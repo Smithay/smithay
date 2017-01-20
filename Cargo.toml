@@ -1,0 +1,7 @@
+[package]
+name = "smithay"
+version = "0.1.0"
+authors = ["Victor Berger <victor.berger@thalesgroup.com>"]
+
+[dependencies]
+wayland-server = "0.7.6"
