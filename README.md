@@ -25,7 +25,7 @@ Nothing is done yet, I'm starting to figure out the design.
 
 ## Why?
 
-I'm doing this because I find it interesting. Also, I'd love to see a pure-rust\* wayland
+I'm doing this because I find it interesting. Also, I'd love to see a pure-rust¹ wayland
 compositor.
 
-*(\* Almost, as some very low-level bits will necessarily still be C. But let's keep them minimal, shall we?)*
+*(¹: Almost, as some very low-level bits will necessarily still be C. But let's keep them minimal, shall we?)*
