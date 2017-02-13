@@ -4,4 +4,4 @@ version = "0.1.0"
 authors = ["Victor Berger <victor.berger@thalesgroup.com>"]
 
 [dependencies]
-wayland-server = "0.7.6"
+wayland-server = "0.8.4"
