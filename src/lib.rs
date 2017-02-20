@@ -2,5 +2,6 @@
 
 #[macro_use]
 extern crate wayland_server;
+extern crate nix;
 
 pub mod shm;

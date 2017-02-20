@@ -32,7 +32,7 @@ use std::sync::Arc;
 use wayland_server::{GlobalHandler, EventLoopHandle, Client, Init, Resource, Destroy, resource_is_registered};
 use wayland_server::protocol::{wl_shm, wl_shm_pool, wl_buffer};
 
-use self::pool::Pool;
+use self::pool::{Pool, ResizeError};
 
 mod pool;
 
@@ -156,9 +156,20 @@ impl Init for ShmHandler {
 }
 
 impl wl_shm::Handler for ShmHandler {
-    fn create_pool(&mut self, evqh: &mut EventLoopHandle, _client: &Client, _shm: &wl_shm::WlShm,
+    fn create_pool(&mut self, evqh: &mut EventLoopHandle, _client: &Client, shm: &wl_shm::WlShm,
                    pool: wl_shm_pool::WlShmPool, fd: RawFd, size: i32) {
-        let arc_pool = Box::new(Arc::new(Pool::new(fd, size)));
+        if size <= 0 {
+            shm.post_error(wl_shm::Error::InvalidFd as u32, "Invalid size for a new wl_shm_pool.".into());
+            return
+        }
+        let mmap_pool = match Pool::new(fd, size as usize) {
+            Ok(p) => p,
+            Err(()) => {
+                shm.post_error(wl_shm::Error::InvalidFd as u32, format!("Failed mmap of fd {}.", fd));
+                return
+            }
+        };
+        let arc_pool = Box::new(Arc::new(mmap_pool));
         evqh.register_with_destructor::<_, ShmHandler, ShmHandler>(&pool, self.my_id);
         pool.set_user_data(Box::into_raw(arc_pool) as *mut ());
     }
@@ -221,8 +232,14 @@ impl wl_shm_pool::Handler for ShmHandler {
               pool: &wl_shm_pool::WlShmPool, size: i32)
     {
         let arc_pool = unsafe { &*(pool.get_user_data() as *mut Arc<Pool>) };
-        if arc_pool.resize(size).is_err() {
-            pool.post_error(wl_shm::Error::InvalidFd as u32, "Invalid new size for a wl_shm_pool.".into())
+        match arc_pool.resize(size) {
+            Ok(()) => {},
+            Err(ResizeError::InvalidSize) => {
+                pool.post_error(wl_shm::Error::InvalidFd as u32, "Invalid new size for a wl_shm_pool.".into());
+            },
+            Err(ResizeError::MremapFailed) => {
+                pool.post_error(wl_shm::Error::InvalidFd as u32, "mremap failed.".into());
+            }
         }
     }
 }

@@ -5,3 +5,4 @@ authors = ["Victor Berger <victor.berger@thalesgroup.com>"]
 
 [dependencies]
 wayland-server = "0.8.4"
+nix = "0.7.0"
