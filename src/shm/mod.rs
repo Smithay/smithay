@@ -25,6 +25,13 @@
 //!     }
 //! );
 //! ```
+//!
+//! **Note**
+//!
+//! This handler makes itself safe regading the client providing a wring size for the memory pool
+//! by using a SIGBUS handler.
+//!
+//! If you are already using an handler for this signal, you probably don't want to use this handler.
 
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
@@ -116,6 +123,7 @@ impl ShmGlobalToken {
 
         if data.pool.with_data_slice(|slice| f(slice, data.data.clone())).is_err() {
             // SIGBUS error occured
+            buffer.post_error(wl_shm::Error::InvalidFd as u32, "Bad pool size.".into());
             return Err(BufferAccessError::BadMap)
         }
         Ok(())
