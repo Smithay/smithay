@@ -28,7 +28,6 @@ before_script:
 script:
   - |
       travis-cargo build &&
-      travis-cargo test &&
       travis-cargo --only stable doc
 
 after_success:
