@@ -44,7 +44,7 @@ env:
     # override the default `--features unstable` used for the nightly branch (optional)
     - TRAVIS_CARGO_NIGHTLY_FEATURE=""
     - RUST_BACKTRACE=1
-    - secure: A/zuPuIu03Z+rqnDS/NNNjbXrg8Nc9lEGKzcBdpHgnyd23z37zreEEAKzFhjJKMx0np0ntDo5LVeLgT6d7fGaDFsJrBZHej3pxuG81MAJdLEmJNaCLCc1eCbwDHgJkEJ5HsblHTrYK0RjBvNL5I8+URuzEqXkwVr7UHJv5px1ZA=
+    - secure: lJjdHvIm6Pzimdik+SafO/MOWLLGY5TJdI7hWcwQ4+XNjuwncKx9ZJ8zqr2xClUKSALvUWB+vdu7i9wTWtsOYnDpyy8wuRvBZoaD5c8H2igsnzmGPPtP5KlPi5sEYvcCRY4vf9GDrvZm6tkNwMRsJBJ+2W/dSOTudMQA9mkdQcn5x24HVUBBOKEEuNy5ZOHZIj/+tre3USC8PbVvWyC5HHHjjEMBKR3F/BoaR1BJq2u4BdyDGTkfsoUa1zaTjApcZiEEK9KhoWDentkmlJHJCHKxC/zIZGhNx8ukw2yrms6j1k94jXB3rJP97q8UyNFcCO1HVO46EdLB6sFUPAW0CuDM27xIHDv+FyU3ICZVlpKQIK8YPJuLmQbCJFpVvEgfNfCIm+7+4jDci09FmHhuW+wQrTZDsRbCQz2gtVveeoE9/cZy5qAbI+UW4F25GGg9Ycxn+VOBU6Zdg8T9MLRRbHJXCzjMmJrNwK+6fEnCsMoVxwbRF9Fsh2JXS0PFdQgJSGtYYW31HEUEu4zrUuooJtz4CAgR+vB9oBxHfu6Y9GXZFmTsrUyuvGSl5vFB3AXLK6AP3BeXu3Bq2wQDy7ClQxvxkpN/eCKKxwV9vE9nRY0eD1sc6esv2gTjlV+gqs7V7JL8VvZulzZZ2gk6S/GhImCqyhJTqziKR7RXsPRZ2Zw=
 
 notifications:
     webhooks:
