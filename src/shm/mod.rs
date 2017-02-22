@@ -2,6 +2,15 @@
 //!
 //! This module provides helpers to handle SHM-based buffers from wayland clients.
 //!
+//! SHM (Shared Memory) is the most basic way wayland clients can send content to
+//! the compositor: by sending a file descriptor to some (likely RAM-backed) storage
+//! containing the actual data. This helper handles for you most of the logic for
+//! handling these file descriptor and accessing their contents as simple `&[u8]` slices.
+//!
+//! This module is heavily inspired from
+//! [the similar helpers](https://cgit.freedesktop.org/wayland/wayland/tree/src/wayland-shm.c)
+//! of the wayland C libraries.
+//!
 //! To use it, first add a `ShmGlobal` to your event loop, specifying the formats
 //! you want to support (ARGB8888 and XRGB8888 are always considered as supported,
 //! as specified by the wayland protocol) and obtain its `ShmGlobalToken`.
@@ -47,7 +56,7 @@
 //!
 //! **Note**
 //!
-//! This handler makes itself safe regading the client providing a wring size for the memory pool
+//! This handler makes itself safe regading the client providing a wrong size for the memory pool
 //! by using a SIGBUS handler.
 //!
 //! If you are already using an handler for this signal, you probably don't want to use this handler.
