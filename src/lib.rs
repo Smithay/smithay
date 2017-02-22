@@ -4,4 +4,8 @@
 extern crate wayland_server;
 extern crate nix;
 
+#[macro_use]
+extern crate slog;
+extern crate slog_stdlog;
+
 pub mod shm;

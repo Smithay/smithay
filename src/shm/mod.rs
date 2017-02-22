@@ -68,7 +68,8 @@ mod pool;
 /// quickly panic.
 pub struct ShmGlobal {
     formats: Vec<wl_shm::Format>,
-    handler_id: Option<usize>
+    handler_id: Option<usize>,
+    log: ::slog::Logger
 }
 
 impl ShmGlobal {
@@ -77,13 +78,22 @@ impl ShmGlobal {
     /// This global will always advertize `ARGB8888` and `XRGB8888` format
     /// as they are required by the protocol. Formats given as argument
     /// as additionnaly advertized.
-    pub fn new(mut formats: Vec<wl_shm::Format>) -> ShmGlobal {
+    ///
+    /// An optionnal `slog::Logger` can be provided and will be used as a drain
+    /// for logging. If `None` is provided, it'll log to `slog-stdlog`.
+    pub fn new<L>(mut formats: Vec<wl_shm::Format>, logger: L) -> ShmGlobal
+        where L: Into<Option<::slog::Logger>>
+    {
+        use slog::DrainExt;
+        let log = logger.into().unwrap_or(::slog::Logger::root(::slog_stdlog::StdLog.fuse(), o!()));
+
         // always add the mandatory formats
         formats.push(wl_shm::Format::Argb8888);
         formats.push(wl_shm::Format::Xrgb8888);
         ShmGlobal {
             formats: formats,
-            handler_id: None
+            handler_id: None,
+            log: log.new(o!("smithay_module" => "shm_handler"))
         }
     }
 
@@ -95,7 +105,7 @@ impl ShmGlobal {
     /// This is needed to retrieve the contents of the shm pools and buffers.
     pub fn get_token(&self) -> ShmGlobalToken {
         ShmGlobalToken {
-            hid: self.handler_id.clone().expect("ShmGlobal was not initialized.")
+            hid: self.handler_id.clone().expect("ShmGlobal was not initialized."),
         }
     }
 }
@@ -153,7 +163,8 @@ impl Init for ShmGlobal {
     fn init(&mut self, evqh: &mut EventLoopHandle, _index: usize) {
         let id = evqh.add_handler_with_init(ShmHandler {
             my_id: ::std::usize::MAX,
-            valid_formats: self.formats.clone()
+            valid_formats: self.formats.clone(),
+            log: self.log.clone()
         });
         self.handler_id = Some(id);
     }
@@ -173,12 +184,14 @@ impl GlobalHandler<wl_shm::WlShm> for ShmGlobal {
 
 struct ShmHandler {
     my_id: usize,
-    valid_formats: Vec<wl_shm::Format>
+    valid_formats: Vec<wl_shm::Format>,
+    log: ::slog::Logger
 }
 
 impl Init for ShmHandler {
     fn init(&mut self, _evqh: &mut EventLoopHandle, index: usize) {
         self.my_id = index;
+        debug!(self.log, "Init finished")
     }
 }
 
@@ -189,7 +202,7 @@ impl wl_shm::Handler for ShmHandler {
             shm.post_error(wl_shm::Error::InvalidFd as u32, "Invalid size for a new wl_shm_pool.".into());
             return
         }
-        let mmap_pool = match Pool::new(fd, size as usize) {
+        let mmap_pool = match Pool::new(fd, size as usize, self.log.clone()) {
             Ok(p) => p,
             Err(()) => {
                 shm.post_error(wl_shm::Error::InvalidFd as u32, format!("Failed mmap of fd {}.", fd));

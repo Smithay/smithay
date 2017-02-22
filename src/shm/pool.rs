@@ -13,7 +13,9 @@ static SIGBUS_INIT: Once = ONCE_INIT;
 static mut OLD_SIGBUS_HANDLER: *mut SigAction = 0 as *mut SigAction;
 
 pub struct Pool {
-    map: RwLock<MemMap>
+    map: RwLock<MemMap>,
+    fd: i32,
+    log: ::slog::Logger
 }
 
 pub enum ResizeError {
@@ -22,19 +24,27 @@ pub enum ResizeError {
 }
 
 impl Pool {
-    pub fn new(fd: RawFd, size: usize) -> Result<Pool,()> {
+    pub fn new(fd: RawFd, size: usize, log: ::slog::Logger) -> Result<Pool,()> {
         let memmap = MemMap::new(fd, size)?;
+        trace!(log, "Creating new shm pool"; "fd" => fd as i32, "size" => size);
         Ok(Pool {
-            map: RwLock::new(memmap)
+            map: RwLock::new(memmap),
+            fd: fd as i32,
+            log: log
         })
     }
 
     pub fn resize(&self, newsize: i32) -> Result<(),ResizeError> {
         let mut guard = self.map.write().unwrap();
-        if newsize <= 0 || guard.size() > (newsize as usize) {
+        let oldsize = guard.size();
+        if newsize <= 0 || oldsize > (newsize as usize) {
             return Err(ResizeError::InvalidSize)
         }
-        guard.remap(newsize as usize).map_err(|()| ResizeError::MremapFailed)
+        trace!(self.log, "Resizing shm pool"; "fd" => self.fd as i32, "oldsize" => oldsize, "newsize" => newsize);
+        guard.remap(newsize as usize).map_err(|()| {
+            debug!(self.log, "SHM pool resize failed"; "fd" => self.fd as i32, "oldsize" => oldsize, "newsize" => newsize);
+            ResizeError::MremapFailed
+        })
     }
     
     pub fn with_data_slice<F: FnOnce(&[u8])>(&self, f: F) -> Result<(),()> {
@@ -44,6 +54,8 @@ impl Pool {
         });
 
         let pool_guard = self.map.read().unwrap();
+
+        trace!(self.log, "Buffer access on shm pool"; "fd" => self.fd as i32);
 
         // Prepare the access
         SIGBUS_GUARD.with(|guard| {
@@ -62,7 +74,12 @@ impl Pool {
         SIGBUS_GUARD.with(|guard| {
             let (_, triggered) = guard.get();
             guard.set((ptr::null_mut(), false));
-            if triggered { Err(()) } else { Ok(()) }
+            if triggered {
+                debug!(self.log, "SIGBUS caught on access on shm pool"; "fd" => self.fd);
+                Err(())
+            } else {
+                Ok(())
+            }
         })
     }
 }
