@@ -21,6 +21,9 @@ before_script:
   - |
       pip install 'travis-cargo<0.2' --user &&
       export PATH=$HOME/.local/bin:$PATH
+  - | 
+      mkdir $(pwd)/socket &&
+      export XDG_RUNTIME_DIR="$(pwd)/socket"
 
 script:
   - |
@@ -35,6 +38,7 @@ env:
   global:
     # override the default `--features unstable` used for the nightly branch (optional)
     - TRAVIS_CARGO_NIGHTLY_FEATURE=""
+    - RUST_BACKTRACE=1
     - secure: A/zuPuIu03Z+rqnDS/NNNjbXrg8Nc9lEGKzcBdpHgnyd23z37zreEEAKzFhjJKMx0np0ntDo5LVeLgT6d7fGaDFsJrBZHej3pxuG81MAJdLEmJNaCLCc1eCbwDHgJkEJ5HsblHTrYK0RjBvNL5I8+URuzEqXkwVr7UHJv5px1ZA=
 
 notifications:
