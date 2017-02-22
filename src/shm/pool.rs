@@ -3,7 +3,7 @@ use std::os::unix::io::RawFd;
 use std::sync::{RwLock, Once, ONCE_INIT};
 use std::ptr;
 
-use nix::{c_int, c_void, libc};
+use nix::{c_int, c_void, libc, unistd};
 use nix::sys::mman;
 use nix::sys::signal::{self, SigAction, Signal, SigHandler};
 
@@ -14,7 +14,7 @@ static mut OLD_SIGBUS_HANDLER: *mut SigAction = 0 as *mut SigAction;
 
 pub struct Pool {
     map: RwLock<MemMap>,
-    fd: i32,
+    fd: RawFd,
     log: ::slog::Logger
 }
 
@@ -29,7 +29,7 @@ impl Pool {
         trace!(log, "Creating new shm pool"; "fd" => fd as i32, "size" => size);
         Ok(Pool {
             map: RwLock::new(memmap),
-            fd: fd as i32,
+            fd: fd,
             log: log
         })
     }
@@ -81,6 +81,13 @@ impl Pool {
                 Ok(())
             }
         })
+    }
+}
+
+impl Drop for Pool {
+    fn drop(&mut self) {
+        trace!(self.log, "Deleting SHM pool"; "fd" => self.fd);
+        let _ = unsafe { unistd::close(self.fd) };
     }
 }
 
