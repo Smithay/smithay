@@ -6,13 +6,32 @@
 //! you want to support (ARGB8888 and XRGB8888 are always considered as supported,
 //! as specified by the wayland protocol) and obtain its `ShmGlobalToken`.
 //!
-//! ```ignore
-//! let handler_id = event_loop.add_handler(ShmGlobal::new());
-//! let shm_global = event_loop.register_global::<wl_shm::WlShm,ShmGlobal>(handler_id, 3);
+//! ```
+//! extern crate wayland_server;
+//! extern crate smithay;
+//!
+//! use smithay::shm::ShmGlobal;
+//! use wayland_server::protocol::wl_shm;
+//!
+//! # fn main() {
+//! # let (_, mut event_loop) = wayland_server::create_display();
+//!
+//! // Insert the ShmGlobal as a handler to your event loop
+//! // Here, we specify that Yuyv and C8 format are supported
+//! // additionnaly to the standart Argb8888 and Xrgb8888.
+//! let handler_id = event_loop.add_handler_with_init(ShmGlobal::new(
+//!     vec![wl_shm::Format::Yuyv, wl_shm::Format::C8],
+//!     None // we don't provide a logger here
+//! ));
+//! // Register this handler to advertise a wl_shm global of version 1
+//! let shm_global = event_loop.register_global::<wl_shm::WlShm,ShmGlobal>(handler_id, 1);
+//! // Retrieve the shm token for later use to access the buffers
 //! let shm_token = {
 //!     let state = event_loop.state();
 //!     state.get_handler::<ShmGlobal>(handler_id).get_token()
 //! };
+//!
+//! # }
 //! ```
 //!
 //! Then, when you have a `WlBuffer` and need to retrieve its contents, use the token method to
