@@ -8,6 +8,8 @@ rust:
 os:
   - linux
 
+dist: trusty
+
 before_install:
   - sudo apt-get install -y libwayland-dev
 
