@@ -1,0 +1,56 @@
+language: rust
+
+cache: cargo
+
+sudo: false
+
+rust:
+  - stable
+  - beta
+  - nightly
+
+os:
+  - linux
+
+dist: trusty
+
+addons:
+  apt:
+    packages:
+      - libwayland-dev
+
+branches:
+  only:
+    - master
+
+before_script:
+  - |
+      pip install 'travis-cargo<0.2' --user &&
+      export PATH=$HOME/.local/bin:$PATH
+  - | 
+      mkdir $(pwd)/socket &&
+      export XDG_RUNTIME_DIR="$(pwd)/socket"
+
+script:
+  - |
+      travis-cargo build &&
+      travis-cargo --only stable doc -- --no-deps
+
+after_success:
+  - travis-cargo --only stable doc-upload
+
+env:
+  global:
+    # override the default `--features unstable` used for the nightly branch (optional)
+    - TRAVIS_CARGO_NIGHTLY_FEATURE=""
+    - RUST_BACKTRACE=1
+    - secure: A/zuPuIu03Z+rqnDS/NNNjbXrg8Nc9lEGKzcBdpHgnyd23z37zreEEAKzFhjJKMx0np0ntDo5LVeLgT6d7fGaDFsJrBZHej3pxuG81MAJdLEmJNaCLCc1eCbwDHgJkEJ5HsblHTrYK0RjBvNL5I8+URuzEqXkwVr7UHJv5px1ZA=
+
+notifications:
+    webhooks:
+        urls:
+            - "https://scalar.vector.im/api/neb/services/hooks/dHJhdmlzLWNpLyU0MGxldmFucyUzQXNhZmFyYWRlZy5uZXQvJTIxRkt4aGprSUNwakJWelZlQ2RGJTNBc2FmYXJhZGVnLm5ldA"
+        on_success: change
+        on_failure: always
+        on_start: never
+
