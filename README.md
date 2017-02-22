@@ -1,5 +1,7 @@
 # Smithay
 
+[![Join the chat at https://gitter.im/smithay/Lobby](https://badges.gitter.im/smithay/Lobby.svg)](https://gitter.im/smithay/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 A smithy for rusty wayland compositors
 
 **Warning:** This is a very new project, still in the process of shaping itself. I cannot
