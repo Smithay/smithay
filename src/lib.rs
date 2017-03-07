@@ -7,8 +7,12 @@
 extern crate wayland_server;
 extern crate nix;
 
+#[cfg(feature = "glutin")]
+extern crate glutin;
+
 #[macro_use]
 extern crate slog;
 extern crate slog_stdlog;
 
 pub mod shm;
+pub mod backend;
