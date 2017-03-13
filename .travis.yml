@@ -24,17 +24,17 @@ branches:
     - master
 
 before_script:
-  - |
-      pip install 'travis-cargo<0.2' --user &&
-      export PATH=$HOME/.local/bin:$PATH
-  - | 
-      mkdir $(pwd)/socket &&
-      export XDG_RUNTIME_DIR="$(pwd)/socket"
+  - export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH
+  - which rustfmt || cargo install rustfmt
+  - pip install 'travis-cargo<0.2' --user
+  - mkdir $(pwd)/socket
+  - export XDG_RUNTIME_DIR="$(pwd)/socket"
 
 script:
-  - |
-      travis-cargo build &&
-      travis-cargo --only stable doc -- --no-deps
+  - cargo fmt -- --write-mode=diff
+  - travis-cargo --skip nightly build
+  - travis-cargo --only nightly build -- --features "clippy"
+  - travis-cargo --only stable doc -- --no-deps
 
 after_success:
   - travis-cargo --only stable doc-upload
