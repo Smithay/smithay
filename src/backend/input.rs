@@ -187,13 +187,13 @@ pub trait InputHandler {
     /// - `time` - A upward counting variable useful for event ordering. Makes no gurantees about actual time passed between events.
     /// - `key_code` - Code of the pressed key. See linux/input-event-codes.h
     /// - `state` - `KeyState` of the event
-    /// - `count` - Amount of key presses registered
+    /// - `count` - Total number of keys pressed on all devices on the associated `Seat`
     ///
     /// # TODO:
     /// - check if events can arrive out of order.
     /// - Make stronger time guarantees
     fn on_keyboard_key(&mut self, seat: &Seat, time: u32, key_code: u32, state: KeyState, count: u32);
-    /// Called when a new keyboard event was received.
+    /// Called when a new pointer movement event was received.
     ///
     /// # Arguments
     ///
@@ -205,7 +205,7 @@ pub trait InputHandler {
     /// - check if events can arrive out of order.
     /// - Make stronger time guarantees
     fn on_pointer_move(&mut self, seat: &Seat, time: u32, to: (u32, u32));
-    /// Called when a new keyboard event was received.
+    /// Called when a new pointer button event was received.
     ///
     /// # Arguments
     ///
@@ -218,7 +218,7 @@ pub trait InputHandler {
     /// - check if events can arrive out of order.
     /// - Make stronger time guarantees
     fn on_pointer_button(&mut self, seat: &Seat, time: u32, button: MouseButton, state: MouseButtonState);
-    /// Called when a new keyboard event was received.
+    /// Called when a new pointer scroll event was received.
     ///
     /// # Arguments
     ///
@@ -232,7 +232,7 @@ pub trait InputHandler {
     /// - check if events can arrive out of order.
     /// - Make stronger time guarantees
     fn on_pointer_scroll(&mut self, seat: &Seat, time: u32, axis: Axis, source: AxisSource, amount: f64);
-    /// Called when a new keyboard event was received.
+    /// Called when a new touch event was received.
     ///
     /// # Arguments
     ///

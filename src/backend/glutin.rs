@@ -261,7 +261,7 @@ impl GlutinInputBackend
         {
             if let Some(ref mut handler) = self.handler {
                 match event {
-                    Event::KeyboardInput(state, key_code/*TODO: Is this really the keycode? glutins docs don't tell*/, _) => handler.on_keyboard_key(&self.seat, self.time_counter, key_code as u32, state.into(), 1),
+                    Event::KeyboardInput(state, key_code, _) => handler.on_keyboard_key(&self.seat, self.time_counter, key_code as u32, state.into(), 1),
                     Event::MouseMoved(x, y) => handler.on_pointer_move(&self.seat, self.time_counter, (x as u32, y as u32)),
                     Event::MouseWheel(delta, _) => match delta {
                         MouseScrollDelta::LineDelta(x, y) => {
