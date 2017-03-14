@@ -217,10 +217,9 @@ impl InputBackend for GlutinInputBackend
     }
 
     fn clear_handler(&mut self) {
-        if let Some(ref mut handler) = self.handler {
+        if let Some(mut handler) = self.handler.take() {
             handler.on_seat_destroyed(&self.seat);
         }
-        self.handler = None;
     }
 
     fn set_cursor_position(&mut self, x: u32, y: u32) -> Result<(), ()> {
