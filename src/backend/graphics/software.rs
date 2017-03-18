@@ -4,7 +4,7 @@ use wayland_server::protocol::wl_shm::Format;
 use std::error::Error;
 
 /// Trait that describes objects providing a software rendering implementation
-pub trait CpuRender<E: Error> {
+pub trait CpuGraphicsBackend<E: Error> {
     /// Render a given buffer of a given format at a specified place in the framebuffer
     ///
     /// # Error

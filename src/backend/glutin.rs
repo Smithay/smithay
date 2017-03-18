@@ -6,7 +6,7 @@ use nix::c_void;
 use std::rc::Rc;
 
 use backend::NewIdType;
-use backend::graphics::opengl::{Api, OpenglRenderer, PixelFormat, SwapBuffersError};
+use backend::graphics::opengl::{Api, OpenglGraphicsBackend, PixelFormat, SwapBuffersError};
 use backend::input::{InputBackend, InputHandler, Seat, KeyState, MouseButton, MouseButtonState, Axis, AxisSource, TouchEvent, TouchSlot};
 
 /// Create a new `GlutinHeadlessRenderer` which implements the `OpenglRenderer` graphics
@@ -63,7 +63,7 @@ pub fn init_windowed_from_builder(builder: WindowBuilder) -> Result<(GlutinWindo
     ))
 }
 
-/// Headless Opengl Context created by `glutin`. Implements the `OpenglRenderer` graphics
+/// Headless Opengl Context created by `glutin`. Implements the `OpenglGraphicsBackend` graphics
 /// backend trait.
 pub struct GlutinHeadlessRenderer
 {
@@ -83,7 +83,7 @@ impl GlutinHeadlessRenderer
     }
 }
 
-impl OpenglRenderer for GlutinHeadlessRenderer
+impl OpenglGraphicsBackend for GlutinHeadlessRenderer
 {
     #[inline]
     fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
@@ -124,7 +124,7 @@ impl OpenglRenderer for GlutinHeadlessRenderer
 }
 
 /// Window with an active Opengl Context created by `glutin`. Implements the
-/// `OpenglRenderer` graphics backend trait.
+/// `OpenglGraphicsBackend` graphics backend trait.
 pub struct GlutinWindowedRenderer
 {
     window: Rc<Window>
@@ -139,7 +139,7 @@ impl GlutinWindowedRenderer
     }
 }
 
-impl OpenglRenderer for GlutinWindowedRenderer
+impl OpenglGraphicsBackend for GlutinWindowedRenderer
 {
     #[inline]
     fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
