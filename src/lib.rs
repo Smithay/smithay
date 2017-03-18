@@ -7,8 +7,11 @@
 extern crate wayland_server;
 extern crate nix;
 
-#[cfg(feature = "glutin")]
+#[cfg(feature = "backend_glutin")]
 extern crate glutin;
+
+#[cfg(feature = "renderer_glium")]
+extern crate glium;
 
 #[macro_use]
 extern crate slog;

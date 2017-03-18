@@ -15,12 +15,12 @@
 pub mod input;
 pub mod graphics;
 
-#[cfg(feature = "glutin")]
+#[cfg(feature = "backend_glutin")]
 pub mod glutin;
 
-#[cfg(feature = "glium")]
+#[cfg(feature = "renderer_glium")]
 mod glium;
-#[cfg(feature = "glium")]
+#[cfg(feature = "renderer_glium")]
 pub use glium::*;
 
 trait NewIdType {
