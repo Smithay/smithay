@@ -198,12 +198,15 @@ pub struct GlutinInputBackend
     window: Rc<Window>,
     time_counter: u32,
     seat: Seat,
-    handler: Option<Box<InputHandler + 'static>>,
+    input_config: (),
+    handler: Option<Box<InputHandler<GlutinInputBackend> + 'static>>,
 }
 
 impl InputBackend for GlutinInputBackend
 {
-    fn set_handler<H: InputHandler + 'static>(&mut self, mut handler: H) {
+    type InputConfig = ();
+
+    fn set_handler<H: InputHandler<Self> + 'static>(&mut self, mut handler: H) {
         if self.handler.is_some() {
             self.clear_handler();
         }
@@ -211,15 +214,19 @@ impl InputBackend for GlutinInputBackend
         self.handler = Some(Box::new(handler));
     }
 
-    fn get_handler(&mut self) -> Option<&mut InputHandler>
+    fn get_handler(&mut self) -> Option<&mut InputHandler<Self>>
     {
-        self.handler.as_mut().map(|handler| handler as &mut InputHandler)
+        self.handler.as_mut().map(|handler| handler as &mut InputHandler<Self>)
     }
 
     fn clear_handler(&mut self) {
         if let Some(mut handler) = self.handler.take() {
             handler.on_seat_destroyed(&self.seat);
         }
+    }
+
+    fn input_config(&mut self) -> &mut Self::InputConfig {
+        &mut self.input_config
     }
 
     fn set_cursor_position(&mut self, x: u32, y: u32) -> Result<(), ()> {
@@ -239,6 +246,7 @@ impl GlutinInputBackend
             window: window,
             time_counter: 0,
             seat: Seat::new(0),
+            input_config: (),
             handler: None,
         }
     }

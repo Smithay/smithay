@@ -158,13 +158,19 @@ pub enum TouchEvent
 /// Trait that describes objects providing a source of input events. All input backends
 /// need to implemenent this and provide the same base gurantees about the presicion of
 /// given events.
-pub trait InputBackend {
+pub trait InputBackend: Sized {
+    /// Type of input device associated with the backend
+    type InputConfig;
     /// Sets a new handler for this `InputBackend`
-    fn set_handler<H: InputHandler + 'static>(&mut self, handler: H);
+    fn set_handler<H: InputHandler<Self> + 'static>(&mut self, handler: H);
     /// Get a reference to the currently set handler, if any
-    fn get_handler(&mut self) -> Option<&mut InputHandler>;
+    fn get_handler(&mut self) -> Option<&mut InputHandler<Self>>;
     /// Clears the currently handler, if one is set
     fn clear_handler(&mut self);
+
+    /// Get current `InputConfig`
+    fn input_config(&mut self) -> &mut Self::InputConfig;
+
     /// Sets the cursor position, useful for e.g. pointer wrapping.
     ///
     /// Not guaranteed to be supported on every backend. The result usually
@@ -174,7 +180,7 @@ pub trait InputBackend {
 }
 
 /// Implement to receive input events from any `InputBackend`.
-pub trait InputHandler {
+pub trait InputHandler<B: InputBackend> {
     /// Called when a new `Seat` has been created
     fn on_seat_created(&mut self, seat: &Seat);
     /// Called when an existing `Seat` has been destroyed.
@@ -244,9 +250,15 @@ pub trait InputHandler {
     /// - check if events can arrive out of order.
     /// - Make stronger time guarantees
     fn on_touch(&mut self, seat: &Seat, time: u32, event: TouchEvent);
+
+    /// Called when the `InputConfig` was changed through an external event.
+    ///
+    /// What kind of events can trigger this call is completely backend dependent.
+    /// E.g. an input devices was attached/detached or changed it's own configuration.
+    fn on_input_config_changed(&mut self, config: &mut B::InputConfig);
 }
 
-impl InputHandler for Box<InputHandler> {
+impl<B: InputBackend> InputHandler<B> for Box<InputHandler<B>> {
     fn on_seat_created(&mut self, seat: &Seat) {
         (**self).on_seat_created(seat)
     }
@@ -273,5 +285,9 @@ impl InputHandler for Box<InputHandler> {
 
     fn on_touch(&mut self, seat: &Seat, time: u32, event: TouchEvent) {
         (**self).on_touch(seat, time, event)
+    }
+
+    fn on_input_config_changed(&mut self, config: &mut B::InputConfig) {
+        (**self).on_input_config_changed(config)
     }
 }
