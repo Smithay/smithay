@@ -3,6 +3,7 @@ extern crate smithay;
 
 use smithay::shm::ShmGlobal;
 use smithay::backend::glutin;
+use smithay::backend::input::InputBackend;
 use wayland_server::protocol::wl_shm;
 
 fn main() {
@@ -30,7 +31,7 @@ fn main() {
     //TODO render stuff
 
     //TODO put input handling on the event loop
-    input.process_new_events();
+    input.dispatch_new_events().unwrap();
 
-    event_loop.run();
+    event_loop.run().unwrap();
 }
