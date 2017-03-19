@@ -1,6 +1,7 @@
 //! Common traits for input backends to receive input from.
+use backend::{SeatInternal, TouchSlotInternal};
 
-use backend::NewIdType;
+use std::error::Error;
 
 /// A seat describes a group of input devices and at least one
 /// graphics device belonging together.
@@ -11,14 +12,33 @@ use backend::NewIdType;
 ///
 /// Seats can be checked for equality and hashed for differentiation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Seat { id: u32 }
+pub struct Seat { id: u32, capabilities: SeatCapabilities }
 
-impl NewIdType for Seat
+impl SeatInternal for Seat
 {
-    fn new(id: u32) -> Seat
+    fn new(id: u32, capabilities: SeatCapabilities) -> Seat
     {
-        Seat { id: id }
+        Seat { id: id, capabilities: capabilities }
     }
+}
+
+impl Seat {
+    /// Get the currently capabilities of this `Seat`
+    pub fn capabilities(&self) -> &SeatCapabilities
+    {
+        &self.capabilities
+    }
+}
+
+/// Describes capabilities a `Seat` has.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SeatCapabilities {
+    /// `Seat` has a pointer
+    pub pointer: bool,
+    /// `Seat` has a keyboard
+    pub keyboard: bool,
+    /// `Seat` has a touchscreen
+    pub touch: bool
 }
 
 /// State of key on a keyboard. Either pressed or released
@@ -104,9 +124,9 @@ pub enum AxisSource
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TouchSlot { id: u32 }
 
-impl NewIdType for TouchSlot
+impl TouchSlotInternal for TouchSlot
 {
-    fn new(id: u32) -> TouchSlot
+    fn new(id: u32) -> Self
     {
         TouchSlot { id: id }
     }
@@ -161,6 +181,10 @@ pub enum TouchEvent
 pub trait InputBackend: Sized {
     /// Type of input device associated with the backend
     type InputConfig;
+
+    /// Type representing errors that may be returned when processing events
+    type EventError: Error;
+
     /// Sets a new handler for this `InputBackend`
     fn set_handler<H: InputHandler<Self> + 'static>(&mut self, handler: H);
     /// Get a reference to the currently set handler, if any
@@ -170,6 +194,9 @@ pub trait InputBackend: Sized {
 
     /// Get current `InputConfig`
     fn input_config(&mut self) -> &mut Self::InputConfig;
+
+    /// Processes new events of the underlying backend and drives the `InputHandler`.
+    fn dispatch_new_events(&mut self) -> Result<(), Self::EventError>;
 
     /// Sets the cursor position, useful for e.g. pointer wrapping.
     ///
@@ -185,6 +212,9 @@ pub trait InputHandler<B: InputBackend> {
     fn on_seat_created(&mut self, seat: &Seat);
     /// Called when an existing `Seat` has been destroyed.
     fn on_seat_destroyed(&mut self, seat: &Seat);
+    /// Called when a `Seat`'s properties have changed.
+    fn on_seat_changed(&mut self, seat: &Seat);
+
     /// Called when a new keyboard event was received.
     ///
     /// # Arguments
@@ -265,6 +295,10 @@ impl<B: InputBackend> InputHandler<B> for Box<InputHandler<B>> {
 
     fn on_seat_destroyed(&mut self, seat: &Seat) {
         (**self).on_seat_destroyed(seat)
+    }
+
+    fn on_seat_changed(&mut self, seat: &Seat) {
+        (**self).on_seat_changed(seat)
     }
 
     fn on_keyboard_key(&mut self, seat: &Seat, time: u32, key_code: u32, state: KeyState, count: u32) {

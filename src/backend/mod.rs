@@ -23,6 +23,12 @@ mod glium;
 #[cfg(feature = "renderer_glium")]
 pub use glium::*;
 
-trait NewIdType {
+/// Internal functions that need to be accessible by the different backend implementations
+
+trait SeatInternal {
+    fn new(id: u32, capabilities: input::SeatCapabilities) -> Self;
+}
+
+trait TouchSlotInternal {
     fn new(id: u32) -> Self;
 }

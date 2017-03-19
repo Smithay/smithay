@@ -4,10 +4,12 @@ use glutin::{ContextError, CreationError, Event, ElementState, MouseScrollDelta,
 use glutin::{Api as GlutinApi, PixelFormat as GlutinPixelFormat, MouseButton as GlutinMouseButton};
 use nix::c_void;
 use std::rc::Rc;
+use std::error::Error;
+use std::fmt;
 
-use backend::NewIdType;
+use backend::{SeatInternal, TouchSlotInternal};
 use backend::graphics::opengl::{Api, OpenglGraphicsBackend, PixelFormat, SwapBuffersError};
-use backend::input::{InputBackend, InputHandler, Seat, KeyState, MouseButton, MouseButtonState, Axis, AxisSource, TouchEvent, TouchSlot};
+use backend::input::{InputBackend, InputHandler, Seat, SeatCapabilities, KeyState, MouseButton, MouseButtonState, Axis, AxisSource, TouchEvent, TouchSlot};
 
 /// Create a new `GlutinHeadlessRenderer` which implements the `OpenglRenderer` graphics
 /// backend trait
@@ -182,12 +184,31 @@ impl OpenglGraphicsBackend for GlutinWindowedRenderer
 }
 
 /// Errors that may happen when driving the event loop of `GlutinInputBackend`
+#[derive(Debug)]
 pub enum GlutinInputError
 {
     /// The underlying `glutin` `Window` was closed. No further events can be processed.
     ///
     /// See `GlutinInputBackend::process_new_events`.
     WindowClosed
+}
+
+impl Error for GlutinInputError
+{
+    fn description(&self) -> &str
+    {
+        match *self {
+            GlutinInputError::WindowClosed => "Glutin Window was closed",
+        }
+    }
+}
+
+impl fmt::Display for GlutinInputError
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
+    {
+        write!(f, "{}", self.description())
+    }
 }
 
 /// Abstracted event loop of a `glutin` `Window` implementing the `InputBackend` trait
@@ -205,6 +226,7 @@ pub struct GlutinInputBackend
 impl InputBackend for GlutinInputBackend
 {
     type InputConfig = ();
+    type EventError = GlutinInputError;
 
     fn set_handler<H: InputHandler<Self> + 'static>(&mut self, mut handler: H) {
         if self.handler.is_some() {
@@ -236,20 +258,6 @@ impl InputBackend for GlutinInputBackend
             Err(())
         }
     }
-}
-
-impl GlutinInputBackend
-{
-    fn new(window: Rc<Window>) -> GlutinInputBackend
-    {
-        GlutinInputBackend {
-            window: window,
-            time_counter: 0,
-            seat: Seat::new(0),
-            input_config: (),
-            handler: None,
-        }
-    }
 
     /// Processes new events of the underlying event loop to drive the set `InputHandler`.
     ///
@@ -263,7 +271,7 @@ impl GlutinInputBackend
     ///
     /// The linked `GlutinWindowedRenderer` will error with a lost Context and should
     /// not be used anymore as well.
-    pub fn process_new_events(&mut self) -> Result<(), GlutinInputError>
+    fn dispatch_new_events(&mut self) -> Result<(), GlutinInputError>
     {
         for event in self.window.poll_events()
         {
@@ -304,6 +312,24 @@ impl GlutinInputBackend
             }
         }
         Ok(())
+    }
+}
+
+impl GlutinInputBackend
+{
+    fn new(window: Rc<Window>) -> GlutinInputBackend
+    {
+        GlutinInputBackend {
+            window: window,
+            time_counter: 0,
+            seat: Seat::new(0, SeatCapabilities {
+                pointer: true,
+                keyboard: true,
+                touch: true,
+            }),
+            input_config: (),
+            handler: None,
+        }
     }
 }
 
