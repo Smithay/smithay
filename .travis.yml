@@ -26,6 +26,8 @@ branches:
 before_script:
   - export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH
   - which rustfmt || cargo install rustfmt
+  - which cargo-install-update || cargo install cargo-update
+  - cargo install-update -a
   - pip install 'travis-cargo<0.2' --user
   - mkdir $(pwd)/socket
   - export XDG_RUNTIME_DIR="$(pwd)/socket"
