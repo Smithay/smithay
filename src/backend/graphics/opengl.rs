@@ -61,8 +61,7 @@ pub struct PixelFormat {
 
 /// Trait that describes objects that have an OpenGl context
 /// and can be used to render upon
-pub trait OpenglGraphicsBackend
-{
+pub trait OpenglGraphicsBackend {
     /// Swaps buffers at the end of a frame.
     fn swap_buffers(&self) -> Result<(), SwapBuffersError>;
 

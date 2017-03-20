@@ -1,12 +1,12 @@
-use glium::backend::Backend;
+
+
+use backend::graphics::opengl::{OpenglGraphicsBackend, SwapBuffersError};
 use glium::SwapBuffersError as GliumSwapBuffersError;
+use glium::backend::Backend;
 
 use std::os::raw::c_void;
 
-use ::backend::graphics::opengl::{OpenglGraphicsBackend, SwapBuffersError};
-
-impl From<SwapBuffersError> for GliumSwapBuffersError
-{
+impl From<SwapBuffersError> for GliumSwapBuffersError {
     fn from(error: SwapBuffersError) -> Self {
         match error {
             SwapBuffersError::ContextLost => GliumSwapBuffersError::ContextLost,
@@ -17,27 +17,22 @@ impl From<SwapBuffersError> for GliumSwapBuffersError
 
 pub struct GliumGraphicBackend<T: OpenglGraphicsBackend>(T);
 
-pub trait IntoGlium: OpenglGraphicsBackend + Sized
-{
+pub trait IntoGlium: OpenglGraphicsBackend + Sized {
     fn into_glium(self) -> GliumGraphicBackend<Self>;
 }
 
-impl<T: OpenglGraphicsBackend> IntoGlium for T
-{
-    fn into_glium(self) -> GliumGraphicBackend<Self>
-    {
+impl<T: OpenglGraphicsBackend> IntoGlium for T {
+    fn into_glium(self) -> GliumGraphicBackend<Self> {
         GliumGraphicBackend(self)
     }
 }
 
-unsafe impl<T: OpenglGraphicsBackend> Backend for GliumGraphicBackend<T>
-{
+unsafe impl<T: OpenglGraphicsBackend> Backend for GliumGraphicBackend<T> {
     fn swap_buffers(&self) -> Result<(), GliumSwapBuffersError> {
         self.0.swap_buffers().map_err(Into::into)
     }
 
-    unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void
-    {
+    unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
         self.0.get_proc_address(symbol) as *const c_void
     }
 

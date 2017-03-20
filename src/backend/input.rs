@@ -1,4 +1,5 @@
 //! Common traits for input backends to receive input from.
+
 use backend::{SeatInternal, TouchSlotInternal};
 
 use std::error::Error;
@@ -12,20 +13,23 @@ use std::error::Error;
 ///
 /// Seats can be checked for equality and hashed for differentiation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Seat { id: u32, capabilities: SeatCapabilities }
+pub struct Seat {
+    id: u32,
+    capabilities: SeatCapabilities,
+}
 
-impl SeatInternal for Seat
-{
-    fn new(id: u32, capabilities: SeatCapabilities) -> Seat
-    {
-        Seat { id: id, capabilities: capabilities }
+impl SeatInternal for Seat {
+    fn new(id: u32, capabilities: SeatCapabilities) -> Seat {
+        Seat {
+            id: id,
+            capabilities: capabilities,
+        }
     }
 }
 
 impl Seat {
     /// Get the currently capabilities of this `Seat`
-    pub fn capabilities(&self) -> &SeatCapabilities
-    {
+    pub fn capabilities(&self) -> &SeatCapabilities {
         &self.capabilities
     }
 }
@@ -38,7 +42,7 @@ pub struct SeatCapabilities {
     /// `Seat` has a keyboard
     pub keyboard: bool,
     /// `Seat` has a touchscreen
-    pub touch: bool
+    pub touch: bool,
 }
 
 /// State of key on a keyboard. Either pressed or released
@@ -74,8 +78,7 @@ pub enum MouseButtonState {
 
 /// Axis when scrolling
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Axis
-{
+pub enum Axis {
     /// Vertical axis
     Vertical,
     /// Horizonal axis
@@ -84,8 +87,7 @@ pub enum Axis
 
 /// Source of an axis when scrolling
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum AxisSource
-{
+pub enum AxisSource {
     /// Finger. Mostly used for trackpads.
     ///
     /// Guarantees that a scroll sequence is terminated with a scroll value of 0.
@@ -122,20 +124,19 @@ pub enum AxisSource
 /// fingers on a multi-touch enabled input device. Events should only
 /// be interpreted in the context of other events on the same slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TouchSlot { id: u32 }
+pub struct TouchSlot {
+    id: u32,
+}
 
-impl TouchSlotInternal for TouchSlot
-{
-    fn new(id: u32) -> Self
-    {
+impl TouchSlotInternal for TouchSlot {
+    fn new(id: u32) -> Self {
         TouchSlot { id: id }
     }
 }
 
 /// Touch event
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub enum TouchEvent
-{
+pub enum TouchEvent {
     /// The start of an event at a given position (x, y).
     ///
     /// If the device has multi-touch capabilities a slot is given.
@@ -145,7 +146,7 @@ pub enum TouchEvent
         /// Absolute x-coordinate of the touch position.
         x: f64,
         /// Absolute y-coordinate of the touch position.
-        y: f64
+        y: f64,
     },
     /// Movement of a touch on the device surface to a given position (x, y).
     ///
@@ -156,23 +157,24 @@ pub enum TouchEvent
         /// Absolute x-coordinate of the final touch position after the motion.
         x: f64,
         /// Absolute y-coordinate of the final touch position after the motion.
-        y: f64 },
+        y: f64,
+    },
     /// Stop of an event chain.
     ///
     /// If the device has multi-touch capabilities a slot is given.
     Up {
         /// `TouchSlot`, if the device has multi-touch capabilities
-        slot: Option<TouchSlot>
+        slot: Option<TouchSlot>,
     },
     /// Cancel of an event chain. All previous events in the chain should be ignored.
     ///
     /// If the device has multi-touch capabilities a slot is given.
     Cancel {
         /// `TouchSlot`, if the device has multi-touch capabilities
-        slot: Option<TouchSlot>
+        slot: Option<TouchSlot>,
     },
     /// Signals the end of a set of touchpoints at one device sample time.
-    Frame
+    Frame,
 }
 
 /// Trait that describes objects providing a source of input events. All input backends

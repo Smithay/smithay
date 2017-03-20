@@ -1,28 +1,29 @@
 //! Implementation of backend traits for types provided by `glutin`
 
-use glutin::{ContextError, CreationError, Event, ElementState, MouseScrollDelta, Touch, TouchPhase, GlContext, HeadlessRendererBuilder, HeadlessContext, WindowBuilder, Window};
-use glutin::{Api as GlutinApi, PixelFormat as GlutinPixelFormat, MouseButton as GlutinMouseButton};
-use nix::c_void;
-use std::rc::Rc;
-use std::error::Error;
-use std::fmt;
 
 use backend::{SeatInternal, TouchSlotInternal};
 use backend::graphics::opengl::{Api, OpenglGraphicsBackend, PixelFormat, SwapBuffersError};
-use backend::input::{InputBackend, InputHandler, Seat, SeatCapabilities, KeyState, MouseButton, MouseButtonState, Axis, AxisSource, TouchEvent, TouchSlot};
+use backend::input::{Axis, AxisSource, InputBackend, InputHandler, KeyState, MouseButton, MouseButtonState,
+                     Seat, SeatCapabilities, TouchEvent, TouchSlot};
+use glutin::{Api as GlutinApi, MouseButton as GlutinMouseButton, PixelFormat as GlutinPixelFormat};
+use glutin::{ContextError, CreationError, ElementState, Event, GlContext, HeadlessContext,
+             HeadlessRendererBuilder, MouseScrollDelta, Touch, TouchPhase, Window, WindowBuilder};
+use nix::c_void;
+use std::error::Error;
+use std::fmt;
+use std::rc::Rc;
 
 /// Create a new `GlutinHeadlessRenderer` which implements the `OpenglRenderer` graphics
 /// backend trait
-pub fn init_headless_renderer() -> Result<GlutinHeadlessRenderer, CreationError>
-{
+pub fn init_headless_renderer() -> Result<GlutinHeadlessRenderer, CreationError> {
     init_headless_renderer_from_builder(HeadlessRendererBuilder::new(1024, 600))
 }
 
 /// Create a new `GlutinHeadlessRenderer`, which implements the `OpenglRenderer` graphics
 /// backend trait, with a given already configured `HeadlessRendererBuilder` for
 /// customization
-pub fn init_headless_renderer_from_builder(builder: HeadlessRendererBuilder) -> Result<GlutinHeadlessRenderer, CreationError>
-{
+pub fn init_headless_renderer_from_builder(builder: HeadlessRendererBuilder)
+                                           -> Result<GlutinHeadlessRenderer, CreationError> {
     let (w, h) = builder.dimensions;
     let context = builder.build_strict()?;
 
@@ -31,15 +32,14 @@ pub fn init_headless_renderer_from_builder(builder: HeadlessRendererBuilder) -> 
 
 /// Create a new `GlutinWindowedRenderer`, which implements the `OpenglRenderer` graphics
 /// backend trait
-pub fn init_windowed_renderer() -> Result<GlutinWindowedRenderer, CreationError>
-{
+pub fn init_windowed_renderer() -> Result<GlutinWindowedRenderer, CreationError> {
     init_windowed_renderer_from_builder(WindowBuilder::new())
 }
 
 /// Create a new `GlutinWindowedRenderer`, which implements the `OpenglRenderer` graphics
 /// backend trait, with a given already configured `WindowBuilder` for customization.
-pub fn init_windowed_renderer_from_builder(builder: WindowBuilder) -> Result<GlutinWindowedRenderer, CreationError>
-{
+pub fn init_windowed_renderer_from_builder(builder: WindowBuilder)
+                                           -> Result<GlutinWindowedRenderer, CreationError> {
     let window = Rc::new(builder.build_strict()?);
     Ok(GlutinWindowedRenderer::new(window))
 }
@@ -47,8 +47,7 @@ pub fn init_windowed_renderer_from_builder(builder: WindowBuilder) -> Result<Glu
 /// Create a new `glutin` `Window`. Returns a `GlutinWindowedRenderer` implementing
 /// the `OpenglRenderer` graphics backend trait and a `GlutinInputBackend` implementing
 /// the `InputBackend` trait.
-pub fn init_windowed() -> Result<(GlutinWindowedRenderer, GlutinInputBackend), CreationError>
-{
+pub fn init_windowed() -> Result<(GlutinWindowedRenderer, GlutinInputBackend), CreationError> {
     init_windowed_from_builder(WindowBuilder::new())
 }
 
@@ -56,26 +55,21 @@ pub fn init_windowed() -> Result<(GlutinWindowedRenderer, GlutinInputBackend), C
 /// customization. Returns a `GlutinWindowedRenderer` implementing
 /// the `OpenglRenderer` graphics backend trait and a `GlutinInputBackend` implementing
 /// the `InputBackend` trait.
-pub fn init_windowed_from_builder(builder: WindowBuilder) -> Result<(GlutinWindowedRenderer, GlutinInputBackend), CreationError>
-{
+pub fn init_windowed_from_builder(builder: WindowBuilder)
+                                  -> Result<(GlutinWindowedRenderer, GlutinInputBackend), CreationError> {
     let window = Rc::new(builder.build_strict()?);
-    Ok((
-        GlutinWindowedRenderer::new(window.clone()),
-        GlutinInputBackend::new(window)
-    ))
+    Ok((GlutinWindowedRenderer::new(window.clone()), GlutinInputBackend::new(window)))
 }
 
 /// Headless Opengl Context created by `glutin`. Implements the `OpenglGraphicsBackend` graphics
 /// backend trait.
-pub struct GlutinHeadlessRenderer
-{
+pub struct GlutinHeadlessRenderer {
     context: HeadlessContext,
     w: u32,
     h: u32,
 }
 
-impl GlutinHeadlessRenderer
-{
+impl GlutinHeadlessRenderer {
     fn new(context: HeadlessContext, w: u32, h: u32) -> GlutinHeadlessRenderer {
         GlutinHeadlessRenderer {
             context: context,
@@ -85,8 +79,7 @@ impl GlutinHeadlessRenderer
     }
 }
 
-impl OpenglGraphicsBackend for GlutinHeadlessRenderer
-{
+impl OpenglGraphicsBackend for GlutinHeadlessRenderer {
     #[inline]
     fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
         match self.context.swap_buffers() {
@@ -127,22 +120,17 @@ impl OpenglGraphicsBackend for GlutinHeadlessRenderer
 
 /// Window with an active Opengl Context created by `glutin`. Implements the
 /// `OpenglGraphicsBackend` graphics backend trait.
-pub struct GlutinWindowedRenderer
-{
-    window: Rc<Window>
+pub struct GlutinWindowedRenderer {
+    window: Rc<Window>,
 }
 
-impl GlutinWindowedRenderer
-{
+impl GlutinWindowedRenderer {
     fn new(window: Rc<Window>) -> GlutinWindowedRenderer {
-        GlutinWindowedRenderer {
-            window: window,
-        }
+        GlutinWindowedRenderer { window: window }
     }
 }
 
-impl OpenglGraphicsBackend for GlutinWindowedRenderer
-{
+impl OpenglGraphicsBackend for GlutinWindowedRenderer {
     #[inline]
     fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
         match self.window.swap_buffers() {
@@ -159,7 +147,7 @@ impl OpenglGraphicsBackend for GlutinWindowedRenderer
 
     #[inline]
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
-        let (width, height) = self.window.get_inner_size().unwrap_or((800, 600));      // TODO: 800x600 ?
+        let (width, height) = self.window.get_inner_size().unwrap_or((800, 600)); // TODO: 800x600 ?
         let scale = self.window.hidpi_factor();
         ((width as f32 * scale) as u32, (height as f32 * scale) as u32)
     }
@@ -185,28 +173,23 @@ impl OpenglGraphicsBackend for GlutinWindowedRenderer
 
 /// Errors that may happen when driving the event loop of `GlutinInputBackend`
 #[derive(Debug)]
-pub enum GlutinInputError
-{
+pub enum GlutinInputError {
     /// The underlying `glutin` `Window` was closed. No further events can be processed.
     ///
     /// See `GlutinInputBackend::process_new_events`.
-    WindowClosed
+    WindowClosed,
 }
 
-impl Error for GlutinInputError
-{
-    fn description(&self) -> &str
-    {
+impl Error for GlutinInputError {
+    fn description(&self) -> &str {
         match *self {
             GlutinInputError::WindowClosed => "Glutin Window was closed",
         }
     }
 }
 
-impl fmt::Display for GlutinInputError
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
-    {
+impl fmt::Display for GlutinInputError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.description())
     }
 }
@@ -214,8 +197,7 @@ impl fmt::Display for GlutinInputError
 /// Abstracted event loop of a `glutin` `Window` implementing the `InputBackend` trait
 ///
 /// You need to call `process_new_events` periodically to receive any events.
-pub struct GlutinInputBackend
-{
+pub struct GlutinInputBackend {
     window: Rc<Window>,
     time_counter: u32,
     seat: Seat,
@@ -223,8 +205,7 @@ pub struct GlutinInputBackend
     handler: Option<Box<InputHandler<GlutinInputBackend> + 'static>>,
 }
 
-impl InputBackend for GlutinInputBackend
-{
+impl InputBackend for GlutinInputBackend {
     type InputConfig = ();
     type EventError = GlutinInputError;
 
@@ -236,8 +217,7 @@ impl InputBackend for GlutinInputBackend
         self.handler = Some(Box::new(handler));
     }
 
-    fn get_handler(&mut self) -> Option<&mut InputHandler<Self>>
-    {
+    fn get_handler(&mut self) -> Option<&mut InputHandler<Self>> {
         self.handler.as_mut().map(|handler| handler as &mut InputHandler<Self>)
     }
 
@@ -271,42 +251,96 @@ impl InputBackend for GlutinInputBackend
     ///
     /// The linked `GlutinWindowedRenderer` will error with a lost Context and should
     /// not be used anymore as well.
-    fn dispatch_new_events(&mut self) -> Result<(), GlutinInputError>
-    {
-        for event in self.window.poll_events()
-        {
+    fn dispatch_new_events(&mut self) -> Result<(), GlutinInputError> {
+        for event in self.window.poll_events() {
             if let Some(ref mut handler) = self.handler {
                 match event {
-                    Event::KeyboardInput(state, key_code, _) => handler.on_keyboard_key(&self.seat, self.time_counter, key_code as u32, state.into(), 1),
-                    Event::MouseMoved(x, y) => handler.on_pointer_move(&self.seat, self.time_counter, (x as u32, y as u32)),
-                    Event::MouseWheel(delta, _) => match delta {
-                        MouseScrollDelta::LineDelta(x, y) => {
-                            if x != 0.0 {
-                                handler.on_pointer_scroll(&self.seat, self.time_counter, Axis::Horizontal, AxisSource::Wheel, x as f64);
-                            }
-                            if y != 0.0 {
-                                handler.on_pointer_scroll(&self.seat, self.time_counter, Axis::Vertical, AxisSource::Wheel, y as f64);
-                            }
-                        },
-                        MouseScrollDelta::PixelDelta(x, y) => {
-                            if x != 0.0 {
-                                handler.on_pointer_scroll(&self.seat, self.time_counter, Axis::Vertical, AxisSource::Continous, x as f64);
-                            }
-                            if y != 0.0 {
-                                handler.on_pointer_scroll(&self.seat, self.time_counter, Axis::Horizontal, AxisSource::Continous, y as f64);
-                            }
-                        },
-                    },
-                    Event::MouseInput(state, button) => handler.on_pointer_button(&self.seat, self.time_counter, button.into(), state.into()),
-                    Event::Touch(Touch { phase: TouchPhase::Started, location: (x, y), id}) => handler.on_touch(&self.seat, self.time_counter, TouchEvent::Down { slot: Some(TouchSlot::new(id as u32)), x: x, y: y }),
-                    Event::Touch(Touch { phase: TouchPhase::Moved, location: (x, y), id}) => handler.on_touch(&self.seat, self.time_counter, TouchEvent::Motion { slot: Some(TouchSlot::new(id as u32)), x: x, y: y }),
-                    Event::Touch(Touch { phase: TouchPhase::Ended, location: (x, y), id }) => {
-                        handler.on_touch(&self.seat, self.time_counter, TouchEvent::Motion { slot: Some(TouchSlot::new(id as u32)), x: x, y: y });
-                        handler.on_touch(&self.seat, self.time_counter, TouchEvent::Up { slot: Some(TouchSlot::new(id as u32)) });
+                    Event::KeyboardInput(state, key_code, _) => {
+                        handler.on_keyboard_key(&self.seat,
+                                                self.time_counter,
+                                                key_code as u32,
+                                                state.into(),
+                                                1)
                     }
-                    Event::Touch(Touch { phase: TouchPhase::Cancelled, id, ..}) => handler.on_touch(&self.seat, self.time_counter, TouchEvent::Cancel { slot: Some(TouchSlot::new(id as u32)) }),
+                    Event::MouseMoved(x, y) => {
+                        handler.on_pointer_move(&self.seat, self.time_counter, (x as u32, y as u32))
+                    }
+                    Event::MouseWheel(delta, _) => {
+                        match delta {
+                            MouseScrollDelta::LineDelta(x, y) => {
+                                if x != 0.0 {
+                                    handler.on_pointer_scroll(&self.seat,
+                                                              self.time_counter,
+                                                              Axis::Horizontal,
+                                                              AxisSource::Wheel,
+                                                              x as f64);
+                                }
+                                if y != 0.0 {
+                                    handler.on_pointer_scroll(&self.seat,
+                                                              self.time_counter,
+                                                              Axis::Vertical,
+                                                              AxisSource::Wheel,
+                                                              y as f64);
+                                }
+                            }
+                            MouseScrollDelta::PixelDelta(x, y) => {
+                                if x != 0.0 {
+                                    handler.on_pointer_scroll(&self.seat,
+                                                              self.time_counter,
+                                                              Axis::Vertical,
+                                                              AxisSource::Continous,
+                                                              x as f64);
+                                }
+                                if y != 0.0 {
+                                    handler.on_pointer_scroll(&self.seat,
+                                                              self.time_counter,
+                                                              Axis::Horizontal,
+                                                              AxisSource::Continous,
+                                                              y as f64);
+                                }
+                            }
+                        }
+                    }
+                    Event::MouseInput(state, button) => {
+                        handler.on_pointer_button(&self.seat, self.time_counter, button.into(), state.into())
+                    }
+                    Event::Touch(Touch { phase: TouchPhase::Started, location: (x, y), id }) => {
+                        handler.on_touch(&self.seat,
+                                         self.time_counter,
+                                         TouchEvent::Down {
+                                             slot: Some(TouchSlot::new(id as u32)),
+                                             x: x,
+                                             y: y,
+                                         })
+                    }
+                    Event::Touch(Touch { phase: TouchPhase::Moved, location: (x, y), id }) => {
+                        handler.on_touch(&self.seat,
+                                         self.time_counter,
+                                         TouchEvent::Motion {
+                                             slot: Some(TouchSlot::new(id as u32)),
+                                             x: x,
+                                             y: y,
+                                         })
+                    }
+                    Event::Touch(Touch { phase: TouchPhase::Ended, location: (x, y), id }) => {
+                        handler.on_touch(&self.seat,
+                                         self.time_counter,
+                                         TouchEvent::Motion {
+                                             slot: Some(TouchSlot::new(id as u32)),
+                                             x: x,
+                                             y: y,
+                                         });
+                        handler.on_touch(&self.seat,
+                                         self.time_counter,
+                                         TouchEvent::Up { slot: Some(TouchSlot::new(id as u32)) });
+                    }
+                    Event::Touch(Touch { phase: TouchPhase::Cancelled, id, .. }) => {
+                        handler.on_touch(&self.seat,
+                                         self.time_counter,
+                                         TouchEvent::Cancel { slot: Some(TouchSlot::new(id as u32)) })
+                    }
                     Event::Closed => return Err(GlutinInputError::WindowClosed),
-                    _ => {},
+                    _ => {}
                 }
                 self.time_counter += 1;
             }
@@ -315,18 +349,17 @@ impl InputBackend for GlutinInputBackend
     }
 }
 
-impl GlutinInputBackend
-{
-    fn new(window: Rc<Window>) -> GlutinInputBackend
-    {
+impl GlutinInputBackend {
+    fn new(window: Rc<Window>) -> GlutinInputBackend {
         GlutinInputBackend {
             window: window,
             time_counter: 0,
-            seat: Seat::new(0, SeatCapabilities {
-                pointer: true,
-                keyboard: true,
-                touch: true,
-            }),
+            seat: Seat::new(0,
+                            SeatCapabilities {
+                                pointer: true,
+                                keyboard: true,
+                                touch: true,
+                            }),
             input_config: (),
             handler: None,
         }
@@ -359,8 +392,7 @@ impl From<GlutinPixelFormat> for PixelFormat {
     }
 }
 
-impl From<GlutinMouseButton> for MouseButton
-{
+impl From<GlutinMouseButton> for MouseButton {
     fn from(button: GlutinMouseButton) -> MouseButton {
         match button {
             GlutinMouseButton::Left => MouseButton::Left,
@@ -371,8 +403,7 @@ impl From<GlutinMouseButton> for MouseButton
     }
 }
 
-impl From<ElementState> for KeyState
-{
+impl From<ElementState> for KeyState {
     fn from(state: ElementState) -> Self {
         match state {
             ElementState::Pressed => KeyState::Pressed,
@@ -381,8 +412,7 @@ impl From<ElementState> for KeyState
     }
 }
 
-impl From<ElementState> for MouseButtonState
-{
+impl From<ElementState> for MouseButtonState {
     fn from(state: ElementState) -> Self {
         match state {
             ElementState::Pressed => MouseButtonState::Pressed,
