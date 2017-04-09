@@ -90,7 +90,8 @@ impl KbdInternal {
     fn new() -> Result<KbdInternal, ()> {
         let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
         // TODO: api to choose the keymap to load
-        let keymap = xkb::Keymap::new_from_names(&context, &"", &"", &"fr", &"oss", None, 0).ok_or(())?;
+        let keymap = xkb::Keymap::new_from_names(&context, &"", &"", &"fr", &"oss", None, 0)
+            .ok_or(())?;
         let state = xkb::State::new(&keymap);
         Ok(KbdInternal {
                focus: None,
@@ -186,10 +187,7 @@ impl KbdHandle {
     pub fn input<F>(&self, keycode: u32, state: KeyState, serial: u32, filter: F)
         where F: FnOnce(&ModifiersState, Keysym) -> bool
     {
-        let mut guard = self.internal
-            .0
-            .lock()
-            .unwrap();
+        let mut guard = self.internal.0.lock().unwrap();
         let mods_changed = guard.key_input(keycode, state);
 
         if !filter(&guard.mods_state, guard.state.key_get_one_sym(keycode)) {
@@ -218,10 +216,7 @@ impl KbdHandle {
     pub fn set_focus(&self, focus: Option<(wl_surface::WlSurface, wl_keyboard::WlKeyboard)>, serial: u32) {
         // TODO: check surface and keyboard are from the same client
 
-        let mut guard = self.internal
-            .0
-            .lock()
-            .unwrap();
+        let mut guard = self.internal.0.lock().unwrap();
 
         // remove current focus
         let old_kbd = if let Some((old_surface, old_kbd)) = guard.focus.take() {

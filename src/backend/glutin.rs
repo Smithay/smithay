@@ -218,7 +218,9 @@ impl InputBackend for GlutinInputBackend {
     }
 
     fn get_handler(&mut self) -> Option<&mut InputHandler<Self>> {
-        self.handler.as_mut().map(|handler| handler as &mut InputHandler<Self>)
+        self.handler
+            .as_mut()
+            .map(|handler| handler as &mut InputHandler<Self>)
     }
 
     fn clear_handler(&mut self) {
@@ -233,7 +235,8 @@ impl InputBackend for GlutinInputBackend {
 
     fn set_cursor_position(&mut self, x: u32, y: u32) -> Result<(), ()> {
         if let Some((win_x, win_y)) = self.window.get_position() {
-            self.window.set_cursor_position(win_x + x as i32, win_y + y as i32)
+            self.window
+                .set_cursor_position(win_x + x as i32, win_y + y as i32)
         } else {
             Err(())
         }
@@ -304,7 +307,11 @@ impl InputBackend for GlutinInputBackend {
                     Event::MouseInput(state, button) => {
                         handler.on_pointer_button(&self.seat, self.time_counter, button.into(), state.into())
                     }
-                    Event::Touch(Touch { phase: TouchPhase::Started, location: (x, y), id }) => {
+                    Event::Touch(Touch {
+                                     phase: TouchPhase::Started,
+                                     location: (x, y),
+                                     id,
+                                 }) => {
                         handler.on_touch(&self.seat,
                                          self.time_counter,
                                          TouchEvent::Down {
@@ -313,7 +320,11 @@ impl InputBackend for GlutinInputBackend {
                                              y: y,
                                          })
                     }
-                    Event::Touch(Touch { phase: TouchPhase::Moved, location: (x, y), id }) => {
+                    Event::Touch(Touch {
+                                     phase: TouchPhase::Moved,
+                                     location: (x, y),
+                                     id,
+                                 }) => {
                         handler.on_touch(&self.seat,
                                          self.time_counter,
                                          TouchEvent::Motion {
@@ -322,7 +333,11 @@ impl InputBackend for GlutinInputBackend {
                                              y: y,
                                          })
                     }
-                    Event::Touch(Touch { phase: TouchPhase::Ended, location: (x, y), id }) => {
+                    Event::Touch(Touch {
+                                     phase: TouchPhase::Ended,
+                                     location: (x, y),
+                                     id,
+                                 }) => {
                         handler.on_touch(&self.seat,
                                          self.time_counter,
                                          TouchEvent::Motion {
@@ -334,7 +349,11 @@ impl InputBackend for GlutinInputBackend {
                                          self.time_counter,
                                          TouchEvent::Up { slot: Some(TouchSlot::new(id as u32)) });
                     }
-                    Event::Touch(Touch { phase: TouchPhase::Cancelled, id, .. }) => {
+                    Event::Touch(Touch {
+                                     phase: TouchPhase::Cancelled,
+                                     id,
+                                     ..
+                                 }) => {
                         handler.on_touch(&self.seat,
                                          self.time_counter,
                                          TouchEvent::Cancel { slot: Some(TouchSlot::new(id as u32)) })
