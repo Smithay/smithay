@@ -6,6 +6,8 @@
 #[macro_use]
 extern crate wayland_server;
 extern crate nix;
+extern crate xkbcommon;
+extern crate tempfile;
 
 #[cfg(feature = "backend_glutin")]
 extern crate glutin;
@@ -19,3 +21,4 @@ extern crate slog_stdlog;
 
 pub mod shm;
 pub mod backend;
+pub mod keyboard;
