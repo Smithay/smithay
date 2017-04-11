@@ -7,7 +7,7 @@
 //! The handle you obtained can be cloned to access this keyboard state from different places. It is
 //! expected that such a context is created for each keyboard the compositor has access to.
 //!
-//! This handle gives you 3 main way to interact with the keymap handling:
+//! This handle gives you 3 main ways to interact with the keymap handling:
 //!
 //! - send the keymap information to a client using the `KbdHandle::send_keymap` method.
 //! - set the current focus for this keyboard: designing the client that will receive the key inputs
@@ -18,7 +18,7 @@
 
 
 use backend::input::KeyState;
-use std::io::Write;
+use std::io::{Error as IoError, Write};
 use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
 
@@ -81,23 +81,33 @@ struct KbdInternal {
     focus: Option<(wl_surface::WlSurface, wl_keyboard::WlKeyboard)>,
     pressed_keys: Vec<u32>,
     mods_state: ModifiersState,
-    _context: xkb::Context,
     keymap: xkb::Keymap,
     state: xkb::State,
 }
 
 impl KbdInternal {
-    fn new() -> Result<KbdInternal, ()> {
+    fn new(rules: &str, model: &str, layout: &str, variant: &str, options: Option<String>)
+           -> Result<KbdInternal, ()> {
+        // we create a new contex for each keyboard because libxkbcommon is actually NOT threadsafe
+        // so confining it inside the KbdInternal allows us to use Rusts mutability rules to make
+        // sure nothing goes wrong.
+        //
+        // FIXME: This is an issue with the xkbcommon-rs crate that does not reflect this
+        // non-threadsafety properly.
         let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
-        // TODO: api to choose the keymap to load
-        let keymap = xkb::Keymap::new_from_names(&context, &"", &"", &"fr", &"oss", None, 0)
-            .ok_or(())?;
+        let keymap = xkb::Keymap::new_from_names(&context,
+                                                 &rules,
+                                                 &model,
+                                                 &layout,
+                                                 &variant,
+                                                 options,
+                                                 xkb::KEYMAP_COMPILE_NO_FLAGS)
+                .ok_or(())?;
         let state = xkb::State::new(&keymap);
         Ok(KbdInternal {
                focus: None,
                pressed_keys: Vec::new(),
                mods_state: ModifiersState::new(),
-               _context: context,
                keymap: keymap,
                state: state,
            })
@@ -145,15 +155,28 @@ impl KbdInternal {
     }
 }
 
-pub fn create_keyboard_handler() -> Result<KbdHandle, ()> {
-    let internal = KbdInternal::new()?;
+/// Errors that can be encountered when creating a keyboard handler
+pub enum Error {
+    /// libxkbcommon could not load the specified keymap
+    BadKeymap,
+    /// Smithay could not create a tempfile to share the keymap with clients
+    IoError(IoError),
+}
+
+/// Create a keyboard handler from a set of RMLVO rules
+pub fn create_keyboard_handler(rules: &str, model: &str, layout: &str, variant: &str,
+                               options: Option<String>)
+                               -> Result<KbdHandle, Error> {
+    let internal = KbdInternal::new(rules, model, layout, variant, options)
+        .map_err(|_| Error::BadKeymap)?;
 
     // prepare a tempfile with the keymap, to send it to clients
-    // TODO: better error handling
-    let mut keymap_file = tempfile().unwrap();
+    let mut keymap_file = tempfile().map_err(Error::IoError)?;
     let keymap_data = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-    keymap_file.write_all(keymap_data.as_bytes()).unwrap();
-    keymap_file.flush().unwrap();
+    keymap_file
+        .write_all(keymap_data.as_bytes())
+        .map_err(Error::IoError)?;
+    keymap_file.flush().map_err(Error::IoError)?;
 
     Ok(KbdHandle {
            internal: Arc::new((Mutex::new(internal), (keymap_file, keymap_data.as_bytes().len() as u32))),
