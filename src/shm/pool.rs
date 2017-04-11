@@ -60,13 +60,13 @@ impl Pool {
 
         // Prepare the access
         SIGBUS_GUARD.with(|guard| {
-            let (p, _) = guard.get();
-            if !p.is_null() {
-                // Recursive call of this method is not supported
-                panic!("Recursive access to a SHM pool content is not supported.");
-            }
-            guard.set((&*pool_guard as *const MemMap, false))
-        });
+                              let (p, _) = guard.get();
+                              if !p.is_null() {
+                                  // Recursive call of this method is not supported
+                                  panic!("Recursive access to a SHM pool content is not supported.");
+                              }
+                              guard.set((&*pool_guard as *const MemMap, false))
+                          });
 
         let slice = pool_guard.get_slice();
         f(slice);

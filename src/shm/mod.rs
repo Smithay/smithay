@@ -94,7 +94,9 @@ impl ShmGlobal {
         where L: Into<Option<::slog::Logger>>
     {
         use slog::DrainExt;
-        let log = logger.into().unwrap_or_else(|| ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), o!()));
+        let log = logger
+            .into()
+            .unwrap_or_else(|| ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), o!()));
 
         // always add the mandatory formats
         formats.push(wl_shm::Format::Argb8888);
@@ -157,7 +159,9 @@ impl ShmGlobalToken {
         }
         let data = unsafe { &*(buffer.get_user_data() as *mut InternalBufferData) };
 
-        if data.pool.with_data_slice(|slice| f(slice, data.data)).is_err() {
+        if data.pool
+               .with_data_slice(|slice| f(slice, data.data))
+               .is_err() {
             // SIGBUS error occured
             buffer.post_error(wl_shm::Error::InvalidFd as u32, "Bad pool size.".into());
             return Err(BufferAccessError::BadMap);
