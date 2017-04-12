@@ -164,11 +164,22 @@ pub enum Error {
 }
 
 /// Create a keyboard handler from a set of RMLVO rules
-pub fn create_keyboard_handler(rules: &str, model: &str, layout: &str, variant: &str,
-                               options: Option<String>)
-                               -> Result<KbdHandle, Error> {
+pub fn create_keyboard_handler<L>(rules: &str, model: &str, layout: &str, variant: &str,
+                                  options: Option<String>, logger: L)
+                                  -> Result<KbdHandle, Error>
+    where L: Into<Option<::slog::Logger>>
+{
+    let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "xkbcommon_handler"));
+    info!(log, "Initializing a xkbcommon handler with keymap";
+        "rules" => rules, "model" => model, "layout" => layout, "variant" => variant,
+        "options" => &options
+    );
     let internal = KbdInternal::new(rules, model, layout, variant, options)
-        .map_err(|_| Error::BadKeymap)?;
+        .map_err(|_| {
+                     debug!(log, "Loading keymap failed");
+                     Error::BadKeymap
+                 })?;
+
 
     // prepare a tempfile with the keymap, to send it to clients
     let mut keymap_file = tempfile().map_err(Error::IoError)?;
@@ -178,9 +189,25 @@ pub fn create_keyboard_handler(rules: &str, model: &str, layout: &str, variant: 
         .map_err(Error::IoError)?;
     keymap_file.flush().map_err(Error::IoError)?;
 
+    trace!(log, "Keymap loaded and copied to tempfile.";
+        "fd" => keymap_file.as_raw_fd(), "len" => keymap_data.as_bytes().len()
+    );
+
     Ok(KbdHandle {
-           internal: Arc::new((Mutex::new(internal), (keymap_file, keymap_data.as_bytes().len() as u32))),
+           arc: Arc::new(KbdArc {
+                             internal: Mutex::new(internal),
+                             keymap_file: keymap_file,
+                             keymap_len: keymap_data.as_bytes().len() as u32,
+                             logger: log,
+                         }),
        })
+}
+
+struct KbdArc {
+    internal: Mutex<KbdInternal>,
+    keymap_file: ::std::fs::File,
+    keymap_len: u32,
+    logger: ::slog::Logger,
 }
 
 /// An handle to a keyboard handler
@@ -191,7 +218,7 @@ pub fn create_keyboard_handler(rules: &str, model: &str, layout: &str, variant: 
 /// See module-level documentation for details of its use.
 #[derive(Clone)]
 pub struct KbdHandle {
-    internal: Arc<(Mutex<KbdInternal>, (::std::fs::File, u32))>,
+    arc: Arc<KbdArc>,
 }
 
 impl KbdHandle {
@@ -210,11 +237,19 @@ impl KbdHandle {
     pub fn input<F>(&self, keycode: u32, state: KeyState, serial: u32, filter: F)
         where F: FnOnce(&ModifiersState, Keysym) -> bool
     {
-        let mut guard = self.internal.0.lock().unwrap();
+        trace!(self.arc.logger, "Handling keystroke"; "keycode" => keycode, "state" => format_args!("{:?}", state));
+        let mut guard = self.arc.internal.lock().unwrap();
         let mods_changed = guard.key_input(keycode, state);
 
-        if !filter(&guard.mods_state, guard.state.key_get_one_sym(keycode)) {
+        let sym = guard.state.key_get_one_sym(keycode);
+
+        trace!(self.arc.logger, "Calling input filter";
+            "mods_state" => format_args!("{:?}", guard.mods_state), "sym" => xkb::keysym_get_name(sym)
+        );
+
+        if !filter(&guard.mods_state, sym) {
             // the filter returned false, we do not forward to client
+            trace!(self.arc.logger, "Input was intercepted by filter");
             return;
         }
 
@@ -229,6 +264,9 @@ impl KbdHandle {
                 KeyState::Released => wl_keyboard::KeyState::Released,
             };
             kbd.key(serial, 0, keycode, wl_state);
+            trace!(self.arc.logger, "Input forwarded to client");
+        } else {
+            trace!(self.arc.logger, "No client currently focused");
         }
     }
 
@@ -239,7 +277,7 @@ impl KbdHandle {
     pub fn set_focus(&self, focus: Option<(wl_surface::WlSurface, wl_keyboard::WlKeyboard)>, serial: u32) {
         // TODO: check surface and keyboard are from the same client
 
-        let mut guard = self.internal.0.lock().unwrap();
+        let mut guard = self.arc.internal.lock().unwrap();
 
         // remove current focus
         let old_kbd = if let Some((old_surface, old_kbd)) = guard.focus.take() {
@@ -265,7 +303,10 @@ impl KbdHandle {
                 // send enter event
                 kbd.enter(serial, &surface, guard.serialize_pressed_keys());
             }
-            guard.focus = Some((surface, kbd))
+            guard.focus = Some((surface, kbd));
+            trace!(self.arc.logger, "Focus set to new surface");
+        } else {
+            trace!(self.arc.logger, "Focus unset");
         }
     }
 
@@ -273,9 +314,9 @@ impl KbdHandle {
     ///
     /// This should be done first, before anything else is done with this keyboard.
     pub fn send_keymap(&self, kbd: &wl_keyboard::WlKeyboard) {
-        let keymap_data = &self.internal.1;
+        trace!(self.arc.logger, "Sending keymap to client");
         kbd.keymap(wl_keyboard::KeymapFormat::XkbV1,
-                   keymap_data.0.as_raw_fd(),
-                   keymap_data.1);
+                   self.arc.keymap_file.as_raw_fd(),
+                   self.arc.keymap_len);
     }
 }

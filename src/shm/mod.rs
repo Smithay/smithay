@@ -64,7 +64,6 @@
 
 use self::pool::{Pool, ResizeError};
 
-use slog_or_stdlog;
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
 
@@ -92,7 +91,7 @@ impl ShmGlobal {
     pub fn new<L>(mut formats: Vec<wl_shm::Format>, logger: L) -> ShmGlobal
         where L: Into<Option<::slog::Logger>>
     {
-        let log = slog_or_stdlog(logger);
+        let log = ::slog_or_stdlog(logger);
 
         // always add the mandatory formats
         formats.push(wl_shm::Format::Argb8888);
