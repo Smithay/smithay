@@ -17,6 +17,8 @@ pub mod graphics;
 
 #[cfg(feature = "backend_glutin")]
 pub mod glutin;
+#[cfg(feature = "backend_libinput")]
+pub mod libinput;
 
 #[cfg(feature = "renderer_glium")]
 mod glium;
