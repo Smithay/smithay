@@ -28,7 +28,8 @@ pub use glium::*;
 /// Internal functions that need to be accessible by the different backend implementations
 
 trait SeatInternal {
-    fn new(id: u32, capabilities: input::SeatCapabilities) -> Self;
+    fn new(id: u64, capabilities: input::SeatCapabilities) -> Self;
+    fn capabilities_mut(&mut self) -> &mut input::SeatCapabilities;
 }
 
 trait TouchSlotInternal {

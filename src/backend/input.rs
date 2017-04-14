@@ -12,18 +12,23 @@ use std::error::Error;
 /// separated users, all with their own focus, input and cursor available.
 ///
 /// Seats can be checked for equality and hashed for differentiation.
+// FIXME: Impl PartialEq, Eq and Hash only dependant on `id`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Seat {
-    id: u32,
+    id: u64,
     capabilities: SeatCapabilities,
 }
 
 impl SeatInternal for Seat {
-    fn new(id: u32, capabilities: SeatCapabilities) -> Seat {
+    fn new(id: u64, capabilities: SeatCapabilities) -> Seat {
         Seat {
             id: id,
             capabilities: capabilities,
         }
+    }
+
+    fn capabilities_mut(&mut self) -> &mut SeatCapabilities {
+        &mut self.capabilities
     }
 }
 
@@ -182,7 +187,7 @@ pub enum TouchEvent {
 /// given events.
 pub trait InputBackend: Sized {
     /// Type of input device associated with the backend
-    type InputConfig;
+    type InputConfig: ?Sized;
 
     /// Type representing errors that may be returned when processing events
     type EventError: Error;
