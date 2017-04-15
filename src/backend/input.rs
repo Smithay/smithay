@@ -12,8 +12,7 @@ use std::error::Error;
 /// separated users, all with their own focus, input and cursor available.
 ///
 /// Seats can be checked for equality and hashed for differentiation.
-// FIXME: Impl PartialEq, Eq and Hash only dependant on `id`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Eq)]
 pub struct Seat {
     id: u64,
     capabilities: SeatCapabilities,
@@ -36,6 +35,18 @@ impl Seat {
     /// Get the currently capabilities of this `Seat`
     pub fn capabilities(&self) -> &SeatCapabilities {
         &self.capabilities
+    }
+}
+
+impl ::std::cmp::PartialEq for Seat {
+    fn eq(&self, other: &Seat) -> bool {
+        self.id == other.id
+    }
+}
+
+impl ::std::hash::Hash for Seat {
+    fn hash<H>(&self, state: &mut H) where H: ::std::hash::Hasher {
+        self.id.hash(state);
     }
 }
 
