@@ -11,7 +11,10 @@ use std::error::Error;
 /// however multiseat configurations are possible and should be treated as
 /// separated users, all with their own focus, input and cursor available.
 ///
-/// Seats can be checked for equality and hashed for differentiation.
+/// Seats referring to the same internal id will always be equal and result in the same
+/// hash, but capabilities of cloned and copied `Seat`s will not be updated by smithay.
+/// Always referr to the `Seat` given by a callback for up-to-date information. You may
+/// use this to calculate the differences since the last callback.
 #[derive(Debug, Clone, Copy, Eq)]
 pub struct Seat {
     id: u64,
