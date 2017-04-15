@@ -14,6 +14,7 @@ pub struct LibinputInputBackend {
     devices: Vec<Device>,
     seats: HashMap<LibinputSeat, Seat>,
     handler: Option<Box<InputHandler<LibinputInputBackend> + 'static>>,
+    logger: ::slog::Logger,
 }
 
 impl InputBackend for LibinputInputBackend {
@@ -24,7 +25,9 @@ impl InputBackend for LibinputInputBackend {
         if self.handler.is_some() {
             self.clear_handler();
         }
+        info!(self.logger, "New input handler set.");
         for seat in self.seats.values() {
+            trace!(self.logger, "Calling on_seat_created with {:?}", seat);
             handler.on_seat_created(&seat);
         }
         self.handler = Some(Box::new(handler));
@@ -39,8 +42,10 @@ impl InputBackend for LibinputInputBackend {
     fn clear_handler(&mut self) {
         if let Some(mut handler) = self.handler.take() {
             for seat in self.seats.values() {
+                trace!(self.logger, "Calling on_seat_destroyed with {:?}", seat);
                 handler.on_seat_destroyed(&seat);
             }
+            info!(self.logger, "Removing input handler");
         }
     }
 
@@ -51,6 +56,7 @@ impl InputBackend for LibinputInputBackend {
     fn set_cursor_position(&mut self, _x: u32, _y: u32) -> Result<(), ()> {
         // FIXME later.
         // This will be doable with the hardware cursor api and probably some more cases
+        warn!(self.logger, "Setting the cursor position is currently unsupported by the libinput backend");
         Err(())
     }
 
@@ -83,6 +89,7 @@ impl InputBackend for LibinputInputBackend {
                                         caps.touch = new_caps.touch || caps.touch;
                                     }
                                     if let Some(ref mut handler) = self.handler {
+                                        trace!(self.logger, "Calling on_seat_changed with {:?}", old_seat);
                                         handler.on_seat_changed(old_seat);
                                     }
                                 },
@@ -91,6 +98,7 @@ impl InputBackend for LibinputInputBackend {
                                     seat_entry.key().hash(&mut hasher);
                                     let seat = seat_entry.insert(Seat::new(hasher.finish(), new_caps));
                                     if let Some(ref mut handler) = self.handler {
+                                        trace!(self.logger, "Calling on_seat_created with {:?}", seat);
                                         handler.on_seat_created(seat);
                                     }
                                 }
@@ -119,6 +127,7 @@ impl InputBackend for LibinputInputBackend {
                                 // it has not, lets destroy it
                                 if let Some(seat) = self.seats.remove(&device_seat) {
                                     if let Some(ref mut handler) = self.handler {
+                                        trace!(self.logger, "Calling on_seat_destroyed with {:?}", seat);
                                         handler.on_seat_destroyed(&seat);
                                     }
                                 } else {
@@ -127,7 +136,9 @@ impl InputBackend for LibinputInputBackend {
                             } else {
                                 // it has, notify about updates
                                 if let Some(ref mut handler) = self.handler {
-                                    handler.on_seat_changed(self.seats.get(&device_seat).unwrap());
+                                    let seat = self.seats.get(&device_seat).unwrap();
+                                    trace!(self.logger, "Calling on_seat_changed with {:?}", seat);
+                                    handler.on_seat_changed(seat);
                                 }
                             }
                         },
