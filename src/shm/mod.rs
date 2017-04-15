@@ -63,6 +63,7 @@
 
 
 use self::pool::{Pool, ResizeError};
+
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
 
@@ -87,16 +88,10 @@ impl ShmGlobal {
     /// This global will always advertize `ARGB8888` and `XRGB8888` format
     /// as they are required by the protocol. Formats given as argument
     /// as additionnaly advertized.
-    ///
-    /// An optionnal `slog::Logger` can be provided and will be used as a drain
-    /// for logging. If `None` is provided, it'll log to `slog-stdlog`.
     pub fn new<L>(mut formats: Vec<wl_shm::Format>, logger: L) -> ShmGlobal
         where L: Into<Option<::slog::Logger>>
     {
-        use slog::DrainExt;
-        let log = logger
-            .into()
-            .unwrap_or_else(|| ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), o!()));
+        let log = ::slog_or_stdlog(logger);
 
         // always add the mandatory formats
         formats.push(wl_shm::Format::Argb8888);
