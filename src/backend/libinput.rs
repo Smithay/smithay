@@ -14,6 +14,10 @@ struct SeatDesc {
     pointer: (u32, u32),
 }
 
+/// Libinput based `InputBackend`.
+///
+/// Tracks input of all devices given manually or via a udev seat to a provided libinput
+/// context.
 pub struct LibinputInputBackend {
     context: Libinput,
     devices: Vec<Device>,
@@ -23,6 +27,8 @@ pub struct LibinputInputBackend {
 }
 
 impl LibinputInputBackend {
+    /// Initialize a new `LibinputInputBackend` from a given already initialized libinput
+    /// context.
     pub fn new<L>(context: Libinput, logger: L) -> Self
         where L: Into<Option<::slog::Logger>>
     {
