@@ -111,7 +111,6 @@ impl InputBackend for LibinputInputBackend {
                                 caps.keyboard = self.devices.iter().any(|x| x.has_capability(DeviceCapability::Keyboard));
                                 caps.touch = self.devices.iter().any(|x| x.has_capability(DeviceCapability::Touch));
                             } else {
-                                //TODO is this the best we can do?
                                 panic!("Seat changed that was never created")
                             }
 
@@ -123,7 +122,6 @@ impl InputBackend for LibinputInputBackend {
                                         handler.on_seat_destroyed(&seat);
                                     }
                                 } else {
-                                    //TODO is this the best we can do?
                                     panic!("Seat destroyed that was never created");
                                 }
                             } else {
