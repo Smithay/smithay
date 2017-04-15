@@ -1,7 +1,7 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
 use backend::SeatInternal;
-use backend::input::{InputBackend, InputHandler, Seat, SeatCapabilities};
+use backend::input::{InputBackend, InputHandler, Seat, SeatCapabilities, MouseButton};
 use input::{Libinput, Device, Seat as LibinputSeat, DeviceCapability};
 use input::event::*;
 
@@ -214,7 +214,16 @@ impl InputBackend for LibinputInputBackend {
                             }
                         },
                         PointerEvent::Button(button_event) => {
-                            
+                            if let Some(ref mut handler) = self.handler {
+                                let device_seat = button_event.device().seat();
+                                let desc = self.seats.get_mut(&device_seat).expect("Recieved pointer event of non existing Seat");
+                                handler.on_pointer_button(&desc.seat, button_event.time(), match button_event.button() {
+                                    0x110 => MouseButton::Left,
+                                    0x111 => MouseButton::Right,
+                                    0x112 => MouseButton::Middle,
+                                    x => MouseButton::Other(x as u8),
+                                }, button_event.button_state().into());
+                            }
                         }
                     }
                 },
@@ -241,6 +250,15 @@ impl From<::input::event::pointer::AxisSource> for ::backend::input::AxisSource 
             ::input::event::pointer::AxisSource::Continuous => ::backend::input::AxisSource::Continuous,
             ::input::event::pointer::AxisSource::Wheel => ::backend::input::AxisSource::Wheel,
             ::input::event::pointer::AxisSource::WheelTilt => ::backend::input::AxisSource::WheelTilt,
+        }
+    }
+}
+
+impl From<::input::event::pointer::ButtonState> for ::backend::input::MouseButtonState {
+    fn from(libinput: ::input::event::pointer::ButtonState) -> Self {
+        match libinput {
+            ::input::event::pointer::ButtonState::Pressed => ::backend::input::MouseButtonState::Pressed,
+            ::input::event::pointer::ButtonState::Released => ::backend::input::MouseButtonState::Released,
         }
     }
 }
