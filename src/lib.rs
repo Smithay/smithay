@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! # Smithay: the wayland composito smithy
+//! **Smithay: the wayland compositor smithy**
 //!
 //! Most entry points in the modules can take an optionnal `slog::Logger` as argument
 //! that will be used as a drain for logging. If `None` is provided, they'll log to `slog-stdlog`.
