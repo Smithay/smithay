@@ -231,6 +231,10 @@ pub trait InputHandler<B: InputBackend> {
     /// Called when an existing `Seat` has been destroyed.
     fn on_seat_destroyed(&mut self, seat: &Seat);
     /// Called when a `Seat`'s properties have changed.
+    ///
+    /// ## Note:
+    ///
+    /// It is not guaranteed that any change has actually happened.
     fn on_seat_changed(&mut self, seat: &Seat);
 
     /// Called when a new keyboard event was received.
