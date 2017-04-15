@@ -155,7 +155,14 @@ impl InputBackend for LibinputInputBackend {
                        handler.on_input_config_changed(&mut self.devices);
                     }
                 },
-                Event::Touch(touch_event) => {},
+                Event::Touch(touch_event) => {
+                    use ::input::event::touch::*;
+                    if let Some(ref mut handler) = self.handler {
+                        let device_seat = touch_event.device().seat();
+                        handler.on_touch(&self.seats.get(&device_seat).expect("Recieved key event of non existing Seat").seat,
+                                         touch_event.time(), touch_event.into())
+                    }
+                },
                 Event::Keyboard(keyboard_event) => {
                     use ::input::event::keyboard::*;
                     match keyboard_event {
@@ -185,9 +192,9 @@ impl InputBackend for LibinputInputBackend {
                             let desc = self.seats.get_mut(&device_seat).expect("Recieved pointer event of non existing Seat");
                             desc.pointer = (
                                 motion_event.absolute_x_transformed(
-                                /*FIXME: global.get_focused_output().width() or something like that*/ 1280) as u32,
+                                /*FIXME: global.get_focused_output_for_seat(&desc.seat).width() or something like that*/ 1280) as u32,
                                 motion_event.absolute_y_transformed(
-                                /*FIXME: global.get_focused_output().height() or something like that*/ 800) as u32,
+                                /*FIXME: global.get_focused_output_for_seat(&desc.seat).height() or something like that*/ 800) as u32,
                             );
                             if let Some(ref mut handler) = self.handler {
                                 handler.on_pointer_move(&desc.seat, motion_event.time(), desc.pointer);
@@ -259,6 +266,33 @@ impl From<::input::event::pointer::ButtonState> for ::backend::input::MouseButto
         match libinput {
             ::input::event::pointer::ButtonState::Pressed => ::backend::input::MouseButtonState::Pressed,
             ::input::event::pointer::ButtonState::Released => ::backend::input::MouseButtonState::Released,
+        }
+    }
+}
+
+impl From<::input::event::touch::TouchEvent> for ::backend::input::TouchEvent {
+    fn from(libinput: ::input::event::touch::TouchEvent) -> Self {
+        use ::input::event::touch::{TouchEventSlot, TouchEventPosition};
+        use ::backend::TouchSlotInternal;
+
+        match libinput {
+            ::input::event::touch::TouchEvent::Down(down_event) => ::backend::input::TouchEvent::Down {
+                slot: down_event.slot().map(|x| ::backend::input::TouchSlot::new(x)),
+                x: down_event.x_transformed(/*FIXME: global.get_focused_output_for_seat(&desc.seat).width() or something like that*/ 1280),
+                y: down_event.x_transformed(/*FIXME: global.get_focused_output_for_seat(&desc.seat).height() or something like that*/ 800),
+            },
+            ::input::event::touch::TouchEvent::Motion(motion_event) => ::backend::input::TouchEvent::Motion {
+                slot: motion_event.slot().map(|x| ::backend::input::TouchSlot::new(x)),
+                x: motion_event.x_transformed(/*FIXME: global.get_focused_output_for_seat(&desc.seat).width() or something like that*/ 1280),
+                y: motion_event.x_transformed(/*FIXME: global.get_focused_output_for_seat(&desc.seat).height() or something like that*/ 800),
+            },
+            ::input::event::touch::TouchEvent::Up(up_event) => ::backend::input::TouchEvent::Up {
+                slot: up_event.slot().map(|x| ::backend::input::TouchSlot::new(x)),
+            },
+            ::input::event::touch::TouchEvent::Cancel(cancel_event) => ::backend::input::TouchEvent::Cancel {
+                slot: cancel_event.slot().map(|x| ::backend::input::TouchSlot::new(x)),
+            },
+            ::input::event::touch::TouchEvent::Frame(_) => ::backend::input::TouchEvent::Frame,
         }
     }
 }
