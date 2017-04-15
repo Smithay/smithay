@@ -291,14 +291,14 @@ impl InputBackend for GlutinInputBackend {
                                     handler.on_pointer_scroll(&self.seat,
                                                               self.time_counter,
                                                               Axis::Vertical,
-                                                              AxisSource::Continous,
+                                                              AxisSource::Continuous,
                                                               x as f64);
                                 }
                                 if y != 0.0 {
                                     handler.on_pointer_scroll(&self.seat,
                                                               self.time_counter,
                                                               Axis::Horizontal,
-                                                              AxisSource::Continous,
+                                                              AxisSource::Continuous,
                                                               y as f64);
                                 }
                             }

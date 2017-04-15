@@ -9,10 +9,15 @@ use std::io::Error as IoError;
 use std::collections::hash_map::{DefaultHasher, Entry, HashMap};
 use std::hash::{Hash, Hasher};
 
+struct SeatDesc {
+    seat: Seat,
+    pointer: (u32, u32),
+}
+
 pub struct LibinputInputBackend {
     context: Libinput,
     devices: Vec<Device>,
-    seats: HashMap<LibinputSeat, Seat>,
+    seats: HashMap<LibinputSeat, SeatDesc>,
     handler: Option<Box<InputHandler<LibinputInputBackend> + 'static>>,
     logger: ::slog::Logger,
 }
@@ -26,9 +31,9 @@ impl InputBackend for LibinputInputBackend {
             self.clear_handler();
         }
         info!(self.logger, "New input handler set.");
-        for seat in self.seats.values() {
-            trace!(self.logger, "Calling on_seat_created with {:?}", seat);
-            handler.on_seat_created(&seat);
+        for desc in self.seats.values() {
+            trace!(self.logger, "Calling on_seat_created with {:?}", desc.seat);
+            handler.on_seat_created(&desc.seat);
         }
         self.handler = Some(Box::new(handler));
     }
@@ -41,9 +46,9 @@ impl InputBackend for LibinputInputBackend {
 
     fn clear_handler(&mut self) {
         if let Some(mut handler) = self.handler.take() {
-            for seat in self.seats.values() {
-                trace!(self.logger, "Calling on_seat_destroyed with {:?}", seat);
-                handler.on_seat_destroyed(&seat);
+            for desc in self.seats.values() {
+                trace!(self.logger, "Calling on_seat_destroyed with {:?}", desc.seat);
+                handler.on_seat_destroyed(&desc.seat);
             }
             info!(self.logger, "Removing input handler");
         }
@@ -83,23 +88,26 @@ impl InputBackend for LibinputInputBackend {
                                 Entry::Occupied(mut seat_entry) => {
                                     let old_seat = seat_entry.get_mut();
                                     {
-                                        let caps = old_seat.capabilities_mut();
+                                        let caps = old_seat.seat.capabilities_mut();
                                         caps.pointer = new_caps.pointer || caps.pointer;
                                         caps.keyboard = new_caps.keyboard || caps.keyboard;
                                         caps.touch = new_caps.touch || caps.touch;
                                     }
                                     if let Some(ref mut handler) = self.handler {
-                                        trace!(self.logger, "Calling on_seat_changed with {:?}", old_seat);
-                                        handler.on_seat_changed(old_seat);
+                                        trace!(self.logger, "Calling on_seat_changed with {:?}", old_seat.seat);
+                                        handler.on_seat_changed(&old_seat.seat);
                                     }
                                 },
                                 Entry::Vacant(seat_entry) => {
                                     let mut hasher = DefaultHasher::default();
                                     seat_entry.key().hash(&mut hasher);
-                                    let seat = seat_entry.insert(Seat::new(hasher.finish(), new_caps));
+                                    let desc = seat_entry.insert(SeatDesc {
+                                        seat: Seat::new(hasher.finish(), new_caps),
+                                        pointer: (0, 0) //FIXME: What position to assume? Maybe center of the screen instead. Probably call `set_cursor_position` after this.
+                                    });
                                     if let Some(ref mut handler) = self.handler {
-                                        trace!(self.logger, "Calling on_seat_created with {:?}", seat);
-                                        handler.on_seat_created(seat);
+                                        trace!(self.logger, "Calling on_seat_created with {:?}", desc.seat);
+                                        handler.on_seat_created(&desc.seat);
                                     }
                                 }
                             }
@@ -113,8 +121,8 @@ impl InputBackend for LibinputInputBackend {
                             let device_seat = removed.seat();
 
                             // update capabilities, so they appear correctly on `on_seat_changed` and `on_seat_destroyed`.
-                            if let Some(seat) = self.seats.get_mut(&device_seat) {
-                                let caps = seat.capabilities_mut();
+                            if let Some(desc) = self.seats.get_mut(&device_seat) {
+                                let caps = desc.seat.capabilities_mut();
                                 caps.pointer = self.devices.iter().filter(|x| x.seat() == device_seat).any(|x| x.has_capability(DeviceCapability::Pointer));
                                 caps.keyboard = self.devices.iter().filter(|x| x.seat() == device_seat).any(|x| x.has_capability(DeviceCapability::Keyboard));
                                 caps.touch = self.devices.iter().filter(|x| x.seat() == device_seat).any(|x| x.has_capability(DeviceCapability::Touch));
@@ -125,10 +133,10 @@ impl InputBackend for LibinputInputBackend {
                             // check if the seat has any other devices
                             if !self.devices.iter().any(|x| x.seat() == device_seat) {
                                 // it has not, lets destroy it
-                                if let Some(seat) = self.seats.remove(&device_seat) {
+                                if let Some(desc) = self.seats.remove(&device_seat) {
                                     if let Some(ref mut handler) = self.handler {
-                                        trace!(self.logger, "Calling on_seat_destroyed with {:?}", seat);
-                                        handler.on_seat_destroyed(&seat);
+                                        trace!(self.logger, "Calling on_seat_destroyed with {:?}", desc.seat);
+                                        handler.on_seat_destroyed(&desc.seat);
                                     }
                                 } else {
                                     panic!("Seat destroyed that was never created");
@@ -136,9 +144,9 @@ impl InputBackend for LibinputInputBackend {
                             } else {
                                 // it has, notify about updates
                                 if let Some(ref mut handler) = self.handler {
-                                    let seat = self.seats.get(&device_seat).unwrap();
-                                    trace!(self.logger, "Calling on_seat_changed with {:?}", seat);
-                                    handler.on_seat_changed(seat);
+                                    let desc = self.seats.get(&device_seat).unwrap();
+                                    trace!(self.logger, "Calling on_seat_changed with {:?}", desc.seat);
+                                    handler.on_seat_changed(&desc.seat);
                                 }
                             }
                         },
@@ -154,13 +162,62 @@ impl InputBackend for LibinputInputBackend {
                         KeyboardEvent::Key(event) => {
                             if let Some(ref mut handler) = self.handler {
                                 let device_seat = event.device().seat();
-                                handler.on_keyboard_key(self.seats.get(&device_seat).expect("Recieved key event of non existing Seat"),
+                                handler.on_keyboard_key(&self.seats.get(&device_seat).expect("Recieved key event of non existing Seat").seat,
                                                         event.time(), event.key(), event.key_state().into(), event.seat_key_count());
                             }
                         }
                     }
                 },
-                Event::Pointer(pointer_event) => {},
+                Event::Pointer(pointer_event) => {
+                    use ::input::event::pointer::*;
+                    match pointer_event {
+                        PointerEvent::Motion(motion_event) => {
+                            let device_seat = motion_event.device().seat();
+                            let desc = self.seats.get_mut(&device_seat).expect("Recieved pointer event of non existing Seat");
+                            desc.pointer.0 += motion_event.dx() as u32;
+                            desc.pointer.1 += motion_event.dy() as u32;
+                            if let Some(ref mut handler) = self.handler {
+                                handler.on_pointer_move(&desc.seat, motion_event.time(), desc.pointer);
+                            }
+                        },
+                        PointerEvent::MotionAbsolute(motion_event) => {
+                            let device_seat = motion_event.device().seat();
+                            let desc = self.seats.get_mut(&device_seat).expect("Recieved pointer event of non existing Seat");
+                            desc.pointer = (
+                                motion_event.absolute_x_transformed(
+                                /*FIXME: global.get_focused_output().width() or something like that*/ 1280) as u32,
+                                motion_event.absolute_y_transformed(
+                                /*FIXME: global.get_focused_output().height() or something like that*/ 800) as u32,
+                            );
+                            if let Some(ref mut handler) = self.handler {
+                                handler.on_pointer_move(&desc.seat, motion_event.time(), desc.pointer);
+                            }
+                        },
+                        PointerEvent::Axis(axis_event) => {
+                            if let Some(ref mut handler) = self.handler {
+                                let device_seat = axis_event.device().seat();
+                                let desc = self.seats.get_mut(&device_seat).expect("Recieved pointer event of non existing Seat");
+                                if axis_event.has_axis(Axis::Vertical) {
+                                    handler.on_pointer_scroll(&desc.seat, axis_event.time(), ::backend::input::Axis::Vertical,
+                                                              axis_event.axis_source().into(), match axis_event.axis_source() {
+                                                                  AxisSource::Finger | AxisSource::Continuous => axis_event.axis_value(Axis::Vertical),
+                                                                  AxisSource::Wheel | AxisSource::WheelTilt => axis_event.axis_value_discrete(Axis::Vertical).unwrap(),
+                                                              });
+                                }
+                                if axis_event.has_axis(Axis::Horizontal) {
+                                    handler.on_pointer_scroll(&desc.seat, axis_event.time(), ::backend::input::Axis::Horizontal,
+                                                              axis_event.axis_source().into(), match axis_event.axis_source() {
+                                                                  AxisSource::Finger | AxisSource::Continuous => axis_event.axis_value(Axis::Horizontal),
+                                                                  AxisSource::Wheel | AxisSource::WheelTilt => axis_event.axis_value_discrete(Axis::Horizontal).unwrap(),
+                                                              });
+                                }
+                            }
+                        },
+                        PointerEvent::Button(button_event) => {
+                            
+                        }
+                    }
+                },
                 _ => {}, //FIXME: What to do with the rest.
             }
         };
@@ -173,6 +230,17 @@ impl From<::input::event::keyboard::KeyState> for ::backend::input::KeyState {
         match libinput {
             ::input::event::keyboard::KeyState::Pressed => ::backend::input::KeyState::Pressed,
             ::input::event::keyboard::KeyState::Released => ::backend::input::KeyState::Released,
+        }
+    }
+}
+
+impl From<::input::event::pointer::AxisSource> for ::backend::input::AxisSource {
+    fn from(libinput: ::input::event::pointer::AxisSource) -> Self {
+        match libinput {
+            ::input::event::pointer::AxisSource::Finger => ::backend::input::AxisSource::Finger,
+            ::input::event::pointer::AxisSource::Continuous => ::backend::input::AxisSource::Continuous,
+            ::input::event::pointer::AxisSource::Wheel => ::backend::input::AxisSource::Wheel,
+            ::input::event::pointer::AxisSource::WheelTilt => ::backend::input::AxisSource::WheelTilt,
         }
     }
 }

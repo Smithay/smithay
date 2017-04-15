@@ -110,7 +110,7 @@ pub enum AxisSource {
     /// The coordinate system is identical to
     /// the cursor movement, i.e. a scroll value of 1 represents the equivalent relative
     /// motion of 1.
-    Continous,
+    Continuous,
     /// Scroll wheel.
     ///
     /// No terminating event is guaranteed (though it may happen). Scrolling is in
