@@ -159,6 +159,7 @@ impl InputBackend for LibinputInputBackend {
                     use ::input::event::touch::*;
                     if let Some(ref mut handler) = self.handler {
                         let device_seat = touch_event.device().seat();
+                        trace!(self.logger, "Calling on_touch with {:?}", touch_event);
                         handler.on_touch(&self.seats.get(&device_seat).expect("Recieved key event of non existing Seat").seat,
                                          touch_event.time(), touch_event.into())
                     }
@@ -166,11 +167,12 @@ impl InputBackend for LibinputInputBackend {
                 Event::Keyboard(keyboard_event) => {
                     use ::input::event::keyboard::*;
                     match keyboard_event {
-                        KeyboardEvent::Key(event) => {
+                        KeyboardEvent::Key(key_event) => {
                             if let Some(ref mut handler) = self.handler {
-                                let device_seat = event.device().seat();
+                                trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
+                                let device_seat = key_event.device().seat();
                                 handler.on_keyboard_key(&self.seats.get(&device_seat).expect("Recieved key event of non existing Seat").seat,
-                                                        event.time(), event.key(), event.key_state().into(), event.seat_key_count());
+                                                        key_event.time(), key_event.key(), key_event.key_state().into(), key_event.seat_key_count());
                             }
                         }
                     }
@@ -184,6 +186,7 @@ impl InputBackend for LibinputInputBackend {
                             desc.pointer.0 += motion_event.dx() as u32;
                             desc.pointer.1 += motion_event.dy() as u32;
                             if let Some(ref mut handler) = self.handler {
+                                trace!(self.logger, "Calling on_pointer_move with {:?}", desc.pointer);
                                 handler.on_pointer_move(&desc.seat, motion_event.time(), desc.pointer);
                             }
                         },
@@ -197,6 +200,7 @@ impl InputBackend for LibinputInputBackend {
                                 /*FIXME: global.get_focused_output_for_seat(&desc.seat).height() or something like that*/ 800) as u32,
                             );
                             if let Some(ref mut handler) = self.handler {
+                                trace!(self.logger, "Calling on_pointer_move with {:?}", desc.pointer);
                                 handler.on_pointer_move(&desc.seat, motion_event.time(), desc.pointer);
                             }
                         },
@@ -205,18 +209,22 @@ impl InputBackend for LibinputInputBackend {
                                 let device_seat = axis_event.device().seat();
                                 let desc = self.seats.get_mut(&device_seat).expect("Recieved pointer event of non existing Seat");
                                 if axis_event.has_axis(Axis::Vertical) {
+                                    let value = match axis_event.axis_source() {
+                                        AxisSource::Finger | AxisSource::Continuous => axis_event.axis_value(Axis::Vertical),
+                                        AxisSource::Wheel | AxisSource::WheelTilt => axis_event.axis_value_discrete(Axis::Vertical).unwrap(),
+                                    };
+                                    trace!(self.logger, "Calling on_pointer_scroll on Axis::Vertical from {:?} with {:?}", axis_event.axis_source(), value);
                                     handler.on_pointer_scroll(&desc.seat, axis_event.time(), ::backend::input::Axis::Vertical,
-                                                              axis_event.axis_source().into(), match axis_event.axis_source() {
-                                                                  AxisSource::Finger | AxisSource::Continuous => axis_event.axis_value(Axis::Vertical),
-                                                                  AxisSource::Wheel | AxisSource::WheelTilt => axis_event.axis_value_discrete(Axis::Vertical).unwrap(),
-                                                              });
+                                                              axis_event.axis_source().into(), value);
                                 }
                                 if axis_event.has_axis(Axis::Horizontal) {
+                                    let value = match axis_event.axis_source() {
+                                        AxisSource::Finger | AxisSource::Continuous => axis_event.axis_value(Axis::Horizontal),
+                                        AxisSource::Wheel | AxisSource::WheelTilt => axis_event.axis_value_discrete(Axis::Horizontal).unwrap(),
+                                    };
+                                    trace!(self.logger, "Calling on_pointer_scroll on Axis::Horizontal from {:?} with {:?}", axis_event.axis_source(), value);
                                     handler.on_pointer_scroll(&desc.seat, axis_event.time(), ::backend::input::Axis::Horizontal,
-                                                              axis_event.axis_source().into(), match axis_event.axis_source() {
-                                                                  AxisSource::Finger | AxisSource::Continuous => axis_event.axis_value(Axis::Horizontal),
-                                                                  AxisSource::Wheel | AxisSource::WheelTilt => axis_event.axis_value_discrete(Axis::Horizontal).unwrap(),
-                                                              });
+                                                              axis_event.axis_source().into(), value);
                                 }
                             }
                         },
@@ -224,6 +232,7 @@ impl InputBackend for LibinputInputBackend {
                             if let Some(ref mut handler) = self.handler {
                                 let device_seat = button_event.device().seat();
                                 let desc = self.seats.get_mut(&device_seat).expect("Recieved pointer event of non existing Seat");
+                                trace!(self.logger, "Calling on_pointer_button with {:?}", button_event.button());
                                 handler.on_pointer_button(&desc.seat, button_event.time(), match button_event.button() {
                                     0x110 => MouseButton::Left,
                                     0x111 => MouseButton::Right,
