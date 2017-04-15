@@ -22,6 +22,22 @@ pub struct LibinputInputBackend {
     logger: ::slog::Logger,
 }
 
+impl LibinputInputBackend {
+    pub fn new<L>(context: Libinput, logger: L) -> Self
+        where L: Into<Option<::slog::Logger>>
+    {
+        let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_libinput"));
+        info!(log, "Initializing a libinput backend");
+        LibinputInputBackend {
+            context: context,
+            devices: Vec::new(),
+            seats: HashMap::new(),
+            handler: None,
+            logger: log,
+        }
+    }
+}
+
 impl InputBackend for LibinputInputBackend {
     type InputConfig = [Device];
     type EventError = IoError;
