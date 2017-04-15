@@ -148,11 +148,31 @@ impl InputBackend for LibinputInputBackend {
                     }
                 },
                 Event::Touch(touch_event) => {},
-                Event::Keyboard(keyboard_event) => {},
+                Event::Keyboard(keyboard_event) => {
+                    use ::input::event::keyboard::*;
+                    match keyboard_event {
+                        KeyboardEvent::Key(event) => {
+                            if let Some(ref mut handler) = self.handler {
+                                let device_seat = event.device().seat();
+                                handler.on_keyboard_key(self.seats.get(&device_seat).expect("Recieved key event of non existing Seat"),
+                                                        event.time(), event.key(), event.key_state().into(), event.seat_key_count());
+                            }
+                        }
+                    }
+                },
                 Event::Pointer(pointer_event) => {},
                 _ => {}, //FIXME: What to do with the rest.
             }
         };
         Ok(())
+    }
+}
+
+impl From<::input::event::keyboard::KeyState> for ::backend::input::KeyState {
+    fn from(libinput: ::input::event::keyboard::KeyState) -> Self {
+        match libinput {
+            ::input::event::keyboard::KeyState::Pressed => ::backend::input::KeyState::Pressed,
+            ::input::event::keyboard::KeyState::Released => ::backend::input::KeyState::Released,
+        }
     }
 }
