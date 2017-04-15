@@ -107,9 +107,9 @@ impl InputBackend for LibinputInputBackend {
                             // update capabilities, so they appear correctly on `on_seat_changed` and `on_seat_destroyed`.
                             if let Some(seat) = self.seats.get_mut(&device_seat) {
                                 let caps = seat.capabilities_mut();
-                                caps.pointer = self.devices.iter().any(|x| x.has_capability(DeviceCapability::Pointer));
-                                caps.keyboard = self.devices.iter().any(|x| x.has_capability(DeviceCapability::Keyboard));
-                                caps.touch = self.devices.iter().any(|x| x.has_capability(DeviceCapability::Touch));
+                                caps.pointer = self.devices.iter().filter(|x| x.seat() == device_seat).any(|x| x.has_capability(DeviceCapability::Pointer));
+                                caps.keyboard = self.devices.iter().filter(|x| x.seat() == device_seat).any(|x| x.has_capability(DeviceCapability::Keyboard));
+                                caps.touch = self.devices.iter().filter(|x| x.seat() == device_seat).any(|x| x.has_capability(DeviceCapability::Touch));
                             } else {
                                 panic!("Seat changed that was never created")
                             }
