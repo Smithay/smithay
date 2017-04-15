@@ -6,7 +6,7 @@ use input::{Libinput, Device, Seat as LibinputSeat, DeviceCapability};
 use input::event::*;
 
 use std::io::Error as IoError;
-use std::collections::hash_map::{DefaultHasher, HashMap};
+use std::collections::hash_map::{DefaultHasher, Entry, HashMap};
 use std::hash::{Hash, Hasher};
 
 pub struct LibinputInputBackend {
@@ -73,24 +73,26 @@ impl InputBackend for LibinputInputBackend {
                             let device_seat = added.seat();
                             self.devices.push(added);
 
-                            let contains = self.seats.contains_key(&device_seat);
-                            if contains {
-                                let old_seat = self.seats.get_mut(&device_seat).unwrap();
-                                {
-                                    let caps = old_seat.capabilities_mut();
-                                    caps.pointer = new_caps.pointer || caps.pointer;
-                                    caps.keyboard = new_caps.keyboard || caps.keyboard;
-                                    caps.touch = new_caps.touch || caps.touch;
-                                }
-                                if let Some(ref mut handler) = self.handler {
-                                    handler.on_seat_changed(old_seat);
-                                }
-                            } else {
-                                let mut hasher = DefaultHasher::default();
-                                device_seat.hash(&mut hasher);
-                                self.seats.insert(device_seat.clone(), Seat::new(hasher.finish(), new_caps));
-                                if let Some(ref mut handler) = self.handler {
-                                    handler.on_seat_created(self.seats.get(&device_seat).unwrap());
+                            match self.seats.entry(device_seat) {
+                                Entry::Occupied(mut seat_entry) => {
+                                    let old_seat = seat_entry.get_mut();
+                                    {
+                                        let caps = old_seat.capabilities_mut();
+                                        caps.pointer = new_caps.pointer || caps.pointer;
+                                        caps.keyboard = new_caps.keyboard || caps.keyboard;
+                                        caps.touch = new_caps.touch || caps.touch;
+                                    }
+                                    if let Some(ref mut handler) = self.handler {
+                                        handler.on_seat_changed(old_seat);
+                                    }
+                                },
+                                Entry::Vacant(seat_entry) => {
+                                    let mut hasher = DefaultHasher::default();
+                                    seat_entry.key().hash(&mut hasher);
+                                    let seat = seat_entry.insert(Seat::new(hasher.finish(), new_caps));
+                                    if let Some(ref mut handler) = self.handler {
+                                        handler.on_seat_created(seat);
+                                    }
                                 }
                             }
                         },
