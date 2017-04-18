@@ -218,13 +218,6 @@ pub trait InputBackend: Sized {
 
     /// Processes new events of the underlying backend and drives the `InputHandler`.
     fn dispatch_new_events(&mut self) -> Result<(), Self::EventError>;
-
-    /// Sets the cursor position, useful for e.g. pointer wrapping.
-    ///
-    /// Not guaranteed to be supported on every backend. The result usually
-    /// depends on the capability of the backend, but may also fail for certain
-    /// specific actions. See the backends documentation.
-    fn set_cursor_position(&mut self, x: u32, y: u32) -> Result<(), ()>;
 }
 
 /// Implement to receive input events from any `InputBackend`.

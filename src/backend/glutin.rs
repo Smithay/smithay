@@ -2,6 +2,7 @@
 
 
 use backend::{SeatInternal, TouchSlotInternal};
+use backend::graphics::GraphicsBackend;
 use backend::graphics::opengl::{Api, OpenglGraphicsBackend, PixelFormat, SwapBuffersError};
 use backend::input::{Axis, AxisSource, InputBackend, InputHandler, KeyState, MouseButton, MouseButtonState,
                      Seat, SeatCapabilities, TouchEvent, TouchSlot};
@@ -79,6 +80,13 @@ impl GlutinHeadlessRenderer {
     }
 }
 
+impl GraphicsBackend for GlutinHeadlessRenderer {
+    fn set_cursor_position(&mut self, _x: u32, _y: u32) -> Result<(), ()> {
+        //FIXME: Maybe save position? Is it of any use?
+        Ok(())
+    }
+}
+
 impl OpenglGraphicsBackend for GlutinHeadlessRenderer {
     #[inline]
     fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
@@ -127,6 +135,17 @@ pub struct GlutinWindowedRenderer {
 impl GlutinWindowedRenderer {
     fn new(window: Rc<Window>) -> GlutinWindowedRenderer {
         GlutinWindowedRenderer { window: window }
+    }
+}
+
+impl GraphicsBackend for GlutinWindowedRenderer {
+    fn set_cursor_position(&mut self, x: u32, y: u32) -> Result<(), ()> {
+        if let Some((win_x, win_y)) = self.window.get_position() {
+            self.window
+                .set_cursor_position(win_x + x as i32, win_y + y as i32)
+        } else {
+            Err(())
+        }
     }
 }
 
@@ -231,15 +250,6 @@ impl InputBackend for GlutinInputBackend {
 
     fn input_config(&mut self) -> &mut Self::InputConfig {
         &mut self.input_config
-    }
-
-    fn set_cursor_position(&mut self, x: u32, y: u32) -> Result<(), ()> {
-        if let Some((win_x, win_y)) = self.window.get_position() {
-            self.window
-                .set_cursor_position(win_x + x as i32, win_y + y as i32)
-        } else {
-            Err(())
-        }
     }
 
     /// Processes new events of the underlying event loop to drive the set `InputHandler`.

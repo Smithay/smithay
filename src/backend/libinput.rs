@@ -80,13 +80,6 @@ impl InputBackend for LibinputInputBackend {
         &mut self.devices
     }
 
-    fn set_cursor_position(&mut self, _x: u32, _y: u32) -> Result<(), ()> {
-        // FIXME later.
-        // This will be doable with the hardware cursor api and probably some more cases
-        warn!(self.logger, "Setting the cursor position is currently unsupported by the libinput backend");
-        Err(())
-    }
-
     fn dispatch_new_events(&mut self) -> Result<(), IoError> {
         self.context.dispatch()?;
         for event in &mut self.context {

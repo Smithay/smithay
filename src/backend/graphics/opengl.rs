@@ -2,6 +2,8 @@
 
 use nix::c_void;
 
+use super::GraphicsBackend;
+
 /// Error that can happen when swapping buffers.
 #[derive(Debug, Clone)]
 pub enum SwapBuffersError {
@@ -61,7 +63,7 @@ pub struct PixelFormat {
 
 /// Trait that describes objects that have an OpenGl context
 /// and can be used to render upon
-pub trait OpenglGraphicsBackend {
+pub trait OpenglGraphicsBackend: GraphicsBackend {
     /// Swaps buffers at the end of a frame.
     fn swap_buffers(&self) -> Result<(), SwapBuffersError>;
 

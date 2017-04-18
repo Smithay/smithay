@@ -3,8 +3,10 @@
 use std::error::Error;
 use wayland_server::protocol::wl_shm::Format;
 
+use super::GraphicsBackend;
+
 /// Trait that describes objects providing a software rendering implementation
-pub trait CpuGraphicsBackend<E: Error> {
+pub trait CpuGraphicsBackend<E: Error>: GraphicsBackend {
     /// Render a given buffer of a given format at a specified place in the framebuffer
     ///
     /// # Error
