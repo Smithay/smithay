@@ -5,7 +5,7 @@ use backend::{SeatInternal, TouchSlotInternal};
 use backend::graphics::GraphicsBackend;
 use backend::graphics::opengl::{Api, OpenglGraphicsBackend, PixelFormat, SwapBuffersError};
 use backend::input::{Axis, AxisSource, InputBackend, InputHandler, KeyState, MouseButton, MouseButtonState,
-                     Seat, SeatCapabilities, TouchEvent, TouchSlot};
+                     Seat, SeatCapabilities, TouchEvent, TouchSlot, Output};
 use glutin::{Api as GlutinApi, MouseButton as GlutinMouseButton, PixelFormat as GlutinPixelFormat};
 use glutin::{ContextError, CreationError, ElementState, Event, GlContext, HeadlessContext,
              HeadlessRendererBuilder, MouseScrollDelta, Touch, TouchPhase, Window, WindowBuilder};
@@ -376,6 +376,8 @@ impl InputBackend for GlutinInputBackend {
         }
         Ok(())
     }
+
+    fn set_output_metadata(&mut self, seat: &Seat, output: &Output) {}
 }
 
 impl GlutinInputBackend {

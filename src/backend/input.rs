@@ -3,6 +3,7 @@
 use backend::{SeatInternal, TouchSlotInternal};
 
 use std::error::Error;
+use std::hash::Hash;
 
 /// A seat describes a group of input devices and at least one
 /// graphics device belonging together.
@@ -62,6 +63,20 @@ pub struct SeatCapabilities {
     pub keyboard: bool,
     /// `Seat` has a touchscreen
     pub touch: bool,
+}
+
+// FIXME: Maybe refactor this into a struct or move to a more appropriate
+// module once fleshed out
+
+/// Describes a general output that can be focused by a `Seat`.
+pub trait Output {
+    /// Returns size in pixels (width, height)
+    fn size(&self) -> (u32, u32);
+
+    /// Returns width in pixels
+    fn width(&self) -> u32;
+    /// Returns height in pixels
+    fn height(&self) -> u32;
 }
 
 /// State of key on a keyboard. Either pressed or released
@@ -216,6 +231,9 @@ pub trait InputBackend: Sized {
     /// Get current `InputConfig`
     fn input_config(&mut self) -> &mut Self::InputConfig;
 
+    /// Called to inform the Input backend about a new focused Output for a `Seat`
+    fn set_output_metadata(&mut self, seat: &Seat, output: &Output);
+
     /// Processes new events of the underlying backend and drives the `InputHandler`.
     fn dispatch_new_events(&mut self) -> Result<(), Self::EventError>;
 }
@@ -232,7 +250,6 @@ pub trait InputHandler<B: InputBackend> {
     ///
     /// It is not guaranteed that any change has actually happened.
     fn on_seat_changed(&mut self, seat: &Seat);
-
     /// Called when a new keyboard event was received.
     ///
     /// # Arguments

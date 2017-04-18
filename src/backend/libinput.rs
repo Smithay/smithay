@@ -1,7 +1,7 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
-use backend::SeatInternal;
-use backend::input::{InputBackend, InputHandler, Seat, SeatCapabilities, MouseButton};
+use backend::{SeatInternal, TouchSlotInternal};
+use backend::input::{InputBackend, InputHandler, Seat, SeatCapabilities, MouseButton, TouchEvent as BackendTouchEvent, TouchSlot as BackendTouchSlot, Output};
 use input::{Libinput, Device, Seat as LibinputSeat, DeviceCapability};
 use input::event::*;
 
@@ -12,6 +12,7 @@ use std::hash::{Hash, Hasher};
 struct SeatDesc {
     seat: Seat,
     pointer: (u32, u32),
+    size: (u32, u32),
 }
 
 /// Libinput based `InputBackend`.
@@ -118,7 +119,8 @@ impl InputBackend for LibinputInputBackend {
                                     seat_entry.key().hash(&mut hasher);
                                     let desc = seat_entry.insert(SeatDesc {
                                         seat: Seat::new(hasher.finish(), new_caps),
-                                        pointer: (0, 0) //FIXME: What position to assume? Maybe center of the screen instead. Probably call `set_cursor_position` after this.
+                                        pointer: (0, 0), //FIXME: We should not assume a position. Some backends might force a position on us.
+                                        size: (1280, 800), //FIXME: Document the requirement of calling `set_output_metadata` on `on_seat_created`.
                                     });
                                     if let Some(ref mut handler) = self.handler {
                                         trace!(self.logger, "Calling on_seat_created with {:?}", desc.seat);
@@ -174,9 +176,28 @@ impl InputBackend for LibinputInputBackend {
                     use ::input::event::touch::*;
                     if let Some(ref mut handler) = self.handler {
                         let device_seat = touch_event.device().seat();
+                        let desc = self.seats.get(&device_seat).expect("Recieved key event of non existing Seat");
                         trace!(self.logger, "Calling on_touch with {:?}", touch_event);
-                        handler.on_touch(&self.seats.get(&device_seat).expect("Recieved key event of non existing Seat").seat,
-                                         touch_event.time(), touch_event.into())
+                        handler.on_touch(&desc.seat, touch_event.time(),
+                            match touch_event {
+                                TouchEvent::Down(down_event) => BackendTouchEvent::Down {
+                                    slot: down_event.slot().map(|x| BackendTouchSlot::new(x)),
+                                    x: down_event.x_transformed(desc.size.0),
+                                    y: down_event.x_transformed(desc.size.1),
+                                },
+                                TouchEvent::Motion(motion_event) => BackendTouchEvent::Motion {
+                                    slot: motion_event.slot().map(|x| BackendTouchSlot::new(x)),
+                                    x: motion_event.x_transformed(desc.size.0),
+                                    y: motion_event.x_transformed(desc.size.1),
+                                },
+                                TouchEvent::Up(up_event) => BackendTouchEvent::Up {
+                                    slot: up_event.slot().map(|x| BackendTouchSlot::new(x)),
+                                },
+                                TouchEvent::Cancel(cancel_event) => BackendTouchEvent::Cancel {
+                                    slot: cancel_event.slot().map(|x| BackendTouchSlot::new(x)),
+                                },
+                                TouchEvent::Frame(_) => ::backend::input::TouchEvent::Frame,
+                        })
                     }
                 },
                 Event::Keyboard(keyboard_event) => {
@@ -209,10 +230,8 @@ impl InputBackend for LibinputInputBackend {
                             let device_seat = motion_event.device().seat();
                             let desc = self.seats.get_mut(&device_seat).expect("Recieved pointer event of non existing Seat");
                             desc.pointer = (
-                                motion_event.absolute_x_transformed(
-                                /*FIXME: global.get_focused_output_for_seat(&desc.seat).width() or something like that*/ 1280) as u32,
-                                motion_event.absolute_y_transformed(
-                                /*FIXME: global.get_focused_output_for_seat(&desc.seat).height() or something like that*/ 800) as u32,
+                                motion_event.absolute_x_transformed(desc.size.0) as u32,
+                                motion_event.absolute_y_transformed(desc.size.1) as u32,
                             );
                             if let Some(ref mut handler) = self.handler {
                                 trace!(self.logger, "Calling on_pointer_move with {:?}", desc.pointer);
@@ -263,6 +282,16 @@ impl InputBackend for LibinputInputBackend {
         };
         Ok(())
     }
+
+    fn set_output_metadata(&mut self, seat: &Seat, output: &Output) {
+        for desc in self.seats.values_mut() {
+            if desc.seat == *seat {
+                desc.size = output.size();
+                return;
+            }
+        }
+        panic!("Got metadata for non-existant seat");
+    }
 }
 
 impl From<::input::event::keyboard::KeyState> for ::backend::input::KeyState {
@@ -290,33 +319,6 @@ impl From<::input::event::pointer::ButtonState> for ::backend::input::MouseButto
         match libinput {
             ::input::event::pointer::ButtonState::Pressed => ::backend::input::MouseButtonState::Pressed,
             ::input::event::pointer::ButtonState::Released => ::backend::input::MouseButtonState::Released,
-        }
-    }
-}
-
-impl From<::input::event::touch::TouchEvent> for ::backend::input::TouchEvent {
-    fn from(libinput: ::input::event::touch::TouchEvent) -> Self {
-        use ::input::event::touch::{TouchEventSlot, TouchEventPosition};
-        use ::backend::TouchSlotInternal;
-
-        match libinput {
-            ::input::event::touch::TouchEvent::Down(down_event) => ::backend::input::TouchEvent::Down {
-                slot: down_event.slot().map(|x| ::backend::input::TouchSlot::new(x)),
-                x: down_event.x_transformed(/*FIXME: global.get_focused_output_for_seat(&desc.seat).width() or something like that*/ 1280),
-                y: down_event.x_transformed(/*FIXME: global.get_focused_output_for_seat(&desc.seat).height() or something like that*/ 800),
-            },
-            ::input::event::touch::TouchEvent::Motion(motion_event) => ::backend::input::TouchEvent::Motion {
-                slot: motion_event.slot().map(|x| ::backend::input::TouchSlot::new(x)),
-                x: motion_event.x_transformed(/*FIXME: global.get_focused_output_for_seat(&desc.seat).width() or something like that*/ 1280),
-                y: motion_event.x_transformed(/*FIXME: global.get_focused_output_for_seat(&desc.seat).height() or something like that*/ 800),
-            },
-            ::input::event::touch::TouchEvent::Up(up_event) => ::backend::input::TouchEvent::Up {
-                slot: up_event.slot().map(|x| ::backend::input::TouchSlot::new(x)),
-            },
-            ::input::event::touch::TouchEvent::Cancel(cancel_event) => ::backend::input::TouchEvent::Cancel {
-                slot: cancel_event.slot().map(|x| ::backend::input::TouchSlot::new(x)),
-            },
-            ::input::event::touch::TouchEvent::Frame(_) => ::backend::input::TouchEvent::Frame,
         }
     }
 }
