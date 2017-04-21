@@ -6,7 +6,7 @@ use backend::graphics::GraphicsBackend;
 use backend::graphics::opengl::{Api, OpenglGraphicsBackend, PixelFormat, SwapBuffersError};
 use backend::input::{Axis, AxisSource, InputBackend, InputHandler, KeyState, MouseButton, MouseButtonState,
                      Seat, SeatCapabilities, TouchEvent, TouchSlot, Output};
-use glutin::{Api as GlutinApi, MouseButton as GlutinMouseButton, PixelFormat as GlutinPixelFormat};
+use glutin::{Api as GlutinApi, MouseButton as GlutinMouseButton, PixelFormat as GlutinPixelFormat, MouseCursor};
 use glutin::{ContextError, CreationError, ElementState, Event, GlContext, HeadlessContext,
              HeadlessRendererBuilder, MouseScrollDelta, Touch, TouchPhase, Window, WindowBuilder};
 use nix::c_void;
@@ -81,10 +81,14 @@ impl GlutinHeadlessRenderer {
 }
 
 impl GraphicsBackend for GlutinHeadlessRenderer {
+    type CursorFormat = ();
+
     fn set_cursor_position(&mut self, _x: u32, _y: u32) -> Result<(), ()> {
         //FIXME: Maybe save position? Is it of any use?
         Ok(())
     }
+
+    fn set_cursor_representation(&mut self, cursor: ()) {}
 }
 
 impl OpenglGraphicsBackend for GlutinHeadlessRenderer {
@@ -139,6 +143,8 @@ impl GlutinWindowedRenderer {
 }
 
 impl GraphicsBackend for GlutinWindowedRenderer {
+    type CursorFormat = MouseCursor;
+
     fn set_cursor_position(&mut self, x: u32, y: u32) -> Result<(), ()> {
         if let Some((win_x, win_y)) = self.window.get_position() {
             self.window
@@ -146,6 +152,10 @@ impl GraphicsBackend for GlutinWindowedRenderer {
         } else {
             Err(())
         }
+    }
+
+    fn set_cursor_representation(&mut self, cursor: MouseCursor) {
+        self.window.set_cursor(cursor);
     }
 }
 
