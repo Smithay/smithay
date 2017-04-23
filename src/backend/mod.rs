@@ -33,5 +33,5 @@ trait SeatInternal {
 }
 
 trait TouchSlotInternal {
-    fn new(id: u32) -> Self;
+    fn new(id: u64) -> Self;
 }

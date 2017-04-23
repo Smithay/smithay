@@ -9,11 +9,6 @@ use std::io::Error as IoError;
 use std::collections::hash_map::{DefaultHasher, Entry, HashMap};
 use std::hash::{Hash, Hasher};
 
-struct SeatDesc {
-    seat: backend::Seat,
-    pointer: (u32, u32),
-}
-
 /// Libinput based `InputBackend`.
 ///
 /// Tracks input of all devices given manually or via a udev seat to a provided libinput
@@ -21,7 +16,7 @@ struct SeatDesc {
 pub struct LibinputInputBackend {
     context: libinput::Libinput,
     devices: Vec<libinput::Device>,
-    seats: HashMap<libinput::Seat, SeatDesc>,
+    seats: HashMap<libinput::Seat, backend::Seat>,
     handler: Option<Box<backend::InputHandler<LibinputInputBackend> + 'static>>,
     logger: ::slog::Logger,
 }
@@ -46,7 +41,7 @@ impl LibinputInputBackend {
 
 impl backend::Event for event::keyboard::KeyboardKeyEvent {
     fn time(&self) -> u32 {
-        self.time()
+        event::keyboard::KeyboardEventTrait::time(self)
     }
 }
 
@@ -66,6 +61,7 @@ impl backend::KeyboardKeyEvent for event::keyboard::KeyboardKeyEvent {
     }
 }
 
+/// Wrapper for libinput pointer axis events to implement `backend::input::PointerAxisEvent`
 pub struct PointerAxisEvent {
     axis: event::pointer::Axis,
     event: event::pointer::PointerAxisEvent,
@@ -99,7 +95,7 @@ impl<'a> backend::PointerAxisEvent for PointerAxisEvent {
 
 impl backend::Event for event::pointer::PointerButtonEvent {
     fn time(&self) -> u32 {
-        self.time()
+        event::pointer::PointerEventTrait::time(self)
     }
 }
 
@@ -114,13 +110,13 @@ impl backend::PointerButtonEvent for event::pointer::PointerButtonEvent {
     }
 
     fn state(&self) -> backend::MouseButtonState {
-        self.state().into()
+        self.button_state().into()
     }
 }
 
 impl backend::Event for event::pointer::PointerMotionEvent {
     fn time(&self) -> u32 {
-        self.time()
+        event::pointer::PointerEventTrait::time(self)
     }
 }
 
@@ -135,7 +131,7 @@ impl backend::PointerMotionEvent for event::pointer::PointerMotionEvent {
 
 impl backend::Event for event::pointer::PointerMotionAbsoluteEvent {
     fn time(&self) -> u32 {
-        self.time()
+        event::pointer::PointerEventTrait::time(self)
     }
 }
 
@@ -159,87 +155,87 @@ impl backend::PointerMotionAbsoluteEvent for event::pointer::PointerMotionAbsolu
 
 impl backend::Event for event::touch::TouchDownEvent {
     fn time(&self) -> u32 {
-        self.time()
+        event::touch::TouchEventTrait::time(self)
     }
 }
 
 impl backend::TouchDownEvent for event::touch::TouchDownEvent {
     fn slot(&self) -> Option<backend::TouchSlot> {
-        self.slot().into()
+        event::touch::TouchEventSlot::slot(self).map(|x| backend::TouchSlot::new(x as u64))
     }
 
     fn x(&self) -> f64 {
-        self.x()
+        event::touch::TouchEventPosition::x(self)
     }
 
     fn y(&self) -> f64 {
-        self.y()
+        event::touch::TouchEventPosition::y(self)
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        self.x_transformed(width) as u32
+        event::touch::TouchEventPosition::x_transformed(self, width) as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        self.y_transformed(height) as u32
+        event::touch::TouchEventPosition::y_transformed(self, height) as u32
     }
 }
 
 impl backend::Event for event::touch::TouchMotionEvent {
     fn time(&self) -> u32 {
-        self.time()
+        event::touch::TouchEventTrait::time(self)
     }
 }
 
 impl backend::TouchMotionEvent for event::touch::TouchMotionEvent {
     fn slot(&self) -> Option<backend::TouchSlot> {
-        self.slot().into()
+        event::touch::TouchEventSlot::slot(self).map(|x| backend::TouchSlot::new(x as u64))
     }
 
     fn x(&self) -> f64 {
-        self.x()
+        event::touch::TouchEventPosition::x(self)
     }
 
     fn y(&self) -> f64 {
-        self.y()
+        event::touch::TouchEventPosition::y(self)
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        self.x_transformed(width) as u32
+        event::touch::TouchEventPosition::x_transformed(self, width) as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        self.y_transformed(height) as u32
+        event::touch::TouchEventPosition::y_transformed(self, height) as u32
     }
 }
 
 impl backend::Event for event::touch::TouchUpEvent {
     fn time(&self) -> u32 {
-        self.time()
+        event::touch::TouchEventTrait::time(self)
     }
 }
 
 impl backend::TouchUpEvent for event::touch::TouchUpEvent {
     fn slot(&self) -> Option<backend::TouchSlot> {
-        self.slot().into()
+        event::touch::TouchEventSlot::slot(self).map(|x| backend::TouchSlot::new(x as u64))
     }
 }
 
 impl backend::Event for event::touch::TouchCancelEvent {
     fn time(&self) -> u32 {
-        self.time()
+        event::touch::TouchEventTrait::time(self)
     }
 }
 
 impl backend::TouchCancelEvent for event::touch::TouchCancelEvent {
     fn slot(&self) -> Option<backend::TouchSlot> {
-        self.slot().into()
+        event::touch::TouchEventSlot::slot(self).map(|x| backend::TouchSlot::new(x as u64))
     }
 }
 
 impl backend::Event for event::touch::TouchFrameEvent {
     fn time(&self) -> u32 {
-        self.time()
+        event::touch::TouchEventTrait::time(self)
     }
 }
 
@@ -265,9 +261,9 @@ impl backend::InputBackend for LibinputInputBackend {
             self.clear_handler();
         }
         info!(self.logger, "New input handler set.");
-        for desc in self.seats.values() {
-            trace!(self.logger, "Calling on_seat_created with {:?}", desc.seat);
-            handler.on_seat_created(&desc.seat);
+        for seat in self.seats.values() {
+            trace!(self.logger, "Calling on_seat_created with {:?}", seat);
+            handler.on_seat_created(&seat);
         }
         self.handler = Some(Box::new(handler));
     }
@@ -280,9 +276,9 @@ impl backend::InputBackend for LibinputInputBackend {
 
     fn clear_handler(&mut self) {
         if let Some(mut handler) = self.handler.take() {
-            for desc in self.seats.values() {
-                trace!(self.logger, "Calling on_seat_destroyed with {:?}", desc.seat);
-                handler.on_seat_destroyed(&desc.seat);
+            for seat in self.seats.values() {
+                trace!(self.logger, "Calling on_seat_destroyed with {:?}", seat);
+                handler.on_seat_destroyed(&seat);
             }
             info!(self.logger, "Removing input handler");
         }
@@ -318,26 +314,23 @@ impl backend::InputBackend for LibinputInputBackend {
                                 Entry::Occupied(mut seat_entry) => {
                                     let old_seat = seat_entry.get_mut();
                                     {
-                                        let caps = old_seat.seat.capabilities_mut();
+                                        let caps = old_seat.capabilities_mut();
                                         caps.pointer = new_caps.pointer || caps.pointer;
                                         caps.keyboard = new_caps.keyboard || caps.keyboard;
                                         caps.touch = new_caps.touch || caps.touch;
                                     }
                                     if let Some(ref mut handler) = self.handler {
-                                        trace!(self.logger, "Calling on_seat_changed with {:?}", old_seat.seat);
-                                        handler.on_seat_changed(&old_seat.seat);
+                                        trace!(self.logger, "Calling on_seat_changed with {:?}", old_seat);
+                                        handler.on_seat_changed(&old_seat);
                                     }
                                 },
                                 Entry::Vacant(seat_entry) => {
                                     let mut hasher = DefaultHasher::default();
                                     seat_entry.key().hash(&mut hasher);
-                                    let desc = seat_entry.insert(SeatDesc {
-                                        seat: backend::Seat::new(hasher.finish(), new_caps),
-                                        pointer: (0, 0), //FIXME: We should not assume a position. Some backends might force a position on us.
-                                    });
+                                    let seat = seat_entry.insert(backend::Seat::new(hasher.finish(), new_caps));
                                     if let Some(ref mut handler) = self.handler {
-                                        trace!(self.logger, "Calling on_seat_created with {:?}", desc.seat);
-                                        handler.on_seat_created(&desc.seat);
+                                        trace!(self.logger, "Calling on_seat_created with {:?}", seat);
+                                        handler.on_seat_created(&seat);
                                     }
                                 }
                             }
@@ -351,8 +344,8 @@ impl backend::InputBackend for LibinputInputBackend {
                             let device_seat = removed.seat();
 
                             // update capabilities, so they appear correctly on `on_seat_changed` and `on_seat_destroyed`.
-                            if let Some(desc) = self.seats.get_mut(&device_seat) {
-                                let caps = desc.seat.capabilities_mut();
+                            if let Some(seat) = self.seats.get_mut(&device_seat) {
+                                let caps = seat.capabilities_mut();
                                 caps.pointer = self.devices.iter().filter(|x| x.seat() == device_seat).any(|x| x.has_capability(libinput::DeviceCapability::Pointer));
                                 caps.keyboard = self.devices.iter().filter(|x| x.seat() == device_seat).any(|x| x.has_capability(libinput::DeviceCapability::Keyboard));
                                 caps.touch = self.devices.iter().filter(|x| x.seat() == device_seat).any(|x| x.has_capability(libinput::DeviceCapability::Touch));
@@ -363,10 +356,10 @@ impl backend::InputBackend for LibinputInputBackend {
                             // check if the seat has any other devices
                             if !self.devices.iter().any(|x| x.seat() == device_seat) {
                                 // it has not, lets destroy it
-                                if let Some(desc) = self.seats.remove(&device_seat) {
+                                if let Some(seat) = self.seats.remove(&device_seat) {
                                     if let Some(ref mut handler) = self.handler {
-                                        trace!(self.logger, "Calling on_seat_destroyed with {:?}", desc.seat);
-                                        handler.on_seat_destroyed(&desc.seat);
+                                        trace!(self.logger, "Calling on_seat_destroyed with {:?}", seat);
+                                        handler.on_seat_destroyed(&seat);
                                     }
                                 } else {
                                     panic!("Seat destroyed that was never created");
@@ -374,9 +367,9 @@ impl backend::InputBackend for LibinputInputBackend {
                             } else {
                                 // it has, notify about updates
                                 if let Some(ref mut handler) = self.handler {
-                                    let desc = self.seats.get(&device_seat).unwrap();
-                                    trace!(self.logger, "Calling on_seat_changed with {:?}", desc.seat);
-                                    handler.on_seat_changed(&desc.seat);
+                                    let seat = self.seats.get(&device_seat).unwrap();
+                                    trace!(self.logger, "Calling on_seat_changed with {:?}", seat);
+                                    handler.on_seat_changed(&seat);
                                 }
                             }
                         },
@@ -389,7 +382,7 @@ impl backend::InputBackend for LibinputInputBackend {
                     use ::input::event::touch::*;
                     if let Some(ref mut handler) = self.handler {
                         let device_seat = touch_event.device().seat();
-                        let seat = &self.seats.get(&device_seat).expect("Recieved key event of non existing Seat").seat;
+                        let seat = &self.seats.get(&device_seat).expect("Recieved key event of non existing Seat");
                         match touch_event {
                             TouchEvent::Down(down_event) => {
                                 trace!(self.logger, "Calling on_touch_down with {:?}", down_event);
@@ -420,7 +413,7 @@ impl backend::InputBackend for LibinputInputBackend {
                         KeyboardEvent::Key(key_event) => {
                             if let Some(ref mut handler) = self.handler {
                                 let device_seat = key_event.device().seat();
-                                let seat = &self.seats.get(&device_seat).expect("Recieved key event of non existing Seat").seat;
+                                let seat = &self.seats.get(&device_seat).expect("Recieved key event of non existing Seat");
                                 trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
                                 handler.on_keyboard_key(seat, key_event);
                             }
@@ -431,7 +424,7 @@ impl backend::InputBackend for LibinputInputBackend {
                     use ::input::event::pointer::*;
                     if let Some(ref mut handler) = self.handler {
                         let device_seat = pointer_event.device().seat();
-                        let seat = &self.seats.get(&device_seat).expect("Recieved key event of non existing Seat").seat;
+                        let seat = &self.seats.get(&device_seat).expect("Recieved key event of non existing Seat");
                         match pointer_event {
                             PointerEvent::Motion(motion_event) => {
                                 trace!(self.logger, "Calling on_pointer_move with {:?}", motion_event);
