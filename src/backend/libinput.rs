@@ -8,6 +8,7 @@ use input::event;
 use std::io::Error as IoError;
 use std::collections::hash_map::{DefaultHasher, Entry, HashMap};
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 /// Libinput based `InputBackend`.
 ///
@@ -64,7 +65,7 @@ impl backend::KeyboardKeyEvent for event::keyboard::KeyboardKeyEvent {
 /// Wrapper for libinput pointer axis events to implement `backend::input::PointerAxisEvent`
 pub struct PointerAxisEvent {
     axis: event::pointer::Axis,
-    event: event::pointer::PointerAxisEvent,
+    event: Rc<event::pointer::PointerAxisEvent>,
 }
 
 impl<'a> backend::Event for PointerAxisEvent {
@@ -435,18 +436,19 @@ impl backend::InputBackend for LibinputInputBackend {
                                 handler.on_pointer_move_absolute(seat, motion_abs_event);
                             },
                             PointerEvent::Axis(axis_event) => {
-                                if axis_event.has_axis(Axis::Vertical) {
-                                    trace!(self.logger, "Calling on_pointer_axis for Axis::Vertical with {:?}", axis_event);
+                                let rc_axis_event = Rc::new(axis_event);
+                                if rc_axis_event.has_axis(Axis::Vertical) {
+                                    trace!(self.logger, "Calling on_pointer_axis for Axis::Vertical with {:?}", *rc_axis_event);
                                     handler.on_pointer_axis(seat, self::PointerAxisEvent {
                                         axis: Axis::Vertical,
-                                        event: axis_event.clone()
+                                        event: rc_axis_event.clone()
                                     });
                                 }
-                                if axis_event.has_axis(Axis::Horizontal) {
-                                    trace!(self.logger, "Calling on_pointer_axis for Axis::Horizontal with {:?}", axis_event);
+                                if rc_axis_event.has_axis(Axis::Horizontal) {
+                                    trace!(self.logger, "Calling on_pointer_axis for Axis::Horizontal with {:?}", *rc_axis_event);
                                     handler.on_pointer_axis(seat, self::PointerAxisEvent {
                                         axis: Axis::Horizontal,
-                                        event: axis_event.clone()
+                                        event: rc_axis_event.clone()
                                     });
                                 }
                             },
