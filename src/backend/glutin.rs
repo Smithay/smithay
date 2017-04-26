@@ -4,9 +4,12 @@
 use backend::{SeatInternal, TouchSlotInternal};
 use backend::graphics::GraphicsBackend;
 use backend::graphics::opengl::{Api, OpenglGraphicsBackend, PixelFormat, SwapBuffersError};
-use backend::input::{Axis, AxisSource, InputBackend, InputHandler, KeyState, MouseButton, MouseButtonState,
-                     Seat, SeatCapabilities, TouchSlot, Event as BackendEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent, TouchDownEvent, TouchUpEvent, TouchMotionEvent, TouchCancelEvent};
-use glutin::{Api as GlutinApi, MouseButton as GlutinMouseButton, PixelFormat as GlutinPixelFormat, MouseCursor};
+use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState,
+                     KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
+                     PointerMotionAbsoluteEvent, Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent,
+                     TouchMotionEvent, TouchSlot, TouchUpEvent};
+use glutin::{Api as GlutinApi, MouseButton as GlutinMouseButton, MouseCursor,
+             PixelFormat as GlutinPixelFormat};
 use glutin::{ContextError, CreationError, ElementState, Event, GlContext, HeadlessContext,
              HeadlessRendererBuilder, MouseScrollDelta, Touch, TouchPhase, Window, WindowBuilder};
 use nix::c_void;
@@ -85,7 +88,7 @@ impl GraphicsBackend for GlutinHeadlessRenderer {
     type CursorFormat = ();
 
     fn set_cursor_position(&mut self, _x: u32, _y: u32) -> Result<(), ()> {
-        //FIXME: Maybe save position? Is it of any use?
+        // FIXME: Maybe save position? Is it of any use?
         Ok(())
     }
 
@@ -290,11 +293,21 @@ impl PointerMotionAbsoluteEvent for GlutinMouseMovedEvent {
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        cmp::min(self.x * width as i32 / self.window.get_inner_size_points().unwrap_or((width, 0)).0 as i32, 0) as u32
+        cmp::min(self.x * width as i32 /
+                 self.window
+                     .get_inner_size_points()
+                     .unwrap_or((width, 0))
+                     .0 as i32,
+                 0) as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        cmp::min(self.y * height as i32 / self.window.get_inner_size_points().unwrap_or((0, height)).1 as i32, 0) as u32
+        cmp::min(self.y * height as i32 /
+                 self.window
+                     .get_inner_size_points()
+                     .unwrap_or((0, height))
+                     .1 as i32,
+                 0) as u32
     }
 }
 
@@ -326,8 +339,10 @@ impl PointerAxisEvent for GlutinMouseWheelEvent {
 
     fn amount(&self) -> f64 {
         match (self.axis, self.delta) {
-            (Axis::Horizontal, MouseScrollDelta::LineDelta(x, _)) | (Axis::Horizontal, MouseScrollDelta::PixelDelta(x, _)) => x as f64,
-            (Axis::Vertical, MouseScrollDelta::LineDelta(_, y)) | (Axis::Vertical, MouseScrollDelta::PixelDelta(_, y)) => y as f64,
+            (Axis::Horizontal, MouseScrollDelta::LineDelta(x, _)) |
+            (Axis::Horizontal, MouseScrollDelta::PixelDelta(x, _)) => x as f64,
+            (Axis::Vertical, MouseScrollDelta::LineDelta(_, y)) |
+            (Axis::Vertical, MouseScrollDelta::PixelDelta(_, y)) => y as f64,
         }
     }
 }
@@ -385,11 +400,21 @@ impl TouchDownEvent for GlutinTouchStartedEvent {
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        cmp::min(self.location.0 as i32 * width as i32 / self.window.get_inner_size_points().unwrap_or((width, 0)).0 as i32, 0) as u32
+        cmp::min(self.location.0 as i32 * width as i32 /
+                 self.window
+                     .get_inner_size_points()
+                     .unwrap_or((width, 0))
+                     .0 as i32,
+                 0) as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        cmp::min(self.location.1 as i32 * height as i32 / self.window.get_inner_size_points().unwrap_or((0, height)).1 as i32, 0) as u32
+        cmp::min(self.location.1 as i32 * height as i32 /
+                 self.window
+                     .get_inner_size_points()
+                     .unwrap_or((0, height))
+                     .1 as i32,
+                 0) as u32
     }
 }
 
@@ -422,11 +447,19 @@ impl TouchMotionEvent for GlutinTouchMovedEvent {
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        self.location.0 as u32 * width / self.window.get_inner_size_points().unwrap_or((width, 0)).0
+        self.location.0 as u32 * width /
+        self.window
+            .get_inner_size_points()
+            .unwrap_or((width, 0))
+            .0
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        self.location.1 as u32 * height / self.window.get_inner_size_points().unwrap_or((0, height)).1
+        self.location.1 as u32 * height /
+        self.window
+            .get_inner_size_points()
+            .unwrap_or((0, height))
+            .1
     }
 }
 
@@ -526,7 +559,9 @@ impl InputBackend for GlutinInputBackend {
                     Event::KeyboardInput(state, key_code, _) => {
                         match state {
                             ElementState::Pressed => self.key_counter += 1,
-                            ElementState::Released => self.key_counter = self.key_counter.checked_sub(1).unwrap_or(0),
+                            ElementState::Released => {
+                                self.key_counter = self.key_counter.checked_sub(1).unwrap_or(0)
+                            }
                         };
                         handler.on_keyboard_key(&self.seat,
                                                 GlutinKeyboardInputEvent {
@@ -537,21 +572,23 @@ impl InputBackend for GlutinInputBackend {
                                                 })
                     }
                     Event::MouseMoved(x, y) => {
-                        handler.on_pointer_move_absolute(&self.seat, GlutinMouseMovedEvent {
-                            window: self.window.clone(),
-                            time: self.time_counter,
-                            x: x,
-                            y: y,
-                        })
+                        handler.on_pointer_move_absolute(&self.seat,
+                                                         GlutinMouseMovedEvent {
+                                                             window: self.window.clone(),
+                                                             time: self.time_counter,
+                                                             x: x,
+                                                             y: y,
+                                                         })
                     }
                     Event::MouseWheel(delta, _) => {
                         let event = GlutinMouseWheelEvent {
-                                                            axis: Axis::Horizontal,
-                                                            time: self.time_counter,
-                                                            delta: delta,
-                                                          };
+                            axis: Axis::Horizontal,
+                            time: self.time_counter,
+                            delta: delta,
+                        };
                         match delta {
-                            MouseScrollDelta::LineDelta(x, y) | MouseScrollDelta::PixelDelta(x, y) => {
+                            MouseScrollDelta::LineDelta(x, y) |
+                            MouseScrollDelta::PixelDelta(x, y) => {
                                 if x != 0.0 {
                                     handler.on_pointer_axis(&self.seat, event.clone());
                                 }
@@ -562,11 +599,12 @@ impl InputBackend for GlutinInputBackend {
                         }
                     }
                     Event::MouseInput(state, button) => {
-                        handler.on_pointer_button(&self.seat, GlutinMouseInputEvent {
-                            time: self.time_counter,
-                            button: button,
-                            state: state,
-                        })
+                        handler.on_pointer_button(&self.seat,
+                                                  GlutinMouseInputEvent {
+                                                      time: self.time_counter,
+                                                      button: button,
+                                                      state: state,
+                                                  })
                     }
                     Event::Touch(Touch {
                                      phase: TouchPhase::Started,
@@ -574,12 +612,12 @@ impl InputBackend for GlutinInputBackend {
                                      id,
                                  }) => {
                         handler.on_touch_down(&self.seat,
-                                        GlutinTouchStartedEvent {
-                                            window: self.window.clone(),
-                                            time: self.time_counter,
-                                            location: (x, y),
-                                            id: id,
-                                        })
+                                              GlutinTouchStartedEvent {
+                                                  window: self.window.clone(),
+                                                  time: self.time_counter,
+                                                  location: (x, y),
+                                                  id: id,
+                                              })
                     }
                     Event::Touch(Touch {
                                      phase: TouchPhase::Moved,
@@ -587,12 +625,12 @@ impl InputBackend for GlutinInputBackend {
                                      id,
                                  }) => {
                         handler.on_touch_motion(&self.seat,
-                                        GlutinTouchMovedEvent {
-                                            window: self.window.clone(),
-                                            time: self.time_counter,
-                                            location: (x, y),
-                                            id: id,
-                                        })
+                                                GlutinTouchMovedEvent {
+                                                    window: self.window.clone(),
+                                                    time: self.time_counter,
+                                                    location: (x, y),
+                                                    id: id,
+                                                })
                     }
                     Event::Touch(Touch {
                                      phase: TouchPhase::Ended,
@@ -600,17 +638,17 @@ impl InputBackend for GlutinInputBackend {
                                      id,
                                  }) => {
                         handler.on_touch_motion(&self.seat,
-                                        GlutinTouchMovedEvent {
-                                            window: self.window.clone(),
-                                            time: self.time_counter,
-                                            location: (x, y),
-                                            id: id,
-                                        });
+                                                GlutinTouchMovedEvent {
+                                                    window: self.window.clone(),
+                                                    time: self.time_counter,
+                                                    location: (x, y),
+                                                    id: id,
+                                                });
                         handler.on_touch_up(&self.seat,
-                                        GlutinTouchEndedEvent {
-                                            time: self.time_counter,
-                                            id: id,
-                                        });
+                                            GlutinTouchEndedEvent {
+                                                time: self.time_counter,
+                                                id: id,
+                                            });
                     }
                     Event::Touch(Touch {
                                      phase: TouchPhase::Cancelled,
@@ -618,10 +656,10 @@ impl InputBackend for GlutinInputBackend {
                                      ..
                                  }) => {
                         handler.on_touch_cancel(&self.seat,
-                                        GlutinTouchCancelledEvent {
-                                            time: self.time_counter,
-                                            id: id,
-                                        })
+                                                GlutinTouchCancelledEvent {
+                                                    time: self.time_counter,
+                                                    id: id,
+                                                })
                     }
                     Event::Closed => return Err(GlutinInputError::WindowClosed),
                     _ => {}

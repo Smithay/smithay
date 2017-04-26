@@ -4,10 +4,10 @@ use backend::{SeatInternal, TouchSlotInternal};
 use backend::input as backend;
 use input as libinput;
 use input::event;
-
-use std::io::Error as IoError;
 use std::collections::hash_map::{DefaultHasher, Entry, HashMap};
 use std::hash::{Hash, Hasher};
+
+use std::io::Error as IoError;
 use std::rc::Rc;
 
 /// Libinput based `InputBackend`.
@@ -48,12 +48,12 @@ impl backend::Event for event::keyboard::KeyboardKeyEvent {
 
 impl backend::KeyboardKeyEvent for event::keyboard::KeyboardKeyEvent {
     fn key_code(&self) -> u32 {
-        use ::input::event::keyboard::KeyboardEventTrait;
+        use input::event::keyboard::KeyboardEventTrait;
         self.key()
     }
 
     fn state(&self) -> backend::KeyState {
-        use ::input::event::keyboard::KeyboardEventTrait;
+        use input::event::keyboard::KeyboardEventTrait;
         self.key_state().into()
     }
 
@@ -70,7 +70,7 @@ pub struct PointerAxisEvent {
 
 impl<'a> backend::Event for PointerAxisEvent {
     fn time(&self) -> u32 {
-        use ::input::event::pointer::PointerEventTrait;
+        use input::event::pointer::PointerEventTrait;
         self.event.time()
     }
 }
@@ -86,10 +86,10 @@ impl<'a> backend::PointerAxisEvent for PointerAxisEvent {
 
     fn amount(&self) -> f64 {
         match self.source() {
-            backend::AxisSource::Finger | backend::AxisSource::Continuous =>
-                self.event.axis_value(self.axis),
-            backend::AxisSource::Wheel | backend::AxisSource::WheelTilt =>
-                self.event.axis_value_discrete(self.axis).unwrap(),
+            backend::AxisSource::Finger |
+            backend::AxisSource::Continuous => self.event.axis_value(self.axis),
+            backend::AxisSource::Wheel |
+            backend::AxisSource::WheelTilt => self.event.axis_value_discrete(self.axis).unwrap(),
         }
     }
 }
@@ -324,18 +324,19 @@ impl backend::InputBackend for LibinputInputBackend {
                                         trace!(self.logger, "Calling on_seat_changed with {:?}", old_seat);
                                         handler.on_seat_changed(&old_seat);
                                     }
-                                },
+                                }
                                 Entry::Vacant(seat_entry) => {
                                     let mut hasher = DefaultHasher::default();
                                     seat_entry.key().hash(&mut hasher);
-                                    let seat = seat_entry.insert(backend::Seat::new(hasher.finish(), new_caps));
+                                    let seat = seat_entry.insert(backend::Seat::new(hasher.finish(),
+                                                                                    new_caps));
                                     if let Some(ref mut handler) = self.handler {
                                         trace!(self.logger, "Calling on_seat_created with {:?}", seat);
                                         handler.on_seat_created(&seat);
                                     }
                                 }
                             }
-                        },
+                        }
                         DeviceEvent::Removed(device_removed_event) => {
                             let removed = device_removed_event.device();
 
@@ -347,9 +348,21 @@ impl backend::InputBackend for LibinputInputBackend {
                             // update capabilities, so they appear correctly on `on_seat_changed` and `on_seat_destroyed`.
                             if let Some(seat) = self.seats.get_mut(&device_seat) {
                                 let caps = seat.capabilities_mut();
-                                caps.pointer = self.devices.iter().filter(|x| x.seat() == device_seat).any(|x| x.has_capability(libinput::DeviceCapability::Pointer));
-                                caps.keyboard = self.devices.iter().filter(|x| x.seat() == device_seat).any(|x| x.has_capability(libinput::DeviceCapability::Keyboard));
-                                caps.touch = self.devices.iter().filter(|x| x.seat() == device_seat).any(|x| x.has_capability(libinput::DeviceCapability::Touch));
+                                caps.pointer =
+                                    self.devices
+                                        .iter()
+                                        .filter(|x| x.seat() == device_seat)
+                                        .any(|x| x.has_capability(libinput::DeviceCapability::Pointer));
+                                caps.keyboard =
+                                    self.devices
+                                        .iter()
+                                        .filter(|x| x.seat() == device_seat)
+                                        .any(|x| x.has_capability(libinput::DeviceCapability::Keyboard));
+                                caps.touch =
+                                    self.devices
+                                        .iter()
+                                        .filter(|x| x.seat() == device_seat)
+                                        .any(|x| x.has_capability(libinput::DeviceCapability::Touch));
                             } else {
                                 panic!("Seat changed that was never created")
                             }
@@ -373,95 +386,117 @@ impl backend::InputBackend for LibinputInputBackend {
                                     handler.on_seat_changed(&seat);
                                 }
                             }
-                        },
+                        }
                     }
                     if let Some(ref mut handler) = self.handler {
-                       handler.on_input_config_changed(&mut self.devices);
+                        handler.on_input_config_changed(&mut self.devices);
                     }
-                },
+                }
                 libinput::Event::Touch(touch_event) => {
-                    use ::input::event::touch::*;
+                    use input::event::touch::*;
                     if let Some(ref mut handler) = self.handler {
                         let device_seat = touch_event.device().seat();
-                        let seat = &self.seats.get(&device_seat).expect("Recieved key event of non existing Seat");
+                        let seat = &self.seats
+                                        .get(&device_seat)
+                                        .expect("Recieved key event of non existing Seat");
                         match touch_event {
                             TouchEvent::Down(down_event) => {
                                 trace!(self.logger, "Calling on_touch_down with {:?}", down_event);
                                 handler.on_touch_down(seat, down_event)
-                            },
+                            }
                             TouchEvent::Motion(motion_event) => {
-                                trace!(self.logger, "Calling on_touch_motion with {:?}", motion_event);
+                                trace!(self.logger,
+                                       "Calling on_touch_motion with {:?}",
+                                       motion_event);
                                 handler.on_touch_motion(seat, motion_event)
-                            },
+                            }
                             TouchEvent::Up(up_event) => {
                                 trace!(self.logger, "Calling on_touch_up with {:?}", up_event);
                                 handler.on_touch_up(seat, up_event)
-                            },
+                            }
                             TouchEvent::Cancel(cancel_event) => {
-                                trace!(self.logger, "Calling on_touch_cancel with {:?}", cancel_event);
+                                trace!(self.logger,
+                                       "Calling on_touch_cancel with {:?}",
+                                       cancel_event);
                                 handler.on_touch_cancel(seat, cancel_event)
-                            },
+                            }
                             TouchEvent::Frame(frame_event) => {
                                 trace!(self.logger, "Calling on_touch_frame with {:?}", frame_event);
                                 handler.on_touch_frame(seat, frame_event)
-                            },
+                            }
                         }
                     }
-                },
+                }
                 libinput::Event::Keyboard(keyboard_event) => {
-                    use ::input::event::keyboard::*;
+                    use input::event::keyboard::*;
                     match keyboard_event {
                         KeyboardEvent::Key(key_event) => {
                             if let Some(ref mut handler) = self.handler {
                                 let device_seat = key_event.device().seat();
-                                let seat = &self.seats.get(&device_seat).expect("Recieved key event of non existing Seat");
+                                let seat = &self.seats
+                                                .get(&device_seat)
+                                                .expect("Recieved key event of non existing Seat");
                                 trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
                                 handler.on_keyboard_key(seat, key_event);
                             }
                         }
                     }
-                },
+                }
                 libinput::Event::Pointer(pointer_event) => {
-                    use ::input::event::pointer::*;
+                    use input::event::pointer::*;
                     if let Some(ref mut handler) = self.handler {
                         let device_seat = pointer_event.device().seat();
-                        let seat = &self.seats.get(&device_seat).expect("Recieved key event of non existing Seat");
+                        let seat = &self.seats
+                                        .get(&device_seat)
+                                        .expect("Recieved key event of non existing Seat");
                         match pointer_event {
                             PointerEvent::Motion(motion_event) => {
-                                trace!(self.logger, "Calling on_pointer_move with {:?}", motion_event);
+                                trace!(self.logger,
+                                       "Calling on_pointer_move with {:?}",
+                                       motion_event);
                                 handler.on_pointer_move(seat, motion_event);
-                            },
+                            }
                             PointerEvent::MotionAbsolute(motion_abs_event) => {
-                                trace!(self.logger, "Calling on_pointer_move_absolute with {:?}", motion_abs_event);
+                                trace!(self.logger,
+                                       "Calling on_pointer_move_absolute with {:?}",
+                                       motion_abs_event);
                                 handler.on_pointer_move_absolute(seat, motion_abs_event);
-                            },
+                            }
                             PointerEvent::Axis(axis_event) => {
                                 let rc_axis_event = Rc::new(axis_event);
                                 if rc_axis_event.has_axis(Axis::Vertical) {
-                                    trace!(self.logger, "Calling on_pointer_axis for Axis::Vertical with {:?}", *rc_axis_event);
-                                    handler.on_pointer_axis(seat, self::PointerAxisEvent {
-                                        axis: Axis::Vertical,
-                                        event: rc_axis_event.clone()
-                                    });
+                                    trace!(self.logger,
+                                           "Calling on_pointer_axis for Axis::Vertical with {:?}",
+                                           *rc_axis_event);
+                                    handler.on_pointer_axis(seat,
+                                                            self::PointerAxisEvent {
+                                                                axis: Axis::Vertical,
+                                                                event: rc_axis_event.clone(),
+                                                            });
                                 }
                                 if rc_axis_event.has_axis(Axis::Horizontal) {
-                                    trace!(self.logger, "Calling on_pointer_axis for Axis::Horizontal with {:?}", *rc_axis_event);
-                                    handler.on_pointer_axis(seat, self::PointerAxisEvent {
-                                        axis: Axis::Horizontal,
-                                        event: rc_axis_event.clone()
-                                    });
+                                    trace!(self.logger,
+                                           "Calling on_pointer_axis for Axis::Horizontal with {:?}",
+                                           *rc_axis_event);
+                                    handler.on_pointer_axis(seat,
+                                                            self::PointerAxisEvent {
+                                                                axis: Axis::Horizontal,
+                                                                event: rc_axis_event.clone(),
+                                                            });
                                 }
-                            },
+                            }
                             PointerEvent::Button(button_event) => {
-                                trace!(self.logger, "Calling on_pointer_button with {:?}", button_event);
+                                trace!(self.logger,
+                                       "Calling on_pointer_button with {:?}",
+                                       button_event);
                                 handler.on_pointer_button(seat, button_event);
                             }
                         }
                     }
-                },
-                _ => {}, //FIXME: What to do with the rest.
+                }
+                _ => {} //FIXME: What to do with the rest.
             }
-        };
+        }
         Ok(())
     }
 }

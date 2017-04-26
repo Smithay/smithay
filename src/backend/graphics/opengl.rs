@@ -1,8 +1,8 @@
 //! Common traits and types for opengl rendering on graphics backends
 
-use nix::c_void;
 
 use super::GraphicsBackend;
+use nix::c_void;
 
 /// Error that can happen when swapping buffers.
 #[derive(Debug, Clone)]

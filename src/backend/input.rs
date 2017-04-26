@@ -48,7 +48,9 @@ impl ::std::cmp::PartialEq for Seat {
 }
 
 impl ::std::hash::Hash for Seat {
-    fn hash<H>(&self, state: &mut H) where H: ::std::hash::Hasher {
+    fn hash<H>(&self, state: &mut H)
+        where H: ::std::hash::Hasher
+    {
         self.id.hash(state);
     }
 }

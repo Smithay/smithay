@@ -1,9 +1,9 @@
 //! Common traits and types used for software rendering on graphics backends
 
-use std::error::Error;
-use wayland_server::protocol::wl_shm::Format;
 
 use super::GraphicsBackend;
+use std::error::Error;
+use wayland_server::protocol::wl_shm::Format;
 
 /// Trait that describes objects providing a software rendering implementation
 pub trait CpuGraphicsBackend<E: Error>: GraphicsBackend {
