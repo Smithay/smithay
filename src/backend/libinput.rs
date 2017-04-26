@@ -264,7 +264,7 @@ impl backend::InputBackend for LibinputInputBackend {
         info!(self.logger, "New input handler set.");
         for seat in self.seats.values() {
             trace!(self.logger, "Calling on_seat_created with {:?}", seat);
-            handler.on_seat_created(&seat);
+            handler.on_seat_created(seat);
         }
         self.handler = Some(Box::new(handler));
     }
@@ -279,7 +279,7 @@ impl backend::InputBackend for LibinputInputBackend {
         if let Some(mut handler) = self.handler.take() {
             for seat in self.seats.values() {
                 trace!(self.logger, "Calling on_seat_destroyed with {:?}", seat);
-                handler.on_seat_destroyed(&seat);
+                handler.on_seat_destroyed(seat);
             }
             info!(self.logger, "Removing input handler");
         }
@@ -322,7 +322,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                     }
                                     if let Some(ref mut handler) = self.handler {
                                         trace!(self.logger, "Calling on_seat_changed with {:?}", old_seat);
-                                        handler.on_seat_changed(&old_seat);
+                                        handler.on_seat_changed(old_seat);
                                     }
                                 }
                                 Entry::Vacant(seat_entry) => {
@@ -332,7 +332,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                                                                     new_caps));
                                     if let Some(ref mut handler) = self.handler {
                                         trace!(self.logger, "Calling on_seat_created with {:?}", seat);
-                                        handler.on_seat_created(&seat);
+                                        handler.on_seat_created(seat);
                                     }
                                 }
                             }
@@ -378,13 +378,11 @@ impl backend::InputBackend for LibinputInputBackend {
                                 } else {
                                     panic!("Seat destroyed that was never created");
                                 }
-                            } else {
                                 // it has, notify about updates
-                                if let Some(ref mut handler) = self.handler {
-                                    let seat = self.seats.get(&device_seat).unwrap();
-                                    trace!(self.logger, "Calling on_seat_changed with {:?}", seat);
-                                    handler.on_seat_changed(&seat);
-                                }
+                            } else if let Some(ref mut handler) = self.handler {
+                                let seat = self.seats[&device_seat];
+                                trace!(self.logger, "Calling on_seat_changed with {:?}", seat);
+                                handler.on_seat_changed(&seat);
                             }
                         }
                     }
