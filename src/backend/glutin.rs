@@ -7,7 +7,7 @@ use backend::graphics::opengl::{Api, OpenglGraphicsBackend, PixelFormat, SwapBuf
 use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState,
                      KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
                      PointerMotionAbsoluteEvent, Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent,
-                     TouchMotionEvent, TouchSlot, TouchUpEvent};
+                     TouchMotionEvent, TouchSlot, TouchUpEvent, UnusedEvent};
 use glutin::{Api as GlutinApi, MouseButton as GlutinMouseButton, MouseCursor,
              PixelFormat as GlutinPixelFormat};
 use glutin::{ContextError, CreationError, ElementState, Event, GlContext, HeadlessContext,
@@ -508,13 +508,13 @@ impl InputBackend for GlutinInputBackend {
     type KeyboardKeyEvent = GlutinKeyboardInputEvent;
     type PointerAxisEvent = GlutinMouseWheelEvent;
     type PointerButtonEvent = GlutinMouseInputEvent;
-    type PointerMotionEvent = ();
+    type PointerMotionEvent = UnusedEvent;
     type PointerMotionAbsoluteEvent = GlutinMouseMovedEvent;
     type TouchDownEvent = GlutinTouchStartedEvent;
     type TouchUpEvent = GlutinTouchEndedEvent;
     type TouchMotionEvent = GlutinTouchMovedEvent;
     type TouchCancelEvent = GlutinTouchCancelledEvent;
-    type TouchFrameEvent = ();
+    type TouchFrameEvent = UnusedEvent;
 
     fn set_handler<H: InputHandler<Self> + 'static>(&mut self, mut handler: H) {
         if self.handler.is_some() {

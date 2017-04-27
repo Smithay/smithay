@@ -77,7 +77,17 @@ pub trait Event {
     fn time(&self) -> u32;
 }
 
-impl Event for () {
+/// Struct to mark events never emitted by an `InputBackend` implementation.
+///
+/// Implements all event types and can be used in place for any `Event` type,
+/// that is not used by an `InputBackend` implementation. Initialization is not
+/// possible, making accidential use impossible and enabling a lot of possible
+/// compiler optimizations.
+pub struct UnusedEvent {
+    _hidden_field: (),
+}
+
+impl Event for UnusedEvent {
     fn time(&self) -> u32 {
         unreachable!()
     }
@@ -102,7 +112,7 @@ pub trait KeyboardKeyEvent: Event {
     fn count(&self) -> u32;
 }
 
-impl KeyboardKeyEvent for () {
+impl KeyboardKeyEvent for UnusedEvent {
     fn key_code(&self) -> u32 {
         unreachable!()
     }
@@ -146,7 +156,7 @@ pub trait PointerButtonEvent: Event {
     fn state(&self) -> MouseButtonState;
 }
 
-impl PointerButtonEvent for () {
+impl PointerButtonEvent for UnusedEvent {
     fn button(&self) -> MouseButton {
         unreachable!()
     }
@@ -208,7 +218,7 @@ pub trait PointerAxisEvent: Event {
     fn amount(&self) -> f64;
 }
 
-impl PointerAxisEvent for () {
+impl PointerAxisEvent for UnusedEvent {
     fn axis(&self) -> Axis {
         unreachable!()
     }
@@ -235,7 +245,7 @@ pub trait PointerMotionEvent: Event {
     fn delta_y(&self) -> u32;
 }
 
-impl PointerMotionEvent for () {
+impl PointerMotionEvent for UnusedEvent {
     fn delta_x(&self) -> u32 {
         unreachable!()
     }
@@ -279,7 +289,7 @@ pub trait PointerMotionAbsoluteEvent: Event {
     fn y_transformed(&self, height: u32) -> u32;
 }
 
-impl PointerMotionAbsoluteEvent for () {
+impl PointerMotionAbsoluteEvent for UnusedEvent {
     fn x(&self) -> f64 {
         unreachable!()
     }
@@ -350,7 +360,7 @@ pub trait TouchDownEvent: Event {
     fn y_transformed(&self, height: u32) -> u32;
 }
 
-impl TouchDownEvent for () {
+impl TouchDownEvent for UnusedEvent {
     fn slot(&self) -> Option<TouchSlot> {
         unreachable!()
     }
@@ -409,7 +419,7 @@ pub trait TouchMotionEvent: Event {
     fn y_transformed(&self, height: u32) -> u32;
 }
 
-impl TouchMotionEvent for () {
+impl TouchMotionEvent for UnusedEvent {
     fn slot(&self) -> Option<TouchSlot> {
         unreachable!()
     }
@@ -437,7 +447,7 @@ pub trait TouchUpEvent: Event {
     fn slot(&self) -> Option<TouchSlot>;
 }
 
-impl TouchUpEvent for () {
+impl TouchUpEvent for UnusedEvent {
     fn slot(&self) -> Option<TouchSlot> {
         unreachable!()
     }
@@ -449,7 +459,7 @@ pub trait TouchCancelEvent: Event {
     fn slot(&self) -> Option<TouchSlot>;
 }
 
-impl TouchCancelEvent for () {
+impl TouchCancelEvent for UnusedEvent {
     fn slot(&self) -> Option<TouchSlot> {
         unreachable!()
     }
@@ -458,7 +468,7 @@ impl TouchCancelEvent for () {
 /// Trait for touch frame events
 pub trait TouchFrameEvent: Event {}
 
-impl TouchFrameEvent for () {}
+impl TouchFrameEvent for UnusedEvent {}
 
 /// Trait that describes objects providing a source of input events. All input backends
 /// need to implemenent this and provide the same base gurantees about the presicion of
