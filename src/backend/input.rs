@@ -77,19 +77,17 @@ pub trait Event {
     fn time(&self) -> u32;
 }
 
-/// Struct to mark events never emitted by an `InputBackend` implementation.
+/// Used to mark events never emitted by an `InputBackend` implementation.
 ///
 /// Implements all event types and can be used in place for any `Event` type,
 /// that is not used by an `InputBackend` implementation. Initialization is not
 /// possible, making accidential use impossible and enabling a lot of possible
 /// compiler optimizations.
-pub struct UnusedEvent {
-    _hidden_field: (),
-}
+pub enum UnusedEvent {}
 
 impl Event for UnusedEvent {
     fn time(&self) -> u32 {
-        unreachable!()
+        match *self {}
     }
 }
 
@@ -114,15 +112,15 @@ pub trait KeyboardKeyEvent: Event {
 
 impl KeyboardKeyEvent for UnusedEvent {
     fn key_code(&self) -> u32 {
-        unreachable!()
+        match *self {}
     }
 
     fn state(&self) -> KeyState {
-        unreachable!()
+        match *self {}
     }
 
     fn count(&self) -> u32 {
-        unreachable!()
+        match *self {}
     }
 }
 
@@ -158,11 +156,11 @@ pub trait PointerButtonEvent: Event {
 
 impl PointerButtonEvent for UnusedEvent {
     fn button(&self) -> MouseButton {
-        unreachable!()
+        match *self {}
     }
 
     fn state(&self) -> MouseButtonState {
-        unreachable!()
+        match *self {}
     }
 }
 
@@ -220,15 +218,15 @@ pub trait PointerAxisEvent: Event {
 
 impl PointerAxisEvent for UnusedEvent {
     fn axis(&self) -> Axis {
-        unreachable!()
+        match *self {}
     }
 
     fn source(&self) -> AxisSource {
-        unreachable!()
+        match *self {}
     }
 
     fn amount(&self) -> f64 {
-        unreachable!()
+        match *self {}
     }
 }
 
@@ -247,11 +245,11 @@ pub trait PointerMotionEvent: Event {
 
 impl PointerMotionEvent for UnusedEvent {
     fn delta_x(&self) -> u32 {
-        unreachable!()
+        match *self {}
     }
 
     fn delta_y(&self) -> u32 {
-        unreachable!()
+        match *self {}
     }
 }
 
@@ -291,19 +289,19 @@ pub trait PointerMotionAbsoluteEvent: Event {
 
 impl PointerMotionAbsoluteEvent for UnusedEvent {
     fn x(&self) -> f64 {
-        unreachable!()
+        match *self {}
     }
 
     fn y(&self) -> f64 {
-        unreachable!()
+        match *self {}
     }
 
     fn x_transformed(&self, _width: u32) -> u32 {
-        unreachable!()
+        match *self {}
     }
 
     fn y_transformed(&self, _height: u32) -> u32 {
-        unreachable!()
+        match *self {}
     }
 }
 
@@ -362,23 +360,23 @@ pub trait TouchDownEvent: Event {
 
 impl TouchDownEvent for UnusedEvent {
     fn slot(&self) -> Option<TouchSlot> {
-        unreachable!()
+        match *self {}
     }
 
     fn x(&self) -> f64 {
-        unreachable!()
+        match *self {}
     }
 
     fn y(&self) -> f64 {
-        unreachable!()
+        match *self {}
     }
 
     fn x_transformed(&self, _width: u32) -> u32 {
-        unreachable!()
+        match *self {}
     }
 
     fn y_transformed(&self, _height: u32) -> u32 {
-        unreachable!()
+        match *self {}
     }
 }
 
@@ -421,23 +419,23 @@ pub trait TouchMotionEvent: Event {
 
 impl TouchMotionEvent for UnusedEvent {
     fn slot(&self) -> Option<TouchSlot> {
-        unreachable!()
+        match *self {}
     }
 
     fn x(&self) -> f64 {
-        unreachable!()
+        match *self {}
     }
 
     fn y(&self) -> f64 {
-        unreachable!()
+        match *self {}
     }
 
     fn x_transformed(&self, _width: u32) -> u32 {
-        unreachable!()
+        match *self {}
     }
 
     fn y_transformed(&self, _height: u32) -> u32 {
-        unreachable!()
+        match *self {}
     }
 }
 
@@ -449,7 +447,7 @@ pub trait TouchUpEvent: Event {
 
 impl TouchUpEvent for UnusedEvent {
     fn slot(&self) -> Option<TouchSlot> {
-        unreachable!()
+        match *self {}
     }
 }
 
@@ -461,7 +459,7 @@ pub trait TouchCancelEvent: Event {
 
 impl TouchCancelEvent for UnusedEvent {
     fn slot(&self) -> Option<TouchSlot> {
-        unreachable!()
+        match *self {}
     }
 }
 
