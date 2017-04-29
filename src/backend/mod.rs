@@ -17,6 +17,8 @@ pub mod graphics;
 
 #[cfg(feature = "backend_glutin")]
 pub mod glutin;
+#[cfg(feature = "backend_libinput")]
+pub mod libinput;
 
 #[cfg(feature = "renderer_glium")]
 mod glium;
@@ -26,9 +28,10 @@ pub use glium::*;
 /// Internal functions that need to be accessible by the different backend implementations
 
 trait SeatInternal {
-    fn new(id: u32, capabilities: input::SeatCapabilities) -> Self;
+    fn new(id: u64, capabilities: input::SeatCapabilities) -> Self;
+    fn capabilities_mut(&mut self) -> &mut input::SeatCapabilities;
 }
 
 trait TouchSlotInternal {
-    fn new(id: u32) -> Self;
+    fn new(id: u64) -> Self;
 }

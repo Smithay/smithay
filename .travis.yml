@@ -22,6 +22,7 @@ addons:
   apt:
     packages:
       - libwayland-dev
+      - libudev-dev
 
 branches:
   only:
@@ -59,4 +60,3 @@ notifications:
         on_success: change
         on_failure: always
         on_start: never
-

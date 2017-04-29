@@ -16,6 +16,8 @@ extern crate tempfile;
 
 #[cfg(feature = "backend_glutin")]
 extern crate glutin;
+#[cfg(feature = "backend_libinput")]
+extern crate input;
 
 #[cfg(feature = "renderer_glium")]
 extern crate glium;
