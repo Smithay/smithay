@@ -30,4 +30,4 @@ pub trait GraphicsBackend {
 }
 
 pub mod software;
-pub mod opengl;
+pub mod egl;

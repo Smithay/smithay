@@ -1,6 +1,4 @@
-
-
-use backend::graphics::opengl::{OpenglGraphicsBackend, SwapBuffersError};
+use backend::graphics::egl::{EGLGraphicsBackend, SwapBuffersError};
 use glium::SwapBuffersError as GliumSwapBuffersError;
 use glium::backend::Backend;
 
@@ -15,19 +13,19 @@ impl From<SwapBuffersError> for GliumSwapBuffersError {
     }
 }
 
-pub struct GliumGraphicBackend<T: OpenglGraphicsBackend>(T);
+pub struct GliumGraphicBackend<T: EGLGraphicsBackend>(T);
 
-pub trait IntoGlium: OpenglGraphicsBackend + Sized {
+pub trait IntoGlium: EGLGraphicsBackend + Sized {
     fn into_glium(self) -> GliumGraphicBackend<Self>;
 }
 
-impl<T: OpenglGraphicsBackend> IntoGlium for T {
+impl<T: EGLGraphicsBackend> IntoGlium for T {
     fn into_glium(self) -> GliumGraphicBackend<Self> {
         GliumGraphicBackend(self)
     }
 }
 
-unsafe impl<T: OpenglGraphicsBackend> Backend for GliumGraphicBackend<T> {
+unsafe impl<T: EGLGraphicsBackend> Backend for GliumGraphicBackend<T> {
     fn swap_buffers(&self) -> Result<(), GliumSwapBuffersError> {
         self.0.swap_buffers().map_err(Into::into)
     }
@@ -45,6 +43,6 @@ unsafe impl<T: OpenglGraphicsBackend> Backend for GliumGraphicBackend<T> {
     }
 
     unsafe fn make_current(&self) {
-        self.0.make_current()
+        self.0.make_current().expect("Context was lost")
     }
 }

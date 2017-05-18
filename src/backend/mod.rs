@@ -6,17 +6,18 @@
 //!
 //! Supported graphics backends:
 //!
-//! - glutin (headless/windowed)
+//! - winit
 //!
 //! Supported input backends:
 //!
-//! - glutin (windowed)
+//! - winit
+//! - libinput
 
 pub mod input;
 pub mod graphics;
 
-#[cfg(feature = "backend_glutin")]
-pub mod glutin;
+#[cfg(feature = "backend_winit")]
+pub mod winit;
 #[cfg(feature = "backend_libinput")]
 pub mod libinput;
 

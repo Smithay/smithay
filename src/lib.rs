@@ -14,10 +14,14 @@ extern crate nix;
 extern crate xkbcommon;
 extern crate tempfile;
 
-#[cfg(feature = "backend_glutin")]
-extern crate glutin;
+#[cfg(feature = "backend_winit")]
+extern crate winit;
+#[cfg(feature = "backend_winit")]
+extern crate wayland_client;
 #[cfg(feature = "backend_libinput")]
 extern crate input;
+
+extern crate libloading;
 
 #[cfg(feature = "renderer_glium")]
 extern crate glium;

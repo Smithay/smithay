@@ -21,7 +21,7 @@ use std::rc::Rc;
 /// Create a new `GlutinHeadlessRenderer` which implements the `OpenglRenderer` graphics
 /// backend trait
 pub fn init_headless_renderer() -> Result<GlutinHeadlessRenderer, CreationError> {
-    init_headless_renderer_from_builder(HeadlessRendererBuilder::new(1024, 600))
+    init_headless_renderer_from_builder(HeadlessRendererBuilder::new(1024, 600)
 }
 
 /// Create a new `GlutinHeadlessRenderer`, which implements the `OpenglRenderer` graphics
