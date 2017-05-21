@@ -143,7 +143,7 @@ impl KbdInternal {
         let mods_locked = self.state.serialize_mods(xkb::STATE_MODS_LOCKED);
         let layout_locked = self.state.serialize_layout(xkb::STATE_LAYOUT_LOCKED);
 
-        return (mods_depressed, mods_latched, mods_locked, layout_locked);
+        (mods_depressed, mods_latched, mods_locked, layout_locked)
     }
 
     fn serialize_pressed_keys(&self) -> Vec<u8> {

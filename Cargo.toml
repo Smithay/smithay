@@ -26,6 +26,6 @@ slog-term = "~1.5"
 
 [features]
 default = ["backend_winit", "backend_libinput", "renderer_glium"]
-backend_winit = ["winit", "wayland-server/dlopen", "wayland-client", "wayland-client/dlopen"]
+backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen"]
 renderer_glium = ["glium"]
 backend_libinput = ["input"]

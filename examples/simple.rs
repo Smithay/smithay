@@ -1,12 +1,15 @@
 extern crate wayland_server;
 extern crate smithay;
 
-use smithay::backend::glutin;
+use smithay::backend::winit;
 use smithay::backend::input::InputBackend;
 use smithay::shm::ShmGlobal;
 use wayland_server::protocol::wl_shm;
 
 fn main() {
+    // Initialize a simple backend for testing
+    let (mut renderer, mut input) = winit::init().unwrap();
+
     let (_, mut event_loop) = wayland_server::create_display();
 
     // Insert the ShmGlobal as a handler to your event loop
@@ -23,9 +26,6 @@ fn main() {
         let state = event_loop.state();
         state.get_handler::<ShmGlobal>(handler_id).get_token()
     };
-
-    // Initialize a simple backend for testing
-    let (mut renderer, mut input) = glutin::init_windowed().unwrap();
 
     // TODO render stuff
 
