@@ -1,8 +1,8 @@
 extern crate wayland_server;
 extern crate smithay;
 
-use smithay::backend::winit;
 use smithay::backend::input::InputBackend;
+use smithay::backend::winit;
 use smithay::shm::ShmGlobal;
 use wayland_server::protocol::wl_shm;
 
