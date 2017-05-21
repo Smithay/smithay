@@ -386,8 +386,9 @@ impl EGLContext {
 
         let surface = {
             let surface = match native {
-                Native::X11(_, window) | Native::Wayland(_, window) | Native::Gbm(_, window) =>
-                    egl.CreateWindowSurface(display, config_id, window, ptr::null()),
+                Native::X11(_, window) |
+                Native::Wayland(_, window) |
+                Native::Gbm(_, window) => egl.CreateWindowSurface(display, config_id, window, ptr::null()),
             };
 
             if surface.is_null() {
@@ -399,10 +400,7 @@ impl EGLContext {
         let mut context_attributes = Vec::with_capacity(10);
         let mut flags = 0;
 
-        if egl_version >= (1, 5) ||
-           extensions
-               .iter()
-               .any(|s| s == &"EGL_KHR_create_context") {
+        if egl_version >= (1, 5) || extensions.iter().any(|s| s == &"EGL_KHR_create_context") {
             context_attributes.push(ffi::egl::CONTEXT_MAJOR_VERSION as i32);
             context_attributes.push(version.0 as i32);
             context_attributes.push(ffi::egl::CONTEXT_MINOR_VERSION as i32);

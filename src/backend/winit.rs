@@ -18,7 +18,7 @@ use wayland_client::egl as wegl;
 use winit::{CreationError as WinitCreationError, ElementState, Event, EventsLoop,
             MouseButton as WinitMouseButton, MouseCursor, MouseScrollDelta, Touch, TouchPhase, Window,
             WindowBuilder, WindowEvent};
-use winit::os::unix::{get_x11_xconnection, WindowExt};
+use winit::os::unix::{WindowExt, get_x11_xconnection};
 
 /// Window with an active EGL Context created by `winit`. Implements the
 /// `EGLGraphicsBackend` graphics backend trait
