@@ -58,7 +58,7 @@ pub fn init_from_builder(builder: WindowBuilder)
                                        version: None,
                                        profile: None,
                                        debug: cfg!(debug_assertions),
-                                       robustness: Robustness::TryRobustLoseContextOnReset,
+                                       robustness: Robustness::NotRobust,
                                        vsync: true,
                                    })
 }
