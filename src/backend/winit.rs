@@ -489,8 +489,8 @@ impl InputBackend for WinitInputBackend {
                                  match event {
                                      WindowEvent::Resized(x, y) => {
                                          window.set_inner_size(x, y);
-                                         if let Some(wl_surface) = surface.as_ref() {
-                                             wl_surface.resize(x as i32, y as i32, 0, 0);
+                                         if let Some(wl_egl_surface) = surface.as_ref() {
+                                             wl_egl_surface.resize(x as i32, y as i32, 0, 0);
                                          }
                                      }
                                      WindowEvent::KeyboardInput(state, key_code, _, _) => {
