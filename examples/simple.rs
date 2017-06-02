@@ -1,13 +1,19 @@
 extern crate wayland_server;
 extern crate smithay;
+extern crate glium;
 
-use smithay::backend::glutin;
+use glium::Surface;
+use smithay::backend::graphics::glium::IntoGlium;
 use smithay::backend::input::InputBackend;
+use smithay::backend::winit;
 use smithay::shm::ShmGlobal;
 use wayland_server::protocol::wl_shm;
 
 fn main() {
-    let (_, mut event_loop) = wayland_server::create_display();
+    // Initialize a simple backend for testing
+    let (renderer, mut input) = winit::init().unwrap();
+
+    let (_display, mut event_loop) = wayland_server::create_display();
 
     // Insert the ShmGlobal as a handler to your event loop
     // Here, we specify tha the standard Argb8888 and Xrgb8888 is the only supported.
@@ -24,13 +30,17 @@ fn main() {
         state.get_handler::<ShmGlobal>(handler_id).get_token()
     };
 
-    // Initialize a simple backend for testing
-    let (mut renderer, mut input) = glutin::init_windowed().unwrap();
+    // Init glium
+    let context = renderer.into_glium();
 
-    // TODO render stuff
 
-    // TODO put input handling on the event loop
-    input.dispatch_new_events().unwrap();
+    loop {
+        input.dispatch_new_events().unwrap();
 
-    event_loop.run().unwrap();
+        let mut frame = context.draw();
+        frame.clear(None, Some((0.0, 0.0, 0.0, 1.0)), false, None, None);
+        frame.finish().unwrap();
+
+        event_loop.dispatch(Some(16)).unwrap();
+    }
 }

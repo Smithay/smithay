@@ -328,8 +328,8 @@ impl backend::InputBackend for LibinputInputBackend {
                                 Entry::Vacant(seat_entry) => {
                                     let mut hasher = DefaultHasher::default();
                                     seat_entry.key().hash(&mut hasher);
-                                    let seat = seat_entry.insert(backend::Seat::new(hasher.finish(),
-                                                                                    new_caps));
+                                    let seat = seat_entry
+                                        .insert(backend::Seat::new(hasher.finish(), new_caps));
                                     if let Some(ref mut handler) = self.handler {
                                         trace!(self.logger, "Calling on_seat_created with {:?}", seat);
                                         handler.on_seat_created(seat);
