@@ -15,7 +15,7 @@ use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
 use wayland_client::egl as wegl;
-use winit::{CreationError as WinitCreationError, ElementState, Event, EventsLoop,
+use winit::{CreationError as WinitCreationError, ElementState, Event, EventsLoop, KeyboardInput,
             MouseButton as WinitMouseButton, MouseCursor, MouseScrollDelta, Touch, TouchPhase, Window,
             WindowBuilder, WindowEvent};
 use winit::os::unix::{WindowExt, get_x11_xconnection};
@@ -45,7 +45,10 @@ pub struct WinitInputBackend {
 /// graphics backend trait and a corresponding `WinitInputBackend`, which implements
 /// the `InputBackend` trait
 pub fn init() -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError> {
-    init_from_builder(WindowBuilder::new())
+    init_from_builder(WindowBuilder::new()
+                          .with_dimensions(1280, 800)
+                          .with_title("Smithay")
+                          .with_visibility(true))
 }
 
 /// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
@@ -85,14 +88,20 @@ pub fn init_from_builder_with_gl_attr(builder: WindowBuilder, attributes: GlAttr
     };
 
     let context = unsafe {
-        EGLContext::new(native,
-                        attributes,
-                        PixelFormatRequirements {
-                            hardware_accelerated: Some(true),
-                            color_bits: Some(24),
-                            alpha_bits: Some(8),
-                            ..Default::default()
-                        })?
+        match EGLContext::new(native,
+                              attributes,
+                              PixelFormatRequirements {
+                                  hardware_accelerated: Some(true),
+                                  color_bits: Some(24),
+                                  alpha_bits: Some(8),
+                                  ..Default::default()
+                              }) {
+            Ok(context) => context,
+            Err(err) => {
+                println!("EGLContext creation failed:\n{}", err);
+                return Err(err);
+            }
+        }
     };
 
     Ok((WinitGraphicsBackend {
@@ -182,7 +191,7 @@ impl fmt::Display for WinitInputError {
 /// Winit-Backend internal event wrapping winit's types into a `KeyboardKeyEvent`
 pub struct WinitKeyboardInputEvent {
     time: u32,
-    key: u8,
+    key: u32,
     count: u32,
     state: ElementState,
 }
@@ -195,7 +204,7 @@ impl BackendEvent for WinitKeyboardInputEvent {
 
 impl KeyboardKeyEvent for WinitKeyboardInputEvent {
     fn key_code(&self) -> u32 {
-        self.key as u32
+        self.key
     }
 
     fn state(&self) -> KeyState {
@@ -212,8 +221,8 @@ impl KeyboardKeyEvent for WinitKeyboardInputEvent {
 pub struct WinitMouseMovedEvent {
     window: Rc<Window>,
     time: u32,
-    x: i32,
-    y: i32,
+    x: f64,
+    y: f64,
 }
 
 impl BackendEvent for WinitMouseMovedEvent {
@@ -224,23 +233,24 @@ impl BackendEvent for WinitMouseMovedEvent {
 
 impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
     fn x(&self) -> f64 {
-        self.x as f64
+        self.x
     }
 
     fn y(&self) -> f64 {
-        self.y as f64
+        self.y
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        cmp::min(self.x * width as i32 /
-                 self.window.get_inner_size_points().unwrap_or((width, 0)).0 as i32,
-                 0) as u32
+        cmp::min((self.x * width as f64 /
+                  self.window.get_inner_size_points().unwrap_or((width, 0)).0 as f64) as u32,
+                 0)
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        cmp::min(self.y * height as i32 /
-                 self.window.get_inner_size_points().unwrap_or((0, height)).1 as i32,
-                 0) as u32
+        cmp::min((self.y * height as f64 /
+                  self.window.get_inner_size_points().unwrap_or((0, height)).1 as f64) as
+                 u32,
+                 0)
     }
 }
 
@@ -484,124 +494,137 @@ impl InputBackend for WinitInputBackend {
             let mut handler = self.handler.as_mut();
 
             self.events_loop
-                .poll_events(move |event| if let Some(ref mut handler) = handler {
-                                 let Event::WindowEvent { event, .. } = event;
-                                 match event {
-                                     WindowEvent::Resized(x, y) => {
-                                         window.set_inner_size(x, y);
-                                         if let Some(wl_egl_surface) = surface.as_ref() {
-                                             wl_egl_surface.resize(x as i32, y as i32, 0, 0);
-                                         }
-                                     }
-                                     WindowEvent::KeyboardInput(state, key_code, _, _) => {
-                                         match state {
-                                             ElementState::Pressed => *key_counter += 1,
-                                             ElementState::Released => {
-                                                 *key_counter = key_counter.checked_sub(1).unwrap_or(0)
-                                             }
-                                         };
-                                         handler.on_keyboard_key(seat,
-                                                                 WinitKeyboardInputEvent {
-                                                                     time: *time_counter,
-                                                                     key: key_code,
-                                                                     count: *key_counter,
-                                                                     state: state,
-                                                                 })
-                                     }
-                                     WindowEvent::MouseMoved(x, y) => {
-                                         handler.on_pointer_move_absolute(seat,
-                                                                          WinitMouseMovedEvent {
-                                                                              window: window.clone(),
-                                                                              time: *time_counter,
-                                                                              x: x,
-                                                                              y: y,
-                                                                          })
-                                     }
-                                     WindowEvent::MouseWheel(delta, _) => {
-                                         let event = WinitMouseWheelEvent {
-                                             axis: Axis::Horizontal,
-                                             time: *time_counter,
-                                             delta: delta,
-                                         };
-                                         match delta {
-                                             MouseScrollDelta::LineDelta(x, y) |
-                                             MouseScrollDelta::PixelDelta(x, y) => {
-                                                 if x != 0.0 {
-                                                     handler.on_pointer_axis(seat, event);
-                                                 }
-                                                 if y != 0.0 {
-                                                     handler.on_pointer_axis(seat, event);
-                                                 }
+                .poll_events(move |event| match event {
+                                 Event::WindowEvent { event, .. } => {
+                                     match (event, handler.as_mut()) {
+                                         (WindowEvent::Resized(x, y), _) => {
+                                             window.set_inner_size(x, y);
+                                             if let Some(wl_egl_surface) = surface.as_ref() {
+                                                 wl_egl_surface.resize(x as i32, y as i32, 0, 0);
                                              }
                                          }
-                                     }
-                                     WindowEvent::MouseInput(state, button) => {
-                                         handler.on_pointer_button(seat,
-                                                                   WinitMouseInputEvent {
+                                         (WindowEvent::KeyboardInput {
+                                              input: KeyboardInput { scancode, state, .. }, ..
+                                          },
+                                          Some(handler)) => {
+                                             match state {
+                                                 ElementState::Pressed => *key_counter += 1,
+                                                 ElementState::Released => {
+                                                     *key_counter = key_counter.checked_sub(1).unwrap_or(0)
+                                                 }
+                                             };
+                                             handler.on_keyboard_key(seat,
+                                                                     WinitKeyboardInputEvent {
+                                                                         time: *time_counter,
+                                                                         key: scancode,
+                                                                         count: *key_counter,
+                                                                         state: state,
+                                                                     })
+                                         }
+                                         (WindowEvent::MouseMoved { position: (x, y), .. },
+                                          Some(handler)) => {
+                                             handler.on_pointer_move_absolute(seat,
+                                                                              WinitMouseMovedEvent {
+                                                                                  window: window.clone(),
+                                                                                  time: *time_counter,
+                                                                                  x: x,
+                                                                                  y: y,
+                                                                              })
+                                         }
+                                         (WindowEvent::MouseWheel { delta, .. }, Some(handler)) => {
+                                             let event = WinitMouseWheelEvent {
+                                                 axis: Axis::Horizontal,
+                                                 time: *time_counter,
+                                                 delta: delta,
+                                             };
+                                             match delta {
+                                                 MouseScrollDelta::LineDelta(x, y) |
+                                                 MouseScrollDelta::PixelDelta(x, y) => {
+                                                     if x != 0.0 {
+                                                         handler.on_pointer_axis(seat, event);
+                                                     }
+                                                     if y != 0.0 {
+                                                         handler.on_pointer_axis(seat, event);
+                                                     }
+                                                 }
+                                             }
+                                         }
+                                         (WindowEvent::MouseInput { state, button, .. }, Some(handler)) => {
+                                             handler.on_pointer_button(seat,
+                                                                       WinitMouseInputEvent {
+                                                                           time: *time_counter,
+                                                                           button: button,
+                                                                           state: state,
+                                                                       })
+                                         }
+                                         (WindowEvent::Touch(Touch {
+                                                                 phase: TouchPhase::Started,
+                                                                 location: (x, y),
+                                                                 id,
+                                                                 ..
+                                                             }),
+                                          Some(handler)) => {
+                                             handler.on_touch_down(seat,
+                                                                   WinitTouchStartedEvent {
+                                                                       window: window.clone(),
                                                                        time: *time_counter,
-                                                                       button: button,
-                                                                       state: state,
+                                                                       location: (x, y),
+                                                                       id: id,
                                                                    })
-                                     }
-                                     WindowEvent::Touch(Touch {
-                                                            phase: TouchPhase::Started,
-                                                            location: (x, y),
-                                                            id,
-                                                        }) => {
-                                         handler.on_touch_down(seat,
-                                                               WinitTouchStartedEvent {
-                                                                   window: window.clone(),
-                                                                   time: *time_counter,
-                                                                   location: (x, y),
-                                                                   id: id,
-                                                               })
-                                     }
-                                     WindowEvent::Touch(Touch {
-                                                            phase: TouchPhase::Moved,
-                                                            location: (x, y),
-                                                            id,
-                                                        }) => {
-                                         handler.on_touch_motion(seat,
-                                                                 WinitTouchMovedEvent {
-                                                                     window: window.clone(),
+                                         }
+                                         (WindowEvent::Touch(Touch {
+                                                                 phase: TouchPhase::Moved,
+                                                                 location: (x, y),
+                                                                 id,
+                                                                 ..
+                                                             }),
+                                          Some(handler)) => {
+                                             handler.on_touch_motion(seat,
+                                                                     WinitTouchMovedEvent {
+                                                                         window: window.clone(),
+                                                                         time: *time_counter,
+                                                                         location: (x, y),
+                                                                         id: id,
+                                                                     })
+                                         }
+                                         (WindowEvent::Touch(Touch {
+                                                                 phase: TouchPhase::Ended,
+                                                                 location: (x, y),
+                                                                 id,
+                                                                 ..
+                                                             }),
+                                          Some(handler)) => {
+                                             handler.on_touch_motion(seat,
+                                                                     WinitTouchMovedEvent {
+                                                                         window: window.clone(),
+                                                                         time: *time_counter,
+                                                                         location: (x, y),
+                                                                         id: id,
+                                                                     });
+                                             handler.on_touch_up(seat,
+                                                                 WinitTouchEndedEvent {
                                                                      time: *time_counter,
-                                                                     location: (x, y),
-                                                                     id: id,
-                                                                 })
-                                     }
-                                     WindowEvent::Touch(Touch {
-                                                            phase: TouchPhase::Ended,
-                                                            location: (x, y),
-                                                            id,
-                                                        }) => {
-                                         handler.on_touch_motion(seat,
-                                                                 WinitTouchMovedEvent {
-                                                                     window: window.clone(),
-                                                                     time: *time_counter,
-                                                                     location: (x, y),
                                                                      id: id,
                                                                  });
-                                         handler.on_touch_up(seat,
-                                                             WinitTouchEndedEvent {
-                                                                 time: *time_counter,
-                                                                 id: id,
-                                                             });
+                                         }
+                                         (WindowEvent::Touch(Touch {
+                                                                 phase: TouchPhase::Cancelled,
+                                                                 id,
+                                                                 ..
+                                                             }),
+                                          Some(handler)) => {
+                                             handler.on_touch_cancel(seat,
+                                                                     WinitTouchCancelledEvent {
+                                                                         time: *time_counter,
+                                                                         id: id,
+                                                                     })
+                                         }
+                                         (WindowEvent::Closed, _) => *closed_ptr = true,
+                                         _ => {}
                                      }
-                                     WindowEvent::Touch(Touch {
-                                                            phase: TouchPhase::Cancelled,
-                                                            id,
-                                                            ..
-                                                        }) => {
-                                         handler.on_touch_cancel(seat,
-                                                                 WinitTouchCancelledEvent {
-                                                                     time: *time_counter,
-                                                                     id: id,
-                                                                 })
-                                     }
-                                     WindowEvent::Closed => *closed_ptr = true,
-                                     _ => {}
+                                     *time_counter += 1;
                                  }
-                                 *time_counter += 1;
+                                 Event::DeviceEvent { .. } => {}
                              });
         }
 
