@@ -117,10 +117,11 @@ impl error::Error for CreationError {
 
 /// EGL context for rendering
 pub struct EGLContext {
-    context: *const c_void,
-    display: *const c_void,
+    _lib: Library,
+    context: ffi::egl::types::EGLContext,
+    display: ffi::egl::types::EGLDisplay,
     egl: ffi::egl::Egl,
-    surface: *const c_void,
+    surface: ffi::egl::types::EGLSurface,
     pixel_format: PixelFormat,
 }
 
@@ -384,19 +385,6 @@ impl EGLContext {
             srgb: false, // TODO: use EGL_KHR_gl_colorspace to know that
         };
 
-        let surface = {
-            let surface = match native {
-                Native::X11(_, window) |
-                Native::Wayland(_, window) |
-                Native::Gbm(_, window) => egl.CreateWindowSurface(display, config_id, window, ptr::null()),
-            };
-
-            if surface.is_null() {
-                return Err(CreationError::OsError(String::from("eglCreateWindowSurface failed")));
-            }
-            surface
-        };
-
         let mut context_attributes = Vec::with_capacity(10);
         let mut flags = 0;
 
@@ -498,7 +486,21 @@ impl EGLContext {
             }
         }
 
+        let surface = {
+            let surface = match native {
+                Native::X11(_, window) |
+                Native::Wayland(_, window) |
+                Native::Gbm(_, window) => egl.CreateWindowSurface(display, config_id, window, ptr::null()),
+            };
+
+            if surface.is_null() {
+                return Err(CreationError::OsError(String::from("eglCreateWindowSurface failed")));
+            }
+            surface
+        };
+
         Ok(EGLContext {
+               _lib: lib,
                context: context as *const _,
                display: display as *const _,
                egl: egl,
