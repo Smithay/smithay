@@ -3,7 +3,7 @@
 use backend::{SeatInternal, TouchSlotInternal};
 use backend::graphics::GraphicsBackend;
 use backend::graphics::egl::{CreationError, EGLContext, EGLGraphicsBackend, GlAttributes, Native,
-                             PixelFormat, PixelFormatRequirements, Robustness, SwapBuffersError};
+                             PixelFormat, PixelFormatRequirements, SwapBuffersError};
 use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState,
                      KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
                      PointerMotionAbsoluteEvent, Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent,
@@ -61,7 +61,6 @@ pub fn init_from_builder(builder: WindowBuilder)
                                        version: None,
                                        profile: None,
                                        debug: cfg!(debug_assertions),
-                                       robustness: Robustness::NotRobust,
                                        vsync: true,
                                    })
 }

@@ -60,8 +60,6 @@ pub enum CreationError {
     IoError(io::Error),
     /// Operating System error
     OsError(String),
-    /// Robustness was requested but is not supported by the graphics system
-    RobustnessNotSupported,
     /// The requested OpenGl version is not supported by the graphics system
     OpenGlVersionNotSupported,
     /// There is no pixel format available that fulfills all requirements
@@ -91,10 +89,6 @@ impl error::Error for CreationError {
         match *self {
             CreationError::IoError(ref err) => err.description(),
             CreationError::OsError(ref text) => text,
-            CreationError::RobustnessNotSupported => {
-                "You requested robustness, but it is \
-                                                      not supported."
-            }
             CreationError::OpenGlVersionNotSupported => {
                 "The requested OpenGL version is not \
                                                          supported."
@@ -386,7 +380,6 @@ impl EGLContext {
         };
 
         let mut context_attributes = Vec::with_capacity(10);
-        let mut flags = 0;
 
         if egl_version >= (1, 5) || extensions.iter().any(|s| s == &"EGL_KHR_create_context") {
             context_attributes.push(ffi::egl::CONTEXT_MAJOR_VERSION as i32);
@@ -394,83 +387,15 @@ impl EGLContext {
             context_attributes.push(ffi::egl::CONTEXT_MINOR_VERSION as i32);
             context_attributes.push(version.1 as i32);
 
-            // handling robustness
-            let supports_robustness = egl_version >= (1, 5) ||
-                                      extensions
-                                          .iter()
-                                          .any(|s| s == "EGL_EXT_create_context_robustness");
-
-            match attributes.robustness {
-                Robustness::NotRobust => (),
-
-                Robustness::NoError => {
-                    if extensions
-                           .iter()
-                           .any(|s| s == "EGL_KHR_create_context_no_error") {
-                        context_attributes.push(ffi::egl::CONTEXT_OPENGL_NO_ERROR_KHR as c_int);
-                        context_attributes.push(1);
-                    }
-                }
-
-                Robustness::RobustNoResetNotification => {
-                    if supports_robustness {
-                        context_attributes
-                            .push(ffi::egl::CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY as c_int);
-                        context_attributes.push(ffi::egl::NO_RESET_NOTIFICATION as c_int);
-                        flags |= ffi::egl::CONTEXT_OPENGL_ROBUST_ACCESS as c_int;
-                    } else {
-                        return Err(CreationError::RobustnessNotSupported);
-                    }
-                }
-
-                Robustness::TryRobustNoResetNotification => {
-                    if supports_robustness {
-                        context_attributes
-                            .push(ffi::egl::CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY as c_int);
-                        context_attributes.push(ffi::egl::NO_RESET_NOTIFICATION as c_int);
-                        flags |= ffi::egl::CONTEXT_OPENGL_ROBUST_ACCESS as c_int;
-                    }
-                }
-
-                Robustness::RobustLoseContextOnReset => {
-                    if supports_robustness {
-                        context_attributes
-                            .push(ffi::egl::CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY as c_int);
-                        context_attributes.push(ffi::egl::LOSE_CONTEXT_ON_RESET as c_int);
-                        flags |= ffi::egl::CONTEXT_OPENGL_ROBUST_ACCESS as c_int;
-                    } else {
-                        return Err(CreationError::RobustnessNotSupported);
-                    }
-                }
-
-                Robustness::TryRobustLoseContextOnReset => {
-                    if supports_robustness {
-                        context_attributes
-                            .push(ffi::egl::CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY as c_int);
-                        context_attributes.push(ffi::egl::LOSE_CONTEXT_ON_RESET as c_int);
-                        flags |= ffi::egl::CONTEXT_OPENGL_ROBUST_ACCESS as c_int;
-                    }
-                }
-            }
-
             if attributes.debug && egl_version >= (1, 5) {
                 context_attributes.push(ffi::egl::CONTEXT_OPENGL_DEBUG as i32);
                 context_attributes.push(ffi::egl::TRUE as i32);
             }
 
             context_attributes.push(ffi::egl::CONTEXT_FLAGS_KHR as i32);
-            context_attributes.push(flags);
+            context_attributes.push(0);
 
         } else if egl_version >= (1, 3) {
-            // robustness is not supported
-            match attributes.robustness {
-                Robustness::RobustNoResetNotification |
-                Robustness::RobustLoseContextOnReset => {
-                    return Err(CreationError::RobustnessNotSupported);
-                }
-                _ => (),
-            }
-
             context_attributes.push(ffi::egl::CONTEXT_CLIENT_VERSION as i32);
             context_attributes.push(version.0 as i32);
         }
@@ -622,35 +547,9 @@ pub struct GlAttributes {
     ///
     /// Debug contexts are usually slower but give better error reporting.
     pub debug: bool,
-    /// How the OpenGL context should detect errors.
-    pub robustness: Robustness,
     /// Whether to use vsync. If vsync is enabled, calling swap_buffers will block until the screen refreshes.
     /// This is typically used to prevent screen tearing.
     pub vsync: bool,
-}
-
-/// Specifies the tolerance of the OpenGL context to faults. If you accept raw OpenGL commands and/or raw
-/// shader code from an untrusted source, you should definitely care about this.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Robustness {
-    /// Not everything is checked. Your application can crash if you do something wrong with your shaders.
-    NotRobust,
-    /// The driver doesn't check anything. This option is very dangerous. Please know what you're doing before
-    /// using it. See the GL_KHR_no_error extension.
-    ///
-    /// Since this option is purely an optimisation, no error will be returned if the backend doesn't support it.
-    /// Instead it will automatically fall back to NotRobust.
-    NoError,
-    /// Everything is checked to avoid any crash. The driver will attempt to avoid any problem, but if a problem occurs
-    /// the behavior is implementation-defined. You are just guaranteed not to get a crash.
-    RobustNoResetNotification,
-    /// Same as RobustNoResetNotification but the context creation doesn't fail if it's not supported.
-    TryRobustNoResetNotification,
-    /// Everything is checked to avoid any crash. If a problem occurs, the context will enter a "context lost" state.
-    /// It must then be recreated.
-    RobustLoseContextOnReset,
-    /// Same as RobustLoseContextOnReset but the context creation doesn't fail if it's not supported.
-    TryRobustLoseContextOnReset,
 }
 
 /// Describes the requested OpenGL context profiles.
