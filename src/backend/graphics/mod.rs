@@ -31,3 +31,5 @@ pub trait GraphicsBackend {
 
 pub mod software;
 pub mod egl;
+#[cfg(feature = "renderer_glium")]
+pub mod glium;

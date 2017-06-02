@@ -21,12 +21,7 @@ pub mod winit;
 #[cfg(feature = "backend_libinput")]
 pub mod libinput;
 
-#[cfg(feature = "renderer_glium")]
-mod glium;
-#[cfg(feature = "renderer_glium")]
-pub use glium::*;
-
-/// Internal functions that need to be accessible by the different backend implementations
+// Internal functions that need to be accessible by the different backend implementations
 
 trait SeatInternal {
     fn new(id: u64, capabilities: input::SeatCapabilities) -> Self;
