@@ -1,4 +1,4 @@
-use super::{Rectangle, RegionAttributes, RectangleKind};
+use super::{Rectangle, RectangleKind, RegionAttributes};
 
 use std::sync::Mutex;
 use wayland_server::Resource;

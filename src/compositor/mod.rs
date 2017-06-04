@@ -5,9 +5,9 @@ mod region;
 
 pub use self::tree::RoleStatus;
 use self::tree::SurfaceData;
+use wayland_server::{Client, EventLoopHandle, Init, resource_is_registered};
 
-use wayland_server::protocol::{wl_buffer, wl_output, wl_surface};
-use wayland_server::{EventLoopHandle, resource_is_registered, Init};
+use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_surface};
 
 /// Description of which part of a surface
 /// should be considered damaged and needs to be redrawn
@@ -19,7 +19,7 @@ pub enum Damage {
     /// A rectangle containing the smaazed zone, in buffer coordinates
     ///
     /// Note: Buffer scaling must be taken into consideration
-    Buffer(Rectangle)
+    Buffer(Rectangle),
 }
 
 /// Data associated with a surface, aggreged by the handlers
@@ -166,12 +166,13 @@ impl Default for RegionAttributes {
 /// access data associated with the wl_surface and wl_region managed
 /// by the `CompositorGlobal` that provided it.
 #[derive(Copy,Clone)]
-pub struct CompositorToken<U> {
+pub struct CompositorToken<U, H> {
     hid: usize,
     _data: ::std::marker::PhantomData<*mut U>,
+    _handler: ::std::marker::PhantomData<*mut H>,
 }
 
-impl<U: Send + 'static> CompositorToken<U> {
+impl<U: Send + 'static, H: Handler + Send + 'static> CompositorToken<U, H> {
     /// Access the data of a surface
     ///
     /// The closure will be called with the contents of the data associated with this surface.
@@ -181,7 +182,7 @@ impl<U: Send + 'static> CompositorToken<U> {
     pub fn with_surface_data<F>(&self, surface: &wl_surface::WlSurface, f: F)
         where F: FnOnce(&mut SurfaceAttributes<U>)
     {
-        assert!(resource_is_registered::<_, CompositorHandler<U>>(surface, self.hid),
+        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
                 "Accessing the data of foreign surfaces is not supported.");
         unsafe {
             SurfaceData::<U>::with_data(surface, f);
@@ -198,7 +199,7 @@ impl<U: Send + 'static> CompositorToken<U> {
     pub fn with_surface_tree<F>(&self, surface: &wl_surface::WlSurface, f: F) -> Result<(), ()>
         where F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>) -> bool
     {
-        assert!(resource_is_registered::<_, CompositorHandler<U>>(surface, self.hid),
+        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
                 "Accessing the data of foreign surfaces is not supported.");
         unsafe {
             SurfaceData::<U>::map_tree(surface, f);
@@ -213,23 +214,19 @@ impl<U: Send + 'static> CompositorToken<U> {
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn get_parent(&self, surface: &wl_surface::WlSurface) -> Option<wl_surface::WlSurface> {
-        assert!(resource_is_registered::<_, CompositorHandler<U>>(surface, self.hid),
+        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
                 "Accessing the data of foreign surfaces is not supported.");
-        unsafe {
-            SurfaceData::<U>::get_parent(surface)
-        }
+        unsafe { SurfaceData::<U>::get_parent(surface) }
     }
-    
+
     /// Retrieve the role status this surface
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn role_status(&self, surface: &wl_surface::WlSurface) -> RoleStatus {
-        assert!(resource_is_registered::<_, CompositorHandler<U>>(surface, self.hid),
+        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
                 "Accessing the data of foreign surfaces is not supported.");
-        unsafe {
-            SurfaceData::<U>::role_status(surface)
-        }
+        unsafe { SurfaceData::<U>::role_status(surface) }
     }
 
     /// Register that this surface has a role
@@ -241,12 +238,10 @@ impl<U: Send + 'static> CompositorToken<U> {
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn give_role(&self, surface: &wl_surface::WlSurface) -> Result<(),()> {
-        assert!(resource_is_registered::<_, CompositorHandler<U>>(surface, self.hid),
+    pub fn give_role(&self, surface: &wl_surface::WlSurface) -> Result<(), ()> {
+        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
                 "Accessing the data of foreign surfaces is not supported.");
-        unsafe {
-            SurfaceData::<U>::give_role(surface)
-        }
+        unsafe { SurfaceData::<U>::give_role(surface) }
     }
 
     /// Register that this surface has no role
@@ -257,44 +252,67 @@ impl<U: Send + 'static> CompositorToken<U> {
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn remove_role(&self, surface: &wl_surface::WlSurface) -> Result<(),()> {
-        assert!(resource_is_registered::<_, CompositorHandler<U>>(surface, self.hid),
+    pub fn remove_role(&self, surface: &wl_surface::WlSurface) -> Result<(), ()> {
+        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
                 "Accessing the data of foreign surfaces is not supported.");
-        unsafe {
-            SurfaceData::<U>::remove_role(surface)
-        }
+        unsafe { SurfaceData::<U>::remove_role(surface) }
     }
 }
 
-pub struct CompositorHandler<U> {
+pub struct CompositorHandler<U, H> {
     my_id: usize,
     log: ::slog::Logger,
+    handler: H,
     _data: ::std::marker::PhantomData<U>,
 }
 
-impl<U> Init for CompositorHandler<U> {
+impl<U, H> Init for CompositorHandler<U, H> {
     fn init(&mut self, _evqh: &mut EventLoopHandle, index: usize) {
         self.my_id = index;
         debug!(self.log, "Init finished")
     }
 }
 
-impl<U> CompositorHandler<U> {
-    pub fn new<L>(logger: L) -> CompositorHandler<U>
+impl<U, H> CompositorHandler<U, H> {
+    /// Create a new CompositorHandler
+    pub fn new<L>(handler: H, logger: L) -> CompositorHandler<U, H>
         where L: Into<Option<::slog::Logger>>
     {
         let log = ::slog_or_stdlog(logger);
         CompositorHandler {
             my_id: ::std::usize::MAX,
             log: log.new(o!("smithay_module" => "compositor_handler")),
+            handler: handler,
             _data: ::std::marker::PhantomData,
         }
     }
 
-    pub fn get_token(&self) -> CompositorToken<U> {
+    /// Create a token to access the data associated to the objects managed by this handler.
+    pub fn get_token(&self) -> CompositorToken<U, H> {
+        assert!(self.my_id != ::std::usize::MAX,
+                "CompositorHandler is not initialized yet.");
         CompositorToken {
             hid: self.my_id,
             _data: ::std::marker::PhantomData,
+            _handler: ::std::marker::PhantomData,
         }
     }
+
+    /// Access the underlying sub-handler
+    pub fn get_handler(&mut self) -> &mut H {
+        &mut self.handler
+    }
+}
+
+/// Sub-handler trait for surface event handling
+///
+/// The global provided by Smithay cannot process these events for you, so they
+/// are forwarded directly to a handler implementing this trait that you must provide
+/// at creation of the `CompositorHandler`.
+pub trait Handler {
+    /// See `wayland_server::protocol::wl_surface::Handler::commit`
+    fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface);
+    /// See `wayland_server::protocol::wl_surface::Handler::frame`
+    fn frame(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface,
+             callback: wl_callback::WlCallback);
 }

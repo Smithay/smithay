@@ -1,8 +1,8 @@
-use super::{Rectangle, RectangleKind, SubsurfaceAttributes, Damage, CompositorHandler};
+use super::{CompositorHandler, Damage, Handler as UserHandler, Rectangle, RectangleKind,
+            SubsurfaceAttributes};
 use super::region::RegionData;
 use super::tree::SurfaceData;
-use super::CompositorToken;
-use wayland_server::{Client, Destroy, EventLoopHandle, Init, Resource};
+use wayland_server::{Client, Destroy, EventLoopHandle, Resource};
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_compositor, wl_output, wl_region,
                                wl_subcompositor, wl_subsurface, wl_surface};
 
@@ -14,26 +14,31 @@ struct CompositorDestructor<U> {
  * wl_compositor
  */
 
-impl<U: Default + Send + 'static> wl_compositor::Handler for CompositorHandler<U> {
-    fn create_surface(&mut self, evqh: &mut EventLoopHandle, _: &Client,
-                      _: &wl_compositor::WlCompositor, id: wl_surface::WlSurface) {
+impl<U, H> wl_compositor::Handler for CompositorHandler<U, H>
+    where U: Default + Send + 'static,
+          H: UserHandler + Send + 'static
+{
+    fn create_surface(&mut self, evqh: &mut EventLoopHandle, _: &Client, _: &wl_compositor::WlCompositor,
+                      id: wl_surface::WlSurface) {
         unsafe { SurfaceData::<U>::init(&id) };
-        evqh.register_with_destructor::<_, CompositorHandler<U>, CompositorDestructor<U>>(&id, self.my_id);
+        evqh.register_with_destructor::<_, CompositorHandler<U, H>, CompositorDestructor<U>>(&id, self.my_id);
     }
-    fn create_region(&mut self, evqh: &mut EventLoopHandle, _: &Client,
-                     _: &wl_compositor::WlCompositor, id: wl_region::WlRegion) {
+    fn create_region(&mut self, evqh: &mut EventLoopHandle, _: &Client, _: &wl_compositor::WlCompositor,
+                     id: wl_region::WlRegion) {
         unsafe { RegionData::init(&id) };
-        evqh.register_with_destructor::<_, CompositorHandler<U>, CompositorDestructor<U>>(&id, self.my_id);
+        evqh.register_with_destructor::<_, CompositorHandler<U, H>, CompositorDestructor<U>>(&id, self.my_id);
     }
 }
 
-unsafe impl<U: Default + Send + 'static> ::wayland_server::Handler<wl_compositor::WlCompositor>
-    for CompositorHandler<U> {
+unsafe impl<U, H> ::wayland_server::Handler<wl_compositor::WlCompositor> for CompositorHandler<U, H>
+    where U: Default + Send + 'static,
+          H: UserHandler + Send + 'static
+{
     unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
                       resource: &wl_compositor::WlCompositor, opcode: u32,
                       args: *const ::wayland_server::sys::wl_argument)
                       -> Result<(), ()> {
-        <CompositorHandler<U> as ::wayland_server::protocol::wl_compositor::Handler>::__message(self, evq, client, resource, opcode, args)
+        <CompositorHandler<U, H> as ::wayland_server::protocol::wl_compositor::Handler>::__message(self, evq, client, resource, opcode, args)
     }
 }
 
@@ -41,7 +46,7 @@ unsafe impl<U: Default + Send + 'static> ::wayland_server::Handler<wl_compositor
  * wl_surface
  */
 
-impl<U> wl_surface::Handler for CompositorHandler<U> {
+impl<U, H: UserHandler> wl_surface::Handler for CompositorHandler<U, H> {
     fn attach(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
               buffer: Option<&wl_buffer::WlBuffer>, x: i32, y: i32) {
         unsafe {
@@ -52,13 +57,19 @@ impl<U> wl_surface::Handler for CompositorHandler<U> {
     fn damage(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface, x: i32,
               y: i32, width: i32, height: i32) {
         unsafe {
-            SurfaceData::<U>::with_data(surface,
-                                        |d| d.damage = Damage::Surface(Rectangle { x, y, width, height }));
+            SurfaceData::<U>::with_data(surface, |d| {
+                d.damage = Damage::Surface(Rectangle {
+                                               x,
+                                               y,
+                                               width,
+                                               height,
+                                           })
+            });
         }
     }
-    fn frame(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
+    fn frame(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface,
              callback: wl_callback::WlCallback) {
-        unimplemented!()
+        UserHandler::frame(&mut self.handler, evlh, client, surface, callback);
     }
     fn set_opaque_region(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
                          region: Option<&wl_region::WlRegion>) {
@@ -74,8 +85,8 @@ impl<U> wl_surface::Handler for CompositorHandler<U> {
             SurfaceData::<U>::with_data(surface, |d| d.input_region = attributes);
         }
     }
-    fn commit(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface) {
-        unimplemented!()
+    fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface) {
+        UserHandler::commit(&mut self.handler, evlh, client, surface);
     }
     fn set_buffer_transform(&mut self, _: &mut EventLoopHandle, _: &Client,
                             surface: &wl_surface::WlSurface, transform: wl_output::Transform) {
@@ -92,18 +103,24 @@ impl<U> wl_surface::Handler for CompositorHandler<U> {
     fn damage_buffer(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
                      x: i32, y: i32, width: i32, height: i32) {
         unsafe {
-            SurfaceData::<U>::with_data(surface,
-                                        |d| d.damage = Damage::Buffer(Rectangle { x, y, width, height }));
+            SurfaceData::<U>::with_data(surface, |d| {
+                d.damage = Damage::Buffer(Rectangle {
+                                              x,
+                                              y,
+                                              width,
+                                              height,
+                                          })
+            });
         }
     }
 }
 
-unsafe impl<U> ::wayland_server::Handler<wl_surface::WlSurface> for CompositorHandler<U> {
+unsafe impl<U, H: UserHandler> ::wayland_server::Handler<wl_surface::WlSurface> for CompositorHandler<U, H> {
     unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
                       resource: &wl_surface::WlSurface, opcode: u32,
                       args: *const ::wayland_server::sys::wl_argument)
                       -> Result<(), ()> {
-        <CompositorHandler<U> as ::wayland_server::protocol::wl_surface::Handler>::__message(self, evq, client, resource, opcode, args)
+        <CompositorHandler<U, H> as ::wayland_server::protocol::wl_surface::Handler>::__message(self, evq, client, resource, opcode, args)
     }
 }
 
@@ -117,11 +134,12 @@ impl<U> Destroy<wl_surface::WlSurface> for CompositorDestructor<U> {
  * wl_region
  */
 
-impl<U> wl_region::Handler for CompositorHandler<U> {
+impl<U, H> wl_region::Handler for CompositorHandler<U, H> {
     fn add(&mut self, _: &mut EventLoopHandle, _: &Client, region: &wl_region::WlRegion, x: i32, y: i32,
            width: i32, height: i32) {
         unsafe {
-            RegionData::add_rectangle(region, RectangleKind::Add,
+            RegionData::add_rectangle(region,
+                                      RectangleKind::Add,
                                       Rectangle {
                                           x,
                                           y,
@@ -133,7 +151,8 @@ impl<U> wl_region::Handler for CompositorHandler<U> {
     fn subtract(&mut self, _: &mut EventLoopHandle, _: &Client, region: &wl_region::WlRegion, x: i32,
                 y: i32, width: i32, height: i32) {
         unsafe {
-            RegionData::add_rectangle(region, RectangleKind::Subtract,
+            RegionData::add_rectangle(region,
+                                      RectangleKind::Subtract,
                                       Rectangle {
                                           x,
                                           y,
@@ -144,12 +163,12 @@ impl<U> wl_region::Handler for CompositorHandler<U> {
     }
 }
 
-unsafe impl<U> ::wayland_server::Handler<wl_region::WlRegion> for CompositorHandler<U> {
+unsafe impl<U, H> ::wayland_server::Handler<wl_region::WlRegion> for CompositorHandler<U, H> {
     unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
                       resource: &wl_region::WlRegion, opcode: u32,
                       args: *const ::wayland_server::sys::wl_argument)
                       -> Result<(), ()> {
-        <CompositorHandler<U> as ::wayland_server::protocol::wl_region::Handler>::__message(self, evq, client, resource, opcode, args)
+        <CompositorHandler<U, H> as ::wayland_server::protocol::wl_region::Handler>::__message(self, evq, client, resource, opcode, args)
     }
 }
 
@@ -163,7 +182,10 @@ impl<U> Destroy<wl_region::WlRegion> for CompositorDestructor<U> {
  * wl_subcompositor
  */
 
-impl<U: Send + 'static> wl_subcompositor::Handler for CompositorHandler<U> {
+impl<U, H> wl_subcompositor::Handler for CompositorHandler<U, H>
+    where U: Send + 'static,
+          H: Send + 'static
+{
     fn get_subsurface(&mut self, evqh: &mut EventLoopHandle, _: &Client,
                       resource: &wl_subcompositor::WlSubcompositor, id: wl_subsurface::WlSubsurface,
                       surface: &wl_surface::WlSurface, parent: &wl_surface::WlSurface) {
@@ -176,17 +198,19 @@ impl<U: Send + 'static> wl_subcompositor::Handler for CompositorHandler<U> {
             SurfaceData::<U>::with_data(surface,
                                         |d| d.subsurface_attributes = Some(Default::default()));
         }
-        evqh.register_with_destructor::<_, CompositorHandler<U>, CompositorDestructor<U>>(&id, self.my_id);
+        evqh.register_with_destructor::<_, CompositorHandler<U, H>, CompositorDestructor<U>>(&id, self.my_id);
     }
 }
 
-unsafe impl<U: Send + 'static> ::wayland_server::Handler<wl_subcompositor::WlSubcompositor>
-    for CompositorHandler<U> {
+unsafe impl<U, H> ::wayland_server::Handler<wl_subcompositor::WlSubcompositor> for CompositorHandler<U, H>
+    where U: Send + 'static,
+          H: Send + 'static
+{
     unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
                       resource: &wl_subcompositor::WlSubcompositor, opcode: u32,
                       args: *const ::wayland_server::sys::wl_argument)
                       -> Result<(), ()> {
-        <CompositorHandler<U> as ::wayland_server::protocol::wl_subcompositor::Handler>::__message(self, evq, client, resource, opcode, args)
+        <CompositorHandler<U, H> as ::wayland_server::protocol::wl_subcompositor::Handler>::__message(self, evq, client, resource, opcode, args)
     }
 }
 
@@ -202,9 +226,9 @@ unsafe fn with_subsurface_attributes<U, F>(subsurface: &wl_subsurface::WlSubsurf
     SurfaceData::<U>::with_data(surface, |d| f(d.subsurface_attributes.as_mut().unwrap()));
 }
 
-impl<U> wl_subsurface::Handler for CompositorHandler<U> {
-    fn set_position(&mut self, _: &mut EventLoopHandle, _: &Client,
-                    resource: &wl_subsurface::WlSubsurface, x: i32, y: i32) {
+impl<U, H> wl_subsurface::Handler for CompositorHandler<U, H> {
+    fn set_position(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &wl_subsurface::WlSubsurface,
+                    x: i32, y: i32) {
         unsafe {
             with_subsurface_attributes::<U, _>(resource, |attrs| {
                 attrs.x = x;
@@ -212,34 +236,32 @@ impl<U> wl_subsurface::Handler for CompositorHandler<U> {
             });
         }
     }
-    fn place_above(&mut self, _: &mut EventLoopHandle, _: &Client,
-                   resource: &wl_subsurface::WlSubsurface, sibling: &wl_surface::WlSurface) {
+    fn place_above(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &wl_subsurface::WlSubsurface,
+                   sibling: &wl_surface::WlSurface) {
         unimplemented!()
     }
-    fn place_below(&mut self, _: &mut EventLoopHandle, _: &Client,
-                   resource: &wl_subsurface::WlSubsurface, sibling: &wl_surface::WlSurface) {
+    fn place_below(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &wl_subsurface::WlSubsurface,
+                   sibling: &wl_surface::WlSurface) {
         unimplemented!()
     }
-    fn set_sync(&mut self, _: &mut EventLoopHandle, _: &Client,
-                resource: &wl_subsurface::WlSubsurface) {
+    fn set_sync(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &wl_subsurface::WlSubsurface) {
         unsafe {
             with_subsurface_attributes::<U, _>(resource, |attrs| { attrs.sync = true; });
         }
     }
-    fn set_desync(&mut self, _: &mut EventLoopHandle, _: &Client,
-                  resource: &wl_subsurface::WlSubsurface) {
+    fn set_desync(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &wl_subsurface::WlSubsurface) {
         unsafe {
             with_subsurface_attributes::<U, _>(resource, |attrs| { attrs.sync = false; });
         }
     }
 }
 
-unsafe impl<U> ::wayland_server::Handler<wl_subsurface::WlSubsurface> for CompositorHandler<U> {
+unsafe impl<U, H> ::wayland_server::Handler<wl_subsurface::WlSubsurface> for CompositorHandler<U, H> {
     unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
                       resource: &wl_subsurface::WlSubsurface, opcode: u32,
                       args: *const ::wayland_server::sys::wl_argument)
                       -> Result<(), ()> {
-        <CompositorHandler<U> as ::wayland_server::protocol::wl_subsurface::Handler>::__message(self, evq, client, resource, opcode, args)
+        <CompositorHandler<U, H> as ::wayland_server::protocol::wl_subsurface::Handler>::__message(self, evq, client, resource, opcode, args)
     }
 }
 
