@@ -1,7 +1,7 @@
 use super::{CompositorHandler, Damage, Handler as UserHandler, Rectangle, RectangleKind,
             SubsurfaceAttributes};
 use super::region::RegionData;
-use super::tree::SurfaceData;
+use super::tree::{Location, SurfaceData};
 use wayland_server::{Client, Destroy, EventLoopHandle, Resource};
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_compositor, wl_output, wl_region,
                                wl_subcompositor, wl_subsurface, wl_surface};
@@ -227,31 +227,43 @@ unsafe fn with_subsurface_attributes<U, F>(subsurface: &wl_subsurface::WlSubsurf
 }
 
 impl<U, H> wl_subsurface::Handler for CompositorHandler<U, H> {
-    fn set_position(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &wl_subsurface::WlSubsurface,
-                    x: i32, y: i32) {
+    fn set_position(&mut self, _: &mut EventLoopHandle, _: &Client,
+                    subsurface: &wl_subsurface::WlSubsurface, x: i32, y: i32) {
         unsafe {
-            with_subsurface_attributes::<U, _>(resource, |attrs| {
+            with_subsurface_attributes::<U, _>(subsurface, |attrs| {
                 attrs.x = x;
                 attrs.y = y;
             });
         }
     }
-    fn place_above(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &wl_subsurface::WlSubsurface,
-                   sibling: &wl_surface::WlSurface) {
-        unimplemented!()
-    }
-    fn place_below(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &wl_subsurface::WlSubsurface,
-                   sibling: &wl_surface::WlSurface) {
-        unimplemented!()
-    }
-    fn set_sync(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &wl_subsurface::WlSubsurface) {
+    fn place_above(&mut self, _: &mut EventLoopHandle, _: &Client,
+                   subsurface: &wl_subsurface::WlSubsurface, sibling: &wl_surface::WlSurface) {
         unsafe {
-            with_subsurface_attributes::<U, _>(resource, |attrs| { attrs.sync = true; });
+            let ptr = subsurface.get_user_data();
+            let surface = &*(ptr as *mut wl_surface::WlSurface);
+            if let Err(()) = SurfaceData::<U>::reorder(surface, Location::After, sibling) {
+                subsurface.post_error(wl_subsurface::Error::BadSurface as u32, "Provided surface is not a sibling or parent.".into());
+            }
         }
     }
-    fn set_desync(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &wl_subsurface::WlSubsurface) {
+    fn place_below(&mut self, _: &mut EventLoopHandle, _: &Client,
+                   subsurface: &wl_subsurface::WlSubsurface, sibling: &wl_surface::WlSurface) {
         unsafe {
-            with_subsurface_attributes::<U, _>(resource, |attrs| { attrs.sync = false; });
+            let ptr = subsurface.get_user_data();
+            let surface = &*(ptr as *mut wl_surface::WlSurface);
+            if let Err(()) = SurfaceData::<U>::reorder(surface, Location::Before, sibling) {
+                subsurface.post_error(wl_subsurface::Error::BadSurface as u32, "Provided surface is not a sibling or parent.".into());
+            }
+        }
+    }
+    fn set_sync(&mut self, _: &mut EventLoopHandle, _: &Client, subsurface: &wl_subsurface::WlSubsurface) {
+        unsafe {
+            with_subsurface_attributes::<U, _>(subsurface, |attrs| { attrs.sync = true; });
+        }
+    }
+    fn set_desync(&mut self, _: &mut EventLoopHandle, _: &Client, subsurface: &wl_subsurface::WlSubsurface) {
+        unsafe {
+            with_subsurface_attributes::<U, _>(subsurface, |attrs| { attrs.sync = false; });
         }
     }
 }

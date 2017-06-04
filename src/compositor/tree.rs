@@ -43,6 +43,11 @@ pub enum RoleStatus {
     HasRole,
 }
 
+pub enum Location {
+    Before,
+    After,
+}
+
 impl<U: Default> SurfaceData<U> {
     fn new() -> SurfaceData<U> {
         SurfaceData {
@@ -189,6 +194,54 @@ impl<U> SurfaceData<U> {
         let child_mutex = Self::get_data(child);
         let child_guard = child_mutex.lock().unwrap();
         child_guard.parent.as_ref().map(|p| p.clone_unchecked())
+    }
+
+    /// Reorders a surface relative to one of its sibling
+    ///
+    /// Fails if `relative_to` is not a sibling or parent of `surface`.
+    pub unsafe fn reorder(surface: &wl_surface::WlSurface, to: Location,
+                          relative_to: &wl_surface::WlSurface)
+                          -> Result<(), ()> {
+        let parent = {
+            let data_mutex = Self::get_data(surface);
+            let data_guard = data_mutex.lock().unwrap();
+            data_guard
+                .parent
+                .as_ref()
+                .map(|p| p.clone_unchecked())
+                .unwrap()
+        };
+        if parent.equals(relative_to) {
+            // TODO: handle positioning relative to parent
+            return Ok(());
+        }
+
+        fn index_of(surface: &wl_surface::WlSurface, slice: &[wl_surface::WlSurface]) -> Option<usize> {
+            for (i, s) in slice.iter().enumerate() {
+                if s.equals(surface) {
+                    return Some(i);
+                }
+            }
+            None
+        }
+
+        let parent_mutex = Self::get_data(&parent);
+        let mut parent_guard = parent_mutex.lock().unwrap();
+        let my_index = index_of(surface, &parent_guard.children).unwrap();
+        let mut other_index = match index_of(surface, &parent_guard.children) {
+            Some(idx) => idx,
+            None => return Err(()),
+        };
+        let me = parent_guard.children.remove(my_index);
+        if my_index < other_index {
+            other_index -= 1;
+        }
+        let new_index = match to {
+            Location::Before => other_index,
+            Location::After => other_index + 1,
+        };
+        parent_guard.children.insert(new_index, me);
+        Ok(())
     }
 
     /// Access the attributes associated with a surface

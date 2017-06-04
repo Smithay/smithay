@@ -192,7 +192,8 @@ impl<U: Send + 'static, H: Handler + Send + 'static> CompositorToken<U, H> {
     /// Access the data of a surface tree
     ///
     /// The provided closure is called successively on the surface and all its child subsurfaces,
-    /// in a depth-first order.
+    /// in a depth-first order. This matches the order in which the surfaces are supposed to be
+    /// drawn: top-most last.
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
