@@ -3,13 +3,11 @@ mod handlers;
 mod tree;
 mod region;
 
-pub use self::global::CompositorGlobal;
-use self::handlers::CompositorHandler;
 pub use self::tree::RoleStatus;
 use self::tree::SurfaceData;
 
 use wayland_server::protocol::{wl_buffer, wl_output, wl_surface};
-use wayland_server::resource_is_registered;
+use wayland_server::{EventLoopHandle, resource_is_registered, Init};
 
 /// Description of which part of a surface
 /// should be considered damaged and needs to be redrawn
@@ -173,13 +171,6 @@ pub struct CompositorToken<U> {
     _data: ::std::marker::PhantomData<*mut U>,
 }
 
-fn make_token<U>(hid: usize) -> CompositorToken<U> {
-    CompositorToken {
-        hid: hid,
-        _data: ::std::marker::PhantomData,
-    }
-}
-
 impl<U: Send + 'static> CompositorToken<U> {
     /// Access the data of a surface
     ///
@@ -271,6 +262,39 @@ impl<U: Send + 'static> CompositorToken<U> {
                 "Accessing the data of foreign surfaces is not supported.");
         unsafe {
             SurfaceData::<U>::remove_role(surface)
+        }
+    }
+}
+
+pub struct CompositorHandler<U> {
+    my_id: usize,
+    log: ::slog::Logger,
+    _data: ::std::marker::PhantomData<U>,
+}
+
+impl<U> Init for CompositorHandler<U> {
+    fn init(&mut self, _evqh: &mut EventLoopHandle, index: usize) {
+        self.my_id = index;
+        debug!(self.log, "Init finished")
+    }
+}
+
+impl<U> CompositorHandler<U> {
+    pub fn new<L>(logger: L) -> CompositorHandler<U>
+        where L: Into<Option<::slog::Logger>>
+    {
+        let log = ::slog_or_stdlog(logger);
+        CompositorHandler {
+            my_id: ::std::usize::MAX,
+            log: log.new(o!("smithay_module" => "compositor_handler")),
+            _data: ::std::marker::PhantomData,
+        }
+    }
+
+    pub fn get_token(&self) -> CompositorToken<U> {
+        CompositorToken {
+            hid: self.my_id,
+            _data: ::std::marker::PhantomData,
         }
     }
 }

@@ -1,35 +1,13 @@
-use super::{Rectangle, RectangleKind, SubsurfaceAttributes, Damage};
+use super::{Rectangle, RectangleKind, SubsurfaceAttributes, Damage, CompositorHandler};
 use super::region::RegionData;
 use super::tree::SurfaceData;
+use super::CompositorToken;
 use wayland_server::{Client, Destroy, EventLoopHandle, Init, Resource};
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_compositor, wl_output, wl_region,
                                wl_subcompositor, wl_subsurface, wl_surface};
 
-pub struct CompositorHandler<U> {
-    my_id: usize,
-    log: ::slog::Logger,
-    _data: ::std::marker::PhantomData<U>,
-}
-
 struct CompositorDestructor<U> {
     _t: ::std::marker::PhantomData<U>,
-}
-
-impl<U> Init for CompositorHandler<U> {
-    fn init(&mut self, _evqh: &mut EventLoopHandle, index: usize) {
-        self.my_id = index;
-        debug!(self.log, "Init finished")
-    }
-}
-
-impl<U> CompositorHandler<U> {
-    pub fn new(log: ::slog::Logger) -> CompositorHandler<U> {
-        CompositorHandler {
-            my_id: ::std::usize::MAX,
-            log: log,
-            _data: ::std::marker::PhantomData::<U>,
-        }
-    }
 }
 
 /*
