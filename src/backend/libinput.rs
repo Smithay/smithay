@@ -396,7 +396,7 @@ impl backend::InputBackend for LibinputInputBackend {
                         let device_seat = touch_event.device().seat();
                         let seat = &self.seats
                                         .get(&device_seat)
-                                        .expect("Recieved key event of non existing Seat");
+                                        .expect("Recieved touch event of non existing Seat");
                         match touch_event {
                             TouchEvent::Down(down_event) => {
                                 trace!(self.logger, "Calling on_touch_down with {:?}", down_event);
@@ -446,7 +446,7 @@ impl backend::InputBackend for LibinputInputBackend {
                         let device_seat = pointer_event.device().seat();
                         let seat = &self.seats
                                         .get(&device_seat)
-                                        .expect("Recieved key event of non existing Seat");
+                                        .expect("Recieved pointer event of non existing Seat");
                         match pointer_event {
                             PointerEvent::Motion(motion_event) => {
                                 trace!(self.logger,
