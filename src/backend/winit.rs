@@ -52,14 +52,15 @@ pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitInputBackend), C
     init_from_builder(WindowBuilder::new()
                           .with_dimensions(1280, 800)
                           .with_title("Smithay")
-                          .with_visibility(true), logger)
+                          .with_visibility(true),
+                      logger)
 }
 
 /// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
 /// graphics backend trait, from a given `WindowBuilder` struct and a corresponding
 /// `WinitInputBackend`, which implements the `InputBackend` trait
 pub fn init_from_builder<L>(builder: WindowBuilder, logger: L)
-                         -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
+                            -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
     where L: Into<Option<::slog::Logger>>
 {
     init_from_builder_with_gl_attr(builder,
@@ -68,15 +69,17 @@ pub fn init_from_builder<L>(builder: WindowBuilder, logger: L)
                                        profile: None,
                                        debug: cfg!(debug_assertions),
                                        vsync: true,
-                                   }, logger)
+                                   },
+                                   logger)
 }
 
 /// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
 /// graphics backend trait, from a given `WindowBuilder` struct, as well as given
 /// `GlAttributes` for further customization of the rendering pipeline and a
 /// corresponding `WinitInputBackend`, which implements the `InputBackend` trait.
-pub fn init_from_builder_with_gl_attr<L>(builder: WindowBuilder, attributes: GlAttributes, logger: L)
-                                      -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
+pub fn init_from_builder_with_gl_attr<L>
+    (builder: WindowBuilder, attributes: GlAttributes, logger: L)
+     -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
     where L: Into<Option<::slog::Logger>>
 {
     let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_winit"));
@@ -109,7 +112,8 @@ pub fn init_from_builder_with_gl_attr<L>(builder: WindowBuilder, attributes: GlA
                                   color_bits: Some(24),
                                   alpha_bits: Some(8),
                                   ..Default::default()
-                              }, log.clone()) {
+                              },
+                              log.clone()) {
             Ok(context) => context,
             Err(err) => {
                 error!(log, "EGLContext creation failed:\n {}", err);
@@ -150,7 +154,7 @@ impl GraphicsBackend for WinitGraphicsBackend {
     }
 
     fn set_cursor_representation(&mut self, cursor: Self::CursorFormat) {
-        //Cannot log this one, as `CursorFormat` is not `Debug` and should not be
+        // Cannot log this one, as `CursorFormat` is not `Debug` and should not be
         debug!(self.logger, "Changing cursor representation");
         self.window.set_cursor(cursor)
     }
@@ -485,7 +489,9 @@ impl InputBackend for WinitInputBackend {
 
     fn clear_handler(&mut self) {
         if let Some(mut handler) = self.handler.take() {
-            trace!(self.logger, "Calling on_seat_destroyed with {:?}", self.seat);
+            trace!(self.logger,
+                   "Calling on_seat_destroyed with {:?}",
+                   self.seat);
             handler.on_seat_destroyed(&self.seat);
         }
         info!(self.logger, "Removing input handler");
@@ -546,7 +552,9 @@ impl InputBackend for WinitInputBackend {
                                                      *key_counter = key_counter.checked_sub(1).unwrap_or(0)
                                                  }
                                              };
-                                             trace!(logger, "Calling on_keyboard_key with {:?}", (scancode, state));
+                                             trace!(logger,
+                                                    "Calling on_keyboard_key with {:?}",
+                                                    (scancode, state));
                                              handler.on_keyboard_key(seat,
                                                                      WinitKeyboardInputEvent {
                                                                          time: *time_counter,
@@ -557,7 +565,9 @@ impl InputBackend for WinitInputBackend {
                                          }
                                          (WindowEvent::MouseMoved { position: (x, y), .. },
                                           Some(handler)) => {
-                                             trace!(logger, "Calling on_pointer_move_absolute with {:?}", (x, y));
+                                             trace!(logger,
+                                                    "Calling on_pointer_move_absolute with {:?}",
+                                                    (x, y));
                                              handler.on_pointer_move_absolute(seat,
                                                                               WinitMouseMovedEvent {
                                                                                   window: window.clone(),
@@ -571,28 +581,34 @@ impl InputBackend for WinitInputBackend {
                                                  MouseScrollDelta::LineDelta(x, y) |
                                                  MouseScrollDelta::PixelDelta(x, y) => {
                                                      if x != 0.0 {
-                                                         let event = WinitMouseWheelEvent {
-                                                            axis: Axis::Horizontal,
-                                                            time: *time_counter,
-                                                            delta: delta,
-                                                         };
-                                                         trace!(logger, "Calling on_pointer_axis for Axis::Horizontal with {:?}", x);
-                                                         handler.on_pointer_axis(seat, event);
-                                                     }
+                            let event = WinitMouseWheelEvent {
+                                axis: Axis::Horizontal,
+                                time: *time_counter,
+                                delta: delta,
+                            };
+                            trace!(logger,
+                                   "Calling on_pointer_axis for Axis::Horizontal with {:?}",
+                                   x);
+                            handler.on_pointer_axis(seat, event);
+                        }
                                                      if y != 0.0 {
-                                                         let event = WinitMouseWheelEvent {
-                                                            axis: Axis::Vertical,
-                                                            time: *time_counter,
-                                                            delta: delta,
-                                                         };
-                                                         trace!(logger, "Calling on_pointer_axis for Axis::Vertical with {:?}", y);
-                                                         handler.on_pointer_axis(seat, event);
-                                                     }
+                            let event = WinitMouseWheelEvent {
+                                axis: Axis::Vertical,
+                                time: *time_counter,
+                                delta: delta,
+                            };
+                            trace!(logger,
+                                   "Calling on_pointer_axis for Axis::Vertical with {:?}",
+                                   y);
+                            handler.on_pointer_axis(seat, event);
+                        }
                                                  }
                                              }
                                          }
                                          (WindowEvent::MouseInput { state, button, .. }, Some(handler)) => {
-                                             trace!(logger, "Calling on_pointer_button with {:?}", (button, state));
+                                             trace!(logger,
+                                                    "Calling on_pointer_button with {:?}",
+                                                    (button, state));
                                              handler.on_pointer_button(seat,
                                                                        WinitMouseInputEvent {
                                                                            time: *time_counter,
@@ -666,11 +682,11 @@ impl InputBackend for WinitInputBackend {
                                                                          time: *time_counter,
                                                                          id: id,
                                                                      })
-                                         },
+                                         }
                                          (WindowEvent::Closed, _) => {
                                              warn!(logger, "Window closed");
                                              *closed_ptr = true;
-                                         },
+                                         }
                                          _ => {}
                                      }
                                      *time_counter += 1;

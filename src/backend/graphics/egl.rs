@@ -126,8 +126,9 @@ impl EGLContext {
     ///
     /// This method is marked unsafe, because the contents of `Native` cannot be verified and msy
     /// contain dangeling pointers are similar unsafe content
-    pub unsafe fn new<L>(native: Native, mut attributes: GlAttributes, reqs: PixelFormatRequirements, logger: L)
-                      -> Result<EGLContext, CreationError>
+    pub unsafe fn new<L>(native: Native, mut attributes: GlAttributes, reqs: PixelFormatRequirements,
+                         logger: L)
+                         -> Result<EGLContext, CreationError>
         where L: Into<Option<::slog::Logger>>
     {
         let logger = logger.into();
@@ -164,12 +165,15 @@ impl EGLContext {
                 }
             }
             Some((1, _)) => {
-                error!(log, "OpenGLES 1.* is not supported by the EGL renderer backend");
-                return Err(CreationError::OpenGlVersionNotSupported)
+                error!(log,
+                       "OpenGLES 1.* is not supported by the EGL renderer backend");
+                return Err(CreationError::OpenGlVersionNotSupported);
             }
             Some(version) => {
-                error!(log, "OpenGLES {:?} is unknown and not supported by the EGL renderer backend", version);
-                return Err(CreationError::OpenGlVersionNotSupported)
+                error!(log,
+                       "OpenGLES {:?} is unknown and not supported by the EGL renderer backend",
+                       version);
+                return Err(CreationError::OpenGlVersionNotSupported);
             }
         };
 
@@ -219,7 +223,8 @@ impl EGLContext {
 
             Native::Wayland(display, _) if has_dp_extension("EGL_KHR_platform_wayland") &&
                                            egl.GetPlatformDisplay.is_loaded() => {
-                trace!(log, "EGL Display Initialization via EGL_KHR_platform_wayland");
+                trace!(log,
+                       "EGL Display Initialization via EGL_KHR_platform_wayland");
                 egl.GetPlatformDisplay(ffi::egl::PLATFORM_WAYLAND_KHR,
                                        display as *mut _,
                                        ptr::null())
@@ -227,7 +232,8 @@ impl EGLContext {
 
             Native::Wayland(display, _) if has_dp_extension("EGL_EXT_platform_wayland") &&
                                            egl.GetPlatformDisplayEXT.is_loaded() => {
-                trace!(log, "EGL Display Initialization via EGL_EXT_platform_wayland");
+                trace!(log,
+                       "EGL Display Initialization via EGL_EXT_platform_wayland");
                 egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_WAYLAND_EXT,
                                           display as *mut _,
                                           ptr::null())
@@ -238,7 +244,7 @@ impl EGLContext {
             Native::Wayland(display, _) => {
                 trace!(log, "Default EGL Display Initialization via GetDisplay");
                 egl.GetDisplay(display as *mut _)
-            },
+            }
         };
 
         let egl_version = {
@@ -269,7 +275,8 @@ impl EGLContext {
         info!(log, "EGL Extensions: {:?}", extensions);
 
         if egl_version >= (1, 2) && egl.BindAPI(ffi::egl::OPENGL_ES_API) == 0 {
-            error!(log, "OpenGLES not supported by the underlying EGL implementation");
+            error!(log,
+                   "OpenGLES not supported by the underlying EGL implementation");
             return Err(CreationError::OpenGlVersionNotSupported);
         }
 
@@ -292,7 +299,8 @@ impl EGLContext {
             match version {
                 (3, _) => {
                     if egl_version < (1, 3) {
-                        error!(log, "OpenglES 3.* is not supported on EGL Versions lower then 1.3");
+                        error!(log,
+                               "OpenglES 3.* is not supported on EGL Versions lower then 1.3");
                         return Err(CreationError::NoAvailablePixelFormat);
                     }
                     trace!(log, "Setting RENDERABLE_TYPE to OPENGL_ES3");
@@ -304,7 +312,8 @@ impl EGLContext {
                 }
                 (2, _) => {
                     if egl_version < (1, 3) {
-                        error!(log, "OpenglES 2.* is not supported on EGL Versions lower then 1.3");
+                        error!(log,
+                               "OpenglES 2.* is not supported on EGL Versions lower then 1.3");
                         return Err(CreationError::NoAvailablePixelFormat);
                     }
                     trace!(log, "Setting RENDERABLE_TYPE to OPENGL_ES2");
@@ -332,10 +341,14 @@ impl EGLContext {
                 trace!(log, "Setting RED_SIZE to {}", color / 3);
                 out.push(ffi::egl::RED_SIZE as c_int);
                 out.push((color / 3) as c_int);
-                trace!(log, "Setting GREEN_SIZE to {}", color / 3 + if color % 3 != 0 { 1 } else { 0 });
+                trace!(log,
+                       "Setting GREEN_SIZE to {}",
+                       color / 3 + if color % 3 != 0 { 1 } else { 0 });
                 out.push(ffi::egl::GREEN_SIZE as c_int);
                 out.push((color / 3 + if color % 3 != 0 { 1 } else { 0 }) as c_int);
-                trace!(log, "Setting BLUE_SIZE to {}", color / 3 + if color % 3 == 2 { 1 } else { 0 });
+                trace!(log,
+                       "Setting BLUE_SIZE to {}",
+                       color / 3 + if color % 3 == 2 { 1 } else { 0 });
                 out.push(ffi::egl::BLUE_SIZE as c_int);
                 out.push((color / 3 + if color % 3 == 2 { 1 } else { 0 }) as c_int);
             }
@@ -456,9 +469,10 @@ impl EGLContext {
         if context.is_null() {
             match egl.GetError() as u32 {
                 ffi::egl::BAD_ATTRIBUTE => {
-                    error!(log, "Context creation failed as one or more requirements could not be met. Try removing some gl attributes or pixel format requirements");
+                    error!(log,
+                           "Context creation failed as one or more requirements could not be met. Try removing some gl attributes or pixel format requirements");
                     return Err(CreationError::OpenGlVersionNotSupported);
-                },
+                }
                 e => panic!("eglCreateContext failed: 0x{:x}", e),
             }
         }
@@ -472,13 +486,13 @@ impl EGLContext {
                     trace!(log, "Setting RENDER_BUFFER to BACK_BUFFER");
                     out.push(ffi::egl::RENDER_BUFFER as c_int);
                     out.push(ffi::egl::BACK_BUFFER as c_int);
-                },
+                }
                 Some(false) => {
                     trace!(log, "Setting RENDER_BUFFER to SINGLE_BUFFER");
                     out.push(ffi::egl::RENDER_BUFFER as c_int);
                     out.push(ffi::egl::SINGLE_BUFFER as c_int);
-                },
-                None => {},
+                }
+                None => {}
             }
 
             out
@@ -489,7 +503,9 @@ impl EGLContext {
             let surface = match native {
                 Native::X11(_, window) |
                 Native::Wayland(_, window) |
-                Native::Gbm(_, window) => egl.CreateWindowSurface(display, config_id, window, surface_attributes.as_ptr()),
+                Native::Gbm(_, window) => {
+                    egl.CreateWindowSurface(display, config_id, window, surface_attributes.as_ptr())
+                }
             };
 
             if surface.is_null() {
