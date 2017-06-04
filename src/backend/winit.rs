@@ -25,6 +25,7 @@ use winit::os::unix::{WindowExt, get_x11_xconnection};
 pub struct WinitGraphicsBackend {
     window: Rc<Window>,
     context: EGLContext,
+    logger: ::slog::Logger,
 }
 
 /// Abstracted event loop of a `winit` `Window` implementing the `InputBackend` trait
@@ -39,50 +40,64 @@ pub struct WinitInputBackend {
     seat: Seat,
     input_config: (),
     handler: Option<Box<InputHandler<WinitInputBackend> + 'static>>,
+    logger: ::slog::Logger,
 }
 
 /// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
 /// graphics backend trait and a corresponding `WinitInputBackend`, which implements
 /// the `InputBackend` trait
-pub fn init() -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError> {
+pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
+    where L: Into<Option<::slog::Logger>>
+{
     init_from_builder(WindowBuilder::new()
                           .with_dimensions(1280, 800)
                           .with_title("Smithay")
-                          .with_visibility(true))
+                          .with_visibility(true), logger)
 }
 
 /// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
 /// graphics backend trait, from a given `WindowBuilder` struct and a corresponding
 /// `WinitInputBackend`, which implements the `InputBackend` trait
-pub fn init_from_builder(builder: WindowBuilder)
-                         -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError> {
+pub fn init_from_builder<L>(builder: WindowBuilder, logger: L)
+                         -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
+    where L: Into<Option<::slog::Logger>>
+{
     init_from_builder_with_gl_attr(builder,
                                    GlAttributes {
                                        version: None,
                                        profile: None,
                                        debug: cfg!(debug_assertions),
                                        vsync: true,
-                                   })
+                                   }, logger)
 }
 
 /// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
 /// graphics backend trait, from a given `WindowBuilder` struct, as well as given
 /// `GlAttributes` for further customization of the rendering pipeline and a
 /// corresponding `WinitInputBackend`, which implements the `InputBackend` trait.
-pub fn init_from_builder_with_gl_attr(builder: WindowBuilder, attributes: GlAttributes)
-                                      -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError> {
+pub fn init_from_builder_with_gl_attr<L>(builder: WindowBuilder, attributes: GlAttributes, logger: L)
+                                      -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
+    where L: Into<Option<::slog::Logger>>
+{
+    let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_winit"));
+    info!(log, "Initializing a winit backend");
+
     let events_loop = EventsLoop::new();
     let window = Rc::new(builder.build(&events_loop)?);
+    debug!(log, "Window created");
 
     let (native, surface) = if let (Some(conn), Some(window)) =
         (get_x11_xconnection(), window.get_xlib_window()) {
+        debug!(log, "Window is backed by X11");
         (Native::X11(conn.display as *const _, window), None)
     } else if let (Some(display), Some(surface)) =
         (window.get_wayland_display(), window.get_wayland_client_surface()) {
+        debug!(log, "Window is backed by Wayland");
         let (w, h) = window.get_inner_size().unwrap();
         let egl_surface = wegl::WlEglSurface::new(surface, w as i32, h as i32);
         (Native::Wayland(display, egl_surface.ptr() as *const _), Some(egl_surface))
     } else {
+        error!(log, "Window is backed by an unsupported graphics framework");
         return Err(CreationError::NotSupported);
     };
 
@@ -94,10 +109,10 @@ pub fn init_from_builder_with_gl_attr(builder: WindowBuilder, attributes: GlAttr
                                   color_bits: Some(24),
                                   alpha_bits: Some(8),
                                   ..Default::default()
-                              }) {
+                              }, log.clone()) {
             Ok(context) => context,
             Err(err) => {
-                println!("EGLContext creation failed:\n{}", err);
+                error!(log, "EGLContext creation failed:\n {}", err);
                 return Err(err);
             }
         }
@@ -106,6 +121,7 @@ pub fn init_from_builder_with_gl_attr(builder: WindowBuilder, attributes: GlAttr
     Ok((WinitGraphicsBackend {
             window: window.clone(),
             context: context,
+            logger: log.new(o!("smithay_winit_component" => "graphics")),
         },
         WinitInputBackend {
             events_loop: events_loop,
@@ -121,6 +137,7 @@ pub fn init_from_builder_with_gl_attr(builder: WindowBuilder, attributes: GlAttr
                             }),
             input_config: (),
             handler: None,
+            logger: log.new(o!("smithay_winit_component" => "input")),
         }))
 }
 
@@ -128,20 +145,25 @@ impl GraphicsBackend for WinitGraphicsBackend {
     type CursorFormat = MouseCursor;
 
     fn set_cursor_position(&mut self, x: u32, y: u32) -> Result<(), ()> {
+        debug!(self.logger, "Setting cursor position to {:?}", (x, y));
         self.window.set_cursor_position(x as i32, y as i32)
     }
 
     fn set_cursor_representation(&mut self, cursor: Self::CursorFormat) {
+        //Cannot log this one, as `CursorFormat` is not `Debug` and should not be
+        debug!(self.logger, "Changing cursor representation");
         self.window.set_cursor(cursor)
     }
 }
 
 impl EGLGraphicsBackend for WinitGraphicsBackend {
     fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
+        trace!(self.logger, "Swapping buffers");
         self.context.swap_buffers()
     }
 
     unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
+        trace!(self.logger, "Getting symbol for {:?}", symbol);
         self.context.get_proc_address(symbol)
     }
 
@@ -156,6 +178,7 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
     }
 
     unsafe fn make_current(&self) -> Result<(), SwapBuffersError> {
+        debug!(self.logger, "Making context the current one");
         self.context.make_current()
     }
 
@@ -448,6 +471,8 @@ impl InputBackend for WinitInputBackend {
         if self.handler.is_some() {
             self.clear_handler();
         }
+        info!(self.logger, "New input handler set.");
+        trace!(self.logger, "Calling on_seat_created with {:?}", self.seat);
         handler.on_seat_created(&self.seat);
         self.handler = Some(Box::new(handler));
     }
@@ -460,8 +485,10 @@ impl InputBackend for WinitInputBackend {
 
     fn clear_handler(&mut self) {
         if let Some(mut handler) = self.handler.take() {
+            trace!(self.logger, "Calling on_seat_destroyed with {:?}", self.seat);
             handler.on_seat_destroyed(&self.seat);
         }
+        info!(self.logger, "Removing input handler");
     }
 
     fn input_config(&mut self) -> &mut Self::InputConfig {
@@ -484,6 +511,11 @@ impl InputBackend for WinitInputBackend {
         let mut closed = false;
 
         {
+            // NOTE: This ugly pile of references is here, because rustc could
+            // figure out how to reference all these objects correctly into the
+            // upcoming closure, which is why all are borrowed manually and the
+            // assignments are then moved into the closure to avoid rustc's
+            // wrong interference.
             let mut closed_ptr = &mut closed;
             let mut key_counter = &mut self.key_counter;
             let mut time_counter = &mut self.time_counter;
@@ -491,12 +523,14 @@ impl InputBackend for WinitInputBackend {
             let window = &self.window;
             let surface = &self.surface;
             let mut handler = self.handler.as_mut();
+            let logger = &self.logger;
 
             self.events_loop
                 .poll_events(move |event| match event {
                                  Event::WindowEvent { event, .. } => {
                                      match (event, handler.as_mut()) {
                                          (WindowEvent::Resized(x, y), _) => {
+                                             trace!(logger, "Resizing window to {:?}", (x, y));
                                              window.set_inner_size(x, y);
                                              if let Some(wl_egl_surface) = surface.as_ref() {
                                                  wl_egl_surface.resize(x as i32, y as i32, 0, 0);
@@ -512,6 +546,7 @@ impl InputBackend for WinitInputBackend {
                                                      *key_counter = key_counter.checked_sub(1).unwrap_or(0)
                                                  }
                                              };
+                                             trace!(logger, "Calling on_keyboard_key with {:?}", (scancode, state));
                                              handler.on_keyboard_key(seat,
                                                                      WinitKeyboardInputEvent {
                                                                          time: *time_counter,
@@ -522,6 +557,7 @@ impl InputBackend for WinitInputBackend {
                                          }
                                          (WindowEvent::MouseMoved { position: (x, y), .. },
                                           Some(handler)) => {
+                                             trace!(logger, "Calling on_pointer_move_absolute with {:?}", (x, y));
                                              handler.on_pointer_move_absolute(seat,
                                                                               WinitMouseMovedEvent {
                                                                                   window: window.clone(),
@@ -531,24 +567,32 @@ impl InputBackend for WinitInputBackend {
                                                                               })
                                          }
                                          (WindowEvent::MouseWheel { delta, .. }, Some(handler)) => {
-                                             let event = WinitMouseWheelEvent {
-                                                 axis: Axis::Horizontal,
-                                                 time: *time_counter,
-                                                 delta: delta,
-                                             };
                                              match delta {
                                                  MouseScrollDelta::LineDelta(x, y) |
                                                  MouseScrollDelta::PixelDelta(x, y) => {
                                                      if x != 0.0 {
+                                                         let event = WinitMouseWheelEvent {
+                                                            axis: Axis::Horizontal,
+                                                            time: *time_counter,
+                                                            delta: delta,
+                                                         };
+                                                         trace!(logger, "Calling on_pointer_axis for Axis::Horizontal with {:?}", x);
                                                          handler.on_pointer_axis(seat, event);
                                                      }
                                                      if y != 0.0 {
+                                                         let event = WinitMouseWheelEvent {
+                                                            axis: Axis::Vertical,
+                                                            time: *time_counter,
+                                                            delta: delta,
+                                                         };
+                                                         trace!(logger, "Calling on_pointer_axis for Axis::Vertical with {:?}", y);
                                                          handler.on_pointer_axis(seat, event);
                                                      }
                                                  }
                                              }
                                          }
                                          (WindowEvent::MouseInput { state, button, .. }, Some(handler)) => {
+                                             trace!(logger, "Calling on_pointer_button with {:?}", (button, state));
                                              handler.on_pointer_button(seat,
                                                                        WinitMouseInputEvent {
                                                                            time: *time_counter,
@@ -563,6 +607,7 @@ impl InputBackend for WinitInputBackend {
                                                                  ..
                                                              }),
                                           Some(handler)) => {
+                                             trace!(logger, "Calling on_touch_down at {:?}", (x, y));
                                              handler.on_touch_down(seat,
                                                                    WinitTouchStartedEvent {
                                                                        window: window.clone(),
@@ -578,6 +623,7 @@ impl InputBackend for WinitInputBackend {
                                                                  ..
                                                              }),
                                           Some(handler)) => {
+                                             trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
                                              handler.on_touch_motion(seat,
                                                                      WinitTouchMovedEvent {
                                                                          window: window.clone(),
@@ -593,6 +639,7 @@ impl InputBackend for WinitInputBackend {
                                                                  ..
                                                              }),
                                           Some(handler)) => {
+                                             trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
                                              handler.on_touch_motion(seat,
                                                                      WinitTouchMovedEvent {
                                                                          window: window.clone(),
@@ -600,6 +647,7 @@ impl InputBackend for WinitInputBackend {
                                                                          location: (x, y),
                                                                          id: id,
                                                                      });
+                                             trace!(logger, "Calling on_touch_up");
                                              handler.on_touch_up(seat,
                                                                  WinitTouchEndedEvent {
                                                                      time: *time_counter,
@@ -612,13 +660,17 @@ impl InputBackend for WinitInputBackend {
                                                                  ..
                                                              }),
                                           Some(handler)) => {
+                                             trace!(logger, "Calling on_touch_cancel");
                                              handler.on_touch_cancel(seat,
                                                                      WinitTouchCancelledEvent {
                                                                          time: *time_counter,
                                                                          id: id,
                                                                      })
-                                         }
-                                         (WindowEvent::Closed, _) => *closed_ptr = true,
+                                         },
+                                         (WindowEvent::Closed, _) => {
+                                             warn!(logger, "Window closed");
+                                             *closed_ptr = true;
+                                         },
                                          _ => {}
                                      }
                                      *time_counter += 1;
