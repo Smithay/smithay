@@ -135,17 +135,6 @@ impl EGLContext {
         let log = ::slog_or_stdlog(logger.clone()).new(o!("smithay_module" => "renderer_egl"));
         trace!(log, "Loading libEGL");
 
-        let lib = Library::new("libEGL.so.1")?;
-        let egl = ffi::egl::Egl::load_with(|sym| {
-                                               let name = CString::new(sym).unwrap();
-                                               let symbol = lib.get::<*mut c_void>(name.as_bytes());
-                                               match symbol {
-                                                   Ok(x) => *x as *const _,
-                                                   Err(_) => ptr::null(),
-                                               }
-                                           });
-
-
         // If no version is given, try OpenGLES 3.0, if available,
         // fallback to 2.0 otherwise
         let version = match attributes.version {
@@ -176,6 +165,16 @@ impl EGLContext {
                 return Err(CreationError::OpenGlVersionNotSupported);
             }
         };
+
+        let lib = Library::new("libEGL.so.1")?;
+        let egl = ffi::egl::Egl::load_with(|sym| {
+                                               let name = CString::new(sym).unwrap();
+                                               let symbol = lib.get::<*mut c_void>(name.as_bytes());
+                                               match symbol {
+                                                   Ok(x) => *x as *const _,
+                                                   Err(_) => ptr::null(),
+                                               }
+                                           });
 
         // the first step is to query the list of extensions without any display, if supported
         let dp_extensions = {
