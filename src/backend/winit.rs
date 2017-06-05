@@ -182,7 +182,7 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
     }
 
     unsafe fn make_current(&self) -> Result<(), SwapBuffersError> {
-        debug!(self.logger, "Making context the current one");
+        debug!(self.logger, "Setting EGL context to be the current context");
         self.context.make_current()
     }
 
