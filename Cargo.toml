@@ -15,7 +15,7 @@ libloading = "0.4.0"
 wayland-client = { version = "~0.8.6", optional = true }
 winit = { git = "https://github.com/tomaka/winit.git", optional = true }
 glium = { version = "~0.16.0", optional = true }
-input = { version = "~0.1.1", optional = true }
+input = { version = "~0.2.0", optional = true }
 clippy = { version = "*", optional = true }
 
 [build-dependencies]
