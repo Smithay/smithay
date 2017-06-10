@@ -13,6 +13,8 @@ extern crate wayland_server;
 extern crate nix;
 extern crate xkbcommon;
 extern crate tempfile;
+#[macro_use]
+extern crate rental;
 
 #[cfg(feature = "backend_winit")]
 extern crate winit;

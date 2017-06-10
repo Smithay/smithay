@@ -2,7 +2,7 @@
 
 use backend::{SeatInternal, TouchSlotInternal};
 use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{CreationError, EGLContext, EGLGraphicsBackend, GlAttributes, Native,
+use backend::graphics::egl::{CreationError, EGLContext, EGLGraphicsBackend, GlAttributes, NativeDisplay, NativeSurface,
                              PixelFormat, PixelFormatRequirements, SwapBuffersError};
 use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState,
                      KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
@@ -20,11 +20,25 @@ use winit::{CreationError as WinitCreationError, ElementState, Event, EventsLoop
             WindowBuilder, WindowEvent};
 use winit::os::unix::{WindowExt, get_x11_xconnection};
 
+rental! {
+    mod egl {
+        use std::boxed::Box;
+        use ::backend::graphics::egl::{EGLContext, EGLSurface};
+
+
+        #[rental(deref_suffix)]
+        pub struct RentEGL {
+            context: Box<EGLContext>,
+            surface: EGLSurface<'context>,
+        }
+    }
+}
+
 /// Window with an active EGL Context created by `winit`. Implements the
 /// `EGLGraphicsBackend` graphics backend trait
 pub struct WinitGraphicsBackend {
     window: Rc<Window>,
-    context: EGLContext,
+    context: egl::RentEGL,
     logger: ::slog::Logger,
 }
 
@@ -89,23 +103,22 @@ pub fn init_from_builder_with_gl_attr<L>
     let window = Rc::new(builder.build(&events_loop)?);
     debug!(log, "Window created");
 
-    let (native, surface) = if let (Some(conn), Some(window)) =
-        (get_x11_xconnection(), window.get_xlib_window()) {
-        debug!(log, "Window is backed by X11");
-        (Native::X11(conn.display as *const _, window), None)
-    } else if let (Some(display), Some(surface)) =
-        (window.get_wayland_display(), window.get_wayland_client_surface()) {
-        debug!(log, "Window is backed by Wayland");
-        let (w, h) = window.get_inner_size().unwrap();
-        let egl_surface = wegl::WlEglSurface::new(surface, w as i32, h as i32);
-        (Native::Wayland(display, egl_surface.ptr() as *const _), Some(egl_surface))
-    } else {
-        error!(log, "Window is backed by an unsupported graphics framework");
-        return Err(CreationError::NotSupported);
-    };
+    let (native_display, native_surface, surface) =
+        if let (Some(conn), Some(window)) = (get_x11_xconnection(), window.get_xlib_window()) {
+            debug!(log, "Window is backed by X11");
+            (NativeDisplay::X11(conn.display as *const _), NativeSurface::X11(window), None)
+        } else if let (Some(display), Some(surface)) = (window.get_wayland_display(), window.get_wayland_client_surface()) {
+            debug!(log, "Window is backed by Wayland");
+            let (w, h) = window.get_inner_size().unwrap();
+            let egl_surface = wegl::WlEglSurface::new(surface, w as i32, h as i32);
+            (NativeDisplay::Wayland(display), NativeSurface::Wayland(egl_surface.ptr() as *const _), Some(egl_surface))
+        } else {
+            error!(log, "Window is backed by an unsupported graphics framework");
+            return Err(CreationError::NotSupported)
+        };
 
     let context = unsafe {
-        match EGLContext::new(native,
+        match EGLContext::new(native_display,
                               attributes,
                               PixelFormatRequirements {
                                   hardware_accelerated: Some(true),
@@ -124,7 +137,10 @@ pub fn init_from_builder_with_gl_attr<L>
 
     Ok((WinitGraphicsBackend {
             window: window.clone(),
-            context: context,
+            context: match egl::RentEGL::try_new(Box::new(context), move |context| unsafe { context.create_surface(native_surface) }) {
+                Ok(x) => x,
+                Err(::rental::TryNewError(err, _)) => return Err(err),
+            },
             logger: log.new(o!("smithay_winit_component" => "graphics")),
         },
         WinitInputBackend {
@@ -163,7 +179,7 @@ impl GraphicsBackend for WinitGraphicsBackend {
 impl EGLGraphicsBackend for WinitGraphicsBackend {
     fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
         trace!(self.logger, "Swapping buffers");
-        self.context.swap_buffers()
+        self.context.rent(|surface| surface.swap_buffers())
     }
 
     unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
@@ -183,7 +199,7 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
 
     unsafe fn make_current(&self) -> Result<(), SwapBuffersError> {
         debug!(self.logger, "Setting EGL context to be the current context");
-        self.context.make_current()
+        self.context.rent(|surface| surface.make_current())
     }
 
     fn get_pixel_format(&self) -> PixelFormat {

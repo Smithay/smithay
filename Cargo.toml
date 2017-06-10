@@ -17,6 +17,7 @@ winit = { git = "https://github.com/tomaka/winit.git", optional = true }
 glium = { version = "~0.16.0", optional = true }
 input = { version = "~0.2.0", optional = true }
 clippy = { version = "*", optional = true }
+rental = "0.4.11"
 
 [build-dependencies]
 gl_generator = "0.5"
