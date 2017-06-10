@@ -17,8 +17,8 @@ use std::ffi::{CStr, CString};
 use std::fmt;
 use std::io;
 use std::mem;
-use std::ptr;
 use std::ops::Deref;
+use std::ptr;
 
 #[allow(non_camel_case_types, dead_code)]
 mod ffi {
@@ -155,8 +155,8 @@ impl EGLContext {
     ///
     /// This method is marked unsafe, because the contents of `NativeDisplay` cannot be verified and msy
     /// contain dangeling pointers are similar unsafe content
-    pub unsafe fn new<L>(native: NativeDisplay, mut attributes: GlAttributes, reqs: PixelFormatRequirements,
-                         logger: L)
+    pub unsafe fn new<L>(native: NativeDisplay, mut attributes: GlAttributes,
+                         reqs: PixelFormatRequirements, logger: L)
                          -> Result<EGLContext, CreationError>
         where L: Into<Option<::slog::Logger>>
     {
@@ -226,31 +226,31 @@ impl EGLContext {
 
         let display = match native {
             NativeDisplay::X11(display) if has_dp_extension("EGL_KHR_platform_x11") &&
-                                       egl.GetPlatformDisplay.is_loaded() => {
+                                           egl.GetPlatformDisplay.is_loaded() => {
                 trace!(log, "EGL Display Initialization via EGL_KHR_platform_x11");
                 egl.GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, ptr::null())
             }
 
             NativeDisplay::X11(display) if has_dp_extension("EGL_EXT_platform_x11") &&
-                                       egl.GetPlatformDisplayEXT.is_loaded() => {
+                                           egl.GetPlatformDisplayEXT.is_loaded() => {
                 trace!(log, "EGL Display Initialization via EGL_EXT_platform_x11");
                 egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_X11_EXT, display as *mut _, ptr::null())
             }
 
             NativeDisplay::Gbm(display) if has_dp_extension("EGL_KHR_platform_gbm") &&
-                                       egl.GetPlatformDisplay.is_loaded() => {
+                                           egl.GetPlatformDisplay.is_loaded() => {
                 trace!(log, "EGL Display Initialization via EGL_KHR_platform_gbm");
                 egl.GetPlatformDisplay(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null())
             }
 
             NativeDisplay::Gbm(display) if has_dp_extension("EGL_MESA_platform_gbm") &&
-                                       egl.GetPlatformDisplayEXT.is_loaded() => {
+                                           egl.GetPlatformDisplayEXT.is_loaded() => {
                 trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
                 egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null())
             }
 
             NativeDisplay::Wayland(display) if has_dp_extension("EGL_KHR_platform_wayland") &&
-                                           egl.GetPlatformDisplay.is_loaded() => {
+                                               egl.GetPlatformDisplay.is_loaded() => {
                 trace!(log,
                        "EGL Display Initialization via EGL_KHR_platform_wayland");
                 egl.GetPlatformDisplay(ffi::egl::PLATFORM_WAYLAND_KHR,
@@ -259,7 +259,7 @@ impl EGLContext {
             }
 
             NativeDisplay::Wayland(display) if has_dp_extension("EGL_EXT_platform_wayland") &&
-                                           egl.GetPlatformDisplayEXT.is_loaded() => {
+                                               egl.GetPlatformDisplayEXT.is_loaded() => {
                 trace!(log,
                        "EGL Display Initialization via EGL_EXT_platform_wayland");
                 egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_WAYLAND_EXT,
@@ -528,15 +528,15 @@ impl EGLContext {
         info!(log, "EGL context created");
 
         Ok(EGLContext {
-            _lib: lib,
-            context: context as *const _,
-            display: display as *const _,
-            egl: egl,
-            config_id: config_id,
-            surface_attributes: surface_attributes,
-            pixel_format: desc,
-            logger: log,
-        })
+               _lib: lib,
+               context: context as *const _,
+               display: display as *const _,
+               egl: egl,
+               config_id: config_id,
+               surface_attributes: surface_attributes,
+               pixel_format: desc,
+               logger: log,
+           })
     }
 
     /// Creates a surface bound to the given egl context for rendering
@@ -545,14 +545,21 @@ impl EGLContext {
     ///
     /// This method is marked unsafe, because the contents of `NativeSurface` cannot be verified and msy
     /// contain dangeling pointers are similar unsafe content
-    pub unsafe fn create_surface<'a>(&'a self, native: NativeSurface) -> Result<EGLSurface<'a>, CreationError> {
+    pub unsafe fn create_surface<'a>(&'a self, native: NativeSurface)
+                                     -> Result<EGLSurface<'a>, CreationError> {
         trace!(self.logger, "Creating EGL window surface...");
 
         let surface = {
             let surface = match native {
                 NativeSurface::X11(window) |
                 NativeSurface::Wayland(window) |
-                NativeSurface::Gbm(window) => self.egl.CreateWindowSurface(self.display, self.config_id, window, self.surface_attributes.as_ptr()),
+                NativeSurface::Gbm(window) => {
+                    self.egl
+                        .CreateWindowSurface(self.display,
+                                             self.config_id,
+                                             window,
+                                             self.surface_attributes.as_ptr())
+                }
             };
 
             if surface.is_null() {
@@ -565,9 +572,9 @@ impl EGLContext {
         debug!(self.logger, "EGL window surface successfully created");
 
         Ok(EGLSurface {
-            context: &self,
-            surface: surface,
-        })
+               context: &self,
+               surface: surface,
+           })
     }
 
     /// Returns the address of an OpenGL function.
@@ -594,7 +601,8 @@ impl<'a> EGLSurface<'a> {
     /// Swaps buffers at the end of a frame.
     pub fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
         let ret = unsafe {
-            self.context.egl
+            self.context
+                .egl
                 .SwapBuffers(self.context.display as *const _, self.surface as *const _)
         };
 
@@ -615,7 +623,8 @@ impl<'a> EGLSurface<'a> {
     /// This function is marked unsafe, because the context cannot be made current
     /// on multiple threads.
     pub unsafe fn make_current(&self) -> Result<(), SwapBuffersError> {
-        let ret = self.context.egl
+        let ret = self.context
+            .egl
             .MakeCurrent(self.context.display as *const _,
                          self.surface as *const _,
                          self.surface as *const _,
@@ -652,7 +661,8 @@ impl Drop for EGLContext {
 impl<'a> Drop for EGLSurface<'a> {
     fn drop(&mut self) {
         unsafe {
-            self.context.egl
+            self.context
+                .egl
                 .DestroySurface(self.context.display as *const _, self.surface as *const _);
         }
     }

@@ -2,8 +2,8 @@
 
 use backend::{SeatInternal, TouchSlotInternal};
 use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{CreationError, EGLContext, EGLGraphicsBackend, GlAttributes, NativeDisplay, NativeSurface,
-                             PixelFormat, PixelFormatRequirements, SwapBuffersError};
+use backend::graphics::egl::{CreationError, EGLContext, EGLGraphicsBackend, GlAttributes, NativeDisplay,
+                             NativeSurface, PixelFormat, PixelFormatRequirements, SwapBuffersError};
 use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState,
                      KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
                      PointerMotionAbsoluteEvent, Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent,
@@ -103,19 +103,22 @@ pub fn init_from_builder_with_gl_attr<L>
     let window = Rc::new(builder.build(&events_loop)?);
     debug!(log, "Window created");
 
-    let (native_display, native_surface, surface) =
-        if let (Some(conn), Some(window)) = (get_x11_xconnection(), window.get_xlib_window()) {
-            debug!(log, "Window is backed by X11");
-            (NativeDisplay::X11(conn.display as *const _), NativeSurface::X11(window), None)
-        } else if let (Some(display), Some(surface)) = (window.get_wayland_display(), window.get_wayland_client_surface()) {
-            debug!(log, "Window is backed by Wayland");
-            let (w, h) = window.get_inner_size().unwrap();
-            let egl_surface = wegl::WlEglSurface::new(surface, w as i32, h as i32);
-            (NativeDisplay::Wayland(display), NativeSurface::Wayland(egl_surface.ptr() as *const _), Some(egl_surface))
-        } else {
-            error!(log, "Window is backed by an unsupported graphics framework");
-            return Err(CreationError::NotSupported)
-        };
+    let (native_display, native_surface, surface) = if let (Some(conn), Some(window)) =
+        (get_x11_xconnection(), window.get_xlib_window()) {
+        debug!(log, "Window is backed by X11");
+        (NativeDisplay::X11(conn.display as *const _), NativeSurface::X11(window), None)
+    } else if let (Some(display), Some(surface)) =
+        (window.get_wayland_display(), window.get_wayland_client_surface()) {
+        debug!(log, "Window is backed by Wayland");
+        let (w, h) = window.get_inner_size().unwrap();
+        let egl_surface = wegl::WlEglSurface::new(surface, w as i32, h as i32);
+        (NativeDisplay::Wayland(display),
+         NativeSurface::Wayland(egl_surface.ptr() as *const _),
+         Some(egl_surface))
+    } else {
+        error!(log, "Window is backed by an unsupported graphics framework");
+        return Err(CreationError::NotSupported);
+    };
 
     let context = unsafe {
         match EGLContext::new(native_display,
@@ -137,7 +140,9 @@ pub fn init_from_builder_with_gl_attr<L>
 
     Ok((WinitGraphicsBackend {
             window: window.clone(),
-            context: match egl::RentEGL::try_new(Box::new(context), move |context| unsafe { context.create_surface(native_surface) }) {
+            context: match egl::RentEGL::try_new(Box::new(context), move |context| unsafe {
+        context.create_surface(native_surface)
+    }) {
                 Ok(x) => x,
                 Err(::rental::TryNewError(err, _)) => return Err(err),
             },
