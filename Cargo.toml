@@ -23,7 +23,8 @@ rental = "0.4.11"
 gl_generator = "0.5"
 
 [dev-dependencies]
-slog-term = "~1.5"
+slog-term = "2.0"
+slog-async = "2.0"
 
 [features]
 default = ["backend_winit", "backend_libinput", "renderer_glium"]
