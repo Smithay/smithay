@@ -112,7 +112,8 @@ impl<U, H: UserHandler> wl_surface::Handler for CompositorHandler<U, H> {
     }
     fn damage_buffer(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
                      x: i32, y: i32, width: i32, height: i32) {
-        trace!(self.log, "Registering damage to surface (buffer coordinates).");
+        trace!(self.log,
+               "Registering damage to surface (buffer coordinates).");
         unsafe {
             SurfaceData::<U>::with_data(surface, |d| {
                 d.damage = Damage::Buffer(Rectangle {

@@ -7,26 +7,26 @@ extern crate slog;
 extern crate slog_async;
 extern crate slog_term;
 
-use slog::*;
 
 use glium::Surface;
+use slog::*;
 
 use smithay::backend::graphics::glium::IntoGlium;
 use smithay::backend::input::InputBackend;
 use smithay::backend::winit;
+use smithay::compositor::{self, CompositorHandler};
 use smithay::shm::ShmGlobal;
-use smithay::compositor::{CompositorHandler, self};
 
 use wayland_server::protocol::{wl_compositor, wl_shm, wl_subcompositor};
 
 struct SurfaceHandler;
 
-impl compositor::Handler for SurfaceHandler {
-}
+impl compositor::Handler for SurfaceHandler {}
 
 fn main() {
     // A logger facility, here we use the terminal for this example
-    let log = Logger::root(slog_async::Async::default(slog_term::term_full().fuse()).fuse(), o!());
+    let log = Logger::root(slog_async::Async::default(slog_term::term_full().fuse()).fuse(),
+                           o!());
 
     // Initialize a simple backend for testing
     let (renderer, mut input) = winit::init(log.clone()).unwrap();
@@ -38,8 +38,7 @@ fn main() {
      */
     // Insert the ShmGlobal as a handler to your event loop
     // Here, we specify tha the standard Argb8888 and Xrgb8888 is the only supported.
-    let shm_handler_id =
-        event_loop.add_handler_with_init(ShmGlobal::new(vec![], log.clone()));
+    let shm_handler_id = event_loop.add_handler_with_init(ShmGlobal::new(vec![], log.clone()));
     // Register this handler to advertise a wl_shm global of version 1
     event_loop.register_global::<wl_shm::WlShm, ShmGlobal>(shm_handler_id, 1);
 
@@ -47,7 +46,7 @@ fn main() {
      * Initialize the compositor global
      */
     let compositor_handler_id =
-        event_loop.add_handler_with_init(CompositorHandler::<(),_>::new(SurfaceHandler, log.clone()));
+        event_loop.add_handler_with_init(CompositorHandler::<(), _>::new(SurfaceHandler, log.clone()));
     // register it to handle wl_compositor and wl_subcompositor
     event_loop.register_global::<wl_compositor::WlCompositor, CompositorHandler<(),SurfaceHandler>>(compositor_handler_id, 4);
     event_loop.register_global::<wl_subcompositor::WlSubcompositor, CompositorHandler<(),SurfaceHandler>>(compositor_handler_id, 1);
@@ -57,10 +56,10 @@ fn main() {
      */
     let (shm_token, compositor_token) = {
         let state = event_loop.state();
-        (
-            state.get_handler::<ShmGlobal>(shm_handler_id).get_token(),
-            state.get_handler::<CompositorHandler<(),SurfaceHandler>>(compositor_handler_id).get_token()
-        )
+        (state.get_handler::<ShmGlobal>(shm_handler_id).get_token(),
+         state
+             .get_handler::<CompositorHandler<(), SurfaceHandler>>(compositor_handler_id)
+             .get_token())
     };
 
     /*
