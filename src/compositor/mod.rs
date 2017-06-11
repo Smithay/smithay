@@ -60,19 +60,19 @@
 //!
 //! // Instanciate the CompositorHandler and give it to the event loop
 //! let compositor_hid = event_loop.add_handler_with_init(
-//!     MyCompositorHandler::new(Myhandler::new())
+//!     MyCompositorHandler::new(MyHandler{ /* ... */ }, None /* put a logger here */)
 //! );
 //!
 //! // Register it as a handler for wl_compositor
-//! event_loop.register_global::<WlCompositor, MyCompositorHandler>(compositor_hid);
+//! event_loop.register_global::<WlCompositor, MyCompositorHandler>(compositor_hid, 4);
 //!
 //! // Register it as a handler for wl_subcompositor
-//! event_loop.register_global::<WlSubcompositor, MyCompositorHandler>(compositor_hid);
+//! event_loop.register_global::<WlSubcompositor, MyCompositorHandler>(compositor_hid, 1);
 //!
 //! // retrieve the token needed to access the surfaces' metadata
 //! let compositor_token = {
 //!     let state = event_loop.state();
-//!     state.get_handler::<MyCompositorHandler>>(handler_id).get_token()
+//!     state.get_handler::<MyCompositorHandler>(compositor_hid).get_token()
 //! };
 //!
 //! // You're now ready to go!
@@ -110,7 +110,7 @@ pub enum Damage {
     Full,
     /// A rectangle containing the damaged zone, in surface coordinates
     Surface(Rectangle),
-    /// A rectangle containing the smaazed zone, in buffer coordinates
+    /// A rectangle containing the damaged zone, in buffer coordinates
     ///
     /// Note: Buffer scaling must be taken into consideration
     Buffer(Rectangle),
@@ -435,9 +435,21 @@ impl<U, H> CompositorHandler<U, H> {
 /// at creation of the `CompositorHandler`.
 #[allow(unused_variables)]
 pub trait Handler {
-    /// See `wayland_server::protocol::wl_surface::Handler::commit`
+    /// The double-buffered state has been validated by the client
+    ///
+    /// At this point, the pending state that has been accumulated in the `SurfaceAttributes` associated
+    /// to this surface should be integrated into the current state of the surface.
+    ///
+    /// See [`wayland_server::protocol::wl_surface::Handler::commit`](https://docs.rs/wayland-server/*/wayland_server/protocol/wl_surface/trait.Handler.html#method.commit)
+    /// for more details
     fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface) {}
-    /// See `wayland_server::protocol::wl_surface::Handler::frame`
+    /// The client asks to be notified when would be a good time to update the contents of this surface
+    ///
+    /// You must keep the provided `WlCallback` and trigger it at the appropriate time by calling
+    /// its `done()` method.
+    ///
+    /// See [`wayland_server::protocol::wl_surface::Handler::frame`](https://docs.rs/wayland-server/*/wayland_server/protocol/wl_surface/trait.Handler.html#method.frame)
+    /// for more details
     fn frame(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface,
              callback: wl_callback::WlCallback) {
     }

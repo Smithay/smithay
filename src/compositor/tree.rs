@@ -35,7 +35,7 @@ pub enum RoleStatus {
     /// This surface does not have any role
     NoRole,
     /// This surface is a subsurface
-    Sursurface,
+    Subsurface,
     /// This surface has a role other than subsurface
     ///
     /// It is thus the root of a subsurface tree that will
@@ -102,7 +102,7 @@ impl<U> SurfaceData<U> {
         let data_mutex = Self::get_data(surface);
         let data_guard = data_mutex.lock().unwrap();
         match (data_guard.has_role, data_guard.parent.is_some()) {
-            (true, true) => RoleStatus::Sursurface,
+            (true, true) => RoleStatus::Subsurface,
             (true, false) => RoleStatus::HasRole,
             (false, false) => RoleStatus::NoRole,
             (false, true) => unreachable!(),
