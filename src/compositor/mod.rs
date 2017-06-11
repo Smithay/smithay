@@ -414,6 +414,7 @@ impl<U, H> CompositorHandler<U, H> {
     pub fn get_token(&self) -> CompositorToken<U, H> {
         assert!(self.my_id != ::std::usize::MAX,
                 "CompositorHandler is not initialized yet.");
+        trace!(self.log, "Creating a compositor token.");
         CompositorToken {
             hid: self.my_id,
             _data: ::std::marker::PhantomData,

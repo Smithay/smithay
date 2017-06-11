@@ -8,6 +8,7 @@ impl<U: Default, H: UserHandler> GlobalHandler<wl_compositor::WlCompositor> for 
           H: Send + 'static
 {
     fn bind(&mut self, evlh: &mut EventLoopHandle, _: &Client, global: wl_compositor::WlCompositor) {
+        debug!(self.log, "New compositor global binded.");
         evlh.register::<_, CompositorHandler<U, H>>(&global, self.my_id);
     }
 }
@@ -17,6 +18,7 @@ impl<U, H> GlobalHandler<wl_subcompositor::WlSubcompositor> for CompositorHandle
           H: Send + 'static
 {
     fn bind(&mut self, evlh: &mut EventLoopHandle, _: &Client, global: wl_subcompositor::WlSubcompositor) {
+        debug!(self.log, "New subcompositor global binded.");
         evlh.register::<_, CompositorHandler<U, H>>(&global, self.my_id);
     }
 }
