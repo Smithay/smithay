@@ -330,10 +330,12 @@ impl<U, H> CompositorHandler<U, H> {
 /// The global provided by Smithay cannot process these events for you, so they
 /// are forwarded directly to a handler implementing this trait that you must provide
 /// at creation of the `CompositorHandler`.
+#[allow(unused_variables)]
 pub trait Handler {
     /// See `wayland_server::protocol::wl_surface::Handler::commit`
-    fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface);
+    fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface) {}
     /// See `wayland_server::protocol::wl_surface::Handler::frame`
     fn frame(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface,
-             callback: wl_callback::WlCallback);
+             callback: wl_callback::WlCallback) {
+    }
 }
