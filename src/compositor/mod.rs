@@ -1,13 +1,107 @@
+//! Utilities for handling surfaces, subsurfaces and regions
+//!
+//! This module provides the `CompositorHandler<U,H>` type, with implements
+//! automatic handling of sufaces, subsurfaces and region wayland objects,
+//! by being registered as a global handler for `wl_compositor` and
+//! `wl_subcompositor`.
+//!
+//! ## Why use this handler
+//!
+//! This handler does a simple job: it stores in a coherent way the state of
+//! surface trees with subsurfaces, to provide you a direct access to the tree
+//! structure and all surface metadata.
+//!
+//! As such, you can, given a root surface with a role requiring it to be displayed,
+//! you can iterate over the whole tree of subsurfaces to recover all the metadata you
+//! need to display the subsurface tree.
+//!
+//! This handler will not do anything more than present you the metadata specified by the
+//! client in a coherent and practical way. All the logic regarding to drawing itself, and
+//! the positionning of windows (surface trees) one relative to another is out of its scope.
+//!
+//! ## How to use it
+//!
+//! ### Initialization
+//!
+//! To initialize this handler, simply instanciate it and register it to the event loop
+//! as a global handler for wl_compositor and wl_subcompositor:
+//!
+//! ```
+//! # extern crate wayland_server;
+//! # extern crate smithay;
+//! use wayland_server::protocol::wl_compositor::WlCompositor;
+//! use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
+//! use smithay::compositor;
+//!
+//! // Define some user data to be associated with the surfaces.
+//! // It must implement the Default trait, which will represent the state of a surface which
+//! // has just been created.
+//! #[derive(Default)]
+//! struct MyData {
+//!     // whatever you need here
+//! }
+//!
+//! // Define a sub-handler to take care of the events the CompositorHandler does not rack for you
+//! struct MyHandler {
+//!     // whatever you need
+//! }
+//!
+//! // Implement the handler trait for this sub-handler
+//! impl compositor::Handler for MyHandler {
+//!     // See the trait documentation for its implementation
+//!     // A default implementation for each method is provided, that does nothing
+//! }
+//!
+//! // A type alias to shorten things:
+//! type MyCompositorHandler = compositor::CompositorHandler<MyData,MyHandler>;
+//!
+//! # fn main() {
+//! # let (_display, mut event_loop) = wayland_server::create_display();
+//!
+//! // Instanciate the CompositorHandler and give it to the event loop
+//! let compositor_hid = event_loop.add_handler_with_init(
+//!     MyCompositorHandler::new(Myhandler::new())
+//! );
+//!
+//! // Register it as a handler for wl_compositor
+//! event_loop.register_global::<WlCompositor, MyCompositorHandler>(compositor_hid);
+//!
+//! // Register it as a handler for wl_subcompositor
+//! event_loop.register_global::<WlSubcompositor, MyCompositorHandler>(compositor_hid);
+//!
+//! // retrieve the token needed to access the surfaces' metadata
+//! let compositor_token = {
+//!     let state = event_loop.state();
+//!     state.get_handler::<MyCompositorHandler>>(handler_id).get_token()
+//! };
+//!
+//! // You're now ready to go!
+//! # }
+//! ```
+//!
+//! ### Use the surface metadata
+//!
+//! As you can see in the previous example, in the end we are retrieving a token from
+//! the `CompositorHandler`. This token is necessary to retrieve the metadata associated with
+//! a surface. It can be cloned, and is sendable accross threads. See `CompositorToken` for
+//! the details of what it enables you.
+//!
+//! The surface metadata is held in the `SurfaceAttributes` struct. In contains double-buffered
+//! state pending from the client as defined by the protocol for wl_surface, as well as your
+//! user-defined type holding any data you need to have associated with a struct. See its
+//! documentation for details.
+
 mod global;
 mod handlers;
 mod tree;
 mod region;
 
+use self::region::RegionData;
 pub use self::tree::RoleStatus;
 use self::tree::SurfaceData;
 use wayland_server::{Client, EventLoopHandle, Init, resource_is_registered};
 
-use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_surface};
+use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface};
 
 /// Description of which part of a surface
 /// should be considered damaged and needs to be redrawn
@@ -280,6 +374,14 @@ impl<U: Send + 'static, H: Handler + Send + 'static> CompositorToken<U, H> {
     }
 }
 
+/// A struct handling the `wl_compositor` and `wl_subcompositor` globals
+///
+/// It allows you to choose a custom `U` type to store data you want
+/// associated with the surfaces in their metadata, as well a providing
+/// a sub-handler to handle the events defined by the `Handler` trait
+/// defined in this module.
+///
+/// See the module-level documentation for instructions and examples of use.
 pub struct CompositorHandler<U, H> {
     my_id: usize,
     log: ::slog::Logger,
