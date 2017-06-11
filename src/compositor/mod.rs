@@ -220,6 +220,16 @@ impl<U: Send + 'static, H: Handler + Send + 'static> CompositorToken<U, H> {
         unsafe { SurfaceData::<U>::get_parent(surface) }
     }
 
+    /// Retrieve the children of this surface
+    ///
+    /// If the surface is not managed by the CompositorGlobal that provided this token, this
+    /// will panic (having more than one compositor is not supported).
+    pub fn get_children(&self, surface: &wl_surface::WlSurface) -> Vec<wl_surface::WlSurface> {
+        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
+                "Accessing the data of foreign surfaces is not supported.");
+        unsafe { SurfaceData::<U>::get_children(surface) }
+    }
+
     /// Retrieve the role status this surface
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
@@ -257,6 +267,16 @@ impl<U: Send + 'static, H: Handler + Send + 'static> CompositorToken<U, H> {
         assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
                 "Accessing the data of foreign surfaces is not supported.");
         unsafe { SurfaceData::<U>::remove_role(surface) }
+    }
+
+    /// Retrieve the metadata associated with a wl_region
+    ///
+    /// If the region is not managed by the CompositorGlobal that provided this token, this
+    /// will panic (having more than one compositor is not supported).
+    pub fn get_region_attributes(&self, region: &wl_region::WlRegion) -> RegionAttributes {
+        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(region, self.hid),
+                "Accessing the data of foreign regions is not supported.");
+        unsafe { RegionData::get_attributes(region) }
     }
 }
 

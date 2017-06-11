@@ -196,6 +196,17 @@ impl<U> SurfaceData<U> {
         child_guard.parent.as_ref().map(|p| p.clone_unchecked())
     }
 
+    /// Retrieve the parent surface (if any) of this surface
+    pub unsafe fn get_children(child: &wl_surface::WlSurface) -> Vec<wl_surface::WlSurface> {
+        let child_mutex = Self::get_data(child);
+        let child_guard = child_mutex.lock().unwrap();
+        child_guard
+            .children
+            .iter()
+            .map(|p| p.clone_unchecked())
+            .collect()
+    }
+
     /// Reorders a surface relative to one of its sibling
     ///
     /// Fails if `relative_to` is not a sibling or parent of `surface`.
