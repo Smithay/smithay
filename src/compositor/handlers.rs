@@ -2,7 +2,7 @@ use super::{CompositorHandler, Damage, Handler as UserHandler, Rectangle, Rectan
             SubsurfaceAttributes};
 use super::region::RegionData;
 use super::tree::{Location, SurfaceData};
-use wayland_server::{Client, Destroy, EventLoopHandle, Resource};
+use wayland_server::{Client, Destroy, EventLoopHandle, Resource, Liveness};
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_compositor, wl_output, wl_region,
                                wl_subcompositor, wl_subsurface, wl_surface};
 
@@ -16,7 +16,7 @@ struct CompositorDestructor<U> {
 
 impl<U, H> wl_compositor::Handler for CompositorHandler<U, H>
     where U: Default + Send + 'static,
-          H: UserHandler + Send + 'static
+          H: UserHandler<U> + Send + 'static
 {
     fn create_surface(&mut self, evqh: &mut EventLoopHandle, _: &Client, _: &wl_compositor::WlCompositor,
                       id: wl_surface::WlSurface) {
@@ -34,7 +34,7 @@ impl<U, H> wl_compositor::Handler for CompositorHandler<U, H>
 
 unsafe impl<U, H> ::wayland_server::Handler<wl_compositor::WlCompositor> for CompositorHandler<U, H>
     where U: Default + Send + 'static,
-          H: UserHandler + Send + 'static
+          H: UserHandler<U> + Send + 'static
 {
     unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
                       resource: &wl_compositor::WlCompositor, opcode: u32,
@@ -48,7 +48,7 @@ unsafe impl<U, H> ::wayland_server::Handler<wl_compositor::WlCompositor> for Com
  * wl_surface
  */
 
-impl<U, H: UserHandler> wl_surface::Handler for CompositorHandler<U, H> {
+impl<U, H: UserHandler<U>> wl_surface::Handler for CompositorHandler<U, H> {
     fn attach(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
               buffer: Option<&wl_buffer::WlBuffer>, x: i32, y: i32) {
         trace!(self.log, "Attaching buffer to surface.");
@@ -74,7 +74,8 @@ impl<U, H: UserHandler> wl_surface::Handler for CompositorHandler<U, H> {
     fn frame(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface,
              callback: wl_callback::WlCallback) {
         trace!(self.log, "Frame surface callback.");
-        UserHandler::frame(&mut self.handler, evlh, client, surface, callback);
+        let token = self.get_token();
+        UserHandler::frame(&mut self.handler, evlh, client, surface, callback, token);
     }
     fn set_opaque_region(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
                          region: Option<&wl_region::WlRegion>) {
@@ -94,7 +95,8 @@ impl<U, H: UserHandler> wl_surface::Handler for CompositorHandler<U, H> {
     }
     fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface) {
         trace!(self.log, "Commit surface callback.");
-        UserHandler::commit(&mut self.handler, evlh, client, surface);
+        let token = self.get_token();
+        UserHandler::commit(&mut self.handler, evlh, client, surface, token);
     }
     fn set_buffer_transform(&mut self, _: &mut EventLoopHandle, _: &Client,
                             surface: &wl_surface::WlSurface, transform: wl_output::Transform) {
@@ -127,7 +129,7 @@ impl<U, H: UserHandler> wl_surface::Handler for CompositorHandler<U, H> {
     }
 }
 
-unsafe impl<U, H: UserHandler> ::wayland_server::Handler<wl_surface::WlSurface> for CompositorHandler<U, H> {
+unsafe impl<U, H: UserHandler<U>> ::wayland_server::Handler<wl_surface::WlSurface> for CompositorHandler<U, H> {
     unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
                       resource: &wl_surface::WlSurface, opcode: u32,
                       args: *const ::wayland_server::sys::wl_argument)
@@ -303,8 +305,10 @@ impl<U> Destroy<wl_subsurface::WlSubsurface> for CompositorDestructor<U> {
         subsurface.set_user_data(::std::ptr::null_mut());
         unsafe {
             let surface = Box::from_raw(ptr as *mut wl_surface::WlSurface);
-            SurfaceData::<U>::with_data(&*surface, |d| d.subsurface_attributes = None);
-            SurfaceData::<U>::unset_parent(&surface);
+            if surface.status() == Liveness::Alive {
+                SurfaceData::<U>::with_data(&*surface, |d| d.subsurface_attributes = None);
+                SurfaceData::<U>::unset_parent(&surface);
+            }
         }
     }
 }

@@ -47,7 +47,7 @@
 //! }
 //!
 //! // Implement the handler trait for this sub-handler
-//! impl compositor::Handler for MyHandler {
+//! impl compositor::Handler<MyData> for MyHandler {
 //!     // See the trait documentation for its implementation
 //!     // A default implementation for each method is provided, that does nothing
 //! }
@@ -259,14 +259,25 @@ impl Default for RegionAttributes {
 /// This token can be cloned at will, and is the entry-point to
 /// access data associated with the wl_surface and wl_region managed
 /// by the `CompositorGlobal` that provided it.
-#[derive(Copy,Clone)]
 pub struct CompositorToken<U, H> {
     hid: usize,
     _data: ::std::marker::PhantomData<*mut U>,
     _handler: ::std::marker::PhantomData<*mut H>,
 }
 
-impl<U: Send + 'static, H: Handler + Send + 'static> CompositorToken<U, H> {
+unsafe impl<U: Send, H: Send> Send for CompositorToken<U, H> {}
+unsafe impl<U: Send, H: Send> Sync for CompositorToken<U, H> {}
+
+// we implement them manually because #[derive(..)] would require
+// U: Clone and H: Clone ...
+impl<U, H> Copy for CompositorToken<U, H> {}
+impl<U, H> Clone for CompositorToken<U, H> {
+    fn clone(&self) -> CompositorToken<U, H> {
+        *self
+    }
+}
+
+impl<U: Send + 'static, H: Handler<U> + Send + 'static> CompositorToken<U, H> {
     /// Access the data of a surface
     ///
     /// The closure will be called with the contents of the data associated with this surface.
@@ -434,7 +445,7 @@ impl<U, H> CompositorHandler<U, H> {
 /// are forwarded directly to a handler implementing this trait that you must provide
 /// at creation of the `CompositorHandler`.
 #[allow(unused_variables)]
-pub trait Handler {
+pub trait Handler<U> : Sized{
     /// The double-buffered state has been validated by the client
     ///
     /// At this point, the pending state that has been accumulated in the `SurfaceAttributes` associated
@@ -442,7 +453,7 @@ pub trait Handler {
     ///
     /// See [`wayland_server::protocol::wl_surface::Handler::commit`](https://docs.rs/wayland-server/*/wayland_server/protocol/wl_surface/trait.Handler.html#method.commit)
     /// for more details
-    fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface) {}
+    fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface, token: CompositorToken<U, Self>) {}
     /// The client asks to be notified when would be a good time to update the contents of this surface
     ///
     /// You must keep the provided `WlCallback` and trigger it at the appropriate time by calling
@@ -451,6 +462,6 @@ pub trait Handler {
     /// See [`wayland_server::protocol::wl_surface::Handler::frame`](https://docs.rs/wayland-server/*/wayland_server/protocol/wl_surface/trait.Handler.html#method.frame)
     /// for more details
     fn frame(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface,
-             callback: wl_callback::WlCallback) {
+             callback: wl_callback::WlCallback, token: CompositorToken<U, Self>) {
     }
 }

@@ -3,7 +3,7 @@ use super::{CompositorHandler, Handler as UserHandler};
 use wayland_server::{Client, EventLoopHandle, GlobalHandler};
 use wayland_server::protocol::{wl_compositor, wl_subcompositor};
 
-impl<U: Default, H: UserHandler> GlobalHandler<wl_compositor::WlCompositor> for CompositorHandler<U, H>
+impl<U: Default, H: UserHandler<U>> GlobalHandler<wl_compositor::WlCompositor> for CompositorHandler<U, H>
     where U: Send + 'static,
           H: Send + 'static
 {
