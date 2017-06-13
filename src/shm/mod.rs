@@ -13,7 +13,7 @@
 //!
 //! To use it, first add a `ShmGlobal` to your event loop, specifying the formats
 //! you want to support (ARGB8888 and XRGB8888 are always considered as supported,
-//! as specified by the wayland protocol) and obtain its `ShmGlobalToken`.
+//! as specified by the wayland protocol) and obtain its `ShmToken`.
 //!
 //! ```
 //! extern crate wayland_server;
@@ -110,8 +110,8 @@ impl ShmGlobal {
     /// and has been initialized. If it is not the case, this method will panic.
     ///
     /// This is needed to retrieve the contents of the shm pools and buffers.
-    pub fn get_token(&self) -> ShmGlobalToken {
-        ShmGlobalToken { hid: self.handler_id.expect("ShmGlobal was not initialized.") }
+    pub fn get_token(&self) -> ShmToken {
+        ShmToken { hid: self.handler_id.expect("ShmGlobal was not initialized.") }
     }
 }
 
@@ -119,7 +119,8 @@ impl ShmGlobal {
 ///
 /// It is needed to access the contents of the buffers & pools managed by the
 /// associated `ShmGlobal`.
-pub struct ShmGlobalToken {
+#[derive(Clone)]
+pub struct ShmToken {
     hid: usize,
 }
 
@@ -136,7 +137,7 @@ pub enum BufferAccessError {
     BadMap,
 }
 
-impl ShmGlobalToken {
+impl ShmToken {
     /// Call given closure with the contents of the given buffer
     ///
     /// If the buffer is managed by the associated ShmGlobal, its contents are
