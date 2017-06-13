@@ -2,7 +2,7 @@ use super::{CompositorHandler, Damage, Handler as UserHandler, Rectangle, Rectan
             SubsurfaceAttributes};
 use super::region::RegionData;
 use super::tree::{Location, SurfaceData};
-use wayland_server::{Client, Destroy, EventLoopHandle, Resource, Liveness};
+use wayland_server::{Client, Destroy, EventLoopHandle, Liveness, Resource};
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_compositor, wl_output, wl_region,
                                wl_subcompositor, wl_subsurface, wl_surface};
 
@@ -53,8 +53,9 @@ impl<U, H: UserHandler<U>> wl_surface::Handler for CompositorHandler<U, H> {
               buffer: Option<&wl_buffer::WlBuffer>, x: i32, y: i32) {
         trace!(self.log, "Attaching buffer to surface.");
         unsafe {
-            SurfaceData::<U>::with_data(surface,
-                                        |d| d.buffer = Some(buffer.map(|b| (b.clone_unchecked(), (x, y)))));
+            SurfaceData::<U>::with_data(surface, |d| {
+                d.buffer = Some(buffer.map(|b| (b.clone_unchecked(), (x, y))))
+            });
         }
     }
     fn damage(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface, x: i32,
@@ -129,7 +130,8 @@ impl<U, H: UserHandler<U>> wl_surface::Handler for CompositorHandler<U, H> {
     }
 }
 
-unsafe impl<U, H: UserHandler<U>> ::wayland_server::Handler<wl_surface::WlSurface> for CompositorHandler<U, H> {
+unsafe impl<U, H: UserHandler<U>> ::wayland_server::Handler<wl_surface::WlSurface>
+    for CompositorHandler<U, H> {
     unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
                       resource: &wl_surface::WlSurface, opcode: u32,
                       args: *const ::wayland_server::sys::wl_argument)
@@ -212,8 +214,9 @@ impl<U, H> wl_subcompositor::Handler for CompositorHandler<U, H>
         }
         id.set_user_data(Box::into_raw(Box::new(unsafe { surface.clone_unchecked() })) as *mut _);
         unsafe {
-            SurfaceData::<U>::with_data(surface,
-                                        |d| d.subsurface_attributes = Some(Default::default()));
+            SurfaceData::<U>::with_data(surface, |d| {
+                d.subsurface_attributes = Some(Default::default())
+            });
         }
         evqh.register_with_destructor::<_, CompositorHandler<U, H>, CompositorDestructor<U>>(&id, self.my_id);
     }

@@ -213,7 +213,7 @@ impl Default for SubsurfaceAttributes {
 }
 
 /// Kind of a rectangle part of a region
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 pub enum RectangleKind {
     /// This rectangle should be added to the region
     Add,
@@ -223,7 +223,7 @@ pub enum RectangleKind {
 }
 
 /// A rectangle defined by its top-left corner and dimensions
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 pub struct Rectangle {
     /// horizontal position of the top-leftcorner of the rectangle, in surface coordinates
     pub x: i32,
@@ -445,7 +445,7 @@ impl<U, H> CompositorHandler<U, H> {
 /// are forwarded directly to a handler implementing this trait that you must provide
 /// at creation of the `CompositorHandler`.
 #[allow(unused_variables)]
-pub trait Handler<U> : Sized{
+pub trait Handler<U>: Sized {
     /// The double-buffered state has been validated by the client
     ///
     /// At this point, the pending state that has been accumulated in the `SurfaceAttributes` associated
@@ -453,7 +453,9 @@ pub trait Handler<U> : Sized{
     ///
     /// See [`wayland_server::protocol::wl_surface::Handler::commit`](https://docs.rs/wayland-server/*/wayland_server/protocol/wl_surface/trait.Handler.html#method.commit)
     /// for more details
-    fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface, token: CompositorToken<U, Self>) {}
+    fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface,
+              token: CompositorToken<U, Self>) {
+    }
     /// The client asks to be notified when would be a good time to update the contents of this surface
     ///
     /// You must keep the provided `WlCallback` and trigger it at the appropriate time by calling

@@ -18,8 +18,7 @@ pub struct GliumDrawer<'a, F: 'a> {
 }
 
 impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
-    pub fn new(display: &'a F) -> GliumDrawer<'a, F>
-    {
+    pub fn new(display: &'a F) -> GliumDrawer<'a, F> {
 
         // building the vertex buffer, which contains all the vertices that we will draw
         let vertex_buffer = glium::VertexBuffer::new(display,
@@ -38,8 +37,7 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
                                                        Vertex {
                                                            position: [1.0, 0.0],
                                                            tex_coords: [1.0, 0.0],
-                                                       }])
-                .unwrap();
+                                                       }]).unwrap();
 
         // building the index buffer
         let index_buffer =
@@ -73,8 +71,7 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
 					}
 				",
 			},
-        )
-                .unwrap();
+        ).unwrap();
 
         GliumDrawer {
             display,
@@ -84,23 +81,25 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
         }
     }
 
-    pub fn draw(&self, target: &mut glium::Frame, contents: &[u8], surface_dimensions: (u32, u32), surface_location: (i32,i32), screen_size: (u32,u32)) {
+    pub fn draw(&self, target: &mut glium::Frame, contents: &[u8], surface_dimensions: (u32, u32),
+                surface_location: (i32, i32), screen_size: (u32, u32)) {
 
         let image = glium::texture::RawImage2d {
             data: contents.into(),
             width: surface_dimensions.0,
             height: surface_dimensions.1,
-            format: glium::texture::ClientFormat::U8U8U8U8
+            format: glium::texture::ClientFormat::U8U8U8U8,
         };
         let opengl_texture = glium::texture::CompressedSrgbTexture2d::new(self.display, image).unwrap();
 
-        let xscale = 2.0*(surface_dimensions.0 as f32) / (screen_size.0 as f32);
-        let yscale = -2.0*(surface_dimensions.1 as f32) / (screen_size.1 as f32);
+        let xscale = 2.0 * (surface_dimensions.0 as f32) / (screen_size.0 as f32);
+        let yscale = -2.0 * (surface_dimensions.1 as f32) / (screen_size.1 as f32);
 
-        let x = 2.0*(surface_location.0 as f32) / (screen_size.0 as f32) - 1.0;
-        let y = 1.0 - 2.0*(surface_location.1 as f32) / (screen_size.1 as f32);
+        let x = 2.0 * (surface_location.0 as f32) / (screen_size.0 as f32) - 1.0;
+        let y = 1.0 - 2.0 * (surface_location.1 as f32) / (screen_size.1 as f32);
 
-        let uniforms = uniform! {
+        let uniforms =
+            uniform! {
             matrix: [
                 [xscale,   0.0  , 0.0, 0.0],
                 [  0.0 , yscale , 0.0, 0.0],
@@ -110,7 +109,13 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
             tex: &opengl_texture
         };
 
-        target.draw(&self.vertex_buffer, &self.index_buffer, &self.program, &uniforms, &Default::default()).unwrap();
+        target
+            .draw(&self.vertex_buffer,
+                  &self.index_buffer,
+                  &self.program,
+                  &uniforms,
+                  &Default::default())
+            .unwrap();
 
     }
 }

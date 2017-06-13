@@ -12,43 +12,45 @@ mod helpers;
 
 use glium::Surface;
 
-use helpers::{WlShellStubHandler, GliumDrawer};
+use helpers::{GliumDrawer, WlShellStubHandler};
 use slog::*;
 
 use smithay::backend::graphics::glium::IntoGlium;
 use smithay::backend::input::InputBackend;
 use smithay::backend::winit;
-use smithay::compositor::{self, CompositorHandler, CompositorToken};
-use smithay::shm::{ShmGlobal, ShmToken, BufferData};
+use smithay::compositor::{self, CompositorHandler, CompositorToken, TraversalAction};
+use smithay::shm::{BufferData, ShmGlobal, ShmToken};
+use wayland_server::{Client, EventLoopHandle, Liveness, Resource};
 
 use wayland_server::protocol::{wl_compositor, wl_shell, wl_shm, wl_subcompositor, wl_surface};
-use wayland_server::{EventLoopHandle,Client,Liveness, Resource};
 
 struct SurfaceHandler {
-    shm_token: ShmToken
+    shm_token: ShmToken,
 }
 
 #[derive(Default)]
 struct SurfaceData {
-    buffer: Option<(Vec<u8>, (u32, u32))>
+    buffer: Option<(Vec<u8>, (u32, u32))>,
 }
 
 impl compositor::Handler<SurfaceData> for SurfaceHandler {
-    fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface, token: CompositorToken<SurfaceData, SurfaceHandler>) {
+    fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface,
+              token: CompositorToken<SurfaceData, SurfaceHandler>) {
         // we retrieve the contents of the associated buffer and copy it
         token.with_surface_data(surface, |attributes| {
             match attributes.buffer.take() {
-                Some(Some((buffer, (x,y)))) => {
+                Some(Some((buffer, (x, y)))) => {
                     self.shm_token.with_buffer_contents(&buffer, |slice, data| {
                         let offset = data.offset as usize;
                         let stride = data.stride as usize;
                         let width = data.width as usize;
                         let height = data.height as usize;
-                        let mut new_vec = Vec::with_capacity(width*height*4);
+                        let mut new_vec = Vec::with_capacity(width * height * 4);
                         for i in 0..height {
-                            new_vec.extend(&slice[(offset+i*stride)..(offset+i*stride+width*4)]);
+                            new_vec.extend(&slice[(offset + i * stride)..(offset + i * stride + width * 4)]);
                         }
-                        attributes.user_data.buffer = Some((new_vec, (data.width as u32, data.height as u32)));
+                        attributes.user_data.buffer = Some((new_vec,
+                                                            (data.width as u32, data.height as u32)));
                     });
 
                 }
@@ -83,9 +85,7 @@ fn main() {
     // retreive the token
     let shm_token = {
         let state = event_loop.state();
-        state
-             .get_handler::<ShmGlobal>(shm_handler_id)
-             .get_token()
+        state.get_handler::<ShmGlobal>(shm_handler_id).get_token()
     };
 
 
@@ -93,23 +93,27 @@ fn main() {
      * Initialize the compositor global
      */
     let compositor_handler_id =
-        event_loop.add_handler_with_init(CompositorHandler::<SurfaceData, _>::new(SurfaceHandler { shm_token: shm_token.clone() }, log.clone()));
+        event_loop.add_handler_with_init(CompositorHandler::<SurfaceData, _>::new(SurfaceHandler {
+                                                                                      shm_token: shm_token
+                                                                                          .clone(),
+                                                                                  },
+                                                                                  log.clone()));
     // register it to handle wl_compositor and wl_subcompositor
     event_loop.register_global::<wl_compositor::WlCompositor, CompositorHandler<SurfaceData,SurfaceHandler>>(compositor_handler_id, 4);
     event_loop.register_global::<wl_subcompositor::WlSubcompositor, CompositorHandler<SurfaceData,SurfaceHandler>>(compositor_handler_id, 1);
     // retrieve the tokens
     let compositor_token = {
         let state = event_loop.state();
-         state
-             .get_handler::<CompositorHandler<SurfaceData, SurfaceHandler>>(compositor_handler_id)
-             .get_token()
+        state
+            .get_handler::<CompositorHandler<SurfaceData, SurfaceHandler>>(compositor_handler_id)
+            .get_token()
     };
 
     /*
      * Initialize the shell stub global
      */
-    let shell_handler_id =
-        event_loop.add_handler_with_init(WlShellStubHandler::new(compositor_token.clone()));
+    let shell_handler_id = event_loop
+        .add_handler_with_init(WlShellStubHandler::new(compositor_token.clone()));
     event_loop.register_global::<wl_shell::WlShell, WlShellStubHandler<SurfaceData, SurfaceHandler>>(shell_handler_id,
                                                                                             1);
 
@@ -123,11 +127,7 @@ fn main() {
     /*
      * Add a listening socket:
      */
-    let name = display
-        .add_socket_auto()
-        .unwrap()
-        .into_string()
-        .unwrap();
+    let name = display.add_socket_auto().unwrap().into_string().unwrap();
     println!("Listening on socket: {}", name);
 
     loop {
