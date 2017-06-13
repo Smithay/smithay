@@ -48,6 +48,16 @@ pub enum Location {
     After,
 }
 
+/// Possible actions to do after handling a node diring tree traversal
+pub enum TraversalAction<T> {
+    /// Traverse its children as well, providing them the data T
+    DoChildren(T),
+    /// Skip its children
+    SkipChildren,
+    /// Stop traversal completely
+    Break,
+}
+
 impl<U: Default> SurfaceData<U> {
     fn new() -> SurfaceData<U> {
         SurfaceData {
@@ -275,12 +285,14 @@ impl<U> SurfaceData<U> {
     ///
     /// The callback returns wether the traversal should continue or not. Returning
     /// false will cause an early-stopping.
-    pub unsafe fn map_tree<F>(root: &wl_surface::WlSurface, mut f: F)
-        where F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>) -> bool
+    pub unsafe fn map_tree<F, T>(root: &wl_surface::WlSurface, initial: T, mut f: F)
+        where F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &T) -> TraversalAction<T>
     {
         // helper function for recursion
-        unsafe fn map<U, F>(surface: &wl_surface::WlSurface, root: &wl_surface::WlSurface, f: &mut F) -> bool
-            where F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>) -> bool
+        unsafe fn map<U, F, T>(surface: &wl_surface::WlSurface, root: &wl_surface::WlSurface, initial: &T,
+                               f: &mut F)
+                               -> bool
+            where F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &T) -> TraversalAction<T>
         {
             // stop if we met the root, so to not deadlock/inifinte loop
             if surface.equals(root) {
@@ -290,27 +302,34 @@ impl<U> SurfaceData<U> {
             let data_mutex = SurfaceData::<U>::get_data(surface);
             let mut data_guard = data_mutex.lock().unwrap();
             // call the callback on ourselves
-            if f(surface, &mut data_guard.attributes) {
-                // loop over children
-                for c in &data_guard.children {
-                    if !map(c, root, f) {
-                        return false;
+            match f(surface, &mut data_guard.attributes, initial) {
+                TraversalAction::DoChildren(t) => {
+                    // loop over children
+                    for c in &data_guard.children {
+                        if !map(c, root, &t, f) {
+                            return false;
+                        }
                     }
+                    true
                 }
+                TraversalAction::SkipChildren => true,
+                TraversalAction::Break => false,
             }
-            true
         }
 
         let data_mutex = Self::get_data(root);
         let mut data_guard = data_mutex.lock().unwrap();
         // call the callback on ourselves
-        if f(root, &mut data_guard.attributes) {
-            // loop over children
-            for c in &data_guard.children {
-                if !map::<U, _>(c, root, &mut f) {
-                    break;
+        match f(root, &mut data_guard.attributes, &initial) {
+            TraversalAction::DoChildren(t) => {
+                // loop over children
+                for c in &data_guard.children {
+                    if !map::<U, _, _>(c, root, &t, &mut f) {
+                        break;
+                    }
                 }
             }
+            _ => {}
         }
     }
 }

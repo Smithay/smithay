@@ -147,18 +147,21 @@ fn main() {
                     continue;
                 }
                 // this surface is a root of a subsurface tree that needs to be drawn
-                compositor_token.with_surface_tree(surface, |surface, attributes| {
+                compositor_token.with_surface_tree(surface, (100, 100), |surface,
+                 attributes,
+                 &(mut x, mut y)| {
                     if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
                         // there is actually something to draw !
-                        let mut x = 100;
-                        let mut y = 100;
                         if let Some(ref subdata) = attributes.subsurface_attributes {
                             x += subdata.x;
                             y += subdata.y;
                         }
                         drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
+                        TraversalAction::DoChildren((x, y))
+                    } else {
+                        // we are not display, so our children are neither
+                        TraversalAction::SkipChildren
                     }
-                    true
                 });
             }
         }

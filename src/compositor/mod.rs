@@ -97,7 +97,7 @@ mod tree;
 mod region;
 
 use self::region::RegionData;
-pub use self::tree::RoleStatus;
+pub use self::tree::{RoleStatus, TraversalAction};
 use self::tree::SurfaceData;
 use wayland_server::{Client, EventLoopHandle, Init, resource_is_registered};
 
@@ -302,13 +302,13 @@ impl<U: Send + 'static, H: Handler<U> + Send + 'static> CompositorToken<U, H> {
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_surface_tree<F>(&self, surface: &wl_surface::WlSurface, f: F) -> Result<(), ()>
-        where F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>) -> bool
+    pub fn with_surface_tree<F, T>(&self, surface: &wl_surface::WlSurface, initial: T, f: F) -> Result<(), ()>
+        where F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &T) -> TraversalAction<T>
     {
         assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
                 "Accessing the data of foreign surfaces is not supported.");
         unsafe {
-            SurfaceData::<U>::map_tree(surface, f);
+            SurfaceData::<U>::map_tree(surface, initial, f);
         }
         Ok(())
     }
