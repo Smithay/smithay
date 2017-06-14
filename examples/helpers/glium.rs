@@ -90,7 +90,7 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
             height: surface_dimensions.1,
             format: glium::texture::ClientFormat::U8U8U8U8,
         };
-        let opengl_texture = glium::texture::CompressedSrgbTexture2d::new(self.display, image).unwrap();
+        let opengl_texture = glium::texture::Texture2d::new(self.display, image).unwrap();
 
         let xscale = 2.0 * (surface_dimensions.0 as f32) / (screen_size.0 as f32);
         let yscale = -2.0 * (surface_dimensions.1 as f32) / (screen_size.1 as f32);
