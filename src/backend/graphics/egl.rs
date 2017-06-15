@@ -67,6 +67,13 @@ pub enum NativeSurface {
     Gbm(ffi::NativeWindowType),
 }
 
+#[derive(PartialEq)]
+enum NativeType {
+    X11,
+    Wayland,
+    Gbm,
+}
+
 /// Error that can happen while creating an `EGLContext` or `EGLSurface`
 #[derive(Debug)]
 pub enum CreationError {
@@ -78,6 +85,10 @@ pub enum CreationError {
     OpenGlVersionNotSupported,
     /// There is no pixel format available that fulfills all requirements
     NoAvailablePixelFormat,
+    /// Surface creation from an unsupport combination
+    ///
+    /// E.g creating a surface from an X11 window on a context created from a wayland display
+    NonMatchingSurfaceType,
     /// Context creation is not supported on this system
     NotSupported,
 }
@@ -106,10 +117,13 @@ impl error::Error for CreationError {
             CreationError::OpenGlVersionNotSupported => {
                 "The requested OpenGL version is not \
                                                          supported."
-            }
+            },
             CreationError::NoAvailablePixelFormat => {
                 "Couldn't find any pixel format that matches \
                                                       the criterias."
+            },
+            CreationError::NonMatchingSurfaceType => {
+                "Surface type does not match the context type."
             }
             CreationError::NotSupported => "Context creation is not supported on the current window system",
         }
@@ -132,6 +146,7 @@ pub struct EGLContext {
     config_id: ffi::egl::types::EGLConfig,
     surface_attributes: Vec<c_int>,
     pixel_format: PixelFormat,
+    backend_type: NativeType,
     logger: slog::Logger,
 }
 
@@ -535,6 +550,11 @@ impl EGLContext {
                config_id: config_id,
                surface_attributes: surface_attributes,
                pixel_format: desc,
+               backend_type: match native {
+                   NativeDisplay::X11(_) => NativeType::X11,
+                   NativeDisplay::Wayland(_) => NativeType::Wayland,
+                   NativeDisplay::Gbm(_) => NativeType::Gbm,
+               },
                logger: log,
            })
     }
@@ -548,6 +568,14 @@ impl EGLContext {
     pub unsafe fn create_surface<'a>(&'a self, native: NativeSurface)
                                      -> Result<EGLSurface<'a>, CreationError> {
         trace!(self.logger, "Creating EGL window surface...");
+
+        match native {
+            NativeSurface::X11(_) if self.backend_type != NativeType::X11 => return Err(CreationError::NonMatchingSurfaceType),
+            NativeSurface::Wayland(_) if self.backend_type != NativeType::Wayland => return Err(CreationError::NonMatchingSurfaceType),
+            NativeSurface::Gbm(_) if self.backend_type != NativeType::Gbm =>
+                return Err(CreationError::NonMatchingSurfaceType),
+            _ => {},
+        };
 
         let surface = {
             let surface = match native {
