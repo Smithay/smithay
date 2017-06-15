@@ -521,7 +521,7 @@ impl EGLContext {
         debug!(log, "EGL context successfully created");
 
         let surface_attributes = {
-            let mut out: Vec<c_int> = Vec::with_capacity(2);
+            let mut out: Vec<c_int> = Vec::with_capacity(3);
 
             match reqs.double_buffer {
                 Some(true) => {
@@ -537,6 +537,7 @@ impl EGLContext {
                 None => {}
             }
 
+            out.push(ffi::egl::NONE as i32);
             out
         };
 
