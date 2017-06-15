@@ -168,8 +168,8 @@ impl EGLContext {
     ///
     /// # Unsafety
     ///
-    /// This method is marked unsafe, because the contents of `NativeDisplay` cannot be verified and msy
-    /// contain dangeling pointers are similar unsafe content
+    /// This method is marked unsafe, because the contents of `NativeDisplay` cannot be verified and may
+    /// contain dangling pointers or similar unsafe content
     pub unsafe fn new<L>(native: NativeDisplay, mut attributes: GlAttributes,
                          reqs: PixelFormatRequirements, logger: L)
                          -> Result<EGLContext, CreationError>
@@ -563,8 +563,8 @@ impl EGLContext {
     ///
     /// # Unsafety
     ///
-    /// This method is marked unsafe, because the contents of `NativeSurface` cannot be verified and msy
-    /// contain dangeling pointers are similar unsafe content
+    /// This method is marked unsafe, because the contents of `NativeSurface` cannot be verified and may
+    /// contain dangling pointers or similar unsafe content
     pub unsafe fn create_surface<'a>(&'a self, native: NativeSurface)
                                      -> Result<EGLSurface<'a>, CreationError> {
         trace!(self.logger, "Creating EGL window surface...");
