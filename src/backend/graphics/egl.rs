@@ -117,14 +117,12 @@ impl error::Error for CreationError {
             CreationError::OpenGlVersionNotSupported => {
                 "The requested OpenGL version is not \
                                                          supported."
-            },
+            }
             CreationError::NoAvailablePixelFormat => {
                 "Couldn't find any pixel format that matches \
                                                       the criterias."
-            },
-            CreationError::NonMatchingSurfaceType => {
-                "Surface type does not match the context type."
             }
+            CreationError::NonMatchingSurfaceType => "Surface type does not match the context type.",
             CreationError::NotSupported => "Context creation is not supported on the current window system",
         }
     }
@@ -571,11 +569,16 @@ impl EGLContext {
         trace!(self.logger, "Creating EGL window surface...");
 
         match native {
-            NativeSurface::X11(_) if self.backend_type != NativeType::X11 => return Err(CreationError::NonMatchingSurfaceType),
-            NativeSurface::Wayland(_) if self.backend_type != NativeType::Wayland => return Err(CreationError::NonMatchingSurfaceType),
-            NativeSurface::Gbm(_) if self.backend_type != NativeType::Gbm =>
-                return Err(CreationError::NonMatchingSurfaceType),
-            _ => {},
+            NativeSurface::X11(_) if self.backend_type != NativeType::X11 => {
+                return Err(CreationError::NonMatchingSurfaceType)
+            }
+            NativeSurface::Wayland(_) if self.backend_type != NativeType::Wayland => {
+                return Err(CreationError::NonMatchingSurfaceType)
+            }
+            NativeSurface::Gbm(_) if self.backend_type != NativeType::Gbm => {
+                return Err(CreationError::NonMatchingSurfaceType)
+            }
+            _ => {}
         };
 
         let surface = {
