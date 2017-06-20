@@ -67,7 +67,7 @@ pub enum NativeSurface {
     Gbm(ffi::NativeWindowType),
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 enum NativeType {
     X11,
     Wayland,
@@ -568,30 +568,18 @@ impl EGLContext {
                                      -> Result<EGLSurface<'a>, CreationError> {
         trace!(self.logger, "Creating EGL window surface...");
 
-        match native {
-            NativeSurface::X11(_) if self.backend_type != NativeType::X11 => {
-                return Err(CreationError::NonMatchingSurfaceType)
-            }
-            NativeSurface::Wayland(_) if self.backend_type != NativeType::Wayland => {
-                return Err(CreationError::NonMatchingSurfaceType)
-            }
-            NativeSurface::Gbm(_) if self.backend_type != NativeType::Gbm => {
-                return Err(CreationError::NonMatchingSurfaceType)
-            }
-            _ => {}
-        };
-
         let surface = {
-            let surface = match native {
-                NativeSurface::X11(window) |
-                NativeSurface::Wayland(window) |
-                NativeSurface::Gbm(window) => {
+            let surface = match (native, self.backend_type) {
+                (NativeSurface::X11(window), NativeType::X11) |
+                (NativeSurface::Wayland(window), NativeType::Wayland) |
+                (NativeSurface::Gbm(window), NativeType::Gbm) => {
                     self.egl
                         .CreateWindowSurface(self.display,
                                              self.config_id,
                                              window,
                                              self.surface_attributes.as_ptr())
                 }
+                _ => return Err(CreationError::NonMatchingSurfaceType),
             };
 
             if surface.is_null() {
