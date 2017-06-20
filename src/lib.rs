@@ -13,6 +13,8 @@ extern crate wayland_server;
 extern crate nix;
 extern crate xkbcommon;
 extern crate tempfile;
+#[macro_use]
+extern crate rental;
 
 #[cfg(feature = "backend_winit")]
 extern crate winit;
@@ -35,10 +37,11 @@ pub mod backend;
 pub mod keyboard;
 
 fn slog_or_stdlog<L>(logger: L) -> ::slog::Logger
-    where L: Into<Option<::slog::Logger>>
+where
+    L: Into<Option<::slog::Logger>>,
 {
     use slog::Drain;
-    logger
-        .into()
-        .unwrap_or_else(|| ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), o!()))
+    logger.into().unwrap_or_else(|| {
+        ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), o!())
+    })
 }

@@ -2,8 +2,8 @@
 
 use backend::{SeatInternal, TouchSlotInternal};
 use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{CreationError, EGLContext, EGLGraphicsBackend, GlAttributes, Native,
-                             PixelFormat, PixelFormatRequirements, SwapBuffersError};
+use backend::graphics::egl::{CreationError, EGLContext, EGLGraphicsBackend, GlAttributes, NativeDisplay,
+                             NativeSurface, PixelFormat, PixelFormatRequirements, SwapBuffersError};
 use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState,
                      KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
                      PointerMotionAbsoluteEvent, Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent,
@@ -20,11 +20,25 @@ use winit::{CreationError as WinitCreationError, ElementState, Event, EventsLoop
             WindowBuilder, WindowEvent};
 use winit::os::unix::{WindowExt, get_x11_xconnection};
 
+rental! {
+    mod egl {
+        use std::boxed::Box;
+        use ::backend::graphics::egl::{EGLContext, EGLSurface};
+
+
+        #[rental(deref_suffix)]
+        pub struct RentEGL {
+            context: Box<EGLContext>,
+            surface: EGLSurface<'context>,
+        }
+    }
+}
+
 /// Window with an active EGL Context created by `winit`. Implements the
 /// `EGLGraphicsBackend` graphics backend trait
 pub struct WinitGraphicsBackend {
     window: Rc<Window>,
-    context: EGLContext,
+    context: egl::RentEGL,
     logger: ::slog::Logger,
 }
 
@@ -47,13 +61,16 @@ pub struct WinitInputBackend {
 /// graphics backend trait and a corresponding `WinitInputBackend`, which implements
 /// the `InputBackend` trait
 pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
-    where L: Into<Option<::slog::Logger>>
+where
+    L: Into<Option<::slog::Logger>>,
 {
-    init_from_builder(WindowBuilder::new()
-                          .with_dimensions(1280, 800)
-                          .with_title("Smithay")
-                          .with_visibility(true),
-                      logger)
+    init_from_builder(
+        WindowBuilder::new()
+            .with_dimensions(1280, 800)
+            .with_title("Smithay")
+            .with_visibility(true),
+        logger,
+    )
 }
 
 /// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
@@ -61,26 +78,30 @@ pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitInputBackend), C
 /// `WinitInputBackend`, which implements the `InputBackend` trait
 pub fn init_from_builder<L>(builder: WindowBuilder, logger: L)
                             -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
-    where L: Into<Option<::slog::Logger>>
+where
+    L: Into<Option<::slog::Logger>>,
 {
-    init_from_builder_with_gl_attr(builder,
-                                   GlAttributes {
-                                       version: None,
-                                       profile: None,
-                                       debug: cfg!(debug_assertions),
-                                       vsync: true,
-                                   },
-                                   logger)
+    init_from_builder_with_gl_attr(
+        builder,
+        GlAttributes {
+            version: None,
+            profile: None,
+            debug: cfg!(debug_assertions),
+            vsync: true,
+        },
+        logger,
+    )
 }
 
 /// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
 /// graphics backend trait, from a given `WindowBuilder` struct, as well as given
 /// `GlAttributes` for further customization of the rendering pipeline and a
 /// corresponding `WinitInputBackend`, which implements the `InputBackend` trait.
-pub fn init_from_builder_with_gl_attr<L>
-    (builder: WindowBuilder, attributes: GlAttributes, logger: L)
-     -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
-    where L: Into<Option<::slog::Logger>>
+pub fn init_from_builder_with_gl_attr<L>(
+    builder: WindowBuilder, attributes: GlAttributes, logger: L)
+    -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
+where
+    L: Into<Option<::slog::Logger>>,
 {
     let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_winit"));
     info!(log, "Initializing a winit backend");
@@ -89,31 +110,45 @@ pub fn init_from_builder_with_gl_attr<L>
     let window = Rc::new(builder.build(&events_loop)?);
     debug!(log, "Window created");
 
-    let (native, surface) = if let (Some(conn), Some(window)) =
-        (get_x11_xconnection(), window.get_xlib_window()) {
-        debug!(log, "Window is backed by X11");
-        (Native::X11(conn.display as *const _, window), None)
-    } else if let (Some(display), Some(surface)) =
-        (window.get_wayland_display(), window.get_wayland_client_surface()) {
-        debug!(log, "Window is backed by Wayland");
-        let (w, h) = window.get_inner_size().unwrap();
-        let egl_surface = wegl::WlEglSurface::new(surface, w as i32, h as i32);
-        (Native::Wayland(display, egl_surface.ptr() as *const _), Some(egl_surface))
-    } else {
-        error!(log, "Window is backed by an unsupported graphics framework");
-        return Err(CreationError::NotSupported);
-    };
+    let (native_display, native_surface, surface) =
+        if let (Some(conn), Some(window)) = (get_x11_xconnection(), window.get_xlib_window()) {
+            debug!(log, "Window is backed by X11");
+            (
+                NativeDisplay::X11(conn.display as *const _),
+                NativeSurface::X11(window),
+                None,
+            )
+        } else if let (Some(display), Some(surface)) =
+            (
+                window.get_wayland_display(),
+                window.get_wayland_client_surface(),
+            )
+        {
+            debug!(log, "Window is backed by Wayland");
+            let (w, h) = window.get_inner_size().unwrap();
+            let egl_surface = wegl::WlEglSurface::new(surface, w as i32, h as i32);
+            (
+                NativeDisplay::Wayland(display),
+                NativeSurface::Wayland(egl_surface.ptr() as *const _),
+                Some(egl_surface),
+            )
+        } else {
+            error!(log, "Window is backed by an unsupported graphics framework");
+            return Err(CreationError::NotSupported);
+        };
 
     let context = unsafe {
-        match EGLContext::new(native,
-                              attributes,
-                              PixelFormatRequirements {
-                                  hardware_accelerated: Some(true),
-                                  color_bits: Some(24),
-                                  alpha_bits: Some(8),
-                                  ..Default::default()
-                              },
-                              log.clone()) {
+        match EGLContext::new(
+            native_display,
+            attributes,
+            PixelFormatRequirements {
+                hardware_accelerated: Some(true),
+                color_bits: Some(24),
+                alpha_bits: Some(8),
+                ..Default::default()
+            },
+            log.clone(),
+        ) {
             Ok(context) => context,
             Err(err) => {
                 error!(log, "EGLContext creation failed:\n {}", err);
@@ -122,9 +157,15 @@ pub fn init_from_builder_with_gl_attr<L>
         }
     };
 
-    Ok((WinitGraphicsBackend {
+    Ok((
+        WinitGraphicsBackend {
             window: window.clone(),
-            context: context,
+            context: match egl::RentEGL::try_new(Box::new(context), move |context| unsafe {
+                context.create_surface(native_surface)
+            }) {
+                Ok(x) => x,
+                Err(::rental::TryNewError(err, _)) => return Err(err),
+            },
             logger: log.new(o!("smithay_winit_component" => "graphics")),
         },
         WinitInputBackend {
@@ -133,16 +174,19 @@ pub fn init_from_builder_with_gl_attr<L>
             surface: surface,
             time_counter: 0,
             key_counter: 0,
-            seat: Seat::new(0,
-                            SeatCapabilities {
-                                pointer: true,
-                                keyboard: true,
-                                touch: true,
-                            }),
+            seat: Seat::new(
+                0,
+                SeatCapabilities {
+                    pointer: true,
+                    keyboard: true,
+                    touch: true,
+                },
+            ),
             input_config: (),
             handler: None,
             logger: log.new(o!("smithay_winit_component" => "input")),
-        }))
+        },
+    ))
 }
 
 impl GraphicsBackend for WinitGraphicsBackend {
@@ -163,7 +207,7 @@ impl GraphicsBackend for WinitGraphicsBackend {
 impl EGLGraphicsBackend for WinitGraphicsBackend {
     fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
         trace!(self.logger, "Swapping buffers");
-        self.context.swap_buffers()
+        self.context.rent(|surface| surface.swap_buffers())
     }
 
     unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
@@ -172,9 +216,9 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
-        self.window
-            .get_inner_size_pixels()
-            .expect("Window does not exist anymore")
+        self.window.get_inner_size_pixels().expect(
+            "Window does not exist anymore",
+        )
     }
 
     fn is_current(&self) -> bool {
@@ -183,7 +227,7 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
 
     unsafe fn make_current(&self) -> Result<(), SwapBuffersError> {
         debug!(self.logger, "Setting EGL context to be the current context");
-        self.context.make_current()
+        self.context.rent(|surface| surface.make_current())
     }
 
     fn get_pixel_format(&self) -> PixelFormat {
@@ -267,16 +311,17 @@ impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        cmp::min((self.x * width as f64 /
-                  self.window.get_inner_size_points().unwrap_or((width, 0)).0 as f64) as u32,
-                 0)
+        cmp::min(
+            (self.x * width as f64 / self.window.get_inner_size_points().unwrap_or((width, 0)).0 as f64) as u32,
+            0,
+        )
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        cmp::min((self.y * height as f64 /
-                  self.window.get_inner_size_points().unwrap_or((0, height)).1 as f64) as
-                 u32,
-                 0)
+        cmp::min(
+            (self.y * height as f64 / self.window.get_inner_size_points().unwrap_or((0, height)).1 as f64) as u32,
+            0,
+        )
     }
 }
 
@@ -369,15 +414,19 @@ impl TouchDownEvent for WinitTouchStartedEvent {
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        cmp::min(self.location.0 as i32 * width as i32 /
-                 self.window.get_inner_size_points().unwrap_or((width, 0)).0 as i32,
-                 0) as u32
+        cmp::min(
+            self.location.0 as i32 * width as i32 /
+                self.window.get_inner_size_points().unwrap_or((width, 0)).0 as i32,
+            0,
+        ) as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        cmp::min(self.location.1 as i32 * height as i32 /
-                 self.window.get_inner_size_points().unwrap_or((0, height)).1 as i32,
-                 0) as u32
+        cmp::min(
+            self.location.1 as i32 * height as i32 /
+                self.window.get_inner_size_points().unwrap_or((0, height)).1 as i32,
+            0,
+        ) as u32
     }
 }
 
@@ -482,16 +531,18 @@ impl InputBackend for WinitInputBackend {
     }
 
     fn get_handler(&mut self) -> Option<&mut InputHandler<Self>> {
-        self.handler
-            .as_mut()
-            .map(|handler| handler as &mut InputHandler<Self>)
+        self.handler.as_mut().map(|handler| {
+            handler as &mut InputHandler<Self>
+        })
     }
 
     fn clear_handler(&mut self) {
         if let Some(mut handler) = self.handler.take() {
-            trace!(self.logger,
-                   "Calling on_seat_destroyed with {:?}",
-                   self.seat);
+            trace!(
+                self.logger,
+                "Calling on_seat_destroyed with {:?}",
+                self.seat
+            );
             handler.on_seat_destroyed(&self.seat);
         }
         info!(self.logger, "Removing input handler");
@@ -531,168 +582,188 @@ impl InputBackend for WinitInputBackend {
             let mut handler = self.handler.as_mut();
             let logger = &self.logger;
 
-            self.events_loop
-                .poll_events(move |event| match event {
-                                 Event::WindowEvent { event, .. } => {
-                                     match (event, handler.as_mut()) {
-                                         (WindowEvent::Resized(x, y), _) => {
-                                             trace!(logger, "Resizing window to {:?}", (x, y));
-                                             window.set_inner_size(x, y);
-                                             if let Some(wl_egl_surface) = surface.as_ref() {
-                                                 wl_egl_surface.resize(x as i32, y as i32, 0, 0);
-                                             }
-                                         }
-                                         (WindowEvent::KeyboardInput {
-                                              input: KeyboardInput { scancode, state, .. }, ..
-                                          },
-                                          Some(handler)) => {
-                                             match state {
-                                                 ElementState::Pressed => *key_counter += 1,
-                                                 ElementState::Released => {
-                                                     *key_counter = key_counter.checked_sub(1).unwrap_or(0)
-                                                 }
-                                             };
-                                             trace!(logger,
-                                                    "Calling on_keyboard_key with {:?}",
-                                                    (scancode, state));
-                                             handler.on_keyboard_key(seat,
-                                                                     WinitKeyboardInputEvent {
-                                                                         time: *time_counter,
-                                                                         key: scancode,
-                                                                         count: *key_counter,
-                                                                         state: state,
-                                                                     })
-                                         }
-                                         (WindowEvent::MouseMoved { position: (x, y), .. },
-                                          Some(handler)) => {
-                                             trace!(logger,
-                                                    "Calling on_pointer_move_absolute with {:?}",
-                                                    (x, y));
-                                             handler.on_pointer_move_absolute(seat,
-                                                                              WinitMouseMovedEvent {
-                                                                                  window: window.clone(),
-                                                                                  time: *time_counter,
-                                                                                  x: x,
-                                                                                  y: y,
-                                                                              })
-                                         }
-                                         (WindowEvent::MouseWheel { delta, .. }, Some(handler)) => {
-                                             match delta {
-                                                 MouseScrollDelta::LineDelta(x, y) |
-                                                 MouseScrollDelta::PixelDelta(x, y) => {
-                                                     if x != 0.0 {
-                            let event = WinitMouseWheelEvent {
-                                axis: Axis::Horizontal,
-                                time: *time_counter,
-                                delta: delta,
-                            };
-                            trace!(logger,
-                                   "Calling on_pointer_axis for Axis::Horizontal with {:?}",
-                                   x);
-                            handler.on_pointer_axis(seat, event);
+            self.events_loop.poll_events(move |event| match event {
+                Event::WindowEvent { event, .. } => {
+                    match (event, handler.as_mut()) {
+                        (WindowEvent::Resized(x, y), _) => {
+                            trace!(logger, "Resizing window to {:?}", (x, y));
+                            window.set_inner_size(x, y);
+                            if let Some(wl_egl_surface) = surface.as_ref() {
+                                wl_egl_surface.resize(x as i32, y as i32, 0, 0);
+                            }
                         }
-                                                     if y != 0.0 {
-                            let event = WinitMouseWheelEvent {
-                                axis: Axis::Vertical,
-                                time: *time_counter,
-                                delta: delta,
+                        (WindowEvent::KeyboardInput {
+                             input: KeyboardInput { scancode, state, .. }, ..
+                         },
+                         Some(handler)) => {
+                            match state {
+                                ElementState::Pressed => *key_counter += 1,
+                                ElementState::Released => {
+                                    *key_counter = key_counter.checked_sub(1).unwrap_or(0)
+                                }
                             };
-                            trace!(logger,
-                                   "Calling on_pointer_axis for Axis::Vertical with {:?}",
-                                   y);
-                            handler.on_pointer_axis(seat, event);
+                            trace!(
+                                logger,
+                                "Calling on_keyboard_key with {:?}",
+                                (scancode, state)
+                            );
+                            handler.on_keyboard_key(
+                                seat,
+                                WinitKeyboardInputEvent {
+                                    time: *time_counter,
+                                    key: scancode,
+                                    count: *key_counter,
+                                    state: state,
+                                },
+                            )
                         }
-                                                 }
-                                             }
-                                         }
-                                         (WindowEvent::MouseInput { state, button, .. }, Some(handler)) => {
-                                             trace!(logger,
-                                                    "Calling on_pointer_button with {:?}",
-                                                    (button, state));
-                                             handler.on_pointer_button(seat,
-                                                                       WinitMouseInputEvent {
-                                                                           time: *time_counter,
-                                                                           button: button,
-                                                                           state: state,
-                                                                       })
-                                         }
-                                         (WindowEvent::Touch(Touch {
-                                                                 phase: TouchPhase::Started,
-                                                                 location: (x, y),
-                                                                 id,
-                                                                 ..
-                                                             }),
-                                          Some(handler)) => {
-                                             trace!(logger, "Calling on_touch_down at {:?}", (x, y));
-                                             handler.on_touch_down(seat,
-                                                                   WinitTouchStartedEvent {
-                                                                       window: window.clone(),
-                                                                       time: *time_counter,
-                                                                       location: (x, y),
-                                                                       id: id,
-                                                                   })
-                                         }
-                                         (WindowEvent::Touch(Touch {
-                                                                 phase: TouchPhase::Moved,
-                                                                 location: (x, y),
-                                                                 id,
-                                                                 ..
-                                                             }),
-                                          Some(handler)) => {
-                                             trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
-                                             handler.on_touch_motion(seat,
-                                                                     WinitTouchMovedEvent {
-                                                                         window: window.clone(),
-                                                                         time: *time_counter,
-                                                                         location: (x, y),
-                                                                         id: id,
-                                                                     })
-                                         }
-                                         (WindowEvent::Touch(Touch {
-                                                                 phase: TouchPhase::Ended,
-                                                                 location: (x, y),
-                                                                 id,
-                                                                 ..
-                                                             }),
-                                          Some(handler)) => {
-                                             trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
-                                             handler.on_touch_motion(seat,
-                                                                     WinitTouchMovedEvent {
-                                                                         window: window.clone(),
-                                                                         time: *time_counter,
-                                                                         location: (x, y),
-                                                                         id: id,
-                                                                     });
-                                             trace!(logger, "Calling on_touch_up");
-                                             handler.on_touch_up(seat,
-                                                                 WinitTouchEndedEvent {
-                                                                     time: *time_counter,
-                                                                     id: id,
-                                                                 });
-                                         }
-                                         (WindowEvent::Touch(Touch {
-                                                                 phase: TouchPhase::Cancelled,
-                                                                 id,
-                                                                 ..
-                                                             }),
-                                          Some(handler)) => {
-                                             trace!(logger, "Calling on_touch_cancel");
-                                             handler.on_touch_cancel(seat,
-                                                                     WinitTouchCancelledEvent {
-                                                                         time: *time_counter,
-                                                                         id: id,
-                                                                     })
-                                         }
-                                         (WindowEvent::Closed, _) => {
-                                             warn!(logger, "Window closed");
-                                             *closed_ptr = true;
-                                         }
-                                         _ => {}
-                                     }
-                                     *time_counter += 1;
-                                 }
-                                 Event::DeviceEvent { .. } => {}
-                             });
+                        (WindowEvent::MouseMoved { position: (x, y), .. }, Some(handler)) => {
+                            trace!(logger, "Calling on_pointer_move_absolute with {:?}", (x, y));
+                            handler.on_pointer_move_absolute(
+                                seat,
+                                WinitMouseMovedEvent {
+                                    window: window.clone(),
+                                    time: *time_counter,
+                                    x: x,
+                                    y: y,
+                                },
+                            )
+                        }
+                        (WindowEvent::MouseWheel { delta, .. }, Some(handler)) => {
+                            match delta {
+                                MouseScrollDelta::LineDelta(x, y) |
+                                MouseScrollDelta::PixelDelta(x, y) => {
+                                    if x != 0.0 {
+                                        let event = WinitMouseWheelEvent {
+                                            axis: Axis::Horizontal,
+                                            time: *time_counter,
+                                            delta: delta,
+                                        };
+                                        trace!(
+                                            logger,
+                                            "Calling on_pointer_axis for Axis::Horizontal with {:?}",
+                                            x
+                                        );
+                                        handler.on_pointer_axis(seat, event);
+                                    }
+                                    if y != 0.0 {
+                                        let event = WinitMouseWheelEvent {
+                                            axis: Axis::Vertical,
+                                            time: *time_counter,
+                                            delta: delta,
+                                        };
+                                        trace!(
+                                            logger,
+                                            "Calling on_pointer_axis for Axis::Vertical with {:?}",
+                                            y
+                                        );
+                                        handler.on_pointer_axis(seat, event);
+                                    }
+                                }
+                            }
+                        }
+                        (WindowEvent::MouseInput { state, button, .. }, Some(handler)) => {
+                            trace!(
+                                logger,
+                                "Calling on_pointer_button with {:?}",
+                                (button, state)
+                            );
+                            handler.on_pointer_button(
+                                seat,
+                                WinitMouseInputEvent {
+                                    time: *time_counter,
+                                    button: button,
+                                    state: state,
+                                },
+                            )
+                        }
+                        (WindowEvent::Touch(Touch {
+                                                phase: TouchPhase::Started,
+                                                location: (x, y),
+                                                id,
+                                                ..
+                                            }),
+                         Some(handler)) => {
+                            trace!(logger, "Calling on_touch_down at {:?}", (x, y));
+                            handler.on_touch_down(
+                                seat,
+                                WinitTouchStartedEvent {
+                                    window: window.clone(),
+                                    time: *time_counter,
+                                    location: (x, y),
+                                    id: id,
+                                },
+                            )
+                        }
+                        (WindowEvent::Touch(Touch {
+                                                phase: TouchPhase::Moved,
+                                                location: (x, y),
+                                                id,
+                                                ..
+                                            }),
+                         Some(handler)) => {
+                            trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
+                            handler.on_touch_motion(
+                                seat,
+                                WinitTouchMovedEvent {
+                                    window: window.clone(),
+                                    time: *time_counter,
+                                    location: (x, y),
+                                    id: id,
+                                },
+                            )
+                        }
+                        (WindowEvent::Touch(Touch {
+                                                phase: TouchPhase::Ended,
+                                                location: (x, y),
+                                                id,
+                                                ..
+                                            }),
+                         Some(handler)) => {
+                            trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
+                            handler.on_touch_motion(
+                                seat,
+                                WinitTouchMovedEvent {
+                                    window: window.clone(),
+                                    time: *time_counter,
+                                    location: (x, y),
+                                    id: id,
+                                },
+                            );
+                            trace!(logger, "Calling on_touch_up");
+                            handler.on_touch_up(
+                                seat,
+                                WinitTouchEndedEvent {
+                                    time: *time_counter,
+                                    id: id,
+                                },
+                            );
+                        }
+                        (WindowEvent::Touch(Touch {
+                                                phase: TouchPhase::Cancelled,
+                                                id,
+                                                ..
+                                            }),
+                         Some(handler)) => {
+                            trace!(logger, "Calling on_touch_cancel");
+                            handler.on_touch_cancel(
+                                seat,
+                                WinitTouchCancelledEvent {
+                                    time: *time_counter,
+                                    id: id,
+                                },
+                            )
+                        }
+                        (WindowEvent::Closed, _) => {
+                            warn!(logger, "Window closed");
+                            *closed_ptr = true;
+                        }
+                        _ => {}
+                    }
+                    *time_counter += 1;
+                }
+                Event::DeviceEvent { .. } => {}
+            });
         }
 
         if closed {

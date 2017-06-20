@@ -26,7 +26,8 @@ impl LibinputInputBackend {
     /// Initialize a new `LibinputInputBackend` from a given already initialized libinput
     /// context.
     pub fn new<L>(context: libinput::Libinput, logger: L) -> Self
-        where L: Into<Option<::slog::Logger>>
+    where
+        L: Into<Option<::slog::Logger>>,
     {
         let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_libinput"));
         info!(log, "Initializing a libinput backend");
@@ -270,9 +271,9 @@ impl backend::InputBackend for LibinputInputBackend {
     }
 
     fn get_handler(&mut self) -> Option<&mut backend::InputHandler<Self>> {
-        self.handler
-            .as_mut()
-            .map(|handler| handler as &mut backend::InputHandler<Self>)
+        self.handler.as_mut().map(|handler| {
+            handler as &mut backend::InputHandler<Self>
+        })
     }
 
     fn clear_handler(&mut self) {
@@ -328,8 +329,8 @@ impl backend::InputBackend for LibinputInputBackend {
                                 Entry::Vacant(seat_entry) => {
                                     let mut hasher = DefaultHasher::default();
                                     seat_entry.key().hash(&mut hasher);
-                                    let seat = seat_entry
-                                        .insert(backend::Seat::new(hasher.finish(), new_caps));
+                                    let seat =
+                                        seat_entry.insert(backend::Seat::new(hasher.finish(), new_caps));
                                     if let Some(ref mut handler) = self.handler {
                                         trace!(self.logger, "Calling on_seat_created with {:?}", seat);
                                         handler.on_seat_created(seat);
@@ -378,7 +379,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                 } else {
                                     panic!("Seat destroyed that was never created");
                                 }
-                                // it has, notify about updates
+                            // it has, notify about updates
                             } else if let Some(ref mut handler) = self.handler {
                                 let seat = self.seats[&device_seat];
                                 trace!(self.logger, "Calling on_seat_changed with {:?}", seat);
@@ -394,18 +395,20 @@ impl backend::InputBackend for LibinputInputBackend {
                     use input::event::touch::*;
                     if let Some(ref mut handler) = self.handler {
                         let device_seat = touch_event.device().seat();
-                        let seat = &self.seats
-                                        .get(&device_seat)
-                                        .expect("Recieved touch event of non existing Seat");
+                        let seat = &self.seats.get(&device_seat).expect(
+                            "Recieved touch event of non existing Seat",
+                        );
                         match touch_event {
                             TouchEvent::Down(down_event) => {
                                 trace!(self.logger, "Calling on_touch_down with {:?}", down_event);
                                 handler.on_touch_down(seat, down_event)
                             }
                             TouchEvent::Motion(motion_event) => {
-                                trace!(self.logger,
-                                       "Calling on_touch_motion with {:?}",
-                                       motion_event);
+                                trace!(
+                                    self.logger,
+                                    "Calling on_touch_motion with {:?}",
+                                    motion_event
+                                );
                                 handler.on_touch_motion(seat, motion_event)
                             }
                             TouchEvent::Up(up_event) => {
@@ -413,9 +416,11 @@ impl backend::InputBackend for LibinputInputBackend {
                                 handler.on_touch_up(seat, up_event)
                             }
                             TouchEvent::Cancel(cancel_event) => {
-                                trace!(self.logger,
-                                       "Calling on_touch_cancel with {:?}",
-                                       cancel_event);
+                                trace!(
+                                    self.logger,
+                                    "Calling on_touch_cancel with {:?}",
+                                    cancel_event
+                                );
                                 handler.on_touch_cancel(seat, cancel_event)
                             }
                             TouchEvent::Frame(frame_event) => {
@@ -431,9 +436,9 @@ impl backend::InputBackend for LibinputInputBackend {
                         KeyboardEvent::Key(key_event) => {
                             if let Some(ref mut handler) = self.handler {
                                 let device_seat = key_event.device().seat();
-                                let seat = &self.seats
-                                                .get(&device_seat)
-                                                .expect("Recieved key event of non existing Seat");
+                                let seat = &self.seats.get(&device_seat).expect(
+                                    "Recieved key event of non existing Seat",
+                                );
                                 trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
                                 handler.on_keyboard_key(seat, key_event);
                             }
@@ -444,49 +449,63 @@ impl backend::InputBackend for LibinputInputBackend {
                     use input::event::pointer::*;
                     if let Some(ref mut handler) = self.handler {
                         let device_seat = pointer_event.device().seat();
-                        let seat = &self.seats
-                                        .get(&device_seat)
-                                        .expect("Recieved pointer event of non existing Seat");
+                        let seat = &self.seats.get(&device_seat).expect(
+                            "Recieved pointer event of non existing Seat",
+                        );
                         match pointer_event {
                             PointerEvent::Motion(motion_event) => {
-                                trace!(self.logger,
-                                       "Calling on_pointer_move with {:?}",
-                                       motion_event);
+                                trace!(
+                                    self.logger,
+                                    "Calling on_pointer_move with {:?}",
+                                    motion_event
+                                );
                                 handler.on_pointer_move(seat, motion_event);
                             }
                             PointerEvent::MotionAbsolute(motion_abs_event) => {
-                                trace!(self.logger,
-                                       "Calling on_pointer_move_absolute with {:?}",
-                                       motion_abs_event);
+                                trace!(
+                                    self.logger,
+                                    "Calling on_pointer_move_absolute with {:?}",
+                                    motion_abs_event
+                                );
                                 handler.on_pointer_move_absolute(seat, motion_abs_event);
                             }
                             PointerEvent::Axis(axis_event) => {
                                 let rc_axis_event = Rc::new(axis_event);
                                 if rc_axis_event.has_axis(Axis::Vertical) {
-                                    trace!(self.logger,
-                                           "Calling on_pointer_axis for Axis::Vertical with {:?}",
-                                           *rc_axis_event);
-                                    handler.on_pointer_axis(seat,
-                                                            self::PointerAxisEvent {
-                                                                axis: Axis::Vertical,
-                                                                event: rc_axis_event.clone(),
-                                                            });
+                                    trace!(
+                                        self.logger,
+                                        "Calling on_pointer_axis for Axis::Vertical with {:?}",
+                                        *rc_axis_event
+                                    );
+                                    handler.on_pointer_axis(
+                                        seat,
+                                        self::PointerAxisEvent {
+                                            axis: Axis::Vertical,
+                                            event: rc_axis_event.clone(),
+                                        },
+                                    );
                                 }
                                 if rc_axis_event.has_axis(Axis::Horizontal) {
-                                    trace!(self.logger,
-                                           "Calling on_pointer_axis for Axis::Horizontal with {:?}",
-                                           *rc_axis_event);
-                                    handler.on_pointer_axis(seat,
-                                                            self::PointerAxisEvent {
-                                                                axis: Axis::Horizontal,
-                                                                event: rc_axis_event.clone(),
-                                                            });
+                                    trace!(
+                                        self.logger,
+                                        "Calling on_pointer_axis for Axis::Horizontal with {:?}",
+                                        *rc_axis_event
+                                    );
+                                    handler.on_pointer_axis(
+                                        seat,
+                                        self::PointerAxisEvent {
+                                            axis: Axis::Horizontal,
+                                            event: rc_axis_event.clone(),
+                                        },
+                                    );
                                 }
                             }
                             PointerEvent::Button(button_event) => {
-                                trace!(self.logger,
-                                       "Calling on_pointer_button with {:?}",
-                                       button_event);
+                                trace!(
+                                    self.logger,
+                                    "Calling on_pointer_button with {:?}",
+                                    button_event
+                                );
                                 handler.on_pointer_button(seat, button_event);
                             }
                         }

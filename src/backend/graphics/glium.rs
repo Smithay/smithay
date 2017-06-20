@@ -48,8 +48,10 @@ impl<T: EGLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
     /// Note that destroying a `Frame` is immediate, even if vsync is enabled.
     #[inline]
     pub fn draw(&self) -> Frame {
-        Frame::new(self.context.clone(),
-                   self.backend.get_framebuffer_dimensions())
+        Frame::new(
+            self.context.clone(),
+            self.backend.get_framebuffer_dimensions(),
+        )
     }
 }
 

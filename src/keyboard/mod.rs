@@ -37,7 +37,7 @@ pub use xkbcommon::xkb::{Keysym, keysyms};
 ///
 /// For some modifiers, this means that the key is currently pressed, others are toggled
 /// (like caps lock).
-#[derive(Copy,Clone,Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct ModifiersState {
     /// The "control" key
     pub ctrl: bool,
@@ -95,22 +95,23 @@ impl KbdInternal {
         // FIXME: This is an issue with the xkbcommon-rs crate that does not reflect this
         // non-threadsafety properly.
         let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
-        let keymap = xkb::Keymap::new_from_names(&context,
-                                                 &rules,
-                                                 &model,
-                                                 &layout,
-                                                 &variant,
-                                                 options,
-                                                 xkb::KEYMAP_COMPILE_NO_FLAGS)
-                .ok_or(())?;
+        let keymap = xkb::Keymap::new_from_names(
+            &context,
+            &rules,
+            &model,
+            &layout,
+            &variant,
+            options,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        ).ok_or(())?;
         let state = xkb::State::new(&keymap);
         Ok(KbdInternal {
-               focus: None,
-               pressed_keys: Vec::new(),
-               mods_state: ModifiersState::new(),
-               keymap: keymap,
-               state: state,
-           })
+            focus: None,
+            pressed_keys: Vec::new(),
+            mods_state: ModifiersState::new(),
+            keymap: keymap,
+            state: state,
+        })
     }
 
     // return true if modifier state has changed
@@ -148,8 +149,10 @@ impl KbdInternal {
 
     fn serialize_pressed_keys(&self) -> Vec<u8> {
         let serialized = unsafe {
-            ::std::slice::from_raw_parts(self.pressed_keys.as_ptr() as *const u8,
-                                         self.pressed_keys.len() * 4)
+            ::std::slice::from_raw_parts(
+                self.pressed_keys.as_ptr() as *const u8,
+                self.pressed_keys.len() * 4,
+            )
         };
         serialized.into()
     }
@@ -167,7 +170,8 @@ pub enum Error {
 pub fn create_keyboard_handler<L>(rules: &str, model: &str, layout: &str, variant: &str,
                                   options: Option<String>, logger: L)
                                   -> Result<KbdHandle, Error>
-    where L: Into<Option<::slog::Logger>>
+where
+    L: Into<Option<::slog::Logger>>,
 {
     let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "xkbcommon_handler"));
     info!(log, "Initializing a xkbcommon handler with keymap";
@@ -176,17 +180,17 @@ pub fn create_keyboard_handler<L>(rules: &str, model: &str, layout: &str, varian
     );
     let internal = KbdInternal::new(rules, model, layout, variant, options)
         .map_err(|_| {
-                     debug!(log, "Loading keymap failed");
-                     Error::BadKeymap
-                 })?;
+            debug!(log, "Loading keymap failed");
+            Error::BadKeymap
+        })?;
 
 
     // prepare a tempfile with the keymap, to send it to clients
     let mut keymap_file = tempfile().map_err(Error::IoError)?;
     let keymap_data = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-    keymap_file
-        .write_all(keymap_data.as_bytes())
-        .map_err(Error::IoError)?;
+    keymap_file.write_all(keymap_data.as_bytes()).map_err(
+        Error::IoError,
+    )?;
     keymap_file.flush().map_err(Error::IoError)?;
 
     trace!(log, "Keymap loaded and copied to tempfile.";
@@ -194,13 +198,13 @@ pub fn create_keyboard_handler<L>(rules: &str, model: &str, layout: &str, varian
     );
 
     Ok(KbdHandle {
-           arc: Arc::new(KbdArc {
-                             internal: Mutex::new(internal),
-                             keymap_file: keymap_file,
-                             keymap_len: keymap_data.as_bytes().len() as u32,
-                             logger: log,
-                         }),
-       })
+        arc: Arc::new(KbdArc {
+            internal: Mutex::new(internal),
+            keymap_file: keymap_file,
+            keymap_len: keymap_data.as_bytes().len() as u32,
+            logger: log,
+        }),
+    })
 }
 
 struct KbdArc {
@@ -235,7 +239,8 @@ impl KbdHandle {
     /// The module `smithay::keyboard::keysyms` exposes definitions of all possible keysyms
     /// to be compared against. This includes non-characted keysyms, such as XF86 special keys.
     pub fn input<F>(&self, keycode: u32, state: KeyState, serial: u32, filter: F)
-        where F: FnOnce(&ModifiersState, Keysym) -> bool
+    where
+        F: FnOnce(&ModifiersState, Keysym) -> bool,
     {
         trace!(self.arc.logger, "Handling keystroke"; "keycode" => keycode, "state" => format_args!("{:?}", state));
         let mut guard = self.arc.internal.lock().unwrap();
@@ -315,8 +320,10 @@ impl KbdHandle {
     /// This should be done first, before anything else is done with this keyboard.
     pub fn send_keymap(&self, kbd: &wl_keyboard::WlKeyboard) {
         trace!(self.arc.logger, "Sending keymap to client");
-        kbd.keymap(wl_keyboard::KeymapFormat::XkbV1,
-                   self.arc.keymap_file.as_raw_fd(),
-                   self.arc.keymap_len);
+        kbd.keymap(
+            wl_keyboard::KeymapFormat::XkbV1,
+            self.arc.keymap_file.as_raw_fd(),
+            self.arc.keymap_len,
+        );
     }
 }
