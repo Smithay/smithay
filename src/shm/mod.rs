@@ -89,7 +89,8 @@ impl ShmGlobal {
     /// as they are required by the protocol. Formats given as argument
     /// as additionnaly advertized.
     pub fn new<L>(mut formats: Vec<wl_shm::Format>, logger: L) -> ShmGlobal
-        where L: Into<Option<::slog::Logger>>
+    where
+        L: Into<Option<::slog::Logger>>,
     {
         let log = ::slog_or_stdlog(logger);
 
@@ -147,7 +148,8 @@ impl ShmGlobalToken {
     /// If the buffer is not managed by the associated ShmGlobal, the closure is not called
     /// and this method will return `Err(())` (this will be the case for an EGL buffer for example).
     pub fn with_buffer_contents<F>(&self, buffer: &wl_buffer::WlBuffer, f: F) -> Result<(), BufferAccessError>
-        where F: FnOnce(&[u8], BufferData)
+    where
+        F: FnOnce(&[u8], BufferData),
     {
         if !resource_is_registered::<_, ShmHandler>(buffer, self.hid) {
             return Err(BufferAccessError::NotManaged);
@@ -155,8 +157,9 @@ impl ShmGlobalToken {
         let data = unsafe { &*(buffer.get_user_data() as *mut InternalBufferData) };
 
         if data.pool
-               .with_data_slice(|slice| f(slice, data.data))
-               .is_err() {
+            .with_data_slice(|slice| f(slice, data.data))
+            .is_err()
+        {
             // SIGBUS error occured
             buffer.post_error(wl_shm::Error::InvalidFd as u32, "Bad pool size.".into());
             return Err(BufferAccessError::BadMap);
@@ -168,10 +171,10 @@ impl ShmGlobalToken {
 impl Init for ShmGlobal {
     fn init(&mut self, evqh: &mut EventLoopHandle, _index: usize) {
         let id = evqh.add_handler_with_init(ShmHandler {
-                                                my_id: ::std::usize::MAX,
-                                                valid_formats: self.formats.clone(),
-                                                log: self.log.clone(),
-                                            });
+            my_id: ::std::usize::MAX,
+            valid_formats: self.formats.clone(),
+            log: self.log.clone(),
+        });
         self.handler_id = Some(id);
     }
 }
@@ -205,8 +208,10 @@ impl wl_shm::Handler for ShmHandler {
     fn create_pool(&mut self, evqh: &mut EventLoopHandle, _client: &Client, shm: &wl_shm::WlShm,
                    pool: wl_shm_pool::WlShmPool, fd: RawFd, size: i32) {
         if size <= 0 {
-            shm.post_error(wl_shm::Error::InvalidFd as u32,
-                           "Invalid size for a new wl_shm_pool.".into());
+            shm.post_error(
+                wl_shm::Error::InvalidFd as u32,
+                "Invalid size for a new wl_shm_pool.".into(),
+            );
             return;
         }
         let mmap_pool = match Pool::new(fd, size as usize, self.log.clone()) {
@@ -232,7 +237,7 @@ impl Destroy<wl_shm_pool::WlShmPool> for ShmHandler {
 declare_handler!(ShmHandler, wl_shm::Handler, wl_shm::WlShm);
 
 /// Details of the contents of a buffer relative to its pool
-#[derive(Copy,Clone,Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct BufferData {
     /// Offset of the start of the buffer relative to the beginning of the pool in bytes
     pub offset: i32,
@@ -261,15 +266,15 @@ impl wl_shm_pool::Handler for ShmHandler {
         }
         let arc_pool = unsafe { &*(pool.get_user_data() as *mut Arc<Pool>) };
         let data = Box::into_raw(Box::new(InternalBufferData {
-                                              pool: arc_pool.clone(),
-                                              data: BufferData {
-                                                  offset: offset,
-                                                  width: width,
-                                                  height: height,
-                                                  stride: stride,
-                                                  format: format,
-                                              },
-                                          }));
+            pool: arc_pool.clone(),
+            data: BufferData {
+                offset: offset,
+                width: width,
+                height: height,
+                stride: stride,
+                format: format,
+            },
+        }));
         evqh.register_with_destructor::<_, ShmHandler, ShmHandler>(&buffer, self.my_id);
         buffer.set_user_data(data as *mut ());
     }
@@ -280,8 +285,10 @@ impl wl_shm_pool::Handler for ShmHandler {
         match arc_pool.resize(size) {
             Ok(()) => {}
             Err(ResizeError::InvalidSize) => {
-                pool.post_error(wl_shm::Error::InvalidFd as u32,
-                                "Invalid new size for a wl_shm_pool.".into());
+                pool.post_error(
+                    wl_shm::Error::InvalidFd as u32,
+                    "Invalid new size for a wl_shm_pool.".into(),
+                );
             }
             Err(ResizeError::MremapFailed) => {
                 pool.post_error(wl_shm::Error::InvalidFd as u32, "mremap failed.".into());

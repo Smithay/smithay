@@ -29,10 +29,10 @@ impl Pool {
         let memmap = MemMap::new(fd, size)?;
         trace!(log, "Creating new shm pool"; "fd" => fd as i32, "size" => size);
         Ok(Pool {
-               map: RwLock::new(memmap),
-               fd: fd,
-               log: log,
-           })
+            map: RwLock::new(memmap),
+            fd: fd,
+            log: log,
+        })
     }
 
     pub fn resize(&self, newsize: i32) -> Result<(), ResizeError> {
@@ -51,8 +51,8 @@ impl Pool {
     pub fn with_data_slice<F: FnOnce(&[u8])>(&self, f: F) -> Result<(), ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {
-                                  place_sigbus_handler();
-                              });
+            place_sigbus_handler();
+        });
 
         let pool_guard = self.map.read().unwrap();
 
@@ -60,13 +60,13 @@ impl Pool {
 
         // Prepare the access
         SIGBUS_GUARD.with(|guard| {
-                              let (p, _) = guard.get();
-                              if !p.is_null() {
-                                  // Recursive call of this method is not supported
-                                  panic!("Recursive access to a SHM pool content is not supported.");
-                              }
-                              guard.set((&*pool_guard as *const MemMap, false))
-                          });
+            let (p, _) = guard.get();
+            if !p.is_null() {
+                // Recursive call of this method is not supported
+                panic!("Recursive access to a SHM pool content is not supported.");
+            }
+            guard.set((&*pool_guard as *const MemMap, false))
+        });
 
         let slice = pool_guard.get_slice();
         f(slice);
@@ -101,10 +101,10 @@ struct MemMap {
 impl MemMap {
     fn new(fd: RawFd, size: usize) -> Result<MemMap, ()> {
         Ok(MemMap {
-               ptr: unsafe { map(fd, size) }?,
-               fd: fd,
-               size: size,
-           })
+            ptr: unsafe { map(fd, size) }?,
+            fd: fd,
+            size: size,
+        })
     }
 
     fn remap(&mut self, newsize: usize) -> Result<(), ()> {
@@ -160,12 +160,14 @@ impl Drop for MemMap {
 
 // mman::mmap should really be unsafe... why isn't it?
 unsafe fn map(fd: RawFd, size: usize) -> Result<*mut u8, ()> {
-    let ret = mman::mmap(ptr::null_mut(),
-                         size,
-                         mman::PROT_READ,
-                         mman::MAP_SHARED,
-                         fd,
-                         0);
+    let ret = mman::mmap(
+        ptr::null_mut(),
+        size,
+        mman::PROT_READ,
+        mman::MAP_SHARED,
+        fd,
+        0,
+    );
     ret.map(|p| p as *mut u8).map_err(|_| ())
 }
 
@@ -176,20 +178,24 @@ unsafe fn unmap(ptr: *mut u8, size: usize) -> Result<(), ()> {
 }
 
 unsafe fn nullify_map(ptr: *mut u8, size: usize) -> Result<(), ()> {
-    let ret = mman::mmap(ptr as *mut _,
-                         size,
-                         mman::PROT_READ,
-                         mman::MAP_ANONYMOUS | mman::MAP_PRIVATE | mman::MAP_FIXED,
-                         -1,
-                         0);
+    let ret = mman::mmap(
+        ptr as *mut _,
+        size,
+        mman::PROT_READ,
+        mman::MAP_ANONYMOUS | mman::MAP_PRIVATE | mman::MAP_FIXED,
+        -1,
+        0,
+    );
     ret.map(|_| ()).map_err(|_| ())
 }
 
 unsafe fn place_sigbus_handler() {
     // create our sigbus handler
-    let action = SigAction::new(SigHandler::SigAction(sigbus_handler),
-                                signal::SA_NODEFER,
-                                signal::SigSet::empty());
+    let action = SigAction::new(
+        SigHandler::SigAction(sigbus_handler),
+        signal::SA_NODEFER,
+        signal::SigSet::empty(),
+    );
     match signal::sigaction(Signal::SIGBUS, &action) {
         Ok(old_signal) => {
             OLD_SIGBUS_HANDLER = Box::into_raw(Box::new(old_signal));

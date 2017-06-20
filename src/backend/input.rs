@@ -49,7 +49,8 @@ impl ::std::cmp::PartialEq for Seat {
 
 impl ::std::hash::Hash for Seat {
     fn hash<H>(&self, state: &mut H)
-        where H: ::std::hash::Hasher
+    where
+        H: ::std::hash::Hasher,
     {
         self.id.hash(state);
     }
@@ -275,7 +276,10 @@ pub trait PointerMotionAbsoluteEvent: Event {
     /// Device position converted to the targets coordinate space.
     /// E.g. the focused output's resolution.
     fn position_transformed(&self, coordinate_space: (u32, u32)) -> (u32, u32) {
-        (self.x_transformed(coordinate_space.0), self.y_transformed(coordinate_space.1))
+        (
+            self.x_transformed(coordinate_space.0),
+            self.y_transformed(coordinate_space.1),
+        )
     }
 
     /// Device x position converted to the targets coordinate space's width.
@@ -336,7 +340,10 @@ pub trait TouchDownEvent: Event {
     /// Touch position converted into the target coordinate space.
     /// E.g. the focused output's resolution.
     fn position_transformed(&self, coordinate_space: (u32, u32)) -> (u32, u32) {
-        (self.x_transformed(coordinate_space.0), self.y_transformed(coordinate_space.1))
+        (
+            self.x_transformed(coordinate_space.0),
+            self.y_transformed(coordinate_space.1),
+        )
     }
 
     /// Touch event's x-coordinate in the device's native coordinate space
@@ -395,7 +402,10 @@ pub trait TouchMotionEvent: Event {
     /// Touch position converted into the target coordinate space.
     /// E.g. the focused output's resolution.
     fn position_transformed(&self, coordinate_space: (u32, u32)) -> (u32, u32) {
-        (self.x_transformed(coordinate_space.0), self.y_transformed(coordinate_space.1))
+        (
+            self.x_transformed(coordinate_space.0),
+            self.y_transformed(coordinate_space.1),
+        )
     }
 
     /// Touch event's x-coordinate in the device's native coordinate space

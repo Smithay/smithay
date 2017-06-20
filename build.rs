@@ -12,22 +12,25 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     let mut file = File::create(&dest.join("egl_bindings.rs")).unwrap();
-    Registry::new(Api::Egl,
-                  (1, 5),
-                  Profile::Core,
-                  Fallbacks::All,
-                  ["EGL_KHR_create_context",
-                   "EGL_EXT_create_context_robustness",
-                   "EGL_KHR_create_context_no_error",
-                   "EGL_KHR_platform_x11",
-                   "EGL_KHR_platform_android",
-                   "EGL_KHR_platform_wayland",
-                   "EGL_KHR_platform_gbm",
-                   "EGL_EXT_platform_base",
-                   "EGL_EXT_platform_x11",
-                   "EGL_MESA_platform_gbm",
-                   "EGL_EXT_platform_wayland",
-                   "EGL_EXT_platform_device"])
-            .write_bindings(gl_generator::StructGenerator, &mut file)
-            .unwrap();
+    Registry::new(
+        Api::Egl,
+        (1, 5),
+        Profile::Core,
+        Fallbacks::All,
+        [
+            "EGL_KHR_create_context",
+            "EGL_EXT_create_context_robustness",
+            "EGL_KHR_create_context_no_error",
+            "EGL_KHR_platform_x11",
+            "EGL_KHR_platform_android",
+            "EGL_KHR_platform_wayland",
+            "EGL_KHR_platform_gbm",
+            "EGL_EXT_platform_base",
+            "EGL_EXT_platform_x11",
+            "EGL_MESA_platform_gbm",
+            "EGL_EXT_platform_wayland",
+            "EGL_EXT_platform_device",
+        ],
+    ).write_bindings(gl_generator::StructGenerator, &mut file)
+        .unwrap();
 }
