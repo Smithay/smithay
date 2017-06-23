@@ -48,10 +48,12 @@ impl compositor::Handler<SurfaceData> for SurfaceHandler {
                         let height = data.height as usize;
                         let mut new_vec = Vec::with_capacity(width * height * 4);
                         for i in 0..height {
-                            new_vec.extend(&slice[(offset + i * stride)..(offset + i * stride + width * 4)]);
+                            new_vec.extend(
+                                &slice[(offset + i * stride)..(offset + i * stride + width * 4)],
+                            );
                         }
-                        attributes.user_data.buffer = Some((new_vec,
-                                                            (data.width as u32, data.height as u32)));
+                        attributes.user_data.buffer =
+                            Some((new_vec, (data.width as u32, data.height as u32)));
                     });
 
                 }
@@ -67,8 +69,10 @@ impl compositor::Handler<SurfaceData> for SurfaceHandler {
 
 fn main() {
     // A logger facility, here we use the terminal for this example
-    let log = Logger::root(slog_async::Async::default(slog_term::term_full().fuse()).fuse(),
-                           o!());
+    let log = Logger::root(
+        slog_async::Async::default(slog_term::term_full().fuse()).fuse(),
+        o!(),
+    );
 
     // Initialize a simple backend for testing
     let (renderer, mut input) = winit::init(log.clone()).unwrap();
@@ -93,14 +97,16 @@ fn main() {
     /*
      * Initialize the compositor global
      */
-    let compositor_handler_id =
-        event_loop.add_handler_with_init(CompositorHandler::<SurfaceData, _>::new(SurfaceHandler {
-                                                                                      shm_token: shm_token
-                                                                                          .clone(),
-                                                                                  },
-                                                                                  log.clone()));
+    let compositor_handler_id = event_loop.add_handler_with_init(CompositorHandler::<SurfaceData, _>::new(
+        SurfaceHandler { shm_token: shm_token.clone() },
+        log.clone(),
+    ));
     // register it to handle wl_compositor and wl_subcompositor
-    event_loop.register_global::<wl_compositor::WlCompositor, CompositorHandler<SurfaceData,SurfaceHandler>>(compositor_handler_id, 4);
+    event_loop
+        .register_global::<wl_compositor::WlCompositor, CompositorHandler<SurfaceData, SurfaceHandler>>(
+            compositor_handler_id,
+            4,
+        );
     event_loop.register_global::<wl_subcompositor::WlSubcompositor, CompositorHandler<SurfaceData,SurfaceHandler>>(compositor_handler_id, 1);
     // retrieve the tokens
     let compositor_token = {
@@ -113,10 +119,12 @@ fn main() {
     /*
      * Initialize the shell stub global
      */
-    let shell_handler_id = event_loop
-        .add_handler_with_init(WlShellStubHandler::new(compositor_token.clone()));
-    event_loop.register_global::<wl_shell::WlShell, WlShellStubHandler<SurfaceData, SurfaceHandler>>(shell_handler_id,
-                                                                                            1);
+    let shell_handler_id =
+        event_loop.add_handler_with_init(WlShellStubHandler::new(compositor_token.clone()));
+    event_loop.register_global::<wl_shell::WlShell, WlShellStubHandler<SurfaceData, SurfaceHandler>>(
+        shell_handler_id,
+        1,
+    );
 
     /*
      * Initialize glium
@@ -143,27 +151,30 @@ fn main() {
             for &(_, ref surface) in
                 state
                     .get_handler::<WlShellStubHandler<SurfaceData, SurfaceHandler>>(shell_handler_id)
-                    .surfaces() {
+                    .surfaces()
+            {
                 if surface.status() != Liveness::Alive {
                     continue;
                 }
                 // this surface is a root of a subsurface tree that needs to be drawn
-                compositor_token.with_surface_tree(surface, (100, 100), |surface,
-                 attributes,
-                 &(mut x, mut y)| {
-                    if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
-                        // there is actually something to draw !
-                        if let Some(ref subdata) = attributes.subsurface_attributes {
-                            x += subdata.x;
-                            y += subdata.y;
+                compositor_token.with_surface_tree(
+                    surface,
+                    (100, 100),
+                    |surface, attributes, &(mut x, mut y)| {
+                        if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
+                            // there is actually something to draw !
+                            if let Some(ref subdata) = attributes.subsurface_attributes {
+                                x += subdata.x;
+                                y += subdata.y;
+                            }
+                            drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
+                            TraversalAction::DoChildren((x, y))
+                        } else {
+                            // we are not display, so our children are neither
+                            TraversalAction::SkipChildren
                         }
-                        drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
-                        TraversalAction::DoChildren((x, y))
-                    } else {
-                        // we are not display, so our children are neither
-                        TraversalAction::SkipChildren
-                    }
-                });
+                    },
+                );
             }
         }
         frame.finish().unwrap();

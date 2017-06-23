@@ -21,23 +21,27 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
     pub fn new(display: &'a F) -> GliumDrawer<'a, F> {
 
         // building the vertex buffer, which contains all the vertices that we will draw
-        let vertex_buffer = glium::VertexBuffer::new(display,
-                                                     &[Vertex {
-                                                           position: [0.0, 0.0],
-                                                           tex_coords: [0.0, 0.0],
-                                                       },
-                                                       Vertex {
-                                                           position: [0.0, 1.0],
-                                                           tex_coords: [0.0, 1.0],
-                                                       },
-                                                       Vertex {
-                                                           position: [1.0, 1.0],
-                                                           tex_coords: [1.0, 1.0],
-                                                       },
-                                                       Vertex {
-                                                           position: [1.0, 0.0],
-                                                           tex_coords: [1.0, 0.0],
-                                                       }]).unwrap();
+        let vertex_buffer = glium::VertexBuffer::new(
+            display,
+            &[
+                Vertex {
+                    position: [0.0, 0.0],
+                    tex_coords: [0.0, 0.0],
+                },
+                Vertex {
+                    position: [0.0, 1.0],
+                    tex_coords: [0.0, 1.0],
+                },
+                Vertex {
+                    position: [1.0, 1.0],
+                    tex_coords: [1.0, 1.0],
+                },
+                Vertex {
+                    position: [1.0, 0.0],
+                    tex_coords: [1.0, 0.0],
+                },
+            ],
+        ).unwrap();
 
         // building the index buffer
         let index_buffer =
@@ -110,11 +114,13 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
         };
 
         target
-            .draw(&self.vertex_buffer,
-                  &self.index_buffer,
-                  &self.program,
-                  &uniforms,
-                  &Default::default())
+            .draw(
+                &self.vertex_buffer,
+                &self.index_buffer,
+                &self.program,
+                &uniforms,
+                &Default::default(),
+            )
             .unwrap();
 
     }

@@ -15,8 +15,9 @@ struct CompositorDestructor<U> {
  */
 
 impl<U, H> wl_compositor::Handler for CompositorHandler<U, H>
-    where U: Default + Send + 'static,
-          H: UserHandler<U> + Send + 'static
+where
+    U: Default + Send + 'static,
+    H: UserHandler<U> + Send + 'static,
 {
     fn create_surface(&mut self, evqh: &mut EventLoopHandle, _: &Client, _: &wl_compositor::WlCompositor,
                       id: wl_surface::WlSurface) {
@@ -54,11 +55,11 @@ impl<U, H: UserHandler<U>> wl_surface::Handler for CompositorHandler<U, H> {
         unsafe {
             SurfaceData::<U>::with_data(surface, |d| {
                 d.damage = Damage::Surface(Rectangle {
-                                               x,
-                                               y,
-                                               width,
-                                               height,
-                                           })
+                    x,
+                    y,
+                    width,
+                    height,
+                })
             });
         }
     }
@@ -105,16 +106,18 @@ impl<U, H: UserHandler<U>> wl_surface::Handler for CompositorHandler<U, H> {
     }
     fn damage_buffer(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
                      x: i32, y: i32, width: i32, height: i32) {
-        trace!(self.log,
-               "Registering damage to surface (buffer coordinates).");
+        trace!(
+            self.log,
+            "Registering damage to surface (buffer coordinates)."
+        );
         unsafe {
             SurfaceData::<U>::with_data(surface, |d| {
                 d.damage = Damage::Buffer(Rectangle {
-                                              x,
-                                              y,
-                                              width,
-                                              height,
-                                          })
+                    x,
+                    y,
+                    width,
+                    height,
+                })
             });
         }
     }
@@ -137,28 +140,32 @@ impl<U, H> wl_region::Handler for CompositorHandler<U, H> {
            width: i32, height: i32) {
         trace!(self.log, "Adding rectangle to a region.");
         unsafe {
-            RegionData::add_rectangle(region,
-                                      RectangleKind::Add,
-                                      Rectangle {
-                                          x,
-                                          y,
-                                          width,
-                                          height,
-                                      })
+            RegionData::add_rectangle(
+                region,
+                RectangleKind::Add,
+                Rectangle {
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+            )
         };
     }
     fn subtract(&mut self, _: &mut EventLoopHandle, _: &Client, region: &wl_region::WlRegion, x: i32,
                 y: i32, width: i32, height: i32) {
         trace!(self.log, "Subtracting rectangle to a region.");
         unsafe {
-            RegionData::add_rectangle(region,
-                                      RectangleKind::Subtract,
-                                      Rectangle {
-                                          x,
-                                          y,
-                                          width,
-                                          height,
-                                      })
+            RegionData::add_rectangle(
+                region,
+                RectangleKind::Subtract,
+                Rectangle {
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+            )
         };
     }
 }
@@ -176,8 +183,9 @@ impl<U> Destroy<wl_region::WlRegion> for CompositorDestructor<U> {
  */
 
 impl<U, H> wl_subcompositor::Handler for CompositorHandler<U, H>
-    where U: Send + 'static,
-          H: Send + 'static
+where
+    U: Send + 'static,
+    H: Send + 'static,
 {
     fn get_subsurface(&mut self, evqh: &mut EventLoopHandle, _: &Client,
                       resource: &wl_subcompositor::WlSubcompositor, id: wl_subsurface::WlSubsurface,
@@ -187,7 +195,9 @@ impl<U, H> wl_subcompositor::Handler for CompositorHandler<U, H>
             resource.post_error(wl_subcompositor::Error::BadSurface as u32, "Surface already has a role.".into());
             return
         }
-        id.set_user_data(Box::into_raw(Box::new(unsafe { surface.clone_unchecked() })) as *mut _);
+        id.set_user_data(Box::into_raw(
+            Box::new(unsafe { surface.clone_unchecked() }),
+        ) as *mut _);
         unsafe {
             SurfaceData::<U>::with_data(surface, |d| {
                 d.subsurface_attributes = Some(Default::default())
@@ -204,7 +214,8 @@ server_declare_handler!(CompositorHandler<U: [Send], H: [Send]>, wl_subcomposito
  */
 
 unsafe fn with_subsurface_attributes<U, F>(subsurface: &wl_subsurface::WlSubsurface, f: F)
-    where F: FnOnce(&mut SubsurfaceAttributes)
+where
+    F: FnOnce(&mut SubsurfaceAttributes),
 {
     let ptr = subsurface.get_user_data();
     let surface = &*(ptr as *mut wl_surface::WlSurface);

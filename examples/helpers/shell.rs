@@ -49,17 +49,22 @@ impl<U, H> GlobalHandler<wl_shell::WlShell> for WlShellStubHandler<U, H>
 }
 
 impl<U, H> wl_shell::Handler for WlShellStubHandler<U, H>
-    where U: Send + 'static,
-          H: CompositorHandler<U> + Send + 'static
+where
+    U: Send + 'static,
+    H: CompositorHandler<U> + Send + 'static,
 {
     fn get_shell_surface(&mut self, evqh: &mut EventLoopHandle, client: &Client,
                          resource: &wl_shell::WlShell, id: wl_shell_surface::WlShellSurface,
                          surface: &wl_surface::WlSurface) {
-        let surface =  surface.clone().expect("WlShellStubHandler can only manage surfaces managed by Smithay's CompositorHandler.");
+        let surface = surface.clone().expect(
+            "WlShellStubHandler can only manage surfaces managed by Smithay's CompositorHandler.",
+        );
         if self.token.give_role(&surface).is_err() {
             // This surface already has a role, and thus cannot be given one!
-            resource.post_error(wl_shell::Error::Role as u32,
-                                "Surface already has a role.".into());
+            resource.post_error(
+                wl_shell::Error::Role as u32,
+                "Surface already has a role.".into(),
+            );
             return;
         }
         evqh.register::<_, Self>(&id, self.my_id.unwrap());
@@ -70,8 +75,9 @@ impl<U, H> wl_shell::Handler for WlShellStubHandler<U, H>
 server_declare_handler!(WlShellStubHandler<U: [Send], H: [CompositorHandler<U>, Send]>, wl_shell::Handler, wl_shell::WlShell);
 
 impl<U, H> wl_shell_surface::Handler for WlShellStubHandler<U, H>
-    where U: Send + 'static,
-          H: CompositorHandler<U> + Send + 'static
+where
+    U: Send + 'static,
+    H: CompositorHandler<U> + Send + 'static,
 {
 }
 

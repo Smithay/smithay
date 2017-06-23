@@ -285,10 +285,13 @@ impl<U: Send + 'static, H: Handler<U> + Send + 'static> CompositorToken<U, H> {
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn with_surface_data<F>(&self, surface: &wl_surface::WlSurface, f: F)
-        where F: FnOnce(&mut SurfaceAttributes<U>)
+    where
+        F: FnOnce(&mut SurfaceAttributes<U>),
     {
-        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
-                "Accessing the data of foreign surfaces is not supported.");
+        assert!(
+            resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
+            "Accessing the data of foreign surfaces is not supported."
+        );
         unsafe {
             SurfaceData::<U>::with_data(surface, f);
         }
@@ -303,10 +306,13 @@ impl<U: Send + 'static, H: Handler<U> + Send + 'static> CompositorToken<U, H> {
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn with_surface_tree<F, T>(&self, surface: &wl_surface::WlSurface, initial: T, f: F) -> Result<(), ()>
-        where F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &T) -> TraversalAction<T>
+    where
+        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &T) -> TraversalAction<T>,
     {
-        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
-                "Accessing the data of foreign surfaces is not supported.");
+        assert!(
+            resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
+            "Accessing the data of foreign surfaces is not supported."
+        );
         unsafe {
             SurfaceData::<U>::map_tree(surface, initial, f);
         }
@@ -320,8 +326,10 @@ impl<U: Send + 'static, H: Handler<U> + Send + 'static> CompositorToken<U, H> {
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn get_parent(&self, surface: &wl_surface::WlSurface) -> Option<wl_surface::WlSurface> {
-        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
-                "Accessing the data of foreign surfaces is not supported.");
+        assert!(
+            resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
+            "Accessing the data of foreign surfaces is not supported."
+        );
         unsafe { SurfaceData::<U>::get_parent(surface) }
     }
 
@@ -330,8 +338,10 @@ impl<U: Send + 'static, H: Handler<U> + Send + 'static> CompositorToken<U, H> {
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn get_children(&self, surface: &wl_surface::WlSurface) -> Vec<wl_surface::WlSurface> {
-        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
-                "Accessing the data of foreign surfaces is not supported.");
+        assert!(
+            resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
+            "Accessing the data of foreign surfaces is not supported."
+        );
         unsafe { SurfaceData::<U>::get_children(surface) }
     }
 
@@ -340,8 +350,10 @@ impl<U: Send + 'static, H: Handler<U> + Send + 'static> CompositorToken<U, H> {
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn role_status(&self, surface: &wl_surface::WlSurface) -> RoleStatus {
-        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
-                "Accessing the data of foreign surfaces is not supported.");
+        assert!(
+            resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
+            "Accessing the data of foreign surfaces is not supported."
+        );
         unsafe { SurfaceData::<U>::role_status(surface) }
     }
 
@@ -355,8 +367,10 @@ impl<U: Send + 'static, H: Handler<U> + Send + 'static> CompositorToken<U, H> {
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn give_role(&self, surface: &wl_surface::WlSurface) -> Result<(), ()> {
-        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
-                "Accessing the data of foreign surfaces is not supported.");
+        assert!(
+            resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
+            "Accessing the data of foreign surfaces is not supported."
+        );
         unsafe { SurfaceData::<U>::give_role(surface) }
     }
 
@@ -369,8 +383,10 @@ impl<U: Send + 'static, H: Handler<U> + Send + 'static> CompositorToken<U, H> {
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn remove_role(&self, surface: &wl_surface::WlSurface) -> Result<(), ()> {
-        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
-                "Accessing the data of foreign surfaces is not supported.");
+        assert!(
+            resource_is_registered::<_, CompositorHandler<U, H>>(surface, self.hid),
+            "Accessing the data of foreign surfaces is not supported."
+        );
         unsafe { SurfaceData::<U>::remove_role(surface) }
     }
 
@@ -379,8 +395,10 @@ impl<U: Send + 'static, H: Handler<U> + Send + 'static> CompositorToken<U, H> {
     /// If the region is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn get_region_attributes(&self, region: &wl_region::WlRegion) -> RegionAttributes {
-        assert!(resource_is_registered::<_, CompositorHandler<U, H>>(region, self.hid),
-                "Accessing the data of foreign regions is not supported.");
+        assert!(
+            resource_is_registered::<_, CompositorHandler<U, H>>(region, self.hid),
+            "Accessing the data of foreign regions is not supported."
+        );
         unsafe { RegionData::get_attributes(region) }
     }
 }
@@ -410,7 +428,8 @@ impl<U, H> Init for CompositorHandler<U, H> {
 impl<U, H> CompositorHandler<U, H> {
     /// Create a new CompositorHandler
     pub fn new<L>(handler: H, logger: L) -> CompositorHandler<U, H>
-        where L: Into<Option<::slog::Logger>>
+    where
+        L: Into<Option<::slog::Logger>>,
     {
         let log = ::slog_or_stdlog(logger);
         CompositorHandler {
@@ -423,8 +442,10 @@ impl<U, H> CompositorHandler<U, H> {
 
     /// Create a token to access the data associated to the objects managed by this handler.
     pub fn get_token(&self) -> CompositorToken<U, H> {
-        assert!(self.my_id != ::std::usize::MAX,
-                "CompositorHandler is not initialized yet.");
+        assert!(
+            self.my_id != ::std::usize::MAX,
+            "CompositorHandler is not initialized yet."
+        );
         trace!(self.log, "Creating a compositor token.");
         CompositorToken {
             hid: self.my_id,

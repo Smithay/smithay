@@ -14,8 +14,9 @@ impl<U: Default, H: UserHandler<U>> GlobalHandler<wl_compositor::WlCompositor> f
 }
 
 impl<U, H> GlobalHandler<wl_subcompositor::WlSubcompositor> for CompositorHandler<U, H>
-    where U: Send + 'static,
-          H: Send + 'static
+where
+    U: Send + 'static,
+    H: Send + 'static,
 {
     fn bind(&mut self, evlh: &mut EventLoopHandle, _: &Client, global: wl_subcompositor::WlSubcompositor) {
         debug!(self.log, "New subcompositor global binded.");
