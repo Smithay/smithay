@@ -3,7 +3,7 @@
 use backend::graphics::egl::{EGLGraphicsBackend, SwapBuffersError};
 use glium::Frame;
 use glium::SwapBuffersError as GliumSwapBuffersError;
-use glium::backend::{Backend, Context};
+use glium::backend::{Backend, Context, Facade};
 use glium::debug::DebugCallbackBehavior;
 use std::ops::Deref;
 use std::os::raw::c_void;
@@ -59,6 +59,12 @@ impl<T: EGLGraphicsBackend> Deref for GliumGraphicsBackend<T> {
     type Target = Context;
 
     fn deref(&self) -> &Context {
+        &self.context
+    }
+}
+
+impl<T: EGLGraphicsBackend> Facade for GliumGraphicsBackend<T> {
+    fn get_context(&self) -> &Rc<Context> {
         &self.context
     }
 }

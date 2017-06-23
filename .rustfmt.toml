@@ -6,6 +6,5 @@ reorder_imports = true
 reorder_imported_names = true
 report_todo = "Never"
 report_fixme = "Never"
-normalize_comments = true
 use_try_shorthand = true
 max_width = 110

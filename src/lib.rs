@@ -32,8 +32,10 @@ extern crate glium;
 extern crate slog;
 extern crate slog_stdlog;
 
-pub mod shm;
 pub mod backend;
+
+pub mod compositor;
+pub mod shm;
 pub mod keyboard;
 
 fn slog_or_stdlog<L>(logger: L) -> ::slog::Logger

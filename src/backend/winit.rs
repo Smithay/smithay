@@ -763,6 +763,7 @@ impl InputBackend for WinitInputBackend {
                     *time_counter += 1;
                 }
                 Event::DeviceEvent { .. } => {}
+                _ => {}
             });
         }
 
