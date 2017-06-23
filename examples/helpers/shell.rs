@@ -67,16 +67,7 @@ impl<U, H> wl_shell::Handler for WlShellStubHandler<U, H>
     }
 }
 
-unsafe impl<U, H> ::wayland_server::Handler<wl_shell::WlShell> for WlShellStubHandler<U, H>
-    where U: Send + 'static,
-          H: CompositorHandler<U> + Send + 'static
-{
-    unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client, resource: &wl_shell::WlShell,
-                      opcode: u32, args: *const ::wayland_server::sys::wl_argument)
-                      -> Result<(), ()> {
-        <WlShellStubHandler<U,H> as ::wayland_server::protocol::wl_shell::Handler>::__message(self, evq, client, resource, opcode, args)
-    }
-}
+server_declare_handler!(WlShellStubHandler<U: [Send], H: [CompositorHandler<U>, Send]>, wl_shell::Handler, wl_shell::WlShell);
 
 impl<U, H> wl_shell_surface::Handler for WlShellStubHandler<U, H>
     where U: Send + 'static,
@@ -84,14 +75,4 @@ impl<U, H> wl_shell_surface::Handler for WlShellStubHandler<U, H>
 {
 }
 
-unsafe impl<U, H> ::wayland_server::Handler<wl_shell_surface::WlShellSurface> for WlShellStubHandler<U, H>
-    where U: Send + 'static,
-          H: CompositorHandler<U> + Send + 'static
-{
-    unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
-                      resource: &wl_shell_surface::WlShellSurface, opcode: u32,
-                      args: *const ::wayland_server::sys::wl_argument)
-                      -> Result<(), ()> {
-        <WlShellStubHandler<U,H> as ::wayland_server::protocol::wl_shell_surface::Handler>::__message(self, evq, client, resource, opcode, args)
-    }
-}
+server_declare_handler!(WlShellStubHandler<U: [Send], H: [CompositorHandler<U>, Send]>, wl_shell_surface::Handler, wl_shell_surface::WlShellSurface);

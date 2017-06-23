@@ -1,3 +1,4 @@
+#[macro_use(server_declare_handler)]
 extern crate wayland_server;
 extern crate smithay;
 #[macro_use]

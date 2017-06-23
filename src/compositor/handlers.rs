@@ -32,17 +32,7 @@ impl<U, H> wl_compositor::Handler for CompositorHandler<U, H>
     }
 }
 
-unsafe impl<U, H> ::wayland_server::Handler<wl_compositor::WlCompositor> for CompositorHandler<U, H>
-    where U: Default + Send + 'static,
-          H: UserHandler<U> + Send + 'static
-{
-    unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
-                      resource: &wl_compositor::WlCompositor, opcode: u32,
-                      args: *const ::wayland_server::sys::wl_argument)
-                      -> Result<(), ()> {
-        <CompositorHandler<U, H> as ::wayland_server::protocol::wl_compositor::Handler>::__message(self, evq, client, resource, opcode, args)
-    }
-}
+server_declare_handler!(CompositorHandler<U: [Default, Send], H: [UserHandler<U>, Send]>, wl_compositor::Handler, wl_compositor::WlCompositor);
 
 /*
  * wl_surface
@@ -130,15 +120,7 @@ impl<U, H: UserHandler<U>> wl_surface::Handler for CompositorHandler<U, H> {
     }
 }
 
-unsafe impl<U, H: UserHandler<U>> ::wayland_server::Handler<wl_surface::WlSurface>
-    for CompositorHandler<U, H> {
-    unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
-                      resource: &wl_surface::WlSurface, opcode: u32,
-                      args: *const ::wayland_server::sys::wl_argument)
-                      -> Result<(), ()> {
-        <CompositorHandler<U, H> as ::wayland_server::protocol::wl_surface::Handler>::__message(self, evq, client, resource, opcode, args)
-    }
-}
+server_declare_handler!(CompositorHandler<U:[], H: [UserHandler<U>]>, wl_surface::Handler, wl_surface::WlSurface);
 
 impl<U> Destroy<wl_surface::WlSurface> for CompositorDestructor<U> {
     fn destroy(surface: &wl_surface::WlSurface) {
@@ -181,14 +163,7 @@ impl<U, H> wl_region::Handler for CompositorHandler<U, H> {
     }
 }
 
-unsafe impl<U, H> ::wayland_server::Handler<wl_region::WlRegion> for CompositorHandler<U, H> {
-    unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
-                      resource: &wl_region::WlRegion, opcode: u32,
-                      args: *const ::wayland_server::sys::wl_argument)
-                      -> Result<(), ()> {
-        <CompositorHandler<U, H> as ::wayland_server::protocol::wl_region::Handler>::__message(self, evq, client, resource, opcode, args)
-    }
-}
+server_declare_handler!(CompositorHandler<U: [], H: []>, wl_region::Handler, wl_region::WlRegion);
 
 impl<U> Destroy<wl_region::WlRegion> for CompositorDestructor<U> {
     fn destroy(region: &wl_region::WlRegion) {
@@ -222,17 +197,7 @@ impl<U, H> wl_subcompositor::Handler for CompositorHandler<U, H>
     }
 }
 
-unsafe impl<U, H> ::wayland_server::Handler<wl_subcompositor::WlSubcompositor> for CompositorHandler<U, H>
-    where U: Send + 'static,
-          H: Send + 'static
-{
-    unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
-                      resource: &wl_subcompositor::WlSubcompositor, opcode: u32,
-                      args: *const ::wayland_server::sys::wl_argument)
-                      -> Result<(), ()> {
-        <CompositorHandler<U, H> as ::wayland_server::protocol::wl_subcompositor::Handler>::__message(self, evq, client, resource, opcode, args)
-    }
-}
+server_declare_handler!(CompositorHandler<U: [Send], H: [Send]>, wl_subcompositor::Handler, wl_subcompositor::WlSubcompositor);
 
 /*
  * wl_subsurface
@@ -293,14 +258,7 @@ impl<U, H> wl_subsurface::Handler for CompositorHandler<U, H> {
     }
 }
 
-unsafe impl<U, H> ::wayland_server::Handler<wl_subsurface::WlSubsurface> for CompositorHandler<U, H> {
-    unsafe fn message(&mut self, evq: &mut EventLoopHandle, client: &Client,
-                      resource: &wl_subsurface::WlSubsurface, opcode: u32,
-                      args: *const ::wayland_server::sys::wl_argument)
-                      -> Result<(), ()> {
-        <CompositorHandler<U, H> as ::wayland_server::protocol::wl_subsurface::Handler>::__message(self, evq, client, resource, opcode, args)
-    }
-}
+server_declare_handler!(CompositorHandler<U: [], H: []>, wl_subsurface::Handler, wl_subsurface::WlSubsurface);
 
 impl<U> Destroy<wl_subsurface::WlSubsurface> for CompositorDestructor<U> {
     fn destroy(subsurface: &wl_subsurface::WlSubsurface) {
