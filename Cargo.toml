@@ -5,17 +5,17 @@ authors = ["Victor Berger <victor.berger@thalesgroup.com>"]
 license = "MIT"
 
 [dependencies]
-wayland-server = "0.9.4"
+wayland-server = "0.9.9"
 nix = "0.7.0"
 xkbcommon = "0.2.1"
 tempfile = "2.1.5"
 slog = { version = "2.0.0" }
 slog-stdlog = "2.0.0-0.2"
 libloading = "0.4.0"
-wayland-client = { version = "~0.8.6", optional = true }
-winit = { git = "https://github.com/tomaka/winit.git", optional = true }
-glium = { version = "~0.16.0", optional = true, default-features = false }
-input = { version = "~0.2.0", optional = true }
+wayland-client = { version = "0.9.9", optional = true }
+winit = { version = "0.7.0", optional = true }
+glium = { version = "0.16.0", optional = true, default-features = false }
+input = { version = "0.2.0", optional = true }
 clippy = { version = "*", optional = true }
 rental = "0.4.11"
 

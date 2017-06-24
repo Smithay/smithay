@@ -110,32 +110,30 @@ where
     let window = Rc::new(builder.build(&events_loop)?);
     debug!(log, "Window created");
 
-    let (native_display, native_surface, surface) =
-        if let (Some(conn), Some(window)) = (get_x11_xconnection(), window.get_xlib_window()) {
-            debug!(log, "Window is backed by X11");
-            (
-                NativeDisplay::X11(conn.display as *const _),
-                NativeSurface::X11(window),
-                None,
-            )
-        } else if let (Some(display), Some(surface)) =
-            (
-                window.get_wayland_display(),
-                window.get_wayland_client_surface(),
-            )
-        {
-            debug!(log, "Window is backed by Wayland");
-            let (w, h) = window.get_inner_size().unwrap();
-            let egl_surface = wegl::WlEglSurface::new(surface, w as i32, h as i32);
-            (
-                NativeDisplay::Wayland(display),
-                NativeSurface::Wayland(egl_surface.ptr() as *const _),
-                Some(egl_surface),
-            )
-        } else {
-            error!(log, "Window is backed by an unsupported graphics framework");
-            return Err(CreationError::NotSupported);
-        };
+    let (native_display, native_surface, surface) = if let (Some(conn), Some(window)) =
+        (get_x11_xconnection(), window.get_xlib_window())
+    {
+        debug!(log, "Window is backed by X11");
+        (
+            NativeDisplay::X11(conn.display as *const _),
+            NativeSurface::X11(window),
+            None,
+        )
+    } else if let (Some(display), Some(surface)) =
+        (window.get_wayland_display(), window.get_wayland_surface())
+    {
+        debug!(log, "Window is backed by Wayland");
+        let (w, h) = window.get_inner_size().unwrap();
+        let egl_surface = unsafe { wegl::WlEglSurface::new_from_raw(surface as *mut _, w as i32, h as i32) };
+        (
+            NativeDisplay::Wayland(display),
+            NativeSurface::Wayland(egl_surface.ptr() as *const _),
+            Some(egl_surface),
+        )
+    } else {
+        error!(log, "Window is backed by an unsupported graphics framework");
+        return Err(CreationError::NotSupported);
+    };
 
     let context = unsafe {
         match EGLContext::new(
