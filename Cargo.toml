@@ -5,7 +5,7 @@ authors = ["Victor Berger <victor.berger@thalesgroup.com>"]
 license = "MIT"
 
 [dependencies]
-wayland-server = "0.9.9"
+wayland-server = { git = "https://github.com/Drakulix/wayland-rs", branch = "raw_handler_access" }
 nix = "0.7.0"
 xkbcommon = "0.2.1"
 tempfile = "2.1.5"
@@ -13,8 +13,10 @@ slog = { version = "2.0.0" }
 slog-stdlog = "2.0.0-0.2"
 libloading = "0.4.0"
 wayland-client = { version = "0.9.9", optional = true }
-winit = { version = "0.7.0", optional = true }
-glium = { version = "0.16.0", optional = true, default-features = false }
+winit = { version = "0.7.5", optional = true }
+drm = { git = "https://github.com/Drakulix/drm-rs.git", branch = "future", optional = true }
+gbm = { git = "https://github.com/Drakulix/gbm.rs", branch = "feature/drm-support", features = ["drm-support"], optional = true }
+glium = { version = "0.16.0", optional = true }
 input = { version = "0.2.0", optional = true }
 clippy = { version = "*", optional = true }
 rental = "0.4.11"
@@ -25,9 +27,11 @@ gl_generator = "0.5"
 [dev-dependencies]
 slog-term = "2.0"
 slog-async = "2.0"
+libudev = { git = "https://github.com/Drakulix/libudev-rs.git" }
 
 [features]
-default = ["backend_winit", "backend_libinput", "renderer_glium"]
+default = ["backend_winit", "backend_drm", "backend_libinput", "renderer_glium"]
 backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen"]
-renderer_glium = ["glium"]
+backend_drm = ["drm", "gbm"]
 backend_libinput = ["input"]
+renderer_glium = ["glium"]

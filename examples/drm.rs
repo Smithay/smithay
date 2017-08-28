@@ -3,6 +3,8 @@ extern crate wayland_server;
 extern crate smithay;
 #[macro_use]
 extern crate glium;
+extern crate drm;
+extern crate gbm;
 
 #[macro_use]
 extern crate slog;
@@ -11,19 +13,31 @@ extern crate slog_term;
 
 mod helpers;
 
+use drm::control::{Device as ControlDevice, ResourceInfo};
+use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
+use gbm::Device as GbmDevice;
+
 use glium::Surface;
 
 use helpers::{GliumDrawer, WlShellStubHandler};
 use slog::*;
 
-use smithay::backend::graphics::glium::IntoGlium;
-use smithay::backend::input::InputBackend;
-use smithay::backend::winit;
+use smithay::backend::drm::{DrmDevice, DrmBackend, DrmHandler};
+use smithay::backend::graphics::GraphicsBackend;
+use smithay::backend::graphics::egl::EGLGraphicsBackend;
+use smithay::backend::graphics::glium::{IntoGlium, GliumGraphicsBackend};
 use smithay::compositor::{self, CompositorHandler, CompositorToken, TraversalAction};
 use smithay::shm::{BufferData, ShmGlobal, ShmToken};
-use wayland_server::{Client, EventLoopHandle, Liveness, Resource};
+
+use wayland_server::{Client, Display, EventLoopHandle, Liveness, Resource};
 
 use wayland_server::protocol::{wl_compositor, wl_shell, wl_shm, wl_subcompositor, wl_surface};
+
+use std::fs::{OpenOptions, File};
+use std::io::Error as IoError;
+use std::sync::Mutex;
+use std::rc::Rc;
+use std::os::unix::io::AsRawFd;
 
 struct SurfaceHandler {
     shm_token: ShmToken,
@@ -74,10 +88,34 @@ fn main() {
         o!(),
     );
 
-    // Initialize a simple backend for testing
-    let (renderer, mut input) = winit::init(log.clone()).unwrap();
-
+    // Initialize the wayland server
     let (mut display, mut event_loop) = wayland_server::create_display();
+
+    // "Find" a suitable drm device
+    let mut options = OpenOptions::new();
+    options.read(true);
+    options.write(true);
+    let device = DrmDevice::new_from_file(options.clone().open("/dev/dri/card0").unwrap());
+
+    // Get a set of all modesetting resource handles (excluding planes):
+    let res_handles = device.resource_handles().unwrap();
+
+    // Use first connected connector
+    let connector_info = res_handles.connectors().iter().map(|conn| {
+        ConnectorInfo::load_from_device(&device, *conn).unwrap()
+    }).find(|conn| conn.connection_state() == ConnectorState::Connected).unwrap();
+
+    // Use the first crtc (should be successful in most cases)
+    let crtc = res_handles.crtcs()[0];
+
+    // Assuming we found a good connector and loaded the info into `connector_info`
+    let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
+
+    // Also get a gbm device (usually the same)
+    let gbm = unsafe { GbmDevice::new_from_fd(device.as_raw_fd()).unwrap() };
+
+    // Initialize the hardware backends
+    let renderer = DrmBackend::new(device, crtc, mode, vec![connector_info.handle()], gbm, log.clone()).unwrap();
 
     /*
      * Initialize wl_shm global
@@ -129,9 +167,7 @@ fn main() {
     /*
      * Initialize glium
      */
-    let context = renderer.into_glium();
-
-    let drawer = GliumDrawer::new(&context);
+    let drawer = Rc::new(Mutex::new(GliumDrawer::new(renderer.into_glium())));
 
     /*
      * Add a listening socket:
@@ -139,25 +175,44 @@ fn main() {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
     println!("Listening on socket: {}", name);
 
-    loop {
-        input.dispatch_new_events().unwrap();
+    let _drm_event_source = drawer.lock().unwrap().register(&mut event_loop, DrmHandlerImpl {
+        drawer: drawer.clone(),
+        shell_handler_id,
+        compositor_token,
+        logger: log,
+    }).unwrap();
 
-        let mut frame = context.draw();
-        frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, None, None);
+    event_loop.run().unwrap();
+}
+
+pub struct DrmHandlerImpl {
+    drawer: Rc<Mutex<GliumDrawer<GliumGraphicsBackend<DrmBackend>>>>,
+    shell_handler_id: usize,
+    compositor_token: CompositorToken<SurfaceData,SurfaceHandler>,
+    logger: ::slog::Logger,
+}
+
+impl DrmHandler for DrmHandlerImpl {
+    fn ready(&mut self, evlh: &mut EventLoopHandle) {
+        let drawer = self.drawer.lock().unwrap();
+
+        drawer.prepare_rendering();
+
+        let mut frame = drawer.draw();
+        frame.clear_color(0.8, 0.8, 0.9, 1.0);
         // redraw the frame, in a simple but inneficient way
         {
-            let screen_dimensions = context.get_framebuffer_dimensions();
-            let state = event_loop.state();
+            let screen_dimensions = drawer.get_framebuffer_dimensions();
             for &(_, ref surface) in
-                state
-                    .get_handler::<WlShellStubHandler<SurfaceData, SurfaceHandler>>(shell_handler_id)
-                    .surfaces()
+                unsafe { evlh
+                    .get_handler_unchecked::<WlShellStubHandler<SurfaceData, SurfaceHandler>>(self.shell_handler_id)
+                    .surfaces() }
             {
                 if surface.status() != Liveness::Alive {
                     continue;
                 }
                 // this surface is a root of a subsurface tree that needs to be drawn
-                compositor_token.with_surface_tree(
+                self.compositor_token.with_surface_tree(
                     surface,
                     (100, 100),
                     |surface, attributes, &(mut x, mut y)| {
@@ -167,7 +222,7 @@ fn main() {
                                 x += subdata.x;
                                 y += subdata.y;
                             }
-                            drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
+                            drawer.render(&mut frame, contents, (w, h), (x, y), screen_dimensions);
                             TraversalAction::DoChildren((x, y))
                         } else {
                             // we are not display, so our children are neither
@@ -179,7 +234,10 @@ fn main() {
         }
         frame.finish().unwrap();
 
-        event_loop.dispatch(Some(16)).unwrap();
-        display.flush_clients();
+        drawer.finish_rendering();
+    }
+
+    fn error(&mut self, _evlh: &mut EventLoopHandle, error: IoError) {
+        error!(self.logger, "{:?}", error);
     }
 }

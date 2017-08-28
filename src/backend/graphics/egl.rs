@@ -17,7 +17,7 @@ use std::ffi::{CStr, CString};
 use std::fmt;
 use std::io;
 use std::mem;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::ptr;
 
 #[allow(non_camel_case_types, dead_code)]
@@ -240,7 +240,12 @@ impl EGLContext {
 
         debug!(log, "EGL No-Display Extensions: {:?}", dp_extensions);
 
+        trace!(log, "EGL Platform loaded: {}", egl.GetPlatformDisplay.is_loaded());
+        trace!(log, "EGL PlatformEXT loaded: {}", egl.GetPlatformDisplayEXT.is_loaded());
+
         let has_dp_extension = |e: &str| dp_extensions.iter().any(|s| s == e);
+
+        trace!(log, "Has GBM Extension: {}", has_dp_extension("EGL_MESA_platform_gbm"));
 
         let display = match native {
             NativeDisplay::X11(display)
@@ -264,7 +269,13 @@ impl EGLContext {
             NativeDisplay::Gbm(display)
                 if has_dp_extension("EGL_MESA_platform_gbm") && egl.GetPlatformDisplayEXT.is_loaded() => {
                 trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
-                egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null())
+                egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
+            }
+
+            NativeDisplay::Gbm(display)
+                if has_dp_extension("EGL_MESA_platform_gbm") && egl.GetPlatformDisplay.is_loaded() => {
+                trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
+                egl.GetPlatformDisplay(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
             }
 
             NativeDisplay::Wayland(display)
@@ -300,6 +311,10 @@ impl EGLContext {
                 egl.GetDisplay(display as *mut _)
             }
         };
+
+        if display == ffi::egl::NO_DISPLAY {
+            error!(log, "EGL Display is not valid");
+        }
 
         let egl_version = {
             let mut major: ffi::egl::types::EGLint = mem::uninitialized();
