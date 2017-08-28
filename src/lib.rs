@@ -20,6 +20,12 @@ extern crate rental;
 extern crate winit;
 #[cfg(feature = "backend_winit")]
 extern crate wayland_client;
+
+#[cfg(feature = "backend_drm")]
+extern crate drm;
+#[cfg(feature = "backend_drm")]
+extern crate gbm;
+
 #[cfg(feature = "backend_libinput")]
 extern crate input;
 

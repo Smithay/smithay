@@ -19,6 +19,7 @@ use slog::*;
 use smithay::backend::graphics::glium::IntoGlium;
 use smithay::backend::input::InputBackend;
 use smithay::backend::winit;
+use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::compositor::{self, CompositorHandler, CompositorToken, TraversalAction};
 use smithay::shm::{BufferData, ShmGlobal, ShmToken};
 use wayland_server::{Client, EventLoopHandle, Liveness, Resource};
@@ -129,9 +130,7 @@ fn main() {
     /*
      * Initialize glium
      */
-    let context = renderer.into_glium();
-
-    let drawer = GliumDrawer::new(&context);
+    let drawer = GliumDrawer::new(renderer.into_glium());
 
     /*
      * Add a listening socket:
@@ -142,11 +141,11 @@ fn main() {
     loop {
         input.dispatch_new_events().unwrap();
 
-        let mut frame = context.draw();
+        let mut frame = drawer.draw();
         frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, None, None);
         // redraw the frame, in a simple but inneficient way
         {
-            let screen_dimensions = context.get_framebuffer_dimensions();
+            let screen_dimensions = drawer.get_framebuffer_dimensions();
             let state = event_loop.state();
             for &(_, ref surface) in
                 state
@@ -167,7 +166,7 @@ fn main() {
                                 x += subdata.x;
                                 y += subdata.y;
                             }
-                            drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
+                            drawer.render(&mut frame, contents, (w, h), (x, y), screen_dimensions);
                             TraversalAction::DoChildren((x, y))
                         } else {
                             // we are not display, so our children are neither

@@ -189,16 +189,18 @@ where
 
 impl GraphicsBackend for WinitGraphicsBackend {
     type CursorFormat = MouseCursor;
+    type Error = ();
 
     fn set_cursor_position(&mut self, x: u32, y: u32) -> Result<(), ()> {
         debug!(self.logger, "Setting cursor position to {:?}", (x, y));
         self.window.set_cursor_position(x as i32, y as i32)
     }
 
-    fn set_cursor_representation(&mut self, cursor: Self::CursorFormat) {
+    fn set_cursor_representation(&mut self, cursor: Self::CursorFormat, _hotspot: (u32, u32)) -> Result<(), ()> {
         // Cannot log this one, as `CursorFormat` is not `Debug` and should not be
         debug!(self.logger, "Changing cursor representation");
-        self.window.set_cursor(cursor)
+        self.window.set_cursor(cursor);
+        Ok(())
     }
 }
 

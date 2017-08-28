@@ -56,10 +56,10 @@ impl<T: EGLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
 }
 
 impl<T: EGLGraphicsBackend> Deref for GliumGraphicsBackend<T> {
-    type Target = Context;
+    type Target = T;
 
-    fn deref(&self) -> &Context {
-        &self.context
+    fn deref(&self) -> &T {
+        &self.backend.0
     }
 }
 

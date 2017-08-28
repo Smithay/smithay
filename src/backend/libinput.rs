@@ -2,13 +2,17 @@
 
 use backend::{SeatInternal, TouchSlotInternal};
 use backend::input as backend;
+use backend::input::InputBackend;
 use input as libinput;
 use input::event;
+use wayland_server::{EventLoop, EventLoopHandle};
+use wayland_server::sources::{FdEventSourceHandler, FdEventSource, FdInterest, READ};
+
 use std::collections::hash_map::{DefaultHasher, Entry, HashMap};
 use std::hash::{Hash, Hasher};
-
 use std::io::Error as IoError;
 use std::rc::Rc;
+use std::os::unix::io::RawFd;
 
 /// Libinput based `InputBackend`.
 ///
@@ -38,6 +42,22 @@ impl LibinputInputBackend {
             handler: None,
             logger: log,
         }
+    }
+
+    pub fn register(self, event_loop: &mut EventLoop) -> Result<FdEventSource, IoError> {
+        let fd = unsafe { self.context.fd() };
+        let id = event_loop.add_handler(self);
+        event_loop.add_fd_event_source::<LibinputInputBackend>(fd, id, READ)
+    }
+}
+
+impl FdEventSourceHandler for LibinputInputBackend {
+    fn ready(&mut self, _evlh: &mut EventLoopHandle, _fd: RawFd, _mask: FdInterest) {
+        self.dispatch_new_events().expect("Failed to dispatch new libinput events");
+    }
+
+    fn error(&mut self, _evlh: &mut EventLoopHandle, _fd: RawFd, error: IoError) {
+        error!(self.logger, "Libinput event loop errored: {:?}", error);
     }
 }
 
