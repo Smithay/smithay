@@ -5,6 +5,9 @@ extern crate smithay;
 extern crate glium;
 extern crate drm;
 extern crate gbm;
+extern crate libudev;
+extern crate input;
+extern crate nix;
 
 #[macro_use]
 extern crate slog;
@@ -26,8 +29,15 @@ use smithay::backend::drm::{DrmDevice, DrmBackend, DrmHandler};
 use smithay::backend::graphics::GraphicsBackend;
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::glium::{IntoGlium, GliumGraphicsBackend};
+use smithay::backend::libinput::{LibinputInputBackend, PointerAxisEvent};
+use smithay::backend::input::{InputBackend, InputHandler, Seat, PointerMotionEvent, PointerMotionAbsoluteEvent};
 use smithay::compositor::{self, CompositorHandler, CompositorToken, TraversalAction};
 use smithay::shm::{BufferData, ShmGlobal, ShmToken};
+
+use nix::libc;
+use input::{Libinput, LibinputInterface, Device as InputDevice, event};
+use libudev::Context as Udev;
+use libudev::handle::Handle as UdevHandle;
 
 use wayland_server::{Client, Display, EventLoopHandle, Liveness, Resource};
 
@@ -81,6 +91,14 @@ impl compositor::Handler<SurfaceData> for SurfaceHandler {
     }
 }
 
+unsafe extern "C" fn open_restricted(path: *const i8, flags: i32, userdata: *mut libc::c_void) -> i32 {
+    libc::open(path, flags)
+}
+
+unsafe extern "C" fn close_restricted(fd: i32, userdata: *mut libc::c_void) {
+    libc::close(fd);
+}
+
 fn main() {
     // A logger facility, here we use the terminal for this example
     let log = Logger::root(
@@ -90,6 +108,14 @@ fn main() {
 
     // Initialize the wayland server
     let (mut display, mut event_loop) = wayland_server::create_display();
+
+    let udev = Udev::new().unwrap();
+    let mut input = LibinputInputBackend::new(unsafe {
+        Libinput::new_from_udev(LibinputInterface {
+            open_restricted: Some(open_restricted),
+            close_restricted: Some(close_restricted),
+        }, None::<()>, udev.as_ptr() as *mut _)
+    }, log.clone());
 
     // "Find" a suitable drm device
     let mut options = OpenOptions::new();
@@ -117,7 +143,7 @@ fn main() {
     // Initialize the hardware backends
     let renderer = DrmBackend::new(device, crtc, mode, vec![connector_info.handle()], gbm, log.clone()).unwrap();
 
-    /*
+        /*
      * Initialize wl_shm global
      */
     // Insert the ShmGlobal as a handler to your event loop
@@ -182,7 +208,51 @@ fn main() {
         logger: log,
     }).unwrap();
 
+    input.set_handler(InputHandlerImpl {
+        drawer: drawer.clone(),
+        position: (0, 0),
+    });
+    let _input_event_source = input.register(&mut event_loop);
+
     event_loop.run().unwrap();
+}
+
+struct InputHandlerImpl {
+    drawer: Rc<Mutex<GliumDrawer<GliumGraphicsBackend<DrmBackend>>>>,
+    position: (u32, u32),
+}
+
+impl InputHandlerImpl {
+    fn set_pointer(&mut self) {
+        //self.drawer.lock().unwrap().set_cursor_position(self.position.0, self.position.1).unwrap()
+    }
+}
+
+impl InputHandler<LibinputInputBackend> for InputHandlerImpl {
+    fn on_seat_created(&mut self, seat: &Seat) {}
+    fn on_seat_destroyed(&mut self, seat: &Seat) {}
+    fn on_seat_changed(&mut self, seat: &Seat) {}
+
+    fn on_keyboard_key(&mut self, seat: &Seat, event: event::keyboard::KeyboardKeyEvent) {}
+
+    fn on_pointer_move(&mut self, seat: &Seat, event: event::pointer::PointerMotionEvent) {
+        self.position.0 += event.delta_x();
+        self.position.1 += event.delta_y();
+        self.set_pointer()
+    }
+    fn on_pointer_move_absolute(&mut self, seat: &Seat, event: event::pointer::PointerMotionAbsoluteEvent) {
+        self.position = event.position_transformed(self.drawer.lock().unwrap().get_framebuffer_dimensions());
+        self.set_pointer()
+    }
+    fn on_pointer_button(&mut self, seat: &Seat, event: event::pointer::PointerButtonEvent) {}
+    fn on_pointer_axis(&mut self, seat: &Seat, event: PointerAxisEvent) {}
+
+    fn on_touch_down(&mut self, seat: &Seat, event: event::touch::TouchDownEvent) {}
+    fn on_touch_motion(&mut self, seat: &Seat, event: event::touch::TouchMotionEvent) {}
+    fn on_touch_up(&mut self, seat: &Seat, event: event::touch::TouchUpEvent) {}
+    fn on_touch_cancel(&mut self, seat: &Seat, event: event::touch::TouchCancelEvent) {}
+    fn on_touch_frame(&mut self, seat: &Seat, event: event::touch::TouchFrameEvent) {}
+    fn on_input_config_changed(&mut self, config: &mut [input::Device]) {}
 }
 
 pub struct DrmHandlerImpl {
