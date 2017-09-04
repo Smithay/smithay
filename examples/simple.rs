@@ -1,5 +1,6 @@
 #[macro_use(server_declare_handler)]
 extern crate wayland_server;
+#[macro_use(define_roles)]
 extern crate smithay;
 #[macro_use]
 extern crate glium;
@@ -13,17 +14,20 @@ mod helpers;
 
 use glium::Surface;
 
-use helpers::{GliumDrawer, WlShellStubHandler};
-use slog::*;
+use helpers::{GliumDrawer, ShellSurfaceRole, WlShellStubHandler};
+use slog::{Drain, Logger};
 
 use smithay::backend::graphics::glium::IntoGlium;
 use smithay::backend::input::InputBackend;
 use smithay::backend::winit;
-use smithay::compositor::{self, CompositorHandler, CompositorToken, TraversalAction};
+use smithay::compositor::{self, CompositorHandler, CompositorToken, SubsurfaceRole, TraversalAction};
+use smithay::compositor::roles::Role;
 use smithay::shm::{BufferData, ShmGlobal, ShmToken};
 use wayland_server::{Client, EventLoopHandle, Liveness, Resource};
 
 use wayland_server::protocol::{wl_compositor, wl_shell, wl_shm, wl_subcompositor, wl_surface};
+
+define_roles!(Roles => [ ShellSurface, ShellSurfaceRole ] );
 
 struct SurfaceHandler {
     shm_token: ShmToken,
@@ -34,9 +38,9 @@ struct SurfaceData {
     buffer: Option<(Vec<u8>, (u32, u32))>,
 }
 
-impl compositor::Handler<SurfaceData> for SurfaceHandler {
+impl compositor::Handler<SurfaceData, Roles> for SurfaceHandler {
     fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface,
-              token: CompositorToken<SurfaceData, SurfaceHandler>) {
+              token: CompositorToken<SurfaceData, Roles, SurfaceHandler>) {
         // we retrieve the contents of the associated buffer and copy it
         token.with_surface_data(surface, |attributes| {
             match attributes.buffer.take() {
@@ -66,6 +70,8 @@ impl compositor::Handler<SurfaceData> for SurfaceHandler {
         });
     }
 }
+
+type MyCompositorHandler = CompositorHandler<SurfaceData, Roles, SurfaceHandler>;
 
 fn main() {
     // A logger facility, here we use the terminal for this example
@@ -97,22 +103,19 @@ fn main() {
     /*
      * Initialize the compositor global
      */
-    let compositor_handler_id = event_loop.add_handler_with_init(CompositorHandler::<SurfaceData, _>::new(
+    let compositor_handler_id = event_loop.add_handler_with_init(MyCompositorHandler::new(
         SurfaceHandler { shm_token: shm_token.clone() },
         log.clone(),
     ));
     // register it to handle wl_compositor and wl_subcompositor
+    event_loop.register_global::<wl_compositor::WlCompositor, MyCompositorHandler>(compositor_handler_id, 4);
     event_loop
-        .register_global::<wl_compositor::WlCompositor, CompositorHandler<SurfaceData, SurfaceHandler>>(
-            compositor_handler_id,
-            4,
-        );
-    event_loop.register_global::<wl_subcompositor::WlSubcompositor, CompositorHandler<SurfaceData,SurfaceHandler>>(compositor_handler_id, 1);
+        .register_global::<wl_subcompositor::WlSubcompositor, MyCompositorHandler>(compositor_handler_id, 1);
     // retrieve the tokens
     let compositor_token = {
         let state = event_loop.state();
         state
-            .get_handler::<CompositorHandler<SurfaceData, SurfaceHandler>>(compositor_handler_id)
+            .get_handler::<MyCompositorHandler>(compositor_handler_id)
             .get_token()
     };
 
@@ -121,7 +124,7 @@ fn main() {
      */
     let shell_handler_id =
         event_loop.add_handler_with_init(WlShellStubHandler::new(compositor_token.clone()));
-    event_loop.register_global::<wl_shell::WlShell, WlShellStubHandler<SurfaceData, SurfaceHandler>>(
+    event_loop.register_global::<wl_shell::WlShell, WlShellStubHandler<SurfaceData, Roles, SurfaceHandler>>(
         shell_handler_id,
         1,
     );
@@ -150,31 +153,30 @@ fn main() {
             let state = event_loop.state();
             for &(_, ref surface) in
                 state
-                    .get_handler::<WlShellStubHandler<SurfaceData, SurfaceHandler>>(shell_handler_id)
+                    .get_handler::<WlShellStubHandler<SurfaceData, Roles, SurfaceHandler>>(shell_handler_id)
                     .surfaces()
             {
                 if surface.status() != Liveness::Alive {
                     continue;
                 }
                 // this surface is a root of a subsurface tree that needs to be drawn
-                compositor_token.with_surface_tree(
-                    surface,
-                    (100, 100),
-                    |surface, attributes, &(mut x, mut y)| {
-                        if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
-                            // there is actually something to draw !
-                            if let Some(ref subdata) = attributes.subsurface_attributes {
-                                x += subdata.x;
-                                y += subdata.y;
-                            }
-                            drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
-                            TraversalAction::DoChildren((x, y))
-                        } else {
-                            // we are not display, so our children are neither
-                            TraversalAction::SkipChildren
+                compositor_token.with_surface_tree(surface, (100, 100), |surface,
+                 attributes,
+                 role,
+                 &(mut x, mut y)| {
+                    if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
+                        // there is actually something to draw !
+                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                            x += subdata.x;
+                            y += subdata.y;
                         }
-                    },
-                );
+                        drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
+                        TraversalAction::DoChildren((x, y))
+                    } else {
+                        // we are not display, so our children are neither
+                        TraversalAction::SkipChildren
+                    }
+                });
             }
         }
         frame.finish().unwrap();

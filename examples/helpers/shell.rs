@@ -1,6 +1,7 @@
 
 
 use smithay::compositor::{CompositorToken, Handler as CompositorHandler};
+use smithay::compositor::roles::{Role, RoleType};
 use wayland_server::{Client, EventLoopHandle, GlobalHandler, Init, Resource};
 use wayland_server::protocol::{wl_shell, wl_shell_surface, wl_surface};
 
@@ -10,14 +11,17 @@ use wayland_server::protocol::{wl_shell, wl_shell_surface, wl_surface};
 /// as well as the roles associated to them.
 ///
 /// That's it.
-pub struct WlShellStubHandler<U, H> {
+pub struct WlShellStubHandler<U, R, H> {
     my_id: Option<usize>,
-    token: CompositorToken<U, H>,
+    token: CompositorToken<U, R, H>,
     surfaces: Vec<(wl_shell_surface::WlShellSurface, wl_surface::WlSurface)>,
 }
 
-impl<U, H> WlShellStubHandler<U, H> {
-    pub fn new(compositor_token: CompositorToken<U, H>) -> WlShellStubHandler<U, H> {
+#[derive(Default)]
+pub struct ShellSurfaceRole;
+
+impl<U, R, H> WlShellStubHandler<U, R, H> {
+    pub fn new(compositor_token: CompositorToken<U, R, H>) -> WlShellStubHandler<U, R, H> {
         WlShellStubHandler {
             my_id: None,
             token: compositor_token,
@@ -30,28 +34,42 @@ impl<U, H> WlShellStubHandler<U, H> {
     }
 }
 
-impl<U, H> Init for WlShellStubHandler<U, H> {
+impl<U, R, H> Init for WlShellStubHandler<U, R, H> {
     fn init(&mut self, evqh: &mut EventLoopHandle, index: usize) {
         self.my_id = Some(index)
     }
 }
 
 
-impl<U, H> GlobalHandler<wl_shell::WlShell> for WlShellStubHandler<U, H>
-    where U: Send + 'static,
-          H: CompositorHandler<U> + Send + 'static
+impl<U, R, H> GlobalHandler<wl_shell::WlShell> for WlShellStubHandler<U, R, H>
+where
+    U: Send + 'static,
+    R: RoleType
+        + Role<ShellSurfaceRole>
+        + Send
+        + 'static,
+    H: CompositorHandler<U, R>
+        + Send
+        + 'static,
 {
     fn bind(&mut self, evqh: &mut EventLoopHandle, client: &Client, global: wl_shell::WlShell) {
-        evqh.register::<_, Self>(&global,
-                                 self.my_id
-                                     .expect("WlShellStubHandler was not properly initialized."));
+        evqh.register::<_, Self>(
+            &global,
+            self.my_id.expect(
+                "WlShellStubHandler was not properly initialized.",
+            ),
+        );
     }
 }
 
-impl<U, H> wl_shell::Handler for WlShellStubHandler<U, H>
+impl<U, R, H> wl_shell::Handler for WlShellStubHandler<U, R, H>
 where
     U: Send + 'static,
-    H: CompositorHandler<U> + Send + 'static,
+    R: RoleType
+        + Role<ShellSurfaceRole>
+        + Send
+        + 'static,
+    H: CompositorHandler<U, R> + Send + 'static,
 {
     fn get_shell_surface(&mut self, evqh: &mut EventLoopHandle, client: &Client,
                          resource: &wl_shell::WlShell, id: wl_shell_surface::WlShellSurface,
@@ -59,7 +77,7 @@ where
         let surface = surface.clone().expect(
             "WlShellStubHandler can only manage surfaces managed by Smithay's CompositorHandler.",
         );
-        if self.token.give_role(&surface).is_err() {
+        if self.token.give_role::<ShellSurfaceRole>(&surface).is_err() {
             // This surface already has a role, and thus cannot be given one!
             resource.post_error(
                 wl_shell::Error::Role as u32,
@@ -72,13 +90,15 @@ where
     }
 }
 
-server_declare_handler!(WlShellStubHandler<U: [Send], H: [CompositorHandler<U>, Send]>, wl_shell::Handler, wl_shell::WlShell);
+server_declare_handler!(WlShellStubHandler<U: [Send], R: [RoleType, Role<ShellSurfaceRole>, Send], H: [CompositorHandler<U, R>, Send]>, wl_shell::Handler, wl_shell::WlShell);
 
-impl<U, H> wl_shell_surface::Handler for WlShellStubHandler<U, H>
+impl<U, R, H> wl_shell_surface::Handler for WlShellStubHandler<U, R, H>
 where
     U: Send + 'static,
-    H: CompositorHandler<U> + Send + 'static,
+    H: CompositorHandler<U, R>
+        + Send
+        + 'static,
 {
 }
 
-server_declare_handler!(WlShellStubHandler<U: [Send], H: [CompositorHandler<U>, Send]>, wl_shell_surface::Handler, wl_shell_surface::WlShellSurface);
+server_declare_handler!(WlShellStubHandler<U: [Send], R: [Send], H: [CompositorHandler<U, R>, Send]>, wl_shell_surface::Handler, wl_shell_surface::WlShellSurface);

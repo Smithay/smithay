@@ -33,7 +33,6 @@ extern crate slog;
 extern crate slog_stdlog;
 
 pub mod backend;
-
 pub mod compositor;
 pub mod shm;
 pub mod keyboard;
