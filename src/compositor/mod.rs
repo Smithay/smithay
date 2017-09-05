@@ -287,17 +287,15 @@ impl<U: Send + 'static, R: Send + 'static, H: Handler<U, R> + Send + 'static> Co
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_surface_data<F>(&self, surface: &wl_surface::WlSurface, f: F)
+    pub fn with_surface_data<F, T>(&self, surface: &wl_surface::WlSurface, f: F) -> T
     where
-        F: FnOnce(&mut SurfaceAttributes<U>),
+        F: FnOnce(&mut SurfaceAttributes<U>) -> T,
     {
         assert!(
             resource_is_registered::<_, CompositorHandler<U, R, H>>(surface, self.hid),
             "Accessing the data of foreign surfaces is not supported."
         );
-        unsafe {
-            SurfaceData::<U, R>::with_data(surface, f);
-        }
+        unsafe { SurfaceData::<U, R>::with_data(surface, f) }
     }
 }
 
