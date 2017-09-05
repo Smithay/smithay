@@ -87,10 +87,10 @@ impl<'a> backend::PointerAxisEvent for PointerAxisEvent {
 
     fn amount(&self) -> f64 {
         match self.source() {
-            backend::AxisSource::Finger |
-            backend::AxisSource::Continuous => self.event.axis_value(self.axis),
-            backend::AxisSource::Wheel |
-            backend::AxisSource::WheelTilt => self.event.axis_value_discrete(self.axis).unwrap(),
+            backend::AxisSource::Finger | backend::AxisSource::Continuous => self.event.axis_value(self.axis),
+            backend::AxisSource::Wheel | backend::AxisSource::WheelTilt => {
+                self.event.axis_value_discrete(self.axis).unwrap()
+            }
         }
     }
 }
@@ -271,9 +271,9 @@ impl backend::InputBackend for LibinputInputBackend {
     }
 
     fn get_handler(&mut self) -> Option<&mut backend::InputHandler<Self>> {
-        self.handler.as_mut().map(|handler| {
-            handler as &mut backend::InputHandler<Self>
-        })
+        self.handler
+            .as_mut()
+            .map(|handler| handler as &mut backend::InputHandler<Self>)
     }
 
     fn clear_handler(&mut self) {
@@ -349,21 +349,18 @@ impl backend::InputBackend for LibinputInputBackend {
                             // update capabilities, so they appear correctly on `on_seat_changed` and `on_seat_destroyed`.
                             if let Some(seat) = self.seats.get_mut(&device_seat) {
                                 let caps = seat.capabilities_mut();
-                                caps.pointer =
-                                    self.devices
-                                        .iter()
-                                        .filter(|x| x.seat() == device_seat)
-                                        .any(|x| x.has_capability(libinput::DeviceCapability::Pointer));
-                                caps.keyboard =
-                                    self.devices
-                                        .iter()
-                                        .filter(|x| x.seat() == device_seat)
-                                        .any(|x| x.has_capability(libinput::DeviceCapability::Keyboard));
-                                caps.touch =
-                                    self.devices
-                                        .iter()
-                                        .filter(|x| x.seat() == device_seat)
-                                        .any(|x| x.has_capability(libinput::DeviceCapability::Touch));
+                                caps.pointer = self.devices
+                                    .iter()
+                                    .filter(|x| x.seat() == device_seat)
+                                    .any(|x| x.has_capability(libinput::DeviceCapability::Pointer));
+                                caps.keyboard = self.devices
+                                    .iter()
+                                    .filter(|x| x.seat() == device_seat)
+                                    .any(|x| x.has_capability(libinput::DeviceCapability::Keyboard));
+                                caps.touch = self.devices
+                                    .iter()
+                                    .filter(|x| x.seat() == device_seat)
+                                    .any(|x| x.has_capability(libinput::DeviceCapability::Touch));
                             } else {
                                 panic!("Seat changed that was never created")
                             }
@@ -395,9 +392,9 @@ impl backend::InputBackend for LibinputInputBackend {
                     use input::event::touch::*;
                     if let Some(ref mut handler) = self.handler {
                         let device_seat = touch_event.device().seat();
-                        let seat = &self.seats.get(&device_seat).expect(
-                            "Recieved touch event of non existing Seat",
-                        );
+                        let seat = &self.seats
+                            .get(&device_seat)
+                            .expect("Recieved touch event of non existing Seat");
                         match touch_event {
                             TouchEvent::Down(down_event) => {
                                 trace!(self.logger, "Calling on_touch_down with {:?}", down_event);
@@ -433,25 +430,23 @@ impl backend::InputBackend for LibinputInputBackend {
                 libinput::Event::Keyboard(keyboard_event) => {
                     use input::event::keyboard::*;
                     match keyboard_event {
-                        KeyboardEvent::Key(key_event) => {
-                            if let Some(ref mut handler) = self.handler {
-                                let device_seat = key_event.device().seat();
-                                let seat = &self.seats.get(&device_seat).expect(
-                                    "Recieved key event of non existing Seat",
-                                );
-                                trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
-                                handler.on_keyboard_key(seat, key_event);
-                            }
-                        }
+                        KeyboardEvent::Key(key_event) => if let Some(ref mut handler) = self.handler {
+                            let device_seat = key_event.device().seat();
+                            let seat = &self.seats
+                                .get(&device_seat)
+                                .expect("Recieved key event of non existing Seat");
+                            trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
+                            handler.on_keyboard_key(seat, key_event);
+                        },
                     }
                 }
                 libinput::Event::Pointer(pointer_event) => {
                     use input::event::pointer::*;
                     if let Some(ref mut handler) = self.handler {
                         let device_seat = pointer_event.device().seat();
-                        let seat = &self.seats.get(&device_seat).expect(
-                            "Recieved pointer event of non existing Seat",
-                        );
+                        let seat = &self.seats
+                            .get(&device_seat)
+                            .expect("Recieved pointer event of non existing Seat");
                         match pointer_event {
                             PointerEvent::Motion(motion_event) => {
                                 trace!(

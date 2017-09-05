@@ -44,20 +44,14 @@ impl<U, R, H> Init for WlShellStubHandler<U, R, H> {
 impl<U, R, H> GlobalHandler<wl_shell::WlShell> for WlShellStubHandler<U, R, H>
 where
     U: Send + 'static,
-    R: RoleType
-        + Role<ShellSurfaceRole>
-        + Send
-        + 'static,
-    H: CompositorHandler<U, R>
-        + Send
-        + 'static,
+    R: RoleType + Role<ShellSurfaceRole> + Send + 'static,
+    H: CompositorHandler<U, R> + Send + 'static,
 {
     fn bind(&mut self, evqh: &mut EventLoopHandle, client: &Client, global: wl_shell::WlShell) {
         evqh.register::<_, Self>(
             &global,
-            self.my_id.expect(
-                "WlShellStubHandler was not properly initialized.",
-            ),
+            self.my_id
+                .expect("WlShellStubHandler was not properly initialized."),
         );
     }
 }
@@ -65,10 +59,7 @@ where
 impl<U, R, H> wl_shell::Handler for WlShellStubHandler<U, R, H>
 where
     U: Send + 'static,
-    R: RoleType
-        + Role<ShellSurfaceRole>
-        + Send
-        + 'static,
+    R: RoleType + Role<ShellSurfaceRole> + Send + 'static,
     H: CompositorHandler<U, R> + Send + 'static,
 {
     fn get_shell_surface(&mut self, evqh: &mut EventLoopHandle, client: &Client,
@@ -95,9 +86,7 @@ server_declare_handler!(WlShellStubHandler<U: [Send], R: [RoleType, Role<ShellSu
 impl<U, R, H> wl_shell_surface::Handler for WlShellStubHandler<U, R, H>
 where
     U: Send + 'static,
-    H: CompositorHandler<U, R>
-        + Send
-        + 'static,
+    H: CompositorHandler<U, R> + Send + 'static,
 {
 }
 

@@ -107,7 +107,7 @@ use self::region::RegionData;
 use self::roles::{Role, RoleType, WrongRole};
 use self::tree::SurfaceData;
 pub use self::tree::TraversalAction;
-use wayland_server::{Client, EventLoopHandle, Init, resource_is_registered};
+use wayland_server::{resource_is_registered, Client, EventLoopHandle, Init};
 
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface};
 
@@ -321,14 +321,11 @@ where
     /// - a custom value that is passer in a fold-like maneer, but only from the output of a parent
     ///   to its children. See `TraversalAction` for details.
     ///
-    /// If the surface is not managed by the CompositorGlobal that provided this token, this
+    /// If the surface not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn with_surface_tree<F, T>(&self, surface: &wl_surface::WlSurface, initial: T, f: F) -> Result<(), ()>
     where
-        F: FnMut(&wl_surface::WlSurface,
-              &mut SurfaceAttributes<U>,
-              &mut R,
-              &T)
+        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
               -> TraversalAction<T>,
     {
         assert!(
@@ -440,10 +437,11 @@ impl<U: Send + 'static, R: Send + RoleType + 'static, H: Handler<U, R> + Send + 
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_role_data<RoleData, F, T>(&self, surface: &wl_surface::WlSurface, f: F) -> Result<T, WrongRole>
+    pub fn with_role_data<RoleData, F, T>(&self, surface: &wl_surface::WlSurface, f: F)
+                                          -> Result<T, WrongRole>
     where
         R: Role<RoleData>,
-        F: FnOnce(&mut RoleData) -> T
+        F: FnOnce(&mut RoleData) -> T,
     {
         assert!(
             resource_is_registered::<_, CompositorHandler<U, R, H>>(surface, self.hid),

@@ -214,9 +214,9 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
-        self.window.get_inner_size_pixels().expect(
-            "Window does not exist anymore",
-        )
+        self.window
+            .get_inner_size_pixels()
+            .expect("Window does not exist anymore")
     }
 
     fn is_current(&self) -> bool {
@@ -310,14 +310,16 @@ impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
 
     fn x_transformed(&self, width: u32) -> u32 {
         cmp::min(
-            (self.x * width as f64 / self.window.get_inner_size_points().unwrap_or((width, 0)).0 as f64) as u32,
+            (self.x * width as f64 / self.window.get_inner_size_points().unwrap_or((width, 0)).0 as f64) as
+                u32,
             0,
         )
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
         cmp::min(
-            (self.y * height as f64 / self.window.get_inner_size_points().unwrap_or((0, height)).1 as f64) as u32,
+            (self.y * height as f64 / self.window.get_inner_size_points().unwrap_or((0, height)).1 as f64) as
+                u32,
             0,
         )
     }
@@ -529,9 +531,9 @@ impl InputBackend for WinitInputBackend {
     }
 
     fn get_handler(&mut self) -> Option<&mut InputHandler<Self>> {
-        self.handler.as_mut().map(|handler| {
-            handler as &mut InputHandler<Self>
-        })
+        self.handler
+            .as_mut()
+            .map(|handler| handler as &mut InputHandler<Self>)
     }
 
     fn clear_handler(&mut self) {
@@ -590,10 +592,15 @@ impl InputBackend for WinitInputBackend {
                                 wl_egl_surface.resize(x as i32, y as i32, 0, 0);
                             }
                         }
-                        (WindowEvent::KeyboardInput {
-                             input: KeyboardInput { scancode, state, .. }, ..
-                         },
-                         Some(handler)) => {
+                        (
+                            WindowEvent::KeyboardInput {
+                                input: KeyboardInput {
+                                    scancode, state, ..
+                                },
+                                ..
+                            },
+                            Some(handler),
+                        ) => {
                             match state {
                                 ElementState::Pressed => *key_counter += 1,
                                 ElementState::Released => {
@@ -615,7 +622,12 @@ impl InputBackend for WinitInputBackend {
                                 },
                             )
                         }
-                        (WindowEvent::MouseMoved { position: (x, y), .. }, Some(handler)) => {
+                        (
+                            WindowEvent::MouseMoved {
+                                position: (x, y), ..
+                            },
+                            Some(handler),
+                        ) => {
                             trace!(logger, "Calling on_pointer_move_absolute with {:?}", (x, y));
                             handler.on_pointer_move_absolute(
                                 seat,
@@ -627,39 +639,36 @@ impl InputBackend for WinitInputBackend {
                                 },
                             )
                         }
-                        (WindowEvent::MouseWheel { delta, .. }, Some(handler)) => {
-                            match delta {
-                                MouseScrollDelta::LineDelta(x, y) |
-                                MouseScrollDelta::PixelDelta(x, y) => {
-                                    if x != 0.0 {
-                                        let event = WinitMouseWheelEvent {
-                                            axis: Axis::Horizontal,
-                                            time: *time_counter,
-                                            delta: delta,
-                                        };
-                                        trace!(
-                                            logger,
-                                            "Calling on_pointer_axis for Axis::Horizontal with {:?}",
-                                            x
-                                        );
-                                        handler.on_pointer_axis(seat, event);
-                                    }
-                                    if y != 0.0 {
-                                        let event = WinitMouseWheelEvent {
-                                            axis: Axis::Vertical,
-                                            time: *time_counter,
-                                            delta: delta,
-                                        };
-                                        trace!(
-                                            logger,
-                                            "Calling on_pointer_axis for Axis::Vertical with {:?}",
-                                            y
-                                        );
-                                        handler.on_pointer_axis(seat, event);
-                                    }
+                        (WindowEvent::MouseWheel { delta, .. }, Some(handler)) => match delta {
+                            MouseScrollDelta::LineDelta(x, y) | MouseScrollDelta::PixelDelta(x, y) => {
+                                if x != 0.0 {
+                                    let event = WinitMouseWheelEvent {
+                                        axis: Axis::Horizontal,
+                                        time: *time_counter,
+                                        delta: delta,
+                                    };
+                                    trace!(
+                                        logger,
+                                        "Calling on_pointer_axis for Axis::Horizontal with {:?}",
+                                        x
+                                    );
+                                    handler.on_pointer_axis(seat, event);
+                                }
+                                if y != 0.0 {
+                                    let event = WinitMouseWheelEvent {
+                                        axis: Axis::Vertical,
+                                        time: *time_counter,
+                                        delta: delta,
+                                    };
+                                    trace!(
+                                        logger,
+                                        "Calling on_pointer_axis for Axis::Vertical with {:?}",
+                                        y
+                                    );
+                                    handler.on_pointer_axis(seat, event);
                                 }
                             }
-                        }
+                        },
                         (WindowEvent::MouseInput { state, button, .. }, Some(handler)) => {
                             trace!(
                                 logger,
@@ -675,13 +684,15 @@ impl InputBackend for WinitInputBackend {
                                 },
                             )
                         }
-                        (WindowEvent::Touch(Touch {
-                                                phase: TouchPhase::Started,
-                                                location: (x, y),
-                                                id,
-                                                ..
-                                            }),
-                         Some(handler)) => {
+                        (
+                            WindowEvent::Touch(Touch {
+                                phase: TouchPhase::Started,
+                                location: (x, y),
+                                id,
+                                ..
+                            }),
+                            Some(handler),
+                        ) => {
                             trace!(logger, "Calling on_touch_down at {:?}", (x, y));
                             handler.on_touch_down(
                                 seat,
@@ -693,13 +704,15 @@ impl InputBackend for WinitInputBackend {
                                 },
                             )
                         }
-                        (WindowEvent::Touch(Touch {
-                                                phase: TouchPhase::Moved,
-                                                location: (x, y),
-                                                id,
-                                                ..
-                                            }),
-                         Some(handler)) => {
+                        (
+                            WindowEvent::Touch(Touch {
+                                phase: TouchPhase::Moved,
+                                location: (x, y),
+                                id,
+                                ..
+                            }),
+                            Some(handler),
+                        ) => {
                             trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
                             handler.on_touch_motion(
                                 seat,
@@ -711,13 +724,15 @@ impl InputBackend for WinitInputBackend {
                                 },
                             )
                         }
-                        (WindowEvent::Touch(Touch {
-                                                phase: TouchPhase::Ended,
-                                                location: (x, y),
-                                                id,
-                                                ..
-                                            }),
-                         Some(handler)) => {
+                        (
+                            WindowEvent::Touch(Touch {
+                                phase: TouchPhase::Ended,
+                                location: (x, y),
+                                id,
+                                ..
+                            }),
+                            Some(handler),
+                        ) => {
                             trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
                             handler.on_touch_motion(
                                 seat,
@@ -737,12 +752,14 @@ impl InputBackend for WinitInputBackend {
                                 },
                             );
                         }
-                        (WindowEvent::Touch(Touch {
-                                                phase: TouchPhase::Cancelled,
-                                                id,
-                                                ..
-                                            }),
-                         Some(handler)) => {
+                        (
+                            WindowEvent::Touch(Touch {
+                                phase: TouchPhase::Cancelled,
+                                id,
+                                ..
+                            }),
+                            Some(handler),
+                        ) => {
                             trace!(logger, "Calling on_touch_cancel");
                             handler.on_touch_cancel(
                                 seat,

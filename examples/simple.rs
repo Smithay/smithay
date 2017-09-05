@@ -1,9 +1,9 @@
-#[macro_use(server_declare_handler)]
-extern crate wayland_server;
-#[macro_use(define_roles)]
-extern crate smithay;
 #[macro_use]
 extern crate glium;
+#[macro_use(define_roles)]
+extern crate smithay;
+#[macro_use(server_declare_handler)]
+extern crate wayland_server;
 
 #[macro_use]
 extern crate slog;
@@ -59,7 +59,6 @@ impl compositor::Handler<SurfaceData, Roles> for SurfaceHandler {
                         attributes.user_data.buffer =
                             Some((new_vec, (data.width as u32, data.height as u32)));
                     });
-
                 }
                 Some(None) => {
                     // erase the contents
@@ -104,7 +103,9 @@ fn main() {
      * Initialize the compositor global
      */
     let compositor_handler_id = event_loop.add_handler_with_init(MyCompositorHandler::new(
-        SurfaceHandler { shm_token: shm_token.clone() },
+        SurfaceHandler {
+            shm_token: shm_token.clone(),
+        },
         log.clone(),
     ));
     // register it to handle wl_compositor and wl_subcompositor
@@ -151,32 +152,32 @@ fn main() {
         {
             let screen_dimensions = context.get_framebuffer_dimensions();
             let state = event_loop.state();
-            for &(_, ref surface) in
-                state
-                    .get_handler::<WlShellStubHandler<SurfaceData, Roles, SurfaceHandler>>(shell_handler_id)
-                    .surfaces()
+            for &(_, ref surface) in state
+                .get_handler::<WlShellStubHandler<SurfaceData, Roles, SurfaceHandler>>(shell_handler_id)
+                .surfaces()
             {
                 if surface.status() != Liveness::Alive {
                     continue;
                 }
                 // this surface is a root of a subsurface tree that needs to be drawn
-                compositor_token.with_surface_tree(surface, (100, 100), |surface,
-                 attributes,
-                 role,
-                 &(mut x, mut y)| {
-                    if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
-                        // there is actually something to draw !
-                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                            x += subdata.x;
-                            y += subdata.y;
+                compositor_token.with_surface_tree(
+                    surface,
+                    (100, 100),
+                    |surface, attributes, role, &(mut x, mut y)| {
+                        if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
+                            // there is actually something to draw !
+                            if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                                x += subdata.x;
+                                y += subdata.y;
+                            }
+                            drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
+                            TraversalAction::DoChildren((x, y))
+                        } else {
+                            // we are not display, so our children are neither
+                            TraversalAction::SkipChildren
                         }
-                        drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
-                        TraversalAction::DoChildren((x, y))
-                    } else {
-                        // we are not display, so our children are neither
-                        TraversalAction::SkipChildren
-                    }
-                });
+                    },
+                );
             }
         }
         frame.finish().unwrap();
