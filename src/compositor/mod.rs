@@ -434,6 +434,23 @@ impl<U: Send + 'static, R: Send + RoleType + 'static, H: Handler<U, R> + Send + 
         unsafe { SurfaceData::<U, R>::give_role_with::<RoleData>(surface, data) }
     }
 
+    /// Access the role data of a surface
+    ///
+    /// Fails and don't call the closure if the surface doesn't have this role
+    ///
+    /// If the surface is not managed by the CompositorGlobal that provided this token, this
+    /// will panic (having more than one compositor is not supported).
+    pub fn with_role_data<RoleData, F, T>(&self, surface: &wl_surface::WlSurface, f: F) -> Result<T, WrongRole>
+    where
+        R: Role<RoleData>,
+        F: FnOnce(&mut RoleData) -> T
+    {
+        assert!(
+            resource_is_registered::<_, CompositorHandler<U, R, H>>(surface, self.hid),
+            "Accessing the data of foreign surfaces is not supported."
+        );
+        unsafe { SurfaceData::<U, R>::with_role_data::<RoleData, _, _>(surface, f) }
+    }
 
     /// Register that this surface does not have a role any longer and retrieve the data
     ///
