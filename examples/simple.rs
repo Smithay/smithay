@@ -1,15 +1,15 @@
 #[macro_use]
 extern crate glium;
+extern crate rand;
+#[macro_use]
+extern crate slog;
+extern crate slog_async;
+extern crate slog_term;
 #[macro_use(define_roles)]
 extern crate smithay;
 extern crate wayland_protocols;
 #[macro_use(server_declare_handler)]
 extern crate wayland_server;
-
-#[macro_use]
-extern crate slog;
-extern crate slog_async;
-extern crate slog_term;
 
 mod helpers;
 
@@ -42,7 +42,7 @@ struct SurfaceHandler {
 #[derive(Default)]
 struct SurfaceData {
     buffer: Option<(Vec<u8>, (u32, u32))>,
-    location: Option<(u32, u32)>,
+    location: Option<(i32, i32)>,
 }
 
 impl compositor::Handler<SurfaceData, Roles> for SurfaceHandler {
@@ -77,7 +77,15 @@ impl compositor::Handler<SurfaceData, Roles> for SurfaceHandler {
     }
 }
 
-struct ShellSurfaceHandler;
+struct ShellSurfaceHandler {
+    token: CompositorToken<SurfaceData, Roles, SurfaceHandler>,
+}
+
+impl ShellSurfaceHandler {
+    fn new(token: CompositorToken<SurfaceData, Roles, SurfaceHandler>) -> ShellSurfaceHandler {
+        ShellSurfaceHandler { token }
+    }
+}
 
 impl shell::Handler<SurfaceData, Roles, SurfaceHandler, ()> for ShellSurfaceHandler {
     fn new_client(&mut self, evlh: &mut EventLoopHandle, client: ShellClient<()>) {}
@@ -85,6 +93,16 @@ impl shell::Handler<SurfaceData, Roles, SurfaceHandler, ()> for ShellSurfaceHand
     fn new_toplevel(&mut self, evlh: &mut EventLoopHandle,
                     surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>)
                     -> ToplevelConfigure {
+        let wl_surface = surface.get_surface().unwrap();
+        self.token.with_surface_data(wl_surface, |data| {
+            // place the window at a random location in the [0;300]x[0;300] square
+            use rand::distributions::{IndependentSample, Range};
+            let range = Range::new(0, 300);
+            let mut rng = rand::thread_rng();
+            let x = range.ind_sample(&mut rng);
+            let y = range.ind_sample(&mut rng);
+            data.user_data.location = Some((x, y))
+        });
         ToplevelConfigure {
             size: None,
             states: vec![],
@@ -185,8 +203,8 @@ fn main() {
      * Initialize the shell global
      */
     let shell_handler_id = event_loop.add_handler_with_init(MyShellHandler::new(
-        ShellSurfaceHandler,
-        compositor_token.clone(),
+        ShellSurfaceHandler::new(compositor_token),
+        compositor_token,
         log.clone(),
     ));
     event_loop.register_global::<wl_shell::WlShell, MyShellHandler>(shell_handler_id, 1);
@@ -220,9 +238,11 @@ fn main() {
             {
                 if let Some(wl_surface) = toplevel_surface.get_surface() {
                     // this surface is a root of a subsurface tree that needs to be drawn
+                    let initial_place = compositor_token
+                        .with_surface_data(wl_surface, |data| data.user_data.location.unwrap_or((0, 0)));
                     compositor_token.with_surface_tree(
                         wl_surface,
-                        (100, 100),
+                        initial_place,
                         |surface, attributes, role, &(mut x, mut y)| {
                             if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
                                 // there is actually something to draw !
