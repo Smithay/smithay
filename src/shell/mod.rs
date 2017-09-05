@@ -115,7 +115,7 @@ where
     H: CompositorHandler<U, R> + Send + 'static,
 {
     /// Create a new CompositorHandler
-    pub fn new<F, L>(handler: SH, token: CompositorToken<U, R, H>, logger: L) -> ShellHandler<U, R, H, SH, SD>
+    pub fn new<L>(handler: SH, token: CompositorToken<U, R, H>, logger: L) -> ShellHandler<U, R, H, SH, SD>
     where
         L: Into<Option<::slog::Logger>>,
     {

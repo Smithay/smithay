@@ -2,6 +2,7 @@
 extern crate glium;
 #[macro_use(define_roles)]
 extern crate smithay;
+extern crate wayland_protocols;
 #[macro_use(server_declare_handler)]
 extern crate wayland_server;
 
@@ -14,7 +15,7 @@ mod helpers;
 
 use glium::Surface;
 
-use helpers::{GliumDrawer, ShellSurfaceRole, WlShellStubHandler};
+use helpers::GliumDrawer;
 use slog::{Drain, Logger};
 
 use smithay::backend::graphics::glium::IntoGlium;
@@ -22,10 +23,15 @@ use smithay::backend::input::InputBackend;
 use smithay::backend::winit;
 use smithay::compositor::{self, CompositorHandler, CompositorToken, SubsurfaceRole, TraversalAction};
 use smithay::compositor::roles::Role;
+use smithay::shell::{self, PopupConfigure, PopupSurface, ShellClient, ShellHandler, ShellSurfaceRole,
+                     ToplevelConfigure, ToplevelSurface};
 use smithay::shm::{BufferData, ShmGlobal, ShmToken};
-use wayland_server::{Client, EventLoopHandle, Liveness, Resource};
 
-use wayland_server::protocol::{wl_compositor, wl_shell, wl_shm, wl_subcompositor, wl_surface};
+use wayland_protocols::unstable::xdg_shell::server::{zxdg_shell_v6, zxdg_toplevel_v6};
+
+use wayland_server::{Client, EventLoopHandle, Liveness, Resource};
+use wayland_server::protocol::{wl_compositor, wl_output, wl_seat, wl_shell, wl_shm, wl_subcompositor,
+                               wl_surface};
 
 define_roles!(Roles => [ ShellSurface, ShellSurfaceRole ] );
 
@@ -36,6 +42,7 @@ struct SurfaceHandler {
 #[derive(Default)]
 struct SurfaceData {
     buffer: Option<(Vec<u8>, (u32, u32))>,
+    location: Option<(u32, u32)>,
 }
 
 impl compositor::Handler<SurfaceData, Roles> for SurfaceHandler {
@@ -70,7 +77,61 @@ impl compositor::Handler<SurfaceData, Roles> for SurfaceHandler {
     }
 }
 
+struct ShellSurfaceHandler;
+
+impl shell::Handler<SurfaceData, Roles, SurfaceHandler, ()> for ShellSurfaceHandler {
+    fn new_client(&mut self, evlh: &mut EventLoopHandle, client: ShellClient<()>) {}
+    fn client_pong(&mut self, evlh: &mut EventLoopHandle, client: ShellClient<()>) {}
+    fn new_toplevel(&mut self, evlh: &mut EventLoopHandle,
+                    surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>)
+                    -> ToplevelConfigure {
+        ToplevelConfigure {
+            size: None,
+            states: vec![],
+            serial: 42,
+        }
+    }
+    fn new_popup(&mut self, evlh: &mut EventLoopHandle,
+                 surface: PopupSurface<SurfaceData, Roles, SurfaceHandler, ()>)
+                 -> PopupConfigure {
+        PopupConfigure {
+            size: (10, 10),
+            position: (10, 10),
+            serial: 42,
+        }
+    }
+    fn move_(&mut self, evlh: &mut EventLoopHandle,
+             surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>, seat: &wl_seat::WlSeat,
+             serial: u32) {
+    }
+    fn resize(&mut self, evlh: &mut EventLoopHandle,
+              surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>, seat: &wl_seat::WlSeat,
+              serial: u32, edges: zxdg_toplevel_v6::ResizeEdge) {
+    }
+    fn grab(&mut self, evlh: &mut EventLoopHandle,
+            surface: PopupSurface<SurfaceData, Roles, SurfaceHandler, ()>, seat: &wl_seat::WlSeat,
+            serial: u32) {
+    }
+    fn change_display_state(&mut self, evlh: &mut EventLoopHandle,
+                            surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>,
+                            maximized: Option<bool>, minimized: Option<bool>, fullscreen: Option<bool>,
+                            output: Option<&wl_output::WlOutput>)
+                            -> ToplevelConfigure {
+        ToplevelConfigure {
+            size: None,
+            states: vec![],
+            serial: 42,
+        }
+    }
+    fn show_window_menu(&mut self, evlh: &mut EventLoopHandle,
+                        surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>,
+                        seat: &wl_seat::WlSeat, serial: u32, x: i32, y: i32) {
+    }
+}
+
+
 type MyCompositorHandler = CompositorHandler<SurfaceData, Roles, SurfaceHandler>;
+type MyShellHandler = ShellHandler<SurfaceData, Roles, SurfaceHandler, ShellSurfaceHandler, ()>;
 
 fn main() {
     // A logger facility, here we use the terminal for this example
@@ -121,14 +182,15 @@ fn main() {
     };
 
     /*
-     * Initialize the shell stub global
+     * Initialize the shell global
      */
-    let shell_handler_id =
-        event_loop.add_handler_with_init(WlShellStubHandler::new(compositor_token.clone()));
-    event_loop.register_global::<wl_shell::WlShell, WlShellStubHandler<SurfaceData, Roles, SurfaceHandler>>(
-        shell_handler_id,
-        1,
-    );
+    let shell_handler_id = event_loop.add_handler_with_init(MyShellHandler::new(
+        ShellSurfaceHandler,
+        compositor_token.clone(),
+        log.clone(),
+    ));
+    event_loop.register_global::<wl_shell::WlShell, MyShellHandler>(shell_handler_id, 1);
+    event_loop.register_global::<zxdg_shell_v6::ZxdgShellV6, MyShellHandler>(shell_handler_id, 1);
 
     /*
      * Initialize glium
@@ -152,32 +214,31 @@ fn main() {
         {
             let screen_dimensions = context.get_framebuffer_dimensions();
             let state = event_loop.state();
-            for &(_, ref surface) in state
-                .get_handler::<WlShellStubHandler<SurfaceData, Roles, SurfaceHandler>>(shell_handler_id)
-                .surfaces()
+            for toplevel_surface in state
+                .get_handler::<MyShellHandler>(shell_handler_id)
+                .toplevel_surfaces()
             {
-                if surface.status() != Liveness::Alive {
-                    continue;
-                }
-                // this surface is a root of a subsurface tree that needs to be drawn
-                compositor_token.with_surface_tree(
-                    surface,
-                    (100, 100),
-                    |surface, attributes, role, &(mut x, mut y)| {
-                        if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
-                            // there is actually something to draw !
-                            if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                                x += subdata.x;
-                                y += subdata.y;
+                if let Some(wl_surface) = toplevel_surface.get_surface() {
+                    // this surface is a root of a subsurface tree that needs to be drawn
+                    compositor_token.with_surface_tree(
+                        wl_surface,
+                        (100, 100),
+                        |surface, attributes, role, &(mut x, mut y)| {
+                            if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
+                                // there is actually something to draw !
+                                if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                                    x += subdata.x;
+                                    y += subdata.y;
+                                }
+                                drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
+                                TraversalAction::DoChildren((x, y))
+                            } else {
+                                // we are not display, so our children are neither
+                                TraversalAction::SkipChildren
                             }
-                            drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
-                            TraversalAction::DoChildren((x, y))
-                        } else {
-                            // we are not display, so our children are neither
-                            TraversalAction::SkipChildren
-                        }
-                    },
-                );
+                        },
+                    );
+                }
             }
         }
         frame.finish().unwrap();
