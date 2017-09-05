@@ -38,7 +38,7 @@ before_script:
   - export XDG_RUNTIME_DIR="$(pwd)/socket"
 
 script:
-  - travis-cargo --only nightly fmt -- --write-mode=diff
+  - travis-cargo --only nightly fmt -- -- --write-mode=diff
   - travis-cargo --skip nightly build
   - travis-cargo --only nightly build -- --features "clippy"
   - travis-cargo --only stable doc -- --no-deps
