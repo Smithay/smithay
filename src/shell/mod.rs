@@ -1,3 +1,144 @@
+//! Utilities for handling shell surfaces, toplevel and popups
+//!
+//! This module provides the `ShellHandler` type, which implements automatic handling of
+//! shell surfaces objects, by being registered as a global handler for `wl_shell` and
+//! `xdg_shell`.
+//!
+//! ## Why use this handler
+//!
+//! This handler can track for you the various shell surfaces defined by the clients by
+//! handling the `xdg_shell` protocol. It also includes a compatibility layer for the
+//! deprecated `wl_shell` global.
+//!
+//! It allows you to easily access a list of all shell surfaces defined by your clients
+//! access their associated metadata and underlying `wl_surface`s.
+//!
+//! This handler only handles the protocol exchanges with the client to present you the
+//! information in a coherent and relatively easy to use maneer. All the actual drawing
+//! and positioning logic of windows is out of its scope.
+//!
+//! ## How to use it
+//!
+//! ### Initialization
+//!
+//! To initialize this handler, simply instanciate it and register it to the event loop
+//! as a global handler for xdg_shell and wl_shell. You will need to provide it the
+//! `CompositorToken` you retrieved from an instanciation of the `CompositorHandler`
+//! provided y smithay.
+//!
+//! ```
+//! # extern crate wayland_server;
+//! # #[macro_use] extern crate smithay;
+//! # extern crate wayland_protocols;
+//! #
+//! use smithay::compositor::roles::*;
+//! use smithay::compositor::CompositorToken;
+//! use smithay::shell::{ShellHandler, Handler as ShellHandlerTrait, ShellSurfaceRole};
+//! use wayland_server::protocol::wl_shell::WlShell;
+//! use wayland_protocols::unstable::xdg_shell::server::zxdg_shell_v6::ZxdgShellV6;
+//! use wayland_server::{EventLoop, EventLoopHandle};
+//! # use smithay::shell::*;
+//! # use wayland_server::protocol::{wl_seat, wl_output};
+//! # use wayland_protocols::unstable::xdg_shell::server::zxdg_toplevel_v6;
+//! # #[derive(Default)] struct MySurfaceData;
+//! # struct MyHandlerForCompositor;
+//! # impl ::smithay::compositor::Handler<MySurfaceData, MyRoles> for MyHandlerForCompositor {}
+//!
+//! // define the roles type. You need to integrate the ShellSurface role:
+//! define_roles!(MyRoles =>
+//!     [ShellSurface, ShellSurfaceRole]
+//! );
+//!
+//! // define the metadata you want associated with the shell clients
+//! #[derive(Default)]
+//! struct MyShellData {
+//!     /* ... */
+//! }
+//!
+//! // define a sub-handler for the shell::Handler trait
+//! struct MyHandlerForShell {
+//!     /* ... */
+//! }
+//!
+//! # type MyToplevelSurface = ToplevelSurface<MySurfaceData, MyRoles, MyHandlerForCompositor,
+//! # MyShellData>;
+//! # type MyPopupSurface = PopupSurface<MySurfaceData, MyRoles, MyHandlerForCompositor,
+//! # MyShellData>;
+//!
+//! impl ShellHandlerTrait<MySurfaceData, MyRoles, MyHandlerForCompositor, MyShellData> for MyHandlerForShell {
+//!     /* ... a few methods to implement, see shell::Handler
+//!        documentation for details ... */
+//! #    fn new_client(&mut self, evlh: &mut EventLoopHandle, client: ShellClient<MyShellData>) { unimplemented!() }
+//! #    fn client_pong(&mut self, evlh: &mut EventLoopHandle, client: ShellClient<MyShellData>) { unimplemented!() }
+//! #    fn new_toplevel(&mut self, evlh: &mut EventLoopHandle, surface: MyToplevelSurface)
+//! #                    -> ToplevelConfigure { unimplemented!() }
+//! #    fn new_popup(&mut self, evlh: &mut EventLoopHandle, surface: MyPopupSurface)
+//! #                 -> PopupConfigure { unimplemented!() }
+//! #    fn move_(&mut self, evlh: &mut EventLoopHandle, surface: MyToplevelSurface,
+//! #             seat: &wl_seat::WlSeat, serial: u32) { unimplemented!() }
+//! #    fn resize(&mut self, evlh: &mut EventLoopHandle, surface: MyToplevelSurface,
+//! #              seat: &wl_seat::WlSeat, serial: u32, edges: zxdg_toplevel_v6::ResizeEdge) { unimplemented!() }
+//! #    fn grab(&mut self, evlh: &mut EventLoopHandle, surface: MyPopupSurface,
+//! #            seat: &wl_seat::WlSeat, serial: u32) { unimplemented!() }
+//! #    fn change_display_state(&mut self, evlh: &mut EventLoopHandle, surface: MyToplevelSurface,
+//! #                            maximized: Option<bool>, minimized: Option<bool>, fullscreen: Option<bool>,
+//! #                            output: Option<&wl_output::WlOutput>)
+//! #                            -> ToplevelConfigure { unimplemented!() }
+//! #    fn show_window_menu(&mut self, evlh: &mut EventLoopHandle, surface: MyToplevelSurface,
+//! #                        seat: &wl_seat::WlSeat, serial: u32, x: i32, y: i32) { unimplemented!() }
+//! }
+//!
+//! # type MyCompositorHandler = smithay::compositor::CompositorHandler<MySurfaceData, MyRoles,
+//! #    MyHandlerForCompositor>;
+//! // A type alias for brevety. ShellHandler has many type parameters:
+//! type MyShellHandler = ShellHandler<
+//!     MySurfaceData,          // the surface data you defined for the CompositorHandler
+//!     MyRoles,                // the roles type
+//!     MyHandlerForCompositor, // the sub-handler type you defined for the CompositorHandler
+//!     MyHandlerForShell,      // the sub-handler type you defined for this ShellHandler
+//!     MyShellData             // the client data you defined for this ShellHandler
+//! >;
+//! # fn main() {
+//! # let (_display, mut event_loop) = wayland_server::create_display();
+//! # let compositor_hid = event_loop.add_handler_with_init(
+//! #     MyCompositorHandler::new(MyHandlerForCompositor{ /* ... */ }, None /* put a logger here */)
+//! # );
+//! # let compositor_token = {
+//! #    let state = event_loop.state();
+//! #    state.get_handler::<MyCompositorHandler>(compositor_hid).get_token()
+//! # };
+//!
+//! let shell_hid = event_loop.add_handler_with_init(
+//!     MyShellHandler::new(
+//!         MyHandlerForShell{ /* ... */ },
+//!         compositor_token, // the composior token you retrieved from the CompositorHandler
+//!         None /* put a logger here */
+//!     )
+//! );
+//!
+//! event_loop.register_global::<WlShell, MyShellHandler>(shell_hid, 1);
+//! event_loop.register_global::<ZxdgShellV6, MyShellHandler>(shell_hid, 1);
+//!
+//! // You're now ready to go!
+//! # }
+//! ```
+//!
+//! ### Access to shell surface and clients data
+//!
+//! There are mainly 3 kind of objects that you'll manipulate from this handler:
+//!
+//! - `ShellClient`: This is a handle representing an isntanciation of a shell global
+//!   you can associate client-wise metadata to it (this is the `MyShellData` type in
+//!   the example above).
+//! - `ToplevelSurface`: This is a handle representing a toplevel surface, you can
+//!   retrive a list of all currently alive toplevel surface from the `Shellhandler`.
+//! - `PopupSurface`: This is a handle representing a popup/tooltip surface. Similarly,
+//!   you can get a list of all currently alive popup surface from the `ShellHandler`.
+//!
+//! You'll obtain these objects though two means: either via the callback methods of
+//! the subhandler you provided, or via methods on the `ShellHandler` that you can
+//! access from the `state()` of the event loop.
+
 use compositor::{CompositorToken, Handler as CompositorHandler, Rectangle};
 use compositor::roles::Role;
 
