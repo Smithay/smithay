@@ -381,7 +381,9 @@ where
     ///
     /// Returns `None` if the surface does actually no longer exist.
     pub fn client(&self) -> Option<ShellClient<SD>> {
-        if !self.alive() { return None }
+        if !self.alive() {
+            return None;
+        }
         match self.shell_surface {
             SurfaceKind::Wl(ref s) => {
                 let &(_, ref shell) =
@@ -517,7 +519,9 @@ where
     ///
     /// Returns `None` if the surface does actually no longer exist.
     pub fn client(&self) -> Option<ShellClient<SD>> {
-        if !self.alive() { return None }
+        if !self.alive() {
+            return None;
+        }
         match self.shell_surface {
             SurfaceKind::Wl(ref s) => {
                 let &(_, ref shell) =
@@ -658,7 +662,7 @@ pub struct PopupConfigure {
     ///
     /// This should be an ever increasing number, as the ACK-ing
     /// from a client for a serial will validate all pending lower
-    /// serials. 
+    /// serials.
     pub serial: u32,
 }
 

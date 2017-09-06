@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use wayland_protocols::unstable::xdg_shell::server::{zxdg_positioner_v6 as xdg_positioner, zxdg_toplevel_v6};
 
-use wayland_server::{Client, Destroy, EventLoopHandle, Init, Resource};
+use wayland_server::{Client, Destroy, EventLoopHandle, Resource};
 use wayland_server::protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface};
 
 pub struct WlShellDestructor<SD> {
@@ -27,6 +27,8 @@ impl<SD> Destroy<wl_shell::WlShell> for WlShellDestructor<SD> {
         let ptr = shell.get_user_data();
         shell.set_user_data(::std::ptr::null_mut());
         let data = unsafe { Box::from_raw(ptr as *mut ShellUserData<SD>) };
+        // explicitly call drop to not forget what we're doing here
+        ::std::mem::drop(data);
     }
 }
 
@@ -45,9 +47,8 @@ where
     SH: UserHandler<U, R, H, SD> + Send + 'static,
     SD: Send + 'static,
 {
-    fn get_shell_surface(&mut self, evqh: &mut EventLoopHandle, client: &Client,
-                         resource: &wl_shell::WlShell, id: wl_shell_surface::WlShellSurface,
-                         surface: &wl_surface::WlSurface) {
+    fn get_shell_surface(&mut self, evlh: &mut EventLoopHandle, _: &Client, resource: &wl_shell::WlShell,
+                         id: wl_shell_surface::WlShellSurface, surface: &wl_surface::WlSurface) {
         trace!(self.log, "Creating new wl_shell_surface.");
         let role_data = ShellSurfaceRole {
             pending_state: ShellSurfacePendingState::None,
@@ -65,7 +66,7 @@ where
         id.set_user_data(
             Box::into_raw(Box::new(unsafe { surface.clone_unchecked() })) as *mut _,
         );
-        evqh.register_with_destructor::<_, Self, WlShellDestructor<SD>>(&id, self.my_id);
+        evlh.register_with_destructor::<_, Self, WlShellDestructor<SD>>(&id, self.my_id);
 
         // register ourselves to the wl_shell for ping handling
         let mutex = unsafe { &*(resource.get_user_data() as *mut ShellUserData<SD>) };
@@ -98,6 +99,8 @@ impl<SD> Destroy<wl_shell_surface::WlShellSurface> for WlShellDestructor<SD> {
         shell_surface.set_user_data(::std::ptr::null_mut());
         // drop the WlSurface object
         let surface = unsafe { Box::from_raw(ptr as *mut ShellSurfaceUserData) };
+        // explicitly call drop to not forget what we're doing here
+        ::std::mem::drop(surface);
     }
 }
 
@@ -145,7 +148,7 @@ where
     SH: UserHandler<U, R, H, SD> + Send + 'static,
     SD: Send + 'static,
 {
-    fn wl_handle_display_state_change(&mut self, evqh: &mut EventLoopHandle,
+    fn wl_handle_display_state_change(&mut self, evlh: &mut EventLoopHandle,
                                       resource: &wl_shell_surface::WlShellSurface,
                                       maximized: Option<bool>, minimized: Option<bool>,
                                       fullscreen: Option<bool>, output: Option<&wl_output::WlOutput>) {
@@ -153,13 +156,13 @@ where
         // handler callback
         let configure =
             self.handler
-                .change_display_state(evqh, handle, maximized, minimized, fullscreen, output);
+                .change_display_state(evlh, handle, maximized, minimized, fullscreen, output);
         // send the configure response to client
         let (w, h) = configure.size.unwrap_or((0, 0));
         resource.configure(wl_shell_surface::None, w, h);
     }
 
-    fn wl_ensure_toplevel(&mut self, evqh: &mut EventLoopHandle,
+    fn wl_ensure_toplevel(&mut self, evlh: &mut EventLoopHandle,
                           resource: &wl_shell_surface::WlShellSurface) {
         let ptr = resource.get_user_data();
         let &(ref wl_surface, _) = unsafe { &*(ptr as *mut ShellSurfaceUserData) };
@@ -198,7 +201,7 @@ where
         // we need to notify about this new toplevel surface
         if need_send {
             let handle = make_toplevel_handle(self.token, resource);
-            let configure = self.handler.new_toplevel(evqh, handle);
+            let configure = self.handler.new_toplevel(evlh, handle);
             send_toplevel_configure(resource, configure);
         }
     }
@@ -212,7 +215,7 @@ where
     SH: UserHandler<U, R, H, SD> + Send + 'static,
     SD: Send + 'static,
 {
-    fn pong(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn pong(&mut self, evlh: &mut EventLoopHandle, _: &Client,
             resource: &wl_shell_surface::WlShellSurface, serial: u32) {
         let &(_, ref shell) = unsafe { &*(resource.get_user_data() as *mut ShellSurfaceUserData) };
         let valid = {
@@ -226,35 +229,35 @@ where
             }
         };
         if valid {
-            self.handler.client_pong(evqh, make_shell_client(shell));
+            self.handler.client_pong(evlh, make_shell_client(shell));
         }
     }
 
-    fn move_(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn move_(&mut self, evlh: &mut EventLoopHandle, _: &Client,
              resource: &wl_shell_surface::WlShellSurface, seat: &wl_seat::WlSeat, serial: u32) {
         let handle = make_toplevel_handle(self.token, resource);
-        self.handler.move_(evqh, handle, seat, serial);
+        self.handler.move_(evlh, handle, seat, serial);
     }
 
-    fn resize(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn resize(&mut self, evlh: &mut EventLoopHandle, _: &Client,
               resource: &wl_shell_surface::WlShellSurface, seat: &wl_seat::WlSeat, serial: u32,
               edges: wl_shell_surface::Resize) {
         let edges = zxdg_toplevel_v6::ResizeEdge::from_raw(edges.bits())
             .unwrap_or(zxdg_toplevel_v6::ResizeEdge::None);
         let handle = make_toplevel_handle(self.token, resource);
-        self.handler.resize(evqh, handle, seat, serial, edges);
+        self.handler.resize(evlh, handle, seat, serial, edges);
     }
 
-    fn set_toplevel(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_toplevel(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                     resource: &wl_shell_surface::WlShellSurface) {
-        self.wl_ensure_toplevel(evqh, resource);
-        self.wl_handle_display_state_change(evqh, resource, Some(false), Some(false), Some(false), None)
+        self.wl_ensure_toplevel(evlh, resource);
+        self.wl_handle_display_state_change(evlh, resource, Some(false), Some(false), Some(false), None)
     }
 
-    fn set_transient(&mut self, evqh: &mut EventLoopHandle, client: &Client,
-                     resource: &wl_shell_surface::WlShellSurface, parent: &wl_surface::WlSurface, x: i32,
-                     y: i32, flags: wl_shell_surface::Transient) {
-        self.wl_ensure_toplevel(evqh, resource);
+    fn set_transient(&mut self, evlh: &mut EventLoopHandle, _: &Client,
+                     resource: &wl_shell_surface::WlShellSurface, parent: &wl_surface::WlSurface, _x: i32,
+                     _y: i32, _flags: wl_shell_surface::Transient) {
+        self.wl_ensure_toplevel(evlh, resource);
         // set the parent
         let ptr = resource.get_user_data();
         let &(ref wl_surface, _) = unsafe { &*(ptr as *mut ShellSurfaceUserData) };
@@ -267,20 +270,20 @@ where
             })
             .unwrap();
         // set as regular surface
-        self.wl_handle_display_state_change(evqh, resource, Some(false), Some(false), Some(false), None)
+        self.wl_handle_display_state_change(evlh, resource, Some(false), Some(false), Some(false), None)
     }
 
-    fn set_fullscreen(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_fullscreen(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                       resource: &wl_shell_surface::WlShellSurface,
-                      method: wl_shell_surface::FullscreenMethod, framerate: u32,
+                      _method: wl_shell_surface::FullscreenMethod, _framerate: u32,
                       output: Option<&wl_output::WlOutput>) {
-        self.wl_ensure_toplevel(evqh, resource);
-        self.wl_handle_display_state_change(evqh, resource, Some(false), Some(false), Some(true), output)
+        self.wl_ensure_toplevel(evlh, resource);
+        self.wl_handle_display_state_change(evlh, resource, Some(false), Some(false), Some(true), output)
     }
 
-    fn set_popup(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_popup(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                  resource: &wl_shell_surface::WlShellSurface, seat: &wl_seat::WlSeat, serial: u32,
-                 parent: &wl_surface::WlSurface, x: i32, y: i32, flags: wl_shell_surface::Transient) {
+                 parent: &wl_surface::WlSurface, x: i32, y: i32, _: wl_shell_surface::Transient) {
         let ptr = resource.get_user_data();
         let &(ref wl_surface, _) = unsafe { &*(ptr as *mut ShellSurfaceUserData) };
         // we are reseting the popup state, so remove this surface from everywhere
@@ -319,17 +322,19 @@ where
 
         // notify the handler about this new popup
         let handle = make_popup_handle(self.token, resource);
-        let configure = self.handler.new_popup(evqh, handle);
+        let configure = self.handler.new_popup(evlh, handle);
         send_popup_configure(resource, configure);
+        self.handler
+            .grab(evlh, make_popup_handle(self.token, resource), seat, serial);
     }
 
-    fn set_maximized(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_maximized(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                      resource: &wl_shell_surface::WlShellSurface, output: Option<&wl_output::WlOutput>) {
-        self.wl_ensure_toplevel(evqh, resource);
-        self.wl_handle_display_state_change(evqh, resource, Some(true), Some(false), Some(false), output)
+        self.wl_ensure_toplevel(evlh, resource);
+        self.wl_handle_display_state_change(evlh, resource, Some(true), Some(false), Some(false), output)
     }
 
-    fn set_title(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_title(&mut self, _: &mut EventLoopHandle, _: &Client,
                  resource: &wl_shell_surface::WlShellSurface, title: String) {
         let ptr = resource.get_user_data();
         let &(ref surface, _) = unsafe { &*(ptr as *mut ShellSurfaceUserData) };
@@ -343,7 +348,7 @@ where
             .expect("wl_shell_surface exists but wl_surface has wrong role?!");
     }
 
-    fn set_class(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_class(&mut self, _: &mut EventLoopHandle, _: &Client,
                  resource: &wl_shell_surface::WlShellSurface, class_: String) {
         let ptr = resource.get_user_data();
         let &(ref surface, _) = unsafe { &*(ptr as *mut ShellSurfaceUserData) };

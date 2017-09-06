@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use wayland_protocols::unstable::xdg_shell::server::{zxdg_popup_v6, zxdg_positioner_v6, zxdg_shell_v6,
                                                      zxdg_surface_v6, zxdg_toplevel_v6};
-use wayland_server::{Client, Destroy, EventLoopHandle, Init, Resource};
+use wayland_server::{Client, Destroy, EventLoopHandle, Resource};
 use wayland_server::protocol::{wl_output, wl_seat, wl_surface};
 
 pub struct XdgShellDestructor<SD> {
@@ -27,6 +27,8 @@ impl<SD> Destroy<zxdg_shell_v6::ZxdgShellV6> for XdgShellDestructor<SD> {
         let ptr = shell.get_user_data();
         shell.set_user_data(::std::ptr::null_mut());
         let data = unsafe { Box::from_raw(ptr as *mut ShellUserData<SD>) };
+        // explicit call to drop to not forget what we're doing here
+        ::std::mem::drop(data);
     }
 }
 
@@ -45,11 +47,9 @@ where
     SH: UserHandler<U, R, H, SD> + Send + 'static,
     SD: Send + 'static,
 {
-    fn destroy(&mut self, evqh: &mut EventLoopHandle, client: &Client,
-               resource: &zxdg_shell_v6::ZxdgShellV6) {
-    }
-    fn create_positioner(&mut self, evqh: &mut EventLoopHandle, client: &Client,
-                         resource: &zxdg_shell_v6::ZxdgShellV6, id: zxdg_positioner_v6::ZxdgPositionerV6) {
+    fn destroy(&mut self, _: &mut EventLoopHandle, _: &Client, _: &zxdg_shell_v6::ZxdgShellV6) {}
+    fn create_positioner(&mut self, evlh: &mut EventLoopHandle, _: &Client,
+                         _: &zxdg_shell_v6::ZxdgShellV6, id: zxdg_positioner_v6::ZxdgPositionerV6) {
         trace!(self.log, "Creating new xdg_positioner.");
         id.set_user_data(Box::into_raw(Box::new(PositionerState {
             rect_size: (0, 0),
@@ -64,9 +64,9 @@ where
             constraint_adjustment: zxdg_positioner_v6::ConstraintAdjustment::empty(),
             offset: (0, 0),
         })) as *mut _);
-        evqh.register_with_destructor::<_, Self, XdgShellDestructor<SD>>(&id, self.my_id);
+        evlh.register_with_destructor::<_, Self, XdgShellDestructor<SD>>(&id, self.my_id);
     }
-    fn get_xdg_surface(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn get_xdg_surface(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                        resource: &zxdg_shell_v6::ZxdgShellV6, id: zxdg_surface_v6::ZxdgSurfaceV6,
                        surface: &wl_surface::WlSurface) {
         trace!(self.log, "Creating new wl_shell_surface.");
@@ -88,10 +88,10 @@ where
                 resource.clone_unchecked()
             }))) as *mut _,
         );
-        evqh.register_with_destructor::<_, Self, XdgShellDestructor<SD>>(&id, self.my_id);
+        evlh.register_with_destructor::<_, Self, XdgShellDestructor<SD>>(&id, self.my_id);
     }
 
-    fn pong(&mut self, evqh: &mut EventLoopHandle, client: &Client, resource: &zxdg_shell_v6::ZxdgShellV6,
+    fn pong(&mut self, evlh: &mut EventLoopHandle, _: &Client, resource: &zxdg_shell_v6::ZxdgShellV6,
             serial: u32) {
         let valid = {
             let mutex = unsafe { &*(resource.get_user_data() as *mut ShellUserData<SD>) };
@@ -104,7 +104,7 @@ where
             }
         };
         if valid {
-            self.handler.client_pong(evqh, make_shell_client(resource));
+            self.handler.client_pong(evlh, make_shell_client(resource));
         }
     }
 }
@@ -125,6 +125,8 @@ impl<SD> Destroy<zxdg_positioner_v6::ZxdgPositionerV6> for XdgShellDestructor<SD
         positioner.set_user_data(::std::ptr::null_mut());
         // drop the PositionerState
         let surface = unsafe { Box::from_raw(ptr as *mut PositionerState) };
+        // explicit call to drop to not forget what we're doing here
+        ::std::mem::drop(surface);
     }
 }
 
@@ -136,11 +138,9 @@ where
     SH: UserHandler<U, R, H, SD> + Send + 'static,
     SD: Send + 'static,
 {
-    fn destroy(&mut self, evqh: &mut EventLoopHandle, client: &Client,
-               resource: &zxdg_positioner_v6::ZxdgPositionerV6) {
-    }
+    fn destroy(&mut self, _: &mut EventLoopHandle, _: &Client, _: &zxdg_positioner_v6::ZxdgPositionerV6) {}
 
-    fn set_size(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_size(&mut self, _: &mut EventLoopHandle, _: &Client,
                 resource: &zxdg_positioner_v6::ZxdgPositionerV6, width: i32, height: i32) {
         if width < 1 || height < 1 {
             resource.post_error(
@@ -154,7 +154,7 @@ where
         }
     }
 
-    fn set_anchor_rect(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_anchor_rect(&mut self, _: &mut EventLoopHandle, _: &Client,
                        resource: &zxdg_positioner_v6::ZxdgPositionerV6, x: i32, y: i32, width: i32,
                        height: i32) {
         if width < 1 || height < 1 {
@@ -174,7 +174,7 @@ where
         }
     }
 
-    fn set_anchor(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_anchor(&mut self, _: &mut EventLoopHandle, _: &Client,
                   resource: &zxdg_positioner_v6::ZxdgPositionerV6, anchor: zxdg_positioner_v6::Anchor) {
         use self::zxdg_positioner_v6::{AnchorBottom, AnchorLeft, AnchorRight, AnchorTop};
         if anchor.contains(AnchorLeft | AnchorRight) || anchor.contains(AnchorTop | AnchorBottom) {
@@ -189,7 +189,7 @@ where
         }
     }
 
-    fn set_gravity(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_gravity(&mut self, _: &mut EventLoopHandle, _: &Client,
                    resource: &zxdg_positioner_v6::ZxdgPositionerV6, gravity: zxdg_positioner_v6::Gravity) {
         use self::zxdg_positioner_v6::{GravityBottom, GravityLeft, GravityRight, GravityTop};
         if gravity.contains(GravityLeft | GravityRight) || gravity.contains(GravityTop | GravityBottom) {
@@ -204,7 +204,7 @@ where
         }
     }
 
-    fn set_constraint_adjustment(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_constraint_adjustment(&mut self, _: &mut EventLoopHandle, _: &Client,
                                  resource: &zxdg_positioner_v6::ZxdgPositionerV6,
                                  constraint_adjustment: u32) {
         let constraint_adjustment =
@@ -214,7 +214,7 @@ where
         state.constraint_adjustment = constraint_adjustment;
     }
 
-    fn set_offset(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_offset(&mut self, _: &mut EventLoopHandle, _: &Client,
                   resource: &zxdg_positioner_v6::ZxdgPositionerV6, x: i32, y: i32) {
         let ptr = resource.get_user_data();
         let state = unsafe { &mut *(ptr as *mut PositionerState) };
@@ -242,6 +242,8 @@ impl<SD> Destroy<zxdg_surface_v6::ZxdgSurfaceV6> for XdgShellDestructor<SD> {
                 ptr as *mut (zxdg_surface_v6::ZxdgSurfaceV6, zxdg_shell_v6::ZxdgShellV6),
             )
         };
+        // explicit call to drop to not forget what we're doing here
+        ::std::mem::drop(data);
     }
 }
 
@@ -253,8 +255,7 @@ where
     SH: UserHandler<U, R, H, SD> + Send + 'static,
     SD: Send + 'static,
 {
-    fn destroy(&mut self, evqh: &mut EventLoopHandle, client: &Client,
-               resource: &zxdg_surface_v6::ZxdgSurfaceV6) {
+    fn destroy(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &zxdg_surface_v6::ZxdgSurfaceV6) {
         let ptr = resource.get_user_data();
         let &(ref surface, ref shell) =
             unsafe { &*(ptr as *mut (wl_surface::WlSurface, zxdg_shell_v6::ZxdgShellV6)) };
@@ -274,7 +275,7 @@ where
             );
     }
 
-    fn get_toplevel(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn get_toplevel(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                     resource: &zxdg_surface_v6::ZxdgSurfaceV6, id: zxdg_toplevel_v6::ZxdgToplevelV6) {
         let ptr = resource.get_user_data();
         let &(ref surface, ref shell) =
@@ -300,7 +301,7 @@ where
                 resource.clone_unchecked(),
             )
         })) as *mut _);
-        evqh.register_with_destructor::<_, Self, XdgShellDestructor<SD>>(&id, self.my_id);
+        evlh.register_with_destructor::<_, Self, XdgShellDestructor<SD>>(&id, self.my_id);
 
         // register to self
         self.known_toplevels
@@ -308,11 +309,11 @@ where
 
         // intial configure event
         let handle = make_toplevel_handle(self.token, &id);
-        let configure = self.handler.new_toplevel(evqh, handle);
+        let configure = self.handler.new_toplevel(evlh, handle);
         send_toplevel_configure(self.token, &id, configure);
     }
 
-    fn get_popup(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn get_popup(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                  resource: &zxdg_surface_v6::ZxdgSurfaceV6, id: zxdg_popup_v6::ZxdgPopupV6,
                  parent: &zxdg_surface_v6::ZxdgSurfaceV6,
                  positioner: &zxdg_positioner_v6::ZxdgPositionerV6) {
@@ -324,7 +325,7 @@ where
 
         let parent_ptr = parent.get_user_data();
         let &(ref parent_surface, _) =
-            unsafe { &*(ptr as *mut (wl_surface::WlSurface, zxdg_shell_v6::ZxdgShellV6)) };
+            unsafe { &*(parent_ptr as *mut (wl_surface::WlSurface, zxdg_shell_v6::ZxdgShellV6)) };
 
         self.token
             .with_role_data::<ShellSurfaceRole, _, _>(surface, |data| {
@@ -344,18 +345,18 @@ where
                 resource.clone_unchecked(),
             )
         })) as *mut _);
-        evqh.register_with_destructor::<_, Self, XdgShellDestructor<SD>>(&id, self.my_id);
+        evlh.register_with_destructor::<_, Self, XdgShellDestructor<SD>>(&id, self.my_id);
 
         // register to self
         self.known_popups.push(make_popup_handle(self.token, &id));
 
         // intial configure event
         let handle = make_popup_handle(self.token, &id);
-        let configure = self.handler.new_popup(evqh, handle);
+        let configure = self.handler.new_popup(evlh, handle);
         send_popup_configure(self.token, &id, configure);
     }
 
-    fn set_window_geometry(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_window_geometry(&mut self, _: &mut EventLoopHandle, _: &Client,
                            resource: &zxdg_surface_v6::ZxdgSurfaceV6, x: i32, y: i32, width: i32,
                            height: i32) {
         let ptr = resource.get_user_data();
@@ -375,7 +376,7 @@ where
             );
     }
 
-    fn ack_configure(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn ack_configure(&mut self, _: &mut EventLoopHandle, _: &Client,
                      resource: &zxdg_surface_v6::ZxdgSurfaceV6, serial: u32) {
         let ptr = resource.get_user_data();
         let &(ref surface, ref shell) =
@@ -426,6 +427,8 @@ impl<SD> Destroy<zxdg_toplevel_v6::ZxdgToplevelV6> for XdgShellDestructor<SD> {
         surface.set_user_data(::std::ptr::null_mut());
         // drop the PositionerState
         let data = unsafe { Box::from_raw(ptr as *mut ShellSurfaceUserData) };
+        // explicit call to drop to not forget what we're doing there
+        ::std::mem::drop(data);
     }
 }
 
@@ -454,7 +457,7 @@ where
             );
     }
 
-    fn xdg_handle_display_state_change(&mut self, evqh: &mut EventLoopHandle,
+    fn xdg_handle_display_state_change(&mut self, evlh: &mut EventLoopHandle,
                                        resource: &zxdg_toplevel_v6::ZxdgToplevelV6,
                                        maximized: Option<bool>, minimized: Option<bool>,
                                        fullscreen: Option<bool>, output: Option<&wl_output::WlOutput>) {
@@ -462,7 +465,7 @@ where
         // handler callback
         let configure =
             self.handler
-                .change_display_state(evqh, handle, maximized, minimized, fullscreen, output);
+                .change_display_state(evlh, handle, maximized, minimized, fullscreen, output);
         // send the configure response to client
         send_toplevel_configure(self.token, resource, configure);
     }
@@ -520,8 +523,7 @@ where
     SH: UserHandler<U, R, H, SD> + Send + 'static,
     SD: Send + 'static,
 {
-    fn destroy(&mut self, evqh: &mut EventLoopHandle, client: &Client,
-               resource: &zxdg_toplevel_v6::ZxdgToplevelV6) {
+    fn destroy(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &zxdg_toplevel_v6::ZxdgToplevelV6) {
         let ptr = resource.get_user_data();
         let &(ref surface, _, _) = unsafe { &*(ptr as *mut ShellSurfaceUserData) };
         self.token
@@ -541,7 +543,7 @@ where
         });
     }
 
-    fn set_parent(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_parent(&mut self, _: &mut EventLoopHandle, _: &Client,
                   resource: &zxdg_toplevel_v6::ZxdgToplevelV6,
                   parent: Option<&zxdg_toplevel_v6::ZxdgToplevelV6>) {
         self.with_surface_toplevel_data(resource, |toplevel_data| {
@@ -554,75 +556,75 @@ where
         });
     }
 
-    fn set_title(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_title(&mut self, _: &mut EventLoopHandle, _: &Client,
                  resource: &zxdg_toplevel_v6::ZxdgToplevelV6, title: String) {
         self.with_surface_toplevel_data(resource, |toplevel_data| { toplevel_data.title = title; });
     }
 
-    fn set_app_id(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_app_id(&mut self, _: &mut EventLoopHandle, _: &Client,
                   resource: &zxdg_toplevel_v6::ZxdgToplevelV6, app_id: String) {
         self.with_surface_toplevel_data(resource, |toplevel_data| { toplevel_data.app_id = app_id; });
     }
 
-    fn show_window_menu(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn show_window_menu(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                         resource: &zxdg_toplevel_v6::ZxdgToplevelV6, seat: &wl_seat::WlSeat, serial: u32,
                         x: i32, y: i32) {
         let handle = make_toplevel_handle(self.token, resource);
         self.handler
-            .show_window_menu(evqh, handle, seat, serial, x, y);
+            .show_window_menu(evlh, handle, seat, serial, x, y);
     }
 
-    fn move_(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn move_(&mut self, evlh: &mut EventLoopHandle, _: &Client,
              resource: &zxdg_toplevel_v6::ZxdgToplevelV6, seat: &wl_seat::WlSeat, serial: u32) {
         let handle = make_toplevel_handle(self.token, resource);
-        self.handler.move_(evqh, handle, seat, serial);
+        self.handler.move_(evlh, handle, seat, serial);
     }
 
-    fn resize(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn resize(&mut self, evlh: &mut EventLoopHandle, _: &Client,
               resource: &zxdg_toplevel_v6::ZxdgToplevelV6, seat: &wl_seat::WlSeat, serial: u32, edges: u32) {
         let edges =
             zxdg_toplevel_v6::ResizeEdge::from_raw(edges).unwrap_or(zxdg_toplevel_v6::ResizeEdge::None);
         let handle = make_toplevel_handle(self.token, resource);
-        self.handler.resize(evqh, handle, seat, serial, edges);
+        self.handler.resize(evlh, handle, seat, serial, edges);
     }
 
-    fn set_max_size(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_max_size(&mut self, _: &mut EventLoopHandle, _: &Client,
                     resource: &zxdg_toplevel_v6::ZxdgToplevelV6, width: i32, height: i32) {
         self.with_surface_toplevel_data(resource, |toplevel_data| {
             toplevel_data.max_size = (width, height);
         });
     }
 
-    fn set_min_size(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_min_size(&mut self, _: &mut EventLoopHandle, _: &Client,
                     resource: &zxdg_toplevel_v6::ZxdgToplevelV6, width: i32, height: i32) {
         self.with_surface_toplevel_data(resource, |toplevel_data| {
             toplevel_data.min_size = (width, height);
         });
     }
 
-    fn set_maximized(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_maximized(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                      resource: &zxdg_toplevel_v6::ZxdgToplevelV6) {
-        self.xdg_handle_display_state_change(evqh, resource, Some(true), None, None, None);
+        self.xdg_handle_display_state_change(evlh, resource, Some(true), None, None, None);
     }
 
-    fn unset_maximized(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn unset_maximized(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                        resource: &zxdg_toplevel_v6::ZxdgToplevelV6) {
-        self.xdg_handle_display_state_change(evqh, resource, Some(false), None, None, None);
+        self.xdg_handle_display_state_change(evlh, resource, Some(false), None, None, None);
     }
 
-    fn set_fullscreen(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_fullscreen(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                       resource: &zxdg_toplevel_v6::ZxdgToplevelV6, output: Option<&wl_output::WlOutput>) {
-        self.xdg_handle_display_state_change(evqh, resource, None, None, Some(true), output);
+        self.xdg_handle_display_state_change(evlh, resource, None, None, Some(true), output);
     }
 
-    fn unset_fullscreen(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn unset_fullscreen(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                         resource: &zxdg_toplevel_v6::ZxdgToplevelV6) {
-        self.xdg_handle_display_state_change(evqh, resource, None, None, Some(false), None);
+        self.xdg_handle_display_state_change(evlh, resource, None, None, Some(false), None);
     }
 
-    fn set_minimized(&mut self, evqh: &mut EventLoopHandle, client: &Client,
+    fn set_minimized(&mut self, evlh: &mut EventLoopHandle, _: &Client,
                      resource: &zxdg_toplevel_v6::ZxdgToplevelV6) {
-        self.xdg_handle_display_state_change(evqh, resource, None, Some(true), None, None);
+        self.xdg_handle_display_state_change(evlh, resource, None, Some(true), None, None);
     }
 }
 
@@ -644,6 +646,8 @@ impl<SD> Destroy<zxdg_popup_v6::ZxdgPopupV6> for XdgShellDestructor<SD> {
         surface.set_user_data(::std::ptr::null_mut());
         // drop the PositionerState
         let data = unsafe { Box::from_raw(ptr as *mut ShellSurfaceUserData) };
+        // explicit call to drop to not forget what we're doing
+        ::std::mem::drop(data);
     }
 }
 
@@ -689,8 +693,7 @@ where
     SH: UserHandler<U, R, H, SD> + Send + 'static,
     SD: Send + 'static,
 {
-    fn destroy(&mut self, evqh: &mut EventLoopHandle, client: &Client,
-               resource: &zxdg_popup_v6::ZxdgPopupV6) {
+    fn destroy(&mut self, _: &mut EventLoopHandle, _: &Client, resource: &zxdg_popup_v6::ZxdgPopupV6) {
         let ptr = resource.get_user_data();
         let &(ref surface, _, _) = unsafe {
             &*(ptr as
@@ -717,10 +720,10 @@ where
         });
     }
 
-    fn grab(&mut self, evqh: &mut EventLoopHandle, client: &Client, resource: &zxdg_popup_v6::ZxdgPopupV6,
+    fn grab(&mut self, evlh: &mut EventLoopHandle, _: &Client, resource: &zxdg_popup_v6::ZxdgPopupV6,
             seat: &wl_seat::WlSeat, serial: u32) {
         let handle = make_popup_handle(self.token, resource);
-        self.handler.grab(evqh, handle, seat, serial);
+        self.handler.grab(evlh, handle, seat, serial);
     }
 }
 
