@@ -8,7 +8,6 @@ extern crate slog_term;
 #[macro_use(define_roles)]
 extern crate smithay;
 extern crate wayland_protocols;
-#[macro_use(server_declare_handler)]
 extern crate wayland_server;
 
 mod helpers;
@@ -25,11 +24,11 @@ use smithay::compositor::{self, CompositorHandler, CompositorToken, SubsurfaceRo
 use smithay::compositor::roles::Role;
 use smithay::shell::{self, PopupConfigure, PopupSurface, ShellClient, ShellHandler, ShellSurfaceRole,
                      ToplevelConfigure, ToplevelSurface};
-use smithay::shm::{BufferData, ShmGlobal, ShmToken};
+use smithay::shm::{ShmGlobal, ShmToken};
 
 use wayland_protocols::unstable::xdg_shell::server::{zxdg_shell_v6, zxdg_toplevel_v6};
 
-use wayland_server::{Client, EventLoopHandle, Liveness, Resource};
+use wayland_server::{Client, EventLoopHandle};
 use wayland_server::protocol::{wl_compositor, wl_output, wl_seat, wl_shell, wl_shm, wl_subcompositor,
                                wl_surface};
 
@@ -46,26 +45,29 @@ struct SurfaceData {
 }
 
 impl compositor::Handler<SurfaceData, Roles> for SurfaceHandler {
-    fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface,
+    fn commit(&mut self, _evlh: &mut EventLoopHandle, _client: &Client, surface: &wl_surface::WlSurface,
               token: CompositorToken<SurfaceData, Roles, SurfaceHandler>) {
         // we retrieve the contents of the associated buffer and copy it
         token.with_surface_data(surface, |attributes| {
             match attributes.buffer.take() {
-                Some(Some((buffer, (x, y)))) => {
-                    self.shm_token.with_buffer_contents(&buffer, |slice, data| {
-                        let offset = data.offset as usize;
-                        let stride = data.stride as usize;
-                        let width = data.width as usize;
-                        let height = data.height as usize;
-                        let mut new_vec = Vec::with_capacity(width * height * 4);
-                        for i in 0..height {
-                            new_vec.extend(
-                                &slice[(offset + i * stride)..(offset + i * stride + width * 4)],
-                            );
-                        }
-                        attributes.user_data.buffer =
-                            Some((new_vec, (data.width as u32, data.height as u32)));
-                    });
+                Some(Some((buffer, (_x, _y)))) => {
+                    // we ignore hotspot coordinates in this simple example
+                    self.shm_token
+                        .with_buffer_contents(&buffer, |slice, data| {
+                            let offset = data.offset as usize;
+                            let stride = data.stride as usize;
+                            let width = data.width as usize;
+                            let height = data.height as usize;
+                            let mut new_vec = Vec::with_capacity(width * height * 4);
+                            for i in 0..height {
+                                new_vec.extend(
+                                    &slice[(offset + i * stride)..(offset + i * stride + width * 4)],
+                                );
+                            }
+                            attributes.user_data.buffer =
+                                Some((new_vec, (data.width as u32, data.height as u32)));
+                        })
+                        .unwrap();
                 }
                 Some(None) => {
                     // erase the contents
@@ -88,9 +90,9 @@ impl ShellSurfaceHandler {
 }
 
 impl shell::Handler<SurfaceData, Roles, SurfaceHandler, ()> for ShellSurfaceHandler {
-    fn new_client(&mut self, evlh: &mut EventLoopHandle, client: ShellClient<()>) {}
-    fn client_pong(&mut self, evlh: &mut EventLoopHandle, client: ShellClient<()>) {}
-    fn new_toplevel(&mut self, evlh: &mut EventLoopHandle,
+    fn new_client(&mut self, _evlh: &mut EventLoopHandle, _client: ShellClient<()>) {}
+    fn client_pong(&mut self, _evlh: &mut EventLoopHandle, _client: ShellClient<()>) {}
+    fn new_toplevel(&mut self, _evlh: &mut EventLoopHandle,
                     surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>)
                     -> ToplevelConfigure {
         let wl_surface = surface.get_surface().unwrap();
@@ -109,8 +111,8 @@ impl shell::Handler<SurfaceData, Roles, SurfaceHandler, ()> for ShellSurfaceHand
             serial: 42,
         }
     }
-    fn new_popup(&mut self, evlh: &mut EventLoopHandle,
-                 surface: PopupSurface<SurfaceData, Roles, SurfaceHandler, ()>)
+    fn new_popup(&mut self, _evlh: &mut EventLoopHandle,
+                 _surface: PopupSurface<SurfaceData, Roles, SurfaceHandler, ()>)
                  -> PopupConfigure {
         PopupConfigure {
             size: (10, 10),
@@ -118,22 +120,22 @@ impl shell::Handler<SurfaceData, Roles, SurfaceHandler, ()> for ShellSurfaceHand
             serial: 42,
         }
     }
-    fn move_(&mut self, evlh: &mut EventLoopHandle,
-             surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>, seat: &wl_seat::WlSeat,
-             serial: u32) {
+    fn move_(&mut self, _evlh: &mut EventLoopHandle,
+             _surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>, _seat: &wl_seat::WlSeat,
+             _serial: u32) {
     }
-    fn resize(&mut self, evlh: &mut EventLoopHandle,
-              surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>, seat: &wl_seat::WlSeat,
-              serial: u32, edges: zxdg_toplevel_v6::ResizeEdge) {
+    fn resize(&mut self, _evlh: &mut EventLoopHandle,
+              _surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>, _seat: &wl_seat::WlSeat,
+              _serial: u32, _edges: zxdg_toplevel_v6::ResizeEdge) {
     }
-    fn grab(&mut self, evlh: &mut EventLoopHandle,
-            surface: PopupSurface<SurfaceData, Roles, SurfaceHandler, ()>, seat: &wl_seat::WlSeat,
-            serial: u32) {
+    fn grab(&mut self, _evlh: &mut EventLoopHandle,
+            _surface: PopupSurface<SurfaceData, Roles, SurfaceHandler, ()>, _seat: &wl_seat::WlSeat,
+            _serial: u32) {
     }
-    fn change_display_state(&mut self, evlh: &mut EventLoopHandle,
-                            surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>,
-                            maximized: Option<bool>, minimized: Option<bool>, fullscreen: Option<bool>,
-                            output: Option<&wl_output::WlOutput>)
+    fn change_display_state(&mut self, _evlh: &mut EventLoopHandle,
+                            _surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>,
+                            _maximized: Option<bool>, _minimized: Option<bool>, _fullscreen: Option<bool>,
+                            _output: Option<&wl_output::WlOutput>)
                             -> ToplevelConfigure {
         ToplevelConfigure {
             size: None,
@@ -141,9 +143,9 @@ impl shell::Handler<SurfaceData, Roles, SurfaceHandler, ()> for ShellSurfaceHand
             serial: 42,
         }
     }
-    fn show_window_menu(&mut self, evlh: &mut EventLoopHandle,
-                        surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>,
-                        seat: &wl_seat::WlSeat, serial: u32, x: i32, y: i32) {
+    fn show_window_menu(&mut self, _evlh: &mut EventLoopHandle,
+                        _surface: ToplevelSurface<SurfaceData, Roles, SurfaceHandler, ()>,
+                        _seat: &wl_seat::WlSeat, _serial: u32, _x: i32, _y: i32) {
     }
 }
 
@@ -240,24 +242,26 @@ fn main() {
                     // this surface is a root of a subsurface tree that needs to be drawn
                     let initial_place = compositor_token
                         .with_surface_data(wl_surface, |data| data.user_data.location.unwrap_or((0, 0)));
-                    compositor_token.with_surface_tree(
-                        wl_surface,
-                        initial_place,
-                        |surface, attributes, role, &(mut x, mut y)| {
-                            if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
-                                // there is actually something to draw !
-                                if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                                    x += subdata.x;
-                                    y += subdata.y;
+                    compositor_token
+                        .with_surface_tree(
+                            wl_surface,
+                            initial_place,
+                            |_surface, attributes, role, &(mut x, mut y)| {
+                                if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
+                                    // there is actually something to draw !
+                                    if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                                        x += subdata.x;
+                                        y += subdata.y;
+                                    }
+                                    drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
+                                    TraversalAction::DoChildren((x, y))
+                                } else {
+                                    // we are not display, so our children are neither
+                                    TraversalAction::SkipChildren
                                 }
-                                drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
-                                TraversalAction::DoChildren((x, y))
-                            } else {
-                                // we are not display, so our children are neither
-                                TraversalAction::SkipChildren
-                            }
-                        },
-                    );
+                            },
+                        )
+                        .unwrap();
                 }
             }
         }

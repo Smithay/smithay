@@ -127,6 +127,7 @@ pub struct ShmToken {
 }
 
 /// Error that can occur when accessing an SHM buffer
+#[derive(Debug)]
 pub enum BufferAccessError {
     /// This buffer is not managed by the SHM handler
     NotManaged,
