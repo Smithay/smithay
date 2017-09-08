@@ -58,9 +58,9 @@ impl<U: Default, R: Default> SurfaceData<U, R> {
 
     /// Initialize the user_data of a surface, must be called right when the surface is created
     pub unsafe fn init(surface: &wl_surface::WlSurface) {
-        surface.set_user_data(Box::into_raw(
-            Box::new(Mutex::new(SurfaceData::<U, R>::new())),
-        ) as *mut _)
+        surface.set_user_data(
+            Box::into_raw(Box::new(Mutex::new(SurfaceData::<U, R>::new()))) as *mut _,
+        )
     }
 }
 
@@ -315,21 +315,15 @@ impl<U, R> SurfaceData<U, R> {
     /// false will cause an early-stopping.
     pub unsafe fn map_tree<F, T>(root: &wl_surface::WlSurface, initial: T, mut f: F)
     where
-        F: FnMut(&wl_surface::WlSurface,
-              &mut SurfaceAttributes<U>,
-              &mut R,
-              &T)
+        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
               -> TraversalAction<T>,
     {
         // helper function for recursion
-        unsafe fn map<U, R, F, T>(surface: &wl_surface::WlSurface, root: &wl_surface::WlSurface, initial: &T,
-                                  f: &mut F)
+        unsafe fn map<U, R, F, T>(surface: &wl_surface::WlSurface, root: &wl_surface::WlSurface,
+                                  initial: &T, f: &mut F)
                                   -> bool
         where
-            F: FnMut(&wl_surface::WlSurface,
-                  &mut SurfaceAttributes<U>,
-                  &mut R,
-                  &T)
+            F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
                   -> TraversalAction<T>,
         {
             // stop if we met the root, so to not deadlock/inifinte loop

@@ -6,7 +6,7 @@ use nix::sys::signal::{self, SigAction, SigHandler, Signal};
 use std::cell::Cell;
 use std::os::unix::io::RawFd;
 use std::ptr;
-use std::sync::{ONCE_INIT, Once, RwLock};
+use std::sync::{Once, RwLock, ONCE_INIT};
 
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr::null_mut(), false)));
 

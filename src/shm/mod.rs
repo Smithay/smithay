@@ -67,7 +67,7 @@ use self::pool::{Pool, ResizeError};
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
 
-use wayland_server::{Client, Destroy, EventLoopHandle, GlobalHandler, Init, Resource, resource_is_registered};
+use wayland_server::{resource_is_registered, Client, Destroy, EventLoopHandle, GlobalHandler, Init, Resource};
 use wayland_server::protocol::{wl_buffer, wl_shm, wl_shm_pool};
 
 mod pool;
@@ -111,7 +111,9 @@ impl ShmGlobal {
     ///
     /// This is needed to retrieve the contents of the shm pools and buffers.
     pub fn get_token(&self) -> ShmToken {
-        ShmToken { hid: self.handler_id.expect("ShmGlobal was not initialized.") }
+        ShmToken {
+            hid: self.handler_id.expect("ShmGlobal was not initialized."),
+        }
     }
 }
 
@@ -125,6 +127,7 @@ pub struct ShmToken {
 }
 
 /// Error that can occur when accessing an SHM buffer
+#[derive(Debug)]
 pub enum BufferAccessError {
     /// This buffer is not managed by the SHM handler
     NotManaged,
@@ -218,8 +221,11 @@ impl wl_shm::Handler for ShmHandler {
         let mmap_pool = match Pool::new(fd, size as usize, self.log.clone()) {
             Ok(p) => p,
             Err(()) => {
-                shm.post_error(wl_shm::Error::InvalidFd as u32, format!("Failed mmap of fd {}.", fd));
-                return
+                shm.post_error(
+                    wl_shm::Error::InvalidFd as u32,
+                    format!("Failed mmap of fd {}.", fd),
+                );
+                return;
             }
         };
         let arc_pool = Box::new(Arc::new(mmap_pool));

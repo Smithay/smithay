@@ -29,7 +29,7 @@ use wayland_server::protocol::{wl_keyboard, wl_surface};
 
 use xkbcommon::xkb;
 
-pub use xkbcommon::xkb::{Keysym, keysyms};
+pub use xkbcommon::xkb::{keysyms, Keysym};
 
 /// Represents the current state of the keyboard modifiers
 ///
@@ -178,19 +178,18 @@ where
         "rules" => rules, "model" => model, "layout" => layout, "variant" => variant,
         "options" => &options
     );
-    let internal = KbdInternal::new(rules, model, layout, variant, options)
-        .map_err(|_| {
-            debug!(log, "Loading keymap failed");
-            Error::BadKeymap
-        })?;
+    let internal = KbdInternal::new(rules, model, layout, variant, options).map_err(|_| {
+        debug!(log, "Loading keymap failed");
+        Error::BadKeymap
+    })?;
 
 
     // prepare a tempfile with the keymap, to send it to clients
     let mut keymap_file = tempfile().map_err(Error::IoError)?;
     let keymap_data = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-    keymap_file.write_all(keymap_data.as_bytes()).map_err(
-        Error::IoError,
-    )?;
+    keymap_file
+        .write_all(keymap_data.as_bytes())
+        .map_err(Error::IoError)?;
     keymap_file.flush().map_err(Error::IoError)?;
 
     trace!(log, "Keymap loaded and copied to tempfile.";

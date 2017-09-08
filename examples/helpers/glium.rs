@@ -19,7 +19,6 @@ pub struct GliumDrawer<'a, F: 'a> {
 
 impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
     pub fn new(display: &'a F) -> GliumDrawer<'a, F> {
-
         // building the vertex buffer, which contains all the vertices that we will draw
         let vertex_buffer = glium::VertexBuffer::new(
             display,
@@ -87,7 +86,6 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
 
     pub fn draw(&self, target: &mut glium::Frame, contents: &[u8], surface_dimensions: (u32, u32),
                 surface_location: (i32, i32), screen_size: (u32, u32)) {
-
         let image = glium::texture::RawImage2d {
             data: contents.into(),
             width: surface_dimensions.0,
@@ -102,8 +100,7 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
         let x = 2.0 * (surface_location.0 as f32) / (screen_size.0 as f32) - 1.0;
         let y = 1.0 - 2.0 * (surface_location.1 as f32) / (screen_size.1 as f32);
 
-        let uniforms =
-            uniform! {
+        let uniforms = uniform! {
             matrix: [
                 [xscale,   0.0  , 0.0, 0.0],
                 [  0.0 , yscale , 0.0, 0.0],
@@ -122,6 +119,5 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
                 &Default::default(),
             )
             .unwrap();
-
     }
 }

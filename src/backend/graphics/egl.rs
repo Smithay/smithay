@@ -116,11 +116,11 @@ impl error::Error for CreationError {
             CreationError::OsError(ref text) => text,
             CreationError::OpenGlVersionNotSupported => {
                 "The requested OpenGL version is not \
-                                                         supported."
+                 supported."
             }
             CreationError::NoAvailablePixelFormat => {
                 "Couldn't find any pixel format that matches \
-                                                      the criterias."
+                 the criterias."
             }
             CreationError::NonMatchingSurfaceType => "Surface type does not match the context type.",
             CreationError::NotSupported => "Context creation is not supported on the current window system",
@@ -244,31 +244,36 @@ impl EGLContext {
 
         let display = match native {
             NativeDisplay::X11(display)
-                if has_dp_extension("EGL_KHR_platform_x11") && egl.GetPlatformDisplay.is_loaded() => {
+                if has_dp_extension("EGL_KHR_platform_x11") && egl.GetPlatformDisplay.is_loaded() =>
+            {
                 trace!(log, "EGL Display Initialization via EGL_KHR_platform_x11");
                 egl.GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, ptr::null())
             }
 
             NativeDisplay::X11(display)
-                if has_dp_extension("EGL_EXT_platform_x11") && egl.GetPlatformDisplayEXT.is_loaded() => {
+                if has_dp_extension("EGL_EXT_platform_x11") && egl.GetPlatformDisplayEXT.is_loaded() =>
+            {
                 trace!(log, "EGL Display Initialization via EGL_EXT_platform_x11");
                 egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_X11_EXT, display as *mut _, ptr::null())
             }
 
             NativeDisplay::Gbm(display)
-                if has_dp_extension("EGL_KHR_platform_gbm") && egl.GetPlatformDisplay.is_loaded() => {
+                if has_dp_extension("EGL_KHR_platform_gbm") && egl.GetPlatformDisplay.is_loaded() =>
+            {
                 trace!(log, "EGL Display Initialization via EGL_KHR_platform_gbm");
                 egl.GetPlatformDisplay(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null())
             }
 
             NativeDisplay::Gbm(display)
-                if has_dp_extension("EGL_MESA_platform_gbm") && egl.GetPlatformDisplayEXT.is_loaded() => {
+                if has_dp_extension("EGL_MESA_platform_gbm") && egl.GetPlatformDisplayEXT.is_loaded() =>
+            {
                 trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
                 egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null())
             }
 
             NativeDisplay::Wayland(display)
-                if has_dp_extension("EGL_KHR_platform_wayland") && egl.GetPlatformDisplay.is_loaded() => {
+                if has_dp_extension("EGL_KHR_platform_wayland") && egl.GetPlatformDisplay.is_loaded() =>
+            {
                 trace!(
                     log,
                     "EGL Display Initialization via EGL_KHR_platform_wayland"
@@ -281,7 +286,8 @@ impl EGLContext {
             }
 
             NativeDisplay::Wayland(display)
-                if has_dp_extension("EGL_EXT_platform_wayland") && egl.GetPlatformDisplayEXT.is_loaded() => {
+                if has_dp_extension("EGL_EXT_platform_wayland") && egl.GetPlatformDisplayEXT.is_loaded() =>
+            {
                 trace!(
                     log,
                     "EGL Display Initialization via EGL_EXT_platform_wayland"
@@ -293,9 +299,7 @@ impl EGLContext {
                 )
             }
 
-            NativeDisplay::X11(display) |
-            NativeDisplay::Gbm(display) |
-            NativeDisplay::Wayland(display) => {
+            NativeDisplay::X11(display) | NativeDisplay::Gbm(display) | NativeDisplay::Wayland(display) => {
                 trace!(log, "Default EGL Display Initialization via GetDisplay");
                 egl.GetDisplay(display as *mut _)
             }
@@ -522,7 +526,6 @@ impl EGLContext {
 
             context_attributes.push(ffi::egl::CONTEXT_FLAGS_KHR as i32);
             context_attributes.push(0);
-
         } else if egl_version >= (1, 3) {
             trace!(log, "Setting CONTEXT_CLIENT_VERSION to {}", version.0);
             context_attributes.push(ffi::egl::CONTEXT_CLIENT_VERSION as i32);
@@ -602,14 +605,12 @@ impl EGLContext {
             let surface = match (native, self.backend_type) {
                 (NativeSurface::X11(window), NativeType::X11) |
                 (NativeSurface::Wayland(window), NativeType::Wayland) |
-                (NativeSurface::Gbm(window), NativeType::Gbm) => {
-                    self.egl.CreateWindowSurface(
-                        self.display,
-                        self.config_id,
-                        window,
-                        self.surface_attributes.as_ptr(),
-                    )
-                }
+                (NativeSurface::Gbm(window), NativeType::Gbm) => self.egl.CreateWindowSurface(
+                    self.display,
+                    self.config_id,
+                    window,
+                    self.surface_attributes.as_ptr(),
+                ),
                 _ => return Err(CreationError::NonMatchingSurfaceType),
             };
 
@@ -654,10 +655,9 @@ impl<'a> EGLSurface<'a> {
     /// Swaps buffers at the end of a frame.
     pub fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
         let ret = unsafe {
-            self.context.egl.SwapBuffers(
-                self.context.display as *const _,
-                self.surface as *const _,
-            )
+            self.context
+                .egl
+                .SwapBuffers(self.context.display as *const _, self.surface as *const _)
         };
 
         if ret == 0 {
@@ -705,10 +705,8 @@ impl Drop for EGLContext {
         unsafe {
             // we don't call MakeCurrent(0, 0) because we are not sure that the context
             // is still the current one
-            self.egl.DestroyContext(
-                self.display as *const _,
-                self.context as *const _,
-            );
+            self.egl
+                .DestroyContext(self.display as *const _, self.context as *const _);
             self.egl.Terminate(self.display as *const _);
         }
     }
@@ -717,10 +715,9 @@ impl Drop for EGLContext {
 impl<'a> Drop for EGLSurface<'a> {
     fn drop(&mut self) {
         unsafe {
-            self.context.egl.DestroySurface(
-                self.context.display as *const _,
-                self.surface as *const _,
-            );
+            self.context
+                .egl
+                .DestroySurface(self.context.display as *const _, self.surface as *const _);
         }
     }
 }

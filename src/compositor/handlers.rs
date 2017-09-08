@@ -193,10 +193,7 @@ impl<U, R> Destroy<wl_region::WlRegion> for CompositorDestructor<U, R> {
 impl<U, R, H> wl_subcompositor::Handler for CompositorHandler<U, R, H>
 where
     U: Send + 'static,
-    R: RoleType
-        + Role<SubsurfaceRole>
-        + Send
-        + 'static,
+    R: RoleType + Role<SubsurfaceRole> + Send + 'static,
     H: Send + 'static,
 {
     fn get_subsurface(&mut self, evqh: &mut EventLoopHandle, _: &Client,
@@ -210,9 +207,9 @@ where
             );
             return;
         }
-        id.set_user_data(Box::into_raw(
-            Box::new(unsafe { surface.clone_unchecked() }),
-        ) as *mut _);
+        id.set_user_data(
+            Box::into_raw(Box::new(unsafe { surface.clone_unchecked() })) as *mut _,
+        );
         evqh.register_with_destructor::<_, CompositorHandler<U, R, H>, CompositorDestructor<U, R>>(
             &id,
             self.my_id,
@@ -259,7 +256,10 @@ where
             let ptr = subsurface.get_user_data();
             let surface = &*(ptr as *mut wl_surface::WlSurface);
             if let Err(()) = SurfaceData::<U, R>::reorder(surface, Location::After, sibling) {
-                subsurface.post_error(wl_subsurface::Error::BadSurface as u32, "Provided surface is not a sibling or parent.".into());
+                subsurface.post_error(
+                    wl_subsurface::Error::BadSurface as u32,
+                    "Provided surface is not a sibling or parent.".into(),
+                );
             }
         }
     }
@@ -270,7 +270,10 @@ where
             let ptr = subsurface.get_user_data();
             let surface = &*(ptr as *mut wl_surface::WlSurface);
             if let Err(()) = SurfaceData::<U, R>::reorder(surface, Location::Before, sibling) {
-                subsurface.post_error(wl_subsurface::Error::BadSurface as u32, "Provided surface is not a sibling or parent.".into());
+                subsurface.post_error(
+                    wl_subsurface::Error::BadSurface as u32,
+                    "Provided surface is not a sibling or parent.".into(),
+                );
             }
         }
     }
@@ -291,7 +294,8 @@ where
 server_declare_handler!(CompositorHandler<U: [], R: [RoleType, Role<SubsurfaceRole>], H: []>, wl_subsurface::Handler, wl_subsurface::WlSubsurface);
 
 impl<U, R> Destroy<wl_subsurface::WlSubsurface> for CompositorDestructor<U, R>
-    where R: RoleType + Role<SubsurfaceRole>
+where
+    R: RoleType + Role<SubsurfaceRole>,
 {
     fn destroy(subsurface: &wl_subsurface::WlSubsurface) {
         let ptr = subsurface.get_user_data();
