@@ -29,8 +29,8 @@ use smithay::shm::{ShmGlobal, ShmToken};
 use wayland_protocols::unstable::xdg_shell::server::{zxdg_shell_v6, zxdg_toplevel_v6};
 
 use wayland_server::{Client, EventLoopHandle};
-use wayland_server::protocol::{wl_compositor, wl_output, wl_seat, wl_shell, wl_shm, wl_subcompositor,
-                               wl_surface};
+use wayland_server::protocol::{wl_callback, wl_compositor, wl_output, wl_seat, wl_shell, wl_shm,
+                               wl_subcompositor, wl_surface};
 
 define_roles!(Roles => [ ShellSurface, ShellSurfaceRole ] );
 
@@ -68,6 +68,7 @@ impl compositor::Handler<SurfaceData, Roles> for SurfaceHandler {
                                 Some((new_vec, (data.width as u32, data.height as u32)));
                         })
                         .unwrap();
+                    buffer.release();
                 }
                 Some(None) => {
                     // erase the contents
@@ -76,6 +77,11 @@ impl compositor::Handler<SurfaceData, Roles> for SurfaceHandler {
                 None => {}
             }
         });
+    }
+
+    fn frame(&mut self, _evlh: &mut EventLoopHandle, _client: &Client, surface: &wl_surface::WlSurface,
+             callback: wl_callback::WlCallback, _token: CompositorToken<SurfaceData, Roles, SurfaceHandler>) {
+        callback.done(0);
     }
 }
 
