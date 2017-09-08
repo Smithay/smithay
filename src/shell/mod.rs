@@ -24,7 +24,7 @@
 //! To initialize this handler, simply instanciate it and register it to the event loop
 //! as a global handler for xdg_shell and wl_shell. You will need to provide it the
 //! `CompositorToken` you retrieved from an instanciation of the `CompositorHandler`
-//! provided y smithay.
+//! provided by smithay.
 //!
 //! ```
 //! # extern crate wayland_server;
@@ -819,7 +819,7 @@ pub trait Handler<U, R, H, SD> {
     fn new_client(&mut self, evlh: &mut EventLoopHandle, client: ShellClient<SD>);
     /// The pong for a pending ping of this shell client was received
     ///
-    /// The SHellHandler already checked for you that the serial matches the one
+    /// The ShellHandler already checked for you that the serial matches the one
     /// from the pending ping.
     fn client_pong(&mut self, evlh: &mut EventLoopHandle, client: ShellClient<SD>);
     /// A new toplevel surface was created
