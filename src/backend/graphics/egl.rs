@@ -7,18 +7,28 @@
 /// (see https://github.com/tomaka/glutin/tree/044e651edf67a2029eecc650dd42546af1501414/LICENSE)
 
 use super::GraphicsBackend;
+#[cfg(feature = "backend_drm")]
+use gbm::{AsRaw, Device as GbmDevice, Surface as GbmSurface};
 
 use libloading::Library;
 use nix::{c_int, c_void};
 use slog;
-use std::error::{self, Error};
 
+use std::error::{self, Error};
 use std::ffi::{CStr, CString};
 use std::fmt;
 use std::io;
+use std::marker::PhantomData;
 use std::mem;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::ptr;
+
+#[cfg(feature = "backend_winit")]
+use wayland_client::egl as wegl;
+#[cfg(feature = "backend_winit")]
+use winit::Window as WinitWindow;
+#[cfg(feature = "backend_winit")]
+use winit::os::unix::WindowExt;
 
 #[allow(non_camel_case_types, dead_code)]
 mod ffi {
@@ -46,7 +56,7 @@ mod ffi {
 /// Native types to create an `EGLContext` from.
 /// Currently supported providers are X11, Wayland and GBM.
 #[derive(Clone, Copy)]
-pub enum NativeDisplay {
+enum NativeDisplayPtr {
     /// X11 Display to create an `EGLContext` upon.
     X11(ffi::NativeDisplayType),
     /// Wayland Display to create an `EGLContext` upon.
@@ -58,7 +68,7 @@ pub enum NativeDisplay {
 /// Native types to create an `EGLSurface` from.
 /// Currently supported providers are X11, Wayland and GBM.
 #[derive(Clone, Copy)]
-pub enum NativeSurface {
+pub enum NativeSurfacePtr {
     /// X11 Window to create an `EGLSurface` upon.
     X11(ffi::NativeWindowType),
     /// Wayland Surface to create an `EGLSurface` upon.
@@ -68,7 +78,7 @@ pub enum NativeSurface {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum NativeType {
+pub enum NativeType {
     X11,
     Wayland,
     Gbm,
@@ -135,8 +145,61 @@ impl error::Error for CreationError {
     }
 }
 
+pub unsafe trait NativeSurface {
+    type Keep: 'static;
+
+    fn surface(&self, backend: NativeType) -> Result<(NativeSurfacePtr, Self::Keep), CreationError>;
+}
+
+#[cfg(feature = "backend_winit")]
+unsafe impl NativeSurface for WinitWindow {
+    type Keep = Option<wegl::WlEglSurface>;
+
+    fn surface(&self, backend_type: NativeType)
+               -> Result<(NativeSurfacePtr, Option<wegl::WlEglSurface>), CreationError> {
+        match backend_type {
+            NativeType::X11 => if let Some(window) = self.get_xlib_window() {
+                Ok((NativeSurfacePtr::X11(window), None))
+            } else {
+                return Err(CreationError::NonMatchingSurfaceType);
+            },
+            NativeType::Wayland => if let Some(surface) = self.get_wayland_surface() {
+                let (w, h) = self.get_inner_size().unwrap();
+                let egl_surface =
+                    unsafe { wegl::WlEglSurface::new_from_raw(surface as *mut _, w as i32, h as i32) };
+                Ok((
+                    NativeSurfacePtr::Wayland(egl_surface.ptr() as *const _),
+                    Some(egl_surface),
+                ))
+            } else {
+                return Err(CreationError::NonMatchingSurfaceType);
+            },
+            _ => Err(CreationError::NonMatchingSurfaceType),
+        }
+    }
+}
+
+#[cfg(feature = "backend_drm")]
+unsafe impl<'a, T: 'static> NativeSurface for GbmSurface<'a, T> {
+    type Keep = ();
+
+    fn surface(&self, backend: NativeType) -> Result<(NativeSurfacePtr, Self::Keep), CreationError> {
+        match backend {
+            NativeType::Gbm => Ok((NativeSurfacePtr::Gbm(self.as_raw() as *const _), ())),
+            _ => Err(CreationError::NonMatchingSurfaceType),
+        }
+    }
+}
+
+unsafe impl NativeSurface for () {
+    type Keep = ();
+    fn surface(&self, _backend: NativeType) -> Result<(NativeSurfacePtr, ()), CreationError> {
+        Err(CreationError::NotSupported)
+    }
+}
+
 /// EGL context for rendering
-pub struct EGLContext {
+pub struct EGLContext<'a, T: NativeSurface> {
     _lib: Library,
     context: ffi::egl::types::EGLContext,
     display: ffi::egl::types::EGLDisplay,
@@ -146,38 +209,67 @@ pub struct EGLContext {
     pixel_format: PixelFormat,
     backend_type: NativeType,
     logger: slog::Logger,
+    _lifetime: PhantomData<&'a ()>,
+    _type: PhantomData<T>,
 }
 
-/// EGL surface of a given egl context for rendering
-pub struct EGLSurface<'a> {
-    context: &'a EGLContext,
-    surface: ffi::egl::types::EGLSurface,
-}
-
-impl<'a> Deref for EGLSurface<'a> {
-    type Target = EGLContext;
-    fn deref(&self) -> &Self::Target {
-        self.context
-    }
-}
-
-impl EGLContext {
-    /// Create a new EGL context
-    ///
-    /// # Unsafety
-    ///
-    /// This method is marked unsafe, because the contents of `NativeDisplay` cannot be verified and may
-    /// contain dangling pointers or similar unsafe content
-    pub unsafe fn new<L>(native: NativeDisplay, mut attributes: GlAttributes, reqs: PixelFormatRequirements,
-                         logger: L)
-                         -> Result<EGLContext, CreationError>
+impl<'a> EGLContext<'a, ()> {
+    #[cfg(feature = "backend_winit")]
+    pub fn new_from_winit<L>(window: &'a WinitWindow, attributes: GlAttributes,
+                             reqs: PixelFormatRequirements, logger: L)
+                             -> Result<EGLContext<'a, WinitWindow>, CreationError>
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let logger = logger.into();
-        let log = ::slog_or_stdlog(logger.clone()).new(o!("smithay_module" => "renderer_egl"));
-        trace!(log, "Loading libEGL");
+        let log = ::slog_or_stdlog(logger.into()).new(o!("smithay_module" => "renderer_egl"));
+        info!(log, "Initializing from winit window");
 
+        unsafe {
+            EGLContext::new(
+                if let Some(display) = window.get_xlib_display() {
+                    debug!(log, "Window is backed by X11");
+                    NativeDisplayPtr::X11(display)
+                } else if let Some(display) = window.get_wayland_display() {
+                    debug!(log, "Window is backed by Wayland");
+                    NativeDisplayPtr::Wayland(display)
+                } else {
+                    error!(log, "Window is backed by an unsupported graphics framework");
+                    return Err(CreationError::NotSupported);
+                },
+                attributes,
+                reqs,
+                log,
+            )
+        }
+    }
+
+    #[cfg(feature = "backend_drm")]
+    pub fn new_from_gbm<L, U: 'static>(gbm: &'a GbmDevice<'a>, attributes: GlAttributes,
+                                       reqs: PixelFormatRequirements, logger: L)
+                                       -> Result<EGLContext<'a, GbmSurface<'a, U>>, CreationError>
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
+        let log = ::slog_or_stdlog(logger.into()).new(o!("smithay_module" => "renderer_egl"));
+        info!(log, "Initializing from gbm device");
+        unsafe {
+            EGLContext::new(
+                NativeDisplayPtr::Gbm(gbm.as_raw() as *const _),
+                attributes,
+                reqs,
+                log,
+            )
+        }
+    }
+}
+
+impl<'a, T: NativeSurface> EGLContext<'a, T> {
+    unsafe fn new(native: NativeDisplayPtr, mut attributes: GlAttributes, reqs: PixelFormatRequirements,
+                  log: ::slog::Logger)
+                  -> Result<EGLContext<'a, T>, CreationError>
+    where
+        T: NativeSurface,
+    {
         // If no version is given, try OpenGLES 3.0, if available,
         // fallback to 2.0 otherwise
         let version = match attributes.version {
@@ -186,13 +278,13 @@ impl EGLContext {
             None => {
                 debug!(log, "Trying to initialize EGL with OpenGLES 3.0");
                 attributes.version = Some((3, 0));
-                match EGLContext::new(native, attributes, reqs, logger.clone()) {
+                match EGLContext::new(native, attributes, reqs, log.clone()) {
                     Ok(x) => return Ok(x),
                     Err(err) => {
                         warn!(log, "EGL OpenGLES 3.0 Initialization failed with {}", err);
                         debug!(log, "Trying to initialize EGL with OpenGLES 2.0");
                         attributes.version = Some((2, 0));
-                        return EGLContext::new(native, attributes, reqs, logger);
+                        return EGLContext::new(native, attributes, reqs, log);
                     }
                 }
             }
@@ -213,6 +305,7 @@ impl EGLContext {
             }
         };
 
+        trace!(log, "Loading libEGL");
         let lib = Library::new("libEGL.so.1")?;
         let egl = ffi::egl::Egl::load_with(|sym| {
             let name = CString::new(sym).unwrap();
@@ -243,35 +336,42 @@ impl EGLContext {
         let has_dp_extension = |e: &str| dp_extensions.iter().any(|s| s == e);
 
         let display = match native {
-            NativeDisplay::X11(display)
+            NativeDisplayPtr::X11(display)
                 if has_dp_extension("EGL_KHR_platform_x11") && egl.GetPlatformDisplay.is_loaded() =>
             {
                 trace!(log, "EGL Display Initialization via EGL_KHR_platform_x11");
                 egl.GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, ptr::null())
             }
 
-            NativeDisplay::X11(display)
+            NativeDisplayPtr::X11(display)
                 if has_dp_extension("EGL_EXT_platform_x11") && egl.GetPlatformDisplayEXT.is_loaded() =>
             {
                 trace!(log, "EGL Display Initialization via EGL_EXT_platform_x11");
                 egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_X11_EXT, display as *mut _, ptr::null())
             }
 
-            NativeDisplay::Gbm(display)
+            NativeDisplayPtr::Gbm(display)
                 if has_dp_extension("EGL_KHR_platform_gbm") && egl.GetPlatformDisplay.is_loaded() =>
             {
                 trace!(log, "EGL Display Initialization via EGL_KHR_platform_gbm");
                 egl.GetPlatformDisplay(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null())
             }
 
-            NativeDisplay::Gbm(display)
+            NativeDisplayPtr::Gbm(display)
                 if has_dp_extension("EGL_MESA_platform_gbm") && egl.GetPlatformDisplayEXT.is_loaded() =>
             {
                 trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
-                egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null())
+                egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
             }
 
-            NativeDisplay::Wayland(display)
+            NativeDisplayPtr::Gbm(display)
+                if has_dp_extension("EGL_MESA_platform_gbm") && egl.GetPlatformDisplay.is_loaded() =>
+            {
+                trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
+                egl.GetPlatformDisplay(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
+            }
+
+            NativeDisplayPtr::Wayland(display)
                 if has_dp_extension("EGL_KHR_platform_wayland") && egl.GetPlatformDisplay.is_loaded() =>
             {
                 trace!(
@@ -285,7 +385,7 @@ impl EGLContext {
                 )
             }
 
-            NativeDisplay::Wayland(display)
+            NativeDisplayPtr::Wayland(display)
                 if has_dp_extension("EGL_EXT_platform_wayland") && egl.GetPlatformDisplayEXT.is_loaded() =>
             {
                 trace!(
@@ -299,11 +399,17 @@ impl EGLContext {
                 )
             }
 
-            NativeDisplay::X11(display) | NativeDisplay::Gbm(display) | NativeDisplay::Wayland(display) => {
+            NativeDisplayPtr::X11(display) |
+            NativeDisplayPtr::Gbm(display) |
+            NativeDisplayPtr::Wayland(display) => {
                 trace!(log, "Default EGL Display Initialization via GetDisplay");
                 egl.GetDisplay(display as *mut _)
             }
         };
+
+        if display == ffi::egl::NO_DISPLAY {
+            error!(log, "EGL Display is not valid");
+        }
 
         let egl_version = {
             let mut major: ffi::egl::types::EGLint = mem::uninitialized();
@@ -583,11 +689,13 @@ impl EGLContext {
             surface_attributes: surface_attributes,
             pixel_format: desc,
             backend_type: match native {
-                NativeDisplay::X11(_) => NativeType::X11,
-                NativeDisplay::Wayland(_) => NativeType::Wayland,
-                NativeDisplay::Gbm(_) => NativeType::Gbm,
+                NativeDisplayPtr::X11(_) => NativeType::X11,
+                NativeDisplayPtr::Wayland(_) => NativeType::Wayland,
+                NativeDisplayPtr::Gbm(_) => NativeType::Gbm,
             },
             logger: log,
+            _lifetime: PhantomData,
+            _type: PhantomData,
         })
     }
 
@@ -597,37 +705,37 @@ impl EGLContext {
     ///
     /// This method is marked unsafe, because the contents of `NativeSurface` cannot be verified and may
     /// contain dangling pointers or similar unsafe content
-    pub unsafe fn create_surface<'a>(&'a self, native: NativeSurface)
-                                     -> Result<EGLSurface<'a>, CreationError> {
+    pub fn create_surface<'b>(&'a self, native: &'b T) -> Result<EGLSurface<'a, 'b, T>, CreationError> {
         trace!(self.logger, "Creating EGL window surface...");
 
-        let surface = {
-            let surface = match (native, self.backend_type) {
-                (NativeSurface::X11(window), NativeType::X11) |
-                (NativeSurface::Wayland(window), NativeType::Wayland) |
-                (NativeSurface::Gbm(window), NativeType::Gbm) => self.egl.CreateWindowSurface(
-                    self.display,
-                    self.config_id,
-                    window,
-                    self.surface_attributes.as_ptr(),
-                ),
-                _ => return Err(CreationError::NonMatchingSurfaceType),
-            };
+        let (surface, keep) = native.surface(self.backend_type)?;
 
-            if surface.is_null() {
-                return Err(CreationError::OsError(
-                    String::from("eglCreateWindowSurface failed"),
-                ));
-            }
-
-            surface
+        let egl_surface = unsafe {
+            self.egl.CreateWindowSurface(
+                self.display,
+                self.config_id,
+                match surface {
+                    NativeSurfacePtr::X11(ptr) => ptr,
+                    NativeSurfacePtr::Wayland(ptr) => ptr,
+                    NativeSurfacePtr::Gbm(ptr) => ptr,
+                },
+                self.surface_attributes.as_ptr(),
+            )
         };
 
-        debug!(self.logger, "EGL window surface successfully created");
+        if egl_surface.is_null() {
+            return Err(CreationError::OsError(
+                String::from("eglCreateWindowSurface failed"),
+            ));
+        }
+
+        debug!(self.logger, "EGL surface successfully created");
 
         Ok(EGLSurface {
             context: &self,
-            surface: surface,
+            surface: egl_surface,
+            keep,
+            _lifetime_surface: PhantomData,
         })
     }
 
@@ -651,7 +759,43 @@ impl EGLContext {
     }
 }
 
-impl<'a> EGLSurface<'a> {
+unsafe impl<'a, T: NativeSurface> Send for EGLContext<'a, T> {}
+unsafe impl<'a, T: NativeSurface> Sync for EGLContext<'a, T> {}
+
+impl<'a, T: NativeSurface> Drop for EGLContext<'a, T> {
+    fn drop(&mut self) {
+        unsafe {
+            // we don't call MakeCurrent(0, 0) because we are not sure that the context
+            // is still the current one
+            self.egl
+                .DestroyContext(self.display as *const _, self.context as *const _);
+            self.egl.Terminate(self.display as *const _);
+        }
+    }
+}
+
+/// EGL surface of a given egl context for rendering
+pub struct EGLSurface<'context, 'surface, T: NativeSurface + 'context> {
+    context: &'context EGLContext<'context, T>,
+    surface: ffi::egl::types::EGLSurface,
+    keep: T::Keep,
+    _lifetime_surface: PhantomData<&'surface ()>,
+}
+
+impl<'a, 'b, T: NativeSurface> Deref for EGLSurface<'a, 'b, T> {
+    type Target = T::Keep;
+    fn deref(&self) -> &Self::Target {
+        &self.keep
+    }
+}
+
+impl<'a, 'b, T: NativeSurface> DerefMut for EGLSurface<'a, 'b, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.keep
+    }
+}
+
+impl<'context, 'surface, T: NativeSurface> EGLSurface<'context, 'surface, T> {
     /// Swaps buffers at the end of a frame.
     pub fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
         let ret = unsafe {
@@ -695,24 +839,10 @@ impl<'a> EGLSurface<'a> {
     }
 }
 
-unsafe impl Send for EGLContext {}
-unsafe impl Sync for EGLContext {}
-unsafe impl<'a> Send for EGLSurface<'a> {}
-unsafe impl<'a> Sync for EGLSurface<'a> {}
+unsafe impl<'a, 'b, T: NativeSurface> Send for EGLSurface<'a, 'b, T> {}
+unsafe impl<'a, 'b, T: NativeSurface> Sync for EGLSurface<'a, 'b, T> {}
 
-impl Drop for EGLContext {
-    fn drop(&mut self) {
-        unsafe {
-            // we don't call MakeCurrent(0, 0) because we are not sure that the context
-            // is still the current one
-            self.egl
-                .DestroyContext(self.display as *const _, self.context as *const _);
-            self.egl.Terminate(self.display as *const _);
-        }
-    }
-}
-
-impl<'a> Drop for EGLSurface<'a> {
+impl<'a, 'b, T: NativeSurface> Drop for EGLSurface<'a, 'b, T> {
     fn drop(&mut self) {
         unsafe {
             self.context
@@ -742,6 +872,27 @@ pub enum SwapBuffersError {
     /// This error can be returned when `swap_buffers` has been called multiple times
     /// without any modification in between.
     AlreadySwapped,
+}
+
+impl fmt::Display for SwapBuffersError {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(formatter, "{}", self.description())
+    }
+}
+
+impl error::Error for SwapBuffersError {
+    fn description(&self) -> &str {
+        match self {
+            &SwapBuffersError::ContextLost => "The context has been lost, it needs to be recreated",
+            &SwapBuffersError::AlreadySwapped => {
+                "Buffers are already swapped, swap_buffers was called too many times"
+            }
+        }
+    }
+
+    fn cause(&self) -> Option<&error::Error> {
+        None
+    }
 }
 
 /// Attributes to use when creating an OpenGL context.

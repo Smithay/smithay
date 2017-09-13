@@ -7,6 +7,7 @@
 #![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 
+extern crate image;
 extern crate nix;
 #[macro_use]
 extern crate rental;
@@ -15,6 +16,10 @@ extern crate wayland_protocols;
 extern crate wayland_server;
 extern crate xkbcommon;
 
+#[cfg(feature = "backend_drm")]
+extern crate drm;
+#[cfg(feature = "backend_drm")]
+extern crate gbm;
 #[cfg(feature = "backend_libinput")]
 extern crate input;
 #[cfg(feature = "backend_winit")]

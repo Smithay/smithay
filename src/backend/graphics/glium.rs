@@ -34,7 +34,7 @@ impl<T: EGLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
         GliumGraphicsBackend {
             // cannot fail
             context: unsafe {
-                Context::new::<_, ()>(internal.clone(), false, DebugCallbackBehavior::default()).unwrap()
+                Context::new(internal.clone(), true, DebugCallbackBehavior::default()).unwrap()
             },
             backend: internal,
         }
@@ -56,10 +56,10 @@ impl<T: EGLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
 }
 
 impl<T: EGLGraphicsBackend> Deref for GliumGraphicsBackend<T> {
-    type Target = Context;
+    type Target = T;
 
-    fn deref(&self) -> &Context {
-        &self.context
+    fn deref(&self) -> &T {
+        &self.backend.0
     }
 }
 

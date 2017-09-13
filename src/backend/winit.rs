@@ -2,8 +2,8 @@
 
 use backend::{SeatInternal, TouchSlotInternal};
 use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{CreationError, EGLContext, EGLGraphicsBackend, GlAttributes, NativeDisplay,
-                             NativeSurface, PixelFormat, PixelFormatRequirements, SwapBuffersError};
+use backend::graphics::egl::{CreationError, EGLContext, EGLGraphicsBackend, GlAttributes, PixelFormat,
+                             PixelFormatRequirements, SwapBuffersError};
 use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState,
                      KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
                      PointerMotionAbsoluteEvent, Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent,
@@ -14,31 +14,36 @@ use std::cmp;
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
-use wayland_client::egl as wegl;
 use winit::{CreationError as WinitCreationError, ElementState, Event, EventsLoop, KeyboardInput,
-            MouseButton as WinitMouseButton, MouseCursor, MouseScrollDelta, Touch, TouchPhase, Window,
+            MouseButton as WinitMouseButton, MouseCursor, MouseScrollDelta, Touch, TouchPhase,
             WindowBuilder, WindowEvent};
-use winit::os::unix::{WindowExt, get_x11_xconnection};
 
 rental! {
-    mod egl {
+    mod rental {
         use std::boxed::Box;
+        use ::winit::{Window as WinitWindow};
         use ::backend::graphics::egl::{EGLContext, EGLSurface};
 
+        #[rental]
+        pub struct Window {
+            window: Box<WinitWindow>,
+            egl: EGL<'window>,
+        }
 
-        #[rental(deref_suffix)]
-        pub struct RentEGL {
-            context: Box<EGLContext>,
-            surface: EGLSurface<'context>,
+        #[rental]
+        pub struct EGL<'a> {
+            context: Box<EGLContext<'a, WinitWindow>>,
+            surface: EGLSurface<'context, 'a, WinitWindow>,
         }
     }
 }
+
+use self::rental::{Window, EGL};
 
 /// Window with an active EGL Context created by `winit`. Implements the
 /// `EGLGraphicsBackend` graphics backend trait
 pub struct WinitGraphicsBackend {
     window: Rc<Window>,
-    context: egl::RentEGL,
     logger: ::slog::Logger,
 }
 
@@ -48,7 +53,6 @@ pub struct WinitGraphicsBackend {
 pub struct WinitInputBackend {
     events_loop: EventsLoop,
     window: Rc<Window>,
-    surface: Option<wegl::WlEglSurface>,
     time_counter: u32,
     key_counter: u32,
     seat: Seat,
@@ -107,69 +111,46 @@ where
     info!(log, "Initializing a winit backend");
 
     let events_loop = EventsLoop::new();
-    let window = Rc::new(builder.build(&events_loop)?);
+    let winit_window = builder.build(&events_loop)?;
     debug!(log, "Window created");
 
-    let (native_display, native_surface, surface) = if let (Some(conn), Some(window)) =
-        (get_x11_xconnection(), window.get_xlib_window())
-    {
-        debug!(log, "Window is backed by X11");
-        (
-            NativeDisplay::X11(conn.display as *const _),
-            NativeSurface::X11(window),
-            None,
-        )
-    } else if let (Some(display), Some(surface)) =
-        (window.get_wayland_display(), window.get_wayland_surface())
-    {
-        debug!(log, "Window is backed by Wayland");
-        let (w, h) = window.get_inner_size().unwrap();
-        let egl_surface = unsafe { wegl::WlEglSurface::new_from_raw(surface as *mut _, w as i32, h as i32) };
-        (
-            NativeDisplay::Wayland(display),
-            NativeSurface::Wayland(egl_surface.ptr() as *const _),
-            Some(egl_surface),
-        )
-    } else {
-        error!(log, "Window is backed by an unsupported graphics framework");
-        return Err(CreationError::NotSupported);
-    };
-
-    let context = unsafe {
-        match EGLContext::new(
-            native_display,
-            attributes,
-            PixelFormatRequirements {
-                hardware_accelerated: Some(true),
-                color_bits: Some(24),
-                alpha_bits: Some(8),
-                ..Default::default()
-            },
-            log.clone(),
+    let window = match Window::try_new(Box::new(winit_window), |window| {
+        match EGL::try_new(
+            Box::new(match EGLContext::new_from_winit(
+                &*window,
+                attributes,
+                PixelFormatRequirements {
+                    hardware_accelerated: Some(true),
+                    color_bits: Some(24),
+                    alpha_bits: Some(8),
+                    ..Default::default()
+                },
+                log.clone(),
+            ) {
+                Ok(context) => context,
+                Err(err) => {
+                    error!(log, "EGLContext creation failed:\n {}", err);
+                    return Err(err);
+                }
+            }),
+            |context| context.create_surface(window),
         ) {
-            Ok(context) => context,
-            Err(err) => {
-                error!(log, "EGLContext creation failed:\n {}", err);
-                return Err(err);
-            }
+            Ok(x) => Ok(x),
+            Err(::rental::TryNewError(err, _)) => return Err(err),
         }
+    }) {
+        Ok(x) => Rc::new(x),
+        Err(::rental::TryNewError(err, _)) => return Err(err),
     };
 
     Ok((
         WinitGraphicsBackend {
             window: window.clone(),
-            context: match egl::RentEGL::try_new(Box::new(context), move |context| unsafe {
-                context.create_surface(native_surface)
-            }) {
-                Ok(x) => x,
-                Err(::rental::TryNewError(err, _)) => return Err(err),
-            },
             logger: log.new(o!("smithay_winit_component" => "graphics")),
         },
         WinitInputBackend {
-            events_loop: events_loop,
-            window: window,
-            surface: surface,
+            events_loop,
+            window,
             time_counter: 0,
             key_counter: 0,
             seat: Seat::new(
@@ -189,47 +170,52 @@ where
 
 impl GraphicsBackend for WinitGraphicsBackend {
     type CursorFormat = MouseCursor;
+    type Error = ();
 
-    fn set_cursor_position(&mut self, x: u32, y: u32) -> Result<(), ()> {
+    fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), ()> {
         debug!(self.logger, "Setting cursor position to {:?}", (x, y));
-        self.window.set_cursor_position(x as i32, y as i32)
+        self.window.head().set_cursor_position(x as i32, y as i32)
     }
 
-    fn set_cursor_representation(&mut self, cursor: Self::CursorFormat) {
+    fn set_cursor_representation(&self, cursor: Self::CursorFormat, _hotspot: (u32, u32)) -> Result<(), ()> {
         // Cannot log this one, as `CursorFormat` is not `Debug` and should not be
         debug!(self.logger, "Changing cursor representation");
-        self.window.set_cursor(cursor)
+        self.window.head().set_cursor(cursor);
+        Ok(())
     }
 }
 
 impl EGLGraphicsBackend for WinitGraphicsBackend {
     fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
         trace!(self.logger, "Swapping buffers");
-        self.context.rent(|surface| surface.swap_buffers())
+        self.window
+            .rent(|egl| egl.rent(|surface| surface.swap_buffers()))
     }
 
     unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
         trace!(self.logger, "Getting symbol for {:?}", symbol);
-        self.context.get_proc_address(symbol)
+        self.window.rent(|egl| egl.head().get_proc_address(symbol))
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
         self.window
+            .head()
             .get_inner_size_pixels()
             .expect("Window does not exist anymore")
     }
 
     fn is_current(&self) -> bool {
-        self.context.is_current()
+        self.window.rent(|egl| egl.head().is_current())
     }
 
     unsafe fn make_current(&self) -> Result<(), SwapBuffersError> {
         debug!(self.logger, "Setting EGL context to be the current context");
-        self.context.rent(|surface| surface.make_current())
+        self.window
+            .rent(|egl| egl.rent(|surface| surface.make_current()))
     }
 
     fn get_pixel_format(&self) -> PixelFormat {
-        self.context.get_pixel_format()
+        self.window.rent(|egl| egl.head().get_pixel_format())
     }
 }
 
@@ -310,16 +296,24 @@ impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
 
     fn x_transformed(&self, width: u32) -> u32 {
         cmp::min(
-            (self.x * width as f64 / self.window.get_inner_size_points().unwrap_or((width, 0)).0 as f64) as
-                u32,
+            (self.x * width as f64 /
+                self.window
+                    .head()
+                    .get_inner_size_points()
+                    .unwrap_or((width, 0))
+                    .0 as f64) as u32,
             0,
         )
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
         cmp::min(
-            (self.y * height as f64 / self.window.get_inner_size_points().unwrap_or((0, height)).1 as f64) as
-                u32,
+            (self.y * height as f64 /
+                self.window
+                    .head()
+                    .get_inner_size_points()
+                    .unwrap_or((0, height))
+                    .1 as f64) as u32,
             0,
         )
     }
@@ -416,7 +410,11 @@ impl TouchDownEvent for WinitTouchStartedEvent {
     fn x_transformed(&self, width: u32) -> u32 {
         cmp::min(
             self.location.0 as i32 * width as i32 /
-                self.window.get_inner_size_points().unwrap_or((width, 0)).0 as i32,
+                self.window
+                    .head()
+                    .get_inner_size_points()
+                    .unwrap_or((width, 0))
+                    .0 as i32,
             0,
         ) as u32
     }
@@ -424,7 +422,11 @@ impl TouchDownEvent for WinitTouchStartedEvent {
     fn y_transformed(&self, height: u32) -> u32 {
         cmp::min(
             self.location.1 as i32 * height as i32 /
-                self.window.get_inner_size_points().unwrap_or((0, height)).1 as i32,
+                self.window
+                    .head()
+                    .get_inner_size_points()
+                    .unwrap_or((0, height))
+                    .1 as i32,
             0,
         ) as u32
     }
@@ -459,11 +461,21 @@ impl TouchMotionEvent for WinitTouchMovedEvent {
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        self.location.0 as u32 * width / self.window.get_inner_size_points().unwrap_or((width, 0)).0
+        self.location.0 as u32 * width /
+            self.window
+                .head()
+                .get_inner_size_points()
+                .unwrap_or((width, 0))
+                .0
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        self.location.1 as u32 * height / self.window.get_inner_size_points().unwrap_or((0, height)).1
+        self.location.1 as u32 * height /
+            self.window
+                .head()
+                .get_inner_size_points()
+                .unwrap_or((0, height))
+                .1
     }
 }
 
@@ -578,7 +590,6 @@ impl InputBackend for WinitInputBackend {
             let mut time_counter = &mut self.time_counter;
             let seat = &self.seat;
             let window = &self.window;
-            let surface = &self.surface;
             let mut handler = self.handler.as_mut();
             let logger = &self.logger;
 
@@ -587,10 +598,12 @@ impl InputBackend for WinitInputBackend {
                     match (event, handler.as_mut()) {
                         (WindowEvent::Resized(x, y), _) => {
                             trace!(logger, "Resizing window to {:?}", (x, y));
-                            window.set_inner_size(x, y);
-                            if let Some(wl_egl_surface) = surface.as_ref() {
-                                wl_egl_surface.resize(x as i32, y as i32, 0, 0);
-                            }
+                            window.head().set_inner_size(x, y);
+                            window.rent(|egl| {
+                                egl.rent(|surface| if let Some(wegl_surface) = (**surface).as_ref() {
+                                    wegl_surface.resize(x as i32, y as i32, 0, 0)
+                                })
+                            });
                         }
                         (
                             WindowEvent::KeyboardInput {

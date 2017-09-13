@@ -15,6 +15,8 @@ mod helpers;
 use glium::Surface;
 use helpers::{shell_implementation, surface_implementation, GliumDrawer};
 use slog::{Drain, Logger};
+use smithay::backend::graphics::egl::EGLGraphicsBackend;
+
 use smithay::backend::graphics::glium::IntoGlium;
 use smithay::backend::input::InputBackend;
 use smithay::backend::winit;
@@ -55,9 +57,7 @@ fn main() {
     /*
      * Initialize glium
      */
-    let context = renderer.into_glium();
-
-    let drawer = GliumDrawer::new(&context);
+    let drawer = GliumDrawer::new(renderer.into_glium());
 
     /*
      * Add a listening socket:
@@ -68,11 +68,11 @@ fn main() {
     loop {
         input.dispatch_new_events().unwrap();
 
-        let mut frame = context.draw();
+        let mut frame = drawer.draw();
         frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, None, None);
         // redraw the frame, in a simple but inneficient way
         {
-            let screen_dimensions = context.get_framebuffer_dimensions();
+            let screen_dimensions = drawer.get_framebuffer_dimensions();
             let state = event_loop.state();
             for toplevel_surface in state.get(&shell_state_token).toplevel_surfaces() {
                 if let Some(wl_surface) = toplevel_surface.get_surface() {
@@ -90,7 +90,7 @@ fn main() {
                                         x += subdata.x;
                                         y += subdata.y;
                                     }
-                                    drawer.draw(&mut frame, contents, (w, h), (x, y), screen_dimensions);
+                                    drawer.render(&mut frame, contents, (w, h), (x, y), screen_dimensions);
                                     TraversalAction::DoChildren((x, y))
                                 } else {
                                     // we are not display, so our children are neither
