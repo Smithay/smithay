@@ -153,7 +153,7 @@ impl error::Error for ModeError {
 #[derive(Debug)]
 pub enum CrtcError {
     /// Selected crtc is already in use by another `DrmBackend`
-    AlreadyInUse
+    AlreadyInUse,
 }
 
 impl fmt::Display for CrtcError {

@@ -1,4 +1,3 @@
-
 extern crate drm;
 #[macro_use]
 extern crate glium;
@@ -34,15 +33,15 @@ use smithay::shm::{ShmGlobal, ShmToken};
 
 use std::fs::OpenOptions;
 use std::io::Error as IoError;
-use std::time::Duration;
 use std::os::unix::io::AsRawFd;
+use std::time::Duration;
 
 use wayland_protocols::unstable::xdg_shell::server::{zxdg_shell_v6, zxdg_toplevel_v6};
 
 use wayland_server::{Client, EventLoopHandle};
-use wayland_server::sources::READ;
 use wayland_server::protocol::{wl_callback, wl_compositor, wl_output, wl_seat, wl_shell, wl_shm,
                                wl_subcompositor, wl_surface};
+use wayland_server::sources::READ;
 
 define_roles!(Roles => [ ShellSurface, ShellSurfaceRole ] );
 
@@ -284,7 +283,8 @@ fn main() {
 
     let fd = device.as_raw_fd();
     let drm_device_id = event_loop.add_handler(device);
-    let _drm_event_source = event_loop.add_fd_event_source::<DrmDevice<DrmHandlerImpl>>(fd, drm_device_id, READ);
+    let _drm_event_source =
+        event_loop.add_fd_event_source::<DrmDevice<DrmHandlerImpl>>(fd, drm_device_id, READ);
 
     event_loop.run().unwrap();
 }

@@ -1,4 +1,3 @@
-
 use super::{DrmError, ModeError};
 
 use super::devices;

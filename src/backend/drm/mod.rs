@@ -156,7 +156,7 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
-use wayland_server::{EventLoopHandle};
+use wayland_server::EventLoopHandle;
 use wayland_server::sources::{FdEventSourceHandler, FdInterest};
 
 mod backend;
@@ -164,7 +164,7 @@ mod error;
 
 pub use self::backend::{DrmBackend, Id};
 use self::backend::DrmBackendInternal;
-pub use self::error::{Error as DrmError, ModeError, CrtcError};
+pub use self::error::{CrtcError, Error as DrmError, ModeError};
 
 /// Internal struct as required by the drm crate
 #[derive(Debug)]
@@ -255,7 +255,7 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
     /// The file descriptor might not be valid and needs to be owned by smithay,
     /// make sure not to share it. Otherwise undefined behavior might occur.
     pub unsafe fn new_from_fd_with_gl_attr<L>(fd: RawFd, attributes: GlAttributes, logger: L)
-        -> Result<Self, DrmError>
+                                              -> Result<Self, DrmError>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -427,10 +427,7 @@ impl<H: DrmHandler + 'static> FdEventSourceHandler for DrmDevice<H> {
         impl BasicDevice for DrmDeviceRef {}
         impl ControlDevice for DrmDeviceRef {}
 
-        struct PageFlipHandler<'a, 'b, H: DrmHandler + 'static>(
-            &'a mut DrmDevice<H>,
-            &'b mut EventLoopHandle,
-        );
+        struct PageFlipHandler<'a, 'b, H: DrmHandler + 'static>(&'a mut DrmDevice<H>, &'b mut EventLoopHandle);
 
         impl<'a, 'b, H: DrmHandler + 'static> crtc::PageFlipHandler<DrmDeviceRef> for PageFlipHandler<'a, 'b, H> {
             fn handle_event(&mut self, _device: &DrmDeviceRef, frame: u32, duration: Duration,
@@ -451,10 +448,7 @@ impl<H: DrmHandler + 'static> FdEventSourceHandler for DrmDevice<H> {
             &DrmDeviceRef(fd),
             2,
             None::<&mut ()>,
-            Some(&mut PageFlipHandler(
-                self,
-                evlh,
-            )),
+            Some(&mut PageFlipHandler(self, evlh)),
             None::<&mut ()>,
         ).unwrap();
     }
