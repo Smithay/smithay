@@ -298,7 +298,7 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm", "drm" => "device"));
+        let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm"));
 
         /* GBM will load a dri driver, but even though they need symbols from
          * libglapi, in some version of Mesa they are not linked to it. Since
@@ -313,13 +313,17 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
             );
         }
 
+        info!(log, "DrmDevice initializing");
+
         // Open the gbm device from the drm device and create a context based on that
         Ok(DrmDevice {
             context: Rc::new(Context::try_new(
                 Box::new(Devices::try_new(Box::new(drm), |drm| {
+                    debug!(log, "Creating gbm device");
                     GbmDevice::new_from_drm::<DrmDevice<H>>(drm).map_err(DrmError::from)
                 })?),
                 |devices| {
+                    debug!(log, "Creating egl context from gbm device");
                     EGLContext::new_from_gbm(
                         devices.gbm,
                         attributes,
@@ -357,9 +361,9 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
             }
         }
 
-        let logger = self.logger
-            .new(o!("drm" => "backend", "crtc" => format!("{:?}", crtc)));
         let own_id = self.backends.len();
+        let logger = self.logger
+            .new(o!("id" => format!("{}", own_id), "crtc" => format!("{:?}", crtc)));
 
         let backend = Rc::new(RefCell::new(DrmBackendInternal::new(
             self.context.clone(),
@@ -435,6 +439,7 @@ impl<H: DrmHandler + 'static> FdEventSourceHandler for DrmDevice<H> {
                 let id: Id = *userdata.downcast().unwrap();
                 if let Some(backend) = self.0.backends[id.raw()].upgrade() {
                     // we can now unlock the buffer
+                    trace!(self.0.logger, "Handling event for backend {:?}", id.raw());
                     backend.borrow().unlock_buffer();
                     if let Some(handler) = self.0.handler.as_mut() {
                         // and then call the user to render the next frame
@@ -455,6 +460,7 @@ impl<H: DrmHandler + 'static> FdEventSourceHandler for DrmDevice<H> {
 
     fn error(&mut self, evlh: &mut EventLoopHandle, _fd: RawFd, error: IoError) {
         if let Some(handler) = self.handler.as_mut() {
+            warn!(self.logger, "DrmDevice errored: {}", error);
             handler.error(evlh, error)
         }
     }

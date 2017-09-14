@@ -105,8 +105,9 @@ impl DrmBackendInternal {
         I: Into<Vec<connector::Handle>>,
         L: Into<Option<::slog::Logger>>,
     {
-        let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm"));
-        info!(log, "Initializing a drm backend");
+        // logger already initialized by the DrmDevice
+        let log = ::slog_or_stdlog(logger);
+        info!(log, "Initializing DrmBackend");
 
         let connectors = connectors.into();
 
@@ -122,12 +123,8 @@ impl DrmBackendInternal {
 
         let (w, h) = mode.size();
 
-        info!(log, "Drm Backend initializing");
-
         Ok(DrmBackendInternal {
             graphics: Graphics::try_new(context, |context| {
-                debug!(log, "GBM EGLContext initialized");
-
                 Ok(GbmTypes {
                     cursor: {
                         // Create an unused cursor buffer (we don't want an Option here)
@@ -138,19 +135,23 @@ impl DrmBackendInternal {
                             &[BufferObjectFlags::Cursor, BufferObjectFlags::Write],
                         )?
                     },
-                    surface: Surface::try_new(
-                        // create a gbm surface
-                        Box::new(context.devices.gbm.create_surface(
-                            w as u32,
-                            h as u32,
-                            GbmFormat::XRGB8888,
-                            &[BufferObjectFlags::Scanout, BufferObjectFlags::Rendering],
-                        )?),
+                    surface: Surface::try_new({
+                            debug!(log, "Creating GbmSurface");
+                            // create a gbm surface
+                            Box::new(context.devices.gbm.create_surface(
+                                w as u32,
+                                h as u32,
+                                GbmFormat::XRGB8888,
+                                &[BufferObjectFlags::Scanout, BufferObjectFlags::Rendering],
+                            )?)
+                        },
                         |surface| {
                             // create an egl surface from the gbm one
+                            debug!(log, "Creating EGLSurface");
                             let egl_surface = context.egl.create_surface(&surface)?;
 
-                            // set it to be able to use `crtc::set` once
+                            // make it active for the first `crtc::set`
+                            // (which is needed before the first page_flip)
                             unsafe { egl_surface.make_current()? };
                             egl_surface.swap_buffers()?;
 
@@ -160,6 +161,8 @@ impl DrmBackendInternal {
                             debug!(log, "FrontBuffer color format: {:?}", front_bo.format());
                             // we need a framebuffer per front buffer
                             let fb = framebuffer::create(context.devices.drm, &*front_bo)?;
+
+                            debug!(log, "Initialize screen");
                             crtc::set(
                                 context.devices.drm,
                                 crtc,
@@ -197,6 +200,7 @@ impl DrmBackendInternal {
                 let next_bo = egl.buffers.next_buffer.replace(None);
 
                 if let Some(next_buffer) = next_bo {
+                    trace!(self.logger, "Releasing all front buffer");
                     egl.buffers.front_buffer.set(next_buffer);
                 // drop and release the old buffer
                 } else {
@@ -225,6 +229,7 @@ impl DrmBackend {
         // check if the connector can handle the current mode
         let mut internal = self.0.borrow_mut();
         if info.modes().contains(&internal.mode) {
+            info!(self.0.borrow().logger, "Adding new connector: {:?}", info.connector_type());
             internal.connectors.push(connector);
             Ok(())
         } else {
@@ -240,6 +245,12 @@ impl DrmBackend {
 
     /// Removes a currently set connector
     pub fn remove_connector(&mut self, connector: connector::Handle) {
+        if let Ok(info) = connector::Info::load_from_device(self.0.borrow().graphics.head().head().head(), connector) {
+            info!(self.0.borrow().logger, "Removing connector: {:?}", info.connector_type());
+        } else {
+            info!(self.0.borrow().logger, "Removeing unknown connector");
+        }
+
         self.0.borrow_mut().connectors.retain(|x| *x != connector);
     }
 
@@ -275,17 +286,23 @@ impl DrmBackend {
             .rent_all_mut(|graphics| -> Result<(), DrmError> {
                 // Recreate the surface and the related resources to match the new
                 // resolution.
-                graphics.gbm.surface = Surface::try_new(
-                    Box::new(graphics.context.devices.gbm.create_surface(
-                        w as u32,
-                        h as u32,
-                        GbmFormat::XRGB8888,
-                        &[BufferObjectFlags::Scanout, BufferObjectFlags::Rendering],
-                    )?),
+                debug!(logger, "Reinitializing surface for new mode: {}:{}", w, h);
+                graphics.gbm.surface = Surface::try_new({
+                        // create a new gbm surface
+                        debug!(logger, "Creating GbmSurface");
+                        Box::new(graphics.context.devices.gbm.create_surface(
+                            w as u32,
+                            h as u32,
+                            GbmFormat::XRGB8888,
+                            &[BufferObjectFlags::Scanout, BufferObjectFlags::Rendering],
+                        )?)
+                    },
                     |surface| {
+                        // create an egl surface from the gbm one
+                        debug!(logger, "Creating EGLSurface");
                         let egl_surface = graphics.context.egl.create_surface(&surface)?;
 
-                        // make it active for the first crtc::set
+                        // make it active for the first `crtc::set`
                         // (which is needed before the first page_flip)
                         unsafe { egl_surface.make_current()? };
                         egl_surface.swap_buffers()?;
@@ -294,7 +311,8 @@ impl DrmBackend {
                         debug!(logger, "FrontBuffer color format: {:?}", front_bo.format());
                         // we need a framebuffer per front_buffer
                         let fb = framebuffer::create(graphics.context.devices.drm, &*front_bo)?;
-                        // init the first screen
+
+                        debug!(logger, "Initialize screen");
                         crtc::set(
                             graphics.context.devices.drm,
                             crtc,
@@ -318,6 +336,7 @@ impl DrmBackend {
                 Ok(())
             })?;
 
+        info!(logger, "Setting new mode: {:?}", mode.name());
         internal.mode = mode;
         Ok(())
     }
@@ -336,6 +355,7 @@ impl GraphicsBackend for DrmBackend {
     type Error = DrmError;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), DrmError> {
+        trace!(self.0.borrow().logger, "Move the cursor to {},{}", x, y);
         crtc::move_cursor(
             self.0.borrow().graphics.head().head().head(),
             self.0.borrow().crtc,
@@ -346,6 +366,7 @@ impl GraphicsBackend for DrmBackend {
     fn set_cursor_representation(&self, buffer: ImageBuffer<Rgba<u8>, Vec<u8>>, hotspot: (u32, u32))
                                  -> Result<(), DrmError> {
         let (w, h) = buffer.dimensions();
+        debug!(self.0.borrow().logger, "Importing cursor");
         /// import the cursor into a buffer we can render
         self.0
             .borrow_mut()
@@ -364,6 +385,7 @@ impl GraphicsBackend for DrmBackend {
                 Ok(())
             })?;
 
+        trace!(self.0.borrow().logger, "Set the new imported cursor");
         // and set it
         if crtc::set_cursor2(
             self.0.borrow().graphics.head().head().head(),
@@ -401,6 +423,7 @@ impl EGLGraphicsBackend for DrmBackend {
                 egl.buffers.next_buffer.set(next);
                 res
             }) {
+                warn!(self.0.borrow().logger, "Tried to swap a DrmBackend with a queued flip");
                 return Err(SwapBuffersError::AlreadySwapped);
             }
 
@@ -426,7 +449,7 @@ impl EGLGraphicsBackend for DrmBackend {
                 };
                 surface.egl.buffers.next_buffer.set(Some(next_bo));
 
-                trace!(self.0.borrow().logger, "Page flip queued");
+                trace!(self.0.borrow().logger, "Queueing Page flip");
 
                 let id: Id = self.0.borrow().own_id;
 
