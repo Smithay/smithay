@@ -23,6 +23,8 @@ pub enum Error {
     Io(IoError),
     /// Selected an invalid Mode
     Mode(ModeError),
+    /// Error related to the selected crtc
+    Crtc(CrtcError),
 }
 
 impl fmt::Display for Error {
@@ -37,6 +39,7 @@ impl fmt::Display for Error {
                 &Error::Gbm(ref x) => x as &error::Error,
                 &Error::Io(ref x) => x as &error::Error,
                 &Error::Mode(ref x) => x as &error::Error,
+                &Error::Crtc(ref x) => x as &error::Error,
             }
         )
     }
@@ -55,6 +58,7 @@ impl error::Error for Error {
             &Error::Gbm(ref x) => Some(x as &error::Error),
             &Error::Io(ref x) => Some(x as &error::Error),
             &Error::Mode(ref x) => Some(x as &error::Error),
+            &Error::Crtc(ref x) => Some(x as &error::Error),
         }
     }
 }
@@ -98,6 +102,12 @@ impl From<ModeError> for Error {
     }
 }
 
+impl From<CrtcError> for Error {
+    fn from(err: CrtcError) -> Error {
+        Error::Crtc(err)
+    }
+}
+
 impl<H> From<TryNewError<Error, H>> for Error {
     fn from(err: TryNewError<Error, H>) -> Error {
         err.0
@@ -134,6 +144,37 @@ impl error::Error for ModeError {
     fn cause(&self) -> Option<&error::Error> {
         match self {
             &ModeError::FailedToLoad(ref err) => Some(err as &error::Error),
+            _ => None,
+        }
+    }
+}
+
+/// Errors related to the selected crtc
+#[derive(Debug)]
+pub enum CrtcError {
+    /// Selected crtc is already in use by another `DrmBackend`
+    AlreadyInUse
+}
+
+impl fmt::Display for CrtcError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.description())?;
+        if let Some(cause) = self.cause() {
+            write!(f, "\tCause: {}", cause)?;
+        }
+        Ok(())
+    }
+}
+
+impl error::Error for CrtcError {
+    fn description(&self) -> &str {
+        match self {
+            &CrtcError::AlreadyInUse => "Crtc is already in use by another DrmBackend",
+        }
+    }
+
+    fn cause(&self) -> Option<&error::Error> {
+        match self {
             _ => None,
         }
     }

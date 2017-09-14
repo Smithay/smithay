@@ -164,7 +164,7 @@ mod error;
 
 pub use self::backend::{DrmBackend, Id};
 use self::backend::DrmBackendInternal;
-pub use self::error::{Error as DrmError, ModeError};
+pub use self::error::{Error as DrmError, ModeError, CrtcError};
 
 /// Internal struct as required by the drm crate
 #[derive(Debug)]
@@ -349,12 +349,18 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
     where
         I: Into<Vec<connector::Handle>>,
     {
+        for backend in self.backends.iter() {
+            if let Some(backend) = backend.upgrade() {
+                if backend.borrow().is_crtc(crtc) {
+                    return Err(DrmError::Crtc(CrtcError::AlreadyInUse));
+                }
+            }
+        }
+
         let logger = self.logger
             .new(o!("drm" => "backend", "crtc" => format!("{:?}", crtc)));
         let own_id = self.backends.len();
 
-        // TODO: Make sure we do not initialize the same crtc multiple times
-        // (check weak pointers and return an error otherwise)
         let backend = Rc::new(RefCell::new(DrmBackendInternal::new(
             self.context.clone(),
             crtc,

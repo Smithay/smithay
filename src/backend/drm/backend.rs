@@ -196,6 +196,10 @@ impl DrmBackendInternal {
             })
         });
     }
+
+    pub(crate) fn is_crtc(&self, crtc: crtc::Handle) -> bool {
+        crtc == self.crtc
+    }
 }
 
 impl DrmBackend {
