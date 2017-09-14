@@ -8,6 +8,7 @@ pub trait GraphicsBackend {
     /// Format representing the image drawn for the cursor.
     type CursorFormat;
 
+    /// Error the underlying backend throws if operations fail
     type Error;
 
     /// Sets the cursor position and therefor updates the drawn cursors position.

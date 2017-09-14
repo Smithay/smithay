@@ -1,5 +1,3 @@
-
-
 use backend::graphics::egl::{CreationError, SwapBuffersError};
 use drm::result::Error as DrmError;
 use gbm::FrontBufferError;
@@ -9,13 +7,21 @@ use std::error::{self, Error as ErrorTrait};
 use std::fmt;
 use std::io::Error as IoError;
 
+/// Error summing up error types related to all underlying libraries
+/// involved in creating the a `DrmDevice`/`DrmBackend`
 #[derive(Debug)]
 pub enum Error {
+    /// The `DrmDevice` has encountered an error on an ioctl
     Drm(DrmError),
+    /// The `EGLContext` could not be created
     EGLCreation(CreationError),
+    /// Swapping Buffers via EGL was not possible
     EGLSwap(SwapBuffersError),
+    /// Locking the front buffer of the underlying `GbmSurface` failed
     Gbm(FrontBufferError),
+    /// A generic IO-Error happened accessing the underlying devices
     Io(IoError),
+    /// Selected an invalid Mode
     Mode(ModeError),
 }
 
@@ -98,9 +104,12 @@ impl<H> From<TryNewError<Error, H>> for Error {
     }
 }
 
+/// Error when trying to select an invalid mode
 #[derive(Debug)]
 pub enum ModeError {
+    /// `Mode` is not compatible with all given connectors
     ModeNotSuitable,
+    /// Failed to load `Mode` information
     FailedToLoad(DrmError),
 }
 

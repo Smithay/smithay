@@ -7,6 +7,7 @@
 //! Supported graphics backends:
 //!
 //! - winit
+//! - drm
 //!
 //! Supported input backends:
 //!

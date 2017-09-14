@@ -18,6 +18,7 @@ use nix::c_void;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+/// Backend based on a `DrmDevice` and a given crtc
 pub struct DrmBackend(Rc<RefCell<DrmBackendInternal>>);
 
 impl DrmBackend {
@@ -76,6 +77,9 @@ rental! {
 }
 use self::graphics::{Graphics, Surface};
 
+/// Id of a `DrmBackend` related to its `DrmDevice`.
+///
+/// Used to track which `DrmBackend` finished page-flipping
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Id(usize);
 
@@ -195,6 +199,11 @@ impl DrmBackendInternal {
 }
 
 impl DrmBackend {
+    /// Add a connector to backend
+    ///
+    /// # Errors
+    ///
+    /// Errors if the new connector does not support the currently set `Mode`
     pub fn add_connector(&mut self, connector: connector::Handle) -> Result<(), ModeError> {
         let info =
             connector::Info::load_from_device(self.0.borrow().graphics.head().head().head(), connector)
@@ -208,14 +217,23 @@ impl DrmBackend {
         }
     }
 
+    /// Returns a copy of the currently set connectors
     pub fn used_connectors(&self) -> Vec<connector::Handle> {
         self.0.borrow().connectors.clone()
     }
 
+    /// Removes a currently set connector
     pub fn remove_connector(&mut self, connector: connector::Handle) {
         self.0.borrow_mut().connectors.retain(|x| *x != connector);
     }
 
+    /// Changes the currently set mode
+    ///
+    /// # Errors
+    ///
+    /// This will fail if not all set connectors support the new `Mode`.
+    /// Several internal resources will need to be recreated to fit the new `Mode`.
+    /// Other errors might occur.
     pub fn use_mode(&mut self, mode: Mode) -> Result<(), DrmError> {
         for connector in self.0.borrow().connectors.iter() {
             if !connector::Info::load_from_device(self.0.borrow().graphics.head().head().head(), *connector)?
@@ -278,6 +296,10 @@ impl DrmBackend {
         Ok(())
     }
 
+    /// Checks of the `DrmBackend` is of the given `Id`
+    ///
+    /// Only produces valid results, if the `Id` is from the `DrmDevice`,
+    /// that created this backend.
     pub fn is(&self, id: Id) -> bool {
         self.0.borrow().own_id == id
     }

@@ -5,15 +5,12 @@
 ///
 /// It therefore falls under glutin's Apache 2.0 license
 /// (see https://github.com/tomaka/glutin/tree/044e651edf67a2029eecc650dd42546af1501414/LICENSE)
-
 use super::GraphicsBackend;
 #[cfg(feature = "backend_drm")]
 use gbm::{AsRaw, Device as GbmDevice, Surface as GbmSurface};
-
 use libloading::Library;
 use nix::{c_int, c_void};
 use slog;
-
 use std::error::{self, Error};
 use std::ffi::{CStr, CString};
 use std::fmt;
@@ -22,7 +19,6 @@ use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr;
-
 #[cfg(feature = "backend_winit")]
 use wayland_client::egl as wegl;
 #[cfg(feature = "backend_winit")]
@@ -77,10 +73,14 @@ pub enum NativeSurfacePtr {
     Gbm(ffi::NativeWindowType),
 }
 
+/// Enumerates all supported backends
 #[derive(Clone, Copy, PartialEq)]
 pub enum NativeType {
+    /// X11 window & surface
     X11,
+    /// Wayland surface
     Wayland,
+    /// Gbm surface
     Gbm,
 }
 
@@ -145,9 +145,16 @@ impl error::Error for CreationError {
     }
 }
 
+/// Trait for supported types returning valid surface pointers for initializing egl
+///
+/// # Safety
+/// The returned `NativeSurfacePtr` must be valid for egl
+/// and there is no way to test that.
 pub unsafe trait NativeSurface {
+    /// Type to keep the surface valid, if needed
     type Keep: 'static;
 
+    /// Return a surface for the given type if possible
     fn surface(&self, backend: NativeType) -> Result<(NativeSurfacePtr, Self::Keep), CreationError>;
 }
 
@@ -214,6 +221,7 @@ pub struct EGLContext<'a, T: NativeSurface> {
 }
 
 impl<'a> EGLContext<'a, ()> {
+    /// Create a new context from a given `winit`-`Window`
     #[cfg(feature = "backend_winit")]
     pub fn new_from_winit<L>(window: &'a WinitWindow, attributes: GlAttributes,
                              reqs: PixelFormatRequirements, logger: L)
@@ -243,6 +251,7 @@ impl<'a> EGLContext<'a, ()> {
         }
     }
 
+    /// Create a new context from a given `gbm::Device`
     #[cfg(feature = "backend_drm")]
     pub fn new_from_gbm<L, U: 'static>(gbm: &'a GbmDevice<'a>, attributes: GlAttributes,
                                        reqs: PixelFormatRequirements, logger: L)
@@ -700,11 +709,6 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
     }
 
     /// Creates a surface bound to the given egl context for rendering
-    ///
-    /// # Unsafety
-    ///
-    /// This method is marked unsafe, because the contents of `NativeSurface` cannot be verified and may
-    /// contain dangling pointers or similar unsafe content
     pub fn create_surface<'b>(&'a self, native: &'b T) -> Result<EGLSurface<'a, 'b, T>, CreationError> {
         trace!(self.logger, "Creating EGL window surface...");
 
