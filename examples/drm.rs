@@ -181,6 +181,9 @@ fn main() {
     // Initialize the wayland server
     let (mut display, mut event_loop) = wayland_server::create_display();
 
+    /*
+     * Initialize the drm backend
+     */
     // "Find" a suitable drm device
     let mut options = OpenOptions::new();
     options.read(true);
@@ -207,7 +210,7 @@ fn main() {
     // Assuming we found a good connector and loaded the info into `connector_info`
     let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
 
-    // Initialize the hardware backends
+    // Initialize the hardware backend
     let renderer = device
         .create_backend(crtc, mode, vec![connector_info.handle()])
         .unwrap();
@@ -274,6 +277,7 @@ fn main() {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
     println!("Listening on socket: {}", name);
 
+    // Set the DrmHandler
     device.set_handler(DrmHandlerImpl {
         drawer: drawer,
         shell_handler_id,
@@ -281,6 +285,9 @@ fn main() {
         logger: log,
     });
 
+    /*
+     * Register the DrmDevice on the EventLoop
+     */
     let fd = device.as_raw_fd();
     let drm_device_id = event_loop.add_handler(device);
     let _drm_event_source =
@@ -344,6 +351,6 @@ impl DrmHandler for DrmHandlerImpl {
     }
 
     fn error(&mut self, _evlh: &mut EventLoopHandle, error: IoError) {
-        error!(self.logger, "{:?}", error);
+        panic!("{:?}", error);
     }
 }
