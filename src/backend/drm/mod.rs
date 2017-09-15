@@ -142,7 +142,7 @@
 
 use backend::graphics::egl::{EGLContext, GlAttributes, PixelFormatRequirements};
 use drm::Device as BasicDevice;
-use drm::control::{connector, crtc, Mode};
+use drm::control::{connector, crtc, encoder, Mode, ResourceInfo};
 use drm::control::Device as ControlDevice;
 
 use gbm::Device as GbmDevice;
@@ -353,6 +353,8 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
     where
         I: Into<Vec<connector::Handle>>,
     {
+        use std::collections::hash_set::HashSet;
+
         for backend in self.backends.iter() {
             if let Some(backend) = backend.upgrade() {
                 if backend.borrow().is_crtc(crtc) {
@@ -360,6 +362,26 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
                 }
             }
         }
+
+        // check if the given connectors and crtc match
+        let connectors = connectors.into();
+        // get all encoders supported by this device
+        let mut set = self.context.head().head().resource_handles()?.encoders().iter().cloned().collect::<HashSet<encoder::Handle>>();
+        for connector in connectors.iter() {
+            let info = connector::Info::load_from_device(self.context.head().head(), *connector)?;
+            // then check for every connector which encoders it does support
+            let conn_set = info.encoders().iter().cloned().collect::<HashSet<encoder::Handle>>();
+            // and update the list of supported encoders for this combination
+            set = set.intersection(&conn_set).cloned().collect::<HashSet<encoder::Handle>>();
+        }
+
+        // check if there is any encoder left that can be connected to the crtc
+        let encoders: Vec<encoder::Info> = set.iter().map(|handle| encoder::Info::load_from_device(self.context.head().head(), *handle).map_err(DrmError::from)).collect::<Result<Vec<encoder::Info>, DrmError>>()?;
+        if !encoders.iter().any(|enc| enc.supports_crtc(crtc)) {
+            return Err(DrmError::Crtc(CrtcError::NoSuitableEncoder));
+        }
+
+        // configuration is valid, the kernel will figure out the rest
 
         let own_id = self.backends.len();
         let logger = self.logger

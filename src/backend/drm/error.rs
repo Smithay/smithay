@@ -154,6 +154,8 @@ impl error::Error for ModeError {
 pub enum CrtcError {
     /// Selected crtc is already in use by another `DrmBackend`
     AlreadyInUse,
+    /// For the selected crtc no encoder exists that supports all connectors
+    NoSuitableEncoder,
 }
 
 impl fmt::Display for CrtcError {
@@ -170,6 +172,7 @@ impl error::Error for CrtcError {
     fn description(&self) -> &str {
         match self {
             &CrtcError::AlreadyInUse => "Crtc is already in use by another DrmBackend",
+            &CrtcError::NoSuitableEncoder => "Crtc has no supported encoder that can drive all connectors",
         }
     }
 
