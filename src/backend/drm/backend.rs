@@ -1,19 +1,13 @@
-use super::{DrmError, ModeError};
-
+use super::{CrtcError, DrmError, ModeError};
 use super::devices;
-
 use backend::graphics::GraphicsBackend;
 use backend::graphics::egl::{EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError};
 use drm::buffer::Buffer;
-use drm::control::{connector, crtc, framebuffer, Mode};
+use drm::control::{connector, crtc, encoder, framebuffer, Mode};
 use drm::control::ResourceInfo;
-
 use gbm::{BufferObject, BufferObjectFlags, Format as GbmFormat, Surface as GbmSurface, SurfaceBufferHandle};
-
 use image::{ImageBuffer, Rgba};
-
 use nix::c_void;
-
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -135,7 +129,8 @@ impl DrmBackendInternal {
                             &[BufferObjectFlags::Cursor, BufferObjectFlags::Write],
                         )?
                     },
-                    surface: Surface::try_new({
+                    surface: Surface::try_new(
+                        {
                             debug!(log, "Creating GbmSurface");
                             // create a gbm surface
                             Box::new(context.devices.gbm.create_surface(
@@ -221,7 +216,7 @@ impl DrmBackend {
     /// # Errors
     ///
     /// Errors if the new connector does not support the currently set `Mode`
-    pub fn add_connector(&mut self, connector: connector::Handle) -> Result<(), ModeError> {
+    pub fn add_connector(&mut self, connector: connector::Handle) -> Result<(), DrmError> {
         let info =
             connector::Info::load_from_device(self.0.borrow().graphics.head().head().head(), connector)
                 .map_err(|err| ModeError::FailedToLoad(err))?;
@@ -229,11 +224,32 @@ impl DrmBackend {
         // check if the connector can handle the current mode
         let mut internal = self.0.borrow_mut();
         if info.modes().contains(&internal.mode) {
-            info!(self.0.borrow().logger, "Adding new connector: {:?}", info.connector_type());
+            // check if there is a valid encoder
+            let encoders = info.encoders()
+                .iter()
+                .map(|encoder| {
+                    encoder::Info::load_from_device(self.0.borrow().graphics.head().head().head(), *encoder)
+                        .map_err(DrmError::from)
+                })
+                .collect::<Result<Vec<encoder::Info>, DrmError>>()?;
+
+            // and if any encoder supports the selected crtc
+            if !encoders
+                .iter()
+                .any(|encoder| encoder.supports_crtc(self.0.borrow().crtc))
+            {
+                return Err(DrmError::Crtc(CrtcError::NoSuitableEncoder));
+            }
+
+            info!(
+                self.0.borrow().logger,
+                "Adding new connector: {:?}",
+                info.connector_type()
+            );
             internal.connectors.push(connector);
             Ok(())
         } else {
-            Err(ModeError::ModeNotSuitable)
+            Err(DrmError::Mode(ModeError::ModeNotSuitable))
         }
     }
 
@@ -245,8 +261,14 @@ impl DrmBackend {
 
     /// Removes a currently set connector
     pub fn remove_connector(&mut self, connector: connector::Handle) {
-        if let Ok(info) = connector::Info::load_from_device(self.0.borrow().graphics.head().head().head(), connector) {
-            info!(self.0.borrow().logger, "Removing connector: {:?}", info.connector_type());
+        if let Ok(info) =
+            connector::Info::load_from_device(self.0.borrow().graphics.head().head().head(), connector)
+        {
+            info!(
+                self.0.borrow().logger,
+                "Removing connector: {:?}",
+                info.connector_type()
+            );
         } else {
             info!(self.0.borrow().logger, "Removeing unknown connector");
         }
@@ -287,7 +309,8 @@ impl DrmBackend {
                 // Recreate the surface and the related resources to match the new
                 // resolution.
                 debug!(logger, "Reinitializing surface for new mode: {}:{}", w, h);
-                graphics.gbm.surface = Surface::try_new({
+                graphics.gbm.surface = Surface::try_new(
+                    {
                         // create a new gbm surface
                         debug!(logger, "Creating GbmSurface");
                         Box::new(graphics.context.devices.gbm.create_surface(
