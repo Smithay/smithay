@@ -39,15 +39,20 @@
 //! You will need to use the `drm` crate to provide the required types to create
 //! a backend.
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! extern crate drm;
 //! extern crate smithay;
 //! # extern crate wayland_server;
 //!
 //! use drm::control::{Device as ControlDevice, ResourceInfo};
 //! use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
+//! use drm::control::encoder::{Info as EncoderInfo};
+//! # use std::io::Error as IoError;
 //! use std::fs::OpenOptions;
+//! # use std::time::Duration;
 //! use smithay::backend::drm::DrmDevice;
+//! # use smithay::backend::drm::{DrmHandler, Id};
+//! # use wayland_server::EventLoopHandle;
 //!
 //! # fn main() {
 //! // Open the drm device
@@ -68,8 +73,17 @@
 //!     .find(|conn| conn.connection_state() == ConnectorState::Connected)
 //!     .unwrap();
 //!
-//! // Use first crtc (should be successful in most cases)
-//! let crtc = res_handles.crtcs()[0];
+//! // Use the first encoder
+//! let encoder_info = EncoderInfo::load_from_device(&device, connector_info.encoders()[0]).unwrap();
+//!
+//! // use the connected crtc if any
+//! let crtc = encoder_info.current_crtc()
+//!     // or use the first one that is compatible with the encoder
+//!     .unwrap_or_else(||
+//!         *res_handles.crtcs()
+//!         .iter()
+//!         .find(|crtc| encoder_info.supports_crtc(**crtc))
+//!         .unwrap());
 //!
 //! // Use first mode (usually the highest resolution)
 //! let mode = connector_info.modes()[0];
@@ -80,6 +94,14 @@
 //!         mode,
 //!         vec![connector_info.handle()]
 //!     ).unwrap();
+//! # struct MyDrmHandler;
+//! #
+//! # impl DrmHandler for MyDrmHandler {
+//! #    fn ready(&mut self, _: &mut EventLoopHandle, id: Id, _frame: u32, _duration: Duration) {}
+//! #    fn error(&mut self, _: &mut EventLoopHandle, error: IoError) {}
+//! # }
+//! #
+//! # device.set_handler(MyDrmHandler);
 //! # }
 //! ```
 //!
@@ -123,6 +145,7 @@
 //! #     options.open("/dev/dri/card0").unwrap(), // try to detect it properly
 //! #     None /*put a logger here*/
 //! # ).unwrap();
+//! #
 //! # let res_handles = device.resource_handles().unwrap();
 //! # let connector_info = res_handles.connectors().iter()
 //! #     .map(|conn| ConnectorInfo::load_from_device(&device, *conn).unwrap())

@@ -16,12 +16,10 @@ mod helpers;
 
 use drm::control::{Device as ControlDevice, ResourceInfo};
 use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
-
+use drm::control::encoder::Info as EncoderInfo;
 use glium::Surface;
-
 use helpers::GliumDrawer;
 use slog::*;
-
 use smithay::backend::drm::{DrmBackend, DrmDevice, DrmHandler, Id};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::glium::{GliumGraphicsBackend, IntoGlium};
@@ -30,14 +28,11 @@ use smithay::compositor::roles::Role;
 use smithay::shell::{self, PopupConfigure, PopupSurface, ShellClient, ShellHandler, ShellSurfaceRole,
                      ToplevelConfigure, ToplevelSurface};
 use smithay::shm::{ShmGlobal, ShmToken};
-
 use std::fs::OpenOptions;
 use std::io::Error as IoError;
 use std::os::unix::io::AsRawFd;
 use std::time::Duration;
-
 use wayland_protocols::unstable::xdg_shell::server::{zxdg_shell_v6, zxdg_toplevel_v6};
-
 use wayland_server::{Client, EventLoopHandle};
 use wayland_server::protocol::{wl_callback, wl_compositor, wl_output, wl_seat, wl_shell, wl_shm,
                                wl_subcompositor, wl_surface};
@@ -204,8 +199,17 @@ fn main() {
         .find(|conn| conn.connection_state() == ConnectorState::Connected)
         .unwrap();
 
-    // Use the first crtc (should be successful in most cases)
-    let crtc = res_handles.crtcs()[0];
+    // Use the first encoder
+    let encoder_info = EncoderInfo::load_from_device(&device, connector_info.encoders()[0]).unwrap();
+
+    // use the connected crtc if any
+    let crtc = encoder_info.current_crtc()
+        // or use the first one that is compatible with the encoder
+        .unwrap_or_else(||
+            *res_handles.crtcs()
+            .iter()
+            .find(|crtc| encoder_info.supports_crtc(**crtc))
+            .unwrap());
 
     // Assuming we found a good connector and loaded the info into `connector_info`
     let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
