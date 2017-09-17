@@ -3,7 +3,29 @@
 //! This module provide a `DrmDevice` which acts as a reprensentation for any drm
 //! device and can be used to create the second provided structure a `DrmBackend`.
 //!
-//! The latter represents a crtc of the graphics card you can render to.
+//! Initialization happens through the types provided by [`drm-rs`](https://docs.rs/drm/).
+//!
+//! Three entities are relevant for the initialization procedure.
+//!
+//! "Crtc"s represent scanout engines of the device pointer to one framebuffer. There responsibility
+//! is to read the data of the framebuffer and export it into an "Encoder". The number of crtc's
+//! represent the number of independant output devices the hardware may handle.
+//!
+//! An "Encoder" encodes the data of connected crtcs into a video signal for a fixed set
+//! of connectors. E.g. you might have an analog encoder based on a DAG for VGA ports, but another
+//! one for digital ones. Also not every encoder might be connected to every crtc.
+//!
+//! The last entity the "Connector" represents a port on your computer, possibly with a connected
+//! monitor, TV, capture card, etc.
+//!
+//! The `DrmBackend` created from a `DrmDevice` represents a crtc of the device you can render to
+//! and that feeds a given set of connectors, that can be manipulated at runtime.
+//!
+//! From these circumstances it becomes clear, that one crtc might only send it's data to a connector,
+//! that is attached to any encoder that is attached to the crtc itself. It is the responsibility of the
+//! user to ensure that a given set of a crtc with it's connectors is valid or an error will be thrown.
+//!
+//! For more details refer to the [`drm-rs` documentation](https://docs.rs/drm).
 //!
 //!
 //! ## How to use it
