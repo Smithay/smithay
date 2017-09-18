@@ -205,11 +205,11 @@ use wayland_server::EventLoopHandle;
 use wayland_server::sources::{FdEventSourceHandler, FdInterest};
 
 mod backend;
-mod error;
+pub mod error;
 
 pub use self::backend::{DrmBackend, Id};
 use self::backend::DrmBackendInternal;
-pub use self::error::{CrtcError, Error as DrmError, ModeError};
+use self::error::*;
 
 /// Internal struct as required by the drm crate
 #[derive(Debug)]
@@ -275,7 +275,7 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
     /// # Safety
     /// The file descriptor might not be valid and needs to be owned by smithay,
     /// make sure not to share it. Otherwise undefined behavior might occur.
-    pub unsafe fn new_from_fd<L>(fd: RawFd, logger: L) -> Result<Self, DrmError>
+    pub unsafe fn new_from_fd<L>(fd: RawFd, logger: L) -> Result<Self>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -299,8 +299,7 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
     /// # Safety
     /// The file descriptor might not be valid and needs to be owned by smithay,
     /// make sure not to share it. Otherwise undefined behavior might occur.
-    pub unsafe fn new_from_fd_with_gl_attr<L>(fd: RawFd, attributes: GlAttributes, logger: L)
-                                              -> Result<Self, DrmError>
+    pub unsafe fn new_from_fd_with_gl_attr<L>(fd: RawFd, attributes: GlAttributes, logger: L) -> Result<Self>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -311,7 +310,7 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
     ///
     /// Returns an error if the file is no valid drm node or context creation was not
     /// successful.
-    pub fn new_from_file<L>(file: File, logger: L) -> Result<Self, DrmError>
+    pub fn new_from_file<L>(file: File, logger: L) -> Result<Self>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -331,15 +330,14 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
     ///
     /// Returns an error if the file is no valid drm node or context creation was not
     /// successful.
-    pub fn new_from_file_with_gl_attr<L>(file: File, attributes: GlAttributes, logger: L)
-                                         -> Result<Self, DrmError>
+    pub fn new_from_file_with_gl_attr<L>(file: File, attributes: GlAttributes, logger: L) -> Result<Self>
     where
         L: Into<Option<::slog::Logger>>,
     {
         DrmDevice::new(DrmDev::new_from_file(file), attributes, logger)
     }
 
-    fn new<L>(drm: DrmDev, attributes: GlAttributes, logger: L) -> Result<Self, DrmError>
+    fn new<L>(drm: DrmDev, attributes: GlAttributes, logger: L) -> Result<Self>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -365,7 +363,7 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
             context: Rc::new(Context::try_new(
                 Box::new(Devices::try_new(Box::new(drm), |drm| {
                     debug!(log, "Creating gbm device");
-                    GbmDevice::new_from_drm::<DrmDevice<H>>(drm).map_err(DrmError::from)
+                    GbmDevice::new_from_drm::<DrmDevice<H>>(drm).chain_err(|| ErrorKind::GbmInitFailed)
                 })?),
                 |devices| {
                     debug!(log, "Creating egl context from gbm device");
@@ -379,7 +377,7 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
                             ..Default::default()
                         },
                         log.clone(),
-                    ).map_err(DrmError::from)
+                    ).map_err(Error::from)
                 },
             )?),
             backends: Vec::new(),
@@ -393,15 +391,14 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
     ///
     /// Errors if initialization fails or the mode is not available on all given
     /// connectors.
-    pub fn create_backend<I>(&mut self, crtc: crtc::Handle, mode: Mode, connectors: I)
-                             -> Result<DrmBackend, DrmError>
+    pub fn create_backend<I>(&mut self, crtc: crtc::Handle, mode: Mode, connectors: I) -> Result<DrmBackend>
     where
         I: Into<Vec<connector::Handle>>,
     {
         for backend in self.backends.iter() {
             if let Some(backend) = backend.upgrade() {
                 if backend.borrow().is_crtc(crtc) {
-                    return Err(DrmError::Crtc(CrtcError::AlreadyInUse));
+                    bail!(ErrorKind::CrtcAlreadyInUse(crtc))
                 }
             }
         }
@@ -411,21 +408,25 @@ impl<H: DrmHandler + 'static> DrmDevice<H> {
 
         // check if we have an encoder for every connector
         for connector in connectors.iter() {
-            let con_info = connector::Info::load_from_device(self.context.head().head(), *connector)?;
+            let con_info = connector::Info::load_from_device(self.context.head().head(), *connector)
+                .chain_err(|| {
+                    ErrorKind::DrmDev(format!("{:?}", self.context.head().head()))
+                })?;
 
             // then check for every connector which encoders it does support
             let encoders = con_info
                 .encoders()
                 .iter()
                 .map(|encoder| {
-                    encoder::Info::load_from_device(self.context.head().head(), *encoder)
-                        .map_err(DrmError::from)
+                    encoder::Info::load_from_device(self.context.head().head(), *encoder).chain_err(|| {
+                        ErrorKind::DrmDev(format!("{:?}", self.context.head().head()))
+                    })
                 })
-                .collect::<Result<Vec<encoder::Info>, DrmError>>()?;
+                .collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
             if !encoders.iter().any(|encoder| encoder.supports_crtc(crtc)) {
-                return Err(DrmError::Crtc(CrtcError::NoSuitableEncoder));
+                bail!(ErrorKind::NoSuitableEncoder(con_info, crtc))
             }
         }
 

@@ -10,11 +10,11 @@ use super::GraphicsBackend;
 use gbm::{AsRaw, Device as GbmDevice, Surface as GbmSurface};
 use libloading::Library;
 use nix::{c_int, c_void};
+use rental::TryNewError;
 use slog;
-use std::error::{self, Error};
+use std::error;
 use std::ffi::{CStr, CString};
 use std::fmt;
-use std::io;
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Deref, DerefMut};
@@ -74,7 +74,7 @@ pub enum NativeSurfacePtr {
 }
 
 /// Enumerates all supported backends
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NativeType {
     /// X11 window & surface
     X11,
@@ -82,66 +82,77 @@ pub enum NativeType {
     Wayland,
     /// Gbm surface
     Gbm,
+    /// Unknown
+    Unknown,
 }
 
-/// Error that can happen while creating an `EGLContext` or `EGLSurface`
-#[derive(Debug)]
-pub enum CreationError {
-    /// I/O error from the underlying system
-    IoError(io::Error),
-    /// Operating System error
-    OsError(String),
-    /// The requested OpenGl version is not supported by the graphics system
-    OpenGlVersionNotSupported,
-    /// There is no pixel format available that fulfills all requirements
-    NoAvailablePixelFormat,
-    /// Surface creation from an unsupport combination
-    ///
-    /// E.g creating a surface from an X11 window on a context created from a wayland display
-    NonMatchingSurfaceType,
-    /// Context creation is not supported on this system
-    NotSupported,
-}
+error_chain! {
+    errors {
+        #[doc = "The requested OpenGL version is not supported"]
+        OpenGlVersionNotSupported(version: (u8, u8)) {
+            description("The requested OpenGL version is not supported."),
+            display("The requested OpenGL version {:?} is not supported.", version),
+        }
 
-impl From<io::Error> for CreationError {
-    fn from(err: io::Error) -> Self {
-        CreationError::IoError(err)
+        #[doc = "The EGL implementation does not support creating OpenGL ES contexts"]
+        OpenGlesNotSupported {
+            description("The EGL implementation does not support creating OpenGL ES contexts")
+        }
+
+        #[doc = "No available pixel format matched the criteria"]
+        NoAvailablePixelFormat {
+            description("No available pixel format matched the criteria.")
+        }
+
+        #[doc = "Surface type does not match the context type"]
+        NonMatchingSurfaceType(context: NativeType, surface: NativeType) {
+            description("Surface type does not match the context type."),
+            display("Surface type '{:?}' does not match the context type '{:?}'.", surface, context),
+        }
+
+        #[doc = "Context creation is not supported on the current window system"]
+        NotSupported {
+            description("Context creation is not supported on the current window system.")
+        }
+
+        #[doc = "Loading libEGL failed"]
+        LoadingEGLFailed {
+            description("Loading libEGL failed"),
+        }
+
+        #[doc = "EGL was unable to optain a valid EGL Display"]
+        DisplayNotSupported {
+            description("EGL was unable to optain a valid EGL Display")
+        }
+
+        #[doc = "eglInitialize returned an error"]
+        InitFailed {
+            description("Failed to initialize EGL")
+        }
+
+        #[doc = "Failed to configure the EGL context"]
+        ConfigFailed {
+            description("Failed to configure the EGL context")
+        }
+
+        #[doc = "Context creation failed as one or more requirements could not be met. Try removing some gl attributes or pixel format requirements"]
+        CreationFailed {
+            description("Context creation failed as one or more requirements could not be met. Try removing some gl attributes or pixel format requirements")
+        }
+
+        #[doc = "eglCreateWindowSurface failed"]
+        SurfaceCreationFailed {
+            description("Failed to create a new EGLSurface")
+        }
+
+        #[doc = "The reason of failure could not be determined"]
+        Unknown(err_no: u32)
     }
 }
 
-impl fmt::Display for CreationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        formatter.write_str(self.description())?;
-        if let Some(err) = error::Error::cause(self) {
-            write!(formatter, ": {}", err)?;
-        }
-        Ok(())
-    }
-}
-
-impl error::Error for CreationError {
-    fn description(&self) -> &str {
-        match *self {
-            CreationError::IoError(ref err) => err.description(),
-            CreationError::OsError(ref text) => text,
-            CreationError::OpenGlVersionNotSupported => {
-                "The requested OpenGL version is not \
-                 supported."
-            }
-            CreationError::NoAvailablePixelFormat => {
-                "Couldn't find any pixel format that matches \
-                 the criterias."
-            }
-            CreationError::NonMatchingSurfaceType => "Surface type does not match the context type.",
-            CreationError::NotSupported => "Context creation is not supported on the current window system",
-        }
-    }
-
-    fn cause(&self) -> Option<&error::Error> {
-        match *self {
-            CreationError::IoError(ref err) => Some(err),
-            _ => None,
-        }
+impl<H> From<TryNewError<Error, H>> for Error {
+    fn from(err: TryNewError<Error, H>) -> Error {
+        err.0
     }
 }
 
@@ -155,20 +166,22 @@ pub unsafe trait NativeSurface {
     type Keep: 'static;
 
     /// Return a surface for the given type if possible
-    fn surface(&self, backend: NativeType) -> Result<(NativeSurfacePtr, Self::Keep), CreationError>;
+    fn surface(&self, backend: NativeType) -> Result<(NativeSurfacePtr, Self::Keep)>;
 }
 
 #[cfg(feature = "backend_winit")]
 unsafe impl NativeSurface for WinitWindow {
     type Keep = Option<wegl::WlEglSurface>;
 
-    fn surface(&self, backend_type: NativeType)
-               -> Result<(NativeSurfacePtr, Option<wegl::WlEglSurface>), CreationError> {
+    fn surface(&self, backend_type: NativeType) -> Result<(NativeSurfacePtr, Option<wegl::WlEglSurface>)> {
         match backend_type {
             NativeType::X11 => if let Some(window) = self.get_xlib_window() {
                 Ok((NativeSurfacePtr::X11(window), None))
             } else {
-                return Err(CreationError::NonMatchingSurfaceType);
+                bail!(ErrorKind::NonMatchingSurfaceType(
+                    NativeType::Wayland,
+                    NativeType::X11
+                ));
             },
             NativeType::Wayland => if let Some(surface) = self.get_wayland_surface() {
                 let (w, h) = self.get_inner_size().unwrap();
@@ -179,9 +192,12 @@ unsafe impl NativeSurface for WinitWindow {
                     Some(egl_surface),
                 ))
             } else {
-                return Err(CreationError::NonMatchingSurfaceType);
+                bail!(ErrorKind::NonMatchingSurfaceType(
+                    NativeType::X11,
+                    NativeType::Wayland
+                ));
             },
-            _ => Err(CreationError::NonMatchingSurfaceType),
+            x => bail!(ErrorKind::NonMatchingSurfaceType(NativeType::Unknown, x)),
         }
     }
 }
@@ -190,18 +206,18 @@ unsafe impl NativeSurface for WinitWindow {
 unsafe impl<'a, T: 'static> NativeSurface for GbmSurface<'a, T> {
     type Keep = ();
 
-    fn surface(&self, backend: NativeType) -> Result<(NativeSurfacePtr, Self::Keep), CreationError> {
+    fn surface(&self, backend: NativeType) -> Result<(NativeSurfacePtr, Self::Keep)> {
         match backend {
             NativeType::Gbm => Ok((NativeSurfacePtr::Gbm(self.as_raw() as *const _), ())),
-            _ => Err(CreationError::NonMatchingSurfaceType),
+            x => bail!(ErrorKind::NonMatchingSurfaceType(NativeType::Gbm, x)),
         }
     }
 }
 
 unsafe impl NativeSurface for () {
     type Keep = ();
-    fn surface(&self, _backend: NativeType) -> Result<(NativeSurfacePtr, ()), CreationError> {
-        Err(CreationError::NotSupported)
+    fn surface(&self, _backend: NativeType) -> Result<(NativeSurfacePtr, ())> {
+        bail!(ErrorKind::NotSupported)
     }
 }
 
@@ -225,7 +241,7 @@ impl<'a> EGLContext<'a, ()> {
     #[cfg(feature = "backend_winit")]
     pub fn new_from_winit<L>(window: &'a WinitWindow, attributes: GlAttributes,
                              reqs: PixelFormatRequirements, logger: L)
-                             -> Result<EGLContext<'a, WinitWindow>, CreationError>
+                             -> Result<EGLContext<'a, WinitWindow>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -242,7 +258,7 @@ impl<'a> EGLContext<'a, ()> {
                     NativeDisplayPtr::Wayland(display)
                 } else {
                     error!(log, "Window is backed by an unsupported graphics framework");
-                    return Err(CreationError::NotSupported);
+                    bail!(ErrorKind::NotSupported)
                 },
                 attributes,
                 reqs,
@@ -255,7 +271,7 @@ impl<'a> EGLContext<'a, ()> {
     #[cfg(feature = "backend_drm")]
     pub fn new_from_gbm<L, U: 'static>(gbm: &'a GbmDevice<'a>, attributes: GlAttributes,
                                        reqs: PixelFormatRequirements, logger: L)
-                                       -> Result<EGLContext<'a, GbmSurface<'a, U>>, CreationError>
+                                       -> Result<EGLContext<'a, GbmSurface<'a, U>>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -275,7 +291,7 @@ impl<'a> EGLContext<'a, ()> {
 impl<'a, T: NativeSurface> EGLContext<'a, T> {
     unsafe fn new(native: NativeDisplayPtr, mut attributes: GlAttributes, reqs: PixelFormatRequirements,
                   log: ::slog::Logger)
-                  -> Result<EGLContext<'a, T>, CreationError>
+                  -> Result<EGLContext<'a, T>>
     where
         T: NativeSurface,
     {
@@ -297,12 +313,12 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
                     }
                 }
             }
-            Some((1, _)) => {
+            Some((1, x)) => {
                 error!(
                     log,
                     "OpenGLES 1.* is not supported by the EGL renderer backend"
                 );
-                return Err(CreationError::OpenGlVersionNotSupported);
+                bail!(ErrorKind::OpenGlVersionNotSupported((1, x)));
             }
             Some(version) => {
                 error!(
@@ -310,12 +326,12 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
                     "OpenGLES {:?} is unknown and not supported by the EGL renderer backend",
                     version
                 );
-                return Err(CreationError::OpenGlVersionNotSupported);
+                bail!(ErrorKind::OpenGlVersionNotSupported(version));
             }
         };
 
         trace!(log, "Loading libEGL");
-        let lib = Library::new("libEGL.so.1")?;
+        let lib = Library::new("libEGL.so.1").chain_err(|| ErrorKind::LoadingEGLFailed)?;
         let egl = ffi::egl::Egl::load_with(|sym| {
             let name = CString::new(sym).unwrap();
             let symbol = lib.get::<*mut c_void>(name.as_bytes());
@@ -418,6 +434,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
 
         if display == ffi::egl::NO_DISPLAY {
             error!(log, "EGL Display is not valid");
+            bail!(ErrorKind::DisplayNotSupported);
         }
 
         let egl_version = {
@@ -425,7 +442,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
             let mut minor: ffi::egl::types::EGLint = mem::uninitialized();
 
             if egl.Initialize(display, &mut major, &mut minor) == 0 {
-                return Err(CreationError::OsError(String::from("eglInitialize failed")));
+                bail!(ErrorKind::InitFailed);
             }
 
             info!(log, "EGL Initialized");
@@ -451,7 +468,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
                 log,
                 "OpenGLES not supported by the underlying EGL implementation"
             );
-            return Err(CreationError::OpenGlVersionNotSupported);
+            bail!(ErrorKind::OpenGlesNotSupported);
         }
 
         let descriptor = {
@@ -477,7 +494,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
                             log,
                             "OpenglES 3.* is not supported on EGL Versions lower then 1.3"
                         );
-                        return Err(CreationError::NoAvailablePixelFormat);
+                        bail!(ErrorKind::NoAvailablePixelFormat);
                     }
                     trace!(log, "Setting RENDERABLE_TYPE to OPENGL_ES3");
                     out.push(ffi::egl::RENDERABLE_TYPE as c_int);
@@ -492,7 +509,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
                             log,
                             "OpenglES 2.* is not supported on EGL Versions lower then 1.3"
                         );
-                        return Err(CreationError::NoAvailablePixelFormat);
+                        bail!(ErrorKind::NoAvailablePixelFormat);
                     }
                     trace!(log, "Setting RENDERABLE_TYPE to OPENGL_ES2");
                     out.push(ffi::egl::RENDERABLE_TYPE as c_int);
@@ -561,7 +578,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
 
             if reqs.stereoscopy {
                 error!(log, "Stereoscopy is currently unsupported (sorry!)");
-                return Err(CreationError::NoAvailablePixelFormat);
+                bail!(ErrorKind::NoAvailablePixelFormat);
             }
 
             out.push(ffi::egl::NONE as c_int);
@@ -579,13 +596,11 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
             &mut num_configs,
         ) == 0
         {
-            return Err(CreationError::OsError(
-                String::from("eglChooseConfig failed"),
-            ));
+            bail!(ErrorKind::ConfigFailed);
         }
         if num_configs == 0 {
             error!(log, "No matching color format found");
-            return Err(CreationError::NoAvailablePixelFormat);
+            bail!(ErrorKind::NoAvailablePixelFormat);
         }
 
         // analyzing each config
@@ -596,7 +611,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
                     let res = $egl.GetConfigAttrib($display, $config,
                                                    $attr as ffi::egl::types::EGLint, &mut value);
                     if res == 0 {
-                        return Err(CreationError::OsError(String::from("eglGetConfigAttrib failed")));
+                        bail!(ErrorKind::ConfigFailed);
                     }
                     value
                 }
@@ -654,14 +669,8 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
 
         if context.is_null() {
             match egl.GetError() as u32 {
-                ffi::egl::BAD_ATTRIBUTE => {
-                    error!(
-                        log,
-                        "Context creation failed as one or more requirements could not be met. Try removing some gl attributes or pixel format requirements"
-                    );
-                    return Err(CreationError::OpenGlVersionNotSupported);
-                }
-                e => panic!("eglCreateContext failed: 0x{:x}", e),
+                ffi::egl::BAD_ATTRIBUTE => bail!(ErrorKind::CreationFailed),
+                err_no => bail!(ErrorKind::Unknown(err_no)),
             }
         }
         debug!(log, "EGL context successfully created");
@@ -709,7 +718,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
     }
 
     /// Creates a surface bound to the given egl context for rendering
-    pub fn create_surface<'b>(&'a self, native: &'b T) -> Result<EGLSurface<'a, 'b, T>, CreationError> {
+    pub fn create_surface<'b>(&'a self, native: &'b T) -> Result<EGLSurface<'a, 'b, T>> {
         trace!(self.logger, "Creating EGL window surface...");
 
         let (surface, keep) = native.surface(self.backend_type)?;
@@ -728,9 +737,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
         };
 
         if egl_surface.is_null() {
-            return Err(CreationError::OsError(
-                String::from("eglCreateWindowSurface failed"),
-            ));
+            bail!(ErrorKind::SurfaceCreationFailed);
         }
 
         debug!(self.logger, "EGL surface successfully created");
@@ -801,7 +808,7 @@ impl<'a, 'b, T: NativeSurface> DerefMut for EGLSurface<'a, 'b, T> {
 
 impl<'context, 'surface, T: NativeSurface> EGLSurface<'context, 'surface, T> {
     /// Swaps buffers at the end of a frame.
-    pub fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
+    pub fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         let ret = unsafe {
             self.context
                 .egl
@@ -824,7 +831,7 @@ impl<'context, 'surface, T: NativeSurface> EGLSurface<'context, 'surface, T> {
     ///
     /// This function is marked unsafe, because the context cannot be made current
     /// on multiple threads.
-    pub unsafe fn make_current(&self) -> Result<(), SwapBuffersError> {
+    pub unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
         let ret = self.context.egl.MakeCurrent(
             self.context.display as *const _,
             self.surface as *const _,
@@ -879,7 +886,8 @@ pub enum SwapBuffersError {
 }
 
 impl fmt::Display for SwapBuffersError {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
+        use std::error::Error;
         write!(formatter, "{}", self.description())
     }
 }
@@ -983,7 +991,7 @@ pub struct PixelFormat {
 /// and can be used to render upon
 pub trait EGLGraphicsBackend: GraphicsBackend {
     /// Swaps buffers at the end of a frame.
-    fn swap_buffers(&self) -> Result<(), SwapBuffersError>;
+    fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError>;
 
     /// Returns the address of an OpenGL function.
     ///
@@ -1006,7 +1014,7 @@ pub trait EGLGraphicsBackend: GraphicsBackend {
     ///
     /// This function is marked unsafe, because the context cannot be made current
     /// on multiple threads.
-    unsafe fn make_current(&self) -> Result<(), SwapBuffersError>;
+    unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError>;
 
     /// Returns the pixel format of the main framebuffer of the context.
     fn get_pixel_format(&self) -> PixelFormat;

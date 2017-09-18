@@ -2,21 +2,20 @@
 
 use backend::{SeatInternal, TouchSlotInternal};
 use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{CreationError, EGLContext, EGLGraphicsBackend, GlAttributes, PixelFormat,
+use backend::graphics::egl::{self, EGLContext, EGLGraphicsBackend, GlAttributes, PixelFormat,
                              PixelFormatRequirements, SwapBuffersError};
 use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState,
                      KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
                      PointerMotionAbsoluteEvent, Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent,
                      TouchMotionEvent, TouchSlot, TouchUpEvent, UnusedEvent};
 use nix::c_void;
-
+use rental::TryNewError;
 use std::cmp;
-use std::error::Error;
+use std::error;
 use std::fmt;
 use std::rc::Rc;
-use winit::{CreationError as WinitCreationError, ElementState, Event, EventsLoop, KeyboardInput,
-            MouseButton as WinitMouseButton, MouseCursor, MouseScrollDelta, Touch, TouchPhase,
-            WindowBuilder, WindowEvent};
+use winit::{ElementState, Event, EventsLoop, KeyboardInput, MouseButton as WinitMouseButton, MouseCursor,
+            MouseScrollDelta, Touch, TouchPhase, WindowBuilder, WindowEvent};
 
 rental! {
     mod rental {
@@ -40,6 +39,24 @@ rental! {
 
 use self::rental::{Window, EGL};
 
+error_chain! {
+    errors {
+        #[doc = "Failed to initialize a window"]
+        InitFailed {
+            description("Failed to initialize a window")
+        }
+    }
+
+    links {
+        EGL(egl::Error, egl::ErrorKind) #[doc = "EGL error"];
+    }
+}
+
+impl<H> From<TryNewError<Error, H>> for Error {
+    fn from(err: TryNewError<Error, H>) -> Error {
+        err.0
+    }
+}
 /// Window with an active EGL Context created by `winit`. Implements the
 /// `EGLGraphicsBackend` graphics backend trait
 pub struct WinitGraphicsBackend {
@@ -64,7 +81,7 @@ pub struct WinitInputBackend {
 /// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
 /// graphics backend trait and a corresponding `WinitInputBackend`, which implements
 /// the `InputBackend` trait
-pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
+pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitInputBackend)>
 where
     L: Into<Option<::slog::Logger>>,
 {
@@ -81,7 +98,7 @@ where
 /// graphics backend trait, from a given `WindowBuilder` struct and a corresponding
 /// `WinitInputBackend`, which implements the `InputBackend` trait
 pub fn init_from_builder<L>(builder: WindowBuilder, logger: L)
-                            -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
+                            -> Result<(WinitGraphicsBackend, WinitInputBackend)>
 where
     L: Into<Option<::slog::Logger>>,
 {
@@ -101,9 +118,8 @@ where
 /// graphics backend trait, from a given `WindowBuilder` struct, as well as given
 /// `GlAttributes` for further customization of the rendering pipeline and a
 /// corresponding `WinitInputBackend`, which implements the `InputBackend` trait.
-pub fn init_from_builder_with_gl_attr<L>(
-    builder: WindowBuilder, attributes: GlAttributes, logger: L)
-    -> Result<(WinitGraphicsBackend, WinitInputBackend), CreationError>
+pub fn init_from_builder_with_gl_attr<L>(builder: WindowBuilder, attributes: GlAttributes, logger: L)
+                                         -> Result<(WinitGraphicsBackend, WinitInputBackend)>
 where
     L: Into<Option<::slog::Logger>>,
 {
@@ -111,11 +127,13 @@ where
     info!(log, "Initializing a winit backend");
 
     let events_loop = EventsLoop::new();
-    let winit_window = builder.build(&events_loop)?;
+    let winit_window = builder
+        .build(&events_loop)
+        .chain_err(|| ErrorKind::InitFailed)?;
     debug!(log, "Window created");
 
-    let window = match Window::try_new(Box::new(winit_window), |window| {
-        match EGL::try_new(
+    let window = Rc::new(Window::try_new(Box::new(winit_window), |window| {
+        EGL::try_new(
             Box::new(match EGLContext::new_from_winit(
                 &*window,
                 attributes,
@@ -128,20 +146,12 @@ where
                 log.clone(),
             ) {
                 Ok(context) => context,
-                Err(err) => {
-                    error!(log, "EGLContext creation failed:\n {}", err);
-                    return Err(err);
-                }
+                Err(err) => bail!(err),
             }),
             |context| context.create_surface(window),
-        ) {
-            Ok(x) => Ok(x),
-            Err(::rental::TryNewError(err, _)) => return Err(err),
-        }
-    }) {
-        Ok(x) => Rc::new(x),
-        Err(::rental::TryNewError(err, _)) => return Err(err),
-    };
+        ).map_err(egl::Error::from)
+            .map_err(Error::from)
+    })?);
 
     Ok((
         WinitGraphicsBackend {
@@ -172,12 +182,13 @@ impl GraphicsBackend for WinitGraphicsBackend {
     type CursorFormat = MouseCursor;
     type Error = ();
 
-    fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), ()> {
+    fn set_cursor_position(&self, x: u32, y: u32) -> ::std::result::Result<(), ()> {
         debug!(self.logger, "Setting cursor position to {:?}", (x, y));
         self.window.head().set_cursor_position(x as i32, y as i32)
     }
 
-    fn set_cursor_representation(&self, cursor: Self::CursorFormat, _hotspot: (u32, u32)) -> Result<(), ()> {
+    fn set_cursor_representation(&self, cursor: Self::CursorFormat, _hotspot: (u32, u32))
+                                 -> ::std::result::Result<(), ()> {
         // Cannot log this one, as `CursorFormat` is not `Debug` and should not be
         debug!(self.logger, "Changing cursor representation");
         self.window.head().set_cursor(cursor);
@@ -186,7 +197,7 @@ impl GraphicsBackend for WinitGraphicsBackend {
 }
 
 impl EGLGraphicsBackend for WinitGraphicsBackend {
-    fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
+    fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         trace!(self.logger, "Swapping buffers");
         self.window
             .rent(|egl| egl.rent(|surface| surface.swap_buffers()))
@@ -208,7 +219,7 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
         self.window.rent(|egl| egl.head().is_current())
     }
 
-    unsafe fn make_current(&self) -> Result<(), SwapBuffersError> {
+    unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
         debug!(self.logger, "Setting EGL context to be the current context");
         self.window
             .rent(|egl| egl.rent(|surface| surface.make_current()))
@@ -228,7 +239,7 @@ pub enum WinitInputError {
     WindowClosed,
 }
 
-impl Error for WinitInputError {
+impl error::Error for WinitInputError {
     fn description(&self) -> &str {
         match *self {
             WinitInputError::WindowClosed => "Glutin Window was closed",
@@ -238,6 +249,7 @@ impl Error for WinitInputError {
 
 impl fmt::Display for WinitInputError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use std::error::Error;
         write!(f, "{}", self.description())
     }
 }
@@ -576,7 +588,7 @@ impl InputBackend for WinitInputBackend {
     ///
     /// The linked `WinitGraphicsBackend` will error with a lost Context and should
     /// not be used anymore as well.
-    fn dispatch_new_events(&mut self) -> Result<(), WinitInputError> {
+    fn dispatch_new_events(&mut self) -> ::std::result::Result<(), WinitInputError> {
         let mut closed = false;
 
         {
@@ -828,15 +840,6 @@ impl From<ElementState> for MouseButtonState {
         match state {
             ElementState::Pressed => MouseButtonState::Pressed,
             ElementState::Released => MouseButtonState::Released,
-        }
-    }
-}
-
-impl From<WinitCreationError> for CreationError {
-    fn from(error: WinitCreationError) -> Self {
-        match error {
-            WinitCreationError::OsError(x) => CreationError::OsError(x),
-            WinitCreationError::NotSupported => CreationError::NotSupported,
         }
     }
 }

@@ -6,6 +6,8 @@
 
 #![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
+// `error_chain!` can recurse deeply
+#![recursion_limit = "1024"]
 
 extern crate image;
 extern crate nix;
@@ -35,6 +37,9 @@ extern crate glium;
 #[macro_use]
 extern crate slog;
 extern crate slog_stdlog;
+
+#[macro_use]
+extern crate error_chain;
 
 pub mod backend;
 pub mod compositor;

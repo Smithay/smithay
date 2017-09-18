@@ -1,5 +1,5 @@
-use super::{CrtcError, DrmError, ModeError};
 use super::devices;
+use super::error::*;
 use backend::graphics::GraphicsBackend;
 use backend::graphics::egl::{EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError};
 use drm::buffer::Buffer;
@@ -94,7 +94,7 @@ pub(crate) struct DrmBackendInternal {
 impl DrmBackendInternal {
     pub(crate) fn new<I, L>(context: Rc<devices::Context>, crtc: crtc::Handle, mode: Mode, connectors: I,
                             own_id: usize, logger: L)
-                            -> Result<DrmBackendInternal, DrmError>
+                            -> Result<DrmBackendInternal>
     where
         I: Into<Vec<connector::Handle>>,
         L: Into<Option<::slog::Logger>>,
@@ -107,11 +107,12 @@ impl DrmBackendInternal {
 
         // check the connectors, if they suite the mode
         for connector in connectors.iter() {
-            if !connector::Info::load_from_device(context.head().head(), *connector)?
+            if !connector::Info::load_from_device(context.head().head(), *connector)
+                .chain_err(|| ErrorKind::DrmDev(format!("{:?}", context.head().head())))?
                 .modes()
                 .contains(&mode)
             {
-                return Err(DrmError::Mode(ModeError::ModeNotSuitable));
+                bail!(ErrorKind::ModeNotSuitable(mode))
             }
         }
 
@@ -122,23 +123,31 @@ impl DrmBackendInternal {
                 Ok(GbmTypes {
                     cursor: {
                         // Create an unused cursor buffer (we don't want an Option here)
-                        context.devices.gbm.create_buffer_object(
-                            1,
-                            1,
-                            GbmFormat::ARGB8888,
-                            &[BufferObjectFlags::Cursor, BufferObjectFlags::Write],
-                        )?
+                        context
+                            .devices
+                            .gbm
+                            .create_buffer_object(
+                                1,
+                                1,
+                                GbmFormat::ARGB8888,
+                                &[BufferObjectFlags::Cursor, BufferObjectFlags::Write],
+                            )
+                            .chain_err(|| ErrorKind::GbmInitFailed)?
                     },
                     surface: Surface::try_new(
                         {
                             debug!(log, "Creating GbmSurface");
                             // create a gbm surface
-                            Box::new(context.devices.gbm.create_surface(
-                                w as u32,
-                                h as u32,
-                                GbmFormat::XRGB8888,
-                                &[BufferObjectFlags::Scanout, BufferObjectFlags::Rendering],
-                            )?)
+                            Box::new(context
+                                .devices
+                                .gbm
+                                .create_surface(
+                                    w as u32,
+                                    h as u32,
+                                    GbmFormat::XRGB8888,
+                                    &[BufferObjectFlags::Scanout, BufferObjectFlags::Rendering],
+                                )
+                                .chain_err(|| ErrorKind::GbmInitFailed)?)
                         },
                         |surface| {
                             // create an egl surface from the gbm one
@@ -147,15 +156,24 @@ impl DrmBackendInternal {
 
                             // make it active for the first `crtc::set`
                             // (which is needed before the first page_flip)
-                            unsafe { egl_surface.make_current()? };
-                            egl_surface.swap_buffers()?;
+                            unsafe {
+                                egl_surface
+                                    .make_current()
+                                    .chain_err(|| ErrorKind::FailedToSwap)?
+                            };
+                            egl_surface
+                                .swap_buffers()
+                                .chain_err(|| ErrorKind::FailedToSwap)?;
 
                             // init the first screen
                             // (must be done before calling page_flip for the first time)
-                            let mut front_bo = surface.lock_front_buffer()?;
+                            let mut front_bo = surface
+                                .lock_front_buffer()
+                                .chain_err(|| ErrorKind::FailedToSwap)?;
                             debug!(log, "FrontBuffer color format: {:?}", front_bo.format());
                             // we need a framebuffer per front buffer
-                            let fb = framebuffer::create(context.devices.drm, &*front_bo)?;
+                            let fb = framebuffer::create(context.devices.drm, &*front_bo)
+                                .chain_err(|| ErrorKind::DrmDev(format!("{:?}", context.devices.drm)))?;
 
                             debug!(log, "Initialize screen");
                             crtc::set(
@@ -165,6 +183,8 @@ impl DrmBackendInternal {
                                 &connectors,
                                 (0, 0),
                                 Some(mode),
+                            ).chain_err(
+                                || ErrorKind::DrmDev(format!("{:?}", context.devices.drm)),
                             )?;
                             front_bo.set_userdata(fb);
 
@@ -176,7 +196,7 @@ impl DrmBackendInternal {
                                 },
                             })
                         },
-                    ).map_err(DrmError::from)?,
+                    ).map_err(Error::from)?,
                 })
             })?,
             crtc,
@@ -216,10 +236,15 @@ impl DrmBackend {
     /// # Errors
     ///
     /// Errors if the new connector does not support the currently set `Mode`
-    pub fn add_connector(&mut self, connector: connector::Handle) -> Result<(), DrmError> {
+    pub fn add_connector(&mut self, connector: connector::Handle) -> Result<()> {
         let info =
             connector::Info::load_from_device(self.0.borrow().graphics.head().head().head(), connector)
-                .map_err(|err| ModeError::FailedToLoad(err))?;
+                .chain_err(|| {
+                    ErrorKind::DrmDev(format!(
+                        "{:?}",
+                        self.0.borrow().graphics.head().head().head()
+                    ))
+                })?;
 
         // check if the connector can handle the current mode
         let mut internal = self.0.borrow_mut();
@@ -229,16 +254,21 @@ impl DrmBackend {
                 .iter()
                 .map(|encoder| {
                     encoder::Info::load_from_device(self.0.borrow().graphics.head().head().head(), *encoder)
-                        .map_err(DrmError::from)
+                        .chain_err(|| {
+                            ErrorKind::DrmDev(format!(
+                                "{:?}",
+                                self.0.borrow().graphics.head().head().head()
+                            ))
+                        })
                 })
-                .collect::<Result<Vec<encoder::Info>, DrmError>>()?;
+                .collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
             if !encoders
                 .iter()
                 .any(|encoder| encoder.supports_crtc(self.0.borrow().crtc))
             {
-                return Err(DrmError::Crtc(CrtcError::NoSuitableEncoder));
+                bail!(ErrorKind::NoSuitableEncoder(info, self.0.borrow().crtc));
             }
 
             info!(
@@ -249,7 +279,7 @@ impl DrmBackend {
             internal.connectors.push(connector);
             Ok(())
         } else {
-            Err(DrmError::Mode(ModeError::ModeNotSuitable))
+            bail!(ErrorKind::ModeNotSuitable(self.0.borrow().mode))
         }
     }
 
@@ -270,7 +300,7 @@ impl DrmBackend {
                 info.connector_type()
             );
         } else {
-            info!(self.0.borrow().logger, "Removeing unknown connector");
+            info!(self.0.borrow().logger, "Removing unknown connector");
         }
 
         self.0.borrow_mut().connectors.retain(|x| *x != connector);
@@ -283,14 +313,20 @@ impl DrmBackend {
     /// This will fail if not all set connectors support the new `Mode`.
     /// Several internal resources will need to be recreated to fit the new `Mode`.
     /// Other errors might occur.
-    pub fn use_mode(&mut self, mode: Mode) -> Result<(), DrmError> {
+    pub fn use_mode(&mut self, mode: Mode) -> Result<()> {
         // check the connectors
         for connector in self.0.borrow().connectors.iter() {
-            if !connector::Info::load_from_device(self.0.borrow().graphics.head().head().head(), *connector)?
+            if !connector::Info::load_from_device(self.0.borrow().graphics.head().head().head(), *connector)
+                .chain_err(|| {
+                    ErrorKind::DrmDev(format!(
+                        "{:?}",
+                        self.0.borrow().graphics.head().head().head()
+                    ))
+                })?
                 .modes()
                 .contains(&mode)
             {
-                return Err(DrmError::Mode(ModeError::ModeNotSuitable));
+                bail!(ErrorKind::ModeNotSuitable(mode));
             }
         }
 
@@ -303,61 +339,76 @@ impl DrmBackend {
 
         let (w, h) = mode.size();
 
-        internal
-            .graphics
-            .rent_all_mut(|graphics| -> Result<(), DrmError> {
-                // Recreate the surface and the related resources to match the new
-                // resolution.
-                debug!(logger, "Reinitializing surface for new mode: {}:{}", w, h);
-                graphics.gbm.surface = Surface::try_new(
-                    {
-                        // create a new gbm surface
-                        debug!(logger, "Creating GbmSurface");
-                        Box::new(graphics.context.devices.gbm.create_surface(
+        internal.graphics.rent_all_mut(|graphics| -> Result<()> {
+            // Recreate the surface and the related resources to match the new
+            // resolution.
+            debug!(logger, "Reinitializing surface for new mode: {}:{}", w, h);
+            graphics.gbm.surface = Surface::try_new(
+                {
+                    // create a new gbm surface
+                    debug!(logger, "Creating GbmSurface");
+                    Box::new(graphics
+                        .context
+                        .devices
+                        .gbm
+                        .create_surface(
                             w as u32,
                             h as u32,
                             GbmFormat::XRGB8888,
                             &[BufferObjectFlags::Scanout, BufferObjectFlags::Rendering],
-                        )?)
-                    },
-                    |surface| {
-                        // create an egl surface from the gbm one
-                        debug!(logger, "Creating EGLSurface");
-                        let egl_surface = graphics.context.egl.create_surface(&surface)?;
+                        )
+                        .chain_err(|| ErrorKind::GbmInitFailed)?)
+                },
+                |surface| {
+                    // create an egl surface from the gbm one
+                    debug!(logger, "Creating EGLSurface");
+                    let egl_surface = graphics.context.egl.create_surface(&surface)?;
 
-                        // make it active for the first `crtc::set`
-                        // (which is needed before the first page_flip)
-                        unsafe { egl_surface.make_current()? };
-                        egl_surface.swap_buffers()?;
+                    // make it active for the first `crtc::set`
+                    // (which is needed before the first page_flip)
+                    unsafe {
+                        egl_surface
+                            .make_current()
+                            .chain_err(|| ErrorKind::FailedToSwap)?
+                    };
+                    egl_surface
+                        .swap_buffers()
+                        .chain_err(|| ErrorKind::FailedToSwap)?;
 
-                        let mut front_bo = surface.lock_front_buffer()?;
-                        debug!(logger, "FrontBuffer color format: {:?}", front_bo.format());
-                        // we need a framebuffer per front_buffer
-                        let fb = framebuffer::create(graphics.context.devices.drm, &*front_bo)?;
+                    let mut front_bo = surface
+                        .lock_front_buffer()
+                        .chain_err(|| ErrorKind::FailedToSwap)?;
+                    debug!(logger, "FrontBuffer color format: {:?}", front_bo.format());
+                    // we need a framebuffer per front_buffer
+                    let fb = framebuffer::create(graphics.context.devices.drm, &*front_bo).chain_err(|| {
+                        ErrorKind::DrmDev(format!("{:?}", graphics.context.devices.drm))
+                    })?;
 
-                        debug!(logger, "Initialize screen");
-                        crtc::set(
-                            graphics.context.devices.drm,
-                            crtc,
-                            fb.handle(),
-                            &connectors,
-                            (0, 0),
-                            Some(mode),
-                        )?;
-                        front_bo.set_userdata(fb);
+                    debug!(logger, "Initialize screen");
+                    crtc::set(
+                        graphics.context.devices.drm,
+                        crtc,
+                        fb.handle(),
+                        &connectors,
+                        (0, 0),
+                        Some(mode),
+                    ).chain_err(|| {
+                        ErrorKind::DrmDev(format!("{:?}", graphics.context.devices.drm))
+                    })?;
+                    front_bo.set_userdata(fb);
 
-                        Ok(EGL {
-                            surface: egl_surface,
-                            buffers: GbmBuffers {
-                                front_buffer: Cell::new(front_bo),
-                                next_buffer: Cell::new(None),
-                            },
-                        })
-                    },
-                )?;
+                    Ok(EGL {
+                        surface: egl_surface,
+                        buffers: GbmBuffers {
+                            front_buffer: Cell::new(front_bo),
+                            next_buffer: Cell::new(None),
+                        },
+                    })
+                },
+            )?;
 
-                Ok(())
-            })?;
+            Ok(())
+        })?;
 
         info!(logger, "Setting new mode: {:?}", mode.name());
         internal.mode = mode;
@@ -375,34 +426,46 @@ impl DrmBackend {
 
 impl GraphicsBackend for DrmBackend {
     type CursorFormat = ImageBuffer<Rgba<u8>, Vec<u8>>;
-    type Error = DrmError;
+    type Error = Error;
 
-    fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), DrmError> {
+    fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
         trace!(self.0.borrow().logger, "Move the cursor to {},{}", x, y);
         crtc::move_cursor(
             self.0.borrow().graphics.head().head().head(),
             self.0.borrow().crtc,
             (x as i32, y as i32),
-        ).map_err(DrmError::from)
+        ).chain_err(|| {
+            ErrorKind::DrmDev(format!(
+                "{:?}",
+                self.0.borrow().graphics.head().head().head()
+            ))
+        })
     }
 
     fn set_cursor_representation(&self, buffer: ImageBuffer<Rgba<u8>, Vec<u8>>, hotspot: (u32, u32))
-                                 -> Result<(), DrmError> {
+                                 -> Result<()> {
         let (w, h) = buffer.dimensions();
         debug!(self.0.borrow().logger, "Importing cursor");
         /// import the cursor into a buffer we can render
         self.0
             .borrow_mut()
             .graphics
-            .rent_all_mut(|graphics| -> Result<(), DrmError> {
+            .rent_all_mut(|graphics| -> Result<()> {
                 graphics.gbm.cursor = {
-                    let mut cursor = graphics.context.devices.gbm.create_buffer_object(
-                        w,
-                        h,
-                        GbmFormat::ARGB8888,
-                        &[BufferObjectFlags::Cursor, BufferObjectFlags::Write],
-                    )?;
-                    cursor.write(&*buffer.into_raw())?;
+                    let mut cursor = graphics
+                        .context
+                        .devices
+                        .gbm
+                        .create_buffer_object(
+                            w,
+                            h,
+                            GbmFormat::ARGB8888,
+                            &[BufferObjectFlags::Cursor, BufferObjectFlags::Write],
+                        )
+                        .chain_err(|| ErrorKind::GbmInitFailed)?;
+                    cursor
+                        .write(&*buffer.into_raw())
+                        .chain_err(|| ErrorKind::GbmInitFailed)?;
                     cursor
                 };
                 Ok(())
@@ -429,7 +492,12 @@ impl GraphicsBackend for DrmBackend {
                     .graphics
                     .rent(|gbm| Buffer::handle(&gbm.cursor)),
                 (w, h),
-            ).map_err(DrmError::from)
+            ).chain_err(|| {
+                ErrorKind::DrmDev(format!(
+                    "{:?}",
+                    self.0.borrow().graphics.head().head().head()
+                ))
+            })
         } else {
             Ok(())
         }
@@ -437,7 +505,7 @@ impl GraphicsBackend for DrmBackend {
 }
 
 impl EGLGraphicsBackend for DrmBackend {
-    fn swap_buffers(&self) -> Result<(), SwapBuffersError> {
+    fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         self.0.borrow().graphics.rent_all(|graphics| {
             // We cannot call lock_front_buffer anymore without releasing the previous buffer, which will happen when the page flip is done
             if graphics.gbm.surface.rent(|egl| {
@@ -503,7 +571,7 @@ impl EGLGraphicsBackend for DrmBackend {
             .rent(|context| context.is_current())
     }
 
-    unsafe fn make_current(&self) -> Result<(), SwapBuffersError> {
+    unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
         self.0
             .borrow()
             .graphics
