@@ -424,6 +424,36 @@ impl DrmBackend {
     }
 }
 
+impl Drop for DrmBackend {
+    fn drop(&mut self) {
+        // Drop framebuffers attached to the userdata of the gbm surface buffers.
+        // (They don't implement drop, as they need the device)
+        self.0.borrow_mut().graphics.rent_all_mut(|graphics| {
+            if let Some(fb) = graphics.gbm.surface.rent(|egl| {
+                if let Some(mut next) = egl.buffers.next_buffer.take() {
+                    return next.take_userdata();
+                } else {
+                    if let Ok(mut next) = graphics.gbm.surface.head().lock_front_buffer() {
+                        return next.take_userdata();
+                    }
+                }
+                None
+            }) {
+                // ignore failure at this point
+                let _ = framebuffer::destroy(&*graphics.context.devices.drm, fb.handle());
+            }
+
+            if let Some(fb) = graphics.gbm.surface.rent_mut(|egl| {
+                let first = egl.buffers.front_buffer.get_mut();
+                first.take_userdata()
+            }) {
+                // ignore failure at this point
+                let _ = framebuffer::destroy(&*graphics.context.devices.drm, fb.handle());
+            }
+        })
+    }
+}
+
 impl GraphicsBackend for DrmBackend {
     type CursorFormat = ImageBuffer<Rgba<u8>, Vec<u8>>;
     type Error = Error;
