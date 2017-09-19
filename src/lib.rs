@@ -12,7 +12,6 @@ extern crate nix;
 extern crate rental;
 extern crate tempfile;
 extern crate wayland_protocols;
-#[macro_use]
 extern crate wayland_server;
 extern crate xkbcommon;
 
@@ -33,10 +32,10 @@ extern crate slog;
 extern crate slog_stdlog;
 
 pub mod backend;
-pub mod compositor;
+//pub mod compositor;
 pub mod shm;
 pub mod keyboard;
-pub mod shell;
+//pub mod shell;
 
 fn slog_or_stdlog<L>(logger: L) -> ::slog::Logger
 where
