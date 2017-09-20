@@ -1,8 +1,6 @@
 use super::{Rectangle, RectangleKind, RegionAttributes};
-
 use std::sync::Mutex;
 use wayland_server::Resource;
-
 use wayland_server::protocol::wl_region;
 
 #[derive(Default)]
@@ -13,9 +11,8 @@ pub struct RegionData {
 impl RegionData {
     /// Initialize the user_data of a region, must be called right when the surface is created
     pub unsafe fn init(region: &wl_region::WlRegion) {
-        region.set_user_data(
-            Box::into_raw(Box::new(Mutex::new(RegionData::default()))) as *mut _,
-        )
+        region.set_user_data(Box::into_raw(Box::new(Mutex::new(RegionData::default())))
+            as *mut _)
     }
 
     /// Cleans the user_data of that surface, must be called when it is destroyed
