@@ -1,7 +1,6 @@
 //! Common traits for input backends to receive input from.
 
 use backend::{SeatInternal, TouchSlotInternal};
-
 use std::error::Error;
 
 /// A seat describes a group of input devices and at least one

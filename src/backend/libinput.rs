@@ -6,7 +6,6 @@ use input as libinput;
 use input::event;
 use std::collections::hash_map::{DefaultHasher, Entry, HashMap};
 use std::hash::{Hash, Hasher};
-
 use std::io::Error as IoError;
 use std::rc::Rc;
 

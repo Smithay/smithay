@@ -1,7 +1,6 @@
 extern crate gl_generator;
 
 use gl_generator::{Api, Fallbacks, Profile, Registry};
-
 use std::env;
 use std::fs::File;
 use std::path::PathBuf;

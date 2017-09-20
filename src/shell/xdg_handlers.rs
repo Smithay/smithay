@@ -682,8 +682,8 @@ where
         destroy: |evlh, idata, _, popup| {
             let ptr = popup.get_user_data();
             let &(ref surface, _, _) = unsafe {
-                &*(ptr
-                    as *mut (
+                &*(ptr as
+                    *mut (
                         wl_surface::WlSurface,
                         zxdg_shell_v6::ZxdgShellV6,
                         zxdg_surface_v6::ZxdgSurfaceV6,
