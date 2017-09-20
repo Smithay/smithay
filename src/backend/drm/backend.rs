@@ -476,7 +476,7 @@ impl GraphicsBackend for DrmBackend {
                                  -> Result<()> {
         let (w, h) = buffer.dimensions();
         debug!(self.0.borrow().logger, "Importing cursor");
-        /// import the cursor into a buffer we can render
+        // import the cursor into a buffer we can render
         self.0
             .borrow_mut()
             .graphics
@@ -548,7 +548,7 @@ impl EGLGraphicsBackend for DrmBackend {
                 return Err(SwapBuffersError::AlreadySwapped);
             }
 
-            /// flip normally
+            // flip normally
             graphics.gbm.surface.rent(|egl| egl.surface.swap_buffers())?;
 
             graphics.gbm.surface.rent_all(|surface| {
