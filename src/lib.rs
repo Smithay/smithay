@@ -6,7 +6,10 @@
 
 #![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
+// `error_chain!` can recurse deeply
+#![recursion_limit = "1024"]
 
+extern crate image;
 extern crate nix;
 #[macro_use]
 extern crate rental;
@@ -15,6 +18,10 @@ extern crate wayland_protocols;
 extern crate wayland_server;
 extern crate xkbcommon;
 
+#[cfg(feature = "backend_drm")]
+extern crate drm;
+#[cfg(feature = "backend_drm")]
+extern crate gbm;
 #[cfg(feature = "backend_libinput")]
 extern crate input;
 #[cfg(feature = "backend_winit")]
@@ -30,6 +37,9 @@ extern crate glium;
 #[macro_use]
 extern crate slog;
 extern crate slog_stdlog;
+
+#[macro_use]
+extern crate error_chain;
 
 pub mod backend;
 pub mod compositor;

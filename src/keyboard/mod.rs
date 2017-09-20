@@ -21,14 +21,10 @@ use backend::input::KeyState;
 use std::io::{Error as IoError, Write};
 use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
-
 use tempfile::tempfile;
-
 use wayland_server::{Liveness, Resource};
 use wayland_server::protocol::{wl_keyboard, wl_surface};
-
 use xkbcommon::xkb;
-
 pub use xkbcommon::xkb::{keysyms, Keysym};
 
 /// Represents the current state of the keyboard modifiers

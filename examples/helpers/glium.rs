@@ -1,6 +1,9 @@
 use glium;
-use glium::Surface;
+use glium::{Frame, Surface};
 use glium::index::PrimitiveType;
+use smithay::backend::graphics::egl::EGLGraphicsBackend;
+use smithay::backend::graphics::glium::GliumGraphicsBackend;
+use std::ops::Deref;
 
 #[derive(Copy, Clone)]
 struct Vertex {
@@ -10,18 +13,28 @@ struct Vertex {
 
 implement_vertex!(Vertex, position, tex_coords);
 
-pub struct GliumDrawer<'a, F: 'a> {
-    display: &'a F,
+pub struct GliumDrawer<F: EGLGraphicsBackend + 'static> {
+    display: GliumGraphicsBackend<F>,
     vertex_buffer: glium::VertexBuffer<Vertex>,
     index_buffer: glium::IndexBuffer<u16>,
     program: glium::Program,
 }
 
-impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
-    pub fn new(display: &'a F) -> GliumDrawer<'a, F> {
+impl<F: EGLGraphicsBackend + 'static> Deref for GliumDrawer<F> {
+    type Target = F;
+
+    fn deref(&self) -> &F {
+        &*self.display
+    }
+}
+
+impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> From<T> for GliumDrawer<T> {
+    fn from(backend: T) -> GliumDrawer<T> {
+        let display = backend.into();
+
         // building the vertex buffer, which contains all the vertices that we will draw
         let vertex_buffer = glium::VertexBuffer::new(
-            display,
+            &display,
             &[
                 Vertex {
                     position: [0.0, 0.0],
@@ -44,10 +57,10 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
 
         // building the index buffer
         let index_buffer =
-            glium::IndexBuffer::new(display, PrimitiveType::TriangleStrip, &[1 as u16, 2, 0, 3]).unwrap();
+            glium::IndexBuffer::new(&display, PrimitiveType::TriangleStrip, &[1 as u16, 2, 0, 3]).unwrap();
 
         // compiling shaders and linking them together
-        let program = program!(display,
+        let program = program!(&display,
 			100 => {
 				vertex: "
 					#version 100
@@ -83,16 +96,18 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
             program,
         }
     }
+}
 
-    pub fn draw(&self, target: &mut glium::Frame, contents: &[u8], surface_dimensions: (u32, u32),
-                surface_location: (i32, i32), screen_size: (u32, u32)) {
+impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
+    pub fn render(&self, target: &mut glium::Frame, contents: &[u8], surface_dimensions: (u32, u32),
+                  surface_location: (i32, i32), screen_size: (u32, u32)) {
         let image = glium::texture::RawImage2d {
             data: contents.into(),
             width: surface_dimensions.0,
             height: surface_dimensions.1,
             format: glium::texture::ClientFormat::U8U8U8U8,
         };
-        let opengl_texture = glium::texture::Texture2d::new(self.display, image).unwrap();
+        let opengl_texture = glium::texture::Texture2d::new(&self.display, image).unwrap();
 
         let xscale = 2.0 * (surface_dimensions.0 as f32) / (screen_size.0 as f32);
         let yscale = -2.0 * (surface_dimensions.1 as f32) / (screen_size.1 as f32);
@@ -119,5 +134,10 @@ impl<'a, F: glium::backend::Facade + 'a> GliumDrawer<'a, F> {
                 &Default::default(),
             )
             .unwrap();
+    }
+
+    #[inline]
+    pub fn draw(&self) -> Frame {
+        self.display.draw()
     }
 }

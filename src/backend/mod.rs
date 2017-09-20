@@ -7,6 +7,7 @@
 //! Supported graphics backends:
 //!
 //! - winit
+//! - drm
 //!
 //! Supported input backends:
 //!
@@ -18,6 +19,8 @@ pub mod graphics;
 
 #[cfg(feature = "backend_winit")]
 pub mod winit;
+#[cfg(feature = "backend_drm")]
+pub mod drm;
 #[cfg(feature = "backend_libinput")]
 pub mod libinput;
 
