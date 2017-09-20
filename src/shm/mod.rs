@@ -19,39 +19,39 @@
 //! extern crate wayland_server;
 //! extern crate smithay;
 //!
-//! use smithay::shm::ShmGlobal;
-//! use wayland_server::protocol::wl_shm;
+//! use smithay::shm::init_shm_global;
+//! use wayland_server::protocol::wl_shm::Format;
 //!
 //! # fn main() {
 //! # let (_, mut event_loop) = wayland_server::create_display();
-//!
-//! // Insert the ShmGlobal as a handler to your event loop
+//! // Insert the ShmGlobal into your event loop
 //! // Here, we specify that Yuyv and C8 format are supported
 //! // additionnaly to the standart Argb8888 and Xrgb8888.
-//! let handler_id = event_loop.add_handler_with_init(ShmGlobal::new(
-//!     vec![wl_shm::Format::Yuyv, wl_shm::Format::C8],
+//! let shm_global = init_shm_global(
+//!     &mut event_loop,
+//!     vec![Format::Yuyv, Format::C8],
 //!     None // we don't provide a logger here
-//! ));
-//! // Register this handler to advertise a wl_shm global of version 1
-//! let shm_global = event_loop.register_global::<wl_shm::WlShm,ShmGlobal>(handler_id, 1);
-//! // Retrieve the shm token for later use to access the buffers
-//! let shm_token = {
-//!     let state = event_loop.state();
-//!     state.get_handler::<ShmGlobal>(handler_id).get_token()
-//! };
-//!
+//! );
 //! # }
 //! ```
 //!
 //! Then, when you have a `WlBuffer` and need to retrieve its contents, use the token method to
 //! do it:
 //!
-//! ```ignore
-//! shm_token.with_buffer_contents(&buffer,
-//!     |slice: &[u8], buffer_metadata: &BufferData| {
+//! ```
+//! # extern crate wayland_server;
+//! # extern crate smithay;
+//! # use wayland_server::protocol::wl_buffer::WlBuffer;
+//! # fn wrap(buffer: &WlBuffer) {
+//! use smithay::shm::{with_buffer_contents, BufferData};
+//!
+//! with_buffer_contents(&buffer,
+//!     |slice: &[u8], buffer_metadata: BufferData| {
 //!         // do something to draw it on the screen
 //!     }
 //! );
+//! # }
+//! # fn main() {}
 //! ```
 //!
 //! **Note**
@@ -63,67 +63,50 @@
 
 
 use self::pool::{Pool, ResizeError};
-
-use std::os::unix::io::RawFd;
+use std::rc::Rc;
 use std::sync::Arc;
-
-use wayland_server::{resource_is_registered, Client, Destroy, EventLoopHandle, GlobalHandler, Init, Resource};
+use wayland_server::{resource_is_registered, Client, EventLoop, EventLoopHandle, Global, Resource};
 use wayland_server::protocol::{wl_buffer, wl_shm, wl_shm_pool};
 
 mod pool;
 
-/// A global for handling SHM pool and buffers
+#[derive(Clone)]
+/// Internal data storage of ShmGlobal
 ///
-/// You must register it to an event loop using `register_with_init`, or it will
-/// quickly panic.
-pub struct ShmGlobal {
-    formats: Vec<wl_shm::Format>,
-    handler_id: Option<usize>,
+/// This type is only visible as type parameter of
+/// the `Global` handle you are provided.
+pub struct ShmGlobalData {
+    formats: Rc<Vec<wl_shm::Format>>,
     log: ::slog::Logger,
 }
 
-impl ShmGlobal {
-    /// Create a new SHM global advertizing given supported formats.
-    ///
-    /// This global will always advertize `ARGB8888` and `XRGB8888` format
-    /// as they are required by the protocol. Formats given as argument
-    /// as additionnaly advertized.
-    pub fn new<L>(mut formats: Vec<wl_shm::Format>, logger: L) -> ShmGlobal
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = ::slog_or_stdlog(logger);
-
-        // always add the mandatory formats
-        formats.push(wl_shm::Format::Argb8888);
-        formats.push(wl_shm::Format::Xrgb8888);
-        ShmGlobal {
-            formats: formats,
-            handler_id: None,
-            log: log.new(o!("smithay_module" => "shm_handler")),
-        }
-    }
-
-    /// Retreive a token from the SHM global.
-    ///
-    /// This can only be called once the `ShmGlobal` has been added to and event loop
-    /// and has been initialized. If it is not the case, this method will panic.
-    ///
-    /// This is needed to retrieve the contents of the shm pools and buffers.
-    pub fn get_token(&self) -> ShmToken {
-        ShmToken {
-            hid: self.handler_id.expect("ShmGlobal was not initialized."),
-        }
-    }
-}
-
-/// An SHM global token
+/// Create a new SHM global advertizing given supported formats.
 ///
-/// It is needed to access the contents of the buffers & pools managed by the
-/// associated `ShmGlobal`.
-#[derive(Clone)]
-pub struct ShmToken {
-    hid: usize,
+/// This global will always advertize `ARGB8888` and `XRGB8888` format
+/// as they are required by the protocol. Formats given as argument
+/// as additionnaly advertized.
+///
+/// The global is directly registered into the eventloop, and this function
+/// returns the global handle, in case you whish to remove this global in
+/// the future.
+pub fn init_shm_global<L>(evl: &mut EventLoop, mut formats: Vec<wl_shm::Format>, logger: L)
+                          -> Global<wl_shm::WlShm, ShmGlobalData>
+where
+    L: Into<Option<::slog::Logger>>,
+{
+    let log = ::slog_or_stdlog(logger);
+
+    // always add the mandatory formats
+    formats.push(wl_shm::Format::Argb8888);
+    formats.push(wl_shm::Format::Xrgb8888);
+    let data = ShmGlobalData {
+        formats: Rc::new(formats),
+        log: log.new(o!("smithay_module" => "shm_handler")),
+    };
+
+    let global = evl.register_global::<wl_shm::WlShm, _>(1, shm_global_bind, data);
+
+    global
 }
 
 /// Error that can occur when accessing an SHM buffer
@@ -140,108 +123,81 @@ pub enum BufferAccessError {
     BadMap,
 }
 
-impl ShmToken {
-    /// Call given closure with the contents of the given buffer
-    ///
-    /// If the buffer is managed by the associated ShmGlobal, its contents are
-    /// extracted and the closure is extracted with them:
-    ///
-    /// - The first argument is a data slice of the contents of the pool
-    /// - The second argument is the specification of this buffer is this pool
-    ///
-    /// If the buffer is not managed by the associated ShmGlobal, the closure is not called
-    /// and this method will return `Err(())` (this will be the case for an EGL buffer for example).
-    pub fn with_buffer_contents<F>(&self, buffer: &wl_buffer::WlBuffer, f: F) -> Result<(), BufferAccessError>
-    where
-        F: FnOnce(&[u8], BufferData),
+/// Call given closure with the contents of the given buffer
+///
+/// If the buffer is managed by the provided ShmGlobal, its contents are
+/// extracted and the closure is extracted with them:
+///
+/// - The first argument is a data slice of the contents of the pool
+/// - The second argument is the specification of this buffer is this pool
+///
+/// If the buffer is not managed by the provided ShmGlobal, the closure is not called
+/// and this method will return `Err(())` (this will be the case for an EGL buffer for example).
+pub fn with_buffer_contents<F>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<(), BufferAccessError>
+where
+    F: FnOnce(&[u8], BufferData),
+{
+    if !resource_is_registered(buffer, &buffer_implementation()) {
+        return Err(BufferAccessError::NotManaged);
+    }
+    let data = unsafe { &*(buffer.get_user_data() as *mut InternalBufferData) };
+
+    if data.pool
+        .with_data_slice(|slice| f(slice, data.data))
+        .is_err()
     {
-        if !resource_is_registered::<_, ShmHandler>(buffer, self.hid) {
-            return Err(BufferAccessError::NotManaged);
-        }
-        let data = unsafe { &*(buffer.get_user_data() as *mut InternalBufferData) };
+        // SIGBUS error occured
+        buffer.post_error(wl_shm::Error::InvalidFd as u32, "Bad pool size.".into());
+        return Err(BufferAccessError::BadMap);
+    }
+    Ok(())
+}
 
-        if data.pool
-            .with_data_slice(|slice| f(slice, data.data))
-            .is_err()
-        {
-            // SIGBUS error occured
-            buffer.post_error(wl_shm::Error::InvalidFd as u32, "Bad pool size.".into());
-            return Err(BufferAccessError::BadMap);
-        }
-        Ok(())
+fn shm_global_bind(evlh: &mut EventLoopHandle, data: &mut ShmGlobalData, _: &Client, global: wl_shm::WlShm) {
+    // register an handler for this shm
+    evlh.register(&global, shm_implementation(), data.clone(), None);
+    // and then the custom formats
+    for f in &data.formats[..] {
+        global.format(*f);
     }
 }
 
-impl Init for ShmGlobal {
-    fn init(&mut self, evqh: &mut EventLoopHandle, _index: usize) {
-        let id = evqh.add_handler_with_init(ShmHandler {
-            my_id: ::std::usize::MAX,
-            valid_formats: self.formats.clone(),
-            log: self.log.clone(),
-        });
-        self.handler_id = Some(id);
-    }
-}
-
-impl GlobalHandler<wl_shm::WlShm> for ShmGlobal {
-    fn bind(&mut self, evqh: &mut EventLoopHandle, _: &Client, global: wl_shm::WlShm) {
-        let hid = self.handler_id.expect("ShmGlobal was not initialized.");
-        // register an handler for this shm
-        evqh.register::<_, ShmHandler>(&global, hid);
-        // and then the custom formats
-        for f in &self.formats {
-            global.format(*f);
-        }
-    }
-}
-
-struct ShmHandler {
-    my_id: usize,
-    valid_formats: Vec<wl_shm::Format>,
-    log: ::slog::Logger,
-}
-
-impl Init for ShmHandler {
-    fn init(&mut self, _evqh: &mut EventLoopHandle, index: usize) {
-        self.my_id = index;
-        debug!(self.log, "Init finished")
-    }
-}
-
-impl wl_shm::Handler for ShmHandler {
-    fn create_pool(&mut self, evqh: &mut EventLoopHandle, _client: &Client, shm: &wl_shm::WlShm,
-                   pool: wl_shm_pool::WlShmPool, fd: RawFd, size: i32) {
-        if size <= 0 {
-            shm.post_error(
-                wl_shm::Error::InvalidFd as u32,
-                "Invalid size for a new wl_shm_pool.".into(),
-            );
-            return;
-        }
-        let mmap_pool = match Pool::new(fd, size as usize, self.log.clone()) {
-            Ok(p) => p,
-            Err(()) => {
+fn shm_implementation() -> wl_shm::Implementation<ShmGlobalData> {
+    wl_shm::Implementation {
+        create_pool: |evlh, data, _, shm, pool, fd, size| {
+            if size <= 0 {
                 shm.post_error(
                     wl_shm::Error::InvalidFd as u32,
-                    format!("Failed mmap of fd {}.", fd),
+                    "Invalid size for a new wl_shm_pool.".into(),
                 );
                 return;
             }
-        };
-        let arc_pool = Box::new(Arc::new(mmap_pool));
-        evqh.register_with_destructor::<_, ShmHandler, ShmHandler>(&pool, self.my_id);
-        pool.set_user_data(Box::into_raw(arc_pool) as *mut ());
+            let mmap_pool = match Pool::new(fd, size as usize, data.log.clone()) {
+                Ok(p) => p,
+                Err(()) => {
+                    shm.post_error(
+                        wl_shm::Error::InvalidFd as u32,
+                        format!("Failed mmap of fd {}.", fd),
+                    );
+                    return;
+                }
+            };
+            let arc_pool = Box::new(Arc::new(mmap_pool));
+            evlh.register(
+                &pool,
+                shm_pool_implementation(),
+                data.clone(),
+                Some(destroy_shm_pool),
+            );
+            pool.set_user_data(Box::into_raw(arc_pool) as *mut ());
+        },
     }
 }
 
-impl Destroy<wl_shm_pool::WlShmPool> for ShmHandler {
-    fn destroy(pool: &wl_shm_pool::WlShmPool) {
-        let arc_pool = unsafe { Box::from_raw(pool.get_user_data() as *mut Arc<Pool>) };
-        drop(arc_pool)
-    }
+fn destroy_shm_pool(pool: &wl_shm_pool::WlShmPool) {
+    let arc_pool = unsafe { Box::from_raw(pool.get_user_data() as *mut Arc<Pool>) };
+    drop(arc_pool)
 }
-
-declare_handler!(ShmHandler, wl_shm::Handler, wl_shm::WlShm);
 
 /// Details of the contents of a buffer relative to its pool
 #[derive(Copy, Clone, Debug)]
@@ -263,56 +219,53 @@ struct InternalBufferData {
     data: BufferData,
 }
 
-impl wl_shm_pool::Handler for ShmHandler {
-    fn create_buffer(&mut self, evqh: &mut EventLoopHandle, _client: &Client,
-                     pool: &wl_shm_pool::WlShmPool, buffer: wl_buffer::WlBuffer, offset: i32, width: i32,
-                     height: i32, stride: i32, format: wl_shm::Format) {
-        if !self.valid_formats.contains(&format) {
-            buffer.post_error(wl_shm::Error::InvalidFormat as u32, String::new());
-            return;
-        }
-        let arc_pool = unsafe { &*(pool.get_user_data() as *mut Arc<Pool>) };
-        let data = Box::into_raw(Box::new(InternalBufferData {
-            pool: arc_pool.clone(),
-            data: BufferData {
-                offset: offset,
-                width: width,
-                height: height,
-                stride: stride,
-                format: format,
-            },
-        }));
-        evqh.register_with_destructor::<_, ShmHandler, ShmHandler>(&buffer, self.my_id);
-        buffer.set_user_data(data as *mut ());
-    }
-
-    fn resize(&mut self, _evqh: &mut EventLoopHandle, _client: &Client, pool: &wl_shm_pool::WlShmPool,
-              size: i32) {
-        let arc_pool = unsafe { &*(pool.get_user_data() as *mut Arc<Pool>) };
-        match arc_pool.resize(size) {
-            Ok(()) => {}
-            Err(ResizeError::InvalidSize) => {
-                pool.post_error(
-                    wl_shm::Error::InvalidFd as u32,
-                    "Invalid new size for a wl_shm_pool.".into(),
-                );
+fn shm_pool_implementation() -> wl_shm_pool::Implementation<ShmGlobalData> {
+    wl_shm_pool::Implementation {
+        create_buffer: |evlh, data, _, pool, buffer, offset, width, height, stride, format| {
+            if !data.formats.contains(&format) {
+                buffer.post_error(wl_shm::Error::InvalidFormat as u32, String::new());
+                return;
             }
-            Err(ResizeError::MremapFailed) => {
-                pool.post_error(wl_shm::Error::InvalidFd as u32, "mremap failed.".into());
+            let arc_pool = unsafe { &*(pool.get_user_data() as *mut Arc<Pool>) };
+            let data = Box::into_raw(Box::new(InternalBufferData {
+                pool: arc_pool.clone(),
+                data: BufferData {
+                    offset: offset,
+                    width: width,
+                    height: height,
+                    stride: stride,
+                    format: format,
+                },
+            }));
+            evlh.register(&buffer, buffer_implementation(), (), Some(destroy_buffer));
+            buffer.set_user_data(data as *mut ());
+        },
+        resize: |_, _, _, pool, size| {
+            let arc_pool = unsafe { &*(pool.get_user_data() as *mut Arc<Pool>) };
+            match arc_pool.resize(size) {
+                Ok(()) => {}
+                Err(ResizeError::InvalidSize) => {
+                    pool.post_error(
+                        wl_shm::Error::InvalidFd as u32,
+                        "Invalid new size for a wl_shm_pool.".into(),
+                    );
+                }
+                Err(ResizeError::MremapFailed) => {
+                    pool.post_error(wl_shm::Error::InvalidFd as u32, "mremap failed.".into());
+                }
             }
-        }
+        },
+        destroy: |_, _, _, _| {},
     }
 }
 
-impl Destroy<wl_buffer::WlBuffer> for ShmHandler {
-    fn destroy(buffer: &wl_buffer::WlBuffer) {
-        let buffer_data = unsafe { Box::from_raw(buffer.get_user_data() as *mut InternalBufferData) };
-        drop(buffer_data)
-    }
+fn destroy_buffer(buffer: &wl_buffer::WlBuffer) {
+    let buffer_data = unsafe { Box::from_raw(buffer.get_user_data() as *mut InternalBufferData) };
+    drop(buffer_data)
 }
 
-declare_handler!(ShmHandler, wl_shm_pool::Handler, wl_shm_pool::WlShmPool);
-
-impl wl_buffer::Handler for ShmHandler {}
-
-declare_handler!(ShmHandler, wl_buffer::Handler, wl_buffer::WlBuffer);
+fn buffer_implementation() -> wl_buffer::Implementation<()> {
+    wl_buffer::Implementation {
+        destroy: |_, _, _, _| {},
+    }
+}

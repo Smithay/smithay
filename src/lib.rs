@@ -12,7 +12,6 @@ extern crate nix;
 extern crate rental;
 extern crate tempfile;
 extern crate wayland_protocols;
-#[macro_use]
 extern crate wayland_server;
 extern crate xkbcommon;
 

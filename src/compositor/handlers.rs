@@ -1,66 +1,101 @@
-use super::{CompositorHandler, Damage, Handler as UserHandler, Rectangle, RectangleKind, Role, RoleType,
-            SubsurfaceRole};
+use super::{CompositorToken, Damage, Rectangle, RectangleKind, Role, RoleType, SubsurfaceRole,
+            SurfaceUserImplementation};
 use super::region::RegionData;
 use super::tree::{Location, SurfaceData};
-use wayland_server::{Client, Destroy, EventLoopHandle, Liveness, Resource};
-use wayland_server::protocol::{wl_buffer, wl_callback, wl_compositor, wl_output, wl_region,
-                               wl_subcompositor, wl_subsurface, wl_surface};
-
-struct CompositorDestructor<U, R> {
-    _t: ::std::marker::PhantomData<U>,
-    _r: ::std::marker::PhantomData<R>,
-}
+use std::cell::RefCell;
+use std::rc::Rc;
+use wayland_server::{Client, EventLoopHandle, Liveness, Resource};
+use wayland_server::protocol::{wl_compositor, wl_region, wl_subcompositor, wl_subsurface, wl_surface};
 
 /*
  * wl_compositor
  */
 
-impl<U, R, H> wl_compositor::Handler for CompositorHandler<U, R, H>
+pub(crate) fn compositor_bind<U, R, ID>(evlh: &mut EventLoopHandle, idata: &mut SurfaceIData<U, R, ID>,
+                                        _: &Client, compositor: wl_compositor::WlCompositor)
 where
-    U: Default + Send + 'static,
-    R: Default + Send + 'static,
-    H: UserHandler<U, R> + Send + 'static,
+    U: Default + 'static,
+    R: Default + 'static,
+    ID: 'static,
 {
-    fn create_surface(&mut self, evqh: &mut EventLoopHandle, _: &Client, _: &wl_compositor::WlCompositor,
-                      id: wl_surface::WlSurface) {
-        trace!(self.log, "New surface created.");
-        unsafe { SurfaceData::<U, R>::init(&id) };
-        evqh.register_with_destructor::<_, CompositorHandler<U, R, H>, CompositorDestructor<U, R>>(
-            &id,
-            self.my_id,
-        );
-    }
-    fn create_region(&mut self, evqh: &mut EventLoopHandle, _: &Client, _: &wl_compositor::WlCompositor,
-                     id: wl_region::WlRegion) {
-        trace!(self.log, "New region created.");
-        unsafe { RegionData::init(&id) };
-        evqh.register_with_destructor::<_, CompositorHandler<U, R, H>, CompositorDestructor<U, R>>(
-            &id,
-            self.my_id,
-        );
-    }
+    trace!(idata.log, "Binding a new wl_compositor.");
+    evlh.register(
+        &compositor,
+        compositor_implementation::<U, R, ID>(),
+        idata.clone(),
+        None,
+    );
 }
 
-server_declare_handler!(CompositorHandler<U: [Default, Send], R: [Default, Send], H: [UserHandler<U, R>, Send]>, wl_compositor::Handler, wl_compositor::WlCompositor);
+fn compositor_implementation<U, R, ID>() -> wl_compositor::Implementation<SurfaceIData<U, R, ID>>
+where
+    U: Default + 'static,
+    R: Default + 'static,
+    ID: 'static,
+{
+    wl_compositor::Implementation {
+        create_surface: |evlh, idata, _, _, surface| {
+            unsafe { SurfaceData::<U, R>::init(&surface) };
+            evlh.register(
+                &surface,
+                surface_implementation::<U, R, ID>(),
+                idata.clone(),
+                Some(destroy_surface::<U, R>),
+            );
+        },
+        create_region: |evlh, _, _, _, region| {
+            unsafe { RegionData::init(&region) };
+            evlh.register(&region, region_implementation(), (), Some(destroy_region));
+        },
+    }
+}
 
 /*
  * wl_surface
  */
 
-impl<U, R, H: UserHandler<U, R>> wl_surface::Handler for CompositorHandler<U, R, H> {
-    fn attach(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
-              buffer: Option<&wl_buffer::WlBuffer>, x: i32, y: i32) {
-        trace!(self.log, "Attaching buffer to surface.");
-        unsafe {
+/// Internal implementation data of surfaces
+///
+/// This type is only visible as type parameter of
+/// the `Global` handle you are provided.
+pub struct SurfaceIData<U, R, ID> {
+    log: ::slog::Logger,
+    implem: SurfaceUserImplementation<U, R, ID>,
+    idata: Rc<RefCell<ID>>,
+}
+
+impl<U, R, ID> SurfaceIData<U, R, ID> {
+    pub(crate) fn make(log: ::slog::Logger, implem: SurfaceUserImplementation<U, R, ID>, idata: ID)
+                       -> SurfaceIData<U, R, ID> {
+        SurfaceIData {
+            log: log,
+            implem: implem,
+            idata: Rc::new(RefCell::new(idata)),
+        }
+    }
+}
+
+impl<U, R, ID> Clone for SurfaceIData<U, R, ID> {
+    fn clone(&self) -> SurfaceIData<U, R, ID> {
+        SurfaceIData {
+            log: self.log.clone(),
+            implem: self.implem.clone(),
+            idata: self.idata.clone(),
+        }
+    }
+}
+
+pub(crate) fn surface_implementation<U: 'static, R: 'static, ID: 'static>(
+    )
+    -> wl_surface::Implementation<SurfaceIData<U, R, ID>>
+{
+    wl_surface::Implementation {
+        attach: |_, _, _, surface, buffer, x, y| unsafe {
             SurfaceData::<U, R>::with_data(surface, |d| {
                 d.buffer = Some(buffer.map(|b| (b.clone_unchecked(), (x, y))))
             });
-        }
-    }
-    fn damage(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface, x: i32,
-              y: i32, width: i32, height: i32) {
-        trace!(self.log, "Registering damage to surface.");
-        unsafe {
+        },
+        damage: |_, _, _, surface, x, y, width, height| unsafe {
             SurfaceData::<U, R>::with_data(surface, |d| {
                 d.damage = Damage::Surface(Rectangle {
                     x,
@@ -69,56 +104,38 @@ impl<U, R, H: UserHandler<U, R>> wl_surface::Handler for CompositorHandler<U, R,
                     height,
                 })
             });
-        }
-    }
-    fn frame(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface,
-             callback: wl_callback::WlCallback) {
-        trace!(self.log, "Frame surface callback.");
-        let token = self.get_token();
-        UserHandler::frame(&mut self.handler, evlh, client, surface, callback, token);
-    }
-    fn set_opaque_region(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
-                         region: Option<&wl_region::WlRegion>) {
-        trace!(self.log, "Setting surface opaque region.");
-        unsafe {
+        },
+        frame: |evlh, idata, _, surface, callback| {
+            let mut user_idata = idata.idata.borrow_mut();
+            trace!(idata.log, "Calling user callback for wl_surface.frame");
+            (idata.implem.frame)(
+                evlh,
+                &mut *user_idata,
+                surface,
+                callback,
+                CompositorToken::make(),
+            )
+        },
+        set_opaque_region: |_, _, _, surface, region| unsafe {
             let attributes = region.map(|r| RegionData::get_attributes(r));
             SurfaceData::<U, R>::with_data(surface, |d| d.opaque_region = attributes);
-        }
-    }
-    fn set_input_region(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
-                        region: Option<&wl_region::WlRegion>) {
-        trace!(self.log, "Setting surface input region.");
-        unsafe {
+        },
+        set_input_region: |_, _, _, surface, region| unsafe {
             let attributes = region.map(|r| RegionData::get_attributes(r));
             SurfaceData::<U, R>::with_data(surface, |d| d.input_region = attributes);
-        }
-    }
-    fn commit(&mut self, evlh: &mut EventLoopHandle, client: &Client, surface: &wl_surface::WlSurface) {
-        trace!(self.log, "Commit surface callback.");
-        let token = self.get_token();
-        UserHandler::commit(&mut self.handler, evlh, client, surface, token);
-    }
-    fn set_buffer_transform(&mut self, _: &mut EventLoopHandle, _: &Client,
-                            surface: &wl_surface::WlSurface, transform: wl_output::Transform) {
-        trace!(self.log, "Setting surface's buffer transform.");
-        unsafe {
+        },
+        commit: |evlh, idata, _, surface| {
+            let mut user_idata = idata.idata.borrow_mut();
+            trace!(idata.log, "Calling user callback for wl_surface.commit");
+            (idata.implem.commit)(evlh, &mut *user_idata, surface, CompositorToken::make())
+        },
+        set_buffer_transform: |_, _, _, surface, transform| unsafe {
             SurfaceData::<U, R>::with_data(surface, |d| d.buffer_transform = transform);
-        }
-    }
-    fn set_buffer_scale(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
-                        scale: i32) {
-        trace!(self.log, "Setting surface's buffer scale.");
-        unsafe {
+        },
+        set_buffer_scale: |_, _, _, surface, scale| unsafe {
             SurfaceData::<U, R>::with_data(surface, |d| d.buffer_scale = scale);
-        }
-    }
-    fn damage_buffer(&mut self, _: &mut EventLoopHandle, _: &Client, surface: &wl_surface::WlSurface,
-                     x: i32, y: i32, width: i32, height: i32) {
-        trace!(
-            self.log,
-            "Registering damage to surface (buffer coordinates)."
-        );
-        unsafe {
+        },
+        damage_buffer: |_, _, _, surface, x, y, width, height| unsafe {
             SurfaceData::<U, R>::with_data(surface, |d| {
                 d.damage = Damage::Buffer(Rectangle {
                     x,
@@ -127,97 +144,102 @@ impl<U, R, H: UserHandler<U, R>> wl_surface::Handler for CompositorHandler<U, R,
                     height,
                 })
             });
-        }
+        },
+        destroy: |_, _, _, _| {},
     }
 }
 
-server_declare_handler!(CompositorHandler<U:[], R: [], H: [UserHandler<U, R>]>, wl_surface::Handler, wl_surface::WlSurface);
-
-impl<U, R> Destroy<wl_surface::WlSurface> for CompositorDestructor<U, R> {
-    fn destroy(surface: &wl_surface::WlSurface) {
-        unsafe { SurfaceData::<U, R>::cleanup(surface) }
-    }
+fn destroy_surface<U: 'static, R: 'static>(surface: &wl_surface::WlSurface) {
+    unsafe { SurfaceData::<U, R>::cleanup(surface) }
 }
 
 /*
  * wl_region
  */
 
-impl<U, R, H> wl_region::Handler for CompositorHandler<U, R, H> {
-    fn add(&mut self, _: &mut EventLoopHandle, _: &Client, region: &wl_region::WlRegion, x: i32, y: i32,
-           width: i32, height: i32) {
-        trace!(self.log, "Adding rectangle to a region.");
-        unsafe {
-            RegionData::add_rectangle(
-                region,
-                RectangleKind::Add,
-                Rectangle {
-                    x,
-                    y,
-                    width,
-                    height,
-                },
-            )
-        };
-    }
-    fn subtract(&mut self, _: &mut EventLoopHandle, _: &Client, region: &wl_region::WlRegion, x: i32,
-                y: i32, width: i32, height: i32) {
-        trace!(self.log, "Subtracting rectangle to a region.");
-        unsafe {
-            RegionData::add_rectangle(
-                region,
-                RectangleKind::Subtract,
-                Rectangle {
-                    x,
-                    y,
-                    width,
-                    height,
-                },
-            )
-        };
+pub(crate) fn region_implementation() -> wl_region::Implementation<()> {
+    wl_region::Implementation {
+        add: |_, _, _, region, x, y, width, height| {
+            unsafe {
+                RegionData::add_rectangle(
+                    region,
+                    RectangleKind::Add,
+                    Rectangle {
+                        x,
+                        y,
+                        width,
+                        height,
+                    },
+                )
+            };
+        },
+        subtract: |_, _, _, region, x, y, width, height| {
+            unsafe {
+                RegionData::add_rectangle(
+                    region,
+                    RectangleKind::Subtract,
+                    Rectangle {
+                        x,
+                        y,
+                        width,
+                        height,
+                    },
+                )
+            };
+        },
+        destroy: |_, _, _, _| {},
     }
 }
 
-server_declare_handler!(CompositorHandler<U: [], R: [], H: []>, wl_region::Handler, wl_region::WlRegion);
-
-impl<U, R> Destroy<wl_region::WlRegion> for CompositorDestructor<U, R> {
-    fn destroy(region: &wl_region::WlRegion) {
-        unsafe { RegionData::cleanup(region) };
-    }
+fn destroy_region(region: &wl_region::WlRegion) {
+    unsafe { RegionData::cleanup(region) };
 }
 
 /*
  * wl_subcompositor
  */
 
-impl<U, R, H> wl_subcompositor::Handler for CompositorHandler<U, R, H>
+pub(crate) fn subcompositor_bind<U, R>(evlh: &mut EventLoopHandle, _: &mut (), _: &Client,
+                                       subcompositor: wl_subcompositor::WlSubcompositor)
 where
-    U: Send + 'static,
-    R: RoleType + Role<SubsurfaceRole> + Send + 'static,
-    H: Send + 'static,
+    R: RoleType + Role<SubsurfaceRole> + 'static,
+    U: 'static,
 {
-    fn get_subsurface(&mut self, evqh: &mut EventLoopHandle, _: &Client,
-                      resource: &wl_subcompositor::WlSubcompositor, id: wl_subsurface::WlSubsurface,
-                      surface: &wl_surface::WlSurface, parent: &wl_surface::WlSurface) {
-        trace!(self.log, "Creating new subsurface.");
-        if let Err(()) = unsafe { SurfaceData::<U, R>::set_parent(surface, parent) } {
-            resource.post_error(
-                wl_subcompositor::Error::BadSurface as u32,
-                "Surface already has a role.".into(),
-            );
-            return;
-        }
-        id.set_user_data(
-            Box::into_raw(Box::new(unsafe { surface.clone_unchecked() })) as *mut _,
-        );
-        evqh.register_with_destructor::<_, CompositorHandler<U, R, H>, CompositorDestructor<U, R>>(
-            &id,
-            self.my_id,
-        );
-    }
+    evlh.register(
+        &subcompositor,
+        subcompositor_implementation::<U, R>(),
+        (),
+        None,
+    );
 }
 
-server_declare_handler!(CompositorHandler<U: [Send], R: [RoleType, Role<SubsurfaceRole>, Send], H: [Send]>, wl_subcompositor::Handler, wl_subcompositor::WlSubcompositor);
+fn subcompositor_implementation<U, R>() -> wl_subcompositor::Implementation<()>
+where
+    R: RoleType + Role<SubsurfaceRole> + 'static,
+    U: 'static,
+{
+    wl_subcompositor::Implementation {
+        get_subsurface: |evlh, _, _, subcompositor, subsurface, surface, parent| {
+            if let Err(()) = unsafe { SurfaceData::<U, R>::set_parent(surface, parent) } {
+                subcompositor.post_error(
+                    wl_subcompositor::Error::BadSurface as u32,
+                    "Surface already has a role.".into(),
+                );
+                return;
+            }
+            subsurface.set_user_data(
+                Box::into_raw(Box::new(unsafe { surface.clone_unchecked() })) as *mut _,
+            );
+            evlh.register(
+                &subsurface,
+                subsurface_implementation::<U, R>(),
+                (),
+                Some(destroy_subsurface::<U, R>),
+            );
+        },
+        destroy: |_, _, _, _| {},
+    }
+}
 
 /*
  * wl_subsurface
@@ -226,7 +248,8 @@ server_declare_handler!(CompositorHandler<U: [Send], R: [RoleType, Role<Subsurfa
 unsafe fn with_subsurface_attributes<U, R, F>(subsurface: &wl_subsurface::WlSubsurface, f: F)
 where
     F: FnOnce(&mut SubsurfaceRole),
-    R: RoleType + Role<SubsurfaceRole>,
+    U: 'static,
+    R: RoleType + Role<SubsurfaceRole> + 'static,
 {
     let ptr = subsurface.get_user_data();
     let surface = &*(ptr as *mut wl_surface::WlSurface);
@@ -235,24 +258,19 @@ where
     );
 }
 
-impl<U, R, H> wl_subsurface::Handler for CompositorHandler<U, R, H>
+fn subsurface_implementation<U, R>() -> wl_subsurface::Implementation<()>
 where
-    R: RoleType + Role<SubsurfaceRole>,
+    R: RoleType + Role<SubsurfaceRole> + 'static,
+    U: 'static,
 {
-    fn set_position(&mut self, _: &mut EventLoopHandle, _: &Client,
-                    subsurface: &wl_subsurface::WlSubsurface, x: i32, y: i32) {
-        trace!(self.log, "Setting subsurface position.");
-        unsafe {
+    wl_subsurface::Implementation {
+        set_position: |_, _, _, subsurface, x, y| unsafe {
             with_subsurface_attributes::<U, R, _>(subsurface, |attrs| {
                 attrs.x = x;
                 attrs.y = y;
             });
-        }
-    }
-    fn place_above(&mut self, _: &mut EventLoopHandle, _: &Client,
-                   subsurface: &wl_subsurface::WlSubsurface, sibling: &wl_surface::WlSurface) {
-        trace!(self.log, "Setting subsurface above an other.");
-        unsafe {
+        },
+        place_above: |_, _, _, subsurface, sibling| unsafe {
             let ptr = subsurface.get_user_data();
             let surface = &*(ptr as *mut wl_surface::WlSurface);
             if let Err(()) = SurfaceData::<U, R>::reorder(surface, Location::After, sibling) {
@@ -261,12 +279,8 @@ where
                     "Provided surface is not a sibling or parent.".into(),
                 );
             }
-        }
-    }
-    fn place_below(&mut self, _: &mut EventLoopHandle, _: &Client,
-                   subsurface: &wl_subsurface::WlSubsurface, sibling: &wl_surface::WlSurface) {
-        trace!(self.log, "Setting subsurface below an other.");
-        unsafe {
+        },
+        place_below: |_, _, _, subsurface, sibling| unsafe {
             let ptr = subsurface.get_user_data();
             let surface = &*(ptr as *mut wl_surface::WlSurface);
             if let Err(()) = SurfaceData::<U, R>::reorder(surface, Location::Before, sibling) {
@@ -275,36 +289,32 @@ where
                     "Provided surface is not a sibling or parent.".into(),
                 );
             }
-        }
-    }
-    fn set_sync(&mut self, _: &mut EventLoopHandle, _: &Client, subsurface: &wl_subsurface::WlSubsurface) {
-        trace!(self.log, "Setting subsurface sync."; "sync_status" => true);
-        unsafe {
-            with_subsurface_attributes::<U, R, _>(subsurface, |attrs| { attrs.sync = true; });
-        }
-    }
-    fn set_desync(&mut self, _: &mut EventLoopHandle, _: &Client, subsurface: &wl_subsurface::WlSubsurface) {
-        trace!(self.log, "Setting subsurface sync."; "sync_status" => false);
-        unsafe {
-            with_subsurface_attributes::<U, R, _>(subsurface, |attrs| { attrs.sync = false; });
-        }
+        },
+        set_sync: |_, _, _, subsurface| unsafe {
+            with_subsurface_attributes::<U, R, _>(subsurface, |attrs| {
+                attrs.sync = true;
+            });
+        },
+        set_desync: |_, _, _, subsurface| unsafe {
+            with_subsurface_attributes::<U, R, _>(subsurface, |attrs| {
+                attrs.sync = false;
+            });
+        },
+        destroy: |_, _, _, _| {},
     }
 }
 
-server_declare_handler!(CompositorHandler<U: [], R: [RoleType, Role<SubsurfaceRole>], H: []>, wl_subsurface::Handler, wl_subsurface::WlSubsurface);
-
-impl<U, R> Destroy<wl_subsurface::WlSubsurface> for CompositorDestructor<U, R>
+fn destroy_subsurface<U, R>(subsurface: &wl_subsurface::WlSubsurface)
 where
-    R: RoleType + Role<SubsurfaceRole>,
+    U: 'static,
+    R: RoleType + Role<SubsurfaceRole> + 'static,
 {
-    fn destroy(subsurface: &wl_subsurface::WlSubsurface) {
-        let ptr = subsurface.get_user_data();
-        subsurface.set_user_data(::std::ptr::null_mut());
-        unsafe {
-            let surface = Box::from_raw(ptr as *mut wl_surface::WlSurface);
-            if surface.status() == Liveness::Alive {
-                SurfaceData::<U, R>::unset_parent(&surface);
-            }
+    let ptr = subsurface.get_user_data();
+    subsurface.set_user_data(::std::ptr::null_mut());
+    unsafe {
+        let surface = Box::from_raw(ptr as *mut wl_surface::WlSurface);
+        if surface.status() == Liveness::Alive {
+            SurfaceData::<U, R>::unset_parent(&surface);
         }
     }
 }

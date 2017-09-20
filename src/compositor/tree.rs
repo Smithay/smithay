@@ -1,7 +1,6 @@
 use super::{SubsurfaceRole, SurfaceAttributes};
 use super::roles::*;
 use std::sync::Mutex;
-
 use wayland_server::{Liveness, Resource};
 use wayland_server::protocol::wl_surface;
 
@@ -64,7 +63,11 @@ impl<U: Default, R: Default> SurfaceData<U, R> {
     }
 }
 
-impl<U, R> SurfaceData<U, R> {
+impl<U, R> SurfaceData<U, R>
+where
+    U: 'static,
+    R: 'static,
+{
     unsafe fn get_data(surface: &wl_surface::WlSurface) -> &Mutex<SurfaceData<U, R>> {
         let ptr = surface.get_user_data();
         &*(ptr as *mut _)
@@ -97,7 +100,7 @@ impl<U, R> SurfaceData<U, R> {
     }
 }
 
-impl<U, R: RoleType> SurfaceData<U, R> {
+impl<U: 'static, R: RoleType + 'static> SurfaceData<U, R> {
     pub unsafe fn has_a_role(surface: &wl_surface::WlSurface) -> bool {
         debug_assert!(surface.status() == Liveness::Alive);
         let data_mutex = Self::get_data(surface);
@@ -171,7 +174,7 @@ impl<U, R: RoleType> SurfaceData<U, R> {
     }
 }
 
-impl<U, R: RoleType + Role<SubsurfaceRole>> SurfaceData<U, R> {
+impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R> {
     /// Sets the parent of a surface
     ///
     /// if this surface already has a role, does nothing and fails, otherwise
@@ -291,7 +294,7 @@ impl<U, R: RoleType + Role<SubsurfaceRole>> SurfaceData<U, R> {
     }
 }
 
-impl<U, R> SurfaceData<U, R> {
+impl<U: 'static, R: 'static> SurfaceData<U, R> {
     /// Access the attributes associated with a surface
     ///
     /// Note that an internal lock is taken during access of this data,
@@ -319,9 +322,9 @@ impl<U, R> SurfaceData<U, R> {
               -> TraversalAction<T>,
     {
         // helper function for recursion
-        unsafe fn map<U, R, F, T>(surface: &wl_surface::WlSurface, root: &wl_surface::WlSurface,
-                                  initial: &T, f: &mut F)
-                                  -> bool
+        unsafe fn map<U: 'static, R: 'static, F, T>(surface: &wl_surface::WlSurface,
+                                                    root: &wl_surface::WlSurface, initial: &T, f: &mut F)
+                                                    -> bool
         where
             F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
                   -> TraversalAction<T>,
