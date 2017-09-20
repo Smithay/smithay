@@ -40,7 +40,4 @@ backend_libinput = ["input"]
 renderer_glium = ["glium"]
 
 [replace]
-"wayland-server:0.9.9" = { git = "https://github.com/Drakulix/wayland-rs", branch = "raw_handler_access"}
-"wayland-protocols:0.9.9" = { git = "https://github.com/Drakulix/wayland-rs", branch = "raw_handler_access"}
-"wayland-client:0.9.9" = { git = "https://github.com/Drakulix/wayland-rs", branch = "raw_handler_access"}
 "drm:0.2.1" = { git = "https://github.com/Drakulix/drm-rs", branch = "future" }

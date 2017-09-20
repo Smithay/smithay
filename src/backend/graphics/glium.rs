@@ -7,7 +7,6 @@ use glium::backend::{Backend, Context, Facade};
 use glium::debug::DebugCallbackBehavior;
 use std::ops::Deref;
 use std::os::raw::c_void;
-
 use std::rc::Rc;
 
 impl From<SwapBuffersError> for GliumSwapBuffersError {
@@ -69,15 +68,9 @@ impl<T: EGLGraphicsBackend> Facade for GliumGraphicsBackend<T> {
     }
 }
 
-/// Converter trait to expose `glium` compatibility for all `EGLGraphicsBackend`s
-pub trait IntoGlium: EGLGraphicsBackend + Sized {
-    /// Wrap the given `EGLGraphicsBackend` to a `GliumGraphicBackend`
-    fn into_glium(self) -> GliumGraphicsBackend<Self>;
-}
-
-impl<T: EGLGraphicsBackend + 'static> IntoGlium for T {
-    fn into_glium(self) -> GliumGraphicsBackend<Self> {
-        GliumGraphicsBackend::new(self)
+impl<T: EGLGraphicsBackend + 'static> From<T> for GliumGraphicsBackend<T> {
+    fn from(backend: T) -> Self {
+        GliumGraphicsBackend::new(backend)
     }
 }
 

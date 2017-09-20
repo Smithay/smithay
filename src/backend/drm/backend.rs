@@ -8,17 +8,8 @@ use drm::control::ResourceInfo;
 use gbm::{BufferObject, BufferObjectFlags, Format as GbmFormat, Surface as GbmSurface, SurfaceBufferHandle};
 use image::{ImageBuffer, Rgba};
 use nix::c_void;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
-
-/// Backend based on a `DrmDevice` and a given crtc
-pub struct DrmBackend(Rc<RefCell<DrmBackendInternal>>);
-
-impl DrmBackend {
-    pub(crate) fn new(drm: Rc<RefCell<DrmBackendInternal>>) -> DrmBackend {
-        DrmBackend(drm)
-    }
-}
 
 /*
     Dependency graph
@@ -32,7 +23,7 @@ impl DrmBackend {
 */
 
 pub(crate) struct GbmTypes<'dev, 'context> {
-    cursor: BufferObject<'dev, ()>,
+    cursor: Cell<BufferObject<'dev, ()>>,
     surface: Surface<'context>,
 }
 
@@ -70,60 +61,32 @@ rental! {
 }
 use self::graphics::{Graphics, Surface};
 
-/// Id of a `DrmBackend` related to its `DrmDevice`.
-///
-/// Used to track which `DrmBackend` finished page-flipping
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Id(usize);
 
-impl Id {
-    pub(crate) fn raw(&self) -> usize {
-        self.0
-    }
-}
-
-pub(crate) struct DrmBackendInternal {
+/// Backend based on a `DrmDevice` and a given crtc
+pub struct DrmBackend {
     graphics: Graphics,
     crtc: crtc::Handle,
     mode: Mode,
     connectors: Vec<connector::Handle>,
-    own_id: Id,
     logger: ::slog::Logger,
 }
 
-impl DrmBackendInternal {
-    pub(crate) fn new<I, L>(context: Rc<devices::Context>, crtc: crtc::Handle, mode: Mode, connectors: I,
-                            own_id: usize, logger: L)
-                            -> Result<DrmBackendInternal>
-    where
-        I: Into<Vec<connector::Handle>>,
-        L: Into<Option<::slog::Logger>>,
-    {
+impl DrmBackend {
+    pub(crate) fn new(context: Rc<devices::Context>, crtc: crtc::Handle, mode: Mode,
+                      connectors: Vec<connector::Handle>, logger: ::slog::Logger)
+                      -> Result<DrmBackend> {
         // logger already initialized by the DrmDevice
         let log = ::slog_or_stdlog(logger);
         info!(log, "Initializing DrmBackend");
 
-        let connectors = connectors.into();
-
-        // check the connectors, if they suite the mode
-        for connector in connectors.iter() {
-            if !connector::Info::load_from_device(context.head().head(), *connector)
-                .chain_err(|| ErrorKind::DrmDev(format!("{:?}", context.head().head())))?
-                .modes()
-                .contains(&mode)
-            {
-                bail!(ErrorKind::ModeNotSuitable(mode))
-            }
-        }
-
         let (w, h) = mode.size();
 
-        Ok(DrmBackendInternal {
+        Ok(DrmBackend {
             graphics: Graphics::try_new(context, |context| {
                 Ok(GbmTypes {
                     cursor: {
                         // Create an unused cursor buffer (we don't want an Option here)
-                        context
+                        Cell::new(context
                             .devices
                             .gbm
                             .create_buffer_object(
@@ -132,7 +95,7 @@ impl DrmBackendInternal {
                                 GbmFormat::ARGB8888,
                                 &[BufferObjectFlags::Cursor, BufferObjectFlags::Write],
                             )
-                            .chain_err(|| ErrorKind::GbmInitFailed)?
+                            .chain_err(|| ErrorKind::GbmInitFailed)?)
                     },
                     surface: Surface::try_new(
                         {
@@ -202,7 +165,6 @@ impl DrmBackendInternal {
             crtc,
             mode,
             connectors,
-            own_id: Id(own_id),
             logger: log.clone(),
         })
     }
@@ -225,85 +187,67 @@ impl DrmBackendInternal {
         });
     }
 
-    pub(crate) fn is_crtc(&self, crtc: crtc::Handle) -> bool {
-        crtc == self.crtc
-    }
-}
-
-impl DrmBackend {
     /// Add a connector to backend
     ///
     /// # Errors
     ///
     /// Errors if the new connector does not support the currently set `Mode`
     pub fn add_connector(&mut self, connector: connector::Handle) -> Result<()> {
-        let info =
-            connector::Info::load_from_device(self.0.borrow().graphics.head().head().head(), connector)
-                .chain_err(|| {
-                    ErrorKind::DrmDev(format!(
-                        "{:?}",
-                        self.0.borrow().graphics.head().head().head()
-                    ))
-                })?;
+        let info = connector::Info::load_from_device(self.graphics.head().head().head(), connector)
+            .chain_err(|| {
+                ErrorKind::DrmDev(format!("{:?}", self.graphics.head().head().head()))
+            })?;
 
         // check if the connector can handle the current mode
-        let mut internal = self.0.borrow_mut();
-        if info.modes().contains(&internal.mode) {
+        if info.modes().contains(&self.mode) {
             // check if there is a valid encoder
             let encoders = info.encoders()
                 .iter()
                 .map(|encoder| {
-                    encoder::Info::load_from_device(self.0.borrow().graphics.head().head().head(), *encoder)
-                        .chain_err(|| {
-                            ErrorKind::DrmDev(format!(
-                                "{:?}",
-                                self.0.borrow().graphics.head().head().head()
-                            ))
-                        })
+                    encoder::Info::load_from_device(self.graphics.head().head().head(), *encoder).chain_err(
+                        || ErrorKind::DrmDev(format!("{:?}", self.graphics.head().head().head())),
+                    )
                 })
                 .collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
             if !encoders
                 .iter()
-                .any(|encoder| encoder.supports_crtc(self.0.borrow().crtc))
+                .any(|encoder| encoder.supports_crtc(self.crtc))
             {
-                bail!(ErrorKind::NoSuitableEncoder(info, self.0.borrow().crtc));
+                bail!(ErrorKind::NoSuitableEncoder(info, self.crtc));
             }
 
             info!(
-                self.0.borrow().logger,
+                self.logger,
                 "Adding new connector: {:?}",
                 info.connector_type()
             );
-            internal.connectors.push(connector);
+            self.connectors.push(connector);
             Ok(())
         } else {
-            bail!(ErrorKind::ModeNotSuitable(self.0.borrow().mode))
+            bail!(ErrorKind::ModeNotSuitable(self.mode))
         }
     }
 
-    /// Returns a copy of the currently set connectors
-    pub fn used_connectors(&self) -> Vec<connector::Handle> {
-        // thanks to the RefCell we can sadly not return a `&[connector::Handle]`
-        self.0.borrow().connectors.clone()
+    /// Returns the currently set connectors
+    pub fn used_connectors(&self) -> &[connector::Handle] {
+        &*self.connectors
     }
 
     /// Removes a currently set connector
     pub fn remove_connector(&mut self, connector: connector::Handle) {
-        if let Ok(info) =
-            connector::Info::load_from_device(self.0.borrow().graphics.head().head().head(), connector)
-        {
+        if let Ok(info) = connector::Info::load_from_device(self.graphics.head().head().head(), connector) {
             info!(
-                self.0.borrow().logger,
+                self.logger,
                 "Removing connector: {:?}",
                 info.connector_type()
             );
         } else {
-            info!(self.0.borrow().logger, "Removing unknown connector");
+            info!(self.logger, "Removing unknown connector");
         }
 
-        self.0.borrow_mut().connectors.retain(|x| *x != connector);
+        self.connectors.retain(|x| *x != connector);
     }
 
     /// Changes the currently set mode
@@ -315,13 +259,10 @@ impl DrmBackend {
     /// Other errors might occur.
     pub fn use_mode(&mut self, mode: Mode) -> Result<()> {
         // check the connectors
-        for connector in self.0.borrow().connectors.iter() {
-            if !connector::Info::load_from_device(self.0.borrow().graphics.head().head().head(), *connector)
+        for connector in self.connectors.iter() {
+            if !connector::Info::load_from_device(self.graphics.head().head().head(), *connector)
                 .chain_err(|| {
-                    ErrorKind::DrmDev(format!(
-                        "{:?}",
-                        self.0.borrow().graphics.head().head().head()
-                    ))
+                    ErrorKind::DrmDev(format!("{:?}", self.graphics.head().head().head()))
                 })?
                 .modes()
                 .contains(&mode)
@@ -332,21 +273,25 @@ impl DrmBackend {
 
         // borrow & clone stuff because rust cannot figure out the upcoming
         // closure otherwise.
-        let crtc = self.0.borrow().crtc;
-        let mut internal = self.0.borrow_mut();
-        let connectors = internal.connectors.clone();
-        let logger = internal.logger.clone();
+        let crtc = self.crtc;
+        let connectors_ref = &self.connectors;
+        let logger_ref = &self.logger;
 
         let (w, h) = mode.size();
 
-        internal.graphics.rent_all_mut(|graphics| -> Result<()> {
+        self.graphics.rent_all_mut(|graphics| -> Result<()> {
             // Recreate the surface and the related resources to match the new
             // resolution.
-            debug!(logger, "Reinitializing surface for new mode: {}:{}", w, h);
+            debug!(
+                logger_ref,
+                "Reinitializing surface for new mode: {}:{}",
+                w,
+                h
+            );
             graphics.gbm.surface = Surface::try_new(
                 {
                     // create a new gbm surface
-                    debug!(logger, "Creating GbmSurface");
+                    debug!(logger_ref, "Creating GbmSurface");
                     Box::new(graphics
                         .context
                         .devices
@@ -361,7 +306,7 @@ impl DrmBackend {
                 },
                 |surface| {
                     // create an egl surface from the gbm one
-                    debug!(logger, "Creating EGLSurface");
+                    debug!(logger_ref, "Creating EGLSurface");
                     let egl_surface = graphics.context.egl.create_surface(&surface)?;
 
                     // make it active for the first `crtc::set`
@@ -378,18 +323,22 @@ impl DrmBackend {
                     let mut front_bo = surface
                         .lock_front_buffer()
                         .chain_err(|| ErrorKind::FailedToSwap)?;
-                    debug!(logger, "FrontBuffer color format: {:?}", front_bo.format());
+                    debug!(
+                        logger_ref,
+                        "FrontBuffer color format: {:?}",
+                        front_bo.format()
+                    );
                     // we need a framebuffer per front_buffer
                     let fb = framebuffer::create(graphics.context.devices.drm, &*front_bo).chain_err(|| {
                         ErrorKind::DrmDev(format!("{:?}", graphics.context.devices.drm))
                     })?;
 
-                    debug!(logger, "Initialize screen");
+                    debug!(logger_ref, "Initialize screen");
                     crtc::set(
                         graphics.context.devices.drm,
                         crtc,
                         fb.handle(),
-                        &connectors,
+                        connectors_ref,
                         (0, 0),
                         Some(mode),
                     ).chain_err(|| {
@@ -410,17 +359,9 @@ impl DrmBackend {
             Ok(())
         })?;
 
-        info!(logger, "Setting new mode: {:?}", mode.name());
-        internal.mode = mode;
+        info!(self.logger, "Setting new mode: {:?}", mode.name());
+        self.mode = mode;
         Ok(())
-    }
-
-    /// Checks of the `DrmBackend` is of the given `Id`
-    ///
-    /// Only produces valid results, if the `Id` is from the `DrmDevice`,
-    /// that created this backend.
-    pub fn is(&self, id: Id) -> bool {
-        self.0.borrow().own_id == id
     }
 }
 
@@ -428,7 +369,7 @@ impl Drop for DrmBackend {
     fn drop(&mut self) {
         // Drop framebuffers attached to the userdata of the gbm surface buffers.
         // (They don't implement drop, as they need the device)
-        self.0.borrow_mut().graphics.rent_all_mut(|graphics| {
+        self.graphics.rent_all_mut(|graphics| {
             if let Some(fb) = graphics.gbm.surface.rent(|egl| {
                 if let Some(mut next) = egl.buffers.next_buffer.take() {
                     return next.take_userdata();
@@ -459,84 +400,72 @@ impl GraphicsBackend for DrmBackend {
     type Error = Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
-        trace!(self.0.borrow().logger, "Move the cursor to {},{}", x, y);
+        trace!(self.logger, "Move the cursor to {},{}", x, y);
         crtc::move_cursor(
-            self.0.borrow().graphics.head().head().head(),
-            self.0.borrow().crtc,
+            self.graphics.head().head().head(),
+            self.crtc,
             (x as i32, y as i32),
         ).chain_err(|| {
-            ErrorKind::DrmDev(format!(
-                "{:?}",
-                self.0.borrow().graphics.head().head().head()
-            ))
+            ErrorKind::DrmDev(format!("{:?}", self.graphics.head().head().head()))
         })
     }
 
     fn set_cursor_representation(&self, buffer: ImageBuffer<Rgba<u8>, Vec<u8>>, hotspot: (u32, u32))
                                  -> Result<()> {
         let (w, h) = buffer.dimensions();
-        debug!(self.0.borrow().logger, "Importing cursor");
-        // import the cursor into a buffer we can render
-        self.0
-            .borrow_mut()
-            .graphics
-            .rent_all_mut(|graphics| -> Result<()> {
-                graphics.gbm.cursor = {
-                    let mut cursor = graphics
-                        .context
-                        .devices
-                        .gbm
-                        .create_buffer_object(
-                            w,
-                            h,
-                            GbmFormat::ARGB8888,
-                            &[BufferObjectFlags::Cursor, BufferObjectFlags::Write],
-                        )
-                        .chain_err(|| ErrorKind::GbmInitFailed)?;
-                    cursor
-                        .write(&*buffer.into_raw())
-                        .chain_err(|| ErrorKind::GbmInitFailed)?;
-                    cursor
-                };
-                Ok(())
-            })?;
 
-        trace!(self.0.borrow().logger, "Set the new imported cursor");
-        // and set it
-        if crtc::set_cursor2(
-            self.0.borrow().graphics.head().head().head(),
-            self.0.borrow().crtc,
-            self.0
-                .borrow()
-                .graphics
-                .rent(|gbm| Buffer::handle(&gbm.cursor)),
-            (w, h),
-            (hotspot.0 as i32, hotspot.1 as i32),
-        ).is_err()
-        {
-            crtc::set_cursor(
-                self.0.borrow().graphics.head().head().head(),
-                self.0.borrow().crtc,
-                self.0
-                    .borrow()
-                    .graphics
-                    .rent(|gbm| Buffer::handle(&gbm.cursor)),
-                (w, h),
-            ).chain_err(|| {
-                ErrorKind::DrmDev(format!(
-                    "{:?}",
-                    self.0.borrow().graphics.head().head().head()
-                ))
-            })
-        } else {
+        debug!(self.logger, "Importing cursor");
+
+        self.graphics.rent_all(|graphics| -> Result<()> {
+            graphics.gbm.cursor.set({
+                // import the cursor into a buffer we can render
+                let mut cursor = graphics
+                    .context
+                    .devices
+                    .gbm
+                    .create_buffer_object(
+                        w,
+                        h,
+                        GbmFormat::ARGB8888,
+                        &[BufferObjectFlags::Cursor, BufferObjectFlags::Write],
+                    )
+                    .chain_err(|| ErrorKind::GbmInitFailed)?;
+                cursor
+                    .write(&*buffer.into_raw())
+                    .chain_err(|| ErrorKind::GbmInitFailed)?;
+
+                trace!(self.logger, "Set the new imported cursor");
+
+                // and set it
+                if crtc::set_cursor2(
+                    self.graphics.head().head().head(),
+                    self.crtc,
+                    Buffer::handle(&cursor),
+                    (w, h),
+                    (hotspot.0 as i32, hotspot.1 as i32),
+                ).is_err()
+                {
+                    crtc::set_cursor(
+                        self.graphics.head().head().head(),
+                        self.crtc,
+                        Buffer::handle(&cursor),
+                        (w, h),
+                    ).chain_err(|| {
+                        ErrorKind::DrmDev(format!("{:?}", self.graphics.head().head().head()))
+                    })?;
+                }
+
+                // and store it
+                cursor
+            });
             Ok(())
-        }
+        })
     }
 }
 
 impl EGLGraphicsBackend for DrmBackend {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        self.0.borrow().graphics.rent_all(|graphics| {
+        self.graphics.rent_all(|graphics| {
             // We cannot call lock_front_buffer anymore without releasing the previous buffer, which will happen when the page flip is done
             if graphics.gbm.surface.rent(|egl| {
                 let next = egl.buffers.next_buffer.take();
@@ -544,7 +473,7 @@ impl EGLGraphicsBackend for DrmBackend {
                 egl.buffers.next_buffer.set(next);
                 res
             }) {
-                warn!(self.0.borrow().logger, "Tried to swap a DrmBackend with a queued flip");
+                warn!(self.logger, "Tried to swap a DrmBackend with a queued flip");
                 return Err(SwapBuffersError::AlreadySwapped);
             }
 
@@ -570,48 +499,36 @@ impl EGLGraphicsBackend for DrmBackend {
                 };
                 surface.egl.buffers.next_buffer.set(Some(next_bo));
 
-                trace!(self.0.borrow().logger, "Queueing Page flip");
-
-                let id: Id = self.0.borrow().own_id;
+                trace!(self.logger, "Queueing Page flip");
 
                 // and flip
-                crtc::page_flip(graphics.context.devices.drm, self.0.borrow().crtc, fb.handle(), &[crtc::PageFlipFlags::PageFlipEvent], id).map_err(|_| SwapBuffersError::ContextLost)
+                crtc::page_flip(graphics.context.devices.drm, self.crtc, fb.handle(), &[crtc::PageFlipFlags::PageFlipEvent], self.crtc).map_err(|_| SwapBuffersError::ContextLost)
             })
         })
     }
 
     unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        self.0
-            .borrow()
-            .graphics
+        self.graphics
             .head()
             .rent(|context| context.get_proc_address(symbol))
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
-        let (w, h) = self.0.borrow().mode.size();
+        let (w, h) = self.mode.size();
         (w as u32, h as u32)
     }
 
     fn is_current(&self) -> bool {
-        self.0
-            .borrow()
-            .graphics
-            .head()
-            .rent(|context| context.is_current())
+        self.graphics.head().rent(|context| context.is_current())
     }
 
     unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        self.0
-            .borrow()
-            .graphics
+        self.graphics
             .rent(|gbm| gbm.surface.rent(|egl| egl.surface.make_current()))
     }
 
     fn get_pixel_format(&self) -> PixelFormat {
-        self.0
-            .borrow()
-            .graphics
+        self.graphics
             .head()
             .rent(|context| context.get_pixel_format())
     }

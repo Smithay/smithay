@@ -19,9 +19,8 @@ use drm::control::encoder::Info as EncoderInfo;
 use glium::Surface;
 use helpers::{shell_implementation, surface_implementation, GliumDrawer, Roles, SurfaceData};
 use slog::{Drain, Logger};
-use smithay::backend::drm::{drm_device_bind, DrmBackend, DrmDevice, DrmHandler, Id};
+use smithay::backend::drm::{drm_device_bind, DrmBackend, DrmDevice, DrmHandler};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
-use smithay::backend::graphics::glium::{GliumGraphicsBackend, IntoGlium};
 use smithay::compositor::{compositor_init, CompositorToken, SubsurfaceRole, TraversalAction};
 use smithay::compositor::roles::Role;
 use smithay::shell::{shell_init, ShellState};
@@ -48,7 +47,7 @@ fn main() {
     let mut options = OpenOptions::new();
     options.read(true);
     options.write(true);
-    let mut device =
+    let mut device: DrmDevice<GliumDrawer<DrmBackend>> =
         DrmDevice::new_from_file(options.clone().open("/dev/dri/card0").unwrap(), log.clone()).unwrap();
 
     // Get a set of all modesetting resource handles (excluding planes):
@@ -80,8 +79,8 @@ fn main() {
     let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
 
     // Initialize the hardware backend
-    let renderer = device
-        .create_backend(crtc, mode, vec![connector_info.handle()])
+    let renderer_token = device
+        .create_backend(&mut event_loop, crtc, mode, vec![connector_info.handle()])
         .unwrap();
 
     /*
@@ -104,10 +103,12 @@ fn main() {
     /*
      * Initialize glium
      */
-    let drawer = GliumDrawer::new(renderer.into_glium());
-    let mut frame = drawer.draw();
-    frame.clear_color(0.8, 0.8, 0.9, 1.0);
-    frame.finish().unwrap();
+    {
+        let drawer = event_loop.state().get(&renderer_token);
+        let mut frame = drawer.draw();
+        frame.clear_color(0.8, 0.8, 0.9, 1.0);
+        frame.finish().unwrap();
+    }
 
     /*
      * Add a listening socket:
@@ -122,7 +123,6 @@ fn main() {
         &mut event_loop,
         device,
         DrmHandlerImpl {
-            drawer,
             shell_state_token,
             compositor_token,
             logger: log,
@@ -133,20 +133,21 @@ fn main() {
 }
 
 pub struct DrmHandlerImpl {
-    drawer: GliumDrawer<GliumGraphicsBackend<DrmBackend>>,
     shell_state_token: StateToken<ShellState<SurfaceData, Roles, (), ()>>,
     compositor_token: CompositorToken<SurfaceData, Roles, ()>,
     logger: ::slog::Logger,
 }
 
-impl DrmHandler for DrmHandlerImpl {
-    fn ready(&mut self, evlh: &mut EventLoopHandle, _id: Id, _frame: u32, _duration: Duration) {
-        let mut frame = self.drawer.draw();
+impl DrmHandler<GliumDrawer<DrmBackend>> for DrmHandlerImpl {
+    fn ready(&mut self, evlh: &mut EventLoopHandle, _device: &mut DrmDevice<GliumDrawer<DrmBackend>>,
+             backend: &StateToken<GliumDrawer<DrmBackend>>, _frame: u32, _duration: Duration) {
+        let state = evlh.state();
+        let drawer = state.get(backend);
+        let mut frame = drawer.draw();
         frame.clear_color(0.8, 0.8, 0.9, 1.0);
         // redraw the frame, in a simple but inneficient way
         {
-            let screen_dimensions = self.drawer.get_framebuffer_dimensions();
-            let state = evlh.state();
+            let screen_dimensions = drawer.get_framebuffer_dimensions();
             for toplevel_surface in state.get(&self.shell_state_token).toplevel_surfaces() {
                 if let Some(wl_surface) = toplevel_surface.get_surface() {
                     // this surface is a root of a subsurface tree that needs to be drawn
@@ -163,13 +164,7 @@ impl DrmHandler for DrmHandlerImpl {
                                         x += subdata.x;
                                         y += subdata.y;
                                     }
-                                    self.drawer.render(
-                                        &mut frame,
-                                        contents,
-                                        (w, h),
-                                        (x, y),
-                                        screen_dimensions,
-                                    );
+                                    drawer.render(&mut frame, contents, (w, h), (x, y), screen_dimensions);
                                     TraversalAction::DoChildren((x, y))
                                 } else {
                                     // we are not display, so our children are neither
@@ -184,7 +179,8 @@ impl DrmHandler for DrmHandlerImpl {
         frame.finish().unwrap();
     }
 
-    fn error(&mut self, _evlh: &mut EventLoopHandle, error: IoError) {
+    fn error(&mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<GliumDrawer<DrmBackend>>,
+             error: IoError) {
         panic!("{:?}", error);
     }
 }

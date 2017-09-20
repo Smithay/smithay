@@ -7,7 +7,6 @@ extern crate slog_async;
 extern crate slog_term;
 #[macro_use(define_roles)]
 extern crate smithay;
-extern crate wayland_protocols;
 extern crate wayland_server;
 
 mod helpers;
@@ -16,8 +15,6 @@ use glium::Surface;
 use helpers::{shell_implementation, surface_implementation, GliumDrawer};
 use slog::{Drain, Logger};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
-
-use smithay::backend::graphics::glium::IntoGlium;
 use smithay::backend::input::InputBackend;
 use smithay::backend::winit;
 use smithay::compositor::{compositor_init, SubsurfaceRole, TraversalAction};
@@ -57,7 +54,7 @@ fn main() {
     /*
      * Initialize glium
      */
-    let drawer = GliumDrawer::new(renderer.into_glium());
+    let drawer = GliumDrawer::from(renderer);
 
     /*
      * Add a listening socket:

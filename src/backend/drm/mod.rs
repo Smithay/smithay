@@ -191,20 +191,21 @@ use drm::control::{connector, crtc, encoder, Mode, ResourceInfo};
 use drm::control::Device as ControlDevice;
 use gbm::Device as GbmDevice;
 use nix;
-use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Error as IoError, Result as IoResult};
+use std::marker::PhantomData;
+use std::ops::Deref;
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::time::Duration;
-use wayland_server::EventLoopHandle;
+use wayland_server::{EventLoopHandle, StateToken};
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, READ};
 
 mod backend;
 pub mod error;
 
-pub use self::backend::{DrmBackend, Id};
-use self::backend::DrmBackendInternal;
+pub use self::backend::DrmBackend;
 use self::error::*;
 
 /// Internal struct as required by the drm crate
@@ -255,13 +256,13 @@ rental! {
 use self::devices::{Context, Devices};
 
 /// Representation of an open drm device node to create rendering backends
-pub struct DrmDevice {
+pub struct DrmDevice<B: Deref<Target = DrmBackend> + 'static> {
     context: Rc<Context>,
-    backends: Vec<Weak<RefCell<DrmBackendInternal>>>,
+    backends: HashMap<crtc::Handle, StateToken<B>>,
     logger: ::slog::Logger,
 }
 
-impl DrmDevice {
+impl<B: From<DrmBackend> + Deref<Target = DrmBackend> + 'static> DrmDevice<B> {
     /// Create a new `DrmDevice` from a raw file descriptor
     ///
     /// Returns an error of opening the device failed or context creation was not
@@ -358,7 +359,7 @@ impl DrmDevice {
             context: Rc::new(Context::try_new(
                 Box::new(Devices::try_new(Box::new(drm), |drm| {
                     debug!(log, "Creating gbm device");
-                    GbmDevice::new_from_drm::<DrmDevice>(drm).chain_err(|| ErrorKind::GbmInitFailed)
+                    GbmDevice::new_from_drm::<DrmDevice<B>>(drm).chain_err(|| ErrorKind::GbmInitFailed)
                 })?),
                 |devices| {
                     debug!(log, "Creating egl context from gbm device");
@@ -375,7 +376,7 @@ impl DrmDevice {
                     ).map_err(Error::from)
                 },
             )?),
-            backends: Vec::new(),
+            backends: HashMap::new(),
             logger: log,
         })
     }
@@ -385,29 +386,32 @@ impl DrmDevice {
     ///
     /// Errors if initialization fails or the mode is not available on all given
     /// connectors.
-    pub fn create_backend<I>(&mut self, crtc: crtc::Handle, mode: Mode, connectors: I) -> Result<DrmBackend>
+    pub fn create_backend<I>(&mut self, evlh: &mut EventLoopHandle, crtc: crtc::Handle, mode: Mode,
+                             connectors: I)
+                             -> Result<StateToken<B>>
     where
         I: Into<Vec<connector::Handle>>,
     {
-        for backend in self.backends.iter() {
-            if let Some(backend) = backend.upgrade() {
-                if backend.borrow().is_crtc(crtc) {
-                    bail!(ErrorKind::CrtcAlreadyInUse(crtc))
-                }
-            }
+        if self.backends.contains_key(&crtc) {
+            bail!(ErrorKind::CrtcAlreadyInUse(crtc));
         }
 
         // check if the given connectors and crtc match
         let connectors = connectors.into();
 
-        // check if we have an encoder for every connector
+        // check if we have an encoder for every connector and the mode mode
         for connector in connectors.iter() {
             let con_info = connector::Info::load_from_device(self.context.head().head(), *connector)
                 .chain_err(|| {
                     ErrorKind::DrmDev(format!("{:?}", self.context.head().head()))
                 })?;
 
-            // then check for every connector which encoders it does support
+            // check the mode
+            if !con_info.modes().contains(&mode) {
+                bail!(ErrorKind::ModeNotSuitable(mode));
+            }
+
+            // check for every connector which encoders it does support
             let encoders = con_info
                 .encoders()
                 .iter()
@@ -426,59 +430,50 @@ impl DrmDevice {
 
         // configuration is valid, the kernel will figure out the rest
 
-        let own_id = self.backends.len();
-        let logger = self.logger.new(
-            o!("id" => format!("{}", own_id), "crtc" => format!("{:?}", crtc)),
-        );
+        let logger = self.logger.new(o!("crtc" => format!("{:?}", crtc)));
+        let backend = DrmBackend::new(self.context.clone(), crtc, mode, connectors, logger)?;
+        let token = evlh.state().insert(backend.into());
+        self.backends.insert(crtc, token.clone());
 
-        let backend = Rc::new(RefCell::new(DrmBackendInternal::new(
-            self.context.clone(),
-            crtc,
-            mode,
-            connectors,
-            own_id,
-            logger,
-        )?));
-
-        self.backends.push(Rc::downgrade(&backend));
-
-        Ok(DrmBackend::new(backend))
+        Ok(token)
     }
 }
 
 // for users convinience and FdEventSource registering
-impl AsRawFd for DrmDevice {
+impl<B: Deref<Target = DrmBackend> + 'static> AsRawFd for DrmDevice<B> {
     fn as_raw_fd(&self) -> RawFd {
         self.context.head().head().as_raw_fd()
     }
 }
-impl BasicDevice for DrmDevice {}
-impl ControlDevice for DrmDevice {}
+impl<B: Deref<Target = DrmBackend> + 'static> BasicDevice for DrmDevice<B> {}
+impl<B: Deref<Target = DrmBackend> + 'static> ControlDevice for DrmDevice<B> {}
 
 /// Handler for drm node events
 ///
 /// See module-level documentation for its use
-pub trait DrmHandler {
+pub trait DrmHandler<B: Deref<Target = DrmBackend> + 'static> {
     /// A `DrmBackend` has finished swapping buffers and new frame can now
     /// (and should be immediately) be rendered.
     ///
     /// The `id` argument is the `Id` of the `DrmBackend` that finished rendering,
     /// check using `DrmBackend::is`.
-    fn ready(&mut self, evlh: &mut EventLoopHandle, id: Id, frame: u32, duration: Duration);
+    fn ready(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<B>, backend: &StateToken<B>,
+             frame: u32, duration: Duration);
     /// The `DrmDevice` has thrown an error.
     ///
     /// The related backends are most likely *not* usable anymore and
     /// the whole stack has to be recreated.
-    fn error(&mut self, evlh: &mut EventLoopHandle, error: IoError);
+    fn error(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<B>, error: IoError);
 }
 
 /// Bind a `DrmDevice` to an EventLoop,
 ///
 /// This will cause it to recieve events and feed them into an `DrmHandler`
-pub fn drm_device_bind<H>(evlh: &mut EventLoopHandle, device: DrmDevice, handler: H)
-                          -> IoResult<FdEventSource<(DrmDevice, H)>>
+pub fn drm_device_bind<B, H>(evlh: &mut EventLoopHandle, device: DrmDevice<B>, handler: H)
+                             -> IoResult<FdEventSource<(DrmDevice<B>, H)>>
 where
-    H: DrmHandler + 'static,
+    B: Deref<Target = DrmBackend> + 'static,
+    H: DrmHandler<B> + 'static,
 {
     evlh.add_fd_event_source(
         device.as_raw_fd(),
@@ -488,28 +483,44 @@ where
     )
 }
 
-fn fd_event_source_implementation<H>() -> FdEventSourceImpl<(DrmDevice, H)>
+fn fd_event_source_implementation<B, H>() -> FdEventSourceImpl<(DrmDevice<B>, H)>
 where
-    H: DrmHandler + 'static,
+    B: Deref<Target = DrmBackend> + 'static,
+    H: DrmHandler<B> + 'static,
 {
     FdEventSourceImpl {
         ready: |evlh, id, _, _| {
             use std::any::Any;
 
-            let &mut (ref dev, ref mut handler) = id;
+            let &mut (ref mut dev, ref mut handler) = id;
 
-            struct PageFlipHandler<'a, 'b, H: DrmHandler + 'static>(&'a mut H, &'b mut EventLoopHandle);
+            struct PageFlipHandler<
+                'a,
+                'b,
+                B: Deref<Target = DrmBackend> + 'static,
+                H: DrmHandler<B> + 'static,
+            > {
+                handler: &'a mut H,
+                evlh: &'b mut EventLoopHandle,
+                _marker: PhantomData<B>,
+            };
 
-            impl<'a, 'b, H: DrmHandler + 'static> crtc::PageFlipHandler<DrmDevice> for PageFlipHandler<'a, 'b, H> {
-                fn handle_event(&mut self, device: &DrmDevice, frame: u32, duration: Duration,
+            impl<'a, 'b, B, H> crtc::PageFlipHandler<DrmDevice<B>> for PageFlipHandler<'a, 'b, B, H>
+            where
+                B: Deref<Target = DrmBackend> + 'static,
+                H: DrmHandler<B> + 'static,
+            {
+                fn handle_event(&mut self, device: &mut DrmDevice<B>, frame: u32, duration: Duration,
                                 userdata: Box<Any>) {
-                    let id: Id = *userdata.downcast().unwrap();
-                    if let Some(backend) = device.backends[id.raw()].upgrade() {
+                    let crtc_id: crtc::Handle = *userdata.downcast().unwrap();
+                    let token = device.backends.get(&crtc_id).cloned();
+                    if let Some(token) = token {
                         // we can now unlock the buffer
-                        backend.borrow().unlock_buffer();
-                        trace!(device.logger, "Handling event for backend {:?}", id.raw());
+                        (**self.evlh.state().get(&token)).unlock_buffer();
+                        trace!(device.logger, "Handling event for backend {:?}", crtc_id);
                         // and then call the user to render the next frame
-                        self.0.ready(self.1, id, frame, duration);
+                        self.handler
+                            .ready(self.evlh, device, &token, frame, duration);
                     }
                 }
             }
@@ -518,13 +529,17 @@ where
                 dev,
                 2,
                 None::<&mut ()>,
-                Some(&mut PageFlipHandler(handler, evlh)),
+                Some(&mut PageFlipHandler {
+                    handler,
+                    evlh,
+                    _marker: PhantomData,
+                }),
                 None::<&mut ()>,
             ).unwrap();
         },
         error: |evlh, id, _, error| {
             warn!(id.0.logger, "DrmDevice errored: {}", error);
-            id.1.error(evlh, error);
+            id.1.error(evlh, &mut id.0, error);
         },
     }
 }

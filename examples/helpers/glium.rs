@@ -1,7 +1,8 @@
 use glium;
-use glium::Surface;
+use glium::{Frame, Surface};
 use glium::index::PrimitiveType;
-
+use smithay::backend::graphics::egl::EGLGraphicsBackend;
+use smithay::backend::graphics::glium::GliumGraphicsBackend;
 use std::ops::Deref;
 
 #[derive(Copy, Clone)]
@@ -12,23 +13,25 @@ struct Vertex {
 
 implement_vertex!(Vertex, position, tex_coords);
 
-pub struct GliumDrawer<F> {
-    display: F,
+pub struct GliumDrawer<F: EGLGraphicsBackend + 'static> {
+    display: GliumGraphicsBackend<F>,
     vertex_buffer: glium::VertexBuffer<Vertex>,
     index_buffer: glium::IndexBuffer<u16>,
     program: glium::Program,
 }
 
-impl<F> Deref for GliumDrawer<F> {
+impl<F: EGLGraphicsBackend + 'static> Deref for GliumDrawer<F> {
     type Target = F;
 
     fn deref(&self) -> &F {
-        &self.display
+        &*self.display
     }
 }
 
-impl<F: glium::backend::Facade> GliumDrawer<F> {
-    pub fn new(display: F) -> GliumDrawer<F> {
+impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> From<T> for GliumDrawer<T> {
+    fn from(backend: T) -> GliumDrawer<T> {
+        let display = backend.into();
+
         // building the vertex buffer, which contains all the vertices that we will draw
         let vertex_buffer = glium::VertexBuffer::new(
             &display,
@@ -93,7 +96,9 @@ impl<F: glium::backend::Facade> GliumDrawer<F> {
             program,
         }
     }
+}
 
+impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
     pub fn render(&self, target: &mut glium::Frame, contents: &[u8], surface_dimensions: (u32, u32),
                   surface_location: (i32, i32), screen_size: (u32, u32)) {
         let image = glium::texture::RawImage2d {
@@ -129,5 +134,10 @@ impl<F: glium::backend::Facade> GliumDrawer<F> {
                 &Default::default(),
             )
             .unwrap();
+    }
+
+    #[inline]
+    pub fn draw(&self) -> Frame {
+        self.display.draw()
     }
 }
