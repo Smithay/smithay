@@ -1,22 +1,3 @@
-//! Utilities for keyboard handling
-//!
-//! This module provides utilities for keyboardand keymap handling: keymap interpretation
-//! and forwarding keystrokes to clients using xkbcommon.
-//!
-//! You can first create a `KbdHandle` using the `create_keyboard_handler` function in this module.
-//! The handle you obtained can be cloned to access this keyboard state from different places. It is
-//! expected that such a context is created for each keyboard the compositor has access to.
-//!
-//! This handle gives you 3 main ways to interact with the keymap handling:
-//!
-//! - send the keymap information to a client using the `KbdHandle::send_keymap` method.
-//! - set the current focus for this keyboard: designing the client that will receive the key inputs
-//!   using the `KbdHandle::set_focus` method.
-//! - process key inputs from the input backend, allowing them to be catched at the compositor-level
-//!   or forwarded to the client. See the documentation of the `KbdHandle::input` method for
-//!   details.
-
-
 use backend::input::KeyState;
 use std::io::{Error as IoError, Write};
 use std::os::unix::io::AsRawFd;
@@ -228,7 +209,14 @@ struct KbdArc {
 /// It can be cloned and all clones manipulate the same internal state. Clones
 /// can also be sent across threads.
 ///
-/// See module-level documentation for details of its use.
+/// This handle gives you 3 main ways to interact with the keymap handling:
+///
+/// - register new `wl_keyboard` instances to it with the `new_kbd` method.
+/// - set the current focus for this keyboard: designing the surface that will receive the key inputs
+///   using the `KbdHandle::set_focus` method.
+/// - process key inputs from the input backend, allowing them to be catched at the compositor-level
+///   or forwarded to the client. See the documentation of the `KbdHandle::input` method for
+///   details.
 #[derive(Clone)]
 pub struct KbdHandle {
     arc: Arc<KbdArc>,
