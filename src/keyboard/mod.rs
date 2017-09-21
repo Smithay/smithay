@@ -74,7 +74,8 @@ impl ModifiersState {
 }
 
 struct KbdInternal {
-    focus: Option<(wl_surface::WlSurface, wl_keyboard::WlKeyboard)>,
+    known_kbds: Vec<wl_keyboard::WlKeyboard>,
+    focus: Option<wl_surface::WlSurface>,
     pressed_keys: Vec<u32>,
     mods_state: ModifiersState,
     keymap: xkb::Keymap,
@@ -102,6 +103,7 @@ impl KbdInternal {
         ).ok_or(())?;
         let state = xkb::State::new(&keymap);
         Ok(KbdInternal {
+            known_kbds: Vec::new(),
             focus: None,
             pressed_keys: Vec::new(),
             mods_state: ModifiersState::new(),
@@ -151,6 +153,18 @@ impl KbdInternal {
             )
         };
         serialized.into()
+    }
+
+    fn with_focused_kbds<F>(&self, mut f: F)
+    where F: FnMut(&wl_keyboard::WlKeyboard, &wl_surface::WlSurface)
+    {
+        if let Some(ref surface) = self.focus {
+            for kbd in &self.known_kbds {
+                if kbd.same_client_as(surface) {
+                    f(kbd, surface);
+                }
+            }
+        }
     }
 }
 
@@ -227,7 +241,7 @@ impl KbdHandle {
     /// keyboard handler. It will internally track the state of the keymap.
     ///
     /// The `filter` argument is expected to be a closure which will peek at the generated input
-    /// as interpreted by the keymap befor it is forwarded to the focused client. If this closure
+    /// as interpreted by the keymap before it is forwarded to the focused client. If this closure
     /// returns false, the input will not be sent to the client. This mechanism can be used to
     /// implement compositor-level key bindings for example.
     ///
@@ -254,16 +268,22 @@ impl KbdHandle {
         }
 
         // forward to client if no keybinding is triggered
-        if let Some((_, ref kbd)) = guard.focus {
-            if mods_changed {
-                let (dep, la, lo, gr) = guard.serialize_modifiers();
+        let modifiers = if mods_changed {
+            Some(guard.serialize_modifiers())
+        } else {
+            None
+        };
+        let wl_state = match state {
+            KeyState::Pressed => wl_keyboard::KeyState::Pressed,
+            KeyState::Released => wl_keyboard::KeyState::Released,
+        };
+        guard.with_focused_kbds(|kbd, _| {
+            if let Some((dep, la, lo, gr)) = modifiers {
                 kbd.modifiers(serial, dep, la, lo, gr);
             }
-            let wl_state = match state {
-                KeyState::Pressed => wl_keyboard::KeyState::Pressed,
-                KeyState::Released => wl_keyboard::KeyState::Released,
-            };
             kbd.key(serial, 0, keycode, wl_state);
+        });
+        if guard.focus.is_some() {
             trace!(self.arc.logger, "Input forwarded to client");
         } else {
             trace!(self.arc.logger, "No client currently focused");
@@ -274,51 +294,50 @@ impl KbdHandle {
     ///
     /// Any previous focus will be sent a `wl_keyboard::leave` event, and if the new focus
     /// is not `None`, a `wl_keyboard::enter` event will be sent.
-    pub fn set_focus(&self, focus: Option<(wl_surface::WlSurface, wl_keyboard::WlKeyboard)>, serial: u32) {
-        // TODO: check surface and keyboard are from the same client
-
+    pub fn set_focus(&self, focus: Option<wl_surface::WlSurface>, serial: u32) {
         let mut guard = self.arc.internal.lock().unwrap();
 
-        // remove current focus
-        let old_kbd = if let Some((old_surface, old_kbd)) = guard.focus.take() {
-            if old_surface.status() != Liveness::Dead {
-                old_kbd.leave(serial, &old_surface);
-            }
-            Some(old_kbd)
-        } else {
-            None
-        };
+        // unset old focus
+        guard.with_focused_kbds(|kbd, s| {
+            kbd.leave(serial, s);
+        });
 
         // set new focus
-        if let Some((surface, kbd)) = focus {
-            if surface.status() != Liveness::Dead {
-                // send new mods status if client instance changed
-                match old_kbd {
-                    Some(ref okbd) if okbd.equals(&kbd) => {}
-                    _ => {
-                        let (dep, la, lo, gr) = guard.serialize_modifiers();
-                        kbd.modifiers(serial, dep, la, lo, gr);
-                    }
-                }
-                // send enter event
-                kbd.enter(serial, &surface, guard.serialize_pressed_keys());
-            }
-            guard.focus = Some((surface, kbd));
+        guard.focus = focus;
+        let (dep, la, lo, gr) = guard.serialize_modifiers();
+        let keys = guard.serialize_pressed_keys();
+        guard.with_focused_kbds(|kbd, s| {
+            kbd.modifiers(serial, dep, la, lo, gr);
+            kbd.enter(serial, s, keys.clone());
+        });
+        if guard.focus.is_some() {
             trace!(self.arc.logger, "Focus set to new surface");
         } else {
             trace!(self.arc.logger, "Focus unset");
         }
     }
 
-    /// Send the keymap to this keyboard
+    /// Register a new keyboard to this handler
+    ///
+    /// The keymap will automatically be sent to it
     ///
     /// This should be done first, before anything else is done with this keyboard.
-    pub fn send_keymap(&self, kbd: &wl_keyboard::WlKeyboard) {
+    pub fn new_kbd(&self, kbd: wl_keyboard::WlKeyboard) {
         trace!(self.arc.logger, "Sending keymap to client");
         kbd.keymap(
             wl_keyboard::KeymapFormat::XkbV1,
             self.arc.keymap_file.as_raw_fd(),
             self.arc.keymap_len,
         );
+        let mut guard = self.arc.internal.lock().unwrap();
+        guard.known_kbds.push(kbd);
+    }
+
+    /// Performs an internal cleanup of known kbds
+    ///
+    /// Drops any wl_keyboard that is no longer alive
+    pub fn cleanup_old_kbds(&self) {
+        let mut guard = self.arc.internal.lock().unwrap();
+        guard.known_kbds.retain(|kbd| kbd.status() != Liveness::Dead);
     }
 }
