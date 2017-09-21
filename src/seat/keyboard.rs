@@ -61,10 +61,13 @@ struct KbdInternal {
     mods_state: ModifiersState,
     keymap: xkb::Keymap,
     state: xkb::State,
+    repeat_rate: i32,
+    repeat_delay: i32,
 }
 
 impl KbdInternal {
-    fn new(rules: &str, model: &str, layout: &str, variant: &str, options: Option<String>)
+    fn new(rules: &str, model: &str, layout: &str, variant: &str, options: Option<String>,
+           repeat_rate: i32, repeat_delay: i32)
            -> Result<KbdInternal, ()> {
         // we create a new contex for each keyboard because libxkbcommon is actually NOT threadsafe
         // so confining it inside the KbdInternal allows us to use Rusts mutability rules to make
@@ -90,6 +93,8 @@ impl KbdInternal {
             mods_state: ModifiersState::new(),
             keymap: keymap,
             state: state,
+            repeat_rate: repeat_rate,
+            repeat_delay: repeat_delay,
         })
     }
 
@@ -137,7 +142,8 @@ impl KbdInternal {
     }
 
     fn with_focused_kbds<F>(&self, mut f: F)
-    where F: FnMut(&wl_keyboard::WlKeyboard, &wl_surface::WlSurface)
+    where
+        F: FnMut(&wl_keyboard::WlKeyboard, &wl_surface::WlSurface),
     {
         if let Some(ref surface) = self.focus {
             for kbd in &self.known_kbds {
@@ -159,7 +165,7 @@ pub enum Error {
 
 /// Create a keyboard handler from a set of RMLVO rules
 pub fn create_keyboard_handler<L>(rules: &str, model: &str, layout: &str, variant: &str,
-                                  options: Option<String>, logger: L)
+                                  options: Option<String>, repeat_delay: i32, repeat_rate: i32, logger: L)
                                   -> Result<KbdHandle, Error>
 where
     L: Into<Option<::slog::Logger>>,
@@ -169,7 +175,15 @@ where
         "rules" => rules, "model" => model, "layout" => layout, "variant" => variant,
         "options" => &options
     );
-    let internal = KbdInternal::new(rules, model, layout, variant, options).map_err(|_| {
+    let internal = KbdInternal::new(
+        rules,
+        model,
+        layout,
+        variant,
+        options,
+        repeat_rate,
+        repeat_delay,
+    ).map_err(|_| {
         debug!(log, "Loading keymap failed");
         Error::BadKeymap
     })?;
@@ -318,7 +332,20 @@ impl KbdHandle {
             self.arc.keymap_len,
         );
         let mut guard = self.arc.internal.lock().unwrap();
+        if kbd.version() >= 4 {
+            kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
+        }
         guard.known_kbds.push(kbd);
+    }
+
+    /// Change the repeat info configured for this keyboard
+    pub fn change_repeat_info(&self, rate: i32, delay: i32) {
+        let mut guard = self.arc.internal.lock().unwrap();
+        guard.repeat_delay = delay;
+        guard.repeat_rate = rate;
+        for kbd in &guard.known_kbds {
+            kbd.repeat_info(rate, delay);
+        }
     }
 
     /// Performs an internal cleanup of known kbds
@@ -326,6 +353,8 @@ impl KbdHandle {
     /// Drops any wl_keyboard that is no longer alive
     pub fn cleanup_old_kbds(&self) {
         let mut guard = self.arc.internal.lock().unwrap();
-        guard.known_kbds.retain(|kbd| kbd.status() != Liveness::Dead);
+        guard
+            .known_kbds
+            .retain(|kbd| kbd.status() != Liveness::Dead);
     }
 }
