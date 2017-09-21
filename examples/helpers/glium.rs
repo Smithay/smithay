@@ -3,8 +3,8 @@ use glium::{Frame, Surface};
 use glium::index::PrimitiveType;
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
-use std::ops::Deref;
 use std::borrow::Borrow;
+use std::ops::Deref;
 
 #[derive(Copy, Clone)]
 struct Vertex {

@@ -78,9 +78,8 @@ where
                 );
                 return;
             }
-            shell_surface.set_user_data(
-                Box::into_raw(Box::new(unsafe { surface.clone_unchecked() })) as *mut _,
-            );
+            shell_surface
+                .set_user_data(Box::into_raw(Box::new(unsafe { surface.clone_unchecked() })) as *mut _);
             evlh.register(
                 &shell_surface,
                 shell_surface_implementation(),
@@ -243,9 +242,7 @@ where
             });
             return true;
         })
-        .expect(
-            "xdg_surface exists but surface has not shell_surface role?!",
-        );
+        .expect("xdg_surface exists but surface has not shell_surface role?!");
     // we need to notify about this new toplevel surface
     if need_send {
         evlh.state()

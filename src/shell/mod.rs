@@ -596,9 +596,7 @@ where
         }
         let configured = self.token
             .with_role_data::<ShellSurfaceRole, _, _>(&self.wl_surface, |data| data.configured)
-            .expect(
-                "A shell surface object exists but the surface does not have the shell_surface role ?!",
-            );
+            .expect("A shell surface object exists but the surface does not have the shell_surface role ?!");
         if !configured {
             if let SurfaceKind::XdgToplevel(ref s) = self.shell_surface {
                 let ptr = s.get_user_data();
@@ -733,9 +731,7 @@ where
         }
         let configured = self.token
             .with_role_data::<ShellSurfaceRole, _, _>(&self.wl_surface, |data| data.configured)
-            .expect(
-                "A shell surface object exists but the surface does not have the shell_surface role ?!",
-            );
+            .expect("A shell surface object exists but the surface does not have the shell_surface role ?!");
         if !configured {
             if let SurfaceKind::XdgPopup(ref s) = self.shell_surface {
                 let ptr = s.get_user_data();
