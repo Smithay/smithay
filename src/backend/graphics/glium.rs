@@ -5,7 +5,7 @@ use glium::Frame;
 use glium::SwapBuffersError as GliumSwapBuffersError;
 use glium::backend::{Backend, Context, Facade};
 use glium::debug::DebugCallbackBehavior;
-use std::ops::Deref;
+use std::borrow::Borrow;
 use std::os::raw::c_void;
 use std::rc::Rc;
 
@@ -54,10 +54,8 @@ impl<T: EGLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
     }
 }
 
-impl<T: EGLGraphicsBackend> Deref for GliumGraphicsBackend<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
+impl<T: EGLGraphicsBackend> Borrow<T> for GliumGraphicsBackend<T> {
+    fn borrow(&self) -> &T {
         &self.backend.0
     }
 }
