@@ -1,5 +1,5 @@
 use glium;
-use glium::Surface;
+use glium::{Frame, Surface};
 use glium::index::PrimitiveType;
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
@@ -22,10 +22,10 @@ pub struct GliumDrawer<F: EGLGraphicsBackend + 'static> {
 }
 
 impl<F: EGLGraphicsBackend + 'static> Deref for GliumDrawer<F> {
-    type Target = GliumGraphicsBackend<F>;
+    type Target = F;
 
-    fn deref(&self) -> &GliumGraphicsBackend<F> {
-        &self.display
+    fn deref(&self) -> &F {
+        self.borrow()
     }
 }
 
@@ -141,5 +141,10 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                 &Default::default(),
             )
             .unwrap();
+    }
+
+    #[inline]
+    pub fn draw(&self) -> Frame {
+        self.display.draw()
     }
 }

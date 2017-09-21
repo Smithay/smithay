@@ -25,7 +25,6 @@ use smithay::compositor::{compositor_init, CompositorToken, SubsurfaceRole, Trav
 use smithay::compositor::roles::Role;
 use smithay::shell::{shell_init, ShellState};
 use smithay::shm::init_shm_global;
-use std::borrow::Borrow;
 use std::fs::OpenOptions;
 use std::io::Error as IoError;
 use std::time::Duration;
@@ -148,7 +147,7 @@ impl DrmHandler<GliumDrawer<DrmBackend>> for DrmHandlerImpl {
         frame.clear_color(0.8, 0.8, 0.9, 1.0);
         // redraw the frame, in a simple but inneficient way
         {
-            let screen_dimensions = (drawer.borrow() as &DrmBackend).get_framebuffer_dimensions();
+            let screen_dimensions = drawer.get_framebuffer_dimensions();
             for toplevel_surface in state.get(&self.shell_state_token).toplevel_surfaces() {
                 if let Some(wl_surface) = toplevel_surface.get_surface() {
                     // this surface is a root of a subsurface tree that needs to be drawn
