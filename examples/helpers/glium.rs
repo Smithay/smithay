@@ -1,9 +1,10 @@
 use glium;
-use glium::{Frame, Surface};
+use glium::Surface;
 use glium::index::PrimitiveType;
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
 use std::ops::Deref;
+use std::borrow::Borrow;
 
 #[derive(Copy, Clone)]
 struct Vertex {
@@ -21,10 +22,16 @@ pub struct GliumDrawer<F: EGLGraphicsBackend + 'static> {
 }
 
 impl<F: EGLGraphicsBackend + 'static> Deref for GliumDrawer<F> {
-    type Target = F;
+    type Target = GliumGraphicsBackend<F>;
 
-    fn deref(&self) -> &F {
-        &*self.display
+    fn deref(&self) -> &GliumGraphicsBackend<F> {
+        &self.display
+    }
+}
+
+impl<F: EGLGraphicsBackend + 'static> Borrow<F> for GliumDrawer<F> {
+    fn borrow(&self) -> &F {
+        self.display.borrow()
     }
 }
 
@@ -134,10 +141,5 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                 &Default::default(),
             )
             .unwrap();
-    }
-
-    #[inline]
-    pub fn draw(&self) -> Frame {
-        self.display.draw()
     }
 }
