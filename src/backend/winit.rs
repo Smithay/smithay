@@ -308,8 +308,8 @@ impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
 
     fn x_transformed(&self, width: u32) -> u32 {
         cmp::min(
-            (self.x * width as f64 /
-                self.window
+            (self.x * width as f64
+                / self.window
                     .head()
                     .get_inner_size_points()
                     .unwrap_or((width, 0))
@@ -320,8 +320,8 @@ impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
 
     fn y_transformed(&self, height: u32) -> u32 {
         cmp::min(
-            (self.y * height as f64 /
-                self.window
+            (self.y * height as f64
+                / self.window
                     .head()
                     .get_inner_size_points()
                     .unwrap_or((0, height))
@@ -421,8 +421,8 @@ impl TouchDownEvent for WinitTouchStartedEvent {
 
     fn x_transformed(&self, width: u32) -> u32 {
         cmp::min(
-            self.location.0 as i32 * width as i32 /
-                self.window
+            self.location.0 as i32 * width as i32
+                / self.window
                     .head()
                     .get_inner_size_points()
                     .unwrap_or((width, 0))
@@ -433,8 +433,8 @@ impl TouchDownEvent for WinitTouchStartedEvent {
 
     fn y_transformed(&self, height: u32) -> u32 {
         cmp::min(
-            self.location.1 as i32 * height as i32 /
-                self.window
+            self.location.1 as i32 * height as i32
+                / self.window
                     .head()
                     .get_inner_size_points()
                     .unwrap_or((0, height))
@@ -473,8 +473,8 @@ impl TouchMotionEvent for WinitTouchMovedEvent {
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        self.location.0 as u32 * width /
-            self.window
+        self.location.0 as u32 * width
+            / self.window
                 .head()
                 .get_inner_size_points()
                 .unwrap_or((width, 0))
@@ -482,8 +482,8 @@ impl TouchMotionEvent for WinitTouchMovedEvent {
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        self.location.1 as u32 * height /
-            self.window
+        self.location.1 as u32 * height
+            / self.window
                 .head()
                 .get_inner_size_points()
                 .unwrap_or((0, height))
@@ -619,9 +619,10 @@ impl InputBackend for WinitInputBackend {
                         }
                         (
                             WindowEvent::KeyboardInput {
-                                input: KeyboardInput {
-                                    scancode, state, ..
-                                },
+                                input:
+                                    KeyboardInput {
+                                        scancode, state, ..
+                                    },
                                 ..
                             },
                             Some(handler),

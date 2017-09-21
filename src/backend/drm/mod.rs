@@ -491,12 +491,7 @@ where
 
             let &mut (ref mut dev, ref mut handler) = id;
 
-            struct PageFlipHandler<
-                'a,
-                'b,
-                B: Borrow<DrmBackend> + 'static,
-                H: DrmHandler<B> + 'static,
-            > {
+            struct PageFlipHandler<'a, 'b, B: Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'static> {
                 handler: &'a mut H,
                 evlh: &'b mut EventLoopHandle,
                 _marker: PhantomData<B>,

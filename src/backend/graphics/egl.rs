@@ -619,11 +619,11 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
         };
 
         let desc = PixelFormat {
-            hardware_accelerated: attrib!(egl, display, config_id, ffi::egl::CONFIG_CAVEAT) !=
-                ffi::egl::SLOW_CONFIG as i32,
-            color_bits: attrib!(egl, display, config_id, ffi::egl::RED_SIZE) as u8 +
-                attrib!(egl, display, config_id, ffi::egl::BLUE_SIZE) as u8 +
-                attrib!(egl, display, config_id, ffi::egl::GREEN_SIZE) as u8,
+            hardware_accelerated: attrib!(egl, display, config_id, ffi::egl::CONFIG_CAVEAT)
+                != ffi::egl::SLOW_CONFIG as i32,
+            color_bits: attrib!(egl, display, config_id, ffi::egl::RED_SIZE) as u8
+                + attrib!(egl, display, config_id, ffi::egl::BLUE_SIZE) as u8
+                + attrib!(egl, display, config_id, ffi::egl::GREEN_SIZE) as u8,
             alpha_bits: attrib!(egl, display, config_id, ffi::egl::ALPHA_SIZE) as u8,
             depth_bits: attrib!(egl, display, config_id, ffi::egl::DEPTH_SIZE) as u8,
             stencil_bits: attrib!(egl, display, config_id, ffi::egl::STENCIL_SIZE) as u8,

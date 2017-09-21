@@ -227,9 +227,7 @@ where
                 );
                 return;
             }
-            subsurface.set_user_data(
-                Box::into_raw(Box::new(unsafe { surface.clone_unchecked() })) as *mut _,
-            );
+            subsurface.set_user_data(Box::into_raw(Box::new(unsafe { surface.clone_unchecked() })) as *mut _);
             evlh.register(
                 &subsurface,
                 subsurface_implementation::<U, R>(),
@@ -253,9 +251,8 @@ where
 {
     let ptr = subsurface.get_user_data();
     let surface = &*(ptr as *mut wl_surface::WlSurface);
-    SurfaceData::<U, R>::with_role_data::<SubsurfaceRole, _, _>(surface, |d| f(d)).expect(
-        "The surface does not have a subsurface role while it has a wl_subsurface?!",
-    );
+    SurfaceData::<U, R>::with_role_data::<SubsurfaceRole, _, _>(surface, |d| f(d))
+        .expect("The surface does not have a subsurface role while it has a wl_subsurface?!");
 }
 
 fn subsurface_implementation<U, R>() -> wl_subsurface::Implementation<()>

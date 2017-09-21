@@ -26,9 +26,8 @@ pub fn surface_implementation() -> SurfaceUserImplementation<SurfaceData, Roles,
                             let height = data.height as usize;
                             let mut new_vec = Vec::with_capacity(width * height * 4);
                             for i in 0..height {
-                                new_vec.extend(
-                                    &slice[(offset + i * stride)..(offset + i * stride + width * 4)],
-                                );
+                                new_vec
+                                    .extend(&slice[(offset + i * stride)..(offset + i * stride + width * 4)]);
                             }
                             attributes.user_data.buffer =
                                 Some((new_vec, (data.width as u32, data.height as u32)));

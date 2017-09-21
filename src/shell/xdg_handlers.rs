@@ -19,9 +19,7 @@ where
     SID: 'static,
     SD: Default + 'static,
 {
-    shell.set_user_data(
-        Box::into_raw(Box::new(Mutex::new(make_shell_client_data::<SD>()))) as *mut _,
-    );
+    shell.set_user_data(Box::into_raw(Box::new(Mutex::new(make_shell_client_data::<SD>()))) as *mut _);
     evlh.register(
         &shell,
         shell_implementation(),
@@ -222,11 +220,8 @@ fn destroy_surface(surface: &zxdg_surface_v6::ZxdgSurfaceV6) {
     let ptr = surface.get_user_data();
     surface.set_user_data(::std::ptr::null_mut());
     // drop the state
-    let data = unsafe {
-        Box::from_raw(
-            ptr as *mut (zxdg_surface_v6::ZxdgSurfaceV6, zxdg_shell_v6::ZxdgShellV6),
-        )
-    };
+    let data =
+        unsafe { Box::from_raw(ptr as *mut (zxdg_surface_v6::ZxdgSurfaceV6, zxdg_shell_v6::ZxdgShellV6)) };
     // explicit call to drop to not forget what we're doing here
     ::std::mem::drop(data);
 }
@@ -258,9 +253,7 @@ where
                         );
                     }
                 })
-                .expect(
-                    "xdg_surface exists but surface has not shell_surface role?!",
-                );
+                .expect("xdg_surface exists but surface has not shell_surface role?!");
         },
         get_toplevel: |evlh, idata, _, xdg_surface, toplevel| {
             let ptr = xdg_surface.get_user_data();
@@ -277,9 +270,7 @@ where
                         max_size: (0, 0),
                     });
                 })
-                .expect(
-                    "xdg_surface exists but surface has not shell_surface role?!",
-                );
+                .expect("xdg_surface exists but surface has not shell_surface role?!");
 
             toplevel.set_user_data(Box::into_raw(Box::new(unsafe {
                 (
@@ -326,9 +317,7 @@ where
                         positioner: positioner_data.clone(),
                     });
                 })
-                .expect(
-                    "xdg_surface exists but surface has not shell_surface role?!",
-                );
+                .expect("xdg_surface exists but surface has not shell_surface role?!");
 
             popup.set_user_data(Box::into_raw(Box::new(unsafe {
                 (
@@ -370,9 +359,7 @@ where
                         height,
                     });
                 })
-                .expect(
-                    "xdg_surface exists but surface has not shell_surface role?!",
-                );
+                .expect("xdg_surface exists but surface has not shell_surface role?!");
         },
         ack_configure: |_, idata, _, surface, serial| {
             let ptr = surface.get_user_data();
@@ -397,9 +384,7 @@ where
                     }
                     data.configured = true;
                 })
-                .expect(
-                    "xdg_surface exists but surface has not shell_surface role?!",
-                );
+                .expect("xdg_surface exists but surface has not shell_surface role?!");
         },
     }
 }
@@ -442,9 +427,7 @@ where
             ShellSurfacePendingState::Toplevel(ref mut toplevel_data) => f(toplevel_data),
             _ => unreachable!(),
         })
-        .expect(
-            "xdg_toplevel exists but surface has not shell_surface role?!",
-        );
+        .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
 fn xdg_handle_display_state_change<U, R, CID, SID, SD>(evlh: &mut EventLoopHandle,
@@ -503,9 +486,7 @@ where
     // Add the configure as pending
     token
         .with_role_data::<ShellSurfaceRole, _, _>(surface, |data| data.pending_configures.push(serial))
-        .expect(
-            "xdg_toplevel exists but surface has not shell_surface role?!",
-        );
+        .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
 fn make_toplevel_handle<U, R, H, SD>(token: CompositorToken<U, R, H>,
@@ -541,9 +522,7 @@ where
                     data.pending_state = ShellSurfacePendingState::None;
                     data.configured = false;
                 })
-                .expect(
-                    "xdg_toplevel exists but surface has not shell_surface role?!",
-                );
+                .expect("xdg_toplevel exists but surface has not shell_surface role?!");
             // remove this surface from the known ones (as well as any leftover dead surface)
             evlh.state()
                 .get_mut(&idata.state_token)
@@ -651,9 +630,7 @@ where
     // Add the configure as pending
     token
         .with_role_data::<ShellSurfaceRole, _, _>(surface, |data| data.pending_configures.push(serial))
-        .expect(
-            "xdg_toplevel exists but surface has not shell_surface role?!",
-        );
+        .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
 fn make_popup_handle<U, R, H, SD>(token: CompositorToken<U, R, H>, resource: &zxdg_popup_v6::ZxdgPopupV6)
@@ -682,8 +659,8 @@ where
         destroy: |evlh, idata, _, popup| {
             let ptr = popup.get_user_data();
             let &(ref surface, _, _) = unsafe {
-                &*(ptr as
-                    *mut (
+                &*(ptr
+                    as *mut (
                         wl_surface::WlSurface,
                         zxdg_shell_v6::ZxdgShellV6,
                         zxdg_surface_v6::ZxdgSurfaceV6,
@@ -695,9 +672,7 @@ where
                     data.pending_state = ShellSurfacePendingState::None;
                     data.configured = false;
                 })
-                .expect(
-                    "xdg_toplevel exists but surface has not shell_surface role?!",
-                );
+                .expect("xdg_toplevel exists but surface has not shell_surface role?!");
             // remove this surface from the known ones (as well as any leftover dead surface)
             evlh.state()
                 .get_mut(&idata.state_token)

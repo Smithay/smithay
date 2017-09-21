@@ -57,9 +57,7 @@ impl<U: Default, R: Default> SurfaceData<U, R> {
 
     /// Initialize the user_data of a surface, must be called right when the surface is created
     pub unsafe fn init(surface: &wl_surface::WlSurface) {
-        surface.set_user_data(
-            Box::into_raw(Box::new(Mutex::new(SurfaceData::<U, R>::new()))) as *mut _,
-        )
+        surface.set_user_data(Box::into_raw(Box::new(Mutex::new(SurfaceData::<U, R>::new()))) as *mut _)
     }
 }
 
