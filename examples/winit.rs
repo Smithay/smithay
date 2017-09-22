@@ -18,10 +18,9 @@ use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerButtonEvent,
                               PointerMotionAbsoluteEvent};
 use smithay::backend::winit;
-use smithay::compositor::{compositor_init, SubsurfaceRole, SurfaceAttributes, TraversalAction};
+use smithay::compositor::{SubsurfaceRole, TraversalAction};
 use smithay::compositor::roles::Role;
 use smithay::seat::{KbdHandle, PointerHandle, Seat};
-use smithay::shell::{shell_init, ShellSurfaceRole};
 use smithay::shm::init_shm_global;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -138,7 +137,7 @@ fn main() {
 
     init_shm_global(&mut event_loop, vec![], log.clone());
 
-    let (compositor_token, shell_state_token, window_map) = init_shell(&mut event_loop, log.clone());
+    let (compositor_token, _shell_state_token, window_map) = init_shell(&mut event_loop, log.clone());
 
     let (seat_token, _) = Seat::new(&mut event_loop, "winit".into(), log.clone());
 
@@ -177,7 +176,6 @@ fn main() {
         // redraw the frame, in a simple but inneficient way
         {
             let screen_dimensions = drawer.get_framebuffer_dimensions();
-            let state = event_loop.state();
             window_map
                 .borrow()
                 .with_windows_from_bottom_to_top(|toplevel_surface, initial_place| {

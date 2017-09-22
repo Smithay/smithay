@@ -30,7 +30,7 @@ where
         // need to check more carefully
         let mut found = None;
         if let Some(wl_surface) = self.toplevel.get_surface() {
-            ctoken.with_surface_tree_downward(
+            let _ = ctoken.with_surface_tree_downward(
                 wl_surface,
                 self.location,
                 |wl_surface, attributes, role, &(mut x, mut y)| if let Some((w, h)) = get_size(attributes) {
@@ -60,14 +60,14 @@ where
         found
     }
 
-    fn self_update<F>(&mut self, ctoken: CompositorToken<U, R, CID>, mut get_size: F)
+    fn self_update<F>(&mut self, ctoken: CompositorToken<U, R, CID>, get_size: F)
     where
         F: Fn(&SurfaceAttributes<U>) -> Option<(i32, i32)>,
     {
         let (base_x, base_y) = self.location;
         let (mut min_x, mut min_y, mut max_x, mut max_y) = (base_x, base_y, base_x, base_y);
         if let Some(wl_surface) = self.toplevel.get_surface() {
-            ctoken.with_surface_tree_downward(
+            let _ = ctoken.with_surface_tree_downward(
                 wl_surface,
                 (base_x, base_y),
                 |_, attributes, role, &(mut x, mut y)| {
