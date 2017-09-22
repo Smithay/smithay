@@ -39,7 +39,7 @@ branches:
 before_script:
   - export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH
   - pip install 'travis-cargo<0.2' --user
-  - which rustfmt || travis-cargo --only nightly install rustfmt-nightly
+  - which rustfmt || travis-cargo --only nightly install rustfmt-nightly -- --force
   - which cargo-install-update || cargo install cargo-update
   - cargo install-update -a
   - mkdir $(pwd)/socket
