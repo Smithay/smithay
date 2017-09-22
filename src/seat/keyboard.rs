@@ -113,7 +113,13 @@ impl KbdInternal {
         };
 
         // update state
-        let state_components = self.state.update_key(keycode, direction);
+        // Offset the keycode by 8, as the evdev XKB rules reflect X's
+        // broken keycode system, which starts at 8.
+        let state_components = self.state.update_key(keycode + 8, direction);
+
+        println!("KEYCODE: {}", keycode);
+        println!("MODS: {:b}", state_components);
+
         if state_components != 0 {
             self.mods_state.update_with(&self.state);
             true
@@ -156,6 +162,7 @@ impl KbdInternal {
 }
 
 /// Errors that can be encountered when creating a keyboard handler
+#[derive(Debug)]
 pub enum Error {
     /// libxkbcommon could not load the specified keymap
     BadKeymap,
@@ -164,14 +171,12 @@ pub enum Error {
 }
 
 /// Create a keyboard handler from a set of RMLVO rules
-pub fn create_keyboard_handler<L>(rules: &str, model: &str, layout: &str, variant: &str,
-                                  options: Option<String>, repeat_delay: i32, repeat_rate: i32, logger: L)
-                                  -> Result<KbdHandle, Error>
-where
-    L: Into<Option<::slog::Logger>>,
-{
-    let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "xkbcommon_handler"));
-    info!(log, "Initializing a xkbcommon handler with keymap";
+pub(crate) fn create_keyboard_handler(rules: &str, model: &str, layout: &str, variant: &str,
+                                      options: Option<String>, repeat_delay: i32, repeat_rate: i32,
+                                      logger: ::slog::Logger)
+                                      -> Result<KbdHandle, Error> {
+    let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
+    info!(log, "Initializing a xkbcommon handler with keymap query";
         "rules" => rules, "model" => model, "layout" => layout, "variant" => variant,
         "options" => &options
     );
@@ -187,6 +192,8 @@ where
         debug!(log, "Loading keymap failed");
         Error::BadKeymap
     })?;
+
+    info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
 
 
     // prepare a tempfile with the keymap, to send it to clients
@@ -255,9 +262,10 @@ impl KbdHandle {
     {
         trace!(self.arc.logger, "Handling keystroke"; "keycode" => keycode, "state" => format_args!("{:?}", state));
         let mut guard = self.arc.internal.lock().unwrap();
-        let mods_changed = guard.key_input(keycode, state);
 
         let sym = guard.state.key_get_one_sym(keycode);
+
+        let mods_changed = guard.key_input(keycode, state);
 
         trace!(self.arc.logger, "Calling input filter";
             "mods_state" => format_args!("{:?}", guard.mods_state), "sym" => xkb::keysym_get_name(sym)
@@ -294,28 +302,39 @@ impl KbdHandle {
 
     /// Set the current focus of this keyboard
     ///
-    /// Any previous focus will be sent a `wl_keyboard::leave` event, and if the new focus
-    /// is not `None`, a `wl_keyboard::enter` event will be sent.
-    pub fn set_focus(&self, focus: Option<wl_surface::WlSurface>, serial: u32) {
+    /// If the ne focus is different from the previous one, any previous focus
+    /// will be sent a `wl_keyboard::leave` event, and if the new focus is not `None`,
+    /// a `wl_keyboard::enter` event will be sent.
+    pub fn set_focus(&self, focus: Option<&wl_surface::WlSurface>, serial: u32) {
         let mut guard = self.arc.internal.lock().unwrap();
 
-        // unset old focus
-        guard.with_focused_kbds(|kbd, s| {
-            kbd.leave(serial, s);
-        });
+        let same = guard
+            .focus
+            .as_ref()
+            .and_then(|f| focus.map(|s| s.equals(f)))
+            .unwrap_or(false);
 
-        // set new focus
-        guard.focus = focus;
-        let (dep, la, lo, gr) = guard.serialize_modifiers();
-        let keys = guard.serialize_pressed_keys();
-        guard.with_focused_kbds(|kbd, s| {
-            kbd.modifiers(serial, dep, la, lo, gr);
-            kbd.enter(serial, s, keys.clone());
-        });
-        if guard.focus.is_some() {
-            trace!(self.arc.logger, "Focus set to new surface");
+        if !same {
+            // unset old focus
+            guard.with_focused_kbds(|kbd, s| {
+                kbd.leave(serial, s);
+            });
+
+            // set new focus
+            guard.focus = focus.and_then(|s| s.clone());
+            let (dep, la, lo, gr) = guard.serialize_modifiers();
+            let keys = guard.serialize_pressed_keys();
+            guard.with_focused_kbds(|kbd, s| {
+                kbd.modifiers(serial, dep, la, lo, gr);
+                kbd.enter(serial, s, keys.clone());
+            });
+            if guard.focus.is_some() {
+                trace!(self.arc.logger, "Focus set to new surface");
+            } else {
+                trace!(self.arc.logger, "Focus unset");
+            }
         } else {
-            trace!(self.arc.logger, "Focus unset");
+            trace!(self.arc.logger, "Focus unchanged");
         }
     }
 
@@ -324,7 +343,7 @@ impl KbdHandle {
     /// The keymap will automatically be sent to it
     ///
     /// This should be done first, before anything else is done with this keyboard.
-    pub fn new_kbd(&self, kbd: wl_keyboard::WlKeyboard) {
+    pub(crate) fn new_kbd(&self, kbd: wl_keyboard::WlKeyboard) {
         trace!(self.arc.logger, "Sending keymap to client");
         kbd.keymap(
             wl_keyboard::KeymapFormat::XkbV1,
@@ -351,7 +370,7 @@ impl KbdHandle {
     /// Performs an internal cleanup of known kbds
     ///
     /// Drops any wl_keyboard that is no longer alive
-    pub fn cleanup_old_kbds(&self) {
+    pub(crate) fn cleanup_old_kbds(&self) {
         let mut guard = self.arc.internal.lock().unwrap();
         guard
             .known_kbds
