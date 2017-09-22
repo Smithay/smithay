@@ -263,7 +263,9 @@ impl KbdHandle {
         trace!(self.arc.logger, "Handling keystroke"; "keycode" => keycode, "state" => format_args!("{:?}", state));
         let mut guard = self.arc.internal.lock().unwrap();
 
-        let sym = guard.state.key_get_one_sym(keycode);
+        // Offset the keycode by 8, as the evdev XKB rules reflect X's
+        // broken keycode system, which starts at 8.
+        let sym = guard.state.key_get_one_sym(keycode+8);
 
         let mods_changed = guard.key_input(keycode, state);
 
