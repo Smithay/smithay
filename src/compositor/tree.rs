@@ -307,21 +307,22 @@ impl<U: 'static, R: 'static> SurfaceData<U, R> {
     }
 
     /// Access sequentially the attributes associated with a surface tree,
-    /// in a depth-first order
+    /// in a depth-first order.
     ///
     /// Note that an internal lock is taken during access of this data,
     /// so the tree cannot be manipulated at the same time.
     ///
     /// The callback returns wether the traversal should continue or not. Returning
     /// false will cause an early-stopping.
-    pub unsafe fn map_tree<F, T>(root: &wl_surface::WlSurface, initial: T, mut f: F)
+    pub unsafe fn map_tree<F, T>(root: &wl_surface::WlSurface, initial: T, mut f: F, reverse: bool)
     where
         F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
               -> TraversalAction<T>,
     {
         // helper function for recursion
         unsafe fn map<U: 'static, R: 'static, F, T>(surface: &wl_surface::WlSurface,
-                                                    root: &wl_surface::WlSurface, initial: &T, f: &mut F)
+                                                    root: &wl_surface::WlSurface, initial: &T, f: &mut F,
+                                                    reverse: bool)
                                                     -> bool
         where
             F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
@@ -344,9 +345,17 @@ impl<U: 'static, R: 'static> SurfaceData<U, R> {
             ) {
                 TraversalAction::DoChildren(t) => {
                     // loop over children
-                    for c in &data_guard.children {
-                        if !map::<U, R, _, _>(c, root, &t, f) {
-                            return false;
+                    if reverse {
+                        for c in data_guard.children.iter().rev() {
+                            if !map::<U, R, _, _>(c, root, &t, f, true) {
+                                return false;
+                            }
+                        }
+                    } else {
+                        for c in &data_guard.children {
+                            if !map::<U, R, _, _>(c, root, &t, f, false) {
+                                return false;
+                            }
                         }
                     }
                     true
@@ -368,9 +377,17 @@ impl<U: 'static, R: 'static> SurfaceData<U, R> {
         ) {
             TraversalAction::DoChildren(t) => {
                 // loop over children
-                for c in &data_guard.children {
-                    if !map::<U, R, _, _>(c, root, &t, &mut f) {
-                        break;
+                if reverse {
+                    for c in data_guard.children.iter().rev() {
+                        if !map::<U, R, _, _>(c, root, &t, &mut f, true) {
+                            break;
+                        }
+                    }
+                } else {
+                    for c in &data_guard.children {
+                        if !map::<U, R, _, _>(c, root, &t, &mut f, false) {
+                            break;
+                        }
                     }
                 }
             }

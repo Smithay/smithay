@@ -298,7 +298,7 @@ where
     R: RoleType + Role<SubsurfaceRole> + 'static,
     ID: 'static,
 {
-    /// Access the data of a surface tree
+    /// Access the data of a surface tree from bottom to top
     ///
     /// The provided closure is called successively on the surface and all its child subsurfaces,
     /// in a depth-first order. This matches the order in which the surfaces are supposed to be
@@ -314,7 +314,8 @@ where
     ///
     /// If the surface not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_surface_tree<F, T>(&self, surface: &wl_surface::WlSurface, initial: T, f: F) -> Result<(), ()>
+    pub fn with_surface_tree_upward<F, T>(&self, surface: &wl_surface::WlSurface, initial: T, f: F)
+                                          -> Result<(), ()>
     where
         F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
               -> TraversalAction<T>,
@@ -327,7 +328,33 @@ where
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe {
-            SurfaceData::<U, R>::map_tree(surface, initial, f);
+            SurfaceData::<U, R>::map_tree(surface, initial, f, false);
+        }
+        Ok(())
+    }
+
+    /// Access the data of a surface tree from top to bottom
+    ///
+    /// The provided closure is called successively on the surface and all its child subsurfaces,
+    /// in a depth-first order. This matches the reverse of the order in which the surfaces are
+    /// supposed to be drawn: top-most first.
+    ///
+    /// Behavior is the same as `with_surface_tree_upward`.
+    pub fn with_surface_tree_downward<F, T>(&self, surface: &wl_surface::WlSurface, initial: T, f: F)
+                                            -> Result<(), ()>
+    where
+        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
+              -> TraversalAction<T>,
+    {
+        assert!(
+            resource_is_registered(
+                surface,
+                &self::handlers::surface_implementation::<U, R, ID>()
+            ),
+            "Accessing the data of foreign surfaces is not supported."
+        );
+        unsafe {
+            SurfaceData::<U, R>::map_tree(surface, initial, f, true);
         }
         Ok(())
     }
