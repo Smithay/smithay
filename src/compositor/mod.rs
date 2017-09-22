@@ -94,6 +94,7 @@ use self::region::RegionData;
 use self::roles::{Role, RoleType, WrongRole};
 use self::tree::SurfaceData;
 pub use self::tree::TraversalAction;
+use utils::Rectangle;
 use wayland_server::{resource_is_registered, EventLoop, EventLoopHandle, Global};
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_compositor, wl_output, wl_region,
                                wl_subcompositor, wl_surface};
@@ -215,19 +216,6 @@ pub enum RectangleKind {
     /// The intersection of this rectangle with the region should
     /// be removed from the region
     Subtract,
-}
-
-/// A rectangle defined by its top-left corner and dimensions
-#[derive(Copy, Clone, Debug)]
-pub struct Rectangle {
-    /// horizontal position of the top-leftcorner of the rectangle, in surface coordinates
-    pub x: i32,
-    /// vertical position of the top-leftcorner of the rectangle, in surface coordinates
-    pub y: i32,
-    /// width of the rectangle
-    pub width: i32,
-    /// height of the rectangle
-    pub height: i32,
 }
 
 /// Description of the contents of a region

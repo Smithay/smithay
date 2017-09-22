@@ -105,10 +105,11 @@
 //! access from the `state()` of the event loop and the token returned by the init
 //! function.
 
-use compositor::{CompositorToken, Rectangle};
+use compositor::CompositorToken;
 use compositor::roles::Role;
 use std::cell::RefCell;
 use std::rc::Rc;
+use utils::Rectangle;
 use wayland_protocols::unstable::xdg_shell::server::{zxdg_popup_v6, zxdg_positioner_v6 as xdg_positioner,
                                                      zxdg_shell_v6, zxdg_surface_v6, zxdg_toplevel_v6};
 use wayland_server::{EventLoop, EventLoopHandle, EventResult, Global, Liveness, Resource, StateToken};

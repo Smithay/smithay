@@ -46,6 +46,7 @@ pub mod compositor;
 pub mod shm;
 pub mod seat;
 pub mod shell;
+pub mod utils;
 
 fn slog_or_stdlog<L>(logger: L) -> ::slog::Logger
 where
