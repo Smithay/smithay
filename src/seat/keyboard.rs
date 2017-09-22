@@ -174,7 +174,7 @@ pub enum Error {
 pub(crate) fn create_keyboard_handler(rules: &str, model: &str, layout: &str, variant: &str,
                                       options: Option<String>, repeat_delay: i32, repeat_rate: i32,
                                       logger: ::slog::Logger)
-                                      -> Result<KbdHandle, Error> {
+                                      -> Result<KeyboardHandle, Error> {
     let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
     info!(log, "Initializing a xkbcommon handler with keymap query";
         "rules" => rules, "model" => model, "layout" => layout, "variant" => variant,
@@ -208,7 +208,7 @@ pub(crate) fn create_keyboard_handler(rules: &str, model: &str, layout: &str, va
         "fd" => keymap_file.as_raw_fd(), "len" => keymap_data.as_bytes().len()
     );
 
-    Ok(KbdHandle {
+    Ok(KeyboardHandle {
         arc: Arc::new(KbdArc {
             internal: Mutex::new(internal),
             keymap_file: keymap_file,
@@ -230,20 +230,19 @@ struct KbdArc {
 /// It can be cloned and all clones manipulate the same internal state. Clones
 /// can also be sent across threads.
 ///
-/// This handle gives you 3 main ways to interact with the keymap handling:
+/// This handle gives you 2 main ways to interact with the keyboard handling:
 ///
-/// - register new `wl_keyboard` instances to it with the `new_kbd` method.
 /// - set the current focus for this keyboard: designing the surface that will receive the key inputs
-///   using the `KbdHandle::set_focus` method.
+///   using the `KeyboardHandle::set_focus` method.
 /// - process key inputs from the input backend, allowing them to be catched at the compositor-level
-///   or forwarded to the client. See the documentation of the `KbdHandle::input` method for
+///   or forwarded to the client. See the documentation of the `KeyboardHandle::input` method for
 ///   details.
 #[derive(Clone)]
-pub struct KbdHandle {
+pub struct KeyboardHandle {
     arc: Arc<KbdArc>,
 }
 
-impl KbdHandle {
+impl KeyboardHandle {
     /// Handle a keystroke
     ///
     /// All keystrokes from the input backend should be fed _in order_ to this method of the
@@ -265,7 +264,7 @@ impl KbdHandle {
 
         // Offset the keycode by 8, as the evdev XKB rules reflect X's
         // broken keycode system, which starts at 8.
-        let sym = guard.state.key_get_one_sym(keycode+8);
+        let sym = guard.state.key_get_one_sym(keycode + 8);
 
         let mods_changed = guard.key_input(keycode, state);
 
