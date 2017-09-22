@@ -1,14 +1,18 @@
+use super::WindowMap;
 use rand;
-use smithay::compositor::{CompositorToken, SurfaceUserImplementation};
-use smithay::shell::{PopupConfigure, ShellSurfaceRole, ShellSurfaceUserImplementation, ToplevelConfigure};
+use smithay::compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceUserImplementation};
+use smithay::shell::{shell_init, PopupConfigure, ShellState, ShellSurfaceRole,
+                     ShellSurfaceUserImplementation, ToplevelConfigure};
 use smithay::shm::with_buffer_contents;
+use std::cell::RefCell;
+use std::rc::Rc;
+use wayland_server::{EventLoop, StateToken};
 
 define_roles!(Roles => [ ShellSurface, ShellSurfaceRole ] );
 
 #[derive(Default)]
 pub struct SurfaceData {
     pub buffer: Option<(Vec<u8>, (u32, u32))>,
-    pub location: Option<(i32, i32)>,
 }
 
 pub fn surface_implementation() -> SurfaceUserImplementation<SurfaceData, Roles, ()> {
@@ -48,24 +52,26 @@ pub fn surface_implementation() -> SurfaceUserImplementation<SurfaceData, Roles,
     }
 }
 
-pub fn shell_implementation(
-    )
-    -> ShellSurfaceUserImplementation<SurfaceData, Roles, (), CompositorToken<SurfaceData, Roles, ()>, ()>
+pub struct ShellIData<F> {
+    pub token: CompositorToken<SurfaceData, Roles, ()>,
+    pub window_map: Rc<RefCell<super::WindowMap<SurfaceData, Roles, (), (), F>>>,
+}
+
+pub fn shell_implementation<F>() -> ShellSurfaceUserImplementation<SurfaceData, Roles, (), ShellIData<F>, ()>
+where
+    F: Fn(&SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)>,
 {
     ShellSurfaceUserImplementation {
         new_client: |_, _, _| {},
         client_pong: |_, _, _| {},
-        new_toplevel: |_, token, toplevel| {
-            let wl_surface = toplevel.get_surface().unwrap();
-            token.with_surface_data(wl_surface, |data| {
-                // place the window at a random location in the [0;300]x[0;300] square
-                use rand::distributions::{IndependentSample, Range};
-                let range = Range::new(0, 300);
-                let mut rng = rand::thread_rng();
-                let x = range.ind_sample(&mut rng);
-                let y = range.ind_sample(&mut rng);
-                data.user_data.location = Some((x, y))
-            });
+        new_toplevel: |_, idata, toplevel| {
+            // place the window at a random location in the [0;300]x[0;300] square
+            use rand::distributions::{IndependentSample, Range};
+            let range = Range::new(0, 300);
+            let mut rng = rand::thread_rng();
+            let x = range.ind_sample(&mut rng);
+            let y = range.ind_sample(&mut rng);
+            idata.window_map.borrow_mut().insert(toplevel, (x, y));
             ToplevelConfigure {
                 size: None,
                 states: vec![],
@@ -91,4 +97,48 @@ pub fn shell_implementation(
         },
         show_window_menu: |_, _, _, _, _, _, _| {},
     }
+}
+
+fn get_size(attrs: &SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)> {
+    attrs
+        .user_data
+        .buffer
+        .as_ref()
+        .map(|&(_, (w, h))| (w as i32, h as i32))
+}
+
+pub type MyWindowMap = WindowMap<
+    SurfaceData,
+    Roles,
+    (),
+    (),
+    fn(&SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)>,
+>;
+
+pub fn init_shell(
+    evl: &mut EventLoop, log: ::slog::Logger)
+    -> (
+        CompositorToken<SurfaceData, Roles, ()>,
+        StateToken<ShellState<SurfaceData, Roles, (), ()>>,
+        Rc<RefCell<MyWindowMap>>,
+    ) {
+    let (compositor_token, _, _) = compositor_init(evl, surface_implementation(), (), log.clone());
+
+    let window_map = Rc::new(RefCell::new(WindowMap::<_, _, _, (), _>::new(
+        compositor_token,
+        get_size as _,
+    )));
+
+    let (shell_state_token, _, _) = shell_init(
+        evl,
+        compositor_token,
+        shell_implementation(),
+        ShellIData {
+            token: compositor_token,
+            window_map: window_map.clone(),
+        },
+        log.clone(),
+    );
+
+    (compositor_token, shell_state_token, window_map)
 }

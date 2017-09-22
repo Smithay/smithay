@@ -17,7 +17,7 @@ use drm::control::{Device as ControlDevice, ResourceInfo};
 use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
 use drm::control::encoder::Info as EncoderInfo;
 use glium::Surface;
-use helpers::{shell_implementation, surface_implementation, GliumDrawer, Roles, SurfaceData};
+use helpers::{init_shell, GliumDrawer, MyWindowMap, Roles, SurfaceData};
 use slog::{Drain, Logger};
 use smithay::backend::drm::{drm_device_bind, DrmBackend, DrmDevice, DrmHandler};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
@@ -25,8 +25,10 @@ use smithay::compositor::{compositor_init, CompositorToken, SubsurfaceRole, Trav
 use smithay::compositor::roles::Role;
 use smithay::shell::{shell_init, ShellState};
 use smithay::shm::init_shm_global;
+use std::cell::RefCell;
 use std::fs::OpenOptions;
 use std::io::Error as IoError;
+use std::rc::Rc;
 use std::time::Duration;
 use wayland_server::{EventLoopHandle, StateToken};
 
@@ -89,16 +91,7 @@ fn main() {
 
     init_shm_global(&mut event_loop, vec![], log.clone());
 
-    let (compositor_token, _, _) =
-        compositor_init(&mut event_loop, surface_implementation(), (), log.clone());
-
-    let (shell_state_token, _, _) = shell_init(
-        &mut event_loop,
-        compositor_token,
-        shell_implementation(),
-        compositor_token,
-        log.clone(),
-    );
+    let (compositor_token, shell_state_token, window_map) = init_shell(&mut event_loop, log.clone());
 
     /*
      * Initialize glium
@@ -125,16 +118,23 @@ fn main() {
         DrmHandlerImpl {
             shell_state_token,
             compositor_token,
+            window_map: window_map.clone(),
             logger: log,
         },
     ).unwrap();
 
-    event_loop.run().unwrap();
+    loop {
+        event_loop.dispatch(Some(16)).unwrap();
+        display.flush_clients();
+
+        window_map.borrow_mut().refresh();
+    }
 }
 
 pub struct DrmHandlerImpl {
     shell_state_token: StateToken<ShellState<SurfaceData, Roles, (), ()>>,
     compositor_token: CompositorToken<SurfaceData, Roles, ()>,
+    window_map: Rc<RefCell<MyWindowMap>>,
     logger: ::slog::Logger,
 }
 
@@ -148,33 +148,39 @@ impl DrmHandler<GliumDrawer<DrmBackend>> for DrmHandlerImpl {
         // redraw the frame, in a simple but inneficient way
         {
             let screen_dimensions = drawer.get_framebuffer_dimensions();
-            for toplevel_surface in state.get(&self.shell_state_token).toplevel_surfaces() {
-                if let Some(wl_surface) = toplevel_surface.get_surface() {
-                    // this surface is a root of a subsurface tree that needs to be drawn
-                    let initial_place = self.compositor_token
-                        .with_surface_data(wl_surface, |data| data.user_data.location.unwrap_or((0, 0)));
-                    self.compositor_token
-                        .with_surface_tree(
-                            wl_surface,
-                            initial_place,
-                            |_surface, attributes, role, &(mut x, mut y)| {
-                                if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
-                                    // there is actually something to draw !
-                                    if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                                        x += subdata.x;
-                                        y += subdata.y;
+            self.window_map
+                .borrow()
+                .with_windows_from_bottom_to_top(|toplevel_surface, initial_place| {
+                    if let Some(wl_surface) = toplevel_surface.get_surface() {
+                        // this surface is a root of a subsurface tree that needs to be drawn
+                        self.compositor_token
+                            .with_surface_tree_upward(
+                                wl_surface,
+                                initial_place,
+                                |_surface, attributes, role, &(mut x, mut y)| {
+                                    if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
+                                        // there is actually something to draw !
+                                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                                            x += subdata.x;
+                                            y += subdata.y;
+                                        }
+                                        drawer.render(
+                                            &mut frame,
+                                            contents,
+                                            (w, h),
+                                            (x, y),
+                                            screen_dimensions,
+                                        );
+                                        TraversalAction::DoChildren((x, y))
+                                    } else {
+                                        // we are not display, so our children are neither
+                                        TraversalAction::SkipChildren
                                     }
-                                    drawer.render(&mut frame, contents, (w, h), (x, y), screen_dimensions);
-                                    TraversalAction::DoChildren((x, y))
-                                } else {
-                                    // we are not display, so our children are neither
-                                    TraversalAction::SkipChildren
-                                }
-                            },
-                        )
-                        .unwrap();
-                }
-            }
+                                },
+                            )
+                            .unwrap();
+                    }
+                });
         }
         frame.finish().unwrap();
     }
