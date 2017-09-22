@@ -20,7 +20,7 @@ use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardK
 use smithay::backend::winit;
 use smithay::compositor::{SubsurfaceRole, TraversalAction};
 use smithay::compositor::roles::Role;
-use smithay::seat::{KbdHandle, PointerHandle, Seat};
+use smithay::seat::{KeyboardHandle, PointerHandle, Seat};
 use smithay::shm::init_shm_global;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -29,7 +29,7 @@ use wayland_server::protocol::wl_pointer;
 struct WinitInputHandler {
     log: Logger,
     pointer: PointerHandle,
-    keyboard: KbdHandle,
+    keyboard: KeyboardHandle,
     window_map: Rc<RefCell<MyWindowMap>>,
     pointer_location: (f64, f64),
     serial: u32,
