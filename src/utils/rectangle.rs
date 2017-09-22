@@ -15,7 +15,6 @@ impl Rectangle {
     /// Checks wether given point is inside a rectangle
     pub fn contains(&self, point: (i32, i32)) -> bool {
         let (x, y) = point;
-        (x >= self.x) && (x < self.x + self.width)
-        && (y >= self.y) && (y < self.y + self.height)
+        (x >= self.x) && (x < self.x + self.width) && (y >= self.y) && (y < self.y + self.height)
     }
 }
