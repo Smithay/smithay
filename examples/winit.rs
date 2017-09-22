@@ -15,12 +15,110 @@ use glium::Surface;
 use helpers::{init_shell, GliumDrawer, MyWindowMap};
 use slog::{Drain, Logger};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
-use smithay::backend::input::InputBackend;
+use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerButtonEvent,
+                              PointerMotionAbsoluteEvent};
 use smithay::backend::winit;
-use smithay::compositor::{compositor_init, SubsurfaceRole, TraversalAction};
+use smithay::compositor::{compositor_init, SubsurfaceRole, SurfaceAttributes, TraversalAction};
 use smithay::compositor::roles::Role;
-use smithay::shell::shell_init;
+use smithay::seat::{KbdHandle, PointerHandle, Seat};
+use smithay::shell::{shell_init, ShellSurfaceRole};
 use smithay::shm::init_shm_global;
+use std::cell::RefCell;
+use std::rc::Rc;
+use wayland_server::protocol::wl_pointer;
+
+struct WinitInputHandler {
+    log: Logger,
+    pointer: PointerHandle,
+    keyboard: KbdHandle,
+    window_map: Rc<RefCell<MyWindowMap>>,
+    pointer_location: (f64, f64),
+    serial: u32,
+}
+
+impl WinitInputHandler {
+    fn next_serial(&mut self) -> u32 {
+        self.serial += 1;
+        self.serial
+    }
+}
+
+impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
+    fn on_seat_created(&mut self, _: &input::Seat) {
+        /* never happens with winit */
+    }
+    fn on_seat_destroyed(&mut self, _: &input::Seat) {
+        /* never happens with winit */
+    }
+    fn on_seat_changed(&mut self, _: &input::Seat) {
+        /* never happens with winit */
+    }
+    fn on_keyboard_key(&mut self, _: &input::Seat, evt: winit::WinitKeyboardInputEvent) {
+        let keycode = evt.key_code() - 8;
+        let state = evt.state();
+        debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
+        let serial = self.next_serial();
+        self.keyboard.input(keycode, state, serial, |_, _| true);
+    }
+    fn on_pointer_move(&mut self, _: &input::Seat, _: input::UnusedEvent) {
+        /* never happens with winit */
+    }
+    fn on_pointer_move_absolute(&mut self, _: &input::Seat, evt: winit::WinitMouseMovedEvent) {
+        // on winit, mouse events are already in pixel coordinates
+        let (x, y) = evt.position();
+        self.pointer_location = (x, y);
+        let serial = self.next_serial();
+        let under = self.window_map.borrow().get_surface_under((x, y));
+        self.pointer.motion(
+            under.as_ref().map(|&(ref s, (x, y))| (s, x, y)),
+            serial,
+            evt.time(),
+        );
+    }
+    fn on_pointer_button(&mut self, _: &input::Seat, evt: winit::WinitMouseInputEvent) {
+        let serial = self.next_serial();
+        let button = match evt.button() {
+            input::MouseButton::Left => 0x110,
+            input::MouseButton::Right => 0x111,
+            input::MouseButton::Middle => 0x112,
+            input::MouseButton::Other(b) => b as u32,
+        };
+        let state = match evt.state() {
+            input::MouseButtonState::Pressed => {
+                // change the keyboard focus
+                let under = self.window_map
+                    .borrow_mut()
+                    .get_surface_and_bring_to_top(self.pointer_location);
+                self.keyboard
+                    .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
+                wl_pointer::ButtonState::Pressed
+            }
+            input::MouseButtonState::Released => wl_pointer::ButtonState::Released,
+        };
+        self.pointer.button(button, state, serial, evt.time());
+    }
+    fn on_pointer_axis(&mut self, _: &input::Seat, _: winit::WinitMouseWheelEvent) {
+        /* not done in this example */
+    }
+    fn on_touch_down(&mut self, _: &input::Seat, _: winit::WinitTouchStartedEvent) {
+        /* not done in this example */
+    }
+    fn on_touch_motion(&mut self, _: &input::Seat, _: winit::WinitTouchMovedEvent) {
+        /* not done in this example */
+    }
+    fn on_touch_up(&mut self, _: &input::Seat, _: winit::WinitTouchEndedEvent) {
+        /* not done in this example */
+    }
+    fn on_touch_cancel(&mut self, _: &input::Seat, _: winit::WinitTouchCancelledEvent) {
+        /* not done in this example */
+    }
+    fn on_touch_frame(&mut self, _: &input::Seat, _: input::UnusedEvent) {
+        /* never happens with winit */
+    }
+    fn on_input_config_changed(&mut self, _: &mut ()) {
+        /* never happens with winit */
+    }
+}
 
 fn main() {
     // A logger facility, here we use the terminal for this example
@@ -42,11 +140,28 @@ fn main() {
 
     let (compositor_token, shell_state_token, window_map) = init_shell(&mut event_loop, log.clone());
 
+    let (seat_token, _) = Seat::new(&mut event_loop, "winit".into(), log.clone());
+
+    let pointer = event_loop.state().get_mut(&seat_token).add_pointer();
+    let keyboard = event_loop
+        .state()
+        .get_mut(&seat_token)
+        .add_keyboard("", "fr", "oss", None, 1000, 500)
+        .expect("Failed to initialize the keyboard");
 
     /*
      * Initialize glium
      */
     let drawer = GliumDrawer::from(renderer);
+
+    input.set_handler(WinitInputHandler {
+        log: log.clone(),
+        pointer,
+        keyboard,
+        window_map: window_map.clone(),
+        pointer_location: (0.0, 0.0),
+        serial: 0,
+    });
 
     /*
      * Add a listening socket:
