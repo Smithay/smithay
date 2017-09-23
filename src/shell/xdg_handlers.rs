@@ -1,9 +1,10 @@
 use super::{make_shell_client_data, PopupConfigure, PopupState, PositionerState, ShellClient,
             ShellClientData, ShellSurfaceIData, ShellSurfacePendingState, ShellSurfaceRole,
             ToplevelConfigure, ToplevelState};
-use compositor::{CompositorToken, Rectangle};
+use compositor::CompositorToken;
 use compositor::roles::*;
 use std::sync::Mutex;
+use utils::Rectangle;
 use wayland_protocols::unstable::xdg_shell::server::{zxdg_popup_v6, zxdg_positioner_v6, zxdg_shell_v6,
                                                      zxdg_surface_v6, zxdg_toplevel_v6};
 use wayland_server::{Client, EventLoopHandle, Resource};

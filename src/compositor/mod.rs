@@ -94,6 +94,7 @@ use self::region::RegionData;
 use self::roles::{Role, RoleType, WrongRole};
 use self::tree::SurfaceData;
 pub use self::tree::TraversalAction;
+use utils::Rectangle;
 use wayland_server::{resource_is_registered, EventLoop, EventLoopHandle, Global};
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_compositor, wl_output, wl_region,
                                wl_subcompositor, wl_surface};
@@ -217,19 +218,6 @@ pub enum RectangleKind {
     Subtract,
 }
 
-/// A rectangle defined by its top-left corner and dimensions
-#[derive(Copy, Clone, Debug)]
-pub struct Rectangle {
-    /// horizontal position of the top-leftcorner of the rectangle, in surface coordinates
-    pub x: i32,
-    /// vertical position of the top-leftcorner of the rectangle, in surface coordinates
-    pub y: i32,
-    /// width of the rectangle
-    pub width: i32,
-    /// height of the rectangle
-    pub height: i32,
-}
-
 /// Description of the contents of a region
 ///
 /// A region is defined as an union and difference of rectangle.
@@ -310,7 +298,7 @@ where
     R: RoleType + Role<SubsurfaceRole> + 'static,
     ID: 'static,
 {
-    /// Access the data of a surface tree
+    /// Access the data of a surface tree from bottom to top
     ///
     /// The provided closure is called successively on the surface and all its child subsurfaces,
     /// in a depth-first order. This matches the order in which the surfaces are supposed to be
@@ -326,7 +314,8 @@ where
     ///
     /// If the surface not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_surface_tree<F, T>(&self, surface: &wl_surface::WlSurface, initial: T, f: F) -> Result<(), ()>
+    pub fn with_surface_tree_upward<F, T>(&self, surface: &wl_surface::WlSurface, initial: T, f: F)
+                                          -> Result<(), ()>
     where
         F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
               -> TraversalAction<T>,
@@ -339,7 +328,33 @@ where
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe {
-            SurfaceData::<U, R>::map_tree(surface, initial, f);
+            SurfaceData::<U, R>::map_tree(surface, initial, f, false);
+        }
+        Ok(())
+    }
+
+    /// Access the data of a surface tree from top to bottom
+    ///
+    /// The provided closure is called successively on the surface and all its child subsurfaces,
+    /// in a depth-first order. This matches the reverse of the order in which the surfaces are
+    /// supposed to be drawn: top-most first.
+    ///
+    /// Behavior is the same as `with_surface_tree_upward`.
+    pub fn with_surface_tree_downward<F, T>(&self, surface: &wl_surface::WlSurface, initial: T, f: F)
+                                            -> Result<(), ()>
+    where
+        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
+              -> TraversalAction<T>,
+    {
+        assert!(
+            resource_is_registered(
+                surface,
+                &self::handlers::surface_implementation::<U, R, ID>()
+            ),
+            "Accessing the data of foreign surfaces is not supported."
+        );
+        unsafe {
+            SurfaceData::<U, R>::map_tree(surface, initial, f, true);
         }
         Ok(())
     }

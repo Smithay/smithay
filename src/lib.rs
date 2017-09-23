@@ -44,8 +44,9 @@ extern crate error_chain;
 pub mod backend;
 pub mod compositor;
 pub mod shm;
-pub mod keyboard;
+pub mod seat;
 pub mod shell;
+pub mod utils;
 
 fn slog_or_stdlog<L>(logger: L) -> ::slog::Logger
 where
