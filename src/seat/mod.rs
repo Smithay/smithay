@@ -94,7 +94,7 @@ impl Seat {
     {
         let log = ::slog_or_stdlog(logger);
         let seat = Seat {
-            log: log.new(o!("smithay_module" => "seat_handler")),
+            log: log.new(o!("smithay_module" => "seat_handler", "seat_name" => name.clone())),
             name: name,
             pointer: None,
             keyboard: None,
