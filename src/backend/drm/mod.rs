@@ -80,10 +80,10 @@
 //! let crtc = encoder_info.current_crtc()
 //!     // or use the first one that is compatible with the encoder
 //!     .unwrap_or_else(||
-//!         *res_handles.crtcs()
-//!         .iter()
-//!         .find(|crtc| encoder_info.supports_crtc(**crtc))
-//!         .unwrap());
+//!         *res_handles.filter_crtcs(encoder_info.possible_crtcs())
+//!           .iter()
+//!           .next()
+//!           .unwrap());
 //!
 //! // Use first mode (usually the highest resolution)
 //! let mode = connector_info.modes()[0];
@@ -118,7 +118,7 @@
 //! #
 //! # use drm::control::{Device as ControlDevice, ResourceInfo};
 //! # use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
-//! use std::io::Error as IoError;
+//! use drm::result::Error as DrmError;
 //! # use std::fs::OpenOptions;
 //! # use std::time::Duration;
 //! use smithay::backend::drm::{DrmDevice, DrmBackend, DrmHandler, drm_device_bind};
@@ -167,7 +167,7 @@
 //!     fn error(&mut self,
 //!              _: &mut EventLoopHandle,
 //!              device: &mut DrmDevice<DrmBackend>,
-//!              error: IoError)
+//!              error: DrmError)
 //!     {
 //!         panic!("DrmDevice errored: {}", error);
 //!     }
@@ -186,13 +186,13 @@ use backend::graphics::egl::{EGLContext, GlAttributes, PixelFormatRequirements};
 use drm::Device as BasicDevice;
 use drm::control::{connector, crtc, encoder, Mode, ResourceInfo};
 use drm::control::Device as ControlDevice;
+use drm::result::Error as DrmError;
 use gbm::Device as GbmDevice;
 use nix;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Error as IoError, Result as IoResult};
-use std::marker::PhantomData;
+use std::io::Result as IoResult;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::time::Duration;
@@ -356,7 +356,7 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
             context: Rc::new(Context::try_new(
                 Box::new(Devices::try_new(Box::new(drm), |drm| {
                     debug!(log, "Creating gbm device");
-                    GbmDevice::new_from_drm::<DrmDevice<B>>(drm).chain_err(|| ErrorKind::GbmInitFailed)
+                    GbmDevice::new_from_drm(drm).chain_err(|| ErrorKind::GbmInitFailed)
                 })?),
                 |devices| {
                     debug!(log, "Creating egl context from gbm device");
@@ -420,7 +420,15 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
                 .collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
-            if !encoders.iter().any(|encoder| encoder.supports_crtc(crtc)) {
+            let resource_handles = self.resource_handles().chain_err(|| {
+                ErrorKind::DrmDev(format!("{:?}", self.context.head().head()))
+            })?;
+            if !encoders
+                .iter()
+                .map(|encoder| encoder.possible_crtcs())
+                .all(|crtc_list| {
+                    resource_handles.filter_crtcs(crtc_list).contains(&crtc)
+                }) {
                 bail!(ErrorKind::NoSuitableEncoder(con_info, crtc))
             }
         }
@@ -460,7 +468,7 @@ pub trait DrmHandler<B: Borrow<DrmBackend> + 'static> {
     ///
     /// The related backends are most likely *not* usable anymore and
     /// the whole stack has to be recreated.
-    fn error(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<B>, error: IoError);
+    fn error(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<B>, error: DrmError);
 }
 
 /// Bind a `DrmDevice` to an EventLoop,
@@ -487,51 +495,31 @@ where
 {
     FdEventSourceImpl {
         ready: |evlh, id, _, _| {
-            use std::any::Any;
-
             let &mut (ref mut dev, ref mut handler) = id;
 
-            struct PageFlipHandler<'a, 'b, B: Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'static> {
-                handler: &'a mut H,
-                evlh: &'b mut EventLoopHandle,
-                _marker: PhantomData<B>,
-            };
-
-            impl<'a, 'b, B, H> crtc::PageFlipHandler<DrmDevice<B>> for PageFlipHandler<'a, 'b, B, H>
-            where
-                B: Borrow<DrmBackend> + 'static,
-                H: DrmHandler<B> + 'static,
-            {
-                fn handle_event(&mut self, device: &mut DrmDevice<B>, frame: u32, duration: Duration,
-                                userdata: Box<Any>) {
-                    let crtc_id: crtc::Handle = *userdata.downcast().unwrap();
-                    let token = device.backends.get(&crtc_id).cloned();
-                    if let Some(token) = token {
-                        // we can now unlock the buffer
-                        self.evlh.state().get(&token).borrow().unlock_buffer();
-                        trace!(device.logger, "Handling event for backend {:?}", crtc_id);
-                        // and then call the user to render the next frame
-                        self.handler
-                            .ready(self.evlh, device, &token, frame, duration);
+            let events = crtc::receive_events(dev);
+            match events {
+                Ok(events) => for event in events {
+                    match event {
+                        crtc::Event::PageFlip(event) => {
+                            let token = dev.backends.get(&event.crtc).cloned();
+                            if let Some(token) = token {
+                                // we can now unlock the buffer
+                                evlh.state().get(&token).borrow().unlock_buffer();
+                                trace!(dev.logger, "Handling event for backend {:?}", event.crtc);
+                                // and then call the user to render the next frame
+                                handler.ready(evlh, dev, &token, event.frame, event.duration);
+                            }
+                        }
+                        _ => {}
                     }
-                }
-            }
-
-            crtc::handle_event(
-                dev,
-                2,
-                None::<&mut ()>,
-                Some(&mut PageFlipHandler {
-                    handler,
-                    evlh,
-                    _marker: PhantomData,
-                }),
-                None::<&mut ()>,
-            ).unwrap();
+                },
+                Err(err) => return handler.error(evlh, dev, err),
+            };
         },
         error: |evlh, id, _, error| {
             warn!(id.0.logger, "DrmDevice errored: {}", error);
-            id.1.error(evlh, &mut id.0, error);
+            id.1.error(evlh, &mut id.0, error.into());
         },
     }
 }

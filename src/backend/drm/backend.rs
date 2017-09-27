@@ -2,9 +2,8 @@ use super::devices;
 use super::error::*;
 use backend::graphics::GraphicsBackend;
 use backend::graphics::egl::{EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError};
-use drm::buffer::Buffer;
+use drm::control::{Device, ResourceInfo};
 use drm::control::{connector, crtc, encoder, framebuffer, Mode};
-use drm::control::ResourceInfo;
 use gbm::{BufferObject, BufferObjectFlags, Format as GbmFormat, Surface as GbmSurface, SurfaceBufferHandle};
 use image::{ImageBuffer, Rgba};
 use nix::c_void;
@@ -211,10 +210,22 @@ impl DrmBackend {
                 .collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
+            let resource_handles = self.graphics
+                .head()
+                .head()
+                .head()
+                .resource_handles()
+                .chain_err(|| {
+                    ErrorKind::DrmDev(format!("{:?}", self.graphics.head().head().head()))
+                })?;
             if !encoders
                 .iter()
-                .any(|encoder| encoder.supports_crtc(self.crtc))
-            {
+                .map(|encoder| encoder.possible_crtcs())
+                .all(|crtc_list| {
+                    resource_handles
+                        .filter_crtcs(crtc_list)
+                        .contains(&self.crtc)
+                }) {
                 bail!(ErrorKind::NoSuitableEncoder(info, self.crtc));
             }
 
@@ -440,17 +451,11 @@ impl GraphicsBackend for DrmBackend {
                 if crtc::set_cursor2(
                     self.graphics.head().head().head(),
                     self.crtc,
-                    Buffer::handle(&cursor),
-                    (w, h),
+                    &cursor,
                     (hotspot.0 as i32, hotspot.1 as i32),
                 ).is_err()
                 {
-                    crtc::set_cursor(
-                        self.graphics.head().head().head(),
-                        self.crtc,
-                        Buffer::handle(&cursor),
-                        (w, h),
-                    ).chain_err(|| {
+                    crtc::set_cursor(self.graphics.head().head().head(), self.crtc, &cursor).chain_err(|| {
                         ErrorKind::DrmDev(format!("{:?}", self.graphics.head().head().head()))
                     })?;
                 }
@@ -502,7 +507,7 @@ impl EGLGraphicsBackend for DrmBackend {
                 trace!(self.logger, "Queueing Page flip");
 
                 // and flip
-                crtc::page_flip(graphics.context.devices.drm, self.crtc, fb.handle(), &[crtc::PageFlipFlags::PageFlipEvent], self.crtc).map_err(|_| SwapBuffersError::ContextLost)
+                crtc::page_flip(graphics.context.devices.drm, self.crtc, fb.handle(), &[crtc::PageFlipFlags::PageFlipEvent]).map_err(|_| SwapBuffersError::ContextLost)
             })
         })
     }

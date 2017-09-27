@@ -16,6 +16,7 @@ mod helpers;
 use drm::control::{Device as ControlDevice, ResourceInfo};
 use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
 use drm::control::encoder::Info as EncoderInfo;
+use drm::result::Error as DrmError;
 use glium::Surface;
 use helpers::{init_shell, GliumDrawer, MyWindowMap, Roles, SurfaceData};
 use slog::{Drain, Logger};
@@ -27,7 +28,6 @@ use smithay::wayland::shell::ShellState;
 use smithay::wayland::shm::init_shm_global;
 use std::cell::RefCell;
 use std::fs::OpenOptions;
-use std::io::Error as IoError;
 use std::rc::Rc;
 use std::time::Duration;
 use wayland_server::{EventLoopHandle, StateToken};
@@ -72,9 +72,9 @@ fn main() {
     let crtc = encoder_info.current_crtc()
         // or use the first one that is compatible with the encoder
         .unwrap_or_else(||
-            *res_handles.crtcs()
+            *res_handles.filter_crtcs(encoder_info.possible_crtcs())
             .iter()
-            .find(|crtc| encoder_info.supports_crtc(**crtc))
+            .next()
             .unwrap());
 
     // Assuming we found a good connector and loaded the info into `connector_info`
@@ -186,7 +186,7 @@ impl DrmHandler<GliumDrawer<DrmBackend>> for DrmHandlerImpl {
     }
 
     fn error(&mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<GliumDrawer<DrmBackend>>,
-             error: IoError) {
+             error: DrmError) {
         panic!("{:?}", error);
     }
 }
