@@ -117,9 +117,6 @@ impl KbdInternal {
         // broken keycode system, which starts at 8.
         let state_components = self.state.update_key(keycode + 8, direction);
 
-        println!("KEYCODE: {}", keycode);
-        println!("MODS: {:b}", state_components);
-
         if state_components != 0 {
             self.mods_state.update_with(&self.state);
             true
