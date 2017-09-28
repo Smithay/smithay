@@ -53,7 +53,7 @@ impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
         /* never happens with winit */
     }
     fn on_keyboard_key(&mut self, _: &input::Seat, evt: winit::WinitKeyboardInputEvent) {
-        let keycode = evt.key_code() - 8;
+        let keycode = evt.key_code();
         let state = evt.state();
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
         let serial = self.next_serial();
