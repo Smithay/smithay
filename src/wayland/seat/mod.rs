@@ -11,7 +11,7 @@
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
 //!
-//! use smithay::seat::Seat;
+//! use smithay::wayland::seat::Seat;
 //!
 //! # fn main(){
 //! # let (_display, mut event_loop) = wayland_server::create_display();
@@ -38,7 +38,7 @@
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
 //! #
-//! # use smithay::seat::Seat;
+//! # use smithay::wayland::seat::Seat;
 //! #
 //! # fn main(){
 //! # let (_display, mut event_loop) = wayland_server::create_display();

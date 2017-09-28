@@ -1,9 +1,9 @@
 use super::WindowMap;
 use rand;
-use smithay::compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceUserImplementation};
-use smithay::shell::{shell_init, PopupConfigure, ShellState, ShellSurfaceRole,
+use smithay::wayland::compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceUserImplementation};
+use smithay::wayland::shell::{shell_init, PopupConfigure, ShellState, ShellSurfaceRole,
                      ShellSurfaceUserImplementation, ToplevelConfigure};
-use smithay::shm::with_buffer_contents;
+use smithay::wayland::shm::with_buffer_contents;
 use std::cell::RefCell;
 use std::rc::Rc;
 use wayland_server::{EventLoop, StateToken};

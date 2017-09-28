@@ -31,7 +31,7 @@
 //! # #[macro_use] extern crate smithay;
 //! use wayland_server::protocol::wl_compositor::WlCompositor;
 //! use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
-//! use smithay::compositor::{compositor_init, SurfaceUserImplementation};
+//! use smithay::wayland::compositor::{compositor_init, SurfaceUserImplementation};
 //!
 //! // Define some user data to be associated with the surfaces.
 //! // It must implement the Default trait, which will represent the state of a surface which

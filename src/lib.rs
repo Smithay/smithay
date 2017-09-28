@@ -42,10 +42,7 @@ extern crate slog_stdlog;
 extern crate error_chain;
 
 pub mod backend;
-pub mod compositor;
-pub mod shm;
-pub mod seat;
-pub mod shell;
+pub mod wayland;
 pub mod utils;
 
 fn slog_or_stdlog<L>(logger: L) -> ::slog::Logger
