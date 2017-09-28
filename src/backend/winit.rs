@@ -10,12 +10,14 @@ use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, Inpu
                      TouchMotionEvent, TouchSlot, TouchUpEvent, UnusedEvent};
 use nix::c_void;
 use rental::TryNewError;
+use std::cell::Cell;
 use std::cmp;
 use std::error;
 use std::fmt;
 use std::rc::Rc;
 use winit::{ElementState, Event, EventsLoop, KeyboardInput, MouseButton as WinitMouseButton, MouseCursor,
             MouseScrollDelta, Touch, TouchPhase, WindowBuilder, WindowEvent};
+use winit::os::unix::WindowExt;
 
 rental! {
     mod rental {
@@ -61,6 +63,7 @@ impl<H> From<TryNewError<Error, H>> for Error {
 /// `EGLGraphicsBackend` graphics backend trait
 pub struct WinitGraphicsBackend {
     window: Rc<Window>,
+    ready: Cell<bool>,
     logger: ::slog::Logger,
 }
 
@@ -156,6 +159,7 @@ where
     Ok((
         WinitGraphicsBackend {
             window: window.clone(),
+            ready: Cell::new(false),
             logger: log.new(o!("smithay_winit_component" => "graphics")),
         },
         WinitInputBackend {
@@ -199,6 +203,15 @@ impl GraphicsBackend for WinitGraphicsBackend {
 impl EGLGraphicsBackend for WinitGraphicsBackend {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         trace!(self.logger, "Swapping buffers");
+        if !self.ready.get() {
+            if self.window.head().is_ready() {
+                // avoid locking the mutex every time once the window is ready
+                self.ready.set(true);
+            } else {
+                // Not yet ready, just silently ignore the swap-buffers call
+                return Ok(());
+            }
+        }
         self.window
             .rent(|egl| egl.rent(|surface| surface.swap_buffers()))
     }
