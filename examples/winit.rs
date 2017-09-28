@@ -18,10 +18,10 @@ use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerButtonEvent,
                               PointerMotionAbsoluteEvent};
 use smithay::backend::winit;
-use smithay::compositor::{SubsurfaceRole, TraversalAction};
-use smithay::compositor::roles::Role;
-use smithay::seat::{KeyboardHandle, PointerHandle, Seat};
-use smithay::shm::init_shm_global;
+use smithay::wayland::compositor::{SubsurfaceRole, TraversalAction};
+use smithay::wayland::compositor::roles::Role;
+use smithay::wayland::seat::{KeyboardHandle, PointerHandle, Seat};
+use smithay::wayland::shm::init_shm_global;
 use std::cell::RefCell;
 use std::rc::Rc;
 use wayland_server::protocol::wl_pointer;

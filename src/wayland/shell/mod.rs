@@ -29,9 +29,9 @@
 //! # #[macro_use] extern crate smithay;
 //! # extern crate wayland_protocols;
 //! #
-//! use smithay::compositor::roles::*;
-//! use smithay::compositor::CompositorToken;
-//! use smithay::shell::{shell_init, ShellSurfaceRole, ShellSurfaceUserImplementation};
+//! use smithay::wayland::compositor::roles::*;
+//! use smithay::wayland::compositor::CompositorToken;
+//! use smithay::wayland::shell::{shell_init, ShellSurfaceRole, ShellSurfaceUserImplementation};
 //! use wayland_server::protocol::wl_shell::WlShell;
 //! use wayland_protocols::unstable::xdg_shell::server::zxdg_shell_v6::ZxdgShellV6;
 //! use wayland_server::{EventLoop, EventLoopHandle};
@@ -52,7 +52,7 @@
 //!
 //! # fn main() {
 //! # let (_display, mut event_loop) = wayland_server::create_display();
-//! # let (compositor_token, _, _) = smithay::compositor::compositor_init::<(), MyRoles, _, _>(
+//! # let (compositor_token, _, _) = smithay::wayland::compositor::compositor_init::<(), MyRoles, _, _>(
 //! #     &mut event_loop,
 //! #     unimplemented!(),
 //! #     (),
@@ -105,8 +105,8 @@
 //! access from the `state()` of the event loop and the token returned by the init
 //! function.
 
-use compositor::CompositorToken;
-use compositor::roles::Role;
+use wayland::compositor::CompositorToken;
+use wayland::compositor::roles::Role;
 use std::cell::RefCell;
 use std::rc::Rc;
 use utils::Rectangle;

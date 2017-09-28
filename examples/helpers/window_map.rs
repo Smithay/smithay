@@ -1,6 +1,6 @@
-use smithay::compositor::{CompositorToken, SubsurfaceRole, SurfaceAttributes, TraversalAction};
-use smithay::compositor::roles::Role;
-use smithay::shell::{ShellSurfaceRole, ToplevelSurface};
+use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, SurfaceAttributes, TraversalAction};
+use smithay::wayland::compositor::roles::Role;
+use smithay::wayland::shell::{ShellSurfaceRole, ToplevelSurface};
 use smithay::utils::Rectangle;
 use wayland_server::Resource;
 use wayland_server::protocol::wl_surface;

@@ -161,7 +161,7 @@ macro_rules! define_roles(
     ($enum_name:ident => $([ $role_name: ident, $role_data: ty])*) => {
         define_roles!(__impl $enum_name =>
             // add in subsurface role
-            [Subsurface, $crate::compositor::SubsurfaceRole]
+            [Subsurface, $crate::wayland::compositor::SubsurfaceRole]
             $([$role_name, $role_data])*
         );
     };
@@ -177,7 +177,7 @@ macro_rules! define_roles(
             }
         }
 
-        impl $crate::compositor::roles::RoleType for $enum_name {
+        impl $crate::wayland::compositor::roles::RoleType for $enum_name {
             fn has_role(&self) -> bool {
                 if let $enum_name::NoRole = *self {
                     false
@@ -188,7 +188,7 @@ macro_rules! define_roles(
         }
 
         $(
-            impl $crate::compositor::roles::Role<$role_data> for $enum_name {
+            impl $crate::wayland::compositor::roles::Role<$role_data> for $enum_name {
                 fn set_with(&mut self, data: $role_data) -> ::std::result::Result<(), $role_data> {
                     if let $enum_name::NoRole = *self {
                         *self = $enum_name::$role_name(data);
@@ -206,23 +206,23 @@ macro_rules! define_roles(
                     }
                 }
 
-                fn data(&self) -> ::std::result::Result<&$role_data, $crate::compositor::roles::WrongRole> {
+                fn data(&self) -> ::std::result::Result<&$role_data, $crate::wayland::compositor::roles::WrongRole> {
                     if let $enum_name::$role_name(ref data) = *self {
                         Ok(data)
                     } else {
-                        Err($crate::compositor::roles::WrongRole)
+                        Err($crate::wayland::compositor::roles::WrongRole)
                     }
                 }
 
-                fn data_mut(&mut self) -> ::std::result::Result<&mut $role_data, $crate::compositor::roles::WrongRole> {
+                fn data_mut(&mut self) -> ::std::result::Result<&mut $role_data, $crate::wayland::compositor::roles::WrongRole> {
                     if let $enum_name::$role_name(ref mut data) = *self {
                         Ok(data)
                     } else {
-                        Err($crate::compositor::roles::WrongRole)
+                        Err($crate::wayland::compositor::roles::WrongRole)
                     }
                 }
 
-                fn unset(&mut self) -> ::std::result::Result<$role_data, $crate::compositor::roles::WrongRole> {
+                fn unset(&mut self) -> ::std::result::Result<$role_data, $crate::wayland::compositor::roles::WrongRole> {
                     // remove self to make borrow checker happy
                     let temp = ::std::mem::replace(self, $enum_name::NoRole);
                     if let $enum_name::$role_name(data) = temp {
@@ -230,7 +230,7 @@ macro_rules! define_roles(
                     } else {
                         // put it back in place
                         ::std::mem::replace(self, temp);
-                        Err($crate::compositor::roles::WrongRole)
+                        Err($crate::wayland::compositor::roles::WrongRole)
                     }
                 }
             }

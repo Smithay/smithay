@@ -19,7 +19,7 @@
 //! extern crate wayland_server;
 //! extern crate smithay;
 //!
-//! use smithay::shm::init_shm_global;
+//! use smithay::wayland::shm::init_shm_global;
 //! use wayland_server::protocol::wl_shm::Format;
 //!
 //! # fn main() {
@@ -43,7 +43,7 @@
 //! # extern crate smithay;
 //! # use wayland_server::protocol::wl_buffer::WlBuffer;
 //! # fn wrap(buffer: &WlBuffer) {
-//! use smithay::shm::{with_buffer_contents, BufferData};
+//! use smithay::wayland::shm::{with_buffer_contents, BufferData};
 //!
 //! with_buffer_contents(&buffer,
 //!     |slice: &[u8], buffer_metadata: BufferData| {
