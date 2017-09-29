@@ -9,10 +9,6 @@ rust:
   - beta
   - nightly
 
-matrix:
-  allow_failures:
-    - rust: nightly
-
 os:
   - linux
 
@@ -39,35 +35,71 @@ branches:
 before_script:
   - export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH
   - |
-      if [ $TRAVIS_RUST_VERSION = "nightly" ]; then
+      if [ "$FEATURES" = "cargo-fmt" ]; then
         cargo install rustfmt-nightly --force;
+      fi
+  - |
+      if [ "$FEATURES" = "cargo-clippy" ]; then
+        cargo install clippy --force;
       fi
   - mkdir $(pwd)/socket
   - export XDG_RUNTIME_DIR="$(pwd)/socket"
 
 script:
   - |
-      if [ $TRAVIS_RUST_VERSION = "nightly" ]; then
-        cargo fmt -- --write-mode=diff
-      fi
-  - |
-      features=$([ $TRAVIS_RUST_VERSION = "nightly" ] && echo "clippy" || echo "")
-      cargo test --features "$features"
-  - |
-      if [ $TRAVIS_RUST_VERSION = "stable" ]; then
-        cargo doc --no-deps
-      fi
+      case $FEATURES in
+        "all")
+            cargo test --all-features &&
+            cargo doc --no-deps --all-features
+        ;;
+        "default")
+            cargo test &&
+            cargo doc --no-deps
+        ;;
+        "cargo-fmt")
+            cargo fmt -- --write-mode=diff
+        ;;
+        "cargo-clippy")
+            cargo clippy --all-features -- -D warnings
+        ;;
+        *)
+            cargo test --lib --doc --tests --no-default-features --features "$FEATURES" &&
+            cargo doc --no-deps --no-default-features --features "$FEATURES"
+      esac
 
 after_success:
   - |
       [ $TRAVIS_RUST_VERSION = "stable" ] &&
       [ $TRAVIS_BRANCH = "master" ] &&
       [ $TRAVIS_PULL_REQUEST = "false" ] &&
+      [ $FEATURES = "all" ] &&
       ./doc_upload.sh
 env:
   global:
     - RUST_BACKTRACE=1
     - secure: lJjdHvIm6Pzimdik+SafO/MOWLLGY5TJdI7hWcwQ4+XNjuwncKx9ZJ8zqr2xClUKSALvUWB+vdu7i9wTWtsOYnDpyy8wuRvBZoaD5c8H2igsnzmGPPtP5KlPi5sEYvcCRY4vf9GDrvZm6tkNwMRsJBJ+2W/dSOTudMQA9mkdQcn5x24HVUBBOKEEuNy5ZOHZIj/+tre3USC8PbVvWyC5HHHjjEMBKR3F/BoaR1BJq2u4BdyDGTkfsoUa1zaTjApcZiEEK9KhoWDentkmlJHJCHKxC/zIZGhNx8ukw2yrms6j1k94jXB3rJP97q8UyNFcCO1HVO46EdLB6sFUPAW0CuDM27xIHDv+FyU3ICZVlpKQIK8YPJuLmQbCJFpVvEgfNfCIm+7+4jDci09FmHhuW+wQrTZDsRbCQz2gtVveeoE9/cZy5qAbI+UW4F25GGg9Ycxn+VOBU6Zdg8T9MLRRbHJXCzjMmJrNwK+6fEnCsMoVxwbRF9Fsh2JXS0PFdQgJSGtYYW31HEUEu4zrUuooJtz4CAgR+vB9oBxHfu6Y9GXZFmTsrUyuvGSl5vFB3AXLK6AP3BeXu3Bq2wQDy7ClQxvxkpN/eCKKxwV9vE9nRY0eD1sc6esv2gTjlV+gqs7V7JL8VvZulzZZ2gk6S/GhImCqyhJTqziKR7RXsPRZ2Zw=
+  matrix:
+    - FEATURES=""
+      # test individual features
+    - FEATURES="backend_winit"
+    - FEATURES="backend_drm"
+    - FEATURES="backend_libinput"
+    - FEATURES="renderer_glium"
+      # test default features
+    - FEATURES="default"
+      # test all features simultaneously
+    - FEATURES="all"
+
+matrix:
+  include:
+      # special features for lint & fmt
+    - rust: nightly
+      env: FEATURES="cargo-fmt"
+    - rust: nightly
+      env: FEATURES="cargo-clippy"
+  allow_failures:
+    - rust: nightly
+
 
 notifications:
     webhooks:

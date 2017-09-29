@@ -4,8 +4,6 @@
 //! Most entry points in the modules can take an optionnal `slog::Logger` as argument
 //! that will be used as a drain for logging. If `None` is provided, they'll log to `slog-stdlog`.
 
-#![cfg_attr(feature = "clippy", feature(plugin))]
-#![cfg_attr(feature = "clippy", plugin(clippy))]
 // `error_chain!` can recurse deeply
 #![recursion_limit = "1024"]
 
