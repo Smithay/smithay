@@ -23,7 +23,7 @@
 //! use wayland_server::protocol::wl_shm::Format;
 //!
 //! # fn main() {
-//! # let (_, mut event_loop) = wayland_server::create_display();
+//! # let (display, mut event_loop) = wayland_server::create_display();
 //! // Insert the ShmGlobal into your event loop
 //! // Here, we specify that Yuyv and C8 format are supported
 //! // additionnaly to the standart Argb8888 and Xrgb8888.
