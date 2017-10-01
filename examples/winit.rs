@@ -20,11 +20,12 @@ use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardK
 use smithay::backend::winit;
 use smithay::wayland::compositor::{SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
+use smithay::wayland::output::{Mode, Output, PhysicalProperties};
 use smithay::wayland::seat::{KeyboardHandle, PointerHandle, Seat};
 use smithay::wayland::shm::init_shm_global;
 use std::cell::RefCell;
 use std::rc::Rc;
-use wayland_server::protocol::wl_pointer;
+use wayland_server::protocol::{wl_output, wl_pointer};
 
 struct WinitInputHandler {
     log: Logger,
@@ -147,6 +148,41 @@ fn main() {
         .get_mut(&seat_token)
         .add_keyboard("", "fr", "oss", None, 1000, 500)
         .expect("Failed to initialize the keyboard");
+
+    let (output_token, _output_global) = Output::new(
+        &mut event_loop,
+        "Winit".into(),
+        PhysicalProperties {
+            width: 0,
+            height: 0,
+            subpixel: wl_output::Subpixel::Unknown,
+            maker: "Smithay".into(),
+            model: "Winit".into(),
+        },
+        log.clone(),
+    );
+
+    let (w, h) = renderer.get_framebuffer_dimensions();
+    event_loop
+        .state()
+        .get_mut(&output_token)
+        .change_current_state(
+            Some(Mode {
+                width: w as i32,
+                height: h as i32,
+                refresh: 60_000,
+            }),
+            None,
+            None,
+        );
+    event_loop
+        .state()
+        .get_mut(&output_token)
+        .set_preferred(Mode {
+            width: w as i32,
+            height: h as i32,
+            refresh: 60_000,
+        });
 
     /*
      * Initialize glium
