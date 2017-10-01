@@ -5,6 +5,9 @@ token="$GH_TOKEN"
 commit=$(git rev-parse --short HEAD)
 msg="Documentation for $repo@$commit"
 
+# add a homepage
+cp ./doc_index.html ./target/doc/index.html
+
 git clone https://github.com/davisp/ghp-import
 ./ghp-import/ghp_import.py -n -m "$msg" target/doc
 # pipe output to /dev/null to avoid printing our token in travis log
