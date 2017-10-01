@@ -15,6 +15,7 @@ mod helpers;
 
 use drm::control::{Device as ControlDevice, ResourceInfo};
 use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
+use drm::control::crtc;
 use drm::control::encoder::Info as EncoderInfo;
 use drm::result::Error as DrmError;
 use glium::Surface;
@@ -80,10 +81,19 @@ fn main() {
     // Assuming we found a good connector and loaded the info into `connector_info`
     let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
 
-    // Initialize the hardware backend
-    let renderer_token = device
-        .create_backend(&mut event_loop, crtc, mode, vec![connector_info.handle()])
-        .unwrap();
+    {
+        // Initialize the hardware backend
+        let renderer = device
+            .create_backend(crtc, mode, vec![connector_info.handle()])
+            .unwrap();
+
+        /*
+         * Initialize glium
+         */
+        let mut frame = renderer.draw();
+        frame.clear_color(0.8, 0.8, 0.9, 1.0);
+        frame.finish().unwrap();
+    }
 
     /*
      * Initialize the globals
@@ -94,16 +104,6 @@ fn main() {
     let (compositor_token, shell_state_token, window_map) = init_shell(&mut event_loop, log.clone());
 
     /*
-     * Initialize glium
-     */
-    {
-        let drawer = event_loop.state().get(&renderer_token);
-        let mut frame = drawer.draw();
-        frame.clear_color(0.8, 0.8, 0.9, 1.0);
-        frame.finish().unwrap();
-    }
-
-    /*
      * Add a listening socket:
      */
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
@@ -112,9 +112,10 @@ fn main() {
     /*
      * Register the DrmDevice on the EventLoop
      */
+    let device_token = event_loop.state().insert(device);
     let _source = drm_device_bind(
         &mut event_loop,
-        device,
+        device_token,
         DrmHandlerImpl {
             shell_state_token,
             compositor_token,
@@ -139,10 +140,11 @@ pub struct DrmHandlerImpl {
 }
 
 impl DrmHandler<GliumDrawer<DrmBackend>> for DrmHandlerImpl {
-    fn ready(&mut self, evlh: &mut EventLoopHandle, _device: &mut DrmDevice<GliumDrawer<DrmBackend>>,
-             backend: &StateToken<GliumDrawer<DrmBackend>>, _frame: u32, _duration: Duration) {
+    fn ready(&mut self, evlh: &mut EventLoopHandle, device: &StateToken<DrmDevice<GliumDrawer<DrmBackend>>>,
+             crtc: &crtc::Handle, _frame: u32, _duration: Duration) {
         let state = evlh.state();
-        let drawer = state.get(backend);
+        let dev = state.get(device);
+        let drawer = dev.backend_for_crtc(crtc).unwrap();
         let mut frame = drawer.draw();
         frame.clear_color(0.8, 0.8, 0.9, 1.0);
         // redraw the frame, in a simple but inneficient way
@@ -185,7 +187,7 @@ impl DrmHandler<GliumDrawer<DrmBackend>> for DrmHandlerImpl {
         frame.finish().unwrap();
     }
 
-    fn error(&mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<GliumDrawer<DrmBackend>>,
+    fn error(&mut self, _evlh: &mut EventLoopHandle, _device: &StateToken<DrmDevice<GliumDrawer<DrmBackend>>>,
              error: DrmError) {
         panic!("{:?}", error);
     }

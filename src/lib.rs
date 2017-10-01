@@ -8,6 +8,7 @@
 #![recursion_limit = "1024"]
 
 extern crate image;
+#[macro_use]
 extern crate nix;
 #[macro_use]
 extern crate rental;
@@ -22,6 +23,8 @@ extern crate drm;
 extern crate gbm;
 #[cfg(feature = "backend_libinput")]
 extern crate input;
+#[cfg(feature = "backend_udev")]
+extern crate libudev;
 #[cfg(feature = "backend_winit")]
 extern crate wayland_client;
 #[cfg(feature = "backend_winit")]

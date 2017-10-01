@@ -1,6 +1,5 @@
 //! Common traits for input backends to receive input from.
 
-use backend::{SeatInternal, TouchSlotInternal};
 use std::error::Error;
 
 /// A seat describes a group of input devices and at least one
@@ -20,20 +19,18 @@ pub struct Seat {
     capabilities: SeatCapabilities,
 }
 
-impl SeatInternal for Seat {
-    fn new(id: u64, capabilities: SeatCapabilities) -> Seat {
+impl Seat {
+    pub(crate) fn new(id: u64, capabilities: SeatCapabilities) -> Seat {
         Seat {
             id: id,
             capabilities: capabilities,
         }
     }
 
-    fn capabilities_mut(&mut self) -> &mut SeatCapabilities {
+    pub(crate) fn capabilities_mut(&mut self) -> &mut SeatCapabilities {
         &mut self.capabilities
     }
-}
 
-impl Seat {
     /// Get the currently capabilities of this `Seat`
     pub fn capabilities(&self) -> &SeatCapabilities {
         &self.capabilities
@@ -318,8 +315,8 @@ pub struct TouchSlot {
     id: u64,
 }
 
-impl TouchSlotInternal for TouchSlot {
-    fn new(id: u64) -> Self {
+impl TouchSlot {
+    pub(crate) fn new(id: u64) -> Self {
         TouchSlot { id: id }
     }
 }

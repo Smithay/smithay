@@ -1,6 +1,5 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
-use backend::{SeatInternal, TouchSlotInternal};
 use backend::input as backend;
 use input as libinput;
 use input::event;

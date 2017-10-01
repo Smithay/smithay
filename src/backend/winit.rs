@@ -1,6 +1,5 @@
 //! Implementation of backend traits for types provided by `winit`
 
-use backend::{SeatInternal, TouchSlotInternal};
 use backend::graphics::GraphicsBackend;
 use backend::graphics::egl::{self, EGLContext, EGLGraphicsBackend, GlAttributes, PixelFormat,
                              PixelFormatRequirements, SwapBuffersError};
@@ -229,7 +228,7 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
     }
 
     fn is_current(&self) -> bool {
-        self.window.rent(|egl| egl.head().is_current())
+        self.window.rent(|egl| egl.rent_all(|egl| egl.context.is_current() && egl.surface.is_current()))
     }
 
     unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {

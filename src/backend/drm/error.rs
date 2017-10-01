@@ -8,6 +8,11 @@ use rental::TryNewError;
 
 error_chain! {
     errors {
+        #[doc = "Unable to acquire drm master"]
+        DrmMasterFailed {
+            description("Failed to acquire drm master")
+        }
+
         #[doc = "The `DrmDevice` encountered an access error"]
         DrmDev(dev: String) {
             description("The drm device encountered an access error"),
@@ -26,7 +31,13 @@ error_chain! {
             display("Swapping front buffers failed"),
         }
 
-        #[doc = "mode is not compatible with all given connectors"]
+        #[doc = "Device is currently paused"]
+        DeviceInactive {
+            description("Device is currently paused, operation rejected"),
+            display("Device is currently paused, operation rejected"),
+        }
+
+        #[doc = "Mode is not compatible with all given connectors"]
         ModeNotSuitable(mode: Mode) {
             description("Mode is not compatible with all given connectors"),
             display("Mode ({:?}) is not compatible with all given connectors", mode),

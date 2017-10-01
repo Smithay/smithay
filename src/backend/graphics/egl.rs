@@ -817,7 +817,7 @@ impl<'context, 'surface, T: NativeSurface> EGLSurface<'context, 'surface, T> {
         if ret == 0 {
             match unsafe { self.context.egl.GetError() } as u32 {
                 ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
-                err => panic!("eglSwapBuffers failed (eglGetError returned 0x{:x})", err),
+                err => Err(SwapBuffersError::Unknown(err)),
             }
         } else {
             Ok(())
@@ -846,6 +846,12 @@ impl<'context, 'surface, T: NativeSurface> EGLSurface<'context, 'surface, T> {
         } else {
             Ok(())
         }
+    }
+
+    /// Returns true if the OpenGL surface is the current one in the thread.
+    pub fn is_current(&self) -> bool {
+        unsafe { self.context.egl.GetCurrentSurface(ffi::egl::DRAW as _) == self.surface as *const _ &&
+                 self.context.egl.GetCurrentSurface(ffi::egl::READ as _) == self.surface as *const _ }
     }
 }
 
@@ -882,6 +888,8 @@ pub enum SwapBuffersError {
     /// This error can be returned when `swap_buffers` has been called multiple times
     /// without any modification in between.
     AlreadySwapped,
+    /// Unknown GL error
+    Unknown(u32),
 }
 
 impl fmt::Display for SwapBuffersError {
@@ -897,6 +905,9 @@ impl error::Error for SwapBuffersError {
             SwapBuffersError::ContextLost => "The context has been lost, it needs to be recreated",
             SwapBuffersError::AlreadySwapped => {
                 "Buffers are already swapped, swap_buffers was called too many times"
+            },
+            SwapBuffersError::Unknown(_) => {
+                "Unknown Open GL error occurred"
             }
         }
     }

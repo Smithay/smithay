@@ -92,7 +92,7 @@ impl DrmBackend {
                                 1,
                                 1,
                                 GbmFormat::ARGB8888,
-                                &[BufferObjectFlags::Cursor, BufferObjectFlags::Write],
+                                BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
                             )
                             .chain_err(|| ErrorKind::GbmInitFailed)?)
                     },
@@ -107,7 +107,7 @@ impl DrmBackend {
                                     w as u32,
                                     h as u32,
                                     GbmFormat::XRGB8888,
-                                    &[BufferObjectFlags::Scanout, BufferObjectFlags::Rendering],
+                                    BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
                                 )
                                 .chain_err(|| ErrorKind::GbmInitFailed)?)
                         },
@@ -311,7 +311,7 @@ impl DrmBackend {
                             w as u32,
                             h as u32,
                             GbmFormat::XRGB8888,
-                            &[BufferObjectFlags::Scanout, BufferObjectFlags::Rendering],
+                            BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
                         )
                         .chain_err(|| ErrorKind::GbmInitFailed)?)
                 },
@@ -373,6 +373,10 @@ impl DrmBackend {
         info!(self.logger, "Setting new mode: {:?}", mode.name());
         self.mode = mode;
         Ok(())
+    }
+
+    pub fn crtc(&self) -> crtc::Handle {
+        self.crtc
     }
 }
 
@@ -437,7 +441,7 @@ impl GraphicsBackend for DrmBackend {
                         w,
                         h,
                         GbmFormat::ARGB8888,
-                        &[BufferObjectFlags::Cursor, BufferObjectFlags::Write],
+                        BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
                     )
                     .chain_err(|| ErrorKind::GbmInitFailed)?;
                 cursor
@@ -523,7 +527,7 @@ impl EGLGraphicsBackend for DrmBackend {
     }
 
     fn is_current(&self) -> bool {
-        self.graphics.head().rent(|context| context.is_current())
+        self.graphics.rent_all(|graphics| graphics.context.egl.is_current() && graphics.gbm.surface.rent(|egl| egl.surface.is_current()))
     }
 
     unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
