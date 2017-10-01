@@ -1,8 +1,9 @@
 [package]
 name = "smithay"
 version = "0.1.0"
-authors = ["Victor Berger <victor.berger@thalesgroup.com>"]
+authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victor Brekenfeld)"]
 license = "MIT"
+description = "Smithay is a library for writing wayland compositors."
 
 [dependencies]
 wayland-server = "0.10.2"
