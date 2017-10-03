@@ -32,6 +32,31 @@ branches:
   only:
     - master
 
+env:
+  global:
+    - RUST_BACKTRACE=1
+  matrix:
+    - FEATURES=""
+      # test individual features
+    - FEATURES="backend_winit"
+    - FEATURES="backend_drm"
+    - FEATURES="backend_libinput"
+    - FEATURES="renderer_glium"
+      # test default features
+    - FEATURES="default"
+      # test all features simultaneously
+    - FEATURES="all"
+
+matrix:
+  include:
+      # special features for lint & fmt
+    - rust: nightly
+      env: FEATURES="cargo-fmt"
+    - rust: nightly
+      env: FEATURES="cargo-clippy"
+  allow_failures:
+    - rust: nightly
+
 before_script:
   - export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH
   - |
@@ -68,38 +93,17 @@ script:
       esac
 
 after_success:
-  - |
-      [ $TRAVIS_RUST_VERSION = "stable" ] &&
-      [ $TRAVIS_BRANCH = "master" ] &&
-      [ $TRAVIS_PULL_REQUEST = "false" ] &&
-      [ $FEATURES = "all" ] &&
-      ./doc_upload.sh
-env:
-  global:
-    - RUST_BACKTRACE=1
-    - secure: lJjdHvIm6Pzimdik+SafO/MOWLLGY5TJdI7hWcwQ4+XNjuwncKx9ZJ8zqr2xClUKSALvUWB+vdu7i9wTWtsOYnDpyy8wuRvBZoaD5c8H2igsnzmGPPtP5KlPi5sEYvcCRY4vf9GDrvZm6tkNwMRsJBJ+2W/dSOTudMQA9mkdQcn5x24HVUBBOKEEuNy5ZOHZIj/+tre3USC8PbVvWyC5HHHjjEMBKR3F/BoaR1BJq2u4BdyDGTkfsoUa1zaTjApcZiEEK9KhoWDentkmlJHJCHKxC/zIZGhNx8ukw2yrms6j1k94jXB3rJP97q8UyNFcCO1HVO46EdLB6sFUPAW0CuDM27xIHDv+FyU3ICZVlpKQIK8YPJuLmQbCJFpVvEgfNfCIm+7+4jDci09FmHhuW+wQrTZDsRbCQz2gtVveeoE9/cZy5qAbI+UW4F25GGg9Ycxn+VOBU6Zdg8T9MLRRbHJXCzjMmJrNwK+6fEnCsMoVxwbRF9Fsh2JXS0PFdQgJSGtYYW31HEUEu4zrUuooJtz4CAgR+vB9oBxHfu6Y9GXZFmTsrUyuvGSl5vFB3AXLK6AP3BeXu3Bq2wQDy7ClQxvxkpN/eCKKxwV9vE9nRY0eD1sc6esv2gTjlV+gqs7V7JL8VvZulzZZ2gk6S/GhImCqyhJTqziKR7RXsPRZ2Zw=
-  matrix:
-    - FEATURES=""
-      # test individual features
-    - FEATURES="backend_winit"
-    - FEATURES="backend_drm"
-    - FEATURES="backend_libinput"
-    - FEATURES="renderer_glium"
-      # test default features
-    - FEATURES="default"
-      # test all features simultaneously
-    - FEATURES="all"
+  - cp ./doc_index.html ./index.html
 
-matrix:
-  include:
-      # special features for lint & fmt
-    - rust: nightly
-      env: FEATURES="cargo-fmt"
-    - rust: nightly
-      env: FEATURES="cargo-clippy"
-  allow_failures:
-    - rust: nightly
-
+deploy:
+  provider: pages
+  skip_cleanup: true
+  github_token: $GITHUB_TOKEN
+  local_dir: "${TRAVIS_BUILD_DIR}/target/doc"
+  on:
+    branch: master
+    rust: stable
+    env: FEATURES="all"
 
 notifications:
     webhooks:
