@@ -8,9 +8,6 @@
 
 A smithy for rusty wayland compositors
 
-**Warning:** This is a very new project, still in the process of shaping itself. I cannot
-recommend to use it *unless* you want to help driving it forward. ;-)
-
 ## Goals
 
 Smithay aims to provide building blocks to create wayland compositors in Rust. While not
@@ -25,13 +22,3 @@ Also:
 - **High-level:** You should be able to not have to worry about gory low-level stuff (but 
   Smithay won't stop you if you really want to dive into it).
 
-## Current status
-
-Nothing is done yet, I'm starting to figure out the design.
-
-## Why?
-
-I'm doing this because I find it interesting. Also, I'd love to see a pure-rust¹ wayland
-compositor.
-
-*(¹: Almost, as some very low-level bits will necessarily still be C. But let's keep them minimal, shall we?)*
