@@ -1,6 +1,10 @@
 # Smithay
 
-[![Join the chat at https://gitter.im/smithay/Lobby](https://badges.gitter.im/smithay/Lobby.svg)](https://gitter.im/smithay/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Crates.io](http://meritbadge.herokuapp.com/smithay)](https://crates.io/crates/smithay)
+[![docs.rs](https://docs.rs/smithay/badge.svg)](https://docs.rs/smithay)
+[![Build Status](https://travis-ci.org/Smithay/smithay.svg?branch=master)](https://travis-ci.org/Smithay/smithay)
+[![Join the chat on matrix at @smithay:matrix.org](matrix_badge.svg)](https://matrix.to/#/#smithay:matrix.org)
+[![Join the chat via bridge at https://gitter.im/smithay/Lobby](https://badges.gitter.im/smithay/Lobby.svg)](https://gitter.im/smithay/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 A smithy for rusty wayland compositors
 
