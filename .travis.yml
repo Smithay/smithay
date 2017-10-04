@@ -93,7 +93,7 @@ script:
       esac
 
 after_success:
-  - cp ./doc_index.html ./index.html
+  - cp ./doc_index.html ./target/doc/index.html
 
 deploy:
   provider: pages
