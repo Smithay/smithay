@@ -103,7 +103,7 @@ deploy:
   on:
     branch: master
     rust: stable
-    env: FEATURES="all"
+    condition: "$FEATURES = all"
 
 notifications:
     webhooks:
