@@ -77,7 +77,7 @@
 //! the details of what it enables you.
 //!
 //! The surface metadata is held in the `SurfaceAttributes` struct. In contains double-buffered
-//! state pending from the client as defined by the protocol for wl_surface, as well as your
+//! state pending from the client as defined by the protocol for `wl_surface`, as well as your
 //! user-defined type holding any data you need to have associated with a struct. See its
 //! documentation for details.
 //!
@@ -240,7 +240,7 @@ impl Default for RegionAttributes {
 /// A Compositor global token
 ///
 /// This token can be cloned at will, and is the entry-point to
-/// access data associated with the wl_surface and wl_region managed
+/// access data associated with the `wl_surface` and `wl_region` managed
 /// by the `CompositorGlobal` that provided it.
 pub struct CompositorToken<U, R, ID> {
     _data: ::std::marker::PhantomData<*mut U>,
@@ -524,7 +524,7 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
     }
 }
 
-/// Create new wl_compositor and wl_subcompositor globals.
+/// Create new `wl_compositor` and `wl_subcompositor` globals.
 ///
 /// The globals are directly registered into the eventloop, and this function
 /// returns a `CompositorToken` which you'll need access the data associated to

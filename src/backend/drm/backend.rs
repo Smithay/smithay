@@ -114,7 +114,7 @@ impl DrmBackend {
                         |surface| {
                             // create an egl surface from the gbm one
                             debug!(log, "Creating EGLSurface");
-                            let egl_surface = context.egl.create_surface(&surface)?;
+                            let egl_surface = context.egl.create_surface(surface)?;
 
                             // make it active for the first `crtc::set`
                             // (which is needed before the first page_flip)
@@ -270,7 +270,7 @@ impl DrmBackend {
     /// Other errors might occur.
     pub fn use_mode(&mut self, mode: Mode) -> Result<()> {
         // check the connectors
-        for connector in self.connectors.iter() {
+        for connector in &self.connectors {
             if !connector::Info::load_from_device(self.graphics.head().head().head(), *connector)
                 .chain_err(|| {
                     ErrorKind::DrmDev(format!("{:?}", self.graphics.head().head().head()))
@@ -318,7 +318,7 @@ impl DrmBackend {
                 |surface| {
                     // create an egl surface from the gbm one
                     debug!(logger_ref, "Creating EGLSurface");
-                    let egl_surface = graphics.context.egl.create_surface(&surface)?;
+                    let egl_surface = graphics.context.egl.create_surface(surface)?;
 
                     // make it active for the first `crtc::set`
                     // (which is needed before the first page_flip)
@@ -383,13 +383,12 @@ impl Drop for DrmBackend {
         self.graphics.rent_all_mut(|graphics| {
             if let Some(fb) = graphics.gbm.surface.rent(|egl| {
                 if let Some(mut next) = egl.buffers.next_buffer.take() {
-                    return next.take_userdata();
+                    next.take_userdata()
+                } else if let Ok(mut next) = graphics.gbm.surface.head().lock_front_buffer() {
+                    next.take_userdata()
                 } else {
-                    if let Ok(mut next) = graphics.gbm.surface.head().lock_front_buffer() {
-                        return next.take_userdata();
-                    }
+                    None
                 }
-                None
             }) {
                 // ignore failure at this point
                 let _ = framebuffer::destroy(&*graphics.context.devices.drm, fb.handle());

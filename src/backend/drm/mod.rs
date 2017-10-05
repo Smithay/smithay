@@ -397,7 +397,7 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
         let connectors = connectors.into();
 
         // check if we have an encoder for every connector and the mode mode
-        for connector in connectors.iter() {
+        for connector in &connectors {
             let con_info = connector::Info::load_from_device(self.context.head().head(), *connector)
                 .chain_err(|| {
                     ErrorKind::DrmDev(format!("{:?}", self.context.head().head()))
@@ -471,7 +471,7 @@ pub trait DrmHandler<B: Borrow<DrmBackend> + 'static> {
     fn error(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<B>, error: DrmError);
 }
 
-/// Bind a `DrmDevice` to an EventLoop,
+/// Bind a `DrmDevice` to an `EventLoop`,
 ///
 /// This will cause it to recieve events and feed them into an `DrmHandler`
 pub fn drm_device_bind<B, H>(evlh: &mut EventLoopHandle, device: DrmDevice<B>, handler: H)
@@ -500,21 +500,18 @@ where
             let events = crtc::receive_events(dev);
             match events {
                 Ok(events) => for event in events {
-                    match event {
-                        crtc::Event::PageFlip(event) => {
-                            let token = dev.backends.get(&event.crtc).cloned();
-                            if let Some(token) = token {
-                                // we can now unlock the buffer
-                                evlh.state().get(&token).borrow().unlock_buffer();
-                                trace!(dev.logger, "Handling event for backend {:?}", event.crtc);
-                                // and then call the user to render the next frame
-                                handler.ready(evlh, dev, &token, event.frame, event.duration);
-                            }
+                    if let crtc::Event::PageFlip(event) = event {
+                        let token = dev.backends.get(&event.crtc).cloned();
+                        if let Some(token) = token {
+                            // we can now unlock the buffer
+                            evlh.state().get(&token).borrow().unlock_buffer();
+                            trace!(dev.logger, "Handling event for backend {:?}", event.crtc);
+                            // and then call the user to render the next frame
+                            handler.ready(evlh, dev, &token, event.frame, event.duration);
                         }
-                        _ => {}
                     }
                 },
-                Err(err) => return handler.error(evlh, dev, err),
+                Err(err) => handler.error(evlh, dev, err),
             };
         },
         error: |evlh, id, _, error| {

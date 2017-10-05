@@ -102,9 +102,9 @@ pub trait RoleType {
     fn has_role(&self) -> bool;
 }
 
-/// A trait representing the capability of a RoleType to handle a given role
+/// A trait representing the capability of a `RoleType` to handle a given role
 ///
-/// This trait allows to interact with the different roles a RoleType can
+/// This trait allows to interact with the different roles a `RoleType` can
 /// handle.
 ///
 /// This trait is meant to be used generically, for example, to retrieve the

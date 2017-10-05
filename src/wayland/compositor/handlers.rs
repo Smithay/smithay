@@ -79,7 +79,7 @@ impl<U, R, ID> Clone for SurfaceIData<U, R, ID> {
     fn clone(&self) -> SurfaceIData<U, R, ID> {
         SurfaceIData {
             log: self.log.clone(),
-            implem: self.implem.clone(),
+            implem: self.implem,
             idata: self.idata.clone(),
         }
     }

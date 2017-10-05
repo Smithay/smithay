@@ -21,8 +21,8 @@ use wayland_server::protocol::wl_surface;
 /// have a failure case to forbid this. Note that if any node in such a graph does not
 /// have a parent, then the graph is a tree and this node is its root.
 ///
-/// All the methods here are unsafe, because they assume the provided wl_surface object
-/// is correctly initialized regarding its user_data.
+/// All the methods here are unsafe, because they assume the provided `wl_surface` object
+/// is correctly initialized regarding its `user_data`.
 pub struct SurfaceData<U, R> {
     parent: Option<wl_surface::WlSurface>,
     children: Vec<wl_surface::WlSurface>,
@@ -369,29 +369,26 @@ impl<U: 'static, R: 'static> SurfaceData<U, R> {
         let mut data_guard = data_mutex.lock().unwrap();
         let data_guard = &mut *data_guard;
         // call the callback on ourselves
-        match f(
+        if let TraversalAction::DoChildren(t) = f(
             root,
             &mut data_guard.attributes,
             &mut data_guard.role,
             &initial,
         ) {
-            TraversalAction::DoChildren(t) => {
-                // loop over children
-                if reverse {
-                    for c in data_guard.children.iter().rev() {
-                        if !map::<U, R, _, _>(c, root, &t, &mut f, true) {
-                            break;
-                        }
+            // loop over children
+            if reverse {
+                for c in data_guard.children.iter().rev() {
+                    if !map::<U, R, _, _>(c, root, &t, &mut f, true) {
+                        break;
                     }
-                } else {
-                    for c in &data_guard.children {
-                        if !map::<U, R, _, _>(c, root, &t, &mut f, false) {
-                            break;
-                        }
+                }
+            } else {
+                for c in &data_guard.children {
+                    if !map::<U, R, _, _>(c, root, &t, &mut f, false) {
+                        break;
                     }
                 }
             }
-            _ => {}
         }
     }
 }

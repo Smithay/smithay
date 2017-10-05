@@ -618,8 +618,8 @@ impl InputBackend for WinitInputBackend {
             let mut handler = self.handler.as_mut();
             let logger = &self.logger;
 
-            self.events_loop.poll_events(move |event| match event {
-                Event::WindowEvent { event, .. } => {
+            self.events_loop.poll_events(move |event| {
+                if let Event::WindowEvent { event, .. } = event {
                     match (event, handler.as_mut()) {
                         (WindowEvent::Resized(x, y), _) => {
                             trace!(logger, "Resizing window to {:?}", (x, y));
@@ -816,8 +816,6 @@ impl InputBackend for WinitInputBackend {
                     }
                     *time_counter += 1;
                 }
-                Event::DeviceEvent { .. } => {}
-                _ => {}
             });
         }
 
