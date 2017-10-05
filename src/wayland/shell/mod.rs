@@ -251,7 +251,7 @@ impl PopupState {
         if let Some(p) = self.parent.clone() {
             Some(PopupState {
                 parent: p,
-                positioner: self.positioner.clone(),
+                positioner: self.positioner,
             })
         } else {
             // the parent surface does no exist any longer,
@@ -283,15 +283,15 @@ impl<U, R, CID, SID, SD> Clone for ShellSurfaceIData<U, R, CID, SID, SD> {
     fn clone(&self) -> ShellSurfaceIData<U, R, CID, SID, SD> {
         ShellSurfaceIData {
             log: self.log.clone(),
-            compositor_token: self.compositor_token.clone(),
-            implementation: self.implementation.clone(),
+            compositor_token: self.compositor_token,
+            implementation: self.implementation,
             idata: self.idata.clone(),
             state_token: self.state_token.clone(),
         }
     }
 }
 
-/// Create new xdg_shell and wl_shell globals.
+/// Create new `xdg_shell` and `wl_shell` globals.
 ///
 /// The globals are directly registered into the eventloop, and this function
 /// returns a `StateToken<_>` which you'll need access the list of shell

@@ -170,7 +170,7 @@ pub enum Error {
 /// Create a keyboard handler from a set of RMLVO rules
 pub(crate) fn create_keyboard_handler(rules: &str, model: &str, layout: &str, variant: &str,
                                       options: Option<String>, repeat_delay: i32, repeat_rate: i32,
-                                      logger: ::slog::Logger)
+                                      logger: &::slog::Logger)
                                       -> Result<KeyboardHandle, Error> {
     let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
     info!(log, "Initializing a xkbcommon handler with keymap query";

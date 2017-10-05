@@ -169,7 +169,7 @@ impl Seat {
             options,
             repeat_delay,
             repeat_rate,
-            self.log.clone(),
+            &self.log,
         )?;
         if self.keyboard.is_some() {
             // there is already a keyboard, remove it and notify the clients

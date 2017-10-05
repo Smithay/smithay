@@ -93,7 +93,7 @@ where
                 pending_configures: Vec::new(),
                 configured: false,
             };
-            if let Err(_) = idata.compositor_token.give_role_with(wl_surface, role_data) {
+            if idata.compositor_token.give_role_with(wl_surface, role_data).is_err() {
                 shell.post_error(
                     zxdg_shell_v6::Error::Role as u32,
                     "Surface already has a role.".into(),
@@ -315,7 +315,7 @@ where
                 .with_role_data::<ShellSurfaceRole, _, _>(surface, |data| {
                     data.pending_state = ShellSurfacePendingState::Popup(PopupState {
                         parent: unsafe { parent_surface.clone_unchecked() },
-                        positioner: positioner_data.clone(),
+                        positioner: *positioner_data,
                     });
                 })
                 .expect("xdg_surface exists but surface has not shell_surface role?!");

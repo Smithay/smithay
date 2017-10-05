@@ -267,7 +267,7 @@ impl Output {
 
     /// Chech is given wl_output instance is managed by this `Output`.
     pub fn owns(&self, output: &wl_output::WlOutput) -> bool {
-        self.instances.iter().find(|&o| o.equals(output)).is_some()
+        self.instances.iter().any(|o| o.equals(output))
     }
 
     /// Cleanup internal `wl_output` instances list

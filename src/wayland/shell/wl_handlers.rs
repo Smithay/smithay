@@ -72,7 +72,7 @@ where
                 pending_configures: Vec::new(),
                 configured: true,
             };
-            if let Err(_) = idata.compositor_token.give_role_with(surface, role_data) {
+            if idata.compositor_token.give_role_with(surface, role_data).is_err() {
                 shell.post_error(
                     wl_shell::Error::Role as u32,
                     "Surface already has a role.".into(),
@@ -91,7 +91,7 @@ where
             // register ourselves to the wl_shell for ping handling
             let mutex = unsafe { &*(shell.get_user_data() as *mut ShellUserData<SD>) };
             let mut guard = mutex.lock().unwrap();
-            if guard.1.len() == 0 && guard.0.pending_ping != 0 {
+            if guard.1.is_empty() && guard.0.pending_ping != 0 {
                 // there is a pending ping that no surface could receive yet, send it
                 // note this is not possible that it was received and then a wl_shell_surface was
                 // destroyed, because wl_shell_surface has no destructor!
@@ -241,7 +241,7 @@ where
                 min_size: (0, 0),
                 max_size: (0, 0),
             });
-            return true;
+            true
         })
         .expect("xdg_surface exists but surface has not shell_surface role?!");
     // we need to notify about this new toplevel surface
@@ -419,11 +419,10 @@ where
             let &(ref surface, _) = unsafe { &*(ptr as *mut ShellSurfaceUserData) };
             idata
                 .compositor_token
-                .with_role_data(surface, |data| match data.pending_state {
-                    ShellSurfacePendingState::Toplevel(ref mut state) => {
+                .with_role_data(surface, |data| {
+                    if let ShellSurfacePendingState::Toplevel(ref mut state) = data.pending_state {
                         state.title = title;
                     }
-                    _ => {}
                 })
                 .expect("wl_shell_surface exists but wl_surface has wrong role?!");
         },

@@ -640,7 +640,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
 
         let mut context_attributes = Vec::with_capacity(10);
 
-        if egl_version >= (1, 5) || extensions.iter().any(|s| s == &"EGL_KHR_create_context") {
+        if egl_version >= (1, 5) || extensions.iter().any(|s| *s == "EGL_KHR_create_context") {
             trace!(log, "Setting CONTEXT_MAJOR_VERSION to {}", version.0);
             context_attributes.push(ffi::egl::CONTEXT_MAJOR_VERSION as i32);
             context_attributes.push(version.0 as i32);
@@ -728,8 +728,8 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
                 self.display,
                 self.config_id,
                 match surface {
-                    NativeSurfacePtr::X11(ptr) => ptr,
-                    NativeSurfacePtr::Wayland(ptr) => ptr,
+                    NativeSurfacePtr::X11(ptr) |
+                    NativeSurfacePtr::Wayland(ptr) |
                     NativeSurfacePtr::Gbm(ptr) => ptr,
                 },
                 self.surface_attributes.as_ptr(),
@@ -743,7 +743,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
         debug!(self.logger, "EGL surface successfully created");
 
         Ok(EGLSurface {
-            context: &self,
+            context: self,
             surface: egl_surface,
             keep,
             _lifetime_surface: PhantomData,
@@ -894,9 +894,9 @@ impl fmt::Display for SwapBuffersError {
 
 impl error::Error for SwapBuffersError {
     fn description(&self) -> &str {
-        match self {
-            &SwapBuffersError::ContextLost => "The context has been lost, it needs to be recreated",
-            &SwapBuffersError::AlreadySwapped => {
+        match *self {
+            SwapBuffersError::ContextLost => "The context has been lost, it needs to be recreated",
+            SwapBuffersError::AlreadySwapped => {
                 "Buffers are already swapped, swap_buffers was called too many times"
             }
         }
@@ -987,7 +987,7 @@ pub struct PixelFormat {
     pub srgb: bool,
 }
 
-/// Trait that describes objects that have an OpenGl context
+/// Trait that describes objects that have an OpenGL context
 /// and can be used to render upon
 pub trait EGLGraphicsBackend: GraphicsBackend {
     /// Swaps buffers at the end of a frame.

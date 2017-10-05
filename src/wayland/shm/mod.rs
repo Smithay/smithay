@@ -71,7 +71,7 @@ use wayland_server::protocol::{wl_buffer, wl_shm, wl_shm_pool};
 mod pool;
 
 #[derive(Clone)]
-/// Internal data storage of ShmGlobal
+/// Internal data storage of `ShmGlobal`
 ///
 /// This type is only visible as type parameter of
 /// the `Global` handle you are provided.
@@ -104,9 +104,7 @@ where
         log: log.new(o!("smithay_module" => "shm_handler")),
     };
 
-    let global = evl.register_global::<wl_shm::WlShm, _>(1, shm_global_bind, data);
-
-    global
+    evl.register_global::<wl_shm::WlShm, _>(1, shm_global_bind, data)
 }
 
 /// Error that can occur when accessing an SHM buffer
@@ -125,13 +123,13 @@ pub enum BufferAccessError {
 
 /// Call given closure with the contents of the given buffer
 ///
-/// If the buffer is managed by the provided ShmGlobal, its contents are
+/// If the buffer is managed by the provided `ShmGlobal`, its contents are
 /// extracted and the closure is extracted with them:
 ///
 /// - The first argument is a data slice of the contents of the pool
 /// - The second argument is the specification of this buffer is this pool
 ///
-/// If the buffer is not managed by the provided ShmGlobal, the closure is not called
+/// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
 /// and this method will return `Err(())` (this will be the case for an EGL buffer for example).
 pub fn with_buffer_contents<F>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<(), BufferAccessError>
 where

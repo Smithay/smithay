@@ -64,7 +64,7 @@ impl PointerHandle {
         // do we leave a surface ?
         let mut leave = true;
         if let Some(ref focus) = guard.focus {
-            if let Some((ref surface, _, _)) = location {
+            if let Some((surface, _, _)) = location {
                 if focus.equals(surface) {
                     leave = false;
                 }
