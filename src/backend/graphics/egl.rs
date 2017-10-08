@@ -9,7 +9,7 @@ use super::GraphicsBackend;
 #[cfg(feature = "backend_drm")]
 use gbm::{AsRaw, Device as GbmDevice, Surface as GbmSurface};
 use libloading::Library;
-use nix::{c_int, c_void};
+use nix::libc::{c_int, c_void};
 use rental::TryNewError;
 use slog;
 use std::error;
@@ -28,8 +28,7 @@ use winit::os::unix::WindowExt;
 
 #[allow(non_camel_case_types, dead_code)]
 mod ffi {
-    use nix::c_void;
-    use nix::libc::{c_long, int32_t, uint64_t};
+    use nix::libc::{c_long, c_void, int32_t, uint64_t};
 
     pub type khronos_utime_nanoseconds_t = khronos_uint64_t;
     pub type khronos_uint64_t = uint64_t;

@@ -8,7 +8,7 @@ use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, Inpu
                      KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
                      PointerMotionAbsoluteEvent, Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent,
                      TouchMotionEvent, TouchSlot, TouchUpEvent, UnusedEvent};
-use nix::c_void;
+use nix::libc::c_void;
 use rental::TryNewError;
 use std::cell::Cell;
 use std::cmp;

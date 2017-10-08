@@ -1,6 +1,6 @@
 
 
-use nix::{c_int, c_void, libc, unistd};
+use nix::{libc, unistd};
 use nix::sys::mman;
 use nix::sys::signal::{self, SigAction, SigHandler, Signal};
 use std::cell::Cell;
@@ -210,7 +210,7 @@ unsafe fn reraise_sigbus() {
     let _ = signal::raise(Signal::SIGBUS);
 }
 
-extern "C" fn sigbus_handler(_signum: c_int, info: *mut libc::siginfo_t, _context: *mut c_void) {
+extern "C" fn sigbus_handler(_signum: libc::c_int, info: *mut libc::siginfo_t, _context: *mut libc::c_void) {
     let faulty_ptr = unsafe { siginfo_si_addr(info) } as *mut u8;
     SIGBUS_GUARD.with(|guard| {
         let (memmap, _) = guard.get();
@@ -238,7 +238,7 @@ extern "C" fn sigbus_handler(_signum: c_int, info: *mut libc::siginfo_t, _contex
 // I guess it's good enough?
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
-unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut c_void {
+unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut libc::c_void {
     #[repr(C)]
     struct siginfo_t {
         a: [libc::c_int; 3], // si_signo, si_errno, si_code
@@ -249,6 +249,6 @@ unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut c_void {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
-unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut c_void {
+unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut libc::c_void {
     (*info).si_addr
 }

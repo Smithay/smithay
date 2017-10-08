@@ -6,7 +6,7 @@ use drm::control::{Device, ResourceInfo};
 use drm::control::{connector, crtc, encoder, framebuffer, Mode};
 use gbm::{BufferObject, BufferObjectFlags, Format as GbmFormat, Surface as GbmSurface, SurfaceBufferHandle};
 use image::{ImageBuffer, Rgba};
-use nix::c_void;
+use nix::libc::c_void;
 use std::cell::Cell;
 use std::rc::Rc;
 
