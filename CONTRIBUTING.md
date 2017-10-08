@@ -17,7 +17,7 @@ use matrix, this room is also bridged to gitter: https://gitter.im/smithay/Lobby
 Smithay attempts to be as generic and un-opinionated as possible. As such, if you have an idea of a feature that would be usefull
 for your compositor project and would like it to be integrated in Smithay, please consider whether it is in its scope:
 
-- If this is a very generic feature that probably many different projects would find usefull, it can be integrated in Smithay
+- If this is a very generic feature that probably many different projects would find useful, it can be integrated in Smithay
 - If it is a rather specific feature, but can be framed as a special case of a more general feature, this general feature is
   likely worth adding to Smithay
 - If this feature is really specific to your use-case, it is out of scope for Smithay
