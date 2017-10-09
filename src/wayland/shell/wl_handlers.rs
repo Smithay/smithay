@@ -72,7 +72,11 @@ where
                 pending_configures: Vec::new(),
                 configured: true,
             };
-            if idata.compositor_token.give_role_with(surface, role_data).is_err() {
+            if idata
+                .compositor_token
+                .give_role_with(surface, role_data)
+                .is_err()
+            {
                 shell.post_error(
                     wl_shell::Error::Role as u32,
                     "Surface already has a role.".into(),
