@@ -104,7 +104,13 @@ impl PointerHandle {
         })
     }
 
-    // TODO: handle axis
+    /// send axis events
+    pub fn axis(&self, axis: wl_pointer::Axis, value: f64, time: u32) {
+        let guard = self.inner.lock().unwrap();
+        guard.with_focused_pointers(|pointer, _| {
+            pointer.axis(time, axis, value);
+        })
+    }
 
     pub(crate) fn cleanup_old_pointers(&self) {
         let mut guard = self.inner.lock().unwrap();
