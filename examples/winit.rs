@@ -16,7 +16,7 @@ use helpers::{init_shell, GliumDrawer, MyWindowMap};
 use slog::{Drain, Logger};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerButtonEvent,
-                              PointerMotionAbsoluteEvent};
+                              PointerMotionAbsoluteEvent, PointerAxisEvent};
 use smithay::backend::winit;
 use smithay::wayland::compositor::{SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
@@ -97,8 +97,12 @@ impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
         };
         self.pointer.button(button, state, serial, evt.time());
     }
-    fn on_pointer_axis(&mut self, _: &input::Seat, _: winit::WinitMouseWheelEvent) {
-        /* not done in this example */
+    fn on_pointer_axis(&mut self, _: &input::Seat, evt: winit::WinitMouseWheelEvent) {
+        let axis = match evt.axis() {
+            input::Axis::Vertical => wayland_server::protocol::wl_pointer::Axis::VerticalScroll,
+            input::Axis::Horizontal => wayland_server::protocol::wl_pointer::Axis::HorizontalScroll,
+        };
+        self.pointer.axis(axis, evt.amount(), evt.time());
     }
     fn on_touch_down(&mut self, _: &input::Seat, _: winit::WinitTouchStartedEvent) {
         /* not done in this example */
