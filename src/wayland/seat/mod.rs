@@ -220,10 +220,10 @@ impl Seat {
     fn compute_caps(&self) -> wl_seat::Capability {
         let mut caps = wl_seat::Capability::empty();
         if self.pointer.is_some() {
-            caps |= wl_seat::Pointer;
+            caps |= wl_seat::Capability::Pointer;
         }
         if self.keyboard.is_some() {
-            caps |= wl_seat::Keyboard;
+            caps |= wl_seat::Capability::Keyboard;
         }
         caps
     }

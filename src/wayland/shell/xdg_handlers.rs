@@ -5,8 +5,8 @@ use std::sync::Mutex;
 use utils::Rectangle;
 use wayland::compositor::CompositorToken;
 use wayland::compositor::roles::*;
-use wayland_protocols::unstable::xdg_shell::server::{zxdg_popup_v6, zxdg_positioner_v6, zxdg_shell_v6,
-                                                     zxdg_surface_v6, zxdg_toplevel_v6};
+use wayland_protocols::unstable::xdg_shell::v6::server::{zxdg_popup_v6, zxdg_positioner_v6, zxdg_shell_v6,
+                                                         zxdg_surface_v6, zxdg_toplevel_v6};
 use wayland_server::{Client, EventLoopHandle, Resource};
 use wayland_server::protocol::{wl_output, wl_surface};
 
@@ -177,8 +177,9 @@ fn positioner_implementation() -> zxdg_positioner_v6::Implementation<()> {
             };
         },
         set_anchor: |_, _, _, positioner, anchor| {
-            use self::zxdg_positioner_v6::{AnchorBottom, AnchorLeft, AnchorRight, AnchorTop};
-            if anchor.contains(AnchorLeft | AnchorRight) || anchor.contains(AnchorTop | AnchorBottom) {
+            use self::zxdg_positioner_v6::Anchor;
+            if anchor.contains(Anchor::Left | Anchor::Right) || anchor.contains(Anchor::Top | Anchor::Bottom)
+            {
                 positioner.post_error(
                     zxdg_positioner_v6::Error::InvalidInput as u32,
                     "Invalid anchor for positioner.".into(),
@@ -190,8 +191,10 @@ fn positioner_implementation() -> zxdg_positioner_v6::Implementation<()> {
             }
         },
         set_gravity: |_, _, _, positioner, gravity| {
-            use self::zxdg_positioner_v6::{GravityBottom, GravityLeft, GravityRight, GravityTop};
-            if gravity.contains(GravityLeft | GravityRight) || gravity.contains(GravityTop | GravityBottom) {
+            use self::zxdg_positioner_v6::Gravity;
+            if gravity.contains(Gravity::Left | Gravity::Right)
+                || gravity.contains(Gravity::Top | Gravity::Bottom)
+            {
                 positioner.post_error(
                     zxdg_positioner_v6::Error::InvalidInput as u32,
                     "Invalid gravity for positioner.".into(),
