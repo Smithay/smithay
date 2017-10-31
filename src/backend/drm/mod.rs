@@ -197,7 +197,7 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::time::Duration;
 use wayland_server::{EventLoopHandle, StateToken};
-use wayland_server::sources::{FdEventSource, FdEventSourceImpl, READ};
+use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 
 mod backend;
 pub mod error;
@@ -484,7 +484,7 @@ where
         device.as_raw_fd(),
         fd_event_source_implementation(),
         (device, handler),
-        READ,
+        FdInterest::READ,
     )
 }
 

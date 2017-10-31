@@ -33,10 +33,10 @@
 //! use smithay::wayland::compositor::CompositorToken;
 //! use smithay::wayland::shell::{shell_init, ShellSurfaceRole, ShellSurfaceUserImplementation};
 //! use wayland_server::protocol::wl_shell::WlShell;
-//! use wayland_protocols::unstable::xdg_shell::server::zxdg_shell_v6::ZxdgShellV6;
+//! use wayland_protocols::unstable::xdg_shell::v6::server::zxdg_shell_v6::ZxdgShellV6;
 //! use wayland_server::{EventLoop, EventLoopHandle};
 //! # use wayland_server::protocol::{wl_seat, wl_output};
-//! # use wayland_protocols::unstable::xdg_shell::server::zxdg_toplevel_v6;
+//! # use wayland_protocols::unstable::xdg_shell::v6::server::zxdg_toplevel_v6;
 //! # #[derive(Default)] struct MySurfaceData;
 //!
 //! // define the roles type. You need to integrate the ShellSurface role:
@@ -110,8 +110,9 @@ use std::rc::Rc;
 use utils::Rectangle;
 use wayland::compositor::CompositorToken;
 use wayland::compositor::roles::Role;
-use wayland_protocols::unstable::xdg_shell::server::{zxdg_popup_v6, zxdg_positioner_v6 as xdg_positioner,
-                                                     zxdg_shell_v6, zxdg_surface_v6, zxdg_toplevel_v6};
+use wayland_protocols::unstable::xdg_shell::v6::server::{zxdg_popup_v6,
+                                                         zxdg_positioner_v6 as xdg_positioner,
+                                                         zxdg_shell_v6, zxdg_surface_v6, zxdg_toplevel_v6};
 use wayland_server::{EventLoop, EventLoopHandle, EventResult, Global, Liveness, Resource, StateToken};
 use wayland_server::protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface};
 

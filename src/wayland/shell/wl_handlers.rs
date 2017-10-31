@@ -5,7 +5,8 @@ use std::sync::Mutex;
 use utils::Rectangle;
 use wayland::compositor::CompositorToken;
 use wayland::compositor::roles::*;
-use wayland_protocols::unstable::xdg_shell::server::{zxdg_positioner_v6 as xdg_positioner, zxdg_toplevel_v6};
+use wayland_protocols::unstable::xdg_shell::v6::server::{zxdg_positioner_v6 as xdg_positioner,
+                                                         zxdg_toplevel_v6};
 use wayland_server::{Client, EventLoopHandle, Resource};
 use wayland_server::protocol::{wl_output, wl_shell, wl_shell_surface, wl_surface};
 
@@ -177,7 +178,7 @@ fn wl_handle_display_state_change<U, R, CID, SID, SD>(evlh: &mut EventLoopHandle
     );
     // send the configure response to client
     let (w, h) = configure.size.unwrap_or((0, 0));
-    shell_surface.configure(wl_shell_surface::None, w, h);
+    shell_surface.configure(wl_shell_surface::Resize::None, w, h);
 }
 
 fn wl_set_parent<U, R, CID, SID, SD>(idata: &ShellSurfaceIData<U, R, CID, SID, SD>,

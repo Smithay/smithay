@@ -160,10 +160,10 @@ impl Output {
         for &mode in &self.modes {
             let mut flags = wl_output::Mode::empty();
             if Some(mode) == self.current_mode {
-                flags |= wl_output::Current;
+                flags |= wl_output::Mode::Current;
             }
             if Some(mode) == self.preferred_mode {
-                flags |= wl_output::Preferred;
+                flags |= wl_output::Mode::Preferred;
             }
             output.mode(flags, mode.width, mode.height, mode.refresh);
         }
@@ -243,9 +243,9 @@ impl Output {
         if let Some(scale) = new_scale {
             self.scale = scale;
         }
-        let mut flags = wl_output::Current;
+        let mut flags = wl_output::Mode::Current;
         if self.preferred_mode == new_mode {
-            flags |= wl_output::Preferred;
+            flags |= wl_output::Mode::Preferred;
         }
         for output in &self.instances {
             if let Some(mode) = new_mode {

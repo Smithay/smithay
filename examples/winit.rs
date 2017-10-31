@@ -15,8 +15,8 @@ use glium::Surface;
 use helpers::{init_shell, GliumDrawer, MyWindowMap};
 use slog::{Drain, Logger};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
-use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerButtonEvent,
-                              PointerMotionAbsoluteEvent, PointerAxisEvent};
+use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerAxisEvent,
+                              PointerButtonEvent, PointerMotionAbsoluteEvent};
 use smithay::backend::winit;
 use smithay::wayland::compositor::{SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
