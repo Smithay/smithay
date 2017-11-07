@@ -4,7 +4,7 @@ use std::os::unix::io::RawFd;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use nix::{Error as NixError, Result as NixResult};
-use nix::fcntl::{self, open};
+use nix::fcntl::{self, open, OFlag};
 use nix::libc::c_int;
 use nix::sys::signal::{self, Signal};
 use nix::sys::stat::{dev_t, major, minor, Mode, fstat};
@@ -15,7 +15,7 @@ use wayland_server::sources::SignalEventSource;
 #[cfg(feature = "backend_session_udev")]
 use libudev::Context;
 
-use super::{Session, SessionNotifier, SessionObserver};
+use super::{AsErrno, Session, SessionNotifier, SessionObserver};
 
 mod tty {
     ioctl!(bad read kd_get_mode with 0x4B3B; i16);
@@ -34,6 +34,7 @@ mod tty {
     ioctl!(bad write_int vt_activate with 0x5606);
     ioctl!(bad write_int vt_wait_active with 0x5607);
     ioctl!(bad write_ptr vt_set_mode with 0x5602; VtMode);
+    ioctl!(bad write_int vt_rel_disp with 0x5605);
     #[repr(C)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub struct VtMode {
@@ -50,7 +51,7 @@ mod tty {
     }
     pub const VT_AUTO: i8 = 0x00;
     pub const VT_PROCESS: i8 = 0x01;
-    pub const VT_ACKACQ: i8 = 0x02;
+    pub const VT_ACKACQ: i32 = 0x02;
 
     extern {
         pub fn __libc_current_sigrtmin() -> i8;
@@ -146,6 +147,7 @@ pub struct DirectSession {
 }
 
 pub struct DirectSessionNotifier {
+    tty: RawFd,
     active: Arc<AtomicBool>,
     signals: Vec<Option<Box<SessionObserver>>>,
     signal: Signal,
@@ -175,6 +177,7 @@ impl DirectSession {
                     old_keyboard_mode,
                     logger: logger.new(o!("vt" => format!("{}", vt), "component" => "session")),
                 }, DirectSessionNotifier {
+                    tty: fd,
                     active,
                     signals: Vec::new(),
                     signal,
@@ -194,7 +197,7 @@ impl DirectSession {
             bail!(ErrorKind::NotRunningFromTTY);
         }
 
-        let vt_num = minor(stat.st_dev) as i32 - 1;
+        let vt_num = minor(stat.st_rdev) as i32;
         info!(logger, "Running from tty: {}", vt_num);
 
         let mut mode = 0;
@@ -246,8 +249,9 @@ impl DirectSession {
 impl Session for DirectSession {
     type Error = NixError;
 
-    fn open(&mut self, path: &Path) -> NixResult<RawFd> {
-        open(path, fcntl::O_RDWR | fcntl::O_CLOEXEC | fcntl::O_NOCTTY | fcntl::O_NONBLOCK, Mode::empty())
+    fn open(&mut self, path: &Path, flags: OFlag) -> NixResult<RawFd> {
+        info!(self.logger, "Opening device: {:?}", path);
+        open(path, flags, Mode::empty())
     }
 
     fn close(&mut self, fd: RawFd) -> NixResult<()> {
@@ -258,9 +262,9 @@ impl Session for DirectSession {
         self.active.load(Ordering::SeqCst)
     }
 
-    fn seat(&self) -> &str {
+    fn seat(&self) -> String {
         // The VT api can only be used on seat0
-        return "seat0"
+        String::from("seat0")
     }
 
     fn change_vt(&mut self, vt_num: i32) -> NixResult<()> {
@@ -268,8 +272,19 @@ impl Session for DirectSession {
     }
 }
 
+impl AsErrno for NixError {
+    fn as_errno(&self) -> Option<i32> {
+        match *self {
+            NixError::Sys(errno) => Some(errno as i32),
+            _ => None,
+        }
+    }
+}
+
 impl Drop for DirectSession {
     fn drop(&mut self) {
+        info!(self.logger, "Deallocating tty {}", self.tty);
+
         if let Err(err) = unsafe { tty::kd_set_kb_mode(self.tty, self.old_keyboard_mode) } {
             warn!(self.logger, "Unable to restore vt keyboard mode. Error: {}", err);
         }
@@ -318,7 +333,13 @@ where
                 if let &mut Some(ref mut signal) = signal {signal.pause(&mut evlh.state().as_proxy()); }
             }
             notifier.active.store(false, Ordering::SeqCst);
+            unsafe {
+                tty::vt_rel_disp(notifier.tty, 1).expect("Unable to release tty lock");
+            }
         } else {
+            unsafe {
+                tty::vt_rel_disp(notifier.tty, tty::VT_ACKACQ).expect("Unable to acquire tty lock");
+            }
             for signal in &mut notifier.signals {
                 if let &mut Some(ref mut signal) = signal { signal.activate(&mut evlh.state().as_proxy()); }
             }

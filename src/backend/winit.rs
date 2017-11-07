@@ -190,11 +190,11 @@ impl GraphicsBackend for WinitGraphicsBackend {
         self.window.head().set_cursor_position(x as i32, y as i32)
     }
 
-    fn set_cursor_representation(&self, cursor: Self::CursorFormat, _hotspot: (u32, u32))
+    fn set_cursor_representation(&self, cursor: &Self::CursorFormat, _hotspot: (u32, u32))
                                  -> ::std::result::Result<(), ()> {
         // Cannot log this one, as `CursorFormat` is not `Debug` and should not be
         debug!(self.logger, "Changing cursor representation");
-        self.window.head().set_cursor(cursor);
+        self.window.head().set_cursor(*cursor);
         Ok(())
     }
 }

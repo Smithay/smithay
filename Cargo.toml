@@ -19,7 +19,7 @@ winit = { version = "0.8.2", optional = true }
 drm = { version = "^0.3.0", optional = true }
 gbm = { version = "^0.3.0", optional = true }
 glium = { version = "0.17.1", optional = true, default-features = false }
-input = { version = "0.3.0", optional = true }
+input = { version = "0.4.0", git = "https://github.com/Smithay/input.rs.git", branch = "feature/udev", optional = true }
 libudev = { git = "https://github.com/Drakulix/libudev-rs.git", branch = "feature/raw_ffi_access", optional = true }
 rental = "0.4.11"
 wayland-protocols = { version = "0.12.0", features = ["unstable_protocols", "server"] }

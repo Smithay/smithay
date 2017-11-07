@@ -29,7 +29,7 @@ pub trait GraphicsBackend {
     /// The format is entirely dictated by the concrete implementation and might range
     /// from raw image buffers over a fixed list of possible cursor types to simply the
     /// void type () to represent no possible customization of the cursor itself.
-    fn set_cursor_representation(&self, cursor: Self::CursorFormat, hotspot: (u32, u32))
+    fn set_cursor_representation(&self, cursor: &Self::CursorFormat, hotspot: (u32, u32))
                                  -> Result<(), Self::Error>;
 }
 

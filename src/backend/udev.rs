@@ -1,4 +1,5 @@
 use libudev::{Context, MonitorBuilder, MonitorSocket, Event, EventType, Enumerator, Result as UdevResult};
+use nix::fcntl;
 use nix::sys::stat::{dev_t, fstat};
 use std::borrow::Borrow;
 use std::collections::HashMap;
@@ -16,7 +17,7 @@ use ::backend::session::{Session, SessionObserver};
 pub struct UdevBackend<B: Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'static, S: Session + 'static, T: UdevHandler<B, H> + 'static> {
     devices: HashMap<dev_t, (StateToken<DrmDevice<B>>, FdEventSource<(StateToken<DrmDevice<B>>, H)>)>,
     monitor: MonitorSocket,
-    session: StateToken<S>,
+    session: S,
     handler: T,
     logger: ::slog::Logger,
 }
@@ -24,7 +25,7 @@ pub struct UdevBackend<B: Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'stat
 impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'static, S: Session + 'static, T: UdevHandler<B, H> + 'static> UdevBackend<B, H, S, T> {
     pub fn new<'a, L>(mut evlh: &mut EventLoopHandle,
                       context: &Context,
-                      session_token: &StateToken<S>,
+                      mut session: S,
                       mut handler: T,
                       logger: L)
         -> Result<UdevBackend<B, H, S, T>>
@@ -32,7 +33,7 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'sta
         L: Into<Option<::slog::Logger>>
     {
         let logger = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_udev"));
-        let seat = String::from(evlh.state().get(&session_token).seat());
+        let seat = session.seat();
         let devices = all_gpus(context, seat)
             .chain_err(|| ErrorKind::FailedToScan)?
             .into_iter()
@@ -40,8 +41,7 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'sta
             .flat_map(|path| {
                 match unsafe { DrmDevice::new_from_fd(
                     {
-                        let session = evlh.state().get_mut(session_token);
-                        match session.open(&path) {
+                        match session.open(&path, fcntl::O_RDWR | fcntl::O_CLOEXEC | fcntl::O_NOCTTY | fcntl::O_NONBLOCK) {
                             Ok(fd) => fd,
                             Err(err) => {
                                 warn!(logger, "Unable to open drm device {:?}, Error: {:?}. Skipping", path, err);
@@ -63,7 +63,6 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'sta
                                     let device = evlh.state().remove(token);
                                     let fd = device.as_raw_fd();
                                     drop(device);
-                                    let session = evlh.state().get_mut(session_token);
                                     if let Err(err) = session.close(fd) {
                                         warn!(logger, "Failed to close dropped device. Error: {:?}. Ignoring", err);
                                     };
@@ -78,7 +77,6 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'sta
                                 let device = evlh.state().remove(token);
                                 let fd = device.as_raw_fd();
                                 drop(device);
-                                let session = evlh.state().get_mut(session_token);
                                 if let Err(err) = session.close(fd) {
                                     warn!(logger, "Failed to close dropped device. Error: {:?}. Ignoring", err);
                                 };
@@ -88,7 +86,6 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'sta
                         None => {
                             let fd = device.as_raw_fd();
                             drop(device); //drops master
-                            let session = evlh.state().get_mut(session_token);
                             if let Err(err) = session.close(fd) {
                                 warn!(logger, "Failed to close device. Error: {:?}. Ignoring", err);
                             }
@@ -110,7 +107,7 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'sta
         Ok(UdevBackend {
             devices,
             monitor,
-            session: session_token.clone(),
+            session,
             handler,
             logger,
         })
@@ -124,11 +121,11 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'sta
             let device = state.remove(device);
             let fd = device.as_raw_fd();
             drop(device);
-            let session = state.get_mut(&self.session);
-            if let Err(err) = session.close(fd) {
+            if let Err(err) = self.session.close(fd) {
                 warn!(self.logger, "Failed to close device. Error: {:?}. Ignoring", err);
             };
         }
+        info!(self.logger, "All devices closed");
     }
 }
 
@@ -187,10 +184,8 @@ where
                             let mut device = {
                                 match unsafe { DrmDevice::new_from_fd(
                                     {
-                                        let session_token = evlh.state().get(token).session.clone();
                                         let logger = evlh.state().get(token).logger.clone();
-                                        let session = evlh.state().get_mut(&session_token);
-                                        match session.open(path) {
+                                        match evlh.state().get_mut(token).session.open(path, fcntl::O_RDWR | fcntl::O_CLOEXEC | fcntl::O_NOCTTY | fcntl::O_NONBLOCK) {
                                             Ok(fd) => fd,
                                             Err(err) => {
                                                 warn!(logger, "Unable to open drm device {:?}, Error: {:?}. Skipping", path, err);
@@ -213,29 +208,24 @@ where
                                         evlh.state().get_mut(token).devices.insert(devnum, (dev_token, fd_event_source));
                                     } else {
                                         evlh.state().with_value(token, |state, udev| {
-                                            let session_token = udev.session.clone();
-                                            state.with_value(&session_token, |state, session| {
-                                                let mut state: StateProxy = state.into();
-                                                udev.handler.device_removed(&mut state, &dev_token);
-                                                let device = state.remove(dev_token);
-                                                let fd = device.as_raw_fd();
-                                                drop(device);
-                                                if let Err(err) = session.close(fd) {
-                                                    warn!(udev.logger, "Failed to close dropped device. Error: {:?}. Ignoring", err);
-                                                };
-                                            })
+                                            let mut state: StateProxy = state.into();
+                                            udev.handler.device_removed(&mut state, &dev_token);
+                                            let device = state.remove(dev_token);
+                                            let fd = device.as_raw_fd();
+                                            drop(device);
+                                            if let Err(err) = udev.session.close(fd) {
+                                                warn!(udev.logger, "Failed to close dropped device. Error: {:?}. Ignoring", err);
+                                            };
                                         })
                                     }
                                 },
                                 None => {
                                     let fd = device.as_raw_fd();
                                     drop(device);
-                                    evlh.state().with_value(token, |state, udev| {
-                                        state.with_value(&udev.session, |_, session| {
-                                            if let Err(err) = session.close(fd) {
-                                                warn!(udev.logger, "Failed to close unused device. Error: {:?}", err);
-                                            }
-                                        })
+                                    evlh.state().with_value(token, |_state, udev| {
+                                        if let Err(err) = udev.session.close(fd) {
+                                            warn!(udev.logger, "Failed to close unused device. Error: {:?}", err);
+                                        }
                                     })
                                 },
                             };
@@ -244,23 +234,20 @@ where
                     // Device removed
                     EventType::Remove => {
                         evlh.state().with_value(token, |state, udev| {
-                            let session_token = udev.session.clone();
-                            state.with_value(&session_token, |state, session| {
-                                info!(udev.logger, "Device Remove");
-                                if let Some(devnum) = event.devnum() {
-                                    if let Some((device, fd_event_source)) = udev.devices.remove(&devnum) {
-                                        fd_event_source.remove();
-                                        let mut state: StateProxy = state.into();
-                                        udev.handler.device_removed(&mut state, &device);
-                                        let device = state.remove(device);
-                                        let fd = device.as_raw_fd();
-                                        drop(device);
-                                        if let Err(err) = session.close(fd) {
-                                            warn!(udev.logger, "Failed to close device {:?}. Error: {:?}. Ignoring", event.sysname(), err);
-                                        };
-                                    }
+                            info!(udev.logger, "Device Remove");
+                            if let Some(devnum) = event.devnum() {
+                                if let Some((device, fd_event_source)) = udev.devices.remove(&devnum) {
+                                    fd_event_source.remove();
+                                    let mut state: StateProxy = state.into();
+                                    udev.handler.device_removed(&mut state, &device);
+                                    let device = state.remove(device);
+                                    let fd = device.as_raw_fd();
+                                    drop(device);
+                                    if let Err(err) = udev.session.close(fd) {
+                                        warn!(udev.logger, "Failed to close device {:?}. Error: {:?}. Ignoring", event.sysname(), err);
+                                    };
                                 }
-                            })
+                            }
                         })
                     },
                     // New connector

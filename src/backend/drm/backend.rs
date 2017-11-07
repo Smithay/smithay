@@ -424,7 +424,7 @@ impl GraphicsBackend for DrmBackend {
         })
     }
 
-    fn set_cursor_representation(&self, buffer: ImageBuffer<Rgba<u8>, Vec<u8>>, hotspot: (u32, u32))
+    fn set_cursor_representation(&self, buffer: &ImageBuffer<Rgba<u8>, Vec<u8>>, hotspot: (u32, u32))
                                  -> Result<()> {
         let (w, h) = buffer.dimensions();
 
@@ -445,7 +445,7 @@ impl GraphicsBackend for DrmBackend {
                     )
                     .chain_err(|| ErrorKind::GbmInitFailed)?;
                 cursor
-                    .write(&*buffer.into_raw())
+                    .write(&**buffer)
                     .chain_err(|| ErrorKind::GbmInitFailed)?;
 
                 trace!(self.logger, "Set the new imported cursor");
