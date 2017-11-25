@@ -7,6 +7,7 @@ extern crate image;
 extern crate libudev;
 #[macro_use(define_roles)]
 extern crate smithay;
+extern crate xkbcommon;
 extern crate wayland_server;
 
 #[macro_use]
@@ -32,7 +33,7 @@ use slog::{Drain, Logger};
 use smithay::backend::drm::{DrmBackend, DrmDevice, DrmHandler};
 use smithay::backend::graphics::GraphicsBackend;
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
-use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, KeyState, PointerButtonEvent,
+use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerButtonEvent,
                               PointerAxisEvent};
 use smithay::backend::libinput::{LibinputInputBackend, libinput_bind, PointerAxisEvent as LibinputPointerAxisEvent, LibinputSessionInterface};
 use smithay::backend::udev::{UdevBackend, UdevHandler, udev_backend_bind};
@@ -51,6 +52,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use xkbcommon::xkb::keysyms as xkb;
 use wayland_server::{StateToken, StateProxy};
 use wayland_server::protocol::{wl_output, wl_pointer};
 
@@ -87,15 +89,15 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
         let state = evt.state();
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
 
-        match (keycode, state) {
-            (1 /*ESC*/, KeyState::Pressed) => {
+        let serial = self.next_serial();
+        self.keyboard.input(keycode, state, serial, |modifiers, keysym| {
+            if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace {
                 self.running.store(false, Ordering::SeqCst);
-            },
-            (keycode, state) => {
-                let serial = self.next_serial();
-                self.keyboard.input(keycode, state, serial, |_, _| true);
+                false
+            } else {
+                true
             }
-        }
+        });
     }
     fn on_pointer_move(&mut self, _: &input::Seat, evt: event::pointer::PointerMotionEvent) {
         let (x, y) = (evt.dx(), evt.dy());
