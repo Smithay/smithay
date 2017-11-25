@@ -250,11 +250,14 @@ impl Session for DirectSession {
     type Error = NixError;
 
     fn open(&mut self, path: &Path, flags: OFlag) -> NixResult<RawFd> {
-        info!(self.logger, "Opening device: {:?}", path);
-        open(path, flags, Mode::empty())
+        debug!(self.logger, "Opening device: {:?}", path);
+        let fd = open(path, flags, Mode::empty())?;
+        trace!(self.logger, "Fd num: {:?}", fd);
+        Ok(fd)
     }
 
     fn close(&mut self, fd: RawFd) -> NixResult<()> {
+        debug!(self.logger, "Closing device: {:?}", fd);
         close(fd)
     }
 
