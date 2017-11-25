@@ -225,11 +225,11 @@ impl DirectSession {
         /*
         let signal = if tty::__libc_current_sigrtmin() > tty::__libc_current_sigrtmax() {
             warn!(logger, "Not enough real-time signals available, falling back to USR1");
-            nix::sys::signal::SIGUSR1 as i32
+            nix::sys::signal::SIGUSR2 as i32
         } else {
             tty::__libc_current_sigrtmin()
         };*/
-        let signal = signal::SIGUSR1;
+        let signal = signal::SIGUSR2;
 
         let mode = tty::VtMode {
             mode: tty::VT_PROCESS,
