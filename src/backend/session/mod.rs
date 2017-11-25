@@ -1,5 +1,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::rc::Rc;
+use std::cell::RefCell;
 use std::os::unix::io::RawFd;
 use nix::fcntl::OFlag;
 use wayland_server::StateProxy;
@@ -39,6 +41,30 @@ impl Session for () {
 
     fn is_active(&self) -> bool { false }
     fn seat(&self) -> String { String::from("seat0") }
+}
+
+impl<S: Session> Session for Rc<RefCell<S>> {
+    type Error = S::Error;
+
+    fn open(&mut self, path: &Path, flags: OFlag) -> Result<RawFd, Self::Error> {
+        self.borrow_mut().open(path, flags)
+    }
+
+    fn close(&mut self, fd: RawFd) -> Result<(), Self::Error> {
+        self.borrow_mut().close(fd)
+    }
+
+    fn change_vt(&mut self, vt: i32) -> Result<(), Self::Error> {
+        self.borrow_mut().change_vt(vt)
+    }
+
+    fn is_active(&self) -> bool {
+        self.borrow().is_active()
+    }
+
+    fn seat(&self) -> String {
+        self.borrow().seat()
+    }
 }
 
 impl<S: Session> Session for Arc<Mutex<S>> {

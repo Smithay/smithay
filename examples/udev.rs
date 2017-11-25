@@ -49,8 +49,8 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::io::Error as IoError;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use xkbcommon::xkb::keysyms as xkb;
 use wayland_server::{StateToken, StateProxy};
@@ -61,7 +61,7 @@ struct LibinputInputHandler {
     pointer: PointerHandle,
     keyboard: KeyboardHandle,
     window_map: Rc<RefCell<MyWindowMap>>,
-    pointer_location: Arc<Mutex<(f64, f64)>>,
+    pointer_location: Rc<RefCell<(f64, f64)>>,
     screen_size: (u32, u32),
     serial: u32,
     running: Arc<AtomicBool>,
@@ -102,7 +102,7 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
     fn on_pointer_move(&mut self, _: &input::Seat, evt: event::pointer::PointerMotionEvent) {
         let (x, y) = (evt.dx(), evt.dy());
         let serial = self.next_serial();
-        let mut location = self.pointer_location.lock().unwrap();
+        let mut location = self.pointer_location.borrow_mut();
         location.0 += x;
         location.1 += y;
         let under = self.window_map.borrow().get_surface_under((location.0, location.1));
@@ -114,7 +114,7 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
     }
     fn on_pointer_move_absolute(&mut self, _: &input::Seat, evt: event::pointer::PointerMotionAbsoluteEvent) {
         let (x, y) = (evt.absolute_x_transformed(self.screen_size.0), evt.absolute_y_transformed(self.screen_size.1));
-        *self.pointer_location.lock().unwrap() = (x, y);
+        *self.pointer_location.borrow_mut() = (x, y);
         let serial = self.next_serial();
         let under = self.window_map.borrow().get_surface_under((x, y));
         self.pointer.motion(
@@ -131,7 +131,7 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
                 // change the keyboard focus
                 let under = self.window_map
                     .borrow_mut()
-                    .get_surface_and_bring_to_top(*self.pointer_location.lock().unwrap());
+                    .get_surface_and_bring_to_top(*self.pointer_location.borrow());
                 self.keyboard
                     .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
                 wl_pointer::ButtonState::Pressed
@@ -188,7 +188,7 @@ fn main() {
      * Initialize session on the current tty
      */
     let (session, mut notifier) = DirectSession::new(None, log.clone()).unwrap();
-    let session = Arc::new(Mutex::new(session));
+    let session = Rc::new(RefCell::new(session));
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -196,7 +196,7 @@ fn main() {
         r.store(false, Ordering::SeqCst);
     }).expect("Error setting Ctrl-C handler");
 
-    let pointer_location = Arc::new(Mutex::new((0.0, 0.0)));
+    let pointer_location = Rc::new(RefCell::new((0.0, 0.0)));
 
     /*
      * Initialize the udev backend
@@ -264,9 +264,9 @@ fn main() {
      * Initialize libinput backend
      */
     let seat = session.seat();
-    let mut libinput_context = Libinput::new_from_udev::<LibinputSessionInterface<Arc<Mutex<DirectSession>>>>(session.into(), &context);
+    let mut libinput_context = Libinput::new_from_udev::<LibinputSessionInterface<Rc<RefCell<DirectSession>>>>(session.into(), &context);
     let libinput_session_id = notifier.register(libinput_context.clone());
-    libinput_context.udev_assign_seat(&seat);
+    libinput_context.udev_assign_seat(&seat).unwrap();
     let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
     libinput_backend.set_handler(LibinputInputHandler {
         log: log.clone(),
@@ -312,7 +312,7 @@ struct UdevHandlerImpl {
     shell_state_token: StateToken<ShellState<SurfaceData, Roles, (), ()>>,
     compositor_token: CompositorToken<SurfaceData, Roles, ()>,
     window_map: Rc<RefCell<MyWindowMap>>,
-    pointer_location: Arc<Mutex<(f64, f64)>>,
+    pointer_location: Rc<RefCell<(f64, f64)>>,
     pointer_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     logger: ::slog::Logger,
 }
@@ -410,7 +410,7 @@ pub struct DrmHandlerImpl {
     shell_state_token: StateToken<ShellState<SurfaceData, Roles, (), ()>>,
     compositor_token: CompositorToken<SurfaceData, Roles, ()>,
     window_map: Rc<RefCell<MyWindowMap>>,
-    pointer_location: Arc<Mutex<(f64, f64)>>,
+    pointer_location: Rc<RefCell<(f64, f64)>>,
     logger: ::slog::Logger,
 }
 
@@ -420,7 +420,7 @@ impl DrmHandler<GliumDrawer<DrmBackend>> for DrmHandlerImpl {
         let state = state.into();
         let drawer = state.get(backend);
         {
-            let (x, y) = *self.pointer_location.lock().unwrap();
+            let (x, y) = *self.pointer_location.borrow();
             let _ = (**drawer).set_cursor_position(x.trunc().abs() as u32, y.trunc().abs() as u32);
         }
         let mut frame = drawer.draw();
