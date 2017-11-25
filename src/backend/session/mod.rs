@@ -102,5 +102,6 @@ impl AsErrno for () {
 }
 
 pub mod direct;
-#[cfg(feature = "backend_session_logind")]
-pub mod logind;
+
+//#[cfg(feature = "backend_session_logind")]
+//pub mod logind;

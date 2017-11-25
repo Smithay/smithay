@@ -25,6 +25,12 @@ extern crate gbm;
 extern crate input;
 #[cfg(feature = "backend_udev")]
 extern crate libudev;
+/*
+#[cfg(feature = "backend_session_logind")]
+extern crate dbus;
+#[cfg(feature = "backend_session_logind")]
+extern crate systemd;
+*/
 #[cfg(feature = "backend_winit")]
 extern crate wayland_client;
 #[cfg(feature = "backend_winit")]
