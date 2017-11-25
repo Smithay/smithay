@@ -385,7 +385,7 @@ impl UdevHandler<GliumDrawer<DrmBackend>, DrmHandlerImpl> for UdevHandlerImpl {
     }
 
     fn device_changed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<GliumDrawer<DrmBackend>>>) {
-        //quick and dirty
+        //quick and dirt, just re-init the device
         let mut state = state.into();
         self.device_removed(&mut state, device);
         state.with_value(device, |state, device| self.scan_connectors(state, device));
