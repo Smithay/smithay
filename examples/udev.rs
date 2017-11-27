@@ -203,7 +203,7 @@ fn main() {
      */
     let context = libudev::Context::new().unwrap();
     let bytes = include_bytes!("resources/cursor2.rgba");
-    let udev
+    let udev_token
         = UdevBackend::new(&mut event_loop, &context, session.clone(), UdevHandlerImpl {
             shell_state_token,
             compositor_token,
@@ -213,7 +213,6 @@ fn main() {
             logger: log.clone(),
         }, log.clone()).unwrap();
 
-    let udev_token = event_loop.state().insert(udev);
     let udev_session_id = notifier.register(udev_token.clone());
 
     let (seat_token, _) = Seat::new(&mut event_loop, session.seat().into(), log.clone());

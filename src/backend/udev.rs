@@ -28,7 +28,7 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'sta
                       mut session: S,
                       mut handler: T,
                       logger: L)
-        -> Result<UdevBackend<B, H, S, T>>
+        -> Result<StateToken<UdevBackend<B, H, S, T>>>
     where
         L: Into<Option<::slog::Logger>>
     {
@@ -104,13 +104,13 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'sta
         builder.match_subsystem("drm").chain_err(|| ErrorKind::FailedToInitMonitor)?;
         let monitor = builder.listen().chain_err(|| ErrorKind::FailedToInitMonitor)?;
 
-        Ok(UdevBackend {
+        Ok(evlh.state().insert(UdevBackend {
             devices,
             monitor,
             session,
             handler,
             logger,
-        })
+        }))
     }
 
     pub fn close<'a, ST: Into<StateProxy<'a>>>(mut self, state: ST) {
