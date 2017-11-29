@@ -1,3 +1,14 @@
+//!
+//! Provides `udev` related functionality for automated device scanning.
+//!
+//! This module mainly provides the `UdevBackend`, which constantly monitors available drm devices
+//! and notifies a user supplied `UdevHandler` of any changes.
+//!
+//! Additionally this contains some utility functions related to scanning.
+//!
+//! See also `examples/udev.rs` for pure hardware backed example of a compositor utilizing this
+//! backend.
+
 use libudev::{Context, MonitorBuilder, MonitorSocket, Event, EventType, Enumerator, Result as UdevResult};
 use nix::fcntl;
 use nix::sys::stat::{dev_t, fstat};
@@ -14,6 +25,11 @@ use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 use ::backend::drm::{DrmDevice, DrmBackend, DrmHandler, drm_device_bind};
 use ::backend::session::{Session, SessionObserver};
 
+/// Graphical backend that monitors available drm devices.
+///
+/// Provides a way to automatically initialize a `DrmDevice` for available gpus and notifies the
+/// given handler of any changes. Can be used to provide hot-plug functionality for gpus and
+/// attached monitors.
 pub struct UdevBackend<B: Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'static, S: Session + 'static, T: UdevHandler<B, H> + 'static> {
     devices: HashMap<dev_t, (StateToken<DrmDevice<B>>, FdEventSource<(StateToken<DrmDevice<B>>, H)>)>,
     monitor: MonitorSocket,
@@ -23,6 +39,14 @@ pub struct UdevBackend<B: Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'stat
 }
 
 impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'static, S: Session + 'static, T: UdevHandler<B, H> + 'static> UdevBackend<B, H, S, T> {
+    /// Creates a new `UdevBackend` and adds it to the given `EventLoop`'s state.
+    ///
+    /// ## Arguments
+    /// `evlh` - An event loop to use for binding `DrmDevices`
+    /// `context` - An initialized udev context
+    /// `session` - A session used to open and close devices as they become available
+    /// `handler` - User-provided handler to respond to any detected changes
+    /// `logger`  - slog Logger to be used by the backend and its `DrmDevices`.
     pub fn new<'a, L>(mut evlh: &mut EventLoopHandle,
                       context: &Context,
                       mut session: S,
@@ -113,6 +137,14 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'sta
         }))
     }
 
+    /// Closes the udev backend and frees all remaining open devices.
+    ///
+    /// Needs to be called after the `FdEventSource` was removed and the backend was removed from
+    /// the `EventLoop`'s `State`.
+    ///
+    /// ## Panics
+    /// The given state might be passed to the registered `UdevHandler::device_removed` callback.
+    /// Make sure not to borrow any tokens twice.
     pub fn close<'a, ST: Into<StateProxy<'a>>>(mut self, state: ST) {
         let mut state = state.into();
         for (_, (mut device, event_source)) in self.devices.drain() {
@@ -147,6 +179,10 @@ impl<B: Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'static, S: Session + '
     }
 }
 
+/// Binds a `UdevBackend` to a given `EventLoop`.
+///
+/// Allows the backend to recieve kernel events and thus to drive the `UdevHandler`.
+/// No runtime functionality can be provided without using this function.
 pub fn udev_backend_bind<B, S, H, T>(evlh: &mut EventLoopHandle, udev: StateToken<UdevBackend<B, H, S, T>>)
     -> IoResult<FdEventSource<StateToken<UdevBackend<B, H, S, T>>>>
 where
@@ -275,13 +311,41 @@ where
     }
 }
 
+/// Handler for the `UdevBackend`, allows to open, close and update drm devices as they change during runtime.
 pub trait UdevHandler<B: Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'static> {
+    /// Called on initialization for every known device and when a new device is detected.
+    ///
+    /// Returning a `DrmHandler` will initialize the device, returning `None` will ignore the device.
+    ///
+    /// ## Panics
+    /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
     fn device_added<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &mut DrmDevice<B>) -> Option<H>;
+    /// Called when an open device is changed.
+    ///
+    /// This usually indicates that some connectors did become available or were unplugged. The handler
+    /// should scan again for connected monitors and mode switch accordingly.
+    ///
+    /// ## Panics
+    /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
     fn device_changed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<B>>);
+    /// Called when a device was removed.
+    ///
+    /// The device will not accept any operations anymore and its file descriptor will be closed once
+    /// this function returns, any open references/tokens to this device need to be released.
+    ///
+    /// ## Panics
+    /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
     fn device_removed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<B>>);
+    /// Called when the udev context has encountered and error.
+    ///
+    /// ## Panics
+    /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
     fn error<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, error: IoError);
 }
 
+/// Returns the path of the primary gpu device if any
+///
+/// Might be used for filtering in `UdevHandler::device_added` or for manual `DrmDevice` initialization
 pub fn primary_gpu<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Option<PathBuf>> {
     let mut enumerator = Enumerator::new(context)?;
     enumerator.match_subsystem("drm")?;
@@ -304,6 +368,9 @@ pub fn primary_gpu<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Opti
     Ok(result.and_then(|device| device.devnode().map(PathBuf::from)))
 }
 
+/// Returns the paths of all available gpu devices
+///
+/// Might be used for manual `DrmDevice` initialization
 pub fn all_gpus<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Vec<PathBuf>> {
     let mut enumerator = Enumerator::new(context)?;
     enumerator.match_subsystem("drm")?;

@@ -1,3 +1,51 @@
+//!
+//! Implementation of the `Session` trait through the legacy vt kernel interface.
+//!
+//! This requires write permissions for the given tty device and any devices opened through this
+//! interface. This means it will almost certainly require root permissions and not allow to run
+//! the compositor as an unpriviledged user. Use this session type *only* as a fallback or for testing,
+//! if anything better is available.
+//!
+//! ## How to use it
+//!
+//! ### Initialization
+//!
+//! To initialize the session you may pass the path to any tty device, that shall be used.
+//! If no path is given the tty used to start this compositor (if any) will be used.
+//! A new session and its notifier will be returned.
+//!
+//! ```rust,no_run
+//! extern crate smithay;
+//!
+//! use smithay::backend::session::direct::DirectSession;
+//!
+//! # fn main() {
+//! let (session, mut notifier) = DirectSession::new(None, None).unwrap();
+//! # }
+//! ```
+//!
+//! ### Usage of the session
+//!
+//! The session may be used to open devices manually through the `Session` interface
+//! or be passed to other object that need to open devices themselves.
+//!
+//! Examples for those are e.g. the `LibinputInputBackend` (its context might be initialized through a
+//! `Session` via the `LibinputSessionInterface`) or the `UdevBackend`.
+//!
+//! In case you want to pass the same `Session` to multiple objects, `Session` is implement for
+//! every `Rc<RefCell<Session>>` or `Arc<Mutex<Session>>`.
+//!
+//! ### Usage of the session notifier
+//!
+//! The notifier might be used to pause device access, when the session gets paused (e.g. by
+//! switching the tty via `DirectSession::change_vt`) and to automatically enable it again,
+//! when the session becomes active again.
+//!
+//! It is crutial to avoid errors during that state. Examples for object that might be registered
+//! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
+//! automatically by the `UdevBackend`, if not done manually).
+//! ```
+
 use std::io::Result as IoResult;
 use std::path::Path;
 use std::os::unix::io::RawFd;
@@ -17,6 +65,7 @@ use libudev::Context;
 
 use super::{AsErrno, Session, SessionNotifier, SessionObserver};
 
+#[allow(dead_code)]
 mod tty {
     ioctl!(bad read kd_get_mode with 0x4B3B; i16);
     ioctl!(bad write_int kd_set_mode with 0x4B3A);
@@ -59,25 +108,6 @@ mod tty {
     }
 }
 
-
-// on freebsd and dragonfly
-#[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
-const DRM_MAJOR: u64 = 145;
-
-// on netbsd
-#[cfg(target_os = "netbsd")]
-const DRM_MAJOR: u64 = 34;
-
-// on openbsd (32 & 64 bit)
-#[cfg(all(target_os = "openbsd", target_pointer_width = "32"))]
-const DRM_MAJOR: u64 = 88;
-#[cfg(all(target_os = "openbsd", target_pointer_width = "64"))]
-const DRM_MAJOR: u64 = 87;
-
-// on linux/android
-#[cfg(any(target_os = "linux", target_os = "android"))]
-const DRM_MAJOR: u64 = 226;
-
 #[cfg(any(target_os = "linux", target_os = "android"))]
 const TTY_MAJOR: u64 = 4;
 
@@ -85,32 +115,8 @@ const TTY_MAJOR: u64 = 4;
 const TTY_MAJOR: u64 = 0;
 
 #[cfg(not(feature = "backend_session_udev"))]
-fn is_drm_device(dev: dev_t, _path: &Path) -> bool {
-    major(dev) == DRM_MAJOR
-}
-
-#[cfg(not(feature = "backend_session_udev"))]
 fn is_tty_device(dev: dev_t, _path: Option<&Path>) -> bool {
     major(dev) == TTY_MAJOR
-}
-
-#[cfg(feature = "backend_session_udev")]
-fn is_drm_device(dev: dev_t, path: &Path) -> bool {
-    let udev = match Context::new() {
-        Ok(context) => context,
-        Err(_) => return major(dev) == DRM_MAJOR,
-    };
-
-    let device = match udev.device_from_syspath(path) {
-        Ok(device) => device,
-        Err(_) => return major(dev) == DRM_MAJOR,
-    };
-
-    if let Some(subsystem) = device.subsystem() {
-        subsystem == "drm"
-    } else {
-        major(dev) == DRM_MAJOR
-    }
 }
 
 #[cfg(feature = "backend_session_udev")]
@@ -138,6 +144,7 @@ fn is_tty_device(dev: dev_t, path: Option<&Path>) -> bool {
     }
 }
 
+/// `Session` via the virtual terminal direct kernel interface
 pub struct DirectSession {
     tty: RawFd,
     active: Arc<AtomicBool>,
@@ -146,6 +153,7 @@ pub struct DirectSession {
     logger: ::slog::Logger,
 }
 
+/// `SessionNotifier` via the virtual terminal direct kernel interface
 pub struct DirectSessionNotifier {
     tty: RawFd,
     active: Arc<AtomicBool>,
@@ -155,6 +163,9 @@ pub struct DirectSessionNotifier {
 }
 
 impl DirectSession {
+    /// Tries to creates a new session via the legacy virtual terminal interface.
+    ///
+    /// If you do not provide a tty device path, it will try to open the currently active tty if any.
     pub fn new<L>(tty: Option<&Path>, logger: L) -> Result<(DirectSession, DirectSessionNotifier)>
         where
             L: Into<Option<::slog::Logger>>
@@ -244,6 +255,11 @@ impl DirectSession {
 
         Ok((vt_num, old_keyboard_mode, signal))
     }
+
+    /// Get the number of the virtual terminal used by this session
+    pub fn vt(&self) -> i32 {
+        self.vt
+    }
 }
 
 impl Session for DirectSession {
@@ -323,6 +339,11 @@ impl SessionNotifier for DirectSessionNotifier {
     }
 }
 
+/// Bind a `DirectSessionNotifier` to an `EventLoop`.
+///
+/// Allows the `DirectSessionNotifier` to listen for the incoming signals signalling the session state.
+/// If you don't use this function `DirectSessionNotifier` will not correctly tell you the current
+/// session state.
 pub fn direct_session_bind<L>(notifier: DirectSessionNotifier, evlh: &mut EventLoopHandle, _logger: L)
     -> IoResult<SignalEventSource<DirectSessionNotifier>>
 where
@@ -332,6 +353,7 @@ where
 
     evlh.add_signal_event_source(|evlh, notifier, _| {
         if notifier.is_active() {
+            info!(notifier.logger, "Session shall become inactive");
             for signal in &mut notifier.signals {
                 if let &mut Some(ref mut signal) = signal {signal.pause(&mut evlh.state().as_proxy()); }
             }
@@ -339,7 +361,9 @@ where
             unsafe {
                 tty::vt_rel_disp(notifier.tty, 1).expect("Unable to release tty lock");
             }
+            debug!(notifier.logger, "Session is now inactive");
         } else {
+            debug!(notifier.logger, "Session will become active again");
             unsafe {
                 tty::vt_rel_disp(notifier.tty, tty::VT_ACKACQ).expect("Unable to acquire tty lock");
             }
@@ -347,6 +371,7 @@ where
                 if let &mut Some(ref mut signal) = signal { signal.activate(&mut evlh.state().as_proxy()); }
             }
             notifier.active.store(true, Ordering::SeqCst);
+            info!(notifier.logger, "Session is now active again");
         }
     }, notifier, signal)
 }

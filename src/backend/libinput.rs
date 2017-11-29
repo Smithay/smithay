@@ -566,6 +566,8 @@ impl SessionObserver for libinput::Libinput {
     }
 }
 
+/// Wrapper for types implementing the `Session` trait to provide
+/// a `LibinputInterface` implementation.
 pub struct LibinputSessionInterface<S: Session>(S);
 
 impl<S: Session> From<S> for LibinputSessionInterface<S> {
@@ -585,6 +587,10 @@ impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
     }
 }
 
+/// Binds a `LibinputInputBackend` to a given `EventLoop`.
+///
+/// Automatically feeds the backend with incoming events without any manual calls to
+/// `dispatch_new_events`. Should be used to achieve the smallest possible latency.
 pub fn libinput_bind(backend: LibinputInputBackend, evlh: &mut EventLoopHandle)
     -> IoResult<FdEventSource<LibinputInputBackend>>
 {

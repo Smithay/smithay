@@ -375,6 +375,7 @@ impl DrmBackend {
         Ok(())
     }
 
+    /// Returns the crtc id used by this backend
     pub fn crtc(&self) -> crtc::Handle {
         self.crtc
     }

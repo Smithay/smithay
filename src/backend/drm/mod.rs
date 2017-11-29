@@ -457,14 +457,20 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
         Ok(self.backends.get(&crtc).unwrap())
     }
 
+    /// Get the current backend for a given crtc if any
     pub fn backend_for_crtc(&self, crtc: &crtc::Handle) -> Option<&StateToken<B>> {
         self.backends.get(crtc)
     }
 
+    /// Get all belonging backends
     pub fn current_backends(&self) -> Vec<&StateToken<B>> {
         self.backends.values().collect()
     }
 
+    /// Destroy the backend using a given crtc if any
+    ///
+    /// ## Panics
+    /// Panics if the backend is already borrowed from the state
     pub fn destroy_backend<'a, S>(&mut self, state: S, crtc: &crtc::Handle)
     where
         S: Into<StateProxy<'a>>
@@ -474,6 +480,11 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
         }
     }
 
+    /// Close the device
+    ///
+    /// ## Warning
+    /// Never call this function if the device is managed by another backend e.g. the `UdevBackend`.
+    /// Only use this function for manually initialized devices.
     pub fn close(self) -> NixResult<()> {
         let fd = self.as_raw_fd();
         mem::drop(self);
@@ -517,12 +528,20 @@ pub trait DrmHandler<B: Borrow<DrmBackend> + 'static> {
     ///
     /// The `id` argument is the `Id` of the `DrmBackend` that finished rendering,
     /// check using `DrmBackend::is`.
+    ///
+    /// ## Panics
+    /// The device is already borrowed from the given `state`. Borrowing it again will panic
+    /// and is not necessary as it is already provided via the `device` parameter.
     fn ready<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &mut DrmDevice<B>, backend: &StateToken<B>,
              crtc: crtc::Handle, frame: u32, duration: Duration);
     /// The `DrmDevice` has thrown an error.
     ///
     /// The related backends are most likely *not* usable anymore and
-    /// the whole stack has to be recreated.
+    /// the whole stack has to be recreated..
+    ///
+    /// ## Panics
+    /// The device is already borrowed from the given `state`. Borrowing it again will panic
+    /// and is not necessary as it is already provided via the `device` parameter.
     fn error<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &mut DrmDevice<B>, error: DrmError);
 }
 
@@ -610,6 +629,5 @@ impl<B: Borrow<DrmBackend> + 'static> SessionObserver for StateToken<DrmDevice<B
                 }
             }
         })
-
     }
 }
