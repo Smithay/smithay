@@ -441,7 +441,7 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
             if !encoders
                 .iter()
                 .map(|encoder| encoder.possible_crtcs())
-                .all(|crtc_list| {
+                .any(|crtc_list| {
                     resource_handles.filter_crtcs(crtc_list).contains(&crtc)
                 }) {
                 bail!(ErrorKind::NoSuitableEncoder(con_info, crtc))
