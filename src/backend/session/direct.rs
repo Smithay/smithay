@@ -322,6 +322,7 @@ impl Drop for DirectSession {
     }
 }
 
+/// Ids of registered `SessionObserver`s of the `DirectSessionNotifier`
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Id(usize);
 
