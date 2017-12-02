@@ -47,3 +47,6 @@ backend_session_udev = ["libudev", "backend_session"]
 backend_session_logind = ["backend_session", "dbus", "systemd"]
 backend_udev = ["libudev", "backend_drm", "backend_session_udev"]
 renderer_glium = ["glium"]
+
+[patch.crates-io]
+drm = { git = "https://github.com/Drakulix/drm-rs.git", branch = "feature/current_encoder" }

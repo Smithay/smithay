@@ -262,6 +262,7 @@ use self::devices::{Context, Devices};
 pub struct DrmDevice<B: Borrow<DrmBackend> + 'static> {
     context: Rc<Context>,
     backends: HashMap<crtc::Handle, StateToken<B>>,
+    old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     active: bool,
     logger: ::slog::Logger,
 }
@@ -361,6 +362,31 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
         // we want to mode-set, so we better be the master
         drm.set_master().chain_err(|| ErrorKind::DrmMasterFailed)?;
 
+        let mut old_state = HashMap::new();
+        let res_handles = drm.resource_handles()
+            .chain_err(|| {
+                ErrorKind::DrmDev(format!("Loading drm resources on {:?}", drm))
+            })?;
+        for &con in res_handles.connectors() {
+            let con_info = connector::Info::load_from_device(&drm, con)
+                .chain_err(|| {
+                    ErrorKind::DrmDev(format!("Loading connector info on {:?}", drm))
+                })?;
+            if let Some(enc) = con_info.current_encoder() {
+                let enc_info = encoder::Info::load_from_device(&drm, enc)
+                    .chain_err(|| {
+                        ErrorKind::DrmDev(format!("Loading encoder info on {:?}", drm))
+                    })?;
+                if let Some(crtc) = enc_info.current_crtc() {
+                    let info = crtc::Info::load_from_device(&drm, crtc)
+                        .chain_err(|| {
+                            ErrorKind::DrmDev(format!("Loading crtc info on {:?}", drm))
+                        })?;
+                    old_state.entry(crtc).or_insert((info, Vec::new())).1.push(con);
+                }
+            }
+        }
+
         // Open the gbm device from the drm device and create a context based on that
         Ok(DrmDevice {
             context: Rc::new(Context::try_new(
@@ -384,6 +410,7 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
                 },
             )?),
             backends: HashMap::new(),
+            old_state,
             active: true,
             logger: log,
         })
@@ -415,7 +442,7 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
         for connector in &connectors {
             let con_info = connector::Info::load_from_device(self.context.head().head(), *connector)
                 .chain_err(|| {
-                    ErrorKind::DrmDev(format!("{:?}", self.context.head().head()))
+                    ErrorKind::DrmDev(format!("Loading connector info on {:?}", self.context.head().head()))
                 })?;
 
             // check the mode
@@ -429,14 +456,14 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
                 .iter()
                 .map(|encoder| {
                     encoder::Info::load_from_device(self.context.head().head(), *encoder).chain_err(|| {
-                        ErrorKind::DrmDev(format!("{:?}", self.context.head().head()))
+                        ErrorKind::DrmDev(format!("Loading encoder info on {:?}", self.context.head().head()))
                     })
                 })
                 .collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
             let resource_handles = self.resource_handles().chain_err(|| {
-                ErrorKind::DrmDev(format!("{:?}", self.context.head().head()))
+                ErrorKind::DrmDev(format!("Loading drm resources on {:?}", self.context.head().head()))
             })?;
             if !encoders
                 .iter()
@@ -506,6 +533,11 @@ impl<B: Borrow<DrmBackend> + 'static> Drop for DrmDevice<B> {
     fn drop(&mut self) {
         if Rc::strong_count(&self.context) > 1 {
             panic!("Pending DrmBackends. Please free all backends before the DrmDevice gets destroyed");
+        }
+        for (handle, (info, connectors)) in self.old_state.drain() {
+            if let Err(err) = crtc::set(self.context.head().head(), handle, info.fb(), &connectors, info.position(), info.mode()) {
+                error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
+            }
         }
         if let Err(err) = self.drop_master() {
             error!(self.logger, "Failed to drop drm master state. Error: {}", err);

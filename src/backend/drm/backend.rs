@@ -385,6 +385,7 @@ impl Drop for DrmBackend {
     fn drop(&mut self) {
         // Drop framebuffers attached to the userdata of the gbm surface buffers.
         // (They don't implement drop, as they need the device)
+        let crtc = self.crtc;
         self.graphics.rent_all_mut(|graphics| {
             if let Some(fb) = graphics.gbm.surface.rent(|egl| {
                 if let Some(mut next) = egl.buffers.next_buffer.take() {
@@ -406,6 +407,9 @@ impl Drop for DrmBackend {
                 // ignore failure at this point
                 let _ = framebuffer::destroy(&*graphics.context.devices.drm, fb.handle());
             }
+
+            // ignore failure at this point
+            let _ = crtc::clear_cursor(&*graphics.context.devices.drm, crtc);
         })
     }
 }
