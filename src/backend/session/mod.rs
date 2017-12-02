@@ -47,12 +47,15 @@ pub trait Session {
 /// gets paused or becomes active again. Any object implementing the `SessionObserver` trait
 /// may be registered.
 pub trait SessionNotifier {
+    /// Id type of registered observers
+    type Id: PartialEq + Eq;
+
     /// Registers a given `SessionObserver`.
     ///
     /// Returns an id of the inserted observer, can be used to remove it again.
-    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> usize;
+    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Self::Id;
     /// Removes an observer by its given id from `SessionNotifier::register`.
-    fn unregister(&mut self, signal: usize);
+    fn unregister(&mut self, signal: Self::Id);
 
     /// Check if this session is currently active
     fn is_active(&self) -> bool;

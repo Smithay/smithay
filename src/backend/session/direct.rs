@@ -322,13 +322,18 @@ impl Drop for DirectSession {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Id(usize);
+
 impl SessionNotifier for DirectSessionNotifier {
-    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> usize {
+    type Id = Id;
+
+    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Id {
         self.signals.push(Some(Box::new(signal)));
-        self.signals.len() - 1
+        Id(self.signals.len() - 1)
     }
-    fn unregister(&mut self, signal: usize) {
-        self.signals[signal] = None;
+    fn unregister(&mut self, signal: Id) {
+        self.signals[signal.0] = None;
     }
 
     fn is_active(&self) -> bool {
