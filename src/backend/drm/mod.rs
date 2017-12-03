@@ -90,11 +90,11 @@
 //!
 //! // Create the backend
 //! let backend: StateToken<DrmBackend> = device.create_backend(
-//!     &mut event_loop,
+//!     event_loop.state(),
 //!     crtc,
 //!     mode,
 //!     vec![connector_info.handle()]
-//! ).unwrap();
+//! ).unwrap().clone();
 //! # }
 //! ```
 //!
@@ -118,12 +118,13 @@
 //! #
 //! # use drm::control::{Device as ControlDevice, ResourceInfo};
 //! # use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
+//! use drm::control::crtc::{Handle as CrtcHandle};
 //! use drm::result::Error as DrmError;
 //! # use std::fs::OpenOptions;
 //! # use std::time::Duration;
 //! use smithay::backend::drm::{DrmDevice, DrmBackend, DrmHandler, drm_device_bind};
 //! use smithay::backend::graphics::egl::EGLGraphicsBackend;
-//! use wayland_server::{EventLoopHandle, StateToken};
+//! use wayland_server::{StateToken, StateProxy};
 //! #
 //! # fn main() {
 //! #
@@ -145,29 +146,32 @@
 //! # let crtc = res_handles.crtcs()[0];
 //! # let mode = connector_info.modes()[0];
 //! # let backend: StateToken<DrmBackend> = device.create_backend(
-//! #     &mut event_loop,
+//! #     event_loop.state(),
 //! #     crtc,
 //! #     mode,
 //! #     vec![connector_info.handle()]
-//! # ).unwrap();
+//! # ).unwrap().clone();
 //!
 //! struct MyDrmHandler;
 //!
 //! impl DrmHandler<DrmBackend> for MyDrmHandler {
-//!     fn ready(&mut self,
-//!              evlh: &mut EventLoopHandle,
-//!              _device: &mut DrmDevice<DrmBackend>,
-//!              backend: &StateToken<DrmBackend>,
-//!              _frame: u32,
-//!              _duration: Duration)
+//!     fn ready<'a, S: Into<StateProxy<'a>>>(
+//!         &mut self,
+//!         state: S,
+//!         _device: &mut DrmDevice<DrmBackend>,
+//!         backend: &StateToken<DrmBackend>,
+//!         _crtc: CrtcHandle,
+//!         _frame: u32,
+//!         _duration: Duration)
 //!     {
 //!         // render surfaces and swap again
-//!         evlh.state().get(backend).swap_buffers().unwrap();
+//!         state.into().get(backend).swap_buffers().unwrap();
 //!     }
-//!     fn error(&mut self,
-//!              _: &mut EventLoopHandle,
-//!              device: &mut DrmDevice<DrmBackend>,
-//!              error: DrmError)
+//!     fn error<'a, S: Into<StateProxy<'a>>>(
+//!         &mut self,
+//!         _state: S,
+//!         device: &mut DrmDevice<DrmBackend>,
+//!         error: DrmError)
 //!     {
 //!         panic!("DrmDevice errored: {}", error);
 //!     }
@@ -176,7 +180,8 @@
 //! // render something (like clear_color)
 //! event_loop.state().get(&backend).swap_buffers().unwrap();
 //!
-//! let _source = drm_device_bind(&mut event_loop, device, MyDrmHandler).unwrap();
+//! let device_token = event_loop.state().insert(device);
+//! let _source = drm_device_bind(&mut event_loop, device_token, MyDrmHandler).unwrap();
 //!
 //! event_loop.run().unwrap();
 //! # }

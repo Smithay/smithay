@@ -31,7 +31,7 @@ use std::cell::RefCell;
 use std::fs::OpenOptions;
 use std::rc::Rc;
 use std::time::Duration;
-use wayland_server::{EventLoopHandle, StateToken};
+use wayland_server::{StateToken, StateProxy};
 
 fn main() {
     // A logger facility, here we use the terminal for this example
@@ -84,13 +84,13 @@ fn main() {
     {
         // Initialize the hardware backend
         let renderer = device
-            .create_backend(crtc, mode, vec![connector_info.handle()])
+            .create_backend(event_loop.state(), crtc, mode, vec![connector_info.handle()])
             .unwrap();
 
         /*
          * Initialize glium
          */
-        let mut frame = renderer.draw();
+        let mut frame = event_loop.state().get(renderer).draw();
         frame.clear_color(0.8, 0.8, 0.9, 1.0);
         frame.finish().unwrap();
     }
@@ -140,11 +140,10 @@ pub struct DrmHandlerImpl {
 }
 
 impl DrmHandler<GliumDrawer<DrmBackend>> for DrmHandlerImpl {
-    fn ready(&mut self, evlh: &mut EventLoopHandle, device: &StateToken<DrmDevice<GliumDrawer<DrmBackend>>>,
-             crtc: &crtc::Handle, _frame: u32, _duration: Duration) {
-        let state = evlh.state();
-        let dev = state.get(device);
-        let drawer = dev.backend_for_crtc(crtc).unwrap();
+    fn ready<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, _device: &mut DrmDevice<GliumDrawer<DrmBackend>>,
+             backend: &StateToken<GliumDrawer<DrmBackend>>, _crtc: crtc::Handle, _frame: u32, _duration: Duration) {
+        let state = state.into();
+        let drawer = state.get(backend);
         let mut frame = drawer.draw();
         frame.clear_color(0.8, 0.8, 0.9, 1.0);
         // redraw the frame, in a simple but inneficient way
@@ -187,7 +186,7 @@ impl DrmHandler<GliumDrawer<DrmBackend>> for DrmHandlerImpl {
         frame.finish().unwrap();
     }
 
-    fn error(&mut self, _evlh: &mut EventLoopHandle, _device: &StateToken<DrmDevice<GliumDrawer<DrmBackend>>>,
+    fn error<'a, S: Into<StateProxy<'a>>>(&mut self, _state: S, _device: &mut DrmDevice<GliumDrawer<DrmBackend>>,
              error: DrmError) {
         panic!("{:?}", error);
     }
