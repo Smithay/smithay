@@ -555,6 +555,7 @@ impl From<event::pointer::ButtonState> for backend::MouseButtonState {
     }
 }
 
+#[cfg(feature = "backend_session")]
 impl SessionObserver for libinput::Libinput {
     fn pause<'a>(&mut self, _state: &mut StateProxy<'a>) {
         self.suspend()
@@ -568,14 +569,17 @@ impl SessionObserver for libinput::Libinput {
 
 /// Wrapper for types implementing the `Session` trait to provide
 /// a `LibinputInterface` implementation.
+#[cfg(feature = "backend_session")]
 pub struct LibinputSessionInterface<S: Session>(S);
 
+#[cfg(feature = "backend_session")]
 impl<S: Session> From<S> for LibinputSessionInterface<S> {
     fn from(session: S) -> LibinputSessionInterface<S> {
         LibinputSessionInterface(session)
     }
 }
 
+#[cfg(feature = "backend_session")]
 impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
     fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<RawFd, i32> {
         use nix::fcntl::OFlag;
