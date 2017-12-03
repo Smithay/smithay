@@ -49,4 +49,4 @@ backend_udev = ["libudev", "backend_drm", "backend_session_udev"]
 renderer_glium = ["glium"]
 
 [patch.crates-io]
-drm = { git = "https://github.com/Drakulix/drm-rs.git", branch = "feature/current_encoder" }
+drm = { git = "https://github.com/Drakulix/drm-rs.git", branch = "future" }
