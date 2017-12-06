@@ -61,7 +61,7 @@ use wayland_server::EventLoopHandle;
 use wayland_server::sources::SignalEventSource;
 
 #[cfg(feature = "backend_session_udev")]
-use libudev::Context;
+use udev::Context;
 
 use super::{AsErrno, Session, SessionNotifier, SessionObserver};
 

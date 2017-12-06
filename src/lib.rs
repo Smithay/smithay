@@ -24,7 +24,7 @@ extern crate gbm;
 #[cfg(feature = "backend_libinput")]
 extern crate input;
 #[cfg(feature = "backend_udev")]
-extern crate libudev;
+extern crate udev;
 /*
 #[cfg(feature = "backend_session_logind")]
 extern crate dbus;

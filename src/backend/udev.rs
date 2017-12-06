@@ -9,7 +9,7 @@
 //! See also `examples/udev.rs` for pure hardware backed example of a compositor utilizing this
 //! backend.
 
-use libudev::{Context, MonitorBuilder, MonitorSocket, Event, EventType, Enumerator, Result as UdevResult};
+use udev::{Context, MonitorBuilder, MonitorSocket, Event, EventType, Enumerator, Result as UdevResult};
 use nix::fcntl;
 use nix::sys::stat::{dev_t, fstat};
 use std::borrow::Borrow;
