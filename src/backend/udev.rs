@@ -147,7 +147,7 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'sta
     /// Make sure not to borrow any tokens twice.
     pub fn close<'a, ST: Into<StateProxy<'a>>>(mut self, state: ST) {
         let mut state = state.into();
-        for (_, (mut device, event_source)) in self.devices.drain() {
+        for (_, (device, event_source)) in self.devices.drain() {
             event_source.remove();
             self.handler.device_removed(&mut state, &device);
             let device = state.remove(device);

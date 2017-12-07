@@ -4,7 +4,7 @@ extern crate glium;
 extern crate rand;
 extern crate input as libinput;
 extern crate image;
-extern crate libudev;
+extern crate udev;
 #[macro_use(define_roles)]
 extern crate smithay;
 extern crate xkbcommon;
@@ -201,7 +201,7 @@ fn main() {
     /*
      * Initialize the udev backend
      */
-    let context = libudev::Context::new().unwrap();
+    let context = udev::Context::new().unwrap();
     let bytes = include_bytes!("resources/cursor2.rgba");
     let udev_token
         = UdevBackend::new(&mut event_loop, &context, session.clone(), UdevHandlerImpl {
