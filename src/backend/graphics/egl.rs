@@ -8,7 +8,6 @@
 use super::GraphicsBackend;
 #[cfg(feature = "backend_drm")]
 use gbm::{AsRaw, Device as GbmDevice, Surface as GbmSurface};
-use libloading::Library;
 use nix::libc::{c_int, c_void};
 use rental::TryNewError;
 use slog;
@@ -26,7 +25,7 @@ use winit::Window as WinitWindow;
 #[cfg(feature = "backend_winit")]
 use winit::os::unix::WindowExt;
 
-#[allow(non_camel_case_types, dead_code)]
+#[allow(non_camel_case_types, dead_code, unused_mut)]
 mod ffi {
     use nix::libc::{c_long, c_void, int32_t, uint64_t};
 
@@ -43,6 +42,16 @@ mod ffi {
 
     pub mod egl {
         use super::*;
+        use libloading::Library;
+        use std::sync::{Once, ONCE_INIT};
+
+        lazy_static! {
+            pub static ref LIB: Library = {
+                Library::new("libEGL.so.1").expect("Failed to load LibEGL")
+            };
+        }
+
+        pub static LOAD: Once = ONCE_INIT;
 
         include!(concat!(env!("OUT_DIR"), "/egl_bindings.rs"));
     }
@@ -222,10 +231,8 @@ unsafe impl NativeSurface for () {
 
 /// EGL context for rendering
 pub struct EGLContext<'a, T: NativeSurface> {
-    _lib: Library,
     context: ffi::egl::types::EGLContext,
     display: ffi::egl::types::EGLDisplay,
-    egl: ffi::egl::Egl,
     config_id: ffi::egl::types::EGLConfig,
     surface_attributes: Vec<c_int>,
     pixel_format: PixelFormat,
@@ -329,20 +336,20 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
             }
         };
 
-        trace!(log, "Loading libEGL");
-        let lib = Library::new("libEGL.so.1").chain_err(|| ErrorKind::LoadingEGLFailed)?;
-        let egl = ffi::egl::Egl::load_with(|sym| {
-            let name = CString::new(sym).unwrap();
-            let symbol = lib.get::<*mut c_void>(name.as_bytes());
-            match symbol {
-                Ok(x) => *x as *const _,
-                Err(_) => ptr::null(),
-            }
+        ffi::egl::LOAD.call_once(|| {
+            ffi::egl::load_with(|sym| {
+                let name = CString::new(sym).unwrap();
+                let symbol = ffi::egl::LIB.get::<*mut c_void>(name.as_bytes());
+                match symbol {
+                    Ok(x) => *x as *const _,
+                    Err(_) => ptr::null(),
+                }
+            });
         });
 
         // the first step is to query the list of extensions without any display, if supported
         let dp_extensions = {
-            let p = egl.QueryString(ffi::egl::NO_DISPLAY, ffi::egl::EXTENSIONS as i32);
+            let p = ffi::egl::QueryString(ffi::egl::NO_DISPLAY, ffi::egl::EXTENSIONS as i32);
 
             // this possibility is available only with EGL 1.5 or EGL_EXT_platform_base, otherwise
             // `eglQueryString` returns an error
@@ -361,48 +368,48 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
 
         let display = match native {
             NativeDisplayPtr::X11(display)
-                if has_dp_extension("EGL_KHR_platform_x11") && egl.GetPlatformDisplay.is_loaded() =>
+                if has_dp_extension("EGL_KHR_platform_x11") && ffi::egl::GetPlatformDisplay::is_loaded() =>
             {
                 trace!(log, "EGL Display Initialization via EGL_KHR_platform_x11");
-                egl.GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, ptr::null())
+                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, ptr::null())
             }
 
             NativeDisplayPtr::X11(display)
-                if has_dp_extension("EGL_EXT_platform_x11") && egl.GetPlatformDisplayEXT.is_loaded() =>
+                if has_dp_extension("EGL_EXT_platform_x11") && ffi::egl::GetPlatformDisplayEXT::is_loaded() =>
             {
                 trace!(log, "EGL Display Initialization via EGL_EXT_platform_x11");
-                egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_X11_EXT, display as *mut _, ptr::null())
+                ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_X11_EXT, display as *mut _, ptr::null())
             }
 
             NativeDisplayPtr::Gbm(display)
-                if has_dp_extension("EGL_KHR_platform_gbm") && egl.GetPlatformDisplay.is_loaded() =>
+                if has_dp_extension("EGL_KHR_platform_gbm") && ffi::egl::GetPlatformDisplay::is_loaded() =>
             {
                 trace!(log, "EGL Display Initialization via EGL_KHR_platform_gbm");
-                egl.GetPlatformDisplay(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null())
+                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null())
             }
 
             NativeDisplayPtr::Gbm(display)
-                if has_dp_extension("EGL_MESA_platform_gbm") && egl.GetPlatformDisplayEXT.is_loaded() =>
+                if has_dp_extension("EGL_MESA_platform_gbm") && ffi::egl::GetPlatformDisplayEXT::is_loaded() =>
             {
                 trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
-                egl.GetPlatformDisplayEXT(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
+                ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
             }
 
             NativeDisplayPtr::Gbm(display)
-                if has_dp_extension("EGL_MESA_platform_gbm") && egl.GetPlatformDisplay.is_loaded() =>
+                if has_dp_extension("EGL_MESA_platform_gbm") && ffi::egl::GetPlatformDisplay::is_loaded() =>
             {
                 trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
-                egl.GetPlatformDisplay(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
+                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
             }
 
             NativeDisplayPtr::Wayland(display)
-                if has_dp_extension("EGL_KHR_platform_wayland") && egl.GetPlatformDisplay.is_loaded() =>
+                if has_dp_extension("EGL_KHR_platform_wayland") && ffi::egl::GetPlatformDisplay::is_loaded() =>
             {
                 trace!(
                     log,
                     "EGL Display Initialization via EGL_KHR_platform_wayland"
                 );
-                egl.GetPlatformDisplay(
+                ffi::egl::GetPlatformDisplay(
                     ffi::egl::PLATFORM_WAYLAND_KHR,
                     display as *mut _,
                     ptr::null(),
@@ -410,13 +417,13 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
             }
 
             NativeDisplayPtr::Wayland(display)
-                if has_dp_extension("EGL_EXT_platform_wayland") && egl.GetPlatformDisplayEXT.is_loaded() =>
+                if has_dp_extension("EGL_EXT_platform_wayland") && ffi::egl::GetPlatformDisplayEXT::is_loaded() =>
             {
                 trace!(
                     log,
                     "EGL Display Initialization via EGL_EXT_platform_wayland"
                 );
-                egl.GetPlatformDisplayEXT(
+                ffi::egl::GetPlatformDisplayEXT(
                     ffi::egl::PLATFORM_WAYLAND_EXT,
                     display as *mut _,
                     ptr::null(),
@@ -427,7 +434,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
             | NativeDisplayPtr::Gbm(display)
             | NativeDisplayPtr::Wayland(display) => {
                 trace!(log, "Default EGL Display Initialization via GetDisplay");
-                egl.GetDisplay(display as *mut _)
+                ffi::egl::GetDisplay(display as *mut _)
             }
         };
 
@@ -440,7 +447,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
             let mut major: ffi::egl::types::EGLint = mem::uninitialized();
             let mut minor: ffi::egl::types::EGLint = mem::uninitialized();
 
-            if egl.Initialize(display, &mut major, &mut minor) == 0 {
+            if ffi::egl::Initialize(display, &mut major, &mut minor) == 0 {
                 bail!(ErrorKind::InitFailed);
             }
 
@@ -453,7 +460,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
         // the list of extensions supported by the client once initialized is different from the
         // list of extensions obtained earlier
         let extensions = if egl_version >= (1, 2) {
-            let p = CStr::from_ptr(egl.QueryString(display, ffi::egl::EXTENSIONS as i32));
+            let p = CStr::from_ptr(ffi::egl::QueryString(display, ffi::egl::EXTENSIONS as i32));
             let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
             list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
         } else {
@@ -462,7 +469,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
 
         info!(log, "EGL Extensions: {:?}", extensions);
 
-        if egl_version >= (1, 2) && egl.BindAPI(ffi::egl::OPENGL_ES_API) == 0 {
+        if egl_version >= (1, 2) && ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) == 0 {
             error!(
                 log,
                 "OpenGLES not supported by the underlying EGL implementation"
@@ -587,7 +594,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
         // calling `eglChooseConfig`
         let mut config_id = mem::uninitialized();
         let mut num_configs = mem::uninitialized();
-        if egl.ChooseConfig(
+        if ffi::egl::ChooseConfig(
             display,
             descriptor.as_ptr(),
             &mut config_id,
@@ -604,10 +611,10 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
 
         // analyzing each config
         macro_rules! attrib {
-            ($egl:expr, $display:expr, $config:expr, $attr:expr) => (
+            ($display:expr, $config:expr, $attr:expr) => (
                 {
                     let mut value = mem::uninitialized();
-                    let res = $egl.GetConfigAttrib($display, $config,
+                    let res = ffi::egl::GetConfigAttrib($display, $config,
                                                    $attr as ffi::egl::types::EGLint, &mut value);
                     if res == 0 {
                         bail!(ErrorKind::ConfigFailed);
@@ -618,17 +625,17 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
         };
 
         let desc = PixelFormat {
-            hardware_accelerated: attrib!(egl, display, config_id, ffi::egl::CONFIG_CAVEAT)
+            hardware_accelerated: attrib!(display, config_id, ffi::egl::CONFIG_CAVEAT)
                 != ffi::egl::SLOW_CONFIG as i32,
-            color_bits: attrib!(egl, display, config_id, ffi::egl::RED_SIZE) as u8
-                + attrib!(egl, display, config_id, ffi::egl::BLUE_SIZE) as u8
-                + attrib!(egl, display, config_id, ffi::egl::GREEN_SIZE) as u8,
-            alpha_bits: attrib!(egl, display, config_id, ffi::egl::ALPHA_SIZE) as u8,
-            depth_bits: attrib!(egl, display, config_id, ffi::egl::DEPTH_SIZE) as u8,
-            stencil_bits: attrib!(egl, display, config_id, ffi::egl::STENCIL_SIZE) as u8,
+            color_bits: attrib!(display, config_id, ffi::egl::RED_SIZE) as u8
+                + attrib!(display, config_id, ffi::egl::BLUE_SIZE) as u8
+                + attrib!(display, config_id, ffi::egl::GREEN_SIZE) as u8,
+            alpha_bits: attrib!(display, config_id, ffi::egl::ALPHA_SIZE) as u8,
+            depth_bits: attrib!(display, config_id, ffi::egl::DEPTH_SIZE) as u8,
+            stencil_bits: attrib!(display, config_id, ffi::egl::STENCIL_SIZE) as u8,
             stereoscopy: false,
             double_buffer: true,
-            multisampling: match attrib!(egl, display, config_id, ffi::egl::SAMPLES) {
+            multisampling: match attrib!(display, config_id, ffi::egl::SAMPLES) {
                 0 | 1 => None,
                 a => Some(a as u16),
             },
@@ -664,10 +671,10 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
         context_attributes.push(ffi::egl::NONE as i32);
 
         trace!(log, "Creating EGL context...");
-        let context = egl.CreateContext(display, config_id, ptr::null(), context_attributes.as_ptr());
+        let context = ffi::egl::CreateContext(display, config_id, ptr::null(), context_attributes.as_ptr());
 
         if context.is_null() {
-            match egl.GetError() as u32 {
+            match ffi::egl::GetError() as u32 {
                 ffi::egl::BAD_ATTRIBUTE => bail!(ErrorKind::CreationFailed),
                 err_no => bail!(ErrorKind::Unknown(err_no)),
             }
@@ -698,10 +705,8 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
         info!(log, "EGL context created");
 
         Ok(EGLContext {
-            _lib: lib,
             context: context as *const _,
             display: display as *const _,
-            egl: egl,
             config_id: config_id,
             surface_attributes: surface_attributes,
             pixel_format: desc,
@@ -723,7 +728,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
         let (surface, keep) = native.surface(self.backend_type)?;
 
         let egl_surface = unsafe {
-            self.egl.CreateWindowSurface(
+            ffi::egl::CreateWindowSurface(
                 self.display,
                 self.config_id,
                 match surface {
@@ -755,12 +760,12 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
     pub unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
         let addr = CString::new(symbol.as_bytes()).unwrap();
         let addr = addr.as_ptr();
-        self.egl.GetProcAddress(addr) as *const _
+        ffi::egl::GetProcAddress(addr) as *const _
     }
 
     /// Returns true if the OpenGL context is the current one in the thread.
     pub fn is_current(&self) -> bool {
-        unsafe { self.egl.GetCurrentContext() == self.context as *const _ }
+        unsafe { ffi::egl::GetCurrentContext() == self.context as *const _ }
     }
 
     /// Returns the pixel format of the main framebuffer of the context.
@@ -777,9 +782,8 @@ impl<'a, T: NativeSurface> Drop for EGLContext<'a, T> {
         unsafe {
             // we don't call MakeCurrent(0, 0) because we are not sure that the context
             // is still the current one
-            self.egl
-                .DestroyContext(self.display as *const _, self.context as *const _);
-            self.egl.Terminate(self.display as *const _);
+            ffi::egl::DestroyContext(self.display as *const _, self.context as *const _);
+            ffi::egl::Terminate(self.display as *const _);
         }
     }
 }
@@ -809,13 +813,11 @@ impl<'context, 'surface, T: NativeSurface> EGLSurface<'context, 'surface, T> {
     /// Swaps buffers at the end of a frame.
     pub fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         let ret = unsafe {
-            self.context
-                .egl
-                .SwapBuffers(self.context.display as *const _, self.surface as *const _)
+            ffi::egl::SwapBuffers(self.context.display as *const _, self.surface as *const _)
         };
 
         if ret == 0 {
-            match unsafe { self.context.egl.GetError() } as u32 {
+            match unsafe { ffi::egl::GetError() } as u32 {
                 ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
                 err => Err(SwapBuffersError::Unknown(err)),
             }
@@ -831,7 +833,7 @@ impl<'context, 'surface, T: NativeSurface> EGLSurface<'context, 'surface, T> {
     /// This function is marked unsafe, because the context cannot be made current
     /// on multiple threads.
     pub unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        let ret = self.context.egl.MakeCurrent(
+        let ret = ffi::egl::MakeCurrent(
             self.context.display as *const _,
             self.surface as *const _,
             self.surface as *const _,
@@ -839,7 +841,7 @@ impl<'context, 'surface, T: NativeSurface> EGLSurface<'context, 'surface, T> {
         );
 
         if ret == 0 {
-            match self.context.egl.GetError() as u32 {
+            match ffi::egl::GetError() as u32 {
                 ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
                 err => panic!("eglMakeCurrent failed (eglGetError returned 0x{:x})", err),
             }
@@ -863,9 +865,7 @@ unsafe impl<'a, 'b, T: NativeSurface> Sync for EGLSurface<'a, 'b, T> {}
 impl<'a, 'b, T: NativeSurface> Drop for EGLSurface<'a, 'b, T> {
     fn drop(&mut self) {
         unsafe {
-            self.context
-                .egl
-                .DestroySurface(self.context.display as *const _, self.surface as *const _);
+            ffi::egl::DestroySurface(self.context.display as *const _, self.surface as *const _);
         }
     }
 }
