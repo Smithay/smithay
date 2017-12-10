@@ -12,7 +12,8 @@ extern crate wayland_server;
 mod helpers;
 
 use glium::Surface;
-use helpers::{init_shell, GliumDrawer, MyWindowMap};
+use glium::texture::UncompressedFloatFormat;
+use helpers::{init_shell, GliumDrawer, MyWindowMap, Buffer};
 use slog::{Drain, Logger};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerAxisEvent,
@@ -226,15 +227,35 @@ fn main() {
                                 wl_surface,
                                 initial_place,
                                 |_surface, attributes, role, &(mut x, mut y)| {
-                                    if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
+                                    if let Some(Buffer::Egl { images, attributes }) = attributes.user_data.buffer {
                                         // there is actually something to draw !
                                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                                             x += subdata.x;
                                             y += subdata.y;
                                         }
-                                        drawer.render(
+                                        drawer.render_egl(
                                             &mut frame,
-                                            contents,
+                                            images,
+                                            format: match attributes.format {
+                                                Format::RGB => UncompressedFloatFormat::U8U8U8,
+                                                Format::RGBA => UncompressedFloatFormat::U8U8U8U8,
+                                                _ => unimplemented!(),
+                                            },
+                                            attributes.y_inverted,
+                                            (attributes.width, attributes.height),
+                                            (x, y),
+                                            screen_dimensions,
+                                        );
+                                        TraversalAction::DoChildren((x, y))
+                                    } else if let Some(Buffer::Shm { data, size: (w, h))) = attributes.user_data.buffer {
+                                        // there is actually something to draw !
+                                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                                            x += subdata.x;
+                                            y += subdata.y;
+                                        }
+                                        drawer.render_shm(
+                                            &mut frame,
+                                            data,
                                             (w, h),
                                             (x, y),
                                             screen_dimensions,

@@ -4,7 +4,8 @@ use smithay::wayland::compositor::{compositor_init, CompositorToken, SurfaceAttr
                                    SurfaceUserImplementation};
 use smithay::wayland::shell::{shell_init, PopupConfigure, ShellState, ShellSurfaceRole,
                               ShellSurfaceUserImplementation, ToplevelConfigure};
-use smithay::wayland::shm::with_buffer_contents;
+use smithay::wayland::shm::with_buffer_contents as shm_buffer_contents;
+use smithay::wayland::drm::{with_buffer_contents as drm_buffer_contents, Attributes, EGLImage};
 use std::cell::RefCell;
 use std::rc::Rc;
 use wayland_server::{EventLoop, StateToken};
@@ -16,6 +17,11 @@ pub struct SurfaceData {
     pub buffer: Option<(Vec<u8>, (u32, u32))>,
 }
 
+pub enum Buffer {
+    Egl { images: Vec<EGLImage>, attributes: Attributes },
+    Shm { data: Vec<u8>, size: (u32, u32) },
+}
+
 pub fn surface_implementation() -> SurfaceUserImplementation<SurfaceData, Roles, ()> {
     SurfaceUserImplementation {
         commit: |_, _, surface, token| {
@@ -24,19 +30,23 @@ pub fn surface_implementation() -> SurfaceUserImplementation<SurfaceData, Roles,
                 match attributes.buffer.take() {
                     Some(Some((buffer, (_x, _y)))) => {
                         // we ignore hotspot coordinates in this simple example
-                        with_buffer_contents(&buffer, |slice, data| {
-                            let offset = data.offset as usize;
-                            let stride = data.stride as usize;
-                            let width = data.width as usize;
-                            let height = data.height as usize;
-                            let mut new_vec = Vec::with_capacity(width * height * 4);
-                            for i in 0..height {
-                                new_vec
-                                    .extend(&slice[(offset + i * stride)..(offset + i * stride + width * 4)]);
-                            }
-                            attributes.user_data.buffer =
-                                Some((new_vec, (data.width as u32, data.height as u32)));
-                        }).unwrap();
+                        if let Ok(_) = drm_buffer_contents(&buffer, |attributes, images| {
+                            attributes.user_data.buffer = Some(Buffer::Egl { images, attributes });
+                        }) {} else {
+                            shm_buffer_contents(&buffer, |slice, data| {
+                                let offset = data.offset as usize;
+                                let stride = data.stride as usize;
+                                let width = data.width as usize;
+                                let height = data.height as usize;
+                                let mut new_vec = Vec::with_capacity(width * height * 4);
+                                for i in 0..height {
+                                    new_vec
+                                        .extend(&slice[(offset + i * stride)..(offset + i * stride + width * 4)]);
+                                }
+                                attributes.user_data.buffer =
+                                    Some(Buffer::Shm { data: new_vec, position: (data.width as u32, data.height as u32) });
+                            }).unwrap();
+                        }
                         buffer.release();
                     }
                     Some(None) => {

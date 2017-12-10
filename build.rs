@@ -33,4 +33,16 @@ fn main() {
         ],
     ).write_bindings(gl_generator::GlobalGenerator, &mut file)
         .unwrap();
+
+    let mut file = File::create(&dest.join("gl_bindings.rs")).unwrap();
+    Registry::new(
+        Api::Gles2,
+        (3, 2),
+        Profile::Compatibility,
+        Fallbacks::None,
+        [
+            "GL_OES_EGL_image",
+        ],
+    ).write_bindings(gl_generator::GlobalGenerator, &mut file)
+        .unwrap();
 }

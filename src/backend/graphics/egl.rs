@@ -8,7 +8,7 @@
 use super::GraphicsBackend;
 #[cfg(feature = "backend_drm")]
 use gbm::{AsRaw, Device as GbmDevice, Surface as GbmSurface};
-use nix::libc::{c_int, c_void};
+use nix::libc::{c_int, c_uint, c_void};
 use rental::TryNewError;
 use slog;
 use std::error;
@@ -27,7 +27,7 @@ use winit::os::unix::WindowExt;
 use wayland_server::Display;
 
 #[allow(non_camel_case_types, dead_code, unused_mut)]
-mod ffi {
+pub(crate) mod ffi {
     use nix::libc::{c_long, c_void, int32_t, uint64_t};
 
     pub type khronos_utime_nanoseconds_t = khronos_uint64_t;
@@ -40,6 +40,10 @@ mod ffi {
     pub type NativeDisplayType = *const c_void;
     pub type NativePixmapType = *const c_void;
     pub type NativeWindowType = *const c_void;
+
+    pub mod gl {
+        include!(concat!(env!("OUT_DIR"), "/egl_bindings.rs"));
+    }
 
     pub mod egl {
         use super::*;
@@ -358,12 +362,12 @@ unsafe impl NativeSurface for () {
 /// EGL context for rendering
 pub struct EGLContext<'a, T: NativeSurface> {
     context: ffi::egl::types::EGLContext,
-    display: ffi::egl::types::EGLDisplay,
+    pub(crate) display: ffi::egl::types::EGLDisplay,
     config_id: ffi::egl::types::EGLConfig,
     surface_attributes: Vec<c_int>,
     pixel_format: PixelFormat,
     backend_type: NativeType,
-    wl_drm_support: bool,
+    pub(crate) wl_drm_support: bool,
     logger: slog::Logger,
     _lifetime: PhantomData<&'a ()>,
     _type: PhantomData<T>,
@@ -465,6 +469,14 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
 
         ffi::egl::LOAD.call_once(|| {
             ffi::egl::load_with(|sym| {
+                let name = CString::new(sym).unwrap();
+                let symbol = ffi::egl::LIB.get::<*mut c_void>(name.as_bytes());
+                match symbol {
+                    Ok(x) => *x as *const _,
+                    Err(_) => ptr::null(),
+                }
+            });
+            ffi::gl::load_with(|sym| {
                 let name = CString::new(sym).unwrap();
                 let symbol = ffi::egl::LIB.get::<*mut c_void>(name.as_bytes());
                 match symbol {
@@ -946,6 +958,10 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
             bail!(ErrorKind::NoEGLDisplayBound);
         }
         Ok(())
+    }
+
+    pub fn egl_image_to_texture(&self, image: ffi::EGLImage, tex_id: c_uint) {
+        ffi::gl::EGLImageTargetTexture2DOES(tex_id, image);
     }
 }
 

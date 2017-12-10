@@ -106,7 +106,7 @@ impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> From<T> fo
 }
 
 impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
-    pub fn render(&self, target: &mut glium::Frame, contents: &[u8], surface_dimensions: (u32, u32),
+    pub fn render_shm(&self, target: &mut glium::Frame, contents: &[u8], surface_dimensions: (u32, u32),
                   surface_location: (i32, i32), screen_size: (u32, u32)) {
         let image = glium::texture::RawImage2d {
             data: contents.into(),
@@ -118,6 +118,51 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
 
         let xscale = 2.0 * (surface_dimensions.0 as f32) / (screen_size.0 as f32);
         let yscale = -2.0 * (surface_dimensions.1 as f32) / (screen_size.1 as f32);
+
+        let x = 2.0 * (surface_location.0 as f32) / (screen_size.0 as f32) - 1.0;
+        let y = 1.0 - 2.0 * (surface_location.1 as f32) / (screen_size.1 as f32);
+
+        let uniforms = uniform! {
+            matrix: [
+                [xscale,   0.0  , 0.0, 0.0],
+                [  0.0 , yscale , 0.0, 0.0],
+                [  0.0 ,   0.0  , 1.0, 0.0],
+                [   x  ,    y   , 0.0, 1.0]
+            ],
+            tex: &opengl_texture
+        };
+
+        target
+            .draw(
+                &self.vertex_buffer,
+                &self.index_buffer,
+                &self.program,
+                &uniforms,
+                &Default::default(),
+            )
+            .unwrap();
+    }
+
+    pub fn render_egl(&self, target: &mut glium::Frame, images: Vec<EGLImage>,
+                  format: UncompressedFloatFormat, y_inverted: bool, surface_dimensions: (u32, u32),
+                  surface_location: (i32, i32), screen_size: (u32, u32))
+    {
+        let opengl_texture = glium::texture::Texture2d::empty_with_format(
+            &self.display,
+            MipmapsOption::NoMipmap,
+            format,
+            surface_dimensions.0,
+            surface_dimensions.1,
+        ).unwrap();
+        self.display.exec_in_context(|| {
+            self.display.borrow().egl_image_to_texture(images[0], opengl_texture.get_id());
+        });
+
+        let xscale = 2.0 * (surface_dimensions.0 as f32) / (screen_size.0 as f32);
+        let mut yscale = -2.0 * (surface_dimensions.1 as f32) / (screen_size.1 as f32);
+        if y_inverted {
+            yscale = -yscale;
+        }
 
         let x = 2.0 * (surface_location.0 as f32) / (screen_size.0 as f32) - 1.0;
         let y = 1.0 - 2.0 * (surface_location.1 as f32) / (screen_size.1 as f32);
