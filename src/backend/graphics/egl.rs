@@ -24,6 +24,7 @@ use wayland_client::egl as wegl;
 use winit::Window as WinitWindow;
 #[cfg(feature = "backend_winit")]
 use winit::os::unix::WindowExt;
+use wayland_server::Display;
 
 #[allow(non_camel_case_types, dead_code, unused_mut)]
 mod ffi {
@@ -61,39 +62,39 @@ mod ffi {
          */
 
         #[allow(non_snake_case, unused_variables, dead_code)] #[inline]
-        pub unsafe fn BindWaylandDisplay(dpy: types::EGLDisplay, display: *mut __gl_imports::raw::c_void) -> types::EGLBoolean {
-            __gl_imports::mem::transmute::<_, extern "system" fn(types::EGLenum, *mut __gl_imports::raw::c_void) -> types::EGLBoolean>(wayland_storage::BindWaylandDisplay.f)(dpy, display)
+        pub unsafe fn BindWaylandDisplayWL(dpy: types::EGLDisplay, display: *mut __gl_imports::raw::c_void) -> types::EGLBoolean {
+            __gl_imports::mem::transmute::<_, extern "system" fn(types::EGLDisplay, *mut __gl_imports::raw::c_void) -> types::EGLBoolean>(wayland_storage::BindWaylandDisplayWL.f)(dpy, display)
         }
 
         #[allow(non_snake_case, unused_variables, dead_code)] #[inline]
-        pub unsafe fn UnbindWaylandDisplay(dpy: types::EGLDisplay, display: *mut __gl_imports::raw::c_void) -> types::EGLBoolean {
-            __gl_imports::mem::transmute::<_, extern "system" fn(types::EGLenum, *mut __gl_imports::raw::c_void) -> types::EGLBoolean>(wayland_storage::UnbindWaylandDisplay.f)(dpy, display)
+        pub unsafe fn UnbindWaylandDisplayWL(dpy: types::EGLDisplay, display: *mut __gl_imports::raw::c_void) -> types::EGLBoolean {
+            __gl_imports::mem::transmute::<_, extern "system" fn(types::EGLDisplay, *mut __gl_imports::raw::c_void) -> types::EGLBoolean>(wayland_storage::UnbindWaylandDisplayWL.f)(dpy, display)
         }
 
         #[allow(non_snake_case, unused_variables, dead_code)] #[inline]
-        pub unsafe fn QueryWaylandBuffer(dpy: types::EGLDisplay, buffer: *mut __gl_imports::raw::c_void, attribute: types::EGLint, value: *mut types::EGLint) -> types::EGLBoolean {
-            __gl_imports::mem::transmute::<_, extern "system" fn(types::EGLenum, *mut __gl_imports::raw::c_void, types::EGLint, *mut types::EGLint) -> types::EGLBoolean>(wayland_storage::QueryWaylandBuffer.f)(dpy, display, attribute, value)
+        pub unsafe fn QueryWaylandBufferWL(dpy: types::EGLDisplay, buffer: *mut __gl_imports::raw::c_void, attribute: types::EGLint, value: *mut types::EGLint) -> types::EGLBoolean {
+            __gl_imports::mem::transmute::<_, extern "system" fn(types::EGLDisplay, *mut __gl_imports::raw::c_void, types::EGLint, *mut types::EGLint) -> types::EGLBoolean>(wayland_storage::QueryWaylandBufferWL.f)(dpy, buffer, attribute, value)
         }
 
         mod wayland_storage {
             use super::__gl_imports::raw;
             use super::FnPtr;
-            pub static mut BindWaylandDisplay: FnPtr = FnPtr {
+            pub static mut BindWaylandDisplayWL: FnPtr = FnPtr {
                 f: super::missing_fn_panic as *const raw::c_void,
                 is_loaded: false
             };
-            pub static mut UnbindWaylandDisplay: FnPtr = FnPtr {
+            pub static mut UnbindWaylandDisplayWL: FnPtr = FnPtr {
                 f: super::missing_fn_panic as *const raw::c_void,
                 is_loaded: false
             };
-            pub static mut QueryWaylandBuffer: FnPtr = FnPtr {
+            pub static mut QueryWaylandBufferWL: FnPtr = FnPtr {
                 f: super::missing_fn_panic as *const raw::c_void,
                 is_loaded: false
             };
         }
 
         #[allow(non_snake_case)]
-        pub mod BindWaylandDisplay {
+        pub mod BindWaylandDisplayWL {
             use super::{wayland_storage, metaloadfn};
             use super::__gl_imports::raw;
             use super::FnPtr;
@@ -101,19 +102,19 @@ mod ffi {
             #[inline]
             #[allow(dead_code)]
             pub fn is_loaded() -> bool {
-                unsafe { wayland_storage::BindWaylandDisplay.is_loaded }
+                unsafe { wayland_storage::BindWaylandDisplayWL.is_loaded }
             }
 
             #[allow(dead_code)]
             pub fn load_with<F>(mut loadfn: F) where F: FnMut(&str) -> *const raw::c_void {
                 unsafe {
-                    wayland_storage::BindWaylandDisplay = FnPtr::new(metaloadfn(&mut loadfn, "eglBindWaylandDisplayWL", &[]))
+                    wayland_storage::BindWaylandDisplayWL = FnPtr::new(metaloadfn(&mut loadfn, "eglBindWaylandDisplayWL", &[]))
                 }
             }
         }
 
         #[allow(non_snake_case)]
-        pub mod UnbindWaylandDisplay {
+        pub mod UnbindWaylandDisplayWL {
             use super::{wayland_storage, metaloadfn};
             use super::__gl_imports::raw;
             use super::FnPtr;
@@ -121,19 +122,19 @@ mod ffi {
             #[inline]
             #[allow(dead_code)]
             pub fn is_loaded() -> bool {
-                unsafe { wayland_storage::UnbindWaylandDisplay.is_loaded }
+                unsafe { wayland_storage::UnbindWaylandDisplayWL.is_loaded }
             }
 
             #[allow(dead_code)]
             pub fn load_with<F>(mut loadfn: F) where F: FnMut(&str) -> *const raw::c_void {
                 unsafe {
-                    wayland_storage::UnbindWaylandDisplay = FnPtr::new(metaloadfn(&mut loadfn, "eglUnbindWaylandDisplayWL", &[]))
+                    wayland_storage::UnbindWaylandDisplayWL = FnPtr::new(metaloadfn(&mut loadfn, "eglUnbindWaylandDisplayWL", &[]))
                 }
             }
         }
 
         #[allow(non_snake_case)]
-        pub mod QueryWaylandBuffer {
+        pub mod QueryWaylandBufferWL {
             use super::{wayland_storage, metaloadfn};
             use super::__gl_imports::raw;
             use super::FnPtr;
@@ -141,16 +142,29 @@ mod ffi {
             #[inline]
             #[allow(dead_code)]
             pub fn is_loaded() -> bool {
-                unsafe { wayland_storage::QueryWaylandBuffer.is_loaded }
+                unsafe { wayland_storage::QueryWaylandBufferWL.is_loaded }
             }
 
             #[allow(dead_code)]
             pub fn load_with<F>(mut loadfn: F) where F: FnMut(&str) -> *const raw::c_void {
                 unsafe {
-                    wayland_storage::QueryWaylandBuffer = FnPtr::new(metaloadfn(&mut loadfn, "eglQueryWaylandBufferWL", &[]))
+                    wayland_storage::QueryWaylandBufferWL = FnPtr::new(metaloadfn(&mut loadfn, "eglQueryWaylandBufferWL", &[]))
                 }
             }
         }
+
+        // Accepted as <target> in eglCreateImageKHR
+        pub const WAYLAND_BUFFER_WL = 0x31D5;
+        // Accepted in the <attrib_list> parameter of eglCreateImageKHR:
+        pub const EGL_WAYLAND_PLANE_WL = 0x31D6;
+        // Possible values for EGL_TEXTURE_FORMAT:
+        pub const EGL_TEXTURE_Y_U_V_WL = 0x31D7;
+        pub const EGL_TEXTURE_Y_UV_WL = 0x31D8;
+        pub const EGL_TEXTURE_Y_XUXV_WL = 0x31D9;
+        pub const EGL_TEXTURE_EXTERNAL_WL = 0x31DA;
+        // Accepted in the <attribute> parameter of eglQueryWaylandBufferWL:
+        pub const EGL_TEXTURE_FORMAT = 0x3080;
+        pub const EGL_WAYLAND_Y_INVERTED_WL = 0x31DB;
     }
 }
 
@@ -250,6 +264,21 @@ error_chain! {
             description("Failed to create a new EGLSurface")
         }
 
+        #[doc = "The required 'EGL_WL_bind_wayland_display' extension is not supported by the underlying EGL implementation"]
+        WlExtensionNotSupported {
+            description("The required 'EGL_WL_bind_wayland_display' extension is not supported by the underlying EGL implementation")
+        }
+
+        #[doc = "Only one EGLDisplay may be bound to a given WlDisplay at any time"]
+        OtherEGLDisplayAlreadyBound {
+            description("Only one EGLDisplay may be bound to a given WlDisplay at any time")
+        }
+
+        #[doc = "No EGLDisplay is currently bound to this WlDisplay"]
+        NoEGLDisplayBound {
+            description("No EGLDisplay is currently bound to this WlDisplay")
+        }
+
         #[doc = "The reason of failure could not be determined"]
         Unknown(err_no: u32)
     }
@@ -334,6 +363,7 @@ pub struct EGLContext<'a, T: NativeSurface> {
     surface_attributes: Vec<c_int>,
     pixel_format: PixelFormat,
     backend_type: NativeType,
+    wl_drm_support: bool,
     logger: slog::Logger,
     _lifetime: PhantomData<&'a ()>,
     _type: PhantomData<T>,
@@ -812,6 +842,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
                 NativeDisplayPtr::Wayland(_) => NativeType::Wayland,
                 NativeDisplayPtr::Gbm(_) => NativeType::Gbm,
             },
+            wl_drm_support: extensions.iter().any(|s| *s == "EGL_WL_bind_wayland_display"),
             logger: log,
             _lifetime: PhantomData,
             _type: PhantomData,
@@ -868,6 +899,53 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
     /// Returns the pixel format of the main framebuffer of the context.
     pub fn get_pixel_format(&self) -> PixelFormat {
         self.pixel_format
+    }
+
+    /// Binds this EGL context to the given Wayland display.
+    ///
+    /// This will allow clients to utilize EGL to create hardware-accelerated
+    /// surfaces. The server will need to be able to handle egl-wl_buffers.
+    /// See the `wayland::drm` module.
+    ///
+    /// ## Errors
+    ///
+    /// This might return `WlExtensionNotSupported` if binding is not supported
+    /// by the EGL implementation.
+    ///
+    /// This might return `OtherEGLDisplayAlreadyBound` if called for the same
+    /// `Display` multiple times, as only one context may be bound at any given time.
+    pub fn bind_wl_display(&self, display: &Display) -> Result<()> {
+        if !self.wl_drm_support {
+            bail!(ErrorKind::WlExtensionNotSupported);
+        }
+        let res = ffi::egl::BindWaylandDisplayWL(self.display, display.ptr());
+        if res == 0 {
+            bail!(ErrorKind::OtherEGLDisplayAlreadyBound);
+        }
+        Ok(())
+    }
+
+    /// Unbinds this EGL context from the given Wayland display.
+    ///
+    /// This will stop clients from using previously available extensions
+    /// to utilize hardware-accelerated surface via EGL.
+    ///
+    /// ## Errors
+    ///
+    /// This might return `WlExtensionNotSupported` if binding is not supported
+    /// by the EGL implementation.
+    ///
+    /// This might return `OtherEGLDisplayAlreadyBound` if called for the same
+    /// `Display` multiple times, as only one context may be bound at any given time.
+    pub fn unbind_wl_display(&self, display: &Display) -> Result<()> {
+        if !self.wl_drm_support {
+            bail!(ErrorKind::WlExtensionNotSupported);
+        }
+        let res = ffi::egl::UnbindWaylandDisplayWL(self.display, display.ptr());
+        if res == 0 {
+            bail!(ErrorKind::NoEGLDisplayBound);
+        }
+        Ok(())
     }
 }
 
