@@ -54,6 +54,103 @@ mod ffi {
         pub static LOAD: Once = ONCE_INIT;
 
         include!(concat!(env!("OUT_DIR"), "/egl_bindings.rs"));
+
+        /*
+         * `gl_generator` cannot generate bindings for the `EGL_WL_bind_wayland_display` extension.
+         *  Lets do it ourselves...
+         */
+
+        #[allow(non_snake_case, unused_variables, dead_code)] #[inline]
+        pub unsafe fn BindWaylandDisplay(dpy: types::EGLDisplay, display: *mut __gl_imports::raw::c_void) -> types::EGLBoolean {
+            __gl_imports::mem::transmute::<_, extern "system" fn(types::EGLenum, *mut __gl_imports::raw::c_void) -> types::EGLBoolean>(wayland_storage::BindWaylandDisplay.f)(dpy, display)
+        }
+
+        #[allow(non_snake_case, unused_variables, dead_code)] #[inline]
+        pub unsafe fn UnbindWaylandDisplay(dpy: types::EGLDisplay, display: *mut __gl_imports::raw::c_void) -> types::EGLBoolean {
+            __gl_imports::mem::transmute::<_, extern "system" fn(types::EGLenum, *mut __gl_imports::raw::c_void) -> types::EGLBoolean>(wayland_storage::UnbindWaylandDisplay.f)(dpy, display)
+        }
+
+        #[allow(non_snake_case, unused_variables, dead_code)] #[inline]
+        pub unsafe fn QueryWaylandBuffer(dpy: types::EGLDisplay, buffer: *mut __gl_imports::raw::c_void, attribute: types::EGLint, value: *mut types::EGLint) -> types::EGLBoolean {
+            __gl_imports::mem::transmute::<_, extern "system" fn(types::EGLenum, *mut __gl_imports::raw::c_void, types::EGLint, *mut types::EGLint) -> types::EGLBoolean>(wayland_storage::QueryWaylandBuffer.f)(dpy, display, attribute, value)
+        }
+
+        mod wayland_storage {
+            use super::__gl_imports::raw;
+            use super::FnPtr;
+            pub static mut BindWaylandDisplay: FnPtr = FnPtr {
+                f: super::missing_fn_panic as *const raw::c_void,
+                is_loaded: false
+            };
+            pub static mut UnbindWaylandDisplay: FnPtr = FnPtr {
+                f: super::missing_fn_panic as *const raw::c_void,
+                is_loaded: false
+            };
+            pub static mut QueryWaylandBuffer: FnPtr = FnPtr {
+                f: super::missing_fn_panic as *const raw::c_void,
+                is_loaded: false
+            };
+        }
+
+        #[allow(non_snake_case)]
+        pub mod BindWaylandDisplay {
+            use super::{wayland_storage, metaloadfn};
+            use super::__gl_imports::raw;
+            use super::FnPtr;
+
+            #[inline]
+            #[allow(dead_code)]
+            pub fn is_loaded() -> bool {
+                unsafe { wayland_storage::BindWaylandDisplay.is_loaded }
+            }
+
+            #[allow(dead_code)]
+            pub fn load_with<F>(mut loadfn: F) where F: FnMut(&str) -> *const raw::c_void {
+                unsafe {
+                    wayland_storage::BindWaylandDisplay = FnPtr::new(metaloadfn(&mut loadfn, "eglBindWaylandDisplayWL", &[]))
+                }
+            }
+        }
+
+        #[allow(non_snake_case)]
+        pub mod UnbindWaylandDisplay {
+            use super::{wayland_storage, metaloadfn};
+            use super::__gl_imports::raw;
+            use super::FnPtr;
+
+            #[inline]
+            #[allow(dead_code)]
+            pub fn is_loaded() -> bool {
+                unsafe { wayland_storage::UnbindWaylandDisplay.is_loaded }
+            }
+
+            #[allow(dead_code)]
+            pub fn load_with<F>(mut loadfn: F) where F: FnMut(&str) -> *const raw::c_void {
+                unsafe {
+                    wayland_storage::UnbindWaylandDisplay = FnPtr::new(metaloadfn(&mut loadfn, "eglUnbindWaylandDisplayWL", &[]))
+                }
+            }
+        }
+
+        #[allow(non_snake_case)]
+        pub mod QueryWaylandBuffer {
+            use super::{wayland_storage, metaloadfn};
+            use super::__gl_imports::raw;
+            use super::FnPtr;
+
+            #[inline]
+            #[allow(dead_code)]
+            pub fn is_loaded() -> bool {
+                unsafe { wayland_storage::QueryWaylandBuffer.is_loaded }
+            }
+
+            #[allow(dead_code)]
+            pub fn load_with<F>(mut loadfn: F) where F: FnMut(&str) -> *const raw::c_void {
+                unsafe {
+                    wayland_storage::QueryWaylandBuffer = FnPtr::new(metaloadfn(&mut loadfn, "eglQueryWaylandBufferWL", &[]))
+                }
+            }
+        }
     }
 }
 
