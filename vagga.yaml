@@ -1,0 +1,77 @@
+minimum-vagga: v0.5.0
+
+containers:
+    base:
+        auto-clean: true
+        setup:
+            - !UbuntuRelease { codename: artful }
+            - !UbuntuUniverse
+            - !Install [build-essential, wget, curl, pkg-config, file, openssl, sudo, ca-certificates, libssl-dev, cmake, libudev-dev, libgbm-dev, libxkbcommon-dev, libegl1-mesa-dev, libwayland-dev, libinput-dev]
+
+    stable:
+        auto-clean: true
+        environ:
+            HOME: /work/.vagga/stable-home
+            PATH: /bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:/work/.vagga/stable-home/.cargo/bin:/work/.vagga/stable-home/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/
+            RUST_BACKTRACE: 1
+            XDG_RUNTIME_DIR: /work/.vagga/stable-home
+        setup:
+            - !Container base
+            - !Env HOME: /work/.vagga/stable-home
+            - !Sh curl https://sh.rustup.rs -sSf | sh -s -- -y --default-host x86_64-unknown-linux-gnu --default-toolchain stable --no-modify-path
+
+    beta:
+        auto-clean: true
+        environ:
+            HOME: /work/.vagga/beta-home
+            PATH: /bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:/work/.vagga/beta-home/.cargo/bin:/work/.vagga/beta-home/.rustup/toolchains/beta-x86_64-unknown-linux-gnu/bin/
+            RUST_BACKTRACE: 1
+            XDG_RUNTIME_DIR: /work/.vagga/beta-home
+        setup:
+            - !Container base
+            - !Env HOME: /work/.vagga/beta-home
+            - !Sh curl https://sh.rustup.rs -sSf | sh -s -- -y --default-host x86_64-unknown-linux-gnu --default-toolchain beta --no-modify-path
+
+    nightly:
+        auto-clean: true
+        environ:
+            HOME: /work/.vagga/nightly-home
+            PATH: /bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:/work/.vagga/nightly-home/.cargo/bin:/work/.vagga/nightly-home/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/
+            RUST_BACKTRACE: 1
+            XDG_RUNTIME_DIR: /work/.vagga/nightly-home
+        setup:
+            - !Container base
+            - !Env HOME: /work/.vagga/nightly-home
+            - !Sh curl https://sh.rustup.rs -sSf | sh -s -- -y --default-host x86_64-unknown-linux-gnu --default-toolchain nightly --no-modify-path
+
+commands:
+    update-stable: !Command
+        description: Update container
+        container: stable
+        run: rustup update
+
+    update-beta: !Command
+        description: Update container
+        container: beta
+        run: rustup update
+
+    update-nightly: !Command
+        description: Update container
+        container: nightly
+        run: |
+            rustup update
+
+    cargo-stable: !Command
+        description: Run cargo
+        container: stable
+        run: ["/work/.vagga/stable-home/.cargo/bin/cargo"]
+
+    cargo-beta: !Command
+        description: Run cargo
+        container: beta
+        run: ["/work/.vagga/beta-home/.cargo/bin/cargo"]
+
+    cargo-nightly: !Command
+        description: Run cargo
+        container: nightly
+        run: ["/work/.vagga/nightly-home/.cargo/bin/cargo"]

@@ -1,40 +1,32 @@
 language: rust
 
-cache: cargo
-
-sudo: required
-
+# We need this for the matrix, install is quick although unused
 rust:
   - stable
   - beta
   - nightly
 
-os:
-  - linux
+sudo: required
 
 dist: trusty
+
+# We cannot cache .vagga, because we actually do not have read permissions
+# without sudo and travis cache script runs not as sudo...
+cache:
+  directories:
+    - .vagga/stable-home
+    - .vagga/beta-home
+    - .vagga/nightly-home
+    - .vagga/.cache
 
 addons:
   apt:
     packages:
-      - libssl-dev
-      - libudev-dev
-      - libgbm-dev
-      - libxkbcommon-dev
-      - libegl1-mesa-dev
-
-before_install:
-  - sudo add-apt-repository -y ppa:wayland.admin/daily-builds
-  - sudo apt-get update -qq || echo "Ignoring failed apt-get update..."
-  - sudo apt-get install -y libwayland-dev libinput-dev
-
-branches:
-  only:
-    - master
+      - libcurl4-openssl-dev
+      - libelf-dev
+      - libdw-dev
 
 env:
-  global:
-    - RUST_BACKTRACE=1
   matrix:
     - FEATURES=""
       # test individual features
@@ -58,38 +50,36 @@ matrix:
     - rust: nightly
 
 before_script:
-  - export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH
+  - 'echo ubuntu-mirror: http://mirrors.us.kernel.org/ubuntu/ > ~/.vagga.yaml'
+  - 'echo alpine-mirror: http://mirrors.gigenet.com/alpinelinux/ >> ~/.vagga.yaml'
   - |
-      if [ "$FEATURES" = "cargo-fmt" ]; then
-        cargo install rustfmt-nightly --force;
-      fi
-  - |
-      if [ "$FEATURES" = "cargo-clippy" ]; then
-        cargo install clippy --force;
-      fi
-  - mkdir $(pwd)/socket
-  - export XDG_RUNTIME_DIR="$(pwd)/socket"
+      echo "$(id -un):100000:65536" | sudo tee /etc/subuid | sudo tee /etc/subgid
+      sudo apt-get install uidmap -y
+      curl http://files.zerogw.com/vagga/vagga-install.sh | sh
+  - vagga update-$TRAVIS_RUST_VERSION
 
 script:
   - |
       case $FEATURES in
         "all")
-            cargo test --all-features &&
-            cargo doc --no-deps --all-features
+            vagga cargo-$TRAVIS_RUST_VERSION test --all-features &&
+            vagga cargo-$TRAVIS_RUST_VERSION doc --no-deps --all-features
         ;;
         "default")
-            cargo test &&
-            cargo doc --no-deps
+            vagga cargo-$TRAVIS_RUST_VERSION test &&
+            vagga cargo-$TRAVIS_RUST_VERSION doc --no-deps
         ;;
         "cargo-fmt")
-            cargo fmt -- --write-mode=diff
+            vagga cargo-$TRAVIS_RUST_VERSION install -f rustfmt-nightly &&
+            vagga cargo-$TRAVIS_RUST_VERSION fmt -- --write-mode=diff
         ;;
         "cargo-clippy")
-            cargo clippy --all-features -- -D warnings
+            vagga cargo-$TRAVIS_RUST_VERSION install -f clippy &&
+            vagga cargo-$TRAVIS_RUST_VERSION clippy --all-features -- -D warnings
         ;;
         *)
-            cargo test --lib --doc --tests --no-default-features --features "$FEATURES" &&
-            cargo doc --no-deps --no-default-features --features "$FEATURES"
+            vagga cargo-$TRAVIS_RUST_VERSION test --lib --doc --tests --no-default-features --features "$FEATURES" &&
+            vagga cargo-$TRAVIS_RUST_VERSION doc --no-deps --no-default-features --features "$FEATURES"
       esac
 
 after_success:
@@ -106,9 +96,9 @@ deploy:
     condition: "$FEATURES = all"
 
 notifications:
-    webhooks:
-        urls:
-            - "https://scalar.vector.im/api/neb/services/hooks/dHJhdmlzLWNpLyU0MGxldmFucyUzQXNhZmFyYWRlZy5uZXQvJTIxRkt4aGprSUNwakJWelZlQ2RGJTNBc2FmYXJhZGVnLm5ldA"
-        on_success: change
-        on_failure: always
-        on_start: never
+  webhooks:
+    urls:
+      - "https://scalar.vector.im/api/neb/services/hooks/dHJhdmlzLWNpLyU0MGxldmFucyUzQXNhZmFyYWRlZy5uZXQvJTIxRkt4aGprSUNwakJWelZlQ2RGJTNBc2FmYXJhZGVnLm5ldA"
+    on_success: change
+    on_failure: always
+    on_start: never
