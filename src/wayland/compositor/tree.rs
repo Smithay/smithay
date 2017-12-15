@@ -132,8 +132,9 @@ impl<U: 'static, R: RoleType + 'static> SurfaceData<U, R> {
     /// Register that this surface has a role with given data
     ///
     /// Fails if it already has one and returns the data
-    pub unsafe fn give_role_with<RoleData>(surface: &wl_surface::WlSurface, data: RoleData)
-                                           -> Result<(), RoleData>
+    pub unsafe fn give_role_with<RoleData>(
+        surface: &wl_surface::WlSurface, data: RoleData
+    ) -> Result<(), RoleData>
     where
         R: Role<RoleData>,
     {
@@ -158,8 +159,9 @@ impl<U: 'static, R: RoleType + 'static> SurfaceData<U, R> {
     }
 
     /// Access to the role data
-    pub unsafe fn with_role_data<RoleData, F, T>(surface: &wl_surface::WlSurface, f: F)
-                                                 -> Result<T, WrongRole>
+    pub unsafe fn with_role_data<RoleData, F, T>(
+        surface: &wl_surface::WlSurface, f: F
+    ) -> Result<T, WrongRole>
     where
         R: Role<RoleData>,
         F: FnOnce(&mut RoleData) -> T,
@@ -177,8 +179,9 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
     ///
     /// if this surface already has a role, does nothing and fails, otherwise
     /// its role is now to be a subsurface
-    pub unsafe fn set_parent(child: &wl_surface::WlSurface, parent: &wl_surface::WlSurface)
-                             -> Result<(), ()> {
+    pub unsafe fn set_parent(
+        child: &wl_surface::WlSurface, parent: &wl_surface::WlSurface
+    ) -> Result<(), ()> {
         debug_assert!(child.status() == Liveness::Alive);
         debug_assert!(parent.status() == Liveness::Alive);
 
@@ -246,9 +249,9 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
     /// Reorders a surface relative to one of its sibling
     ///
     /// Fails if `relative_to` is not a sibling or parent of `surface`.
-    pub unsafe fn reorder(surface: &wl_surface::WlSurface, to: Location,
-                          relative_to: &wl_surface::WlSurface)
-                          -> Result<(), ()> {
+    pub unsafe fn reorder(
+        surface: &wl_surface::WlSurface, to: Location, relative_to: &wl_surface::WlSurface
+    ) -> Result<(), ()> {
         let parent = {
             let data_mutex = Self::get_data(surface);
             let data_guard = data_mutex.lock().unwrap();
@@ -316,17 +319,15 @@ impl<U: 'static, R: 'static> SurfaceData<U, R> {
     /// false will cause an early-stopping.
     pub unsafe fn map_tree<F, T>(root: &wl_surface::WlSurface, initial: T, mut f: F, reverse: bool)
     where
-        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
-              -> TraversalAction<T>,
+        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
     {
         // helper function for recursion
-        unsafe fn map<U: 'static, R: 'static, F, T>(surface: &wl_surface::WlSurface,
-                                                    root: &wl_surface::WlSurface, initial: &T, f: &mut F,
-                                                    reverse: bool)
-                                                    -> bool
+        unsafe fn map<U: 'static, R: 'static, F, T>(
+            surface: &wl_surface::WlSurface, root: &wl_surface::WlSurface, initial: &T, f: &mut F,
+            reverse: bool,
+        ) -> bool
         where
-            F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
-                  -> TraversalAction<T>,
+            F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
         {
             // stop if we met the root, so to not deadlock/inifinte loop
             if surface.equals(root) {

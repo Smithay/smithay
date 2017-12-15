@@ -113,11 +113,11 @@ impl Output {
     /// returns the state token allowing you to access it, as well as the global handle,
     /// in case you whish to remove this global in  the future.
     pub fn new<L>(
-        evl: &mut EventLoop, name: String, physical: PhysicalProperties, logger: L)
-        -> (
-            StateToken<Output>,
-            Global<wl_output::WlOutput, StateToken<Output>>,
-        )
+        evl: &mut EventLoop, name: String, physical: PhysicalProperties, logger: L
+    ) -> (
+        StateToken<Output>,
+        Global<wl_output::WlOutput, StateToken<Output>>,
+    )
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -229,8 +229,10 @@ impl Output {
     /// internal list.
     ///
     /// By default, transform status is `Normal`, and scale is `1`.
-    pub fn change_current_state(&mut self, new_mode: Option<Mode>,
-                                new_transform: Option<wl_output::Transform>, new_scale: Option<i32>) {
+    pub fn change_current_state(
+        &mut self, new_mode: Option<Mode>, new_transform: Option<wl_output::Transform>,
+        new_scale: Option<i32>,
+    ) {
         if let Some(mode) = new_mode {
             if self.modes.iter().find(|&m| *m == mode).is_none() {
                 self.modes.push(mode);
@@ -283,8 +285,9 @@ impl Output {
     }
 }
 
-fn output_bind(evlh: &mut EventLoopHandle, token: &mut StateToken<Output>, _: &Client,
-               global: wl_output::WlOutput) {
+fn output_bind(
+    evlh: &mut EventLoopHandle, token: &mut StateToken<Output>, _: &Client, global: wl_output::WlOutput
+) {
     evlh.register(&global, output_implementation(), token.clone(), None);
     evlh.state().get_mut(token).new_global(global);
 }

@@ -46,24 +46,22 @@
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
 
-use std::io::Result as IoResult;
-use std::path::Path;
-use std::os::unix::io::RawFd;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use super::{AsErrno, Session, SessionNotifier, SessionObserver};
 use nix::{Error as NixError, Result as NixResult};
 use nix::fcntl::{self, open, OFlag};
 use nix::libc::c_int;
 use nix::sys::signal::{self, Signal};
-use nix::sys::stat::{dev_t, major, minor, Mode, fstat};
-use nix::unistd::{dup, close};
-use wayland_server::EventLoopHandle;
-use wayland_server::sources::SignalEventSource;
-
+use nix::sys::stat::{dev_t, fstat, major, minor, Mode};
+use nix::unistd::{close, dup};
+use std::io::Result as IoResult;
+use std::os::unix::io::RawFd;
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "backend_session_udev")]
 use udev::Context;
-
-use super::{AsErrno, Session, SessionNotifier, SessionObserver};
+use wayland_server::EventLoopHandle;
+use wayland_server::sources::SignalEventSource;
 
 #[allow(dead_code)]
 mod tty {
@@ -102,7 +100,7 @@ mod tty {
     pub const VT_PROCESS: i8 = 0x01;
     pub const VT_ACKACQ: i32 = 0x02;
 
-    extern {
+    extern "C" {
         pub fn __libc_current_sigrtmin() -> i8;
         pub fn __libc_current_sigrtmax() -> i8;
     }
@@ -139,8 +137,8 @@ fn is_tty_device(dev: dev_t, path: Option<&Path>) -> bool {
                 major(dev) == TTY_MAJOR
             };
             res || minor(dev) != 0
-        },
-        None => major(dev) == TTY_MAJOR || minor(dev) != 0
+        }
+        None => major(dev) == TTY_MAJOR || minor(dev) != 0,
     }
 }
 
@@ -167,34 +165,36 @@ impl DirectSession {
     ///
     /// If you do not provide a tty device path, it will try to open the currently active tty if any.
     pub fn new<L>(tty: Option<&Path>, logger: L) -> Result<(DirectSession, DirectSessionNotifier)>
-        where
-            L: Into<Option<::slog::Logger>>
+    where
+        L: Into<Option<::slog::Logger>>,
     {
-        let logger = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_session", "session_type" => "direct/vt"));
+        let logger = ::slog_or_stdlog(logger)
+            .new(o!("smithay_module" => "backend_session", "session_type" => "direct/vt"));
 
-        let fd = tty
-            .map(|path| open(path, fcntl::O_RDWR | fcntl::O_CLOEXEC, Mode::empty())
-                .chain_err(|| ErrorKind::FailedToOpenTTY(String::from(path.to_string_lossy()))))
-            .unwrap_or(dup(0 /*stdin*/).chain_err(|| ErrorKind::FailedToOpenTTY(String::from("<stdin>"))))?;
+        let fd = tty.map(|path| {
+            open(path, fcntl::O_RDWR | fcntl::O_CLOEXEC, Mode::empty())
+                .chain_err(|| ErrorKind::FailedToOpenTTY(String::from(path.to_string_lossy())))
+        }).unwrap_or(dup(0 /*stdin*/).chain_err(|| ErrorKind::FailedToOpenTTY(String::from("<stdin>"))))?;
 
         let active = Arc::new(AtomicBool::new(true));
 
         match DirectSession::setup_tty(tty, fd, logger.clone()) {
-            Ok((vt, old_keyboard_mode, signal)) => {
-                Ok((DirectSession {
+            Ok((vt, old_keyboard_mode, signal)) => Ok((
+                DirectSession {
                     tty: fd,
                     active: active.clone(),
                     vt,
                     old_keyboard_mode,
                     logger: logger.new(o!("vt" => format!("{}", vt), "component" => "session")),
-                }, DirectSessionNotifier {
+                },
+                DirectSessionNotifier {
                     tty: fd,
                     active,
                     signals: Vec::new(),
                     signal,
-                    logger: logger.new(o!("vt" => format!("{}", vt), "component" => "session_notifier"))
-                }))
-            },
+                    logger: logger.new(o!("vt" => format!("{}", vt), "component" => "session_notifier")),
+                },
+            )),
             Err(err) => {
                 let _ = close(fd);
                 Err(err)
@@ -226,9 +226,11 @@ impl DirectSession {
 
         let mut old_keyboard_mode = 0;
         unsafe {
-            tty::kd_get_kb_mode(tty, &mut old_keyboard_mode).chain_err(|| ErrorKind::FailedToSaveTTYState(vt_num))?;
+            tty::kd_get_kb_mode(tty, &mut old_keyboard_mode)
+                .chain_err(|| ErrorKind::FailedToSaveTTYState(vt_num))?;
             tty::kd_set_kb_mode(tty, tty::K_OFF).chain_err(|| ErrorKind::FailedToSetTTYKbMode(vt_num))?;
-            tty::kd_set_mode(tty, tty::KD_GRAPHICS as i32).chain_err(|| ErrorKind::FailedToSetTTYMode(vt_num))?;
+            tty::kd_set_mode(tty, tty::KD_GRAPHICS as i32)
+                .chain_err(|| ErrorKind::FailedToSetTTYMode(vt_num))?;
         }
 
         // TODO: Support realtime signals
@@ -305,19 +307,33 @@ impl Drop for DirectSession {
         info!(self.logger, "Deallocating tty {}", self.tty);
 
         if let Err(err) = unsafe { tty::kd_set_kb_mode(self.tty, self.old_keyboard_mode) } {
-            warn!(self.logger, "Unable to restore vt keyboard mode. Error: {}", err);
+            warn!(
+                self.logger,
+                "Unable to restore vt keyboard mode. Error: {}", err
+            );
         }
         if let Err(err) = unsafe { tty::kd_set_mode(self.tty, tty::KD_TEXT as i32) } {
-            warn!(self.logger, "Unable to restore vt text mode. Error: {}", err);
+            warn!(
+                self.logger,
+                "Unable to restore vt text mode. Error: {}", err
+            );
         }
-        if let Err(err) = unsafe { tty::vt_set_mode(self.tty, &tty::VtMode {
-            mode: tty::VT_AUTO,
-            ..Default::default()
-        }) } {
+        if let Err(err) = unsafe {
+            tty::vt_set_mode(
+                self.tty,
+                &tty::VtMode {
+                    mode: tty::VT_AUTO,
+                    ..Default::default()
+                },
+            )
+        } {
             error!(self.logger, "Failed to reset vt handling. Error: {}", err);
         }
         if let Err(err) = close(self.tty) {
-            error!(self.logger, "Failed to close tty file descriptor. Error: {}", err);
+            error!(
+                self.logger,
+                "Failed to close tty file descriptor. Error: {}", err
+            );
         }
     }
 }
@@ -350,36 +366,45 @@ impl SessionNotifier for DirectSessionNotifier {
 /// Allows the `DirectSessionNotifier` to listen for the incoming signals signalling the session state.
 /// If you don't use this function `DirectSessionNotifier` will not correctly tell you the current
 /// session state.
-pub fn direct_session_bind<L>(notifier: DirectSessionNotifier, evlh: &mut EventLoopHandle, _logger: L)
-    -> IoResult<SignalEventSource<DirectSessionNotifier>>
+pub fn direct_session_bind<L>(
+    notifier: DirectSessionNotifier, evlh: &mut EventLoopHandle, _logger: L
+) -> IoResult<SignalEventSource<DirectSessionNotifier>>
 where
     L: Into<Option<::slog::Logger>>,
 {
     let signal = notifier.signal;
 
-    evlh.add_signal_event_source(|evlh, notifier, _| {
-        if notifier.is_active() {
-            info!(notifier.logger, "Session shall become inactive");
-            for signal in &mut notifier.signals {
-                if let &mut Some(ref mut signal) = signal {signal.pause(&mut evlh.state().as_proxy()); }
+    evlh.add_signal_event_source(
+        |evlh, notifier, _| {
+            if notifier.is_active() {
+                info!(notifier.logger, "Session shall become inactive");
+                for signal in &mut notifier.signals {
+                    if let &mut Some(ref mut signal) = signal {
+                        signal.pause(&mut evlh.state().as_proxy());
+                    }
+                }
+                notifier.active.store(false, Ordering::SeqCst);
+                unsafe {
+                    tty::vt_rel_disp(notifier.tty, 1).expect("Unable to release tty lock");
+                }
+                debug!(notifier.logger, "Session is now inactive");
+            } else {
+                debug!(notifier.logger, "Session will become active again");
+                unsafe {
+                    tty::vt_rel_disp(notifier.tty, tty::VT_ACKACQ).expect("Unable to acquire tty lock");
+                }
+                for signal in &mut notifier.signals {
+                    if let &mut Some(ref mut signal) = signal {
+                        signal.activate(&mut evlh.state().as_proxy());
+                    }
+                }
+                notifier.active.store(true, Ordering::SeqCst);
+                info!(notifier.logger, "Session is now active again");
             }
-            notifier.active.store(false, Ordering::SeqCst);
-            unsafe {
-                tty::vt_rel_disp(notifier.tty, 1).expect("Unable to release tty lock");
-            }
-            debug!(notifier.logger, "Session is now inactive");
-        } else {
-            debug!(notifier.logger, "Session will become active again");
-            unsafe {
-                tty::vt_rel_disp(notifier.tty, tty::VT_ACKACQ).expect("Unable to acquire tty lock");
-            }
-            for signal in &mut notifier.signals {
-                if let &mut Some(ref mut signal) = signal { signal.activate(&mut evlh.state().as_proxy()); }
-            }
-            notifier.active.store(true, Ordering::SeqCst);
-            info!(notifier.logger, "Session is now active again");
-        }
-    }, notifier, signal)
+        },
+        notifier,
+        signal,
+    )
 }
 
 error_chain! {

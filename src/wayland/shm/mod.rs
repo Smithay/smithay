@@ -61,7 +61,6 @@
 //!
 //! If you are already using an handler for this signal, you probably don't want to use this handler.
 
-
 use self::pool::{Pool, ResizeError};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -89,8 +88,9 @@ pub struct ShmGlobalData {
 /// The global is directly registered into the eventloop, and this function
 /// returns the global handle, in case you whish to remove this global in
 /// the future.
-pub fn init_shm_global<L>(evl: &mut EventLoop, mut formats: Vec<wl_shm::Format>, logger: L)
-                          -> Global<wl_shm::WlShm, ShmGlobalData>
+pub fn init_shm_global<L>(
+    evl: &mut EventLoop, mut formats: Vec<wl_shm::Format>, logger: L
+) -> Global<wl_shm::WlShm, ShmGlobalData>
 where
     L: Into<Option<::slog::Logger>>,
 {

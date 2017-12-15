@@ -1,16 +1,16 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
+use backend::input as backend;
 #[cfg(feature = "backend_session")]
 use backend::session::{AsErrno, Session, SessionObserver};
-use backend::input as backend;
 use input as libinput;
 use input::event;
 use std::collections::hash_map::{DefaultHasher, Entry, HashMap};
 use std::hash::{Hash, Hasher};
 use std::io::{Error as IoError, Result as IoResult};
-use std::rc::Rc;
-use std::path::Path;
 use std::os::unix::io::RawFd;
+use std::path::Path;
+use std::rc::Rc;
 use wayland_server::{EventLoopHandle, StateProxy};
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 
@@ -583,7 +583,9 @@ impl<S: Session> From<S> for LibinputSessionInterface<S> {
 impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
     fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<RawFd, i32> {
         use nix::fcntl::OFlag;
-        self.0.open(path, OFlag::from_bits_truncate(flags)).map_err(|err| err.as_errno().unwrap_or(1 /*Use EPERM by default*/))
+        self.0
+            .open(path, OFlag::from_bits_truncate(flags))
+            .map_err(|err| err.as_errno().unwrap_or(1 /*Use EPERM by default*/))
     }
 
     fn close_restricted(&mut self, fd: RawFd) {
@@ -595,9 +597,9 @@ impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
 ///
 /// Automatically feeds the backend with incoming events without any manual calls to
 /// `dispatch_new_events`. Should be used to achieve the smallest possible latency.
-pub fn libinput_bind(backend: LibinputInputBackend, evlh: &mut EventLoopHandle)
-    -> IoResult<FdEventSource<LibinputInputBackend>>
-{
+pub fn libinput_bind(
+    backend: LibinputInputBackend, evlh: &mut EventLoopHandle
+) -> IoResult<FdEventSource<LibinputInputBackend>> {
     let fd = unsafe { backend.context.fd() };
     evlh.add_fd_event_source(
         fd,
@@ -610,13 +612,13 @@ pub fn libinput_bind(backend: LibinputInputBackend, evlh: &mut EventLoopHandle)
 fn fd_event_source_implementation() -> FdEventSourceImpl<LibinputInputBackend> {
     FdEventSourceImpl {
         ready: |_evlh, ref mut backend, _, _| {
-            use ::backend::input::InputBackend;
+            use backend::input::InputBackend;
             if let Err(error) = backend.dispatch_new_events() {
                 warn!(backend.logger, "Libinput errored: {}", error);
             }
         },
         error: |_evlh, ref backend, _, error| {
             warn!(backend.logger, "Libinput fd errored: {}", error);
-        }
+        },
     }
 }

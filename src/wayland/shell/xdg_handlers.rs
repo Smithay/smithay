@@ -10,10 +10,10 @@ use wayland_protocols::unstable::xdg_shell::v6::server::{zxdg_popup_v6, zxdg_pos
 use wayland_server::{Client, EventLoopHandle, Resource};
 use wayland_server::protocol::{wl_output, wl_surface};
 
-pub(crate) fn xdg_shell_bind<U, R, CID, SID, SD>(evlh: &mut EventLoopHandle,
-                                                 idata: &mut ShellSurfaceIData<U, R, CID, SID, SD>,
-                                                 _: &Client, shell: zxdg_shell_v6::ZxdgShellV6)
-where
+pub(crate) fn xdg_shell_bind<U, R, CID, SID, SD>(
+    evlh: &mut EventLoopHandle, idata: &mut ShellSurfaceIData<U, R, CID, SID, SD>, _: &Client,
+    shell: zxdg_shell_v6::ZxdgShellV6,
+) where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
     CID: 'static,
@@ -53,8 +53,7 @@ pub(crate) fn make_shell_client<SD>(resource: &zxdg_shell_v6::ZxdgShellV6) -> Sh
 }
 
 fn shell_implementation<U, R, CID, SID, SD>(
-    )
-    -> zxdg_shell_v6::Implementation<ShellSurfaceIData<U, R, CID, SID, SD>>
+) -> zxdg_shell_v6::Implementation<ShellSurfaceIData<U, R, CID, SID, SD>>
 where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
@@ -104,11 +103,10 @@ where
                 );
                 return;
             }
-            xdg_surface.set_user_data(
-                Box::into_raw(Box::new((unsafe { wl_surface.clone_unchecked() }, unsafe {
-                    shell.clone_unchecked()
-                }))) as *mut _,
-            );
+            xdg_surface.set_user_data(Box::into_raw(Box::new((
+                unsafe { wl_surface.clone_unchecked() },
+                unsafe { shell.clone_unchecked() },
+            ))) as *mut _);
             evlh.register(
                 &xdg_surface,
                 surface_implementation(),
@@ -151,30 +149,34 @@ fn destroy_positioner(positioner: &zxdg_positioner_v6::ZxdgPositionerV6) {
 fn positioner_implementation() -> zxdg_positioner_v6::Implementation<()> {
     zxdg_positioner_v6::Implementation {
         destroy: |_, _, _, _| {},
-        set_size: |_, _, _, positioner, width, height| if width < 1 || height < 1 {
-            positioner.post_error(
-                zxdg_positioner_v6::Error::InvalidInput as u32,
-                "Invalid size for positioner.".into(),
-            );
-        } else {
-            let ptr = positioner.get_user_data();
-            let state = unsafe { &mut *(ptr as *mut PositionerState) };
-            state.rect_size = (width, height);
+        set_size: |_, _, _, positioner, width, height| {
+            if width < 1 || height < 1 {
+                positioner.post_error(
+                    zxdg_positioner_v6::Error::InvalidInput as u32,
+                    "Invalid size for positioner.".into(),
+                );
+            } else {
+                let ptr = positioner.get_user_data();
+                let state = unsafe { &mut *(ptr as *mut PositionerState) };
+                state.rect_size = (width, height);
+            }
         },
-        set_anchor_rect: |_, _, _, positioner, x, y, width, height| if width < 1 || height < 1 {
-            positioner.post_error(
-                zxdg_positioner_v6::Error::InvalidInput as u32,
-                "Invalid size for positioner's anchor rectangle.".into(),
-            );
-        } else {
-            let ptr = positioner.get_user_data();
-            let state = unsafe { &mut *(ptr as *mut PositionerState) };
-            state.anchor_rect = Rectangle {
-                x,
-                y,
-                width,
-                height,
-            };
+        set_anchor_rect: |_, _, _, positioner, x, y, width, height| {
+            if width < 1 || height < 1 {
+                positioner.post_error(
+                    zxdg_positioner_v6::Error::InvalidInput as u32,
+                    "Invalid size for positioner's anchor rectangle.".into(),
+                );
+            } else {
+                let ptr = positioner.get_user_data();
+                let state = unsafe { &mut *(ptr as *mut PositionerState) };
+                state.anchor_rect = Rectangle {
+                    x,
+                    y,
+                    width,
+                    height,
+                };
+            }
         },
         set_anchor: |_, _, _, positioner, anchor| {
             use self::zxdg_positioner_v6::Anchor;
@@ -228,15 +230,15 @@ fn destroy_surface(surface: &zxdg_surface_v6::ZxdgSurfaceV6) {
     let ptr = surface.get_user_data();
     surface.set_user_data(::std::ptr::null_mut());
     // drop the state
-    let data =
-        unsafe { Box::from_raw(ptr as *mut (zxdg_surface_v6::ZxdgSurfaceV6, zxdg_shell_v6::ZxdgShellV6)) };
+    let data = unsafe {
+        Box::from_raw(ptr as *mut (zxdg_surface_v6::ZxdgSurfaceV6, zxdg_shell_v6::ZxdgShellV6))
+    };
     // explicit call to drop to not forget what we're doing here
     ::std::mem::drop(data);
 }
 
 fn surface_implementation<U, R, CID, SID, SD>(
-    )
-    -> zxdg_surface_v6::Implementation<ShellSurfaceIData<U, R, CID, SID, SD>>
+) -> zxdg_surface_v6::Implementation<ShellSurfaceIData<U, R, CID, SID, SD>>
 where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
@@ -417,9 +419,9 @@ fn destroy_toplevel(surface: &zxdg_toplevel_v6::ZxdgToplevelV6) {
 }
 
 // Utility functions allowing to factor out a lot of the upcoming logic
-fn with_surface_toplevel_data<U, R, CID, SID, SD, F>(idata: &ShellSurfaceIData<U, R, CID, SID, SD>,
-                                                     toplevel: &zxdg_toplevel_v6::ZxdgToplevelV6, f: F)
-where
+fn with_surface_toplevel_data<U, R, CID, SID, SD, F>(
+    idata: &ShellSurfaceIData<U, R, CID, SID, SD>, toplevel: &zxdg_toplevel_v6::ZxdgToplevelV6, f: F
+) where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
     CID: 'static,
@@ -438,13 +440,11 @@ where
         .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
-fn xdg_handle_display_state_change<U, R, CID, SID, SD>(evlh: &mut EventLoopHandle,
-                                                       idata: &ShellSurfaceIData<U, R, CID, SID, SD>,
-                                                       toplevel: &zxdg_toplevel_v6::ZxdgToplevelV6,
-                                                       maximized: Option<bool>, minimized: Option<bool>,
-                                                       fullscreen: Option<bool>,
-                                                       output: Option<&wl_output::WlOutput>)
-where
+fn xdg_handle_display_state_change<U, R, CID, SID, SD>(
+    evlh: &mut EventLoopHandle, idata: &ShellSurfaceIData<U, R, CID, SID, SD>,
+    toplevel: &zxdg_toplevel_v6::ZxdgToplevelV6, maximized: Option<bool>, minimized: Option<bool>,
+    fullscreen: Option<bool>, output: Option<&wl_output::WlOutput>,
+) where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
     CID: 'static,
@@ -467,11 +467,10 @@ where
     send_toplevel_configure(idata.compositor_token, toplevel, configure);
 }
 
-
-pub fn send_toplevel_configure<U, R, ID>(token: CompositorToken<U, R, ID>,
-                                         resource: &zxdg_toplevel_v6::ZxdgToplevelV6,
-                                         configure: ToplevelConfigure)
-where
+pub fn send_toplevel_configure<U, R, ID>(
+    token: CompositorToken<U, R, ID>, resource: &zxdg_toplevel_v6::ZxdgToplevelV6,
+    configure: ToplevelConfigure,
+) where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
     ID: 'static,
@@ -497,9 +496,9 @@ where
         .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
-fn make_toplevel_handle<U, R, H, SD>(token: CompositorToken<U, R, H>,
-                                     resource: &zxdg_toplevel_v6::ZxdgToplevelV6)
-                                     -> super::ToplevelSurface<U, R, H, SD> {
+fn make_toplevel_handle<U, R, H, SD>(
+    token: CompositorToken<U, R, H>, resource: &zxdg_toplevel_v6::ZxdgToplevelV6
+) -> super::ToplevelSurface<U, R, H, SD> {
     let ptr = resource.get_user_data();
     let &(ref wl_surface, _, _) = unsafe { &*(ptr as *mut ShellSurfaceUserData) };
     super::ToplevelSurface {
@@ -511,8 +510,7 @@ fn make_toplevel_handle<U, R, H, SD>(token: CompositorToken<U, R, H>,
 }
 
 fn toplevel_implementation<U, R, CID, SID, SD>(
-    )
-    -> zxdg_toplevel_v6::Implementation<ShellSurfaceIData<U, R, CID, SID, SD>>
+) -> zxdg_toplevel_v6::Implementation<ShellSurfaceIData<U, R, CID, SID, SD>>
 where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
@@ -546,8 +544,9 @@ where
             with_surface_toplevel_data(idata, toplevel, |toplevel_data| {
                 toplevel_data.parent = parent.map(|toplevel_surface_parent| {
                     let parent_ptr = toplevel_surface_parent.get_user_data();
-                    let &(ref parent_surface, _) =
-                        unsafe { &*(parent_ptr as *mut (wl_surface::WlSurface, zxdg_shell_v6::ZxdgShellV6)) };
+                    let &(ref parent_surface, _) = unsafe {
+                        &*(parent_ptr as *mut (wl_surface::WlSurface, zxdg_shell_v6::ZxdgShellV6))
+                    };
                     unsafe { parent_surface.clone_unchecked() }
                 })
             });
@@ -620,10 +619,9 @@ fn destroy_popup(surface: &zxdg_popup_v6::ZxdgPopupV6) {
     ::std::mem::drop(data);
 }
 
-pub(crate) fn send_popup_configure<U, R, ID>(token: CompositorToken<U, R, ID>,
-                                             resource: &zxdg_popup_v6::ZxdgPopupV6,
-                                             configure: PopupConfigure)
-where
+pub(crate) fn send_popup_configure<U, R, ID>(
+    token: CompositorToken<U, R, ID>, resource: &zxdg_popup_v6::ZxdgPopupV6, configure: PopupConfigure
+) where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
     ID: 'static,
@@ -641,8 +639,9 @@ where
         .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
-fn make_popup_handle<U, R, H, SD>(token: CompositorToken<U, R, H>, resource: &zxdg_popup_v6::ZxdgPopupV6)
-                                  -> super::PopupSurface<U, R, H, SD> {
+fn make_popup_handle<U, R, H, SD>(
+    token: CompositorToken<U, R, H>, resource: &zxdg_popup_v6::ZxdgPopupV6
+) -> super::PopupSurface<U, R, H, SD> {
     let ptr = resource.get_user_data();
     let &(ref wl_surface, _, _) = unsafe { &*(ptr as *mut ShellSurfaceUserData) };
     super::PopupSurface {
@@ -654,8 +653,7 @@ fn make_popup_handle<U, R, H, SD>(token: CompositorToken<U, R, H>, resource: &zx
 }
 
 fn popup_implementation<U, R, CID, SID, SD>(
-    )
-    -> zxdg_popup_v6::Implementation<ShellSurfaceIData<U, R, CID, SID, SD>>
+) -> zxdg_popup_v6::Implementation<ShellSurfaceIData<U, R, CID, SID, SD>>
 where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,

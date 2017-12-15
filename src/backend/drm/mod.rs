@@ -188,9 +188,9 @@
 //! ```
 
 use backend::graphics::egl::{EGLContext, GlAttributes, PixelFormatRequirements};
+use backend::graphics::egl::EGLGraphicsBackend;
 #[cfg(feature = "backend_session")]
 use backend::session::SessionObserver;
-use backend::graphics::egl::EGLGraphicsBackend;
 use drm::Device as BasicDevice;
 use drm::control::{connector, crtc, encoder, Mode, ResourceInfo};
 use drm::control::Device as ControlDevice;
@@ -204,11 +204,11 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io::Result as IoResult;
-use std::os::unix::io::{IntoRawFd, AsRawFd, RawFd};
-use std::rc::Rc;
 use std::mem;
+use std::os::unix::io::{AsRawFd, IntoRawFd, RawFd};
+use std::rc::Rc;
 use std::time::Duration;
-use wayland_server::{EventLoopHandle, StateToken, StateProxy};
+use wayland_server::{EventLoopHandle, StateProxy, StateToken};
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 
 mod backend;
@@ -369,25 +369,21 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
 
         let mut old_state = HashMap::new();
         let res_handles = drm.resource_handles()
-            .chain_err(|| {
-                ErrorKind::DrmDev(format!("Loading drm resources on {:?}", drm))
-            })?;
+            .chain_err(|| ErrorKind::DrmDev(format!("Loading drm resources on {:?}", drm)))?;
         for &con in res_handles.connectors() {
             let con_info = connector::Info::load_from_device(&drm, con)
-                .chain_err(|| {
-                    ErrorKind::DrmDev(format!("Loading connector info on {:?}", drm))
-                })?;
+                .chain_err(|| ErrorKind::DrmDev(format!("Loading connector info on {:?}", drm)))?;
             if let Some(enc) = con_info.current_encoder() {
                 let enc_info = encoder::Info::load_from_device(&drm, enc)
-                    .chain_err(|| {
-                        ErrorKind::DrmDev(format!("Loading encoder info on {:?}", drm))
-                    })?;
+                    .chain_err(|| ErrorKind::DrmDev(format!("Loading encoder info on {:?}", drm)))?;
                 if let Some(crtc) = enc_info.current_crtc() {
                     let info = crtc::Info::load_from_device(&drm, crtc)
-                        .chain_err(|| {
-                            ErrorKind::DrmDev(format!("Loading crtc info on {:?}", drm))
-                        })?;
-                    old_state.entry(crtc).or_insert((info, Vec::new())).1.push(con);
+                        .chain_err(|| ErrorKind::DrmDev(format!("Loading crtc info on {:?}", drm)))?;
+                    old_state
+                        .entry(crtc)
+                        .or_insert((info, Vec::new()))
+                        .1
+                        .push(con);
                 }
             }
         }
@@ -426,8 +422,9 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
     ///
     /// Errors if initialization fails or the mode is not available on all given
     /// connectors.
-    pub fn create_backend<'a, I, S>(&mut self, state: S, crtc: crtc::Handle, mode: Mode, connectors: I)
-        -> Result<&StateToken<B>>
+    pub fn create_backend<'a, I, S>(
+        &mut self, state: S, crtc: crtc::Handle, mode: Mode, connectors: I
+    ) -> Result<&StateToken<B>>
     where
         I: Into<Vec<connector::Handle>>,
         S: Into<StateProxy<'a>>,
@@ -447,7 +444,10 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
         for connector in &connectors {
             let con_info = connector::Info::load_from_device(self.context.head().head(), *connector)
                 .chain_err(|| {
-                    ErrorKind::DrmDev(format!("Loading connector info on {:?}", self.context.head().head()))
+                    ErrorKind::DrmDev(format!(
+                        "Loading connector info on {:?}",
+                        self.context.head().head()
+                    ))
                 })?;
 
             // check the mode
@@ -461,21 +461,26 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
                 .iter()
                 .map(|encoder| {
                     encoder::Info::load_from_device(self.context.head().head(), *encoder).chain_err(|| {
-                        ErrorKind::DrmDev(format!("Loading encoder info on {:?}", self.context.head().head()))
+                        ErrorKind::DrmDev(format!(
+                            "Loading encoder info on {:?}",
+                            self.context.head().head()
+                        ))
                     })
                 })
                 .collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
             let resource_handles = self.resource_handles().chain_err(|| {
-                ErrorKind::DrmDev(format!("Loading drm resources on {:?}", self.context.head().head()))
+                ErrorKind::DrmDev(format!(
+                    "Loading drm resources on {:?}",
+                    self.context.head().head()
+                ))
             })?;
             if !encoders
                 .iter()
                 .map(|encoder| encoder.possible_crtcs())
-                .any(|crtc_list| {
-                    resource_handles.filter_crtcs(crtc_list).contains(&crtc)
-                }) {
+                .any(|crtc_list| resource_handles.filter_crtcs(crtc_list).contains(&crtc))
+            {
                 bail!(ErrorKind::NoSuitableEncoder(con_info, crtc))
             }
         }
@@ -484,7 +489,8 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
 
         let logger = self.logger.new(o!("crtc" => format!("{:?}", crtc)));
         let backend = DrmBackend::new(self.context.clone(), crtc, mode, connectors, logger)?;
-        self.backends.insert(crtc, state.into().insert(backend.into()));
+        self.backends
+            .insert(crtc, state.into().insert(backend.into()));
 
         Ok(self.backends.get(&crtc).unwrap())
     }
@@ -505,7 +511,7 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
     /// Panics if the backend is already borrowed from the state
     pub fn destroy_backend<'a, S>(&mut self, state: S, crtc: &crtc::Handle)
     where
-        S: Into<StateProxy<'a>>
+        S: Into<StateProxy<'a>>,
     {
         if let Some(token) = self.backends.remove(crtc) {
             state.into().remove(token);
@@ -540,12 +546,25 @@ impl<B: Borrow<DrmBackend> + 'static> Drop for DrmDevice<B> {
             panic!("Pending DrmBackends. Please free all backends before the DrmDevice gets destroyed");
         }
         for (handle, (info, connectors)) in self.old_state.drain() {
-            if let Err(err) = crtc::set(self.context.head().head(), handle, info.fb(), &connectors, info.position(), info.mode()) {
-                error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
+            if let Err(err) = crtc::set(
+                self.context.head().head(),
+                handle,
+                info.fb(),
+                &connectors,
+                info.position(),
+                info.mode(),
+            ) {
+                error!(
+                    self.logger,
+                    "Failed to reset crtc ({:?}). Error: {}", handle, err
+                );
             }
         }
         if let Err(err) = self.drop_master() {
-            error!(self.logger, "Failed to drop drm master state. Error: {}", err);
+            error!(
+                self.logger,
+                "Failed to drop drm master state. Error: {}", err
+            );
         }
     }
 }
@@ -569,8 +588,10 @@ pub trait DrmHandler<B: Borrow<DrmBackend> + 'static> {
     /// ## Panics
     /// The device is already borrowed from the given `state`. Borrowing it again will panic
     /// and is not necessary as it is already provided via the `device` parameter.
-    fn ready<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &mut DrmDevice<B>, backend: &StateToken<B>,
-             crtc: crtc::Handle, frame: u32, duration: Duration);
+    fn ready<'a, S: Into<StateProxy<'a>>>(
+        &mut self, state: S, device: &mut DrmDevice<B>, backend: &StateToken<B>, crtc: crtc::Handle,
+        frame: u32, duration: Duration,
+    );
     /// The `DrmDevice` has thrown an error.
     ///
     /// The related backends are most likely *not* usable anymore and
@@ -585,8 +606,9 @@ pub trait DrmHandler<B: Borrow<DrmBackend> + 'static> {
 /// Bind a `DrmDevice` to an `EventLoop`,
 ///
 /// This will cause it to recieve events and feed them into an `DrmHandler`
-pub fn drm_device_bind<B, H>(evlh: &mut EventLoopHandle, device: StateToken<DrmDevice<B>>, handler: H)
-                             -> IoResult<FdEventSource<(StateToken<DrmDevice<B>>, H)>>
+pub fn drm_device_bind<B, H>(
+    evlh: &mut EventLoopHandle, device: StateToken<DrmDevice<B>>, handler: H
+) -> IoResult<FdEventSource<(StateToken<DrmDevice<B>>, H)>>
 where
     B: From<DrmBackend> + Borrow<DrmBackend> + 'static,
     H: DrmHandler<B> + 'static,
@@ -624,13 +646,22 @@ where
                                     state.get(&backend_token).borrow().unlock_buffer();
                                     trace!(logger, "Handling event for backend {:?}", event.crtc);
                                     // and then call the user to render the next frame
-                                    handler.ready(state, &mut dev, &backend_token, event.crtc, event.frame, event.duration);
+                                    handler.ready(
+                                        state,
+                                        &mut dev,
+                                        &backend_token,
+                                        event.crtc,
+                                        event.frame,
+                                        event.duration,
+                                    );
                                 }
                             }
                         });
                     }
                 },
-                Err(err) => evlh.state().with_value(dev_token, |state, mut dev| handler.error(state, &mut dev, err)),
+                Err(err) => evlh.state().with_value(dev_token, |state, mut dev| {
+                    handler.error(state, &mut dev, err)
+                }),
             };
         },
         error: |evlh, &mut (ref mut dev_token, ref mut handler), _, error| {
@@ -648,7 +679,10 @@ impl<B: Borrow<DrmBackend> + 'static> SessionObserver for StateToken<DrmDevice<B
         let device: &mut DrmDevice<B> = state.get_mut(self);
         device.active = false;
         if let Err(err) = device.drop_master() {
-            error!(device.logger, "Failed to drop drm master state. Error: {}", err);
+            error!(
+                device.logger,
+                "Failed to drop drm master state. Error: {}", err
+            );
         }
     }
 
@@ -656,13 +690,22 @@ impl<B: Borrow<DrmBackend> + 'static> SessionObserver for StateToken<DrmDevice<B
         state.with_value(self, |state, device| {
             device.active = true;
             if let Err(err) = device.set_master() {
-                crit!(device.logger, "Failed to acquire drm master again. Error: {}", err);
+                crit!(
+                    device.logger,
+                    "Failed to acquire drm master again. Error: {}",
+                    err
+                );
             }
             for token in device.backends.values() {
                 let backend = state.get(token);
                 if let Err(err) = backend.borrow().swap_buffers() {
                     // TODO handle this better?
-                    error!(device.logger, "Failed to activate crtc ({:?}) again. Error: {}", backend.borrow().crtc(), err);
+                    error!(
+                        device.logger,
+                        "Failed to activate crtc ({:?}) again. Error: {}",
+                        backend.borrow().crtc(),
+                        err
+                    );
                 }
             }
         })

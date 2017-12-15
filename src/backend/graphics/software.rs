@@ -1,6 +1,5 @@
 //! Common traits and types used for software rendering on graphics backends
 
-
 use super::GraphicsBackend;
 use std::error::Error;
 use wayland_server::protocol::wl_shm::Format;

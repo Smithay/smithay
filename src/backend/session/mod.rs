@@ -10,12 +10,12 @@
 //! The following mechanisms are currently provided:
 //!     - direct - legacy tty / virtual terminal kernel api
 //!
-use std::path::Path;
-use std::sync::{Arc, Mutex};
-use std::rc::Rc;
+use nix::fcntl::OFlag;
 use std::cell::RefCell;
 use std::os::unix::io::RawFd;
-use nix::fcntl::OFlag;
+use std::path::Path;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use wayland_server::StateProxy;
 
 /// General session interface.
@@ -83,13 +83,23 @@ pub trait SessionObserver {
 impl Session for () {
     type Error = ();
 
-    fn open(&mut self, _path: &Path, _flags: OFlag) -> Result<RawFd, Self::Error> { Err(()) }
-    fn close(&mut self, _fd: RawFd) -> Result<(), Self::Error> { Err(()) }
+    fn open(&mut self, _path: &Path, _flags: OFlag) -> Result<RawFd, Self::Error> {
+        Err(())
+    }
+    fn close(&mut self, _fd: RawFd) -> Result<(), Self::Error> {
+        Err(())
+    }
 
-    fn change_vt(&mut self, _vt: i32) -> Result<(), Self::Error> { Err(()) }
+    fn change_vt(&mut self, _vt: i32) -> Result<(), Self::Error> {
+        Err(())
+    }
 
-    fn is_active(&self) -> bool { false }
-    fn seat(&self) -> String { String::from("seat0") }
+    fn is_active(&self) -> bool {
+        false
+    }
+    fn seat(&self) -> String {
+        String::from("seat0")
+    }
 }
 
 impl<S: Session> Session for Rc<RefCell<S>> {

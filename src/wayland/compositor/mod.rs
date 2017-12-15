@@ -314,11 +314,11 @@ where
     ///
     /// If the surface not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_surface_tree_upward<F, T>(&self, surface: &wl_surface::WlSurface, initial: T, f: F)
-                                          -> Result<(), ()>
+    pub fn with_surface_tree_upward<F, T>(
+        &self, surface: &wl_surface::WlSurface, initial: T, f: F
+    ) -> Result<(), ()>
     where
-        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
-              -> TraversalAction<T>,
+        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
     {
         assert!(
             resource_is_registered(
@@ -340,11 +340,11 @@ where
     /// supposed to be drawn: top-most first.
     ///
     /// Behavior is the same as `with_surface_tree_upward`.
-    pub fn with_surface_tree_downward<F, T>(&self, surface: &wl_surface::WlSurface, initial: T, f: F)
-                                            -> Result<(), ()>
+    pub fn with_surface_tree_downward<F, T>(
+        &self, surface: &wl_surface::WlSurface, initial: T, f: F
+    ) -> Result<(), ()>
     where
-        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T)
-              -> TraversalAction<T>,
+        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
     {
         assert!(
             resource_is_registered(
@@ -426,7 +426,6 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
         unsafe { SurfaceData::<U, R>::has_role::<RoleData>(surface) }
     }
 
-
     /// Register that this surface has given role with default data
     ///
     /// Fails if the surface already has a role.
@@ -454,8 +453,9 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn give_role_with<RoleData>(&self, surface: &wl_surface::WlSurface, data: RoleData)
-                                    -> Result<(), RoleData>
+    pub fn give_role_with<RoleData>(
+        &self, surface: &wl_surface::WlSurface, data: RoleData
+    ) -> Result<(), RoleData>
     where
         R: Role<RoleData>,
     {
@@ -475,8 +475,9 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_role_data<RoleData, F, T>(&self, surface: &wl_surface::WlSurface, f: F)
-                                          -> Result<T, WrongRole>
+    pub fn with_role_data<RoleData, F, T>(
+        &self, surface: &wl_surface::WlSurface, f: F
+    ) -> Result<T, WrongRole>
     where
         R: Role<RoleData>,
         F: FnOnce(&mut RoleData) -> T,
@@ -533,12 +534,12 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
 /// It also returns the two global handles, in case you whish to remove these
 /// globals from the event loop in the future.
 pub fn compositor_init<U, R, ID, L>(
-    evl: &mut EventLoop, implem: SurfaceUserImplementation<U, R, ID>, idata: ID, logger: L)
-    -> (
-        CompositorToken<U, R, ID>,
-        Global<wl_compositor::WlCompositor, self::handlers::SurfaceIData<U, R, ID>>,
-        Global<wl_subcompositor::WlSubcompositor, ()>,
-    )
+    evl: &mut EventLoop, implem: SurfaceUserImplementation<U, R, ID>, idata: ID, logger: L
+) -> (
+    CompositorToken<U, R, ID>,
+    Global<wl_compositor::WlCompositor, self::handlers::SurfaceIData<U, R, ID>>,
+    Global<wl_subcompositor::WlSubcompositor, ()>,
+)
 where
     L: Into<Option<::slog::Logger>>,
     U: Default + 'static,
@@ -580,10 +581,10 @@ pub struct SurfaceUserImplementation<U, R, ID> {
     /// See [`wayland_server::protocol::wl_surface::Implementation::commit`](https://docs.rs/wayland-server/0.10.1/wayland_server/protocol/wl_surface/struct.Implementation.html#structfield.commit)
     /// for more details
     pub commit: fn(
-     evlh: &mut EventLoopHandle,
-     idata: &mut ID,
-     surface: &wl_surface::WlSurface,
-     token: CompositorToken<U, R, ID>,
+        evlh: &mut EventLoopHandle,
+        idata: &mut ID,
+        surface: &wl_surface::WlSurface,
+        token: CompositorToken<U, R, ID>,
     ),
     /// The client asks to be notified when would be a good time to update the contents of this surface
     ///
@@ -593,11 +594,11 @@ pub struct SurfaceUserImplementation<U, R, ID> {
     /// See [`wayland_server::protocol::wl_surface::Implementation::frame`](https://docs.rs/wayland-server/0.10.1/wayland_server/protocol/wl_surface/struct.Implementation.html#structfield.frame)
     /// for more details
     pub frame: fn(
-     evlh: &mut EventLoopHandle,
-     idata: &mut ID,
-     surface: &wl_surface::WlSurface,
-     callback: wl_callback::WlCallback,
-     token: CompositorToken<U, R, ID>,
+        evlh: &mut EventLoopHandle,
+        idata: &mut ID,
+        surface: &wl_surface::WlSurface,
+        callback: wl_callback::WlCallback,
+        token: CompositorToken<U, R, ID>,
     ),
 }
 
