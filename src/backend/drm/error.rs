@@ -2,9 +2,8 @@
 //! Errors thrown by the `DrmDevice` and `DrmBackend`
 //!
 
-use backend::graphics::egl;
+use backend::graphics::egl::error as egl;
 use drm::control::{connector, crtc, Mode};
-use rental::TryNewError;
 
 error_chain! {
     errors {
@@ -58,11 +57,5 @@ error_chain! {
 
     links {
         EGL(egl::Error, egl::ErrorKind) #[doc = "EGL error"];
-    }
-}
-
-impl<H> From<TryNewError<Error, H>> for Error {
-    fn from(err: TryNewError<Error, H>) -> Error {
-        err.0
     }
 }

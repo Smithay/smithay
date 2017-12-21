@@ -1,11 +1,13 @@
-use super::WindowMap;
+use super::{GliumDrawer, WindowMap};
+use glium::texture::{Texture2d, UncompressedFloatFormat};
 use rand;
+use smithay::backend::graphics::egl::{EGLGraphicsBackend, EGLImage};
 use smithay::wayland::compositor::{compositor_init, CompositorToken, SurfaceAttributes,
                                    SurfaceUserImplementation};
 use smithay::wayland::shell::{shell_init, PopupConfigure, ShellState, ShellSurfaceRole,
                               ShellSurfaceUserImplementation, ToplevelConfigure};
 use smithay::wayland::shm::with_buffer_contents as shm_buffer_contents;
-use smithay::wayland::drm::{with_buffer_contents as drm_buffer_contents, Attributes, EGLImage};
+use smithay::wayland::drm::{with_buffer_contents as drm_buffer_contents, Attributes, Format};
 use std::cell::RefCell;
 use std::rc::Rc;
 use wayland_server::{EventLoop, StateToken};
@@ -14,7 +16,8 @@ define_roles!(Roles => [ ShellSurface, ShellSurfaceRole ] );
 
 #[derive(Default)]
 pub struct SurfaceData {
-    pub buffer: Option<(Vec<u8>, (u32, u32))>,
+    pub texture: Option<Texture2d>,
+    pub buffer: Option<Buffer>,
 }
 
 pub enum Buffer {
@@ -22,17 +25,34 @@ pub enum Buffer {
     Shm { data: Vec<u8>, size: (u32, u32) },
 }
 
-pub fn surface_implementation() -> SurfaceUserImplementation<SurfaceData, Roles, ()> {
+unsafe impl Send for Buffer {}
+
+pub fn surface_implementation<G: EGLGraphicsBackend + 'static>() -> SurfaceUserImplementation<SurfaceData, Roles, GliumDrawer<G>> {
     SurfaceUserImplementation {
-        commit: |_, _, surface, token| {
+        commit: |_, drawer, surface, token| {
             // we retrieve the contents of the associated buffer and copy it
             token.with_surface_data(surface, |attributes| {
-                match attributes.buffer.take() {
-                    Some(Some((buffer, (_x, _y)))) => {
-                        // we ignore hotspot coordinates in this simple example
-                        if let Ok(_) = drm_buffer_contents(&buffer, |attributes, images| {
+                match attributes.buffer() {
+                    Some(ref buffer) => {
+                        // we ignore hotspot coordinates in this simple example (`attributes.buffer_coordinates()`)
+                        if drm_buffer_contents(&buffer, drawer.borrow(), |attributes, images| {
+                            let format = match attributes.format {
+                                Format::RGB => UncompressedFloatFormat::U8U8U8,
+                                Format::RGBA => UncompressedFloatFormat::U8U8U8U8,
+                                _ => {
+                                    // we don't handle the more complex formats here.
+                                    attributes.user_data.buffer = None;
+                                    attributes.user_data.texture = None;
+                                    return;
+                                },
+                            };
+                            attributes.user_data.texture = Some(drawer.texture_from_egl(
+                                images[0] /*Both simple formats only have one plane*/,
+                                format,
+                                (attributes.width, attributes.height)
+                            ));
                             attributes.user_data.buffer = Some(Buffer::Egl { images, attributes });
-                        }) {} else {
+                        }).is_err() {
                             shm_buffer_contents(&buffer, |slice, data| {
                                 let offset = data.offset as usize;
                                 let stride = data.stride as usize;
@@ -43,17 +63,16 @@ pub fn surface_implementation() -> SurfaceUserImplementation<SurfaceData, Roles,
                                     new_vec
                                         .extend(&slice[(offset + i * stride)..(offset + i * stride + width * 4)]);
                                 }
+                                attributes.user_data.texture = Some(drawer.texture_from_mem(&new_vec, data.width as u32, data.height as u32));
                                 attributes.user_data.buffer =
                                     Some(Buffer::Shm { data: new_vec, position: (data.width as u32, data.height as u32) });
                             }).unwrap();
                         }
-                        buffer.release();
                     }
-                    Some(None) => {
+                    None => {
                         // erase the contents
                         attributes.user_data.buffer = None;
                     }
-                    None => {}
                 }
             });
         },
@@ -126,14 +145,14 @@ pub type MyWindowMap = WindowMap<
     fn(&SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)>,
 >;
 
-pub fn init_shell(
-    evl: &mut EventLoop, log: ::slog::Logger)
+pub fn init_shell<ID: 'static>(
+    evl: &mut EventLoop, log: ::slog::Logger, data: ID)
     -> (
-        CompositorToken<SurfaceData, Roles, ()>,
-        StateToken<ShellState<SurfaceData, Roles, (), ()>>,
+        CompositorToken<SurfaceData, Roles, ID>,
+        StateToken<ShellState<SurfaceData, Roles, ID, ()>>,
         Rc<RefCell<MyWindowMap>>,
     ) {
-    let (compositor_token, _, _) = compositor_init(evl, surface_implementation(), (), log.clone());
+    let (compositor_token, _, _) = compositor_init(evl, surface_implementation(), data, log.clone());
 
     let window_map = Rc::new(RefCell::new(WindowMap::<_, _, _, (), _>::new(
         compositor_token,

@@ -12,7 +12,6 @@ extern crate wayland_server;
 mod helpers;
 
 use glium::Surface;
-use glium::texture::UncompressedFloatFormat;
 use helpers::{init_shell, GliumDrawer, MyWindowMap, Buffer};
 use slog::{Drain, Logger};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
@@ -137,13 +136,19 @@ fn main() {
 
     let (mut display, mut event_loop) = wayland_server::create_display();
 
+    if let Ok(_) = renderer.bind_wl_display(&display) {
+        info!(log, "EGL hardware-acceleration enabled");
+    }
+
+    let drawer = Rc::new(GliumDrawer::from(renderer));
+
     /*
      * Initialize the globals
      */
 
     init_shm_global(&mut event_loop, vec![], log.clone());
 
-    let (compositor_token, _shell_state_token, window_map) = init_shell(&mut event_loop, log.clone());
+    let (compositor_token, _shell_state_token, window_map) = init_shell(&mut event_loop, log.clone(), drawer.clone());
 
     let (seat_token, _) = Seat::new(&mut event_loop, "winit".into(), log.clone());
 
@@ -192,7 +197,6 @@ fn main() {
     /*
      * Initialize glium
      */
-    let drawer = GliumDrawer::from(renderer);
 
     input.set_handler(WinitInputHandler {
         log: log.clone(),
@@ -227,36 +231,23 @@ fn main() {
                                 wl_surface,
                                 initial_place,
                                 |_surface, attributes, role, &(mut x, mut y)| {
-                                    if let Some(Buffer::Egl { images, attributes }) = attributes.user_data.buffer {
                                         // there is actually something to draw !
+                                    if let Some(texture) = attributes.user_data.texture {
                                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                                             x += subdata.x;
                                             y += subdata.y;
                                         }
-                                        drawer.render_egl(
+                                        drawer.render_texture(
                                             &mut frame,
-                                            images,
-                                            format: match attributes.format {
-                                                Format::RGB => UncompressedFloatFormat::U8U8U8,
-                                                Format::RGBA => UncompressedFloatFormat::U8U8U8U8,
-                                                _ => unimplemented!(),
+                                            texture,
+                                            match *attributes.user_data.buffer.as_ref().unwrap() {
+                                                Buffer::Egl { ref attributes, .. } => attributes.y_inverted,
+                                                Buffer::Shm { .. } => false,
                                             },
-                                            attributes.y_inverted,
-                                            (attributes.width, attributes.height),
-                                            (x, y),
-                                            screen_dimensions,
-                                        );
-                                        TraversalAction::DoChildren((x, y))
-                                    } else if let Some(Buffer::Shm { data, size: (w, h))) = attributes.user_data.buffer {
-                                        // there is actually something to draw !
-                                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                                            x += subdata.x;
-                                            y += subdata.y;
-                                        }
-                                        drawer.render_shm(
-                                            &mut frame,
-                                            data,
-                                            (w, h),
+                                            match *attributes.user_data.buffer.as_ref().unwrap() {
+                                                Buffer::Egl { ref attributes, .. } => (attributes.width, attributes.height),
+                                                Buffer::Shm { ref size, .. } => *size,
+                                            },
                                             (x, y),
                                             screen_dimensions,
                                         );

@@ -9,6 +9,8 @@
 //! See also `examples/udev.rs` for pure hardware backed example of a compositor utilizing this
 //! backend.
 
+use drm::Device as BasicDevice;
+use drm::control::Device as ControlDevice;
 use backend::drm::{drm_device_bind, DrmBackend, DrmDevice, DrmHandler};
 use backend::session::{Session, SessionObserver};
 use nix::fcntl;
@@ -18,11 +20,21 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io::{Error as IoError, Result as IoResult};
 use std::mem::drop;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use udev::{Context, Enumerator, Event, EventType, MonitorBuilder, MonitorSocket, Result as UdevResult};
 use wayland_server::{EventLoopHandle, StateProxy, StateToken};
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
+
+pub struct SessionFdDrmDevice(RawFd);
+
+impl AsRawFd for SessionFdDrmDevice {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0
+    }
+}
+impl BasicDevice for SessionFdDrmDevice {}
+impl ControlDevice for SessionFdDrmDevice {}
 
 /// Graphical backend that monitors available drm devices.
 ///
@@ -30,16 +42,16 @@ use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 /// given handler of any changes. Can be used to provide hot-plug functionality for gpus and
 /// attached monitors.
 pub struct UdevBackend<
-    B: Borrow<DrmBackend> + 'static,
-    H: DrmHandler<B> + 'static,
+    B: Borrow<DrmBackend<SessionFdDrmDevice>> + 'static,
+    H: DrmHandler<SessionFdDrmDevice, B> + 'static,
     S: Session + 'static,
     T: UdevHandler<B, H> + 'static,
 > {
     devices: HashMap<
         dev_t,
         (
-            StateToken<DrmDevice<B>>,
-            FdEventSource<(StateToken<DrmDevice<B>>, H)>,
+            StateToken<DrmDevice<SessionFdDrmDevice, B>>,
+            FdEventSource<(StateToken<DrmDevice<SessionFdDrmDevice, B>>, H)>,
         ),
     >,
     monitor: MonitorSocket,
@@ -49,8 +61,8 @@ pub struct UdevBackend<
 }
 
 impl<
-    B: From<DrmBackend> + Borrow<DrmBackend> + 'static,
-    H: DrmHandler<B> + 'static,
+    B: From<DrmBackend<SessionFdDrmDevice>> + Borrow<DrmBackend<SessionFdDrmDevice>> + 'static,
+    H: DrmHandler<SessionFdDrmDevice, B> + 'static,
     S: Session + 'static,
     T: UdevHandler<B, H> + 'static,
 > UdevBackend<B, H, S, T> {
@@ -75,10 +87,10 @@ impl<
             .into_iter()
             // Create devices
             .flat_map(|path| {
-                match unsafe { DrmDevice::new_from_fd(
+                match unsafe { DrmDevice::new(
                     {
                         match session.open(&path, fcntl::O_RDWR | fcntl::O_CLOEXEC | fcntl::O_NOCTTY | fcntl::O_NONBLOCK) {
-                            Ok(fd) => fd,
+                            Ok(fd) => SessionFdDrmDevice(fd),
                             Err(err) => {
                                 warn!(logger, "Unable to open drm device {:?}, Error: {:?}. Skipping", path, err);
                                 return None;
@@ -134,7 +146,7 @@ impl<
                     }
                 }
             })
-            .collect::<HashMap<dev_t, (StateToken<DrmDevice<B>>, FdEventSource<(StateToken<DrmDevice<B>>, H)>)>>();
+            .collect::<HashMap<dev_t, (StateToken<DrmDevice<SessionFdDrmDevice, B>>, FdEventSource<(StateToken<DrmDevice<SessionFdDrmDevice, B>>, H)>)>>();
 
         let mut builder = MonitorBuilder::new(context).chain_err(|| ErrorKind::FailedToInitMonitor)?;
         builder
@@ -181,8 +193,8 @@ impl<
 }
 
 impl<
-    B: Borrow<DrmBackend> + 'static,
-    H: DrmHandler<B> + 'static,
+    B: Borrow<DrmBackend<SessionFdDrmDevice>> + 'static,
+    H: DrmHandler<SessionFdDrmDevice, B> + 'static,
     S: Session + 'static,
     T: UdevHandler<B, H> + 'static,
 > SessionObserver for StateToken<UdevBackend<B, H, S, T>> {
@@ -211,8 +223,8 @@ pub fn udev_backend_bind<B, S, H, T>(
     evlh: &mut EventLoopHandle, udev: StateToken<UdevBackend<B, H, S, T>>
 ) -> IoResult<FdEventSource<StateToken<UdevBackend<B, H, S, T>>>>
 where
-    B: From<DrmBackend> + Borrow<DrmBackend> + 'static,
-    H: DrmHandler<B> + 'static,
+    B: From<DrmBackend<SessionFdDrmDevice>> + Borrow<DrmBackend<SessionFdDrmDevice>> + 'static,
+    H: DrmHandler<SessionFdDrmDevice, B> + 'static,
     T: UdevHandler<B, H> + 'static,
     S: Session + 'static,
 {
@@ -222,8 +234,8 @@ where
 
 fn fd_event_source_implementation<B, S, H, T>() -> FdEventSourceImpl<StateToken<UdevBackend<B, H, S, T>>>
 where
-    B: From<DrmBackend> + Borrow<DrmBackend> + 'static,
-    H: DrmHandler<B> + 'static,
+    B: From<DrmBackend<SessionFdDrmDevice>> + Borrow<DrmBackend<SessionFdDrmDevice>> + 'static,
+    H: DrmHandler<SessionFdDrmDevice, B> + 'static,
     T: UdevHandler<B, H> + 'static,
     S: Session + 'static,
 {
@@ -242,7 +254,7 @@ where
                         if let (Some(path), Some(devnum)) = (event.devnode(), event.devnum()) {
                             let mut device = {
                                 match unsafe {
-                                    DrmDevice::new_from_fd(
+                                    DrmDevice::new(
                                         {
                                             let logger = evlh.state().get(token).logger.clone();
                                             match evlh.state().get_mut(token).session.open(
@@ -250,7 +262,7 @@ where
                                                 fcntl::O_RDWR | fcntl::O_CLOEXEC | fcntl::O_NOCTTY
                                                     | fcntl::O_NONBLOCK,
                                             ) {
-                                                Ok(fd) => fd,
+                                                Ok(fd) => SessionFdDrmDevice(fd),
                                                 Err(err) => {
                                                     warn!(logger, "Unable to open drm device {:?}, Error: {:?}. Skipping", path, err);
                                                     continue;
@@ -365,7 +377,7 @@ where
 }
 
 /// Handler for the `UdevBackend`, allows to open, close and update drm devices as they change during runtime.
-pub trait UdevHandler<B: Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'static>
+pub trait UdevHandler<B: Borrow<DrmBackend<SessionFdDrmDevice>> + 'static, H: DrmHandler<SessionFdDrmDevice, B> + 'static>
      {
     /// Called on initialization for every known device and when a new device is detected.
     ///
@@ -373,7 +385,7 @@ pub trait UdevHandler<B: Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'stati
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_added<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &mut DrmDevice<B>)
+    fn device_added<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &mut DrmDevice<SessionFdDrmDevice, B>)
         -> Option<H>;
     /// Called when an open device is changed.
     ///
@@ -382,7 +394,7 @@ pub trait UdevHandler<B: Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'stati
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_changed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<B>>);
+    fn device_changed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice, B>>);
     /// Called when a device was removed.
     ///
     /// The device will not accept any operations anymore and its file descriptor will be closed once
@@ -390,7 +402,7 @@ pub trait UdevHandler<B: Borrow<DrmBackend> + 'static, H: DrmHandler<B> + 'stati
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_removed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<B>>);
+    fn device_removed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice, B>>);
     /// Called when the udev context has encountered and error.
     ///
     /// ## Panics

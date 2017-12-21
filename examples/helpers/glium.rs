@@ -1,7 +1,9 @@
 use glium;
-use glium::{Frame, Surface};
+use glium::{Frame, Surface, GlObject};
+use glium::backend::Facade;
 use glium::index::PrimitiveType;
-use smithay::backend::graphics::egl::EGLGraphicsBackend;
+use glium::texture::{MipmapsOption, UncompressedFloatFormat, Texture2d};
+use smithay::backend::graphics::egl::{EGLGraphicsBackend, EGLImage};
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
 use std::borrow::Borrow;
 use std::ops::Deref;
@@ -106,58 +108,37 @@ impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> From<T> fo
 }
 
 impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
-    pub fn render_shm(&self, target: &mut glium::Frame, contents: &[u8], surface_dimensions: (u32, u32),
-                  surface_location: (i32, i32), screen_size: (u32, u32)) {
+    pub fn texture_from_mem(&self, contents: &[u8], surface_dimensions: (u32, u32)) {
         let image = glium::texture::RawImage2d {
             data: contents.into(),
             width: surface_dimensions.0,
             height: surface_dimensions.1,
             format: glium::texture::ClientFormat::U8U8U8U8,
         };
-        let opengl_texture = glium::texture::Texture2d::new(&self.display, image).unwrap();
-
-        let xscale = 2.0 * (surface_dimensions.0 as f32) / (screen_size.0 as f32);
-        let yscale = -2.0 * (surface_dimensions.1 as f32) / (screen_size.1 as f32);
-
-        let x = 2.0 * (surface_location.0 as f32) / (screen_size.0 as f32) - 1.0;
-        let y = 1.0 - 2.0 * (surface_location.1 as f32) / (screen_size.1 as f32);
-
-        let uniforms = uniform! {
-            matrix: [
-                [xscale,   0.0  , 0.0, 0.0],
-                [  0.0 , yscale , 0.0, 0.0],
-                [  0.0 ,   0.0  , 1.0, 0.0],
-                [   x  ,    y   , 0.0, 1.0]
-            ],
-            tex: &opengl_texture
-        };
-
-        target
-            .draw(
-                &self.vertex_buffer,
-                &self.index_buffer,
-                &self.program,
-                &uniforms,
-                &Default::default(),
-            )
-            .unwrap();
+        let opengl_texture = Texture2d::new(&self.display, image).unwrap();
     }
 
-    pub fn render_egl(&self, target: &mut glium::Frame, images: Vec<EGLImage>,
-                  format: UncompressedFloatFormat, y_inverted: bool, surface_dimensions: (u32, u32),
-                  surface_location: (i32, i32), screen_size: (u32, u32))
+    pub fn texture_from_egl(&self, image: EGLImage, format: UncompressedFloatFormat,
+                            surface_dimensions: (u32, u32))
+        -> Texture2d
     {
-        let opengl_texture = glium::texture::Texture2d::empty_with_format(
+        let opengl_texture = Texture2d::empty_with_format(
             &self.display,
-            MipmapsOption::NoMipmap,
             format,
+            MipmapsOption::NoMipmap,
             surface_dimensions.0,
             surface_dimensions.1,
         ).unwrap();
-        self.display.exec_in_context(|| {
-            self.display.borrow().egl_image_to_texture(images[0], opengl_texture.get_id());
+        self.display.get_context().exec_in_context(|| {
+            self.display.borrow().egl_image_to_texture(image, opengl_texture.get_id());
         });
+        opengl_texture
+    }
 
+    pub fn render_texture(&self, target: &mut glium::Frame, texture: Texture2d,
+                  y_inverted: bool, surface_dimensions: (u32, u32),
+                  surface_location: (i32, i32), screen_size: (u32, u32))
+    {
         let xscale = 2.0 * (surface_dimensions.0 as f32) / (screen_size.0 as f32);
         let mut yscale = -2.0 * (surface_dimensions.1 as f32) / (screen_size.1 as f32);
         if y_inverted {
@@ -174,7 +155,7 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                 [  0.0 ,   0.0  , 1.0, 0.0],
                 [   x  ,    y   , 0.0, 1.0]
             ],
-            tex: &opengl_texture
+            tex: &texture,
         };
 
         target

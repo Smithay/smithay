@@ -8,10 +8,8 @@
 #![recursion_limit = "1024"]
 
 extern crate image;
-#[macro_use]
+#[cfg_attr(feature = "backend_session", macro_use)]
 extern crate nix;
-#[macro_use]
-extern crate rental;
 extern crate tempfile;
 extern crate wayland_protocols;
 extern crate wayland_server;

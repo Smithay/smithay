@@ -187,26 +187,27 @@
 //! # }
 //! ```
 
-use backend::graphics::egl::{EGLContext, GlAttributes, PixelFormatRequirements};
+#[cfg(feature = "backend_session")]
 use backend::graphics::egl::EGLGraphicsBackend;
+use backend::graphics::egl::context::{EGLContext, GlAttributes, PixelFormatRequirements};
+use backend::graphics::egl::native::Gbm;
 #[cfg(feature = "backend_session")]
 use backend::session::SessionObserver;
 use drm::Device as BasicDevice;
 use drm::control::{connector, crtc, encoder, Mode, ResourceInfo};
 use drm::control::Device as ControlDevice;
 use drm::result::Error as DrmError;
+use drm::control::framebuffer;
 use gbm::Device as GbmDevice;
 use nix;
-use nix::Result as NixResult;
-use nix::unistd::close;
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io::Result as IoResult;
-use std::mem;
-use std::os::unix::io::{AsRawFd, IntoRawFd, RawFd};
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
+use std::sync::{Once, ONCE_INIT};
+use std::path::PathBuf;
 use std::time::Duration;
 use wayland_server::{EventLoopHandle, StateProxy, StateToken};
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
@@ -217,76 +218,28 @@ pub mod error;
 pub use self::backend::DrmBackend;
 use self::error::*;
 
-/// Internal struct as required by the drm crate
-#[derive(Debug)]
-pub(crate) struct DrmDev(RawFd);
-
-impl AsRawFd for DrmDev {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0
-    }
-}
-impl BasicDevice for DrmDev {}
-impl ControlDevice for DrmDev {}
-
-impl DrmDev {
-    unsafe fn new_from_fd(fd: RawFd) -> Self {
-        DrmDev(fd)
-    }
-
-    fn new_from_file(file: File) -> Self {
-        DrmDev(file.into_raw_fd())
-    }
-}
-
-rental! {
-    mod devices {
-        use drm::control::framebuffer;
-        use gbm::{Device as GbmDevice, Surface as GbmSurface};
-
-        use ::backend::graphics::egl::EGLContext;
-        use super::DrmDev;
-
-        #[rental]
-        pub(crate) struct Context {
-            #[subrental(arity = 2)]
-            devices: Box<Devices>,
-            egl: EGLContext<'devices_1, GbmSurface<'devices_1, framebuffer::Info>>,
-        }
-
-        #[rental]
-        pub(crate) struct Devices {
-            drm: Box<DrmDev>,
-            gbm: GbmDevice<'drm>,
-        }
-    }
-}
-use self::devices::{Context, Devices};
+static LOAD: Once = ONCE_INIT;
 
 /// Representation of an open drm device node to create rendering backends
-pub struct DrmDevice<B: Borrow<DrmBackend> + 'static> {
-    context: Rc<Context>,
+pub struct DrmDevice<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> {
+    context: Rc<EGLContext<Gbm<framebuffer::Info>, GbmDevice<A>>>,
     backends: HashMap<crtc::Handle, StateToken<B>>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     active: bool,
     logger: ::slog::Logger,
 }
 
-impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
-    /// Create a new `DrmDevice` from a raw file descriptor
+impl<A: ControlDevice + 'static, B: From<DrmBackend<A>> + Borrow<DrmBackend<A>> + 'static> DrmDevice<A, B> {
+    /// Create a new `DrmDevice` from an open drm node
     ///
-    /// Returns an error of opening the device failed or context creation was not
+    /// Returns an error if the file is no valid drm node or context creation was not
     /// successful.
-    ///
-    /// # Safety
-    /// The file descriptor might not be valid and needs to be owned by smithay,
-    /// make sure not to share it. Otherwise undefined behavior might occur.
-    pub unsafe fn new_from_fd<L>(fd: RawFd, logger: L) -> Result<Self>
+    pub fn new<L>(dev: A, logger: L) -> Result<Self>
     where
         L: Into<Option<::slog::Logger>>,
     {
-        DrmDevice::new(
-            DrmDev::new_from_fd(fd),
+        DrmDevice::new_with_gl_attr(
+            dev,
             GlAttributes {
                 version: None,
                 profile: None,
@@ -297,53 +250,11 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
         )
     }
 
-    /// Create a new `DrmDevice` from a raw file descriptor and given `GlAttributes`
-    ///
-    /// Returns an error of opening the device failed or context creation was not
-    /// successful.
-    ///
-    /// # Safety
-    /// The file descriptor might not be valid and needs to be owned by smithay,
-    /// make sure not to share it. Otherwise undefined behavior might occur.
-    pub unsafe fn new_from_fd_with_gl_attr<L>(fd: RawFd, attributes: GlAttributes, logger: L) -> Result<Self>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        DrmDevice::new(DrmDev::new_from_fd(fd), attributes, logger)
-    }
-
-    /// Create a new `DrmDevice` from a `File` of an open drm node
+    /// Create a new `DrmDevice` from an open drm node and given `GlAttributes`
     ///
     /// Returns an error if the file is no valid drm node or context creation was not
     /// successful.
-    pub fn new_from_file<L>(file: File, logger: L) -> Result<Self>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        DrmDevice::new(
-            DrmDev::new_from_file(file),
-            GlAttributes {
-                version: None,
-                profile: None,
-                debug: cfg!(debug_assertions),
-                vsync: true,
-            },
-            logger,
-        )
-    }
-
-    /// Create a new `DrmDevice` from a `File` of an open drm node and given `GlAttributes`
-    ///
-    /// Returns an error if the file is no valid drm node or context creation was not
-    /// successful.
-    pub fn new_from_file_with_gl_attr<L>(file: File, attributes: GlAttributes, logger: L) -> Result<Self>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        DrmDevice::new(DrmDev::new_from_file(file), attributes, logger)
-    }
-
-    fn new<L>(drm: DrmDev, attributes: GlAttributes, logger: L) -> Result<Self>
+    pub fn new_with_gl_attr<L>(dev: A, attributes: GlAttributes, logger: L) -> Result<Self>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -351,35 +262,58 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
 
         /* GBM will load a dri driver, but even though they need symbols from
          * libglapi, in some version of Mesa they are not linked to it. Since
-         * only the gl-renderer module links to it,  these symbols won't be globally available,
+         * only the gl-renderer module links to it, these symbols won't be globally available,
          * and loading the DRI driver fails.
          * Workaround this by dlopen()'ing libglapi with RTLD_GLOBAL.
          */
-        unsafe {
+        LOAD.call_once(|| unsafe {
             nix::libc::dlopen(
                 "libglapi.so.0".as_ptr() as *const _,
                 nix::libc::RTLD_LAZY | nix::libc::RTLD_GLOBAL,
             );
-        }
+        });
+
+        let mut drm = DrmDevice {
+            // Open the gbm device from the drm device and create a context based on that
+            context: Rc::new(EGLContext::new(
+                {
+                    debug!(log, "Creating gbm device");
+                    let gbm = GbmDevice::new(dev).chain_err(|| ErrorKind::GbmInitFailed)?;
+                    debug!(log, "Creating egl context from gbm device");
+                    gbm
+                },
+                attributes,
+                PixelFormatRequirements {
+                    hardware_accelerated: Some(true),
+                    color_bits: Some(24),
+                    alpha_bits: Some(8),
+                    ..Default::default()
+                },
+                log.clone(),
+            ).map_err(Error::from)?),
+            backends: HashMap::new(),
+            old_state: HashMap::new(),
+            active: true,
+            logger: log.clone(),
+        };
 
         info!(log, "DrmDevice initializing");
 
         // we want to mode-set, so we better be the master
         drm.set_master().chain_err(|| ErrorKind::DrmMasterFailed)?;
 
-        let mut old_state = HashMap::new();
         let res_handles = drm.resource_handles()
-            .chain_err(|| ErrorKind::DrmDev(format!("Loading drm resources on {:?}", drm)))?;
+            .chain_err(|| ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", drm.dev_path())))?;
         for &con in res_handles.connectors() {
             let con_info = connector::Info::load_from_device(&drm, con)
-                .chain_err(|| ErrorKind::DrmDev(format!("Loading connector info on {:?}", drm)))?;
+                .chain_err(|| ErrorKind::DrmDev(format!("Error loading connector info on {:?}", drm.dev_path())))?;
             if let Some(enc) = con_info.current_encoder() {
                 let enc_info = encoder::Info::load_from_device(&drm, enc)
-                    .chain_err(|| ErrorKind::DrmDev(format!("Loading encoder info on {:?}", drm)))?;
+                    .chain_err(|| ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", drm.dev_path())))?;
                 if let Some(crtc) = enc_info.current_crtc() {
                     let info = crtc::Info::load_from_device(&drm, crtc)
-                        .chain_err(|| ErrorKind::DrmDev(format!("Loading crtc info on {:?}", drm)))?;
-                    old_state
+                        .chain_err(|| ErrorKind::DrmDev(format!("Error loading crtc info on {:?}", drm.dev_path())))?;
+                    drm.old_state
                         .entry(crtc)
                         .or_insert((info, Vec::new()))
                         .1
@@ -388,33 +322,7 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
             }
         }
 
-        // Open the gbm device from the drm device and create a context based on that
-        Ok(DrmDevice {
-            context: Rc::new(Context::try_new(
-                Box::new(Devices::try_new(Box::new(drm), |drm| {
-                    debug!(log, "Creating gbm device");
-                    GbmDevice::new_from_drm(drm).chain_err(|| ErrorKind::GbmInitFailed)
-                })?),
-                |devices| {
-                    debug!(log, "Creating egl context from gbm device");
-                    EGLContext::new_from_gbm(
-                        devices.gbm,
-                        attributes,
-                        PixelFormatRequirements {
-                            hardware_accelerated: Some(true),
-                            color_bits: Some(24),
-                            alpha_bits: Some(8),
-                            ..Default::default()
-                        },
-                        log.clone(),
-                    ).map_err(Error::from)
-                },
-            )?),
-            backends: HashMap::new(),
-            old_state,
-            active: true,
-            logger: log,
-        })
+        Ok(drm)
     }
 
     /// Create a new backend on a given crtc with a given `Mode` for a given amount
@@ -442,12 +350,9 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
 
         // check if we have an encoder for every connector and the mode mode
         for connector in &connectors {
-            let con_info = connector::Info::load_from_device(self.context.head().head(), *connector)
+            let con_info = connector::Info::load_from_device(self, *connector)
                 .chain_err(|| {
-                    ErrorKind::DrmDev(format!(
-                        "Loading connector info on {:?}",
-                        self.context.head().head()
-                    ))
+                    ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
                 })?;
 
             // check the mode
@@ -460,21 +365,15 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
                 .encoders()
                 .iter()
                 .map(|encoder| {
-                    encoder::Info::load_from_device(self.context.head().head(), *encoder).chain_err(|| {
-                        ErrorKind::DrmDev(format!(
-                            "Loading encoder info on {:?}",
-                            self.context.head().head()
-                        ))
+                    encoder::Info::load_from_device(self, *encoder).chain_err(|| {
+                        ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", self.dev_path()))
                     })
                 })
                 .collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
             let resource_handles = self.resource_handles().chain_err(|| {
-                ErrorKind::DrmDev(format!(
-                    "Loading drm resources on {:?}",
-                    self.context.head().head()
-                ))
+                ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", self.dev_path()))
             })?;
             if !encoders
                 .iter()
@@ -517,37 +416,38 @@ impl<B: From<DrmBackend> + Borrow<DrmBackend> + 'static> DrmDevice<B> {
             state.into().remove(token);
         }
     }
+}
 
-    /// Close the device
-    ///
-    /// ## Warning
-    /// Never call this function if the device is managed by another backend e.g. the `UdevBackend`.
-    /// Only use this function for manually initialized devices.
-    pub fn close(self) -> NixResult<()> {
-        let fd = self.as_raw_fd();
-        mem::drop(self);
-        close(fd)
+pub trait DevPath {
+    fn dev_path(&self) -> Option<PathBuf>;
+}
+
+impl<A: AsRawFd> DevPath for A {
+    fn dev_path(&self) -> Option<PathBuf> {
+        use std::fs;
+
+        fs::read_link(format!("/proc/self/fd/{:?}", self.as_raw_fd())).ok()
     }
 }
 
 // for users convinience and FdEventSource registering
-impl<B: Borrow<DrmBackend> + 'static> AsRawFd for DrmDevice<B> {
+impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> AsRawFd for DrmDevice<A, B> {
     fn as_raw_fd(&self) -> RawFd {
-        self.context.head().head().as_raw_fd()
+        self.context.as_raw_fd()
     }
 }
 
-impl<B: Borrow<DrmBackend> + 'static> BasicDevice for DrmDevice<B> {}
-impl<B: Borrow<DrmBackend> + 'static> ControlDevice for DrmDevice<B> {}
+impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> BasicDevice for DrmDevice<A, B> {}
+impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> ControlDevice for DrmDevice<A, B> {}
 
-impl<B: Borrow<DrmBackend> + 'static> Drop for DrmDevice<B> {
+impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> Drop for DrmDevice<A, B> {
     fn drop(&mut self) {
         if Rc::strong_count(&self.context) > 1 {
             panic!("Pending DrmBackends. Please free all backends before the DrmDevice gets destroyed");
         }
         for (handle, (info, connectors)) in self.old_state.drain() {
             if let Err(err) = crtc::set(
-                self.context.head().head(),
+                &*self.context,
                 handle,
                 info.fb(),
                 &connectors,
@@ -569,7 +469,7 @@ impl<B: Borrow<DrmBackend> + 'static> Drop for DrmDevice<B> {
     }
 }
 
-impl<B: Borrow<DrmBackend> + 'static> Hash for DrmDevice<B> {
+impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> Hash for DrmDevice<A, B> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.as_raw_fd().hash(state)
     }
@@ -578,7 +478,7 @@ impl<B: Borrow<DrmBackend> + 'static> Hash for DrmDevice<B> {
 /// Handler for drm node events
 ///
 /// See module-level documentation for its use
-pub trait DrmHandler<B: Borrow<DrmBackend> + 'static> {
+pub trait DrmHandler<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> {
     /// A `DrmBackend` has finished swapping buffers and new frame can now
     /// (and should be immediately) be rendered.
     ///
@@ -589,7 +489,7 @@ pub trait DrmHandler<B: Borrow<DrmBackend> + 'static> {
     /// The device is already borrowed from the given `state`. Borrowing it again will panic
     /// and is not necessary as it is already provided via the `device` parameter.
     fn ready<'a, S: Into<StateProxy<'a>>>(
-        &mut self, state: S, device: &mut DrmDevice<B>, backend: &StateToken<B>, crtc: crtc::Handle,
+        &mut self, state: S, device: &mut DrmDevice<A, B>, backend: &StateToken<B>, crtc: crtc::Handle,
         frame: u32, duration: Duration,
     );
     /// The `DrmDevice` has thrown an error.
@@ -600,18 +500,19 @@ pub trait DrmHandler<B: Borrow<DrmBackend> + 'static> {
     /// ## Panics
     /// The device is already borrowed from the given `state`. Borrowing it again will panic
     /// and is not necessary as it is already provided via the `device` parameter.
-    fn error<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &mut DrmDevice<B>, error: DrmError);
+    fn error<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &mut DrmDevice<A, B>, error: DrmError);
 }
 
 /// Bind a `DrmDevice` to an `EventLoop`,
 ///
 /// This will cause it to recieve events and feed them into an `DrmHandler`
-pub fn drm_device_bind<B, H>(
-    evlh: &mut EventLoopHandle, device: StateToken<DrmDevice<B>>, handler: H
-) -> IoResult<FdEventSource<(StateToken<DrmDevice<B>>, H)>>
+pub fn drm_device_bind<A, B, H>(
+    evlh: &mut EventLoopHandle, device: StateToken<DrmDevice<A, B>>, handler: H
+) -> IoResult<FdEventSource<(StateToken<DrmDevice<A, B>>, H)>>
 where
-    B: From<DrmBackend> + Borrow<DrmBackend> + 'static,
-    H: DrmHandler<B> + 'static,
+    A: ControlDevice + 'static,
+    B: From<DrmBackend<A>> + Borrow<DrmBackend<A>> + 'static,
+    H: DrmHandler<A, B> + 'static,
 {
     let fd = evlh.state().get(&device).as_raw_fd();
     evlh.add_fd_event_source(
@@ -622,10 +523,11 @@ where
     )
 }
 
-fn fd_event_source_implementation<B, H>() -> FdEventSourceImpl<(StateToken<DrmDevice<B>>, H)>
+fn fd_event_source_implementation<A, B, H>() -> FdEventSourceImpl<(StateToken<DrmDevice<A, B>>, H)>
 where
-    B: From<DrmBackend> + Borrow<DrmBackend> + 'static,
-    H: DrmHandler<B> + 'static,
+    A: ControlDevice + 'static,
+    B: From<DrmBackend<A>> + Borrow<DrmBackend<A>> + 'static,
+    H: DrmHandler<A, B> + 'static,
 {
     FdEventSourceImpl {
         ready: |evlh, &mut (ref mut dev_token, ref mut handler), _, _| {
@@ -674,9 +576,9 @@ where
 }
 
 #[cfg(feature = "backend_session")]
-impl<B: Borrow<DrmBackend> + 'static> SessionObserver for StateToken<DrmDevice<B>> {
+impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> SessionObserver for StateToken<DrmDevice<A, B>> {
     fn pause<'a>(&mut self, state: &mut StateProxy<'a>) {
-        let device: &mut DrmDevice<B> = state.get_mut(self);
+        let device: &mut DrmDevice<A, B> = state.get_mut(self);
         device.active = false;
         if let Err(err) = device.drop_master() {
             error!(

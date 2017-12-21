@@ -19,6 +19,7 @@
 //!   quickly encounter a panic.
 
 pub mod compositor;
+//pub mod drm;
 pub mod output;
 pub mod seat;
 pub mod shm;
