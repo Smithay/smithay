@@ -174,11 +174,9 @@ impl DrmBackend {
                 let next_bo = egl.buffers.next_buffer.replace(None);
 
                 if let Some(next_buffer) = next_bo {
-                    trace!(self.logger, "Releasing all front buffer");
+                    trace!(self.logger, "Releasing old front buffer");
                     egl.buffers.front_buffer.set(next_buffer);
-                // drop and release the old buffer
-                } else {
-                    unreachable!();
+                    // drop and release the old buffer
                 }
             })
         });
