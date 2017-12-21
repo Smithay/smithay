@@ -23,7 +23,7 @@ extern crate drm;
 extern crate gbm;
 #[cfg(feature = "backend_libinput")]
 extern crate input;
-#[cfg(feature = "backend_udev")]
+#[cfg(feature = "udev")]
 extern crate udev;
 /*
 #[cfg(feature = "backend_session_logind")]
