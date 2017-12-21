@@ -33,6 +33,9 @@ env:
     - FEATURES="backend_winit"
     - FEATURES="backend_drm"
     - FEATURES="backend_libinput"
+    - FEATURES="backend_udev"
+    - FEATURES="backend_session"
+    - FEATURES="backend_session_udev"
     - FEATURES="renderer_glium"
       # test default features
     - FEATURES="default"
