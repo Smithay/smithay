@@ -16,7 +16,7 @@ slog-stdlog = "2.0.0-0.2"
 libloading = "0.4.0"
 wayland-client = { version = "0.9.9", optional = true }
 winit = { version = "0.8.2", optional = true }
-drm = { version = "^0.3.0", optional = true }
+drm = { version = "^0.3.1", optional = true }
 gbm = { version = "^0.3.0", optional = true, default-features = false, features = ["drm-support"] }
 glium = { version = "0.17.1", optional = true, default-features = false }
 input = { version = "0.4.0", optional = true }
@@ -44,6 +44,3 @@ backend_session = []
 backend_session_udev = ["udev", "backend_session"]
 backend_udev = ["udev", "backend_drm", "backend_session_udev"]
 renderer_glium = ["glium"]
-
-[patch.crates-io]
-drm = { git = "https://github.com/Smithay/drm-rs.git" }
