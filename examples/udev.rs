@@ -34,7 +34,7 @@ use smithay::backend::drm::{DrmBackend, DrmDevice, DrmHandler};
 use smithay::backend::graphics::GraphicsBackend;
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerButtonEvent,
-                              PointerAxisEvent};
+                              PointerAxisEvent, KeyState};
 use smithay::backend::libinput::{LibinputInputBackend, libinput_bind, PointerAxisEvent as LibinputPointerAxisEvent, LibinputSessionInterface};
 use smithay::backend::udev::{UdevBackend, UdevHandler, udev_backend_bind};
 use smithay::backend::session::{Session, SessionNotifier};
@@ -52,6 +52,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use std::process::Command;
 use xkbcommon::xkb::keysyms as xkb;
 use wayland_server::{StateToken, StateProxy};
 use wayland_server::protocol::{wl_output, wl_pointer};
@@ -93,6 +94,9 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
         self.keyboard.input(keycode, state, serial, |modifiers, keysym| {
             if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace {
                 self.running.store(false, Ordering::SeqCst);
+                false
+            } else if modifiers.logo && keysym == xkb::KEY_Return && state == KeyState::Pressed {
+                let _ = Command::new("weston-terminal").spawn();
                 false
             } else {
                 true
