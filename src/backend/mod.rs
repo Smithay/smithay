@@ -23,14 +23,7 @@ pub mod winit;
 pub mod drm;
 #[cfg(feature = "backend_libinput")]
 pub mod libinput;
-
-// Internal functions that need to be accessible by the different backend implementations
-
-trait SeatInternal {
-    fn new(id: u64, capabilities: input::SeatCapabilities) -> Self;
-    fn capabilities_mut(&mut self) -> &mut input::SeatCapabilities;
-}
-
-trait TouchSlotInternal {
-    fn new(id: u64) -> Self;
-}
+#[cfg(feature = "backend_session")]
+pub mod session;
+#[cfg(feature = "backend_udev")]
+pub mod udev;

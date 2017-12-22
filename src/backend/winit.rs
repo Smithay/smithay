@@ -1,6 +1,5 @@
 //! Implementation of backend traits for types provided by `winit`
 
-use backend::{SeatInternal, TouchSlotInternal};
 use backend::graphics::GraphicsBackend;
 use backend::graphics::egl::{self, EGLContext, EGLGraphicsBackend, GlAttributes, PixelFormat,
                              PixelFormatRequirements, SwapBuffersError};
@@ -100,8 +99,9 @@ where
 /// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
 /// graphics backend trait, from a given `WindowBuilder` struct and a corresponding
 /// `WinitInputBackend`, which implements the `InputBackend` trait
-pub fn init_from_builder<L>(builder: WindowBuilder, logger: L)
-                            -> Result<(WinitGraphicsBackend, WinitInputBackend)>
+pub fn init_from_builder<L>(
+    builder: WindowBuilder, logger: L
+) -> Result<(WinitGraphicsBackend, WinitInputBackend)>
 where
     L: Into<Option<::slog::Logger>>,
 {
@@ -121,8 +121,9 @@ where
 /// graphics backend trait, from a given `WindowBuilder` struct, as well as given
 /// `GlAttributes` for further customization of the rendering pipeline and a
 /// corresponding `WinitInputBackend`, which implements the `InputBackend` trait.
-pub fn init_from_builder_with_gl_attr<L>(builder: WindowBuilder, attributes: GlAttributes, logger: L)
-                                         -> Result<(WinitGraphicsBackend, WinitInputBackend)>
+pub fn init_from_builder_with_gl_attr<L>(
+    builder: WindowBuilder, attributes: GlAttributes, logger: L
+) -> Result<(WinitGraphicsBackend, WinitInputBackend)>
 where
     L: Into<Option<::slog::Logger>>,
 {
@@ -191,11 +192,12 @@ impl GraphicsBackend for WinitGraphicsBackend {
         self.window.head().set_cursor_position(x as i32, y as i32)
     }
 
-    fn set_cursor_representation(&self, cursor: Self::CursorFormat, _hotspot: (u32, u32))
-                                 -> ::std::result::Result<(), ()> {
+    fn set_cursor_representation(
+        &self, cursor: &Self::CursorFormat, _hotspot: (u32, u32)
+    ) -> ::std::result::Result<(), ()> {
         // Cannot log this one, as `CursorFormat` is not `Debug` and should not be
         debug!(self.logger, "Changing cursor representation");
-        self.window.head().set_cursor(cursor);
+        self.window.head().set_cursor(*cursor);
         Ok(())
     }
 }
@@ -229,7 +231,8 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
     }
 
     fn is_current(&self) -> bool {
-        self.window.rent(|egl| egl.head().is_current())
+        self.window
+            .rent(|egl| egl.rent_all(|egl| egl.context.is_current() && egl.surface.is_current()))
     }
 
     unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
@@ -372,10 +375,10 @@ impl PointerAxisEvent for WinitMouseWheelEvent {
 
     fn amount(&self) -> f64 {
         match (self.axis, self.delta) {
-            (Axis::Horizontal, MouseScrollDelta::LineDelta(x, _)) |
-            (Axis::Horizontal, MouseScrollDelta::PixelDelta(x, _)) => x as f64,
-            (Axis::Vertical, MouseScrollDelta::LineDelta(_, y)) |
-            (Axis::Vertical, MouseScrollDelta::PixelDelta(_, y)) => y as f64,
+            (Axis::Horizontal, MouseScrollDelta::LineDelta(x, _))
+            | (Axis::Horizontal, MouseScrollDelta::PixelDelta(x, _)) => x as f64,
+            (Axis::Vertical, MouseScrollDelta::LineDelta(_, y))
+            | (Axis::Vertical, MouseScrollDelta::PixelDelta(_, y)) => y as f64,
         }
     }
 }
@@ -625,8 +628,10 @@ impl InputBackend for WinitInputBackend {
                             trace!(logger, "Resizing window to {:?}", (x, y));
                             window.head().set_inner_size(x, y);
                             window.rent(|egl| {
-                                egl.rent(|surface| if let Some(wegl_surface) = (**surface).as_ref() {
-                                    wegl_surface.resize(x as i32, y as i32, 0, 0)
+                                egl.rent(|surface| {
+                                    if let Some(wegl_surface) = (**surface).as_ref() {
+                                        wegl_surface.resize(x as i32, y as i32, 0, 0)
+                                    }
                                 })
                             });
                         }

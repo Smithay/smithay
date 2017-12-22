@@ -87,8 +87,9 @@ impl Seat {
     /// You are provided with the state token to retrieve it (allowing
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
-    pub fn new<L>(evl: &mut EventLoop, name: String, logger: L)
-                  -> (StateToken<Seat>, Global<wl_seat::WlSeat, StateToken<Seat>>)
+    pub fn new<L>(
+        evl: &mut EventLoop, name: String, logger: L
+    ) -> (StateToken<Seat>, Global<wl_seat::WlSeat, StateToken<Seat>>)
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -158,9 +159,10 @@ impl Seat {
     /// Calling this method on a seat that already has a keyboard capability
     /// will overwrite it, and will be seen by the clients as if the
     /// keyboard was unplugged and a new one was plugged.
-    pub fn add_keyboard(&mut self, model: &str, layout: &str, variant: &str, options: Option<String>,
-                        repeat_delay: i32, repeat_rate: i32)
-                        -> Result<KeyboardHandle, KeyboardError> {
+    pub fn add_keyboard(
+        &mut self, model: &str, layout: &str, variant: &str, options: Option<String>, repeat_delay: i32,
+        repeat_rate: i32,
+    ) -> Result<KeyboardHandle, KeyboardError> {
         let keyboard = self::keyboard::create_keyboard_handler(
             "evdev", // we need this one
             model,
@@ -229,8 +231,9 @@ impl Seat {
     }
 }
 
-fn seat_global_bind(evlh: &mut EventLoopHandle, token: &mut StateToken<Seat>, _: &Client,
-                    seat: wl_seat::WlSeat) {
+fn seat_global_bind(
+    evlh: &mut EventLoopHandle, token: &mut StateToken<Seat>, _: &Client, seat: wl_seat::WlSeat
+) {
     evlh.register(&seat, seat_implementation(), token.clone(), None);
     let seat_mgr = evlh.state().get_mut(token);
     seat.name(seat_mgr.name.clone());

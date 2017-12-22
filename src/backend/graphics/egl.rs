@@ -238,9 +238,9 @@ pub struct EGLContext<'a, T: NativeSurface> {
 impl<'a> EGLContext<'a, ()> {
     /// Create a new context from a given `winit`-`Window`
     #[cfg(feature = "backend_winit")]
-    pub fn new_from_winit<L>(window: &'a WinitWindow, attributes: GlAttributes,
-                             reqs: PixelFormatRequirements, logger: L)
-                             -> Result<EGLContext<'a, WinitWindow>>
+    pub fn new_from_winit<L>(
+        window: &'a WinitWindow, attributes: GlAttributes, reqs: PixelFormatRequirements, logger: L
+    ) -> Result<EGLContext<'a, WinitWindow>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -268,9 +268,9 @@ impl<'a> EGLContext<'a, ()> {
 
     /// Create a new context from a given `gbm::Device`
     #[cfg(feature = "backend_drm")]
-    pub fn new_from_gbm<L, U: 'static>(gbm: &'a GbmDevice<'a>, attributes: GlAttributes,
-                                       reqs: PixelFormatRequirements, logger: L)
-                                       -> Result<EGLContext<'a, GbmSurface<'a, U>>>
+    pub fn new_from_gbm<L, U: 'static>(
+        gbm: &'a GbmDevice<'a>, attributes: GlAttributes, reqs: PixelFormatRequirements, logger: L
+    ) -> Result<EGLContext<'a, GbmSurface<'a, U>>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -288,9 +288,10 @@ impl<'a> EGLContext<'a, ()> {
 }
 
 impl<'a, T: NativeSurface> EGLContext<'a, T> {
-    unsafe fn new(native: NativeDisplayPtr, mut attributes: GlAttributes, reqs: PixelFormatRequirements,
-                  log: ::slog::Logger)
-                  -> Result<EGLContext<'a, T>>
+    unsafe fn new(
+        native: NativeDisplayPtr, mut attributes: GlAttributes, reqs: PixelFormatRequirements,
+        log: ::slog::Logger,
+    ) -> Result<EGLContext<'a, T>>
     where
         T: NativeSurface,
     {
@@ -322,8 +323,7 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
             Some(version) => {
                 error!(
                     log,
-                    "OpenGLES {:?} is unknown and not supported by the EGL renderer backend",
-                    version
+                    "OpenGLES {:?} is unknown and not supported by the EGL renderer backend", version
                 );
                 bail!(ErrorKind::OpenGlVersionNotSupported(version));
             }
@@ -423,9 +423,9 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
                 )
             }
 
-            NativeDisplayPtr::X11(display) |
-            NativeDisplayPtr::Gbm(display) |
-            NativeDisplayPtr::Wayland(display) => {
+            NativeDisplayPtr::X11(display)
+            | NativeDisplayPtr::Gbm(display)
+            | NativeDisplayPtr::Wayland(display) => {
                 trace!(log, "Default EGL Display Initialization via GetDisplay");
                 egl.GetDisplay(display as *mut _)
             }
@@ -727,9 +727,9 @@ impl<'a, T: NativeSurface> EGLContext<'a, T> {
                 self.display,
                 self.config_id,
                 match surface {
-                    NativeSurfacePtr::X11(ptr) |
-                    NativeSurfacePtr::Wayland(ptr) |
-                    NativeSurfacePtr::Gbm(ptr) => ptr,
+                    NativeSurfacePtr::X11(ptr)
+                    | NativeSurfacePtr::Wayland(ptr)
+                    | NativeSurfacePtr::Gbm(ptr) => ptr,
                 },
                 self.surface_attributes.as_ptr(),
             )
@@ -817,7 +817,7 @@ impl<'context, 'surface, T: NativeSurface> EGLSurface<'context, 'surface, T> {
         if ret == 0 {
             match unsafe { self.context.egl.GetError() } as u32 {
                 ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
-                err => panic!("eglSwapBuffers failed (eglGetError returned 0x{:x})", err),
+                err => Err(SwapBuffersError::Unknown(err)),
             }
         } else {
             Ok(())
@@ -845,6 +845,14 @@ impl<'context, 'surface, T: NativeSurface> EGLSurface<'context, 'surface, T> {
             }
         } else {
             Ok(())
+        }
+    }
+
+    /// Returns true if the OpenGL surface is the current one in the thread.
+    pub fn is_current(&self) -> bool {
+        unsafe {
+            self.context.egl.GetCurrentSurface(ffi::egl::DRAW as _) == self.surface as *const _
+                && self.context.egl.GetCurrentSurface(ffi::egl::READ as _) == self.surface as *const _
         }
     }
 }
@@ -882,6 +890,8 @@ pub enum SwapBuffersError {
     /// This error can be returned when `swap_buffers` has been called multiple times
     /// without any modification in between.
     AlreadySwapped,
+    /// Unknown GL error
+    Unknown(u32),
 }
 
 impl fmt::Display for SwapBuffersError {
@@ -898,6 +908,7 @@ impl error::Error for SwapBuffersError {
             SwapBuffersError::AlreadySwapped => {
                 "Buffers are already swapped, swap_buffers was called too many times"
             }
+            SwapBuffersError::Unknown(_) => "Unknown Open GL error occurred",
         }
     }
 

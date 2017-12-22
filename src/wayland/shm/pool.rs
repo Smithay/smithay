@@ -1,5 +1,3 @@
-
-
 use nix::{libc, unistd};
 use nix::sys::mman;
 use nix::sys::signal::{self, SigAction, SigHandler, Signal};

@@ -302,12 +302,12 @@ impl<U, R, CID, SID, SD> Clone for ShellSurfaceIData<U, R, CID, SID, SD> {
 /// globals from the event loop in the future.
 pub fn shell_init<U, R, CID, SID, SD, L>(
     evl: &mut EventLoop, token: CompositorToken<U, R, CID>,
-    implementation: ShellSurfaceUserImplementation<U, R, CID, SID, SD>, idata: SID, logger: L)
-    -> (
-        StateToken<ShellState<U, R, CID, SD>>,
-        Global<wl_shell::WlShell, ShellSurfaceIData<U, R, CID, SID, SD>>,
-        Global<zxdg_shell_v6::ZxdgShellV6, ShellSurfaceIData<U, R, CID, SID, SD>>,
-    )
+    implementation: ShellSurfaceUserImplementation<U, R, CID, SID, SD>, idata: SID, logger: L,
+) -> (
+    StateToken<ShellState<U, R, CID, SD>>,
+    Global<wl_shell::WlShell, ShellSurfaceIData<U, R, CID, SID, SD>>,
+    Global<zxdg_shell_v6::ZxdgShellV6, ShellSurfaceIData<U, R, CID, SID, SD>>,
+)
 where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
@@ -449,7 +449,8 @@ impl<SD> ShellClient<SD> {
         }
         match self.kind {
             ShellClientKind::Wl(ref shell) => {
-                let mutex = unsafe { &*(shell.get_user_data() as *mut self::wl_handlers::ShellUserData<SD>) };
+                let mutex =
+                    unsafe { &*(shell.get_user_data() as *mut self::wl_handlers::ShellUserData<SD>) };
                 let mut guard = mutex.lock().unwrap();
                 if guard.0.pending_ping == 0 {
                     return Err(());
@@ -486,7 +487,8 @@ impl<SD> ShellClient<SD> {
         }
         match self.kind {
             ShellClientKind::Wl(ref shell) => {
-                let mutex = unsafe { &*(shell.get_user_data() as *mut self::wl_handlers::ShellUserData<SD>) };
+                let mutex =
+                    unsafe { &*(shell.get_user_data() as *mut self::wl_handlers::ShellUserData<SD>) };
                 let mut guard = mutex.lock().unwrap();
                 Ok(f(&mut guard.0.data))
             }
@@ -844,46 +846,44 @@ pub struct ShellSurfaceUserImplementation<U, R, CID, SID, SD> {
     ///
     /// You need to return a `ToplevelConfigure` from this function, which will be sent
     /// to the client to configure this surface
-    pub new_toplevel: fn(
-     evlh: &mut EventLoopHandle,
-     idata: &mut SID,
-     surface: ToplevelSurface<U, R, CID, SD>,
-    ) -> ToplevelConfigure,
+    pub new_toplevel:
+        fn(evlh: &mut EventLoopHandle, idata: &mut SID, surface: ToplevelSurface<U, R, CID, SD>)
+            -> ToplevelConfigure,
     /// A new popup surface was created
     ///
     /// You need to return a `PopupConfigure` from this function, which will be sent
     /// to the client to configure this surface
     pub new_popup: fn(evlh: &mut EventLoopHandle, idata: &mut SID, surface: PopupSurface<U, R, CID, SD>)
-     -> PopupConfigure,
+        -> PopupConfigure,
     /// The client requested the start of an interactive move for this surface
     pub move_: fn(
-     evlh: &mut EventLoopHandle,
-     idata: &mut SID,
-     surface: ToplevelSurface<U, R, CID, SD>,
-     seat: &wl_seat::WlSeat,
-     serial: u32,
+        evlh: &mut EventLoopHandle,
+        idata: &mut SID,
+        surface: ToplevelSurface<U, R, CID, SD>,
+        seat: &wl_seat::WlSeat,
+        serial: u32,
     ),
     /// The client requested the start of an interactive resize for this surface
     ///
     /// The `edges` argument specifies which part of the window's border is being dragged.
     pub resize: fn(
-     evlh: &mut EventLoopHandle,
-     idata: &mut SID,
-     surface: ToplevelSurface<U, R, CID, SD>,
-     seat: &wl_seat::WlSeat,
-     serial: u32,
-     edges: zxdg_toplevel_v6::ResizeEdge,
+        evlh: &mut EventLoopHandle,
+        idata: &mut SID,
+        surface: ToplevelSurface<U, R, CID, SD>,
+        seat: &wl_seat::WlSeat,
+        serial: u32,
+        edges: zxdg_toplevel_v6::ResizeEdge,
     ),
     /// This popup requests a grab of the pointer
     ///
     /// This means it requests to be sent a `popup_done` event when the pointer leaves
     /// the grab area.
     pub grab: fn(
-     evlh: &mut EventLoopHandle,
-     idata: &mut SID,
-     surface: PopupSurface<U, R, CID, SD>,
-     seat: &wl_seat::WlSeat,
-     serial: u32,
+        evlh: &mut EventLoopHandle,
+        idata: &mut SID,
+        surface: PopupSurface<U, R, CID, SD>,
+        seat: &wl_seat::WlSeat,
+        serial: u32,
     ),
     /// A toplevel surface requested its display state to be changed
     ///
@@ -899,26 +899,26 @@ pub struct ShellSurfaceUserImplementation<U, R, CID, SID, SD> {
     /// You are to answer with a `ToplevelConfigure` that will be sent to the client in
     /// response.
     pub change_display_state: fn(
-     evlh: &mut EventLoopHandle,
-     idata: &mut SID,
-     surface: ToplevelSurface<U, R, CID, SD>,
-     maximized: Option<bool>,
-     minimized: Option<bool>,
-     fullscreen: Option<bool>,
-     output: Option<&wl_output::WlOutput>,
+        evlh: &mut EventLoopHandle,
+        idata: &mut SID,
+        surface: ToplevelSurface<U, R, CID, SD>,
+        maximized: Option<bool>,
+        minimized: Option<bool>,
+        fullscreen: Option<bool>,
+        output: Option<&wl_output::WlOutput>,
     ) -> ToplevelConfigure,
     /// The client requests the window menu to be displayed on this surface at this location
     ///
     /// This menu belongs to the compositor. It is typically expected to contain options for
     /// control of the window (maximize/minimize/close/move/etc...).
     pub show_window_menu: fn(
-     evlh: &mut EventLoopHandle,
-     idata: &mut SID,
-     surface: ToplevelSurface<U, R, CID, SD>,
-     seat: &wl_seat::WlSeat,
-     serial: u32,
-     x: i32,
-     y: i32,
+        evlh: &mut EventLoopHandle,
+        idata: &mut SID,
+        surface: ToplevelSurface<U, R, CID, SD>,
+        seat: &wl_seat::WlSeat,
+        serial: u32,
+        x: i32,
+        y: i32,
     ),
 }
 

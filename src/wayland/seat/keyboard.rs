@@ -66,9 +66,10 @@ struct KbdInternal {
 }
 
 impl KbdInternal {
-    fn new(rules: &str, model: &str, layout: &str, variant: &str, options: Option<String>,
-           repeat_rate: i32, repeat_delay: i32)
-           -> Result<KbdInternal, ()> {
+    fn new(
+        rules: &str, model: &str, layout: &str, variant: &str, options: Option<String>, repeat_rate: i32,
+        repeat_delay: i32,
+    ) -> Result<KbdInternal, ()> {
         // we create a new contex for each keyboard because libxkbcommon is actually NOT threadsafe
         // so confining it inside the KbdInternal allows us to use Rusts mutability rules to make
         // sure nothing goes wrong.
@@ -168,10 +169,10 @@ pub enum Error {
 }
 
 /// Create a keyboard handler from a set of RMLVO rules
-pub(crate) fn create_keyboard_handler(rules: &str, model: &str, layout: &str, variant: &str,
-                                      options: Option<String>, repeat_delay: i32, repeat_rate: i32,
-                                      logger: &::slog::Logger)
-                                      -> Result<KeyboardHandle, Error> {
+pub(crate) fn create_keyboard_handler(
+    rules: &str, model: &str, layout: &str, variant: &str, options: Option<String>, repeat_delay: i32,
+    repeat_rate: i32, logger: &::slog::Logger,
+) -> Result<KeyboardHandle, Error> {
     let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
     info!(log, "Initializing a xkbcommon handler with keymap query";
         "rules" => rules, "model" => model, "layout" => layout, "variant" => variant,
@@ -191,7 +192,6 @@ pub(crate) fn create_keyboard_handler(rules: &str, model: &str, layout: &str, va
     })?;
 
     info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
-
 
     // prepare a tempfile with the keymap, to send it to clients
     let mut keymap_file = tempfile().map_err(Error::IoError)?;

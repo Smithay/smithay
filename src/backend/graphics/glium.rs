@@ -14,6 +14,7 @@ impl From<SwapBuffersError> for GliumSwapBuffersError {
         match error {
             SwapBuffersError::ContextLost => GliumSwapBuffersError::ContextLost,
             SwapBuffersError::AlreadySwapped => GliumSwapBuffersError::AlreadySwapped,
+            SwapBuffersError::Unknown(_) => GliumSwapBuffersError::ContextLost, // TODO
         }
     }
 }

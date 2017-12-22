@@ -1,13 +1,18 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
-use backend::{SeatInternal, TouchSlotInternal};
 use backend::input as backend;
+#[cfg(feature = "backend_session")]
+use backend::session::{AsErrno, Session, SessionObserver};
 use input as libinput;
 use input::event;
 use std::collections::hash_map::{DefaultHasher, Entry, HashMap};
 use std::hash::{Hash, Hasher};
-use std::io::Error as IoError;
+use std::io::{Error as IoError, Result as IoResult};
+use std::os::unix::io::RawFd;
+use std::path::Path;
 use std::rc::Rc;
+use wayland_server::{EventLoopHandle, StateProxy};
+use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 
 /// Libinput based `InputBackend`.
 ///
@@ -261,7 +266,7 @@ impl backend::InputBackend for LibinputInputBackend {
         if self.handler.is_some() {
             self.clear_handler();
         }
-        info!(self.logger, "New input handler set.");
+        info!(self.logger, "New input handler set");
         for seat in self.seats.values() {
             trace!(self.logger, "Calling on_seat_created with {:?}", seat);
             handler.on_seat_created(seat);
@@ -547,5 +552,73 @@ impl From<event::pointer::ButtonState> for backend::MouseButtonState {
             event::pointer::ButtonState::Pressed => backend::MouseButtonState::Pressed,
             event::pointer::ButtonState::Released => backend::MouseButtonState::Released,
         }
+    }
+}
+
+#[cfg(feature = "backend_session")]
+impl SessionObserver for libinput::Libinput {
+    fn pause<'a>(&mut self, _state: &mut StateProxy<'a>) {
+        self.suspend()
+    }
+
+    fn activate<'a>(&mut self, _state: &mut StateProxy<'a>) {
+        // TODO Is this the best way to handle this failure?
+        self.resume().expect("Unable to resume libinput context");
+    }
+}
+
+/// Wrapper for types implementing the `Session` trait to provide
+/// a `LibinputInterface` implementation.
+#[cfg(feature = "backend_session")]
+pub struct LibinputSessionInterface<S: Session>(S);
+
+#[cfg(feature = "backend_session")]
+impl<S: Session> From<S> for LibinputSessionInterface<S> {
+    fn from(session: S) -> LibinputSessionInterface<S> {
+        LibinputSessionInterface(session)
+    }
+}
+
+#[cfg(feature = "backend_session")]
+impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
+    fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<RawFd, i32> {
+        use nix::fcntl::OFlag;
+        self.0
+            .open(path, OFlag::from_bits_truncate(flags))
+            .map_err(|err| err.as_errno().unwrap_or(1 /*Use EPERM by default*/))
+    }
+
+    fn close_restricted(&mut self, fd: RawFd) {
+        let _ = self.0.close(fd);
+    }
+}
+
+/// Binds a `LibinputInputBackend` to a given `EventLoop`.
+///
+/// Automatically feeds the backend with incoming events without any manual calls to
+/// `dispatch_new_events`. Should be used to achieve the smallest possible latency.
+pub fn libinput_bind(
+    backend: LibinputInputBackend, evlh: &mut EventLoopHandle
+) -> IoResult<FdEventSource<LibinputInputBackend>> {
+    let fd = unsafe { backend.context.fd() };
+    evlh.add_fd_event_source(
+        fd,
+        fd_event_source_implementation(),
+        backend,
+        FdInterest::READ,
+    )
+}
+
+fn fd_event_source_implementation() -> FdEventSourceImpl<LibinputInputBackend> {
+    FdEventSourceImpl {
+        ready: |_evlh, ref mut backend, _, _| {
+            use backend::input::InputBackend;
+            if let Err(error) = backend.dispatch_new_events() {
+                warn!(backend.logger, "Libinput errored: {}", error);
+            }
+        },
+        error: |_evlh, ref backend, _, error| {
+            warn!(backend.logger, "Libinput fd errored: {}", error);
+        },
     }
 }

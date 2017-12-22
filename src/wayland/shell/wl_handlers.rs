@@ -10,10 +10,10 @@ use wayland_protocols::unstable::xdg_shell::v6::server::{zxdg_positioner_v6 as x
 use wayland_server::{Client, EventLoopHandle, Resource};
 use wayland_server::protocol::{wl_output, wl_shell, wl_shell_surface, wl_surface};
 
-pub(crate) fn wl_shell_bind<U, R, CID, SID, SD>(evlh: &mut EventLoopHandle,
-                                                idata: &mut ShellSurfaceIData<U, R, CID, SID, SD>,
-                                                _: &Client, shell: wl_shell::WlShell)
-where
+pub(crate) fn wl_shell_bind<U, R, CID, SID, SD>(
+    evlh: &mut EventLoopHandle, idata: &mut ShellSurfaceIData<U, R, CID, SID, SD>, _: &Client,
+    shell: wl_shell::WlShell,
+) where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
     CID: 'static,
@@ -56,8 +56,7 @@ pub fn make_shell_client<SD>(resource: &wl_shell::WlShell) -> ShellClient<SD> {
 }
 
 fn shell_implementation<U, R, CID, SID, SD>(
-    )
-    -> wl_shell::Implementation<ShellSurfaceIData<U, R, CID, SID, SD>>
+) -> wl_shell::Implementation<ShellSurfaceIData<U, R, CID, SID, SD>>
 where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
@@ -122,9 +121,9 @@ fn destroy_shell_surface(shell_surface: &wl_shell_surface::WlShellSurface) {
     ::std::mem::drop(surface);
 }
 
-fn make_toplevel_handle<U, R, H, SD>(token: CompositorToken<U, R, H>,
-                                     resource: &wl_shell_surface::WlShellSurface)
-                                     -> super::ToplevelSurface<U, R, H, SD> {
+fn make_toplevel_handle<U, R, H, SD>(
+    token: CompositorToken<U, R, H>, resource: &wl_shell_surface::WlShellSurface
+) -> super::ToplevelSurface<U, R, H, SD> {
     let ptr = resource.get_user_data();
     let &(ref wl_surface, _) = unsafe { &*(ptr as *mut ShellSurfaceUserData) };
     super::ToplevelSurface {
@@ -135,9 +134,9 @@ fn make_toplevel_handle<U, R, H, SD>(token: CompositorToken<U, R, H>,
     }
 }
 
-fn make_popup_handle<U, R, H, SD>(token: CompositorToken<U, R, H>,
-                                  resource: &wl_shell_surface::WlShellSurface)
-                                  -> super::PopupSurface<U, R, H, SD> {
+fn make_popup_handle<U, R, H, SD>(
+    token: CompositorToken<U, R, H>, resource: &wl_shell_surface::WlShellSurface
+) -> super::PopupSurface<U, R, H, SD> {
     let ptr = resource.get_user_data();
     let &(ref wl_surface, _) = unsafe { &*(ptr as *mut ShellSurfaceUserData) };
     super::PopupSurface {
@@ -158,12 +157,11 @@ pub fn send_popup_configure(resource: &wl_shell_surface::WlShellSurface, configu
     resource.configure(wl_shell_surface::Resize::empty(), w, h);
 }
 
-fn wl_handle_display_state_change<U, R, CID, SID, SD>(evlh: &mut EventLoopHandle,
-                                                      idata: &ShellSurfaceIData<U, R, CID, SID, SD>,
-                                                      shell_surface: &wl_shell_surface::WlShellSurface,
-                                                      maximized: Option<bool>, minimized: Option<bool>,
-                                                      fullscreen: Option<bool>,
-                                                      output: Option<&wl_output::WlOutput>) {
+fn wl_handle_display_state_change<U, R, CID, SID, SD>(
+    evlh: &mut EventLoopHandle, idata: &ShellSurfaceIData<U, R, CID, SID, SD>,
+    shell_surface: &wl_shell_surface::WlShellSurface, maximized: Option<bool>, minimized: Option<bool>,
+    fullscreen: Option<bool>, output: Option<&wl_output::WlOutput>,
+) {
     let handle = make_toplevel_handle(idata.compositor_token, shell_surface);
     // handler callback
     let mut user_idata = idata.idata.borrow_mut();
@@ -181,10 +179,10 @@ fn wl_handle_display_state_change<U, R, CID, SID, SD>(evlh: &mut EventLoopHandle
     shell_surface.configure(wl_shell_surface::Resize::None, w, h);
 }
 
-fn wl_set_parent<U, R, CID, SID, SD>(idata: &ShellSurfaceIData<U, R, CID, SID, SD>,
-                                     shell_surface: &wl_shell_surface::WlShellSurface,
-                                     parent: Option<wl_surface::WlSurface>)
-where
+fn wl_set_parent<U, R, CID, SID, SD>(
+    idata: &ShellSurfaceIData<U, R, CID, SID, SD>, shell_surface: &wl_shell_surface::WlShellSurface,
+    parent: Option<wl_surface::WlSurface>,
+) where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
     CID: 'static,
@@ -204,10 +202,10 @@ where
         .unwrap();
 }
 
-fn wl_ensure_toplevel<U, R, CID, SID, SD>(evlh: &mut EventLoopHandle,
-                                          idata: &ShellSurfaceIData<U, R, CID, SID, SD>,
-                                          shell_surface: &wl_shell_surface::WlShellSurface)
-where
+fn wl_ensure_toplevel<U, R, CID, SID, SD>(
+    evlh: &mut EventLoopHandle, idata: &ShellSurfaceIData<U, R, CID, SID, SD>,
+    shell_surface: &wl_shell_surface::WlShellSurface,
+) where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
     CID: 'static,
@@ -263,8 +261,7 @@ where
 }
 
 fn shell_surface_implementation<U, R, CID, SID, SD>(
-    )
-    -> wl_shell_surface::Implementation<ShellSurfaceIData<U, R, CID, SID, SD>>
+) -> wl_shell_surface::Implementation<ShellSurfaceIData<U, R, CID, SID, SD>>
 where
     U: 'static,
     R: Role<ShellSurfaceRole> + 'static,
@@ -274,7 +271,8 @@ where
 {
     wl_shell_surface::Implementation {
         pong: |evlh, idata, _, shell_surface, serial| {
-            let &(_, ref shell) = unsafe { &*(shell_surface.get_user_data() as *mut ShellSurfaceUserData) };
+            let &(_, ref shell) =
+                unsafe { &*(shell_surface.get_user_data() as *mut ShellSurfaceUserData) };
             let valid = {
                 let mutex = unsafe { &*(shell.get_user_data() as *mut ShellUserData<SD>) };
                 let mut guard = mutex.lock().unwrap();

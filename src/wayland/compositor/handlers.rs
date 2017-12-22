@@ -11,9 +11,10 @@ use wayland_server::protocol::{wl_compositor, wl_region, wl_subcompositor, wl_su
  * wl_compositor
  */
 
-pub(crate) fn compositor_bind<U, R, ID>(evlh: &mut EventLoopHandle, idata: &mut SurfaceIData<U, R, ID>,
-                                        _: &Client, compositor: wl_compositor::WlCompositor)
-where
+pub(crate) fn compositor_bind<U, R, ID>(
+    evlh: &mut EventLoopHandle, idata: &mut SurfaceIData<U, R, ID>, _: &Client,
+    compositor: wl_compositor::WlCompositor,
+) where
     U: Default + 'static,
     R: Default + 'static,
     ID: 'static,
@@ -65,8 +66,9 @@ pub struct SurfaceIData<U, R, ID> {
 }
 
 impl<U, R, ID> SurfaceIData<U, R, ID> {
-    pub(crate) fn make(log: ::slog::Logger, implem: SurfaceUserImplementation<U, R, ID>, idata: ID)
-                       -> SurfaceIData<U, R, ID> {
+    pub(crate) fn make(
+        log: ::slog::Logger, implem: SurfaceUserImplementation<U, R, ID>, idata: ID
+    ) -> SurfaceIData<U, R, ID> {
         SurfaceIData {
             log: log,
             implem: implem,
@@ -86,9 +88,7 @@ impl<U, R, ID> Clone for SurfaceIData<U, R, ID> {
 }
 
 pub(crate) fn surface_implementation<U: 'static, R: 'static, ID: 'static>(
-    )
-    -> wl_surface::Implementation<SurfaceIData<U, R, ID>>
-{
+) -> wl_surface::Implementation<SurfaceIData<U, R, ID>> {
     wl_surface::Implementation {
         attach: |_, _, _, surface, buffer, x, y| unsafe {
             SurfaceData::<U, R>::with_data(surface, |d| {
@@ -199,9 +199,9 @@ fn destroy_region(region: &wl_region::WlRegion) {
  * wl_subcompositor
  */
 
-pub(crate) fn subcompositor_bind<U, R>(evlh: &mut EventLoopHandle, _: &mut (), _: &Client,
-                                       subcompositor: wl_subcompositor::WlSubcompositor)
-where
+pub(crate) fn subcompositor_bind<U, R>(
+    evlh: &mut EventLoopHandle, _: &mut (), _: &Client, subcompositor: wl_subcompositor::WlSubcompositor
+) where
     R: RoleType + Role<SubsurfaceRole> + 'static,
     U: 'static,
 {
