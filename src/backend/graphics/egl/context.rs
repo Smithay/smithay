@@ -18,7 +18,6 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 #[cfg(feature = "backend_drm")]
 use std::os::unix::io::{AsRawFd, RawFd};
-use wayland_server::Display;
 
 /// EGL context for rendering
 pub struct EGLContext<B: native::Backend, N: native::NativeDisplay<B>> {
@@ -28,8 +27,8 @@ pub struct EGLContext<B: native::Backend, N: native::NativeDisplay<B>> {
     pub(crate) config_id: ffi::egl::types::EGLConfig,
     pub(crate) surface_attributes: Vec<c_int>,
     pixel_format: PixelFormat,
-    wl_drm_support: bool,
-    egl_to_texture_support: bool,
+    pub(crate) wl_drm_support: bool,
+    pub(crate) egl_to_texture_support: bool,
     logger: slog::Logger,
     _backend: PhantomData<B>,
 }
@@ -474,68 +473,6 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     pub fn get_pixel_format(&self) -> PixelFormat {
         self.pixel_format
     }
-
-    /// Binds this EGL context to the given Wayland display.
-    ///
-    /// This will allow clients to utilize EGL to create hardware-accelerated
-    /// surfaces. The server will need to be able to handle egl-wl_buffers.
-    /// See the `wayland::drm` module.
-    ///
-    /// ## Errors
-    ///
-    /// This might return `WlExtensionNotSupported` if binding is not supported
-    /// by the EGL implementation.
-    ///
-    /// This might return `OtherEGLDisplayAlreadyBound` if called for the same
-    /// `Display` multiple times, as only one context may be bound at any given time.
-    pub fn bind_wl_display(&self, display: &Display) -> Result<()> {
-        if !self.wl_drm_support {
-            bail!(ErrorKind::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
-        }
-        let res = unsafe { ffi::egl::BindWaylandDisplayWL(*self.display, display.ptr() as *mut _) };
-        if res == 0 {
-            bail!(ErrorKind::OtherEGLDisplayAlreadyBound);
-        }
-        Ok(())
-    }
-
-    /// Unbinds this EGL context from the given Wayland display.
-    ///
-    /// This will stop clients from using previously available extensions
-    /// to utilize hardware-accelerated surface via EGL.
-    ///
-    /// ## Errors
-    ///
-    /// This might return `WlExtensionNotSupported` if binding is not supported
-    /// by the EGL implementation.
-    ///
-    /// This might return `OtherEGLDisplayAlreadyBound` if called for the same
-    /// `Display` multiple times, as only one context may be bound at any given time.
-    pub fn unbind_wl_display(&self, display: &Display) -> Result<()> {
-        if !self.wl_drm_support {
-            bail!(ErrorKind::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
-        }
-        let res = unsafe { ffi::egl::UnbindWaylandDisplayWL(*self.display, display.ptr() as *mut _) };
-        if res == 0 {
-            bail!(ErrorKind::NoEGLDisplayBound);
-        }
-        Ok(())
-    }
-
-    /*
-    pub unsafe fn egl_image_to_texture(&self, image: ffi::egl::types::EGLImage, tex_id: c_uint) -> Result<()> {
-        if !self.egl_to_texture_support {
-            bail!(ErrorKind::EglExtensionNotSupported(&["EGL_OES_image", "EGL_OES_image_base"]));
-        }
-       ffi::gl::EGLImageTargetTexture2DOES(tex_id, image);
-        Ok(())
-    }
-
-    pub unsafe fn destroy_egl_image(&self, image: ffi::egl::types::EGLImage, tex_id: c_uint) -> Result<()> {
-        ffi::gl::DestroyImageKHR(self.display, image);
-        Ok(())
-    }
-    */
 }
 
 unsafe impl<B: native::Backend, N: native::NativeDisplay<B> + Send> Send for EGLContext<B, N> {}

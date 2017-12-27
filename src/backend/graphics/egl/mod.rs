@@ -19,6 +19,7 @@ pub mod ffi;
 pub mod native;
 pub mod surface;
 pub use self::surface::EGLSurface;
+pub mod wayland;
 
 /// Error that can happen when swapping buffers.
 #[derive(Debug, Clone, PartialEq)]
@@ -166,6 +167,7 @@ pub trait EGLGraphicsBackend: GraphicsBackend {
     /// This might return `OtherEGLDisplayAlreadyBound` if called for the same
     /// `Display` multiple times, as only one context may be bound at any given time.
     fn bind_wl_display(&self, display: &Display) -> ::std::result::Result<(), EglExtensionNotSupportedError>;
+
     /// Unbinds this EGL context from the given Wayland display.
     ///
     /// This will stop clients from using previously available extensions

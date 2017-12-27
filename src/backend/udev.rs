@@ -87,7 +87,7 @@ impl<
             .into_iter()
             // Create devices
             .flat_map(|path| {
-                match unsafe { DrmDevice::new(
+                match DrmDevice::new(
                     {
                         match session.open(&path, fcntl::O_RDWR | fcntl::O_CLOEXEC | fcntl::O_NOCTTY | fcntl::O_NONBLOCK) {
                             Ok(fd) => SessionFdDrmDevice(fd),
@@ -97,7 +97,7 @@ impl<
                             }
                         }
                     }, logger.clone()
-                ) } {
+                ) {
                     // Call the handler, which might add it to the runloop
                     Ok(mut device) => match handler.device_added(&mut evlh.state().as_proxy(), &mut device) {
                         // fstat them
@@ -253,25 +253,23 @@ where
                         info!(evlh.state().get(token).logger, "Device Added");
                         if let (Some(path), Some(devnum)) = (event.devnode(), event.devnum()) {
                             let mut device = {
-                                match unsafe {
-                                    DrmDevice::new(
-                                        {
-                                            let logger = evlh.state().get(token).logger.clone();
-                                            match evlh.state().get_mut(token).session.open(
-                                                path,
-                                                fcntl::O_RDWR | fcntl::O_CLOEXEC | fcntl::O_NOCTTY
-                                                    | fcntl::O_NONBLOCK,
-                                            ) {
-                                                Ok(fd) => SessionFdDrmDevice(fd),
-                                                Err(err) => {
-                                                    warn!(logger, "Unable to open drm device {:?}, Error: {:?}. Skipping", path, err);
-                                                    continue;
-                                                }
+                                match DrmDevice::new(
+                                    {
+                                        let logger = evlh.state().get(token).logger.clone();
+                                        match evlh.state().get_mut(token).session.open(
+                                            path,
+                                            fcntl::O_RDWR | fcntl::O_CLOEXEC | fcntl::O_NOCTTY
+                                                | fcntl::O_NONBLOCK,
+                                        ) {
+                                            Ok(fd) => SessionFdDrmDevice(fd),
+                                            Err(err) => {
+                                                warn!(logger, "Unable to open drm device {:?}, Error: {:?}. Skipping", path, err);
+                                                continue;
                                             }
-                                        },
-                                        evlh.state().get(token).logger.clone(),
-                                    )
-                                } {
+                                        }
+                                    },
+                                    evlh.state().get(token).logger.clone(),
+                                ) {
                                     Ok(dev) => dev,
                                     Err(err) => {
                                         warn!(

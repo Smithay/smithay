@@ -47,6 +47,11 @@ error_chain! {
             description("Failed to create a new EGLSurface")
         }
 
+        #[doc = "The OpenGL context has been lost and needs to be recreated"]
+        ContextLost {
+            description("The OpenGL context has been lost and needs to be recreated")
+        }
+
         #[doc = "The required EGL extension is not supported by the underlying EGL implementation"]
         EglExtensionNotSupported(extensions: &'static [&'static str]) {
             description("The required EGL extension is not supported by the underlying EGL implementation"),
@@ -62,6 +67,21 @@ error_chain! {
         #[doc = "No EGLDisplay is currently bound to this WlDisplay"]
         NoEGLDisplayBound {
             description("No EGLDisplay is currently bound to this WlDisplay")
+        }
+
+        #[doc = "Index of plane is out of bounds for EGLImages"]
+        PlaneIndexOutOfBounds {
+            description("Index of plane is out of bounds for EGLImages")
+        }
+
+        #[doc = "This buffer is not mananged by EGL"]
+        BufferNotManaged {
+            description("This buffer is not mananged by EGL")
+        }
+
+        #[doc = "Failed to create EGLImages from the buffer"]
+        EGLImageCreationFailed {
+            description("Failed to create EGLImages from the buffer")
         }
 
         #[doc = "The reason of failure could not be determined"]
