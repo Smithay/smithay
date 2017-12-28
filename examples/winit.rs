@@ -27,23 +27,23 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wayland_server::protocol::{wl_output, wl_pointer};
 
-struct WinitInputHandler {
+struct WinitInputHandler<G: EGLGraphicsBackend + 'static> {
     log: Logger,
     pointer: PointerHandle,
     keyboard: KeyboardHandle,
-    window_map: Rc<RefCell<MyWindowMap>>,
+    window_map: Rc<RefCell<MyWindowMap<G>>>,
     pointer_location: (f64, f64),
     serial: u32,
 }
 
-impl WinitInputHandler {
+impl<G: EGLGraphicsBackend + 'static> WinitInputHandler<G> {
     fn next_serial(&mut self) -> u32 {
         self.serial += 1;
         self.serial
     }
 }
 
-impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
+impl<G: EGLGraphicsBackend + 'static> InputHandler<winit::WinitInputBackend> for WinitInputHandler<G> {
     fn on_seat_created(&mut self, _: &input::Seat) {
         /* never happens with winit */
     }
@@ -140,6 +140,7 @@ fn main() {
         info!(log, "EGL hardware-acceleration enabled");
     }
 
+    let (w, h) = renderer.get_framebuffer_dimensions();
     let drawer = Rc::new(GliumDrawer::from(renderer));
 
     /*
@@ -172,7 +173,6 @@ fn main() {
         log.clone(),
     );
 
-    let (w, h) = renderer.get_framebuffer_dimensions();
     event_loop
         .state()
         .get_mut(&output_token)
@@ -194,10 +194,6 @@ fn main() {
             refresh: 60_000,
         });
 
-    /*
-     * Initialize glium
-     */
-
     input.set_handler(WinitInputHandler {
         log: log.clone(),
         pointer,
@@ -217,7 +213,7 @@ fn main() {
         input.dispatch_new_events().unwrap();
 
         let mut frame = drawer.draw();
-        frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, None, None);
+        frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
         // redraw the frame, in a simple but inneficient way
         {
             let screen_dimensions = drawer.get_framebuffer_dimensions();
@@ -232,7 +228,7 @@ fn main() {
                                 initial_place,
                                 |_surface, attributes, role, &(mut x, mut y)| {
                                         // there is actually something to draw !
-                                    if let Some(texture) = attributes.user_data.texture {
+                                    if let Some(ref texture) = attributes.user_data.texture {
                                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                                             x += subdata.x;
                                             y += subdata.y;
@@ -241,11 +237,11 @@ fn main() {
                                             &mut frame,
                                             texture,
                                             match *attributes.user_data.buffer.as_ref().unwrap() {
-                                                Buffer::Egl { ref attributes, .. } => attributes.y_inverted,
+                                                Buffer::Egl { ref images } => images.y_inverted,
                                                 Buffer::Shm { .. } => false,
                                             },
                                             match *attributes.user_data.buffer.as_ref().unwrap() {
-                                                Buffer::Egl { ref attributes, .. } => (attributes.width, attributes.height),
+                                                Buffer::Egl { ref images } => (images.width, images.height),
                                                 Buffer::Shm { ref size, .. } => *size,
                                             },
                                             (x, y),

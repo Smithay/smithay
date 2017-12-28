@@ -1,7 +1,7 @@
 //! Implementation of backend traits for types provided by `winit`
 
 use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{EGLGraphicsBackend, EGLContext, EGLSurface, PixelFormat, SwapBuffersError, EglExtensionNotSupportedError};
+use backend::graphics::egl::{EGLGraphicsBackend, EGLContext, EGLSurface, BufferAccessError, PixelFormat, SwapBuffersError, EglExtensionNotSupportedError, EGLImages};
 use backend::graphics::egl::error as egl_error;
 use backend::graphics::egl::native;
 use backend::graphics::egl::context::{GlAttributes, PixelFormatRequirements};
@@ -18,6 +18,7 @@ use winit::{ElementState, Event, EventsLoop, KeyboardInput, MouseButton as Winit
             MouseScrollDelta, Touch, TouchPhase, WindowBuilder, WindowEvent, Window as WinitWindow};
 use wayland_client::egl as wegl;
 use wayland_server::Display;
+use wayland_server::protocol::wl_buffer::WlBuffer;
 
 error_chain! {
     errors {
@@ -134,13 +135,7 @@ where
         .chain_err(|| ErrorKind::InitFailed)?;
     debug!(log, "Window created");
 
-    let reqs = PixelFormatRequirements {
-        hardware_accelerated: Some(true),
-        color_bits: Some(24),
-        alpha_bits: Some(8),
-        ..Default::default()
-    };
-
+    let reqs = Default::default();
     let window = Rc::new(
         if native::NativeDisplay::<native::Wayland>::is_backend(&winit_window) {
             let context = EGLContext::<native::Wayland, WinitWindow>::new(
@@ -277,12 +272,12 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
         Ok(())
     }
 
-    /*
-    unsafe fn egl_image_to_texture(&self, image: EGLImage, tex_id: c_uint) -> ::std::result::Result<(), EglExtensionNotSupportedError> {
-        self.window.rent(|egl| egl.head().egl_image_to_texture(image, tex_id))?;
-        Ok(())
+    fn egl_buffer_contents(&self, buffer: WlBuffer) -> ::std::result::Result<EGLImages, BufferAccessError> {
+        match *self.window {
+            Window::Wayland { ref context, .. } => context.egl_buffer_contents(buffer),
+            Window::X11 { ref context, .. } => context.egl_buffer_contents(buffer),
+        }
     }
-    */
 }
 
 /// Errors that may happen when driving the event loop of `WinitInputBackend`

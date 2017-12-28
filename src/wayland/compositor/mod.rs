@@ -72,9 +72,7 @@
 //!
 //! As you can see in the previous example, in the end we are retrieving a token from
 //! the init function. This token is necessary to retrieve the metadata associated with
-//! a surface. It can be cloned, and is sendable accross threads (as long as your
-//! `Mydata` and `MyRoles` are `Send` too). See `CompositorToken` for
-//! the details of what it enables you.
+//! a surface. It can be cloned. See `CompositorToken` for the details of what it enables you.
 //!
 //! The surface metadata is held in the `SurfaceAttributes` struct. In contains double-buffered
 //! state pending from the client as defined by the protocol for `wl_surface`, as well as your
@@ -248,9 +246,6 @@ pub struct CompositorToken<U, R, ID> {
     _idata: ::std::marker::PhantomData<*mut ID>,
 }
 
-unsafe impl<U: Send, R: Send, ID> Send for CompositorToken<U, R, ID> {}
-unsafe impl<U: Send, R: Send, ID> Sync for CompositorToken<U, R, ID> {}
-
 // we implement them manually because #[derive(..)] would require
 // U: Clone and R: Clone
 impl<U, R, ID> Copy for CompositorToken<U, R, ID> {}
@@ -270,7 +265,7 @@ impl<U, R, ID> CompositorToken<U, R, ID> {
     }
 }
 
-impl<U: Send + 'static, R: Send + 'static, ID: 'static> CompositorToken<U, R, ID> {
+impl<U: 'static, R: 'static, ID: 'static> CompositorToken<U, R, ID> {
     /// Access the data of a surface
     ///
     /// The closure will be called with the contents of the data associated with this surface.

@@ -1,78 +1,81 @@
 use super::{GliumDrawer, WindowMap};
-use glium::texture::{Texture2d, UncompressedFloatFormat};
+use smithay::backend::graphics::egl::wayland::{Format, BufferAccessError};
+use glium::texture::Texture2d;
 use rand;
-use smithay::backend::graphics::egl::{EGLGraphicsBackend, EGLImage};
+use smithay::backend::graphics::egl::{EGLGraphicsBackend, EGLImages};
 use smithay::wayland::compositor::{compositor_init, CompositorToken, SurfaceAttributes,
                                    SurfaceUserImplementation};
 use smithay::wayland::shell::{shell_init, PopupConfigure, ShellState, ShellSurfaceRole,
                               ShellSurfaceUserImplementation, ToplevelConfigure};
 use smithay::wayland::shm::with_buffer_contents as shm_buffer_contents;
-use smithay::wayland::drm::{with_buffer_contents as drm_buffer_contents, Attributes, Format};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::borrow::Borrow;
 use wayland_server::{EventLoop, StateToken};
 
 define_roles!(Roles => [ ShellSurface, ShellSurfaceRole ] );
 
 #[derive(Default)]
 pub struct SurfaceData {
-    pub texture: Option<Texture2d>,
     pub buffer: Option<Buffer>,
+    pub texture: Option<Texture2d>,
 }
 
 pub enum Buffer {
-    Egl { images: Vec<EGLImage>, attributes: Attributes },
+    Egl { images: EGLImages },
     Shm { data: Vec<u8>, size: (u32, u32) },
 }
 
 unsafe impl Send for Buffer {}
 
-pub fn surface_implementation<G: EGLGraphicsBackend + 'static>() -> SurfaceUserImplementation<SurfaceData, Roles, GliumDrawer<G>> {
+pub fn surface_implementation<G: EGLGraphicsBackend + 'static>() -> SurfaceUserImplementation<SurfaceData, Roles, Rc<GliumDrawer<G>>> {
     SurfaceUserImplementation {
         commit: |_, drawer, surface, token| {
             // we retrieve the contents of the associated buffer and copy it
             token.with_surface_data(surface, |attributes| {
-                match attributes.buffer() {
-                    Some(ref buffer) => {
-                        // we ignore hotspot coordinates in this simple example (`attributes.buffer_coordinates()`)
-                        if drm_buffer_contents(&buffer, drawer.borrow(), |attributes, images| {
-                            let format = match attributes.format {
-                                Format::RGB => UncompressedFloatFormat::U8U8U8,
-                                Format::RGBA => UncompressedFloatFormat::U8U8U8U8,
-                                _ => {
-                                    // we don't handle the more complex formats here.
-                                    attributes.user_data.buffer = None;
-                                    attributes.user_data.texture = None;
-                                    return;
-                                },
-                            };
-                            attributes.user_data.texture = Some(drawer.texture_from_egl(
-                                images[0] /*Both simple formats only have one plane*/,
-                                format,
-                                (attributes.width, attributes.height)
-                            ));
-                            attributes.user_data.buffer = Some(Buffer::Egl { images, attributes });
-                        }).is_err() {
-                            shm_buffer_contents(&buffer, |slice, data| {
-                                let offset = data.offset as usize;
-                                let stride = data.stride as usize;
-                                let width = data.width as usize;
-                                let height = data.height as usize;
-                                let mut new_vec = Vec::with_capacity(width * height * 4);
-                                for i in 0..height {
-                                    new_vec
-                                        .extend(&slice[(offset + i * stride)..(offset + i * stride + width * 4)]);
-                                }
-                                attributes.user_data.texture = Some(drawer.texture_from_mem(&new_vec, data.width as u32, data.height as u32));
-                                attributes.user_data.buffer =
-                                    Some(Buffer::Shm { data: new_vec, position: (data.width as u32, data.height as u32) });
-                            }).unwrap();
+                match attributes.buffer.take() {
+                    Some(Some((buffer, (_x, _y)))) => {
+                        // we ignore hotspot coordinates in this simple example
+                        match <GliumDrawer<G> as Borrow<G>>::borrow(&**drawer).egl_buffer_contents(buffer) {
+                            Ok(images) => {
+                                let format = match images.format {
+                                    Format::RGB => {},
+                                    Format::RGBA => {},
+                                    _ => {
+                                        // we don't handle the more complex formats here.
+                                        attributes.user_data.buffer = None;
+                                        attributes.user_data.texture = None;
+                                        return;
+                                    },
+                                };
+                                attributes.user_data.texture = drawer.texture_from_egl(&images);
+                                attributes.user_data.buffer = Some(Buffer::Egl { images });
+                            },
+                            Err(BufferAccessError::NotManaged(buffer)) => {
+                                shm_buffer_contents(&buffer, |slice, data| {
+                                    let offset = data.offset as usize;
+                                    let stride = data.stride as usize;
+                                    let width = data.width as usize;
+                                    let height = data.height as usize;
+                                    let mut new_vec = Vec::with_capacity(width * height * 4);
+                                    for i in 0..height {
+                                        new_vec
+                                            .extend(&slice[(offset + i * stride)..(offset + i * stride + width * 4)]);
+                                    }
+                                    attributes.user_data.texture = Some(drawer.texture_from_mem(&new_vec, (data.width as u32, data.height as u32)));
+                                    attributes.user_data.buffer = Some(Buffer::Shm { data: new_vec, size: (data.width as u32, data.height as u32) });
+                                }).unwrap();
+                                buffer.release();
+                            },
+                            Err(err) => panic!("EGL error: {}", err),
                         }
                     }
-                    None => {
+                    Some(None) => {
                         // erase the contents
                         attributes.user_data.buffer = None;
+                        attributes.user_data.texture = None;
                     }
+                    None => {}
                 }
             });
         },
@@ -82,14 +85,15 @@ pub fn surface_implementation<G: EGLGraphicsBackend + 'static>() -> SurfaceUserI
     }
 }
 
-pub struct ShellIData<F> {
-    pub token: CompositorToken<SurfaceData, Roles, ()>,
-    pub window_map: Rc<RefCell<super::WindowMap<SurfaceData, Roles, (), (), F>>>,
+pub struct ShellIData<F, G: EGLGraphicsBackend + 'static> {
+    pub token: CompositorToken<SurfaceData, Roles, Rc<GliumDrawer<G>>>,
+    pub window_map: Rc<RefCell<super::WindowMap<SurfaceData, Roles, Rc<GliumDrawer<G>>, (), F>>>,
 }
 
-pub fn shell_implementation<F>() -> ShellSurfaceUserImplementation<SurfaceData, Roles, (), ShellIData<F>, ()>
+pub fn shell_implementation<F, G>() -> ShellSurfaceUserImplementation<SurfaceData, Roles, Rc<GliumDrawer<G>>, ShellIData<F, G>, ()>
 where
     F: Fn(&SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)>,
+    G: EGLGraphicsBackend + 'static,
 {
     ShellSurfaceUserImplementation {
         new_client: |_, _, _| {},
@@ -134,23 +138,27 @@ fn get_size(attrs: &SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)> {
         .user_data
         .buffer
         .as_ref()
-        .map(|&(_, (w, h))| (w as i32, h as i32))
+        .map(|ref buffer| match **buffer {
+            Buffer::Shm { ref size, .. } => *size,
+            Buffer::Egl { ref images } => (images.width, images.height),
+        })
+        .map(|(x, y)| (x as i32, y as i32))
 }
 
-pub type MyWindowMap = WindowMap<
+pub type MyWindowMap<G: EGLGraphicsBackend + 'static> = WindowMap<
     SurfaceData,
     Roles,
-    (),
+    Rc<GliumDrawer<G>>,
     (),
     fn(&SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)>,
 >;
 
-pub fn init_shell<ID: 'static>(
-    evl: &mut EventLoop, log: ::slog::Logger, data: ID)
+pub fn init_shell<G: EGLGraphicsBackend + 'static>(
+    evl: &mut EventLoop, log: ::slog::Logger, data: Rc<GliumDrawer<G>>)
     -> (
-        CompositorToken<SurfaceData, Roles, ID>,
-        StateToken<ShellState<SurfaceData, Roles, ID, ()>>,
-        Rc<RefCell<MyWindowMap>>,
+        CompositorToken<SurfaceData, Roles, Rc<GliumDrawer<G>>>,
+        StateToken<ShellState<SurfaceData, Roles, Rc<GliumDrawer<G>>, ()>>,
+        Rc<RefCell<MyWindowMap<G>>>,
     ) {
     let (compositor_token, _, _) = compositor_init(evl, surface_implementation(), data, log.clone());
 

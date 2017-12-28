@@ -9,8 +9,8 @@ use super::GraphicsBackend;
 use nix::libc::c_void;
 use std::fmt;
 use wayland_server::Display;
+use wayland_server::protocol::wl_buffer::WlBuffer;
 
-pub use self::ffi::egl::types::EGLImage;
 pub mod context;
 pub use self::context::EGLContext;
 pub mod error;
@@ -20,6 +20,7 @@ pub mod native;
 pub mod surface;
 pub use self::surface::EGLSurface;
 pub mod wayland;
+pub use self::wayland::{EGLImages, BufferAccessError};
 
 /// Error that can happen when swapping buffers.
 #[derive(Debug, Clone, PartialEq)]
@@ -182,5 +183,5 @@ pub trait EGLGraphicsBackend: GraphicsBackend {
     /// `Display` multiple times, as only one context may be bound at any given time.
     fn unbind_wl_display(&self, display: &Display) -> ::std::result::Result<(), EglExtensionNotSupportedError>;
 
-    // unsafe fn egl_image_to_texture(&self, image: ffi::egl::types::EGLImage, tex_id: c_uint) -> ::std::result::Result<(), EglExtensionNotSupportedError>;
+    fn egl_buffer_contents(&self, buffer: WlBuffer) -> ::std::result::Result<EGLImages, wayland::BufferAccessError>;
 }

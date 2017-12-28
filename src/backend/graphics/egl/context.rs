@@ -132,6 +132,12 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         };
 
         ffi::egl::LOAD.call_once(|| {
+            fn constrain<F>(f: F) -> F
+            where
+                F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
+            {
+                f
+            };
             ffi::egl::load_with(|sym| {
                 let name = CString::new(sym).unwrap();
                 let symbol = ffi::egl::LIB.get::<*mut c_void>(name.as_bytes());
@@ -140,14 +146,16 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
                     Err(_) => ptr::null(),
                 }
             });
-            ffi::gl::load_with(|sym| {
-                let name = CString::new(sym).unwrap();
-                let symbol = ffi::egl::LIB.get::<*mut c_void>(name.as_bytes());
-                match symbol {
-                    Ok(x) => *x as *const _,
-                    Err(_) => ptr::null(),
-                }
+            let procAddress = constrain(|sym| {
+                let addr = CString::new(sym).unwrap();
+                let addr = addr.as_ptr();
+                ffi::egl::GetProcAddress(addr) as *const _
             });
+            ffi::egl::load_with(&procAddress);
+            ffi::egl::BindWaylandDisplayWL::load_with(&procAddress);
+            ffi::egl::UnbindWaylandDisplayWL::load_with(&procAddress);
+            ffi::egl::QueryWaylandBufferWL::load_with(&procAddress);
+            ffi::gl::load_with(&procAddress);
         });
 
         // the first step is to query the list of extensions without any display, if supported
@@ -434,6 +442,23 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
 
         info!(log, "EGL context created");
 
+        // make current and get list of gl extensions
+        ffi::egl::MakeCurrent(
+            display as *const _,
+            ptr::null(),
+            ptr::null(),
+            context as *const _,
+        );
+
+        // the list of gl extensions supported by the context
+        let gl_extensions = {
+            let data = CStr::from_ptr(ffi::gl::GetString(ffi::gl::EXTENSIONS) as *const _).to_bytes().to_vec();
+            let list = String::from_utf8(data).unwrap();
+            list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
+        };
+
+        info!(log, "GL Extensions: {:?}", gl_extensions);
+
         Ok((
             Rc::new(context as *const _),
             Rc::new(display as *const _),
@@ -441,7 +466,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             surface_attributes,
             desc,
             extensions.iter().any(|s| *s == "EGL_WL_bind_wayland_display"),
-            extensions.iter().any(|s| *s == "EGL_OES_image" || *s == "EGL_OES_image_base"),
+            gl_extensions.iter().any(|s| *s == "GL_OES_EGL_image" || *s == "GL_OES_EGL_image_base"),
         ))
     }
 
@@ -530,7 +555,7 @@ pub enum GlProfile {
 }
 
 /// Describes how the backend should choose a pixel format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PixelFormatRequirements {
     /// If `true`, only hardware-accelerated formats will be conisdered. If `false`, only software renderers.
     /// `None` means "don't care". Default is `None`.
@@ -556,4 +581,20 @@ pub struct PixelFormatRequirements {
     /// If `true`, only stereoscopic formats will be considered. If `false`, only non-stereoscopic formats.
     /// The default is `false`.
     pub stereoscopy: bool,
+}
+
+impl Default for PixelFormatRequirements {
+    fn default() -> Self {
+        PixelFormatRequirements {
+            hardware_accelerated: Some(true),
+            color_bits: Some(24),
+            float_color_buffer: false,
+            alpha_bits: Some(8),
+            depth_bits: Some(24),
+            stencil_bits: Some(8),
+            double_buffer: Some(true),
+            multisampling: None,
+            stereoscopy: false,
+        }
+    }
 }
