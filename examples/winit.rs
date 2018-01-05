@@ -15,6 +15,7 @@ use glium::Surface;
 use helpers::{init_shell, GliumDrawer, MyWindowMap, Buffer};
 use slog::{Drain, Logger};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
+use smithay::backend::graphics::egl::wayland::{EGLWaylandExtensions, Format};
 use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerAxisEvent,
                               PointerButtonEvent, PointerMotionAbsoluteEvent};
 use smithay::backend::winit;
@@ -27,23 +28,23 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wayland_server::protocol::{wl_output, wl_pointer};
 
-struct WinitInputHandler<G: EGLGraphicsBackend + 'static> {
+struct WinitInputHandler {
     log: Logger,
     pointer: PointerHandle,
     keyboard: KeyboardHandle,
-    window_map: Rc<RefCell<MyWindowMap<G>>>,
+    window_map: Rc<RefCell<MyWindowMap>>,
     pointer_location: (f64, f64),
     serial: u32,
 }
 
-impl<G: EGLGraphicsBackend + 'static> WinitInputHandler<G> {
+impl WinitInputHandler {
     fn next_serial(&mut self) -> u32 {
         self.serial += 1;
         self.serial
     }
 }
 
-impl<G: EGLGraphicsBackend + 'static> InputHandler<winit::WinitInputBackend> for WinitInputHandler<G> {
+impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
     fn on_seat_created(&mut self, _: &input::Seat) {
         /* never happens with winit */
     }
@@ -136,12 +137,17 @@ fn main() {
 
     let (mut display, mut event_loop) = wayland_server::create_display();
 
-    if let Ok(_) = renderer.bind_wl_display(&display) {
-        info!(log, "EGL hardware-acceleration enabled");
-    }
+    let egl_display = Rc::new(RefCell::new(
+        if let Ok(egl_display) = renderer.bind_wl_display(&display) {
+            info!(log, "EGL hardware-acceleration enabled");
+            Some(egl_display)
+        } else {
+            None
+        }
+    ));
 
     let (w, h) = renderer.get_framebuffer_dimensions();
-    let drawer = Rc::new(GliumDrawer::from(renderer));
+    let drawer = GliumDrawer::from(renderer);
 
     /*
      * Initialize the globals
@@ -149,7 +155,7 @@ fn main() {
 
     init_shm_global(&mut event_loop, vec![], log.clone());
 
-    let (compositor_token, _shell_state_token, window_map) = init_shell(&mut event_loop, log.clone(), drawer.clone());
+    let (compositor_token, _shell_state_token, window_map) = init_shell(&mut event_loop, log.clone(), egl_display);
 
     let (seat_token, _) = Seat::new(&mut event_loop, "winit".into(), log.clone());
 
@@ -227,7 +233,32 @@ fn main() {
                                 wl_surface,
                                 initial_place,
                                 |_surface, attributes, role, &(mut x, mut y)| {
-                                        // there is actually something to draw !
+                                    // there is actually something to draw !
+                                    if attributes.user_data.texture.is_none() {
+                                        let mut remove = false;
+                                        match attributes.user_data.buffer {
+                                            Some(Buffer::Egl { ref images }) => {
+                                                match images.format {
+                                                    Format::RGB | Format::RGBA => {
+                                                        attributes.user_data.texture = drawer.texture_from_egl(&images);
+                                                    },
+                                                    _ => {
+                                                        // we don't handle the more complex formats here.
+                                                        attributes.user_data.texture = None;
+                                                        remove = true;
+                                                    },
+                                                };
+                                            },
+                                            Some(Buffer::Shm { ref data, ref size }) => {
+                                                attributes.user_data.texture = Some(drawer.texture_from_mem(data, *size));
+                                            },
+                                            _ => {},
+                                        }
+                                        if remove {
+                                            attributes.user_data.buffer = None;
+                                        }
+                                    }
+
                                     if let Some(ref texture) = attributes.user_data.texture {
                                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                                             x += subdata.x;
@@ -246,6 +277,17 @@ fn main() {
                                             },
                                             (x, y),
                                             screen_dimensions,
+                                            glium::Blend {
+                                                color: glium::BlendingFunction::Addition {
+                                                    source: glium::LinearBlendingFactor::One,
+                                                    destination: glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                                },
+                                                alpha: glium::BlendingFunction::Addition {
+                                                    source: glium::LinearBlendingFactor::One,
+                                                    destination: glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                                },
+                                                ..Default::default()
+                                            }
                                         );
                                         TraversalAction::DoChildren((x, y))
                                     } else {

@@ -66,6 +66,7 @@ impl Backend for Wayland {
     }
 }
 
+#[cfg(feature = "backend_winit")]
 pub struct XlibWindow(*const c_void);
 #[cfg(feature = "backend_winit")]
 pub enum X11 {}

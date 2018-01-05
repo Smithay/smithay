@@ -11,11 +11,10 @@
 
 use drm::Device as BasicDevice;
 use drm::control::Device as ControlDevice;
-use backend::drm::{drm_device_bind, DrmBackend, DrmDevice, DrmHandler};
+use backend::drm::{drm_device_bind, DrmDevice, DrmHandler};
 use backend::session::{Session, SessionObserver};
 use nix::fcntl;
 use nix::sys::stat::{dev_t, fstat};
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io::{Error as IoError, Result as IoResult};
@@ -42,16 +41,15 @@ impl ControlDevice for SessionFdDrmDevice {}
 /// given handler of any changes. Can be used to provide hot-plug functionality for gpus and
 /// attached monitors.
 pub struct UdevBackend<
-    B: Borrow<DrmBackend<SessionFdDrmDevice>> + 'static,
-    H: DrmHandler<SessionFdDrmDevice, B> + 'static,
+    H: DrmHandler<SessionFdDrmDevice> + 'static,
     S: Session + 'static,
-    T: UdevHandler<B, H> + 'static,
+    T: UdevHandler<H> + 'static,
 > {
     devices: HashMap<
         dev_t,
         (
-            StateToken<DrmDevice<SessionFdDrmDevice, B>>,
-            FdEventSource<(StateToken<DrmDevice<SessionFdDrmDevice, B>>, H)>,
+            StateToken<DrmDevice<SessionFdDrmDevice>>,
+            FdEventSource<(StateToken<DrmDevice<SessionFdDrmDevice>>, H)>,
         ),
     >,
     monitor: MonitorSocket,
@@ -61,11 +59,10 @@ pub struct UdevBackend<
 }
 
 impl<
-    B: From<DrmBackend<SessionFdDrmDevice>> + Borrow<DrmBackend<SessionFdDrmDevice>> + 'static,
-    H: DrmHandler<SessionFdDrmDevice, B> + 'static,
+    H: DrmHandler<SessionFdDrmDevice> + 'static,
     S: Session + 'static,
-    T: UdevHandler<B, H> + 'static,
-> UdevBackend<B, H, S, T> {
+    T: UdevHandler<H> + 'static,
+> UdevBackend<H, S, T> {
     /// Creates a new `UdevBackend` and adds it to the given `EventLoop`'s state.
     ///
     /// ## Arguments
@@ -76,7 +73,7 @@ impl<
     /// `logger`  - slog Logger to be used by the backend and its `DrmDevices`.
     pub fn new<'a, L>(
         mut evlh: &mut EventLoopHandle, context: &Context, mut session: S, mut handler: T, logger: L
-    ) -> Result<StateToken<UdevBackend<B, H, S, T>>>
+    ) -> Result<StateToken<UdevBackend<H, S, T>>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -99,17 +96,17 @@ impl<
                     }, logger.clone()
                 ) {
                     // Call the handler, which might add it to the runloop
-                    Ok(mut device) => match handler.device_added(&mut evlh.state().as_proxy(), &mut device) {
-                        // fstat them
-                        Some(drm_handler) => match fstat(device.as_raw_fd()) {
-                            Ok(stat) => {
+                    Ok(mut device) => {
+                        let fd = device.as_raw_fd();
+                        let devnum = device.device_id();
+                        match handler.device_added(&mut evlh.state().as_proxy(), &mut device) {
+                            Some(drm_handler) => {
                                 let token = evlh.state().insert(device);
                                 if let Ok(event_source) = drm_device_bind(&mut evlh, token.clone(), drm_handler) {
-                                    Some((stat.st_rdev, (token, event_source)))
+                                    Some((devnum, (token, event_source)))
                                 } else {
                                     handler.device_removed(evlh.state(), &token);
                                     let device = evlh.state().remove(token);
-                                    let fd = device.as_raw_fd();
                                     drop(device);
                                     if let Err(err) = session.close(fd) {
                                         warn!(logger, "Failed to close dropped device. Error: {:?}. Ignoring", err);
@@ -117,27 +114,13 @@ impl<
                                     None
                                 }
                             },
-                            Err(err) => {
-                                // almost impossible to hit, but lets do it as good as possible
-                                error!(logger, "Failed to get devnum of newly initialized device, dropping. Error: {:?}", err);
-                                let token = evlh.state().insert(device);
-                                handler.device_removed(evlh.state(), &token);
-                                let device = evlh.state().remove(token);
-                                let fd = device.as_raw_fd();
-                                drop(device);
+                            None => {
+                                drop(device); //drops master
                                 if let Err(err) = session.close(fd) {
-                                    warn!(logger, "Failed to close dropped device. Error: {:?}. Ignoring", err);
-                                };
+                                    warn!(logger, "Failed to close device. Error: {:?}. Ignoring", err);
+                                }
                                 None
                             }
-                        },
-                        None => {
-                            let fd = device.as_raw_fd();
-                            drop(device); //drops master
-                            if let Err(err) = session.close(fd) {
-                                warn!(logger, "Failed to close device. Error: {:?}. Ignoring", err);
-                            }
-                            None
                         }
                     },
                     Err(err) => {
@@ -146,7 +129,7 @@ impl<
                     }
                 }
             })
-            .collect::<HashMap<dev_t, (StateToken<DrmDevice<SessionFdDrmDevice, B>>, FdEventSource<(StateToken<DrmDevice<SessionFdDrmDevice, B>>, H)>)>>();
+            .collect::<HashMap<dev_t, (StateToken<DrmDevice<SessionFdDrmDevice>>, FdEventSource<(StateToken<DrmDevice<SessionFdDrmDevice>>, H)>)>>();
 
         let mut builder = MonitorBuilder::new(context).chain_err(|| ErrorKind::FailedToInitMonitor)?;
         builder
@@ -193,11 +176,10 @@ impl<
 }
 
 impl<
-    B: Borrow<DrmBackend<SessionFdDrmDevice>> + 'static,
-    H: DrmHandler<SessionFdDrmDevice, B> + 'static,
+    H: DrmHandler<SessionFdDrmDevice> + 'static,
     S: Session + 'static,
-    T: UdevHandler<B, H> + 'static,
-> SessionObserver for StateToken<UdevBackend<B, H, S, T>> {
+    T: UdevHandler<H> + 'static,
+> SessionObserver for StateToken<UdevBackend<H, S, T>> {
     fn pause<'a>(&mut self, state: &mut StateProxy<'a>) {
         state.with_value(self, |state, udev| {
             for &mut (ref mut device, _) in udev.devices.values_mut() {
@@ -219,24 +201,22 @@ impl<
 ///
 /// Allows the backend to recieve kernel events and thus to drive the `UdevHandler`.
 /// No runtime functionality can be provided without using this function.
-pub fn udev_backend_bind<B, S, H, T>(
-    evlh: &mut EventLoopHandle, udev: StateToken<UdevBackend<B, H, S, T>>
-) -> IoResult<FdEventSource<StateToken<UdevBackend<B, H, S, T>>>>
+pub fn udev_backend_bind<S, H, T>(
+    evlh: &mut EventLoopHandle, udev: StateToken<UdevBackend<H, S, T>>
+) -> IoResult<FdEventSource<StateToken<UdevBackend<H, S, T>>>>
 where
-    B: From<DrmBackend<SessionFdDrmDevice>> + Borrow<DrmBackend<SessionFdDrmDevice>> + 'static,
-    H: DrmHandler<SessionFdDrmDevice, B> + 'static,
-    T: UdevHandler<B, H> + 'static,
+    H: DrmHandler<SessionFdDrmDevice> + 'static,
+    T: UdevHandler<H> + 'static,
     S: Session + 'static,
 {
     let fd = evlh.state().get(&udev).monitor.as_raw_fd();
     evlh.add_fd_event_source(fd, fd_event_source_implementation(), udev, FdInterest::READ)
 }
 
-fn fd_event_source_implementation<B, S, H, T>() -> FdEventSourceImpl<StateToken<UdevBackend<B, H, S, T>>>
+fn fd_event_source_implementation<S, H, T>() -> FdEventSourceImpl<StateToken<UdevBackend<H, S, T>>>
 where
-    B: From<DrmBackend<SessionFdDrmDevice>> + Borrow<DrmBackend<SessionFdDrmDevice>> + 'static,
-    H: DrmHandler<SessionFdDrmDevice, B> + 'static,
-    T: UdevHandler<B, H> + 'static,
+    H: DrmHandler<SessionFdDrmDevice> + 'static,
+    T: UdevHandler<H> + 'static,
     S: Session + 'static,
 {
     FdEventSourceImpl {
@@ -282,6 +262,7 @@ where
                                     }
                                 }
                             };
+                            let fd = device.as_raw_fd();
                             match evlh.state().with_value(token, |state, udev| {
                                 udev.handler.device_added(state, &mut device)
                             }) {
@@ -299,7 +280,6 @@ where
                                             let mut state: StateProxy = state.into();
                                             udev.handler.device_removed(&mut state, &dev_token);
                                             let device = state.remove(dev_token);
-                                            let fd = device.as_raw_fd();
                                             drop(device);
                                             if let Err(err) = udev.session.close(fd) {
                                                 warn!(
@@ -312,7 +292,6 @@ where
                                     }
                                 }
                                 None => {
-                                    let fd = device.as_raw_fd();
                                     drop(device);
                                     evlh.state().with_value(token, |_state, udev| {
                                         if let Err(err) = udev.session.close(fd) {
@@ -375,7 +354,7 @@ where
 }
 
 /// Handler for the `UdevBackend`, allows to open, close and update drm devices as they change during runtime.
-pub trait UdevHandler<B: Borrow<DrmBackend<SessionFdDrmDevice>> + 'static, H: DrmHandler<SessionFdDrmDevice, B> + 'static>
+pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static>
      {
     /// Called on initialization for every known device and when a new device is detected.
     ///
@@ -383,7 +362,7 @@ pub trait UdevHandler<B: Borrow<DrmBackend<SessionFdDrmDevice>> + 'static, H: Dr
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_added<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &mut DrmDevice<SessionFdDrmDevice, B>)
+    fn device_added<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &mut DrmDevice<SessionFdDrmDevice>)
         -> Option<H>;
     /// Called when an open device is changed.
     ///
@@ -392,7 +371,7 @@ pub trait UdevHandler<B: Borrow<DrmBackend<SessionFdDrmDevice>> + 'static, H: Dr
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_changed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice, B>>);
+    fn device_changed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice>>);
     /// Called when a device was removed.
     ///
     /// The device will not accept any operations anymore and its file descriptor will be closed once
@@ -400,7 +379,7 @@ pub trait UdevHandler<B: Borrow<DrmBackend<SessionFdDrmDevice>> + 'static, H: Dr
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_removed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice, B>>);
+    fn device_removed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice>>);
     /// Called when the udev context has encountered and error.
     ///
     /// ## Panics

@@ -4,11 +4,13 @@ use backend::graphics::egl::ffi::egl::types::EGLImage;
 use nix::libc::{c_uint};
 use std::rc::{Rc, Weak};
 use std::fmt;
-use wayland_server::{Display, Resource};
+use wayland_server::{Display, Resource, StateToken, StateProxy};
 use wayland_server::protocol::wl_buffer::WlBuffer;
 
 /// Error that can occur when accessing an EGL buffer
 pub enum BufferAccessError {
+    /// The corresponding Context is not alive anymore
+    ContextLost,
     /// This buffer is not managed by the EGL buffer
     NotManaged(WlBuffer),
     /// Failed to create EGLImages from the buffer
@@ -20,6 +22,7 @@ pub enum BufferAccessError {
 impl fmt::Debug for BufferAccessError {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
         match *self {
+            BufferAccessError::ContextLost => write!(formatter, "BufferAccessError::ContextLost"),
             BufferAccessError::NotManaged(_) => write!(formatter, "BufferAccessError::NotManaged"),
             BufferAccessError::EGLImageCreationFailed => write!(formatter, "BufferAccessError::EGLImageCreationFailed"),
             BufferAccessError::EglExtensionNotSupported(ref err) => write!(formatter, "{:?}", err),
@@ -31,8 +34,7 @@ impl fmt::Display for BufferAccessError {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
         use ::std::error::Error;
         match *self {
-            BufferAccessError::NotManaged(_) => write!(formatter, "{}", self.description()),
-            BufferAccessError::EGLImageCreationFailed => write!(formatter, "{}", self.description()),
+            BufferAccessError::ContextLost | BufferAccessError::NotManaged(_) | BufferAccessError::EGLImageCreationFailed => write!(formatter, "{}", self.description()),
             BufferAccessError::EglExtensionNotSupported(ref err) => err.fmt(formatter),
         }
     }
@@ -41,6 +43,7 @@ impl fmt::Display for BufferAccessError {
 impl ::std::error::Error for BufferAccessError {
     fn description(&self) -> &str {
         match *self {
+            BufferAccessError::ContextLost => "The corresponding context was lost",
             BufferAccessError::NotManaged(_) => "This buffer is not mananged by EGL",
             BufferAccessError::EGLImageCreationFailed => "Failed to create EGLImages from the buffer",
             BufferAccessError::EglExtensionNotSupported(ref err) => err.description(),
@@ -173,7 +176,7 @@ impl Drop for EGLImages {
     }
 }
 
-impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
+pub trait EGLWaylandExtensions {
     /// Binds this EGL context to the given Wayland display.
     ///
     /// This will allow clients to utilize EGL to create hardware-accelerated
@@ -187,16 +190,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     ///
     /// This might return `OtherEGLDisplayAlreadyBound` if called for the same
     /// `Display` multiple times, as only one context may be bound at any given time.
-    pub fn bind_wl_display(&self, display: &Display) -> Result<()> {
-        if !self.wl_drm_support {
-            bail!(ErrorKind::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
-        }
-        let res = unsafe { ffi::egl::BindWaylandDisplayWL(*self.display, display.ptr() as *mut _) };
-        if res == 0 {
-            bail!(ErrorKind::OtherEGLDisplayAlreadyBound);
-        }
-        Ok(())
-    }
+    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay>;
 
     /// Unbinds this EGL context from the given Wayland display.
     ///
@@ -210,7 +204,112 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     ///
     /// This might return `OtherEGLDisplayAlreadyBound` if called for the same
     /// `Display` multiple times, as only one context may be bound at any given time.
-    pub fn unbind_wl_display(&self, display: &Display) -> Result<()> {
+    fn unbind_wl_display(&self, display: &Display) -> Result<()>;
+}
+
+pub struct EGLDisplay(Weak<ffi::egl::types::EGLDisplay>);
+
+impl EGLDisplay {
+    pub fn new<B: native::Backend, N: native::NativeDisplay<B>>(context: &EGLContext<B, N>) -> EGLDisplay {
+        EGLDisplay(Rc::downgrade(&context.display))
+    }
+
+    pub fn egl_buffer_contents(&self, buffer: WlBuffer) -> ::std::result::Result<EGLImages, BufferAccessError> {
+        if let Some(display) = self.0.upgrade() {
+            let mut format: i32 = 0;
+            if unsafe { ffi::egl::QueryWaylandBufferWL(*display, buffer.ptr() as *mut _, ffi::egl::EGL_TEXTURE_FORMAT, &mut format as *mut _) == 0 } {
+                return Err(BufferAccessError::NotManaged(buffer));
+            }
+            let format = match format {
+                x if x == ffi::egl::TEXTURE_RGB as i32 => Format::RGB,
+                x if x == ffi::egl::TEXTURE_RGBA as i32 => Format::RGBA,
+                ffi::egl::TEXTURE_EXTERNAL_WL => Format::External,
+                ffi::egl::TEXTURE_Y_UV_WL => Format::Y_UV,
+                ffi::egl::TEXTURE_Y_U_V_WL => Format::Y_U_V,
+                ffi::egl::TEXTURE_Y_XUXV_WL => Format::Y_XUXV,
+                _ => panic!("EGL returned invalid texture type"),
+            };
+
+            let mut width: i32 = 0;
+            if unsafe { ffi::egl::QueryWaylandBufferWL(*display, buffer.ptr() as *mut _, ffi::egl::WIDTH as i32, &mut width as *mut _) == 0 } {
+                return Err(BufferAccessError::NotManaged(buffer));
+            }
+
+            let mut height: i32 = 0;
+            if unsafe { ffi::egl::QueryWaylandBufferWL(*display, buffer.ptr() as *mut _, ffi::egl::HEIGHT as i32, &mut height as *mut _) == 0 } {
+                return Err(BufferAccessError::NotManaged(buffer));
+            }
+
+            let mut inverted: i32 = 0;
+            if unsafe { ffi::egl::QueryWaylandBufferWL(*display, buffer.ptr() as *mut _, ffi::egl::WAYLAND_Y_INVERTED_WL, &mut inverted as *mut _) != 0 } {
+                inverted = 1;
+            }
+
+            let mut images = Vec::with_capacity(format.num_planes());
+            for i in 0..format.num_planes() {
+                let mut out = Vec::with_capacity(3);
+                out.push(ffi::egl::WAYLAND_PLANE_WL as i32);
+                out.push(i as i32);
+        		out.push(ffi::egl::NONE as i32);
+
+                images.push({
+        		    let image =
+                        unsafe { ffi::egl::CreateImageKHR(
+                            *display,
+                            ffi::egl::NO_CONTEXT,
+                            ffi::egl::WAYLAND_BUFFER_WL,
+            				buffer.ptr() as *mut _,
+            				out.as_ptr(),
+                        ) };
+                    if image == ffi::egl::NO_IMAGE_KHR {
+                        return Err(BufferAccessError::EGLImageCreationFailed);
+                    } else {
+                        image
+                    }
+                });
+            }
+
+            Ok(EGLImages {
+                display: Rc::downgrade(&display),
+                width: width as u32,
+                height: height as u32,
+                y_inverted: inverted != 0,
+                format,
+                images,
+                buffer,
+            })
+        } else {
+            Err(BufferAccessError::ContextLost)
+        }
+    }
+}
+
+impl<E: EGLWaylandExtensions> EGLWaylandExtensions for Rc<E>
+{
+    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay> {
+        (**self).bind_wl_display(display)
+    }
+    fn unbind_wl_display(&self, display: &Display) -> Result<()> {
+        (**self).unbind_wl_display(display)
+    }
+}
+
+impl<B: native::Backend, N: native::NativeDisplay<B>> EGLWaylandExtensions for EGLContext<B, N> {
+    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay> {
+        if !self.wl_drm_support {
+            bail!(ErrorKind::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
+        }
+        if !self.egl_to_texture_support {
+            bail!(ErrorKind::EglExtensionNotSupported(&["GL_OES_EGL_image"]));
+        }
+        let res = unsafe { ffi::egl::BindWaylandDisplayWL(*self.display, display.ptr() as *mut _) };
+        if res == 0 {
+            bail!(ErrorKind::OtherEGLDisplayAlreadyBound);
+        }
+        Ok(EGLDisplay::new(self))
+    }
+
+    fn unbind_wl_display(&self, display: &Display) -> Result<()> {
         if !self.wl_drm_support {
             bail!(ErrorKind::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
         }
@@ -219,77 +318,5 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             bail!(ErrorKind::NoEGLDisplayBound);
         }
         Ok(())
-    }
-
-    pub fn egl_buffer_contents(&self, buffer: WlBuffer) -> ::std::result::Result<EGLImages, BufferAccessError> {
-        if !self.wl_drm_support {
-            return Err(EglExtensionNotSupportedError(&["EGL_WL_bind_wayland_display"]).into());
-        }
-        if !self.egl_to_texture_support {
-            return Err(EglExtensionNotSupportedError(&["GL_OES_EGL_image"]).into());
-        }
-
-        let mut format: i32 = 0;
-        if unsafe { ffi::egl::QueryWaylandBufferWL(*self.display, buffer.ptr() as *mut _, ffi::egl::EGL_TEXTURE_FORMAT, &mut format as *mut _) == 0 } {
-            return Err(BufferAccessError::NotManaged(buffer));
-        }
-        let format = match format {
-            x if x == ffi::egl::TEXTURE_RGB as i32 => Format::RGB,
-            x if x == ffi::egl::TEXTURE_RGBA as i32 => Format::RGBA,
-            ffi::egl::TEXTURE_EXTERNAL_WL => Format::External,
-            ffi::egl::TEXTURE_Y_UV_WL => Format::Y_UV,
-            ffi::egl::TEXTURE_Y_U_V_WL => Format::Y_U_V,
-            ffi::egl::TEXTURE_Y_XUXV_WL => Format::Y_XUXV,
-            _ => panic!("EGL returned invalid texture type"),
-        };
-
-        let mut width: i32 = 0;
-        if unsafe { ffi::egl::QueryWaylandBufferWL(*self.display, buffer.ptr() as *mut _, ffi::egl::WIDTH as i32, &mut width as *mut _) == 0 } {
-            return Err(BufferAccessError::NotManaged(buffer));
-        }
-
-        let mut height: i32 = 0;
-        if unsafe { ffi::egl::QueryWaylandBufferWL(*self.display, buffer.ptr() as *mut _, ffi::egl::HEIGHT as i32, &mut height as *mut _) == 0 } {
-            return Err(BufferAccessError::NotManaged(buffer));
-        }
-
-        let mut inverted: i32 = 0;
-        if unsafe { ffi::egl::QueryWaylandBufferWL(*self.display, buffer.ptr() as *mut _, ffi::egl::WAYLAND_Y_INVERTED_WL, &mut inverted as *mut _) != 0 } {
-            inverted = 1;
-        }
-
-        let mut images = Vec::with_capacity(format.num_planes());
-        for i in 0..format.num_planes() {
-            let mut out = Vec::with_capacity(3);
-            out.push(ffi::egl::WAYLAND_PLANE_WL as i32);
-            out.push(i as i32);
-    		out.push(ffi::egl::NONE as i32);
-
-            images.push({
-    		    let image =
-                    unsafe { ffi::egl::CreateImageKHR(
-                        *self.display,
-                        ffi::egl::NO_CONTEXT,
-                        ffi::egl::WAYLAND_BUFFER_WL,
-        				buffer.ptr() as *mut _,
-        				out.as_ptr(),
-                    ) };
-                if image == ffi::egl::NO_IMAGE_KHR {
-                    return Err(BufferAccessError::EGLImageCreationFailed);
-                } else {
-                    image
-                }
-            });
-        }
-
-        Ok(EGLImages {
-            display: Rc::downgrade(&self.display),
-            width: width as u32,
-            height: height as u32,
-            y_inverted: inverted != 0,
-            format,
-            images,
-            buffer,
-        })
     }
 }

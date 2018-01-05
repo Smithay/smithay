@@ -13,25 +13,41 @@ extern crate slog_term;
 
 mod helpers;
 
+use drm::Device as BasicDevice;
 use drm::control::{Device as ControlDevice, ResourceInfo};
 use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
 use drm::control::crtc;
 use drm::control::encoder::Info as EncoderInfo;
 use drm::result::Error as DrmError;
-use glium::Surface;
-use helpers::{init_shell, GliumDrawer, MyWindowMap, Roles, SurfaceData};
+use glium::{Blend, Surface};
+use helpers::{init_shell, GliumDrawer, MyWindowMap, Roles, SurfaceData, Buffer};
 use slog::{Drain, Logger};
 use smithay::backend::drm::{drm_device_bind, DrmBackend, DrmDevice, DrmHandler};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
+use smithay::backend::graphics::egl::wayland::{Format, EGLDisplay, EGLWaylandExtensions};
 use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
 use smithay::wayland::shell::ShellState;
 use smithay::wayland::shm::init_shm_global;
 use std::cell::RefCell;
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
+use std::os::unix::io::RawFd;
+use std::os::unix::io::AsRawFd;
 use std::rc::Rc;
 use std::time::Duration;
-use wayland_server::{StateToken, StateProxy};
+use wayland_server::{StateToken};
+
+#[derive(Debug)]
+pub struct Card(File);
+
+impl AsRawFd for Card {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0.as_raw_fd()
+    }
+}
+
+impl BasicDevice for Card {}
+impl ControlDevice for Card {}
 
 fn main() {
     // A logger facility, here we use the terminal for this example
@@ -50,8 +66,8 @@ fn main() {
     let mut options = OpenOptions::new();
     options.read(true);
     options.write(true);
-    let mut device: DrmDevice<GliumDrawer<DrmBackend>> =
-        DrmDevice::new_from_file(options.clone().open("/dev/dri/card0").unwrap(), log.clone()).unwrap();
+    let mut device =
+        DrmDevice::new(Card(options.clone().open("/dev/dri/card0").unwrap()), log.clone()).unwrap();
 
     // Get a set of all modesetting resource handles (excluding planes):
     let res_handles = device.resource_handles().unwrap();
@@ -81,19 +97,27 @@ fn main() {
     // Assuming we found a good connector and loaded the info into `connector_info`
     let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
 
+    // Initialize the hardware backend
+    let renderer = GliumDrawer::from(device
+        .create_backend(crtc, mode, vec![connector_info.handle()])
+        .unwrap());
     {
-        // Initialize the hardware backend
-        let renderer = device
-            .create_backend(event_loop.state(), crtc, mode, vec![connector_info.handle()])
-            .unwrap();
-
         /*
          * Initialize glium
          */
-        let mut frame = event_loop.state().get(renderer).draw();
+        let mut frame = renderer.draw();
         frame.clear_color(0.8, 0.8, 0.9, 1.0);
         frame.finish().unwrap();
     }
+
+    let egl_display = Rc::new(RefCell::new(
+        if let Ok(egl_display) = renderer.bind_wl_display(&display) {
+            info!(log, "EGL hardware-acceleration enabled");
+            Some(egl_display)
+        } else {
+            None
+        }
+    ));
 
     /*
      * Initialize the globals
@@ -101,7 +125,7 @@ fn main() {
 
     init_shm_global(&mut event_loop, vec![], log.clone());
 
-    let (compositor_token, shell_state_token, window_map) = init_shell(&mut event_loop, log.clone());
+    let (compositor_token, shell_state_token, window_map) = init_shell(&mut event_loop, log.clone(), egl_display.clone());
 
     /*
      * Add a listening socket:
@@ -120,6 +144,7 @@ fn main() {
             shell_state_token,
             compositor_token,
             window_map: window_map.clone(),
+            drawer: renderer,
             logger: log,
         },
     ).unwrap();
@@ -133,22 +158,20 @@ fn main() {
 }
 
 pub struct DrmHandlerImpl {
-    shell_state_token: StateToken<ShellState<SurfaceData, Roles, (), ()>>,
-    compositor_token: CompositorToken<SurfaceData, Roles, ()>,
+    shell_state_token: StateToken<ShellState<SurfaceData, Roles, Rc<RefCell<Option<EGLDisplay>>>, ()>>,
+    compositor_token: CompositorToken<SurfaceData, Roles, Rc<RefCell<Option<EGLDisplay>>>>,
     window_map: Rc<RefCell<MyWindowMap>>,
+    drawer: GliumDrawer<DrmBackend<Card>>,
     logger: ::slog::Logger,
 }
 
-impl DrmHandler<GliumDrawer<DrmBackend>> for DrmHandlerImpl {
-    fn ready<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, _device: &mut DrmDevice<GliumDrawer<DrmBackend>>,
-             backend: &StateToken<GliumDrawer<DrmBackend>>, _crtc: crtc::Handle, _frame: u32, _duration: Duration) {
-        let state = state.into();
-        let drawer = state.get(backend);
-        let mut frame = drawer.draw();
+impl DrmHandler<Card> for DrmHandlerImpl {
+    fn ready(&mut self, _device: &mut DrmDevice<Card>, _crtc: crtc::Handle, _frame: u32, _duration: Duration) {
+        let mut frame = self.drawer.draw();
         frame.clear_color(0.8, 0.8, 0.9, 1.0);
         // redraw the frame, in a simple but inneficient way
         {
-            let screen_dimensions = drawer.get_framebuffer_dimensions();
+            let screen_dimensions = self.drawer.get_framebuffer_dimensions();
             self.window_map
                 .borrow()
                 .with_windows_from_bottom_to_top(|toplevel_surface, initial_place| {
@@ -159,18 +182,52 @@ impl DrmHandler<GliumDrawer<DrmBackend>> for DrmHandlerImpl {
                                 wl_surface,
                                 initial_place,
                                 |_surface, attributes, role, &(mut x, mut y)| {
-                                    if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
-                                        // there is actually something to draw !
+                                    // there is actually something to draw !
+                                    if attributes.user_data.texture.is_none() {
+                                        let mut remove = false;
+                                        match attributes.user_data.buffer {
+                                            Some(Buffer::Egl { ref images }) => {
+                                                match images.format {
+                                                    Format::RGB | Format::RGBA => {
+                                                        attributes.user_data.texture = self.drawer.texture_from_egl(&images);
+                                                    },
+                                                    _ => {
+                                                        // we don't handle the more complex formats here.
+                                                        attributes.user_data.texture = None;
+                                                        remove = true;
+                                                    },
+                                                };
+                                            },
+                                            Some(Buffer::Shm { ref data, ref size }) => {
+                                                attributes.user_data.texture = Some(self.drawer.texture_from_mem(data, *size));
+                                            },
+                                            _ => {},
+                                        }
+                                        if remove {
+                                            attributes.user_data.buffer = None;
+                                        }
+                                    }
+
+                                    if let Some(ref texture) = attributes.user_data.texture {
                                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                                             x += subdata.x;
                                             y += subdata.y;
                                         }
-                                        drawer.render(
+                                        info!(self.logger, "Render window");
+                                        self.drawer.render_texture(
                                             &mut frame,
-                                            contents,
-                                            (w, h),
+                                            texture,
+                                            match *attributes.user_data.buffer.as_ref().unwrap() {
+                                                Buffer::Egl { ref images } => images.y_inverted,
+                                                Buffer::Shm { .. } => false,
+                                            },
+                                            match *attributes.user_data.buffer.as_ref().unwrap() {
+                                                Buffer::Egl { ref images } => (images.width, images.height),
+                                                Buffer::Shm { ref size, .. } => *size,
+                                            },
                                             (x, y),
                                             screen_dimensions,
+                                            Blend::alpha_blending(),
                                         );
                                         TraversalAction::DoChildren((x, y))
                                     } else {
@@ -186,7 +243,7 @@ impl DrmHandler<GliumDrawer<DrmBackend>> for DrmHandlerImpl {
         frame.finish().unwrap();
     }
 
-    fn error<'a, S: Into<StateProxy<'a>>>(&mut self, _state: S, _device: &mut DrmDevice<GliumDrawer<DrmBackend>>,
+    fn error(&mut self, _device: &mut DrmDevice<Card>,
              error: DrmError) {
         panic!("{:?}", error);
     }

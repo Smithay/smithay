@@ -1,10 +1,12 @@
 //! Implementation of backend traits for types provided by `winit`
 
 use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{EGLGraphicsBackend, EGLContext, EGLSurface, BufferAccessError, PixelFormat, SwapBuffersError, EglExtensionNotSupportedError, EGLImages};
+use backend::graphics::egl::{EGLGraphicsBackend, EGLContext, EGLSurface, PixelFormat, SwapBuffersError, EglExtensionNotSupportedError};
 use backend::graphics::egl::error as egl_error;
+use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::native;
-use backend::graphics::egl::context::{GlAttributes, PixelFormatRequirements};
+use backend::graphics::egl::context::GlAttributes;
+use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLImages, Format, BufferAccessError, EGLDisplay};
 use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState,
                      KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
                      PointerMotionAbsoluteEvent, Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent,
@@ -255,27 +257,20 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
             Window::X11 { ref context, .. } => context.get_pixel_format(),
         }
     }
+}
 
-    fn bind_wl_display(&self, display: &Display) -> ::std::result::Result<(), EglExtensionNotSupportedError> {
+impl EGLWaylandExtensions for WinitGraphicsBackend {
+    fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
         match *self.window {
             Window::Wayland { ref context, .. } => context.bind_wl_display(display),
             Window::X11 { ref context, .. } => context.bind_wl_display(display),
-        }?;
-        Ok(())
+        }
     }
 
-    fn unbind_wl_display(&self, display: &Display) -> ::std::result::Result<(), EglExtensionNotSupportedError> {
+    fn unbind_wl_display(&self, display: &Display) -> EGLResult<()> {
         match *self.window {
             Window::Wayland { ref context, .. } => context.unbind_wl_display(display),
             Window::X11 { ref context, .. } => context.unbind_wl_display(display),
-        }?;
-        Ok(())
-    }
-
-    fn egl_buffer_contents(&self, buffer: WlBuffer) -> ::std::result::Result<EGLImages, BufferAccessError> {
-        match *self.window {
-            Window::Wayland { ref context, .. } => context.egl_buffer_contents(buffer),
-            Window::X11 { ref context, .. } => context.egl_buffer_contents(buffer),
         }
     }
 }

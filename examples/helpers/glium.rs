@@ -4,10 +4,13 @@ use glium::backend::Facade;
 use glium::index::PrimitiveType;
 use glium::texture::{MipmapsOption, UncompressedFloatFormat, Texture2d};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
-use smithay::backend::graphics::egl::wayland::{Format, EGLImages};
+use smithay::backend::graphics::egl::error::Result as EGLResult;
+use smithay::backend::graphics::egl::wayland::{Format, EGLImages, EGLDisplay, EGLWaylandExtensions, BufferAccessError};
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
 use std::borrow::Borrow;
 use std::ops::Deref;
+use wayland_server::Display;
+use wayland_server::protocol::wl_buffer::WlBuffer;
 
 #[derive(Copy, Clone)]
 struct Vertex {
@@ -135,15 +138,14 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
             images.width,
             images.height,
         ).unwrap();
-        if let Err(_) = unsafe { self.display.get_context().exec_in_context(|| {
-            images.bind_to_texture(0, opengl_texture.get_id())
-        }) } { return None };
+        unsafe { images.bind_to_texture(0, opengl_texture.get_id()).expect("Failed to bind to texture"); }
         Some(opengl_texture)
     }
 
     pub fn render_texture(&self, target: &mut glium::Frame, texture: &Texture2d,
                   y_inverted: bool, surface_dimensions: (u32, u32),
-                  surface_location: (i32, i32), screen_size: (u32, u32))
+                  surface_location: (i32, i32), screen_size: (u32, u32),
+                  blending: glium::Blend)
     {
         let xscale = 2.0 * (surface_dimensions.0 as f32) / (screen_size.0 as f32);
         let mut yscale = -2.0 * (surface_dimensions.1 as f32) / (screen_size.1 as f32);
@@ -173,24 +175,9 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                 &self.program,
                 &uniforms,
                 &glium::DrawParameters {
-                    blend: glium::Blend {
-                        color: glium::BlendingFunction::Addition {
-                            source: glium::LinearBlendingFactor::One,
-                            destination: glium::LinearBlendingFactor::OneMinusSourceAlpha,
-                        },
-                        alpha: glium::BlendingFunction::Addition {
-                            source: glium::LinearBlendingFactor::One,
-                            destination: glium::LinearBlendingFactor::OneMinusSourceAlpha,
-                        },
-                        ..Default::default()
-                    },
-                    depth: glium::Depth {
-                        test: glium::DepthTest::IfLess,
-                        write: false,
-                        ..Default::default()
-                    },
-                    .. Default::default()
-                },
+                    blend: blending,
+                    ..Default::default()
+                }
             )
             .unwrap();
         }
@@ -198,5 +185,14 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
     #[inline]
     pub fn draw(&self) -> Frame {
         self.display.draw()
+    }
+}
+
+impl<G: EGLWaylandExtensions + EGLGraphicsBackend + 'static> EGLWaylandExtensions for GliumDrawer<G> {
+    fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
+        self.display.bind_wl_display(display)
+    }
+    fn unbind_wl_display(&self, display: &Display) -> EGLResult<()> {
+        self.display.unbind_wl_display(display)
     }
 }

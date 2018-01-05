@@ -20,7 +20,7 @@ pub mod native;
 pub mod surface;
 pub use self::surface::EGLSurface;
 pub mod wayland;
-pub use self::wayland::{EGLImages, BufferAccessError};
+pub use self::wayland::{EGLWaylandExtensions, EGLImages, BufferAccessError};
 
 /// Error that can happen when swapping buffers.
 #[derive(Debug, Clone, PartialEq)]
@@ -90,15 +90,6 @@ impl ::std::error::Error for EglExtensionNotSupportedError {
     }
 }
 
-impl From<error::Error> for EglExtensionNotSupportedError {
-    fn from(error: error::Error) -> Self {
-        match *error.kind() {
-            error::ErrorKind::EglExtensionNotSupported(extensions) => EglExtensionNotSupportedError(extensions),
-            _ => panic!("Error not convertible"),
-        }
-    }
-}
-
 /// Describes the pixel format of the main framebuffer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PixelFormat {
@@ -153,35 +144,4 @@ pub trait EGLGraphicsBackend: GraphicsBackend {
 
     /// Returns the pixel format of the main framebuffer of the context.
     fn get_pixel_format(&self) -> PixelFormat;
-
-    /// Binds this EGL context to the given Wayland display.
-    ///
-    /// This will allow clients to utilize EGL to create hardware-accelerated
-    /// surfaces. The server will need to be able to handle egl-wl_buffers.
-    /// See the `wayland::drm` module.
-    ///
-    /// ## Errors
-    ///
-    /// This might return `WlExtensionNotSupported` if binding is not supported
-    /// by the EGL implementation.
-    ///
-    /// This might return `OtherEGLDisplayAlreadyBound` if called for the same
-    /// `Display` multiple times, as only one context may be bound at any given time.
-    fn bind_wl_display(&self, display: &Display) -> ::std::result::Result<(), EglExtensionNotSupportedError>;
-
-    /// Unbinds this EGL context from the given Wayland display.
-    ///
-    /// This will stop clients from using previously available extensions
-    /// to utilize hardware-accelerated surface via EGL.
-    ///
-    /// ## Errors
-    ///
-    /// This might return `WlExtensionNotSupported` if binding is not supported
-    /// by the EGL implementation.
-    ///
-    /// This might return `OtherEGLDisplayAlreadyBound` if called for the same
-    /// `Display` multiple times, as only one context may be bound at any given time.
-    fn unbind_wl_display(&self, display: &Display) -> ::std::result::Result<(), EglExtensionNotSupportedError>;
-
-    fn egl_buffer_contents(&self, buffer: WlBuffer) -> ::std::result::Result<EGLImages, wayland::BufferAccessError>;
 }

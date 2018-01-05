@@ -188,9 +188,11 @@
 //! ```
 
 #[cfg(feature = "backend_session")]
-use backend::graphics::egl::EGLGraphicsBackend;
+use backend::graphics::egl::EglExtensionNotSupportedError;
 use backend::graphics::egl::context::{EGLContext, GlAttributes, PixelFormatRequirements};
+use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::native::Gbm;
+use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLDisplay, BufferAccessError, EGLImages};
 #[cfg(feature = "backend_session")]
 use backend::session::SessionObserver;
 use drm::Device as BasicDevice;
@@ -200,36 +202,41 @@ use drm::result::Error as DrmError;
 use drm::control::framebuffer;
 use gbm::Device as GbmDevice;
 use nix;
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::Result as IoResult;
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::sync::{Once, ONCE_INIT};
 use std::path::PathBuf;
 use std::time::Duration;
-use wayland_server::{EventLoopHandle, StateProxy, StateToken};
+use nix::sys::stat::{dev_t, fstat};
+use wayland_server::{EventLoopHandle, StateToken};
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
+#[cfg(feature = "backend_session")]
+use wayland_server::{Display, StateProxy};
+use wayland_server::protocol::wl_buffer::WlBuffer;
 
 mod backend;
 pub mod error;
 
 pub use self::backend::DrmBackend;
+use self::backend::DrmBackendInternal;
 use self::error::*;
 
 static LOAD: Once = ONCE_INIT;
 
 /// Representation of an open drm device node to create rendering backends
-pub struct DrmDevice<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> {
+pub struct DrmDevice<A: ControlDevice + 'static> {
     context: Rc<EGLContext<Gbm<framebuffer::Info>, GbmDevice<A>>>,
-    backends: HashMap<crtc::Handle, StateToken<B>>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
+    device_id: dev_t,
+    backends: HashMap<crtc::Handle, Weak<DrmBackendInternal<A>>>,
     active: bool,
     logger: ::slog::Logger,
 }
 
-impl<A: ControlDevice + 'static, B: From<DrmBackend<A>> + Borrow<DrmBackend<A>> + 'static> DrmDevice<A, B> {
+impl<A: ControlDevice + 'static> DrmDevice<A> {
     /// Create a new `DrmDevice` from an open drm node
     ///
     /// Returns an error if the file is no valid drm node or context creation was not
@@ -273,6 +280,8 @@ impl<A: ControlDevice + 'static, B: From<DrmBackend<A>> + Borrow<DrmBackend<A>> 
             );
         });
 
+        let device_id = fstat(dev.as_raw_fd()).chain_err(|| ErrorKind::UnableToGetDeviceId)?.st_rdev;
+
         let mut drm = DrmDevice {
             // Open the gbm device from the drm device and create a context based on that
             context: Rc::new(EGLContext::new(
@@ -283,15 +292,11 @@ impl<A: ControlDevice + 'static, B: From<DrmBackend<A>> + Borrow<DrmBackend<A>> 
                     gbm
                 },
                 attributes,
-                PixelFormatRequirements {
-                    hardware_accelerated: Some(true),
-                    color_bits: Some(24),
-                    alpha_bits: Some(8),
-                    ..Default::default()
-                },
+                Default::default(),
                 log.clone(),
             ).map_err(Error::from)?),
             backends: HashMap::new(),
+            device_id,
             old_state: HashMap::new(),
             active: true,
             logger: log.clone(),
@@ -330,12 +335,11 @@ impl<A: ControlDevice + 'static, B: From<DrmBackend<A>> + Borrow<DrmBackend<A>> 
     ///
     /// Errors if initialization fails or the mode is not available on all given
     /// connectors.
-    pub fn create_backend<'a, I, S>(
-        &mut self, state: S, crtc: crtc::Handle, mode: Mode, connectors: I
-    ) -> Result<&StateToken<B>>
+    pub fn create_backend<I>(
+        &mut self, crtc: crtc::Handle, mode: Mode, connectors: I
+    ) -> Result<DrmBackend<A>>
     where
-        I: Into<Vec<connector::Handle>>,
-        S: Into<StateProxy<'a>>,
+        I: Into<Vec<connector::Handle>>
     {
         if self.backends.contains_key(&crtc) {
             bail!(ErrorKind::CrtcAlreadyInUse(crtc));
@@ -388,33 +392,13 @@ impl<A: ControlDevice + 'static, B: From<DrmBackend<A>> + Borrow<DrmBackend<A>> 
 
         let logger = self.logger.new(o!("crtc" => format!("{:?}", crtc)));
         let backend = DrmBackend::new(self.context.clone(), crtc, mode, connectors, logger)?;
-        self.backends
-            .insert(crtc, state.into().insert(backend.into()));
-
-        Ok(self.backends.get(&crtc).unwrap())
+        self.backends.insert(crtc, backend.weak());
+        Ok(backend)
     }
 
-    /// Get the current backend for a given crtc if any
-    pub fn backend_for_crtc(&self, crtc: &crtc::Handle) -> Option<&StateToken<B>> {
-        self.backends.get(crtc)
-    }
-
-    /// Get all belonging backends
-    pub fn current_backends(&self) -> Vec<&StateToken<B>> {
-        self.backends.values().collect()
-    }
-
-    /// Destroy the backend using a given crtc if any
-    ///
-    /// ## Panics
-    /// Panics if the backend is already borrowed from the state
-    pub fn destroy_backend<'a, S>(&mut self, state: S, crtc: &crtc::Handle)
-    where
-        S: Into<StateProxy<'a>>,
-    {
-        if let Some(token) = self.backends.remove(crtc) {
-            state.into().remove(token);
-        }
+    /// Returns an internal device id, that is unique per boot per system
+    pub fn device_id(&self) -> u64 {
+        self.device_id
     }
 }
 
@@ -430,20 +414,43 @@ impl<A: AsRawFd> DevPath for A {
     }
 }
 
+impl<A: ControlDevice + 'static> PartialEq for DrmDevice<A> {
+    fn eq(&self, other: &DrmDevice<A>) -> bool {
+        self.device_id == other.device_id
+    }
+}
+impl<A: ControlDevice + 'static> Eq for DrmDevice<A> {}
+
+impl<A: ControlDevice + 'static> Hash for DrmDevice<A> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.device_id.hash(state);
+    }
+}
+
 // for users convinience and FdEventSource registering
-impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> AsRawFd for DrmDevice<A, B> {
+impl<A: ControlDevice + 'static> AsRawFd for DrmDevice<A> {
     fn as_raw_fd(&self) -> RawFd {
         self.context.as_raw_fd()
     }
 }
 
-impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> BasicDevice for DrmDevice<A, B> {}
-impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> ControlDevice for DrmDevice<A, B> {}
+impl<A: ControlDevice + 'static> BasicDevice for DrmDevice<A> {}
+impl<A: ControlDevice + 'static> ControlDevice for DrmDevice<A> {}
 
-impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> Drop for DrmDevice<A, B> {
+impl<A: ControlDevice + 'static> EGLWaylandExtensions for DrmDevice<A> {
+    fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
+        self.context.bind_wl_display(display)
+    }
+
+    fn unbind_wl_display(&self, display: &Display) -> EGLResult<()> {
+        self.context.unbind_wl_display(display)
+    }
+}
+
+impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {
     fn drop(&mut self) {
         if Rc::strong_count(&self.context) > 1 {
-            panic!("Pending DrmBackends. Please free all backends before the DrmDevice gets destroyed");
+            panic!("Pending DrmBackends. You need to free all backends before the DrmDevice gets destroyed");
         }
         for (handle, (info, connectors)) in self.old_state.drain() {
             if let Err(err) = crtc::set(
@@ -469,50 +476,32 @@ impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> Drop for Dr
     }
 }
 
-impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> Hash for DrmDevice<A, B> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.as_raw_fd().hash(state)
-    }
-}
-
 /// Handler for drm node events
 ///
 /// See module-level documentation for its use
-pub trait DrmHandler<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> {
-    /// A `DrmBackend` has finished swapping buffers and new frame can now
+pub trait DrmHandler<A: ControlDevice + 'static> {
+    /// The `DrmBackend` of crtc has finished swapping buffers and new frame can now
     /// (and should be immediately) be rendered.
-    ///
-    /// The `id` argument is the `Id` of the `DrmBackend` that finished rendering,
-    /// check using `DrmBackend::is`.
-    ///
-    /// ## Panics
-    /// The device is already borrowed from the given `state`. Borrowing it again will panic
-    /// and is not necessary as it is already provided via the `device` parameter.
-    fn ready<'a, S: Into<StateProxy<'a>>>(
-        &mut self, state: S, device: &mut DrmDevice<A, B>, backend: &StateToken<B>, crtc: crtc::Handle,
+    fn ready(
+        &mut self, device: &mut DrmDevice<A>, crtc: crtc::Handle,
         frame: u32, duration: Duration,
     );
     /// The `DrmDevice` has thrown an error.
     ///
     /// The related backends are most likely *not* usable anymore and
     /// the whole stack has to be recreated..
-    ///
-    /// ## Panics
-    /// The device is already borrowed from the given `state`. Borrowing it again will panic
-    /// and is not necessary as it is already provided via the `device` parameter.
-    fn error<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &mut DrmDevice<A, B>, error: DrmError);
+    fn error(&mut self, device: &mut DrmDevice<A>, error: DrmError);
 }
 
 /// Bind a `DrmDevice` to an `EventLoop`,
 ///
 /// This will cause it to recieve events and feed them into an `DrmHandler`
-pub fn drm_device_bind<A, B, H>(
-    evlh: &mut EventLoopHandle, device: StateToken<DrmDevice<A, B>>, handler: H
-) -> IoResult<FdEventSource<(StateToken<DrmDevice<A, B>>, H)>>
+pub fn drm_device_bind<A, H>(
+    evlh: &mut EventLoopHandle, device: StateToken<DrmDevice<A>>, handler: H
+) -> IoResult<FdEventSource<(StateToken<DrmDevice<A>>, H)>>
 where
     A: ControlDevice + 'static,
-    B: From<DrmBackend<A>> + Borrow<DrmBackend<A>> + 'static,
-    H: DrmHandler<A, B> + 'static,
+    H: DrmHandler<A> + 'static,
 {
     let fd = evlh.state().get(&device).as_raw_fd();
     evlh.add_fd_event_source(
@@ -523,11 +512,10 @@ where
     )
 }
 
-fn fd_event_source_implementation<A, B, H>() -> FdEventSourceImpl<(StateToken<DrmDevice<A, B>>, H)>
+fn fd_event_source_implementation<A, H>() -> FdEventSourceImpl<(StateToken<DrmDevice<A>>, H)>
 where
     A: ControlDevice + 'static,
-    B: From<DrmBackend<A>> + Borrow<DrmBackend<A>> + 'static,
-    H: DrmHandler<A, B> + 'static,
+    H: DrmHandler<A> + 'static,
 {
     FdEventSourceImpl {
         ready: |evlh, &mut (ref mut dev_token, ref mut handler), _, _| {
@@ -541,44 +529,40 @@ where
             match events {
                 Ok(events) => for event in events {
                     if let crtc::Event::PageFlip(event) = event {
-                        evlh.state().with_value(dev_token, |state, mut dev| {
-                            if dev.active {
-                                if let Some(backend_token) = dev.backend_for_crtc(&event.crtc).cloned() {
-                                    // we can now unlock the buffer
-                                    state.get(&backend_token).borrow().unlock_buffer();
-                                    trace!(logger, "Handling event for backend {:?}", event.crtc);
-                                    // and then call the user to render the next frame
-                                    handler.ready(
-                                        state,
-                                        &mut dev,
-                                        &backend_token,
-                                        event.crtc,
-                                        event.frame,
-                                        event.duration,
-                                    );
-                                }
+                        let dev = evlh.state().get_mut(dev_token);
+                        if dev.active {
+                            if let Some(backend) = dev.backends.get(&event.crtc).iter().flat_map(|x| x.upgrade()).next() {
+                                // we can now unlock the buffer
+                                backend.unlock_buffer();
+                                trace!(logger, "Handling event for backend {:?}", event.crtc);
+                                // and then call the user to render the next frame
+                                handler.ready(
+                                    dev,
+                                    event.crtc,
+                                    event.frame,
+                                    event.duration,
+                                );
+                            } else {
+                                dev.backends.remove(&event.crtc);
                             }
-                        });
+                        }
                     }
                 },
-                Err(err) => evlh.state().with_value(dev_token, |state, mut dev| {
-                    handler.error(state, &mut dev, err)
-                }),
+                Err(err) => handler.error(evlh.state().get_mut(dev_token), err),
             };
         },
         error: |evlh, &mut (ref mut dev_token, ref mut handler), _, error| {
-            evlh.state().with_value(dev_token, |state, mut dev| {
-                warn!(dev.logger, "DrmDevice errored: {}", error);
-                handler.error(state, &mut dev, error.into());
-            })
+             let mut dev = evlh.state().get_mut(dev_token);
+             warn!(dev.logger, "DrmDevice errored: {}", error);
+             handler.error(&mut dev, error.into());
         },
     }
 }
 
 #[cfg(feature = "backend_session")]
-impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> SessionObserver for StateToken<DrmDevice<A, B>> {
+impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
     fn pause<'a>(&mut self, state: &mut StateProxy<'a>) {
-        let device: &mut DrmDevice<A, B> = state.get_mut(self);
+        let device: &mut DrmDevice<A> = state.get_mut(self);
         device.active = false;
         if let Err(err) = device.drop_master() {
             error!(
@@ -598,17 +582,24 @@ impl<A: ControlDevice + 'static, B: Borrow<DrmBackend<A>> + 'static> SessionObse
                     err
                 );
             }
-            for token in device.backends.values() {
-                let backend = state.get(token);
-                if let Err(err) = backend.borrow().swap_buffers() {
-                    // TODO handle this better?
-                    error!(
-                        device.logger,
-                        "Failed to activate crtc ({:?}) again. Error: {}",
-                        backend.borrow().crtc(),
-                        err
-                    );
+            let mut crtcs = Vec::new();
+            for (crtc, backend) in device.backends.iter() {
+                if let Some(backend) = backend.upgrade() {
+                    backend.unlock_buffer();
+                    if let Err(err) = backend.page_flip(None) {
+                        error!(
+                            device.logger,
+                            "Failed to activate crtc ({:?}) again. Error: {}",
+                            crtc,
+                            err
+                        );
+                    }
+                } else {
+                    crtcs.push(*crtc);
                 }
+            }
+            for crtc in crtcs {
+                device.backends.remove(&crtc);
             }
         })
     }

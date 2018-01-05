@@ -18,6 +18,11 @@ error_chain! {
             display("The drm device ({:?}) encountered an access error", dev),
         }
 
+        #[doc = "Unable to determine device id of drm device"]
+        UnableToGetDeviceId {
+            description("Unable to determine device id of drm device"),
+        }
+
         #[doc = "Creation of gbm resource failed"]
         GbmInitFailed {
             description("Creation of gbm resource failed"),

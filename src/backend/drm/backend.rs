@@ -1,27 +1,35 @@
 use super::error::*;
 use super::DevPath;
 use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{EGLGraphicsBackend, EGLContext, EGLSurface, EGLImage, PixelFormat, SwapBuffersError, EglExtensionNotSupportedError};
+use backend::graphics::egl::{EGLGraphicsBackend, EGLContext, EGLSurface, PixelFormat, SwapBuffersError, EglExtensionNotSupportedError};
+use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::native::{Gbm, GbmSurfaceArguments};
+use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLDisplay, BufferAccessError, EGLImages};
 use drm::control::{Device, ResourceInfo};
 use drm::control::{connector, crtc, encoder, framebuffer, Mode};
 use gbm::{Device as GbmDevice, BufferObject, BufferObjectFlags, Format as GbmFormat, Surface as GbmSurface, SurfaceBufferHandle};
 use image::{ImageBuffer, Rgba};
-use nix::libc::{c_void, c_uint};
+use nix::libc::c_void;
 use std::cell::Cell;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use wayland_server::Display;
+use wayland_server::protocol::wl_buffer::WlBuffer;
+
+pub struct DrmBackend<A: Device + 'static> {
+    backend: Rc<DrmBackendInternal<A>>,
+    surface: EGLSurface<GbmSurface<framebuffer::Info>>,
+    mode: Mode,
+    connectors: Vec<connector::Handle>,
+}
 
 /// Backend based on a `DrmDevice` and a given crtc
-pub struct DrmBackend<A: Device + 'static> {
+pub(crate) struct DrmBackendInternal<A: Device + 'static> {
     context: Rc<EGLContext<Gbm<framebuffer::Info>, GbmDevice<A>>>,
-    surface: EGLSurface<GbmSurface<framebuffer::Info>>,
     cursor: Cell<BufferObject<()>>,
+    current_frame_buffer: Cell<framebuffer::Info>,
     front_buffer: Cell<SurfaceBufferHandle<framebuffer::Info>>,
     next_buffer: Cell<Option<SurfaceBufferHandle<framebuffer::Info>>>,
     crtc: crtc::Handle,
-    mode: Mode,
-    connectors: Vec<connector::Handle>,
     logger: ::slog::Logger,
 }
 
@@ -31,10 +39,9 @@ impl<A: Device + 'static> DrmBackend<A> {
         crtc: crtc::Handle,
         mode: Mode,
         connectors: Vec<connector::Handle>,
-        logger: ::slog::Logger,
+        log: ::slog::Logger,
     ) -> Result<Self> {
         // logger already initialized by the DrmDevice
-        let log = ::slog_or_stdlog(logger);
         info!(log, "Initializing DrmBackend");
 
         let (w, h) = mode.size();
@@ -89,26 +96,24 @@ impl<A: Device + 'static> DrmBackend<A> {
         ).chain_err(|| ErrorKind::GbmInitFailed)?);
 
         Ok(DrmBackend {
-            context,
+            backend: Rc::new(DrmBackendInternal {
+                context,
+                cursor,
+                current_frame_buffer: Cell::new(fb),
+                front_buffer: Cell::new(front_bo),
+                next_buffer: Cell::new(None),
+                crtc,
+                logger: log,
+            }),
             surface,
-            cursor,
-            front_buffer: Cell::new(front_bo),
-            next_buffer: Cell::new(None),
-            crtc,
             mode,
             connectors,
-            logger: log,
         })
     }
 
-    pub(crate) fn unlock_buffer(&self) {
-        // after the page swap is finished we need to release the rendered buffer.
-        // this is called from the PageFlipHandler
-        if let Some(next_buffer) = self.next_buffer.replace(None) {
-            trace!(self.logger, "Releasing old front buffer");
-            self.front_buffer.set(next_buffer);
-            // drop and release the old buffer
-        }
+    pub(crate) fn weak(&self) -> Weak<DrmBackendInternal<A>>
+    {
+        Rc::downgrade(&self.backend)
     }
 
     /// Add a connector to backend
@@ -117,8 +122,8 @@ impl<A: Device + 'static> DrmBackend<A> {
     ///
     /// Errors if the new connector does not support the currently set `Mode`
     pub fn add_connector(&mut self, connector: connector::Handle) -> Result<()> {
-        let info = connector::Info::load_from_device(&*self.context, connector)
-            .chain_err(|| ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.context.dev_path())))?;
+        let info = connector::Info::load_from_device(&*self.backend.context, connector)
+            .chain_err(|| ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.backend.context.dev_path())))?;
 
         // check if the connector can handle the current mode
         if info.modes().contains(&self.mode) {
@@ -126,28 +131,28 @@ impl<A: Device + 'static> DrmBackend<A> {
             let encoders = info.encoders()
                 .iter()
                 .map(|encoder| {
-                    encoder::Info::load_from_device(&*self.context, *encoder)
-                        .chain_err(|| ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", self.context.dev_path())))
+                    encoder::Info::load_from_device(&*self.backend.context, *encoder)
+                        .chain_err(|| ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", self.backend.context.dev_path())))
                 })
                 .collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
-            let resource_handles = self.context
+            let resource_handles = self.backend.context
                 .resource_handles()
-                .chain_err(|| ErrorKind::DrmDev(format!("Error loading resources on {:?}", self.context.dev_path())))?;
+                .chain_err(|| ErrorKind::DrmDev(format!("Error loading resources on {:?}", self.backend.context.dev_path())))?;
             if !encoders
                 .iter()
                 .map(|encoder| encoder.possible_crtcs())
                 .all(|crtc_list| {
                     resource_handles
                         .filter_crtcs(crtc_list)
-                        .contains(&self.crtc)
+                        .contains(&self.backend.crtc)
                 }) {
-                bail!(ErrorKind::NoSuitableEncoder(info, self.crtc));
+                bail!(ErrorKind::NoSuitableEncoder(info, self.backend.crtc));
             }
 
             info!(
-                self.logger,
+                self.backend.logger,
                 "Adding new connector: {:?}",
                 info.connector_type()
             );
@@ -165,14 +170,14 @@ impl<A: Device + 'static> DrmBackend<A> {
 
     /// Removes a currently set connector
     pub fn remove_connector(&mut self, connector: connector::Handle) {
-        if let Ok(info) = connector::Info::load_from_device(&*self.context, connector) {
+        if let Ok(info) = connector::Info::load_from_device(&*self.backend.context, connector) {
             info!(
-                self.logger,
+                self.backend.logger,
                 "Removing connector: {:?}",
                 info.connector_type()
             );
         } else {
-            info!(self.logger, "Removing unknown connector");
+            info!(self.backend.logger, "Removing unknown connector");
         }
 
         self.connectors.retain(|x| *x != connector);
@@ -188,8 +193,8 @@ impl<A: Device + 'static> DrmBackend<A> {
     pub fn use_mode(&mut self, mode: Mode) -> Result<()> {
         // check the connectors
         for connector in &self.connectors {
-            if !connector::Info::load_from_device(&*self.context, *connector)
-                .chain_err(|| ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.context.dev_path())))?
+            if !connector::Info::load_from_device(&*self.backend.context, *connector)
+                .chain_err(|| ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.backend.context.dev_path())))?
                 .modes()
                 .contains(&mode)
             {
@@ -197,13 +202,13 @@ impl<A: Device + 'static> DrmBackend<A> {
             }
         }
 
-        info!(self.logger, "Setting new mode: {:?}", mode.name());
+        info!(self.backend.logger, "Setting new mode: {:?}", mode.name());
         let (w, h) = mode.size();
 
         // Recreate the surface and the related resources to match the new
         // resolution.
-        debug!(self.logger, "Reinitializing surface for new mode: {}:{}", w, h);
-        let surface = self.context.create_surface(
+        debug!(self.backend.logger, "Reinitializing surface for new mode: {}:{}", w, h);
+        let surface = self.backend.context.create_surface(
             GbmSurfaceArguments {
                 size: (w as u32, h as u32),
                 format: GbmFormat::XRGB8888,
@@ -224,10 +229,10 @@ impl<A: Device + 'static> DrmBackend<A> {
 
         // Clean up next_buffer
         {
-            if let Some(mut old_bo) = self.next_buffer.take() {
+            if let Some(mut old_bo) = self.backend.next_buffer.take() {
                 if let Ok(Some(fb)) = old_bo.take_userdata() {
-                    if let Err(err) = framebuffer::destroy(&*self.context, fb.handle()) {
-                        warn!(self.logger, "Error releasing old back_buffer framebuffer: {:?}", err);
+                    if let Err(err) = framebuffer::destroy(&*self.backend.context, fb.handle()) {
+                        warn!(self.backend.logger, "Error releasing old back_buffer framebuffer: {:?}", err);
                     }
                 }
             }
@@ -235,41 +240,37 @@ impl<A: Device + 'static> DrmBackend<A> {
 
         // Cleanup front_buffer and init the first screen on the new front_buffer
         // (must be done before calling page_flip for the first time)
-        let fb = {
-            let mut old_front_bo = self.front_buffer.replace(
-                surface
+        let mut old_front_bo = self.backend.front_buffer.replace({
+            let mut front_bo = surface
                 .lock_front_buffer()
-                .chain_err(|| ErrorKind::FailedToSwap)?
-            );
-            if let Ok(Some(fb)) = old_front_bo.take_userdata() {
-                if let Err(err) = framebuffer::destroy(&*self.context, fb.handle()) {
-                    warn!(self.logger, "Error releasing old front_buffer framebuffer: {:?}", err);
-                }
-            }
+                .chain_err(|| ErrorKind::FailedToSwap)?;
 
-            let front_bo = self.front_buffer.get_mut();
-            debug!(self.logger, "FrontBuffer color format: {:?}", front_bo.format());
+            debug!(self.backend.logger, "FrontBuffer color format: {:?}", front_bo.format());
 
             // we also need a new framebuffer for the front buffer
-            let dev_path = self.context.dev_path();
-            let fb = framebuffer::create(&*self.context, &**front_bo)
+            let dev_path = self.backend.context.dev_path();
+            let fb = framebuffer::create(&*self.backend.context, &*front_bo)
                 .chain_err(|| ErrorKind::DrmDev(format!("Error creating framebuffer on {:?}", dev_path)))?;
 
             front_bo.set_userdata(fb).unwrap();
 
-            fb
-        };
+            debug!(self.backend.logger, "Setting screen");
+            crtc::set(
+                &*self.backend.context,
+                self.backend.crtc,
+                fb.handle(),
+                &self.connectors,
+                (0, 0),
+                Some(mode),
+            ).chain_err(|| ErrorKind::DrmDev(format!("Error setting crtc {:?} on {:?}", self.backend.crtc, self.backend.context.dev_path())))?;
 
-        debug!(self.logger, "Setting screen");
-        crtc::set(
-            &*self.context,
-            self.crtc,
-            fb.handle(),
-            &self.connectors,
-            (0, 0),
-            Some(mode),
-        ).chain_err(|| ErrorKind::DrmDev(format!("Error setting crtc {:?} on {:?}", self.crtc, self.context.dev_path())))?;
-
+            front_bo
+        });
+        if let Ok(Some(fb)) = old_front_bo.take_userdata() {
+            if let Err(err) = framebuffer::destroy(&*self.backend.context, fb.handle()) {
+                warn!(self.backend.logger, "Error releasing old front_buffer framebuffer: {:?}", err);
+            }
+        }
 
         // Drop the old surface after cleanup
         self.surface = surface;
@@ -279,7 +280,37 @@ impl<A: Device + 'static> DrmBackend<A> {
 
     /// Returns the crtc id used by this backend
     pub fn crtc(&self) -> crtc::Handle {
-        self.crtc
+        self.backend.crtc
+    }
+}
+
+impl<A: Device + 'static> DrmBackendInternal<A> {
+    pub(crate) fn unlock_buffer(&self) {
+        // after the page swap is finished we need to release the rendered buffer.
+        // this is called from the PageFlipHandler
+        if let Some(next_buffer) = self.next_buffer.replace(None) {
+            trace!(self.logger, "Releasing old front buffer");
+            self.front_buffer.set(next_buffer);
+            // drop and release the old buffer
+        }
+    }
+
+    pub(crate) fn page_flip(&self, fb: Option<&framebuffer::Info>) -> ::std::result::Result<(), SwapBuffersError> {
+        trace!(self.logger, "Queueing Page flip");
+
+        let fb = *fb.unwrap_or(&self.current_frame_buffer.get());
+
+        // and flip
+        crtc::page_flip(
+            &*self.context,
+            self.crtc,
+            fb.handle(),
+            &[crtc::PageFlipFlags::PageFlipEvent],
+        ).map_err(|_| SwapBuffersError::ContextLost)?;
+
+        self.current_frame_buffer.set(fb);
+
+        Ok(())
     }
 }
 
@@ -288,7 +319,7 @@ impl<A: Device + 'static> Drop for DrmBackend<A> {
         // Drop framebuffers attached to the userdata of the gbm surface buffers.
         // (They don't implement drop, as they need the device)
         if let Ok(Some(fb)) = {
-            if let Some(mut next) = self.next_buffer.take() {
+            if let Some(mut next) = self.backend.next_buffer.take() {
                 next.take_userdata()
             } else if let Ok(mut next) = self.surface.lock_front_buffer() {
                 next.take_userdata()
@@ -297,9 +328,13 @@ impl<A: Device + 'static> Drop for DrmBackend<A> {
             }
         } {
             // ignore failure at this point
-            let _ = framebuffer::destroy(&*self.context, fb.handle());
+            let _ = framebuffer::destroy(&*self.backend.context, fb.handle());
         }
+    }
+}
 
+impl<A: Device + 'static> Drop for DrmBackendInternal<A> {
+    fn drop(&mut self) {
         if let Ok(Some(fb)) = self.front_buffer.get_mut().take_userdata() {
             // ignore failure at this point
             let _ = framebuffer::destroy(&*self.context, fb.handle());
@@ -315,22 +350,23 @@ impl<A: Device + 'static> GraphicsBackend for DrmBackend<A> {
     type Error = Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
-        trace!(self.logger, "Move the cursor to {},{}", x, y);
+        trace!(self.backend.logger, "Move the cursor to {},{}", x, y);
         crtc::move_cursor(
-            &*self.context,
-            self.crtc,
+            &*self.backend.context,
+            self.backend.crtc,
             (x as i32, y as i32),
-        ).chain_err(|| ErrorKind::DrmDev(format!("Error moving cursor on {:?}", self.context.dev_path())))
+        ).chain_err(|| ErrorKind::DrmDev(format!("Error moving cursor on {:?}", self.backend.context.dev_path())))
     }
 
     fn set_cursor_representation(
         &self, buffer: &ImageBuffer<Rgba<u8>, Vec<u8>>, hotspot: (u32, u32)
     ) -> Result<()> {
         let (w, h) = buffer.dimensions();
-        debug!(self.logger, "Importing cursor");
+        debug!(self.backend.logger, "Importing cursor");
 
         // import the cursor into a buffer we can render
         let mut cursor = self
+        .backend
         .context
         .create_buffer_object(
             w,
@@ -344,37 +380,37 @@ impl<A: Device + 'static> GraphicsBackend for DrmBackend<A> {
         .chain_err(|| ErrorKind::GbmInitFailed)?
         .chain_err(|| ErrorKind::GbmInitFailed)?;
 
-        trace!(self.logger, "Setting the new imported cursor");
+        trace!(self.backend.logger, "Setting the new imported cursor");
 
         // and set it
         if crtc::set_cursor2(
-            &*self.context,
-            self.crtc,
+            &*self.backend.context,
+            self.backend.crtc,
             &cursor,
             (hotspot.0 as i32, hotspot.1 as i32),
         ).is_err()
         {
-            crtc::set_cursor(&*self.context, self.crtc, &cursor).chain_err(
-                || ErrorKind::DrmDev(format!("Failed to set cursor on {:?}", self.context.dev_path())),
+            crtc::set_cursor(&*self.backend.context, self.backend.crtc, &cursor).chain_err(
+                || ErrorKind::DrmDev(format!("Failed to set cursor on {:?}", self.backend.context.dev_path())),
             )?;
         }
 
         // and store it
-        self.cursor.set(cursor);
+        self.backend.cursor.set(cursor);
         Ok(())
     }
 }
 
 impl<A: Device + 'static> EGLGraphicsBackend for DrmBackend<A> {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        // We cannot call lock_front_buffer anymore without releasing the previous buffer, which will happen when the page flip is done
         if {
-            let nb = self.next_buffer.take();
+            let nb = self.backend.next_buffer.take();
             let res = nb.is_some();
-            self.next_buffer.set(nb);
+            self.backend.next_buffer.set(nb);
             res
         } {
-            warn!(self.logger, "Tried to swap a DrmBackend with a queued flip");
+            // We cannot call lock_front_buffer anymore without releasing the previous buffer, which will happen when the page flip is done
+            warn!(self.backend.logger, "Tried to swap a DrmBackend with a queued flip");
             return Err(SwapBuffersError::AlreadySwapped);
         }
 
@@ -386,8 +422,8 @@ impl<A: Device + 'static> EGLGraphicsBackend for DrmBackend<A> {
         // neither weston, wlc or wlroots bother with that as well.
         // so we just assume we got at least two buffers to do flipping.
         let mut next_bo = self.surface
-            .lock_front_buffer()
-            .expect("Surface only has one front buffer. Not supported by smithay");
+        .lock_front_buffer()
+        .expect("Surface only has one front buffer. Not supported by smithay");
 
         // create a framebuffer if the front buffer does not have one already
         // (they are reused by gbm)
@@ -395,26 +431,18 @@ impl<A: Device + 'static> EGLGraphicsBackend for DrmBackend<A> {
         let fb = if let Some(info) = maybe_fb {
             info
         } else {
-            let fb = framebuffer::create(&*self.context, &*next_bo)
+            let fb = framebuffer::create(&*self.backend.context, &*next_bo)
             .map_err(|_| SwapBuffersError::ContextLost)?;
             next_bo.set_userdata(fb).unwrap();
             fb
         };
-        self.next_buffer.set(Some(next_bo));
+        self.backend.next_buffer.set(Some(next_bo));
 
-        trace!(self.logger, "Queueing Page flip");
-
-        // and flip
-        crtc::page_flip(
-            &*self.context,
-            self.crtc,
-            fb.handle(),
-            &[crtc::PageFlipFlags::PageFlipEvent],
-        ).map_err(|_| SwapBuffersError::ContextLost)
+        self.backend.page_flip(Some(&fb))
     }
 
     unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        self.context.get_proc_address(symbol)
+        self.backend.context.get_proc_address(symbol)
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
@@ -423,7 +451,7 @@ impl<A: Device + 'static> EGLGraphicsBackend for DrmBackend<A> {
     }
 
     fn is_current(&self) -> bool {
-        self.context.is_current() && self.surface.is_current()
+        self.backend.context.is_current() && self.surface.is_current()
     }
 
     unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
@@ -431,19 +459,16 @@ impl<A: Device + 'static> EGLGraphicsBackend for DrmBackend<A> {
     }
 
     fn get_pixel_format(&self) -> PixelFormat {
-        self.context.get_pixel_format()
+        self.backend.context.get_pixel_format()
+    }
+}
+
+impl<A: Device + 'static> EGLWaylandExtensions for DrmBackend<A> {
+    fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
+        self.backend.context.bind_wl_display(display)
     }
 
-    fn bind_wl_display(&self, display: &Display) -> ::std::result::Result<(), EglExtensionNotSupportedError> {
-        self.context.bind_wl_display(display).map_err(EglExtensionNotSupportedError::from)
+    fn unbind_wl_display(&self, display: &Display) -> EGLResult<()> {
+        self.backend.context.unbind_wl_display(display)
     }
-
-    fn unbind_wl_display(&self, display: &Display) -> ::std::result::Result<(), EglExtensionNotSupportedError> {
-        self.context.unbind_wl_display(display).map_err(EglExtensionNotSupportedError::from)
-    }
-
-    /*unsafe fn egl_image_to_texture(&self, image: EGLImage, tex_id: c_uint) -> ::std::result::Result<(), EglExtensionNotSupportedError> {
-        self.graphics.head().rent(|context| context.egl_image_to_texture(image, tex_id))?;
-        Ok(())
-    }*/
 }
