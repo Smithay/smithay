@@ -400,7 +400,9 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
     }
 }
 
+/// Trait for types representing open devices
 pub trait DevPath {
+    /// Returns the path of the open device if possible
     fn dev_path(&self) -> Option<PathBuf>;
 }
 
@@ -556,7 +558,7 @@ where
 #[cfg(feature = "backend_session")]
 impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
     fn pause<'a>(&mut self, state: &mut StateProxy<'a>) {
-        let device: &mut DrmDevice<A> = state.get_mut(self);
+        let device = state.get_mut(self);
         device.active = false;
         if let Err(err) = device.drop_master() {
             error!(
@@ -567,7 +569,7 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
     }
 
     fn activate<'a>(&mut self, state: &mut StateProxy<'a>) {
-        let mut device = state.get_mut(self);
+        let device = state.get_mut(self);
         device.active = true;
         if let Err(err) = device.set_master() {
             crit!(

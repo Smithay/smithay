@@ -1,4 +1,4 @@
-//! Common traits and types for egl context creation and rendering
+//! Common traits and types for egl rendering
 
 /// Large parts of this module are taken from
 /// https://github.com/tomaka/glutin/tree/044e651edf67a2029eecc650dd42546af1501414/src/api/egl/

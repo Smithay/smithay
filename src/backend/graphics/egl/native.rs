@@ -1,3 +1,5 @@
+//! Type safe native types for safe context/surface creation
+
 use super::ffi;
 use super::error::*;
 
@@ -18,9 +20,17 @@ use winit::os::unix::WindowExt;
 #[cfg(feature = "backend_winit")]
 use wayland_client::egl as wegl;
 
+/// Trait for typed backend variants (X11/Wayland/GBM)
 pub trait Backend {
+    /// Surface type created by this backend
     type Surface: NativeSurface;
 
+    /// Return an `EGLDisplay` based on this backend
+    ///
+    /// # Unsafety
+    ///
+    /// The returned `EGLDisplay` needs to be a valid ptr for egl,
+    /// but there is no way to test that.
     unsafe fn get_display<F: Fn(&str) -> bool>(
         display: ffi::NativeDisplayType,
         has_dp_extension: F,
@@ -29,6 +39,7 @@ pub trait Backend {
 }
 
 #[cfg(feature = "backend_winit")]
+/// Wayland backend type
 pub enum Wayland {}
 #[cfg(feature = "backend_winit")]
 impl Backend for Wayland {
@@ -65,8 +76,10 @@ impl Backend for Wayland {
 }
 
 #[cfg(feature = "backend_winit")]
+/// Typed Xlib window for the `X11` backend
 pub struct XlibWindow(u64);
 #[cfg(feature = "backend_winit")]
+/// X11 backend type
 pub enum X11 {}
 #[cfg(feature = "backend_winit")]
 impl Backend for X11 {
@@ -94,6 +107,7 @@ impl Backend for X11 {
     }
 }
 #[cfg(feature = "backend_drm")]
+/// Gbm backend type
 pub struct Gbm<T: 'static> {
     _userdata: PhantomData<T>,
 }
@@ -134,7 +148,9 @@ impl<T: 'static> Backend for Gbm<T> {
 ///
 /// The returned `NativeDisplayType` must be valid for egl and there is no way to test that.
 pub unsafe trait NativeDisplay<B: Backend> {
+    /// Arguments used to surface creation.
     type Arguments;
+    /// Error type thrown by the surface creation in case of failure.
     type Error: ::std::error::Error + Send + 'static;
     /// Because one typ might implement multiple `Backend` this function must be called to check
     /// if the expected `Backend` is used at runtime.

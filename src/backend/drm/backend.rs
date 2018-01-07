@@ -14,6 +14,7 @@ use std::cell::Cell;
 use std::rc::{Rc, Weak};
 use wayland_server::Display;
 
+/// Backend based on a `DrmDevice` and a given crtc
 pub struct DrmBackend<A: Device + 'static> {
     backend: Rc<DrmBackendInternal<A>>,
     surface: EGLSurface<GbmSurface<framebuffer::Info>>,
@@ -21,7 +22,6 @@ pub struct DrmBackend<A: Device + 'static> {
     connectors: Vec<connector::Handle>,
 }
 
-/// Backend based on a `DrmDevice` and a given crtc
 pub(crate) struct DrmBackendInternal<A: Device + 'static> {
     context: Rc<EGLContext<Gbm<framebuffer::Info>, GbmDevice<A>>>,
     cursor: Cell<BufferObject<()>>,

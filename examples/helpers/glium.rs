@@ -1,16 +1,14 @@
 use glium;
 use glium::{Frame, Surface, GlObject};
-use glium::backend::Facade;
 use glium::index::PrimitiveType;
 use glium::texture::{MipmapsOption, UncompressedFloatFormat, Texture2d};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::egl::error::Result as EGLResult;
-use smithay::backend::graphics::egl::wayland::{Format, EGLImages, EGLDisplay, EGLWaylandExtensions, BufferAccessError};
+use smithay::backend::graphics::egl::wayland::{Format, EGLImages, EGLDisplay, EGLWaylandExtensions};
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
 use std::borrow::Borrow;
 use std::ops::Deref;
 use wayland_server::Display;
-use wayland_server::protocol::wl_buffer::WlBuffer;
 
 #[derive(Copy, Clone)]
 struct Vertex {

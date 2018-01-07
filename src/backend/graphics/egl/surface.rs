@@ -1,3 +1,5 @@
+//! EGL surface related structs
+
 use super::{EGLContext, SwapBuffersError};
 use super::error::*;
 use super::ffi;

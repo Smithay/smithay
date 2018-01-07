@@ -19,7 +19,6 @@ extern crate ctrlc;
 
 mod helpers;
 
-use drm::Device as BasicDevice;
 use drm::control::{Device as ControlDevice, ResourceInfo};
 use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
 use drm::control::encoder::Info as EncoderInfo;
@@ -45,7 +44,6 @@ use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, TraversalAct
 use smithay::wayland::compositor::roles::Role;
 use smithay::wayland::output::{Mode, Output, PhysicalProperties};
 use smithay::wayland::seat::{KeyboardHandle, PointerHandle, Seat};
-use smithay::wayland::shell::ShellState;
 use smithay::wayland::shm::init_shm_global;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -56,7 +54,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::path::PathBuf;
 use std::process::Command;
-use std::os::unix::io::{AsRawFd, RawFd};
 use xkbcommon::xkb::keysyms as xkb;
 use wayland_server::{Display, StateToken, StateProxy};
 use wayland_server::protocol::{wl_output, wl_pointer};
@@ -199,7 +196,7 @@ fn main() {
      */
     init_shm_global(&mut event_loop, vec![], log.clone());
 
-    let (compositor_token, shell_state_token, window_map) = init_shell(&mut event_loop, log.clone(), active_egl_context.clone());
+    let (compositor_token, _shell_state_token, window_map) = init_shell(&mut event_loop, log.clone(), active_egl_context.clone());
 
     /*
      * Initialize session on the current tty
@@ -226,7 +223,6 @@ fn main() {
     let bytes = include_bytes!("resources/cursor2.rgba");
     let udev_token
         = UdevBackend::new(&mut event_loop, &context, session.clone(), UdevHandlerImpl {
-            shell_state_token,
             compositor_token,
             active_egl_context,
             backends: HashMap::new(),
@@ -307,9 +303,12 @@ fn main() {
     let udev_event_source = udev_backend_bind(&mut event_loop, udev_token).unwrap();
 
     while running.load(Ordering::SeqCst) {
-        event_loop.dispatch(Some(16));
-        display.flush_clients();
-        window_map.borrow_mut().refresh();
+        if let Err(_) = event_loop.dispatch(Some(16)) {
+            running.store(false, Ordering::SeqCst);
+        } else {
+            display.flush_clients();
+            window_map.borrow_mut().refresh();
+        }
     }
 
     println!("Bye Bye");
@@ -326,7 +325,6 @@ fn main() {
 }
 
 struct UdevHandlerImpl {
-    shell_state_token: StateToken<ShellState<SurfaceData, Roles, Rc<RefCell<Option<EGLDisplay>>>, ()>>,
     compositor_token: CompositorToken<SurfaceData, Roles, Rc<RefCell<Option<EGLDisplay>>>>,
     active_egl_context: Rc<RefCell<Option<EGLDisplay>>>,
     backends: HashMap<u64, Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<DrmBackend<SessionFdDrmDevice>>>>>>,
@@ -399,7 +397,6 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
         self.backends.insert(device.device_id(), backends.clone());
 
         Some(DrmHandlerImpl {
-            shell_state_token: self.shell_state_token.clone(),
             compositor_token: self.compositor_token.clone(),
             backends,
             window_map: self.window_map.clone(),
@@ -434,7 +431,6 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
 }
 
 pub struct DrmHandlerImpl {
-    shell_state_token: StateToken<ShellState<SurfaceData, Roles, Rc<RefCell<Option<EGLDisplay>>>, ()>>,
     compositor_token: CompositorToken<SurfaceData, Roles, Rc<RefCell<Option<EGLDisplay>>>>,
     backends: Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<DrmBackend<SessionFdDrmDevice>>>>>,
     window_map: Rc<RefCell<MyWindowMap>>,

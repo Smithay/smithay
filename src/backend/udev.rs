@@ -25,6 +25,7 @@ use udev::{Context, Enumerator, Event, EventType, MonitorBuilder, MonitorSocket,
 use wayland_server::{EventLoopHandle, StateProxy, StateToken};
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 
+/// Udev's `DrmDevice` type based on the underlying session
 pub struct SessionFdDrmDevice(RawFd);
 
 impl AsRawFd for SessionFdDrmDevice {

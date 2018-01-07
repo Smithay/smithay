@@ -27,7 +27,6 @@ use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::egl::wayland::{Format, EGLDisplay, EGLWaylandExtensions};
 use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
-use smithay::wayland::shell::ShellState;
 use smithay::wayland::shm::init_shm_global;
 use std::cell::RefCell;
 use std::fs::{File, OpenOptions};
@@ -35,7 +34,6 @@ use std::os::unix::io::RawFd;
 use std::os::unix::io::AsRawFd;
 use std::rc::Rc;
 use std::time::Duration;
-use wayland_server::{StateToken};
 
 #[derive(Debug)]
 pub struct Card(File);
@@ -125,7 +123,7 @@ fn main() {
 
     init_shm_global(&mut event_loop, vec![], log.clone());
 
-    let (compositor_token, shell_state_token, window_map) = init_shell(&mut event_loop, log.clone(), egl_display.clone());
+    let (compositor_token, _shell_state_token, window_map) = init_shell(&mut event_loop, log.clone(), egl_display.clone());
 
     /*
      * Add a listening socket:
@@ -141,7 +139,6 @@ fn main() {
         &mut event_loop,
         device_token,
         DrmHandlerImpl {
-            shell_state_token,
             compositor_token,
             window_map: window_map.clone(),
             drawer: renderer,
@@ -158,7 +155,6 @@ fn main() {
 }
 
 pub struct DrmHandlerImpl {
-    shell_state_token: StateToken<ShellState<SurfaceData, Roles, Rc<RefCell<Option<EGLDisplay>>>, ()>>,
     compositor_token: CompositorToken<SurfaceData, Roles, Rc<RefCell<Option<EGLDisplay>>>>,
     window_map: Rc<RefCell<MyWindowMap>>,
     drawer: GliumDrawer<DrmBackend<Card>>,

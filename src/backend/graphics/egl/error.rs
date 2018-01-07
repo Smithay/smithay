@@ -1,3 +1,5 @@
+//! EGL error types
+
 error_chain! {
     errors {
         #[doc = "The requested OpenGL version is not supported"]

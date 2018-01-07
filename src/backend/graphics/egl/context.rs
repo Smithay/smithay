@@ -1,3 +1,5 @@
+//! EGL context related structs
+
 use super::{ffi, EGLSurface, PixelFormat};
 use super::error::*;
 use super::native;
@@ -47,6 +49,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> DerefMut for EGLContext<B,
 }
 
 impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
+    /// Create a new `EGLContext` from a given `NativeDisplay`
     pub fn new<L>(
         native: N,
         attributes: GlAttributes,
@@ -146,16 +149,16 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
                     Err(_) => ptr::null(),
                 }
             });
-            let procAddress = constrain(|sym| {
+            let proc_address = constrain(|sym| {
                 let addr = CString::new(sym).unwrap();
                 let addr = addr.as_ptr();
                 ffi::egl::GetProcAddress(addr) as *const _
             });
-            ffi::egl::load_with(&procAddress);
-            ffi::egl::BindWaylandDisplayWL::load_with(&procAddress);
-            ffi::egl::UnbindWaylandDisplayWL::load_with(&procAddress);
-            ffi::egl::QueryWaylandBufferWL::load_with(&procAddress);
-            ffi::gl::load_with(&procAddress);
+            ffi::egl::load_with(&proc_address);
+            ffi::egl::BindWaylandDisplayWL::load_with(&proc_address);
+            ffi::egl::UnbindWaylandDisplayWL::load_with(&proc_address);
+            ffi::egl::QueryWaylandBufferWL::load_with(&proc_address);
+            ffi::gl::load_with(&proc_address);
         });
 
         // the first step is to query the list of extensions without any display, if supported

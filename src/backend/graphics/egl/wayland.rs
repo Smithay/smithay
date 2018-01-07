@@ -1,3 +1,15 @@
+//! Wayland specific EGL functionality - EGL based WlBuffers.
+//!
+//! The types of this module can be used to initialize hardware acceleration rendering
+//! based on EGL for clients as it may enabled usage of `EGLImage` based `WlBuffer`s.
+//!
+//! To use it bind any backend implementing the `EGLWaylandExtensions` trait, that shall do the
+//! rendering (so pick a fast one), to the `wayland_server::Display` of your compositor.
+//! Note only one backend may be bould to any `Display` at any time.
+//!
+//! You may then use the resulting `EGLDisplay` to recieve `EGLImages` of an egl-based `WlBuffer`
+//! for rendering.
+
 use backend::graphics::egl::{EGLContext, EglExtensionNotSupportedError, ffi, native};
 use backend::graphics::egl::error::*;
 use backend::graphics::egl::ffi::egl::types::EGLImage;
@@ -113,17 +125,26 @@ impl ::std::error::Error for TextureCreationError {
     }
 }
 
+/// Texture format types
 #[repr(i32)]
+#[allow(non_camel_case_types)]
 pub enum Format {
+    /// RGB format
     RGB = ffi::egl::TEXTURE_RGB as i32,
+    /// RGB + alpha channel format
     RGBA = ffi::egl::TEXTURE_RGBA as i32,
+    /// External format
     External = ffi::egl::TEXTURE_EXTERNAL_WL,
+    /// 2-plane Y and UV format
     Y_UV = ffi::egl::TEXTURE_Y_UV_WL,
+    /// 3-plane Y, U and V format
     Y_U_V = ffi::egl::TEXTURE_Y_U_V_WL,
+    /// 2-plane Y and XUXV format
     Y_XUXV = ffi::egl::TEXTURE_Y_XUXV_WL,
 }
 
 impl Format {
+    /// Amount of planes this format uses
     pub fn num_planes(&self) -> usize {
         match *self {
             Format::RGB | Format::RGBA | Format::External => 1,
@@ -133,21 +154,34 @@ impl Format {
     }
 }
 
+/// Images of the egl-based `WlBuffer`.
 pub struct EGLImages {
     display: Weak<ffi::egl::types::EGLDisplay>,
+    /// Width in pixels
     pub width: u32,
+    /// Height in pixels
     pub height: u32,
+    /// If the y-axis is inverted or not
     pub y_inverted: bool,
+    /// Format of these images
     pub format: Format,
     images: Vec<EGLImage>,
     buffer: WlBuffer,
 }
 
 impl EGLImages {
+    /// Amount of planes of these `EGLImages`
     pub fn num_planes(&self) -> usize {
         self.format.num_planes()
     }
 
+    /// Bind plane to an OpenGL texture id
+    ///
+    /// This does only temporarily modify the OpenGL state any changes are reverted before returning.
+    ///
+    /// # Unsafety
+    ///
+    /// The given `tex_id` needs to be a valid GL texture otherwise undefined behavior might occur.
     pub unsafe fn bind_to_texture(&self, plane: usize, tex_id: c_uint) -> ::std::result::Result<(), TextureCreationError> {
         if self.display.upgrade().is_some() {
             let mut old_tex_id: i32 = 0;
@@ -177,6 +211,8 @@ impl Drop for EGLImages {
     }
 }
 
+/// Trait any backend type may implement that allows binding a `wayland_server::Display`
+/// to create an `EGLDisplay` for egl-based `WlBuffer`s.
 pub trait EGLWaylandExtensions {
     /// Binds this EGL context to the given Wayland display.
     ///
@@ -194,6 +230,9 @@ pub trait EGLWaylandExtensions {
     fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay>;
 }
 
+/// Type to recieve `EGLImages` for egl-based `WlBuffer`s.
+///
+/// Can be created by using `EGLWaylandExtensions::bind_wl_display`.
 pub struct EGLDisplay(Weak<ffi::egl::types::EGLDisplay>, *mut wl_display);
 
 impl EGLDisplay {
@@ -201,6 +240,11 @@ impl EGLDisplay {
         EGLDisplay(Rc::downgrade(&context.display), display)
     }
 
+    /// Try to recieve `EGLImages` from a given `WlBuffer`.
+    ///
+    /// In case the buffer is not managed by egl (but e.g. the wayland::shm module)
+    /// a `BufferAccessError::NotManaged(WlBuffer)` is returned with the original buffer
+    /// to render it another way.
     pub fn egl_buffer_contents(&self, buffer: WlBuffer) -> ::std::result::Result<EGLImages, BufferAccessError> {
         if let Some(display) = self.0.upgrade() {
             let mut format: i32 = 0;
