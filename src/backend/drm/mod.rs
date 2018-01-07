@@ -44,23 +44,37 @@
 //! extern crate smithay;
 //! extern crate wayland_server;
 //!
+//! use drm::Device as BasicDevice;
 //! use drm::control::{Device as ControlDevice, ResourceInfo};
 //! use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
 //! use drm::control::encoder::{Info as EncoderInfo};
-//! use std::fs::OpenOptions;
+//! use std::fs::{File, OpenOptions};
+//! use std::os::unix::io::RawFd;
+//! use std::os::unix::io::AsRawFd;
 //! use smithay::backend::drm::{DrmDevice, DrmBackend};
 //! use wayland_server::StateToken;
 //!
-//! # fn main() {
+//! #[derive(Debug)]
+//! pub struct Card(File);
 //!
+//! impl AsRawFd for Card {
+//!     fn as_raw_fd(&self) -> RawFd {
+//!         self.0.as_raw_fd()
+//!     }
+//! }
+//!
+//! impl BasicDevice for Card {}
+//! impl ControlDevice for Card {}
+//!
+//! # fn main() {
 //! let (_display, mut event_loop) = wayland_server::create_display();
 //!
 //! // Open the drm device
 //! let mut options = OpenOptions::new();
 //! options.read(true);
 //! options.write(true);
-//! let mut device = DrmDevice::new_from_file(
-//!     options.open("/dev/dri/card0").unwrap(), // try to detect it properly
+//! let mut device = DrmDevice::new(
+//!     Card(options.open("/dev/dri/card0").unwrap()), // try to detect it properly
 //!     None /*put a logger here*/
 //! ).unwrap();
 //!
@@ -89,12 +103,11 @@
 //! let mode = connector_info.modes()[0];
 //!
 //! // Create the backend
-//! let backend: StateToken<DrmBackend> = device.create_backend(
-//!     event_loop.state(),
+//! let backend = device.create_backend(
 //!     crtc,
 //!     mode,
 //!     vec![connector_info.handle()]
-//! ).unwrap().clone();
+//! ).unwrap();
 //! # }
 //! ```
 //!
@@ -116,15 +129,27 @@
 //! # extern crate smithay;
 //! # extern crate wayland_server;
 //! #
+//! # use drm::Device as BasicDevice;
 //! # use drm::control::{Device as ControlDevice, ResourceInfo};
 //! # use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
 //! use drm::control::crtc::{Handle as CrtcHandle};
 //! use drm::result::Error as DrmError;
-//! # use std::fs::OpenOptions;
+//! # use std::fs::{File, OpenOptions};
+//! # use std::os::unix::io::RawFd;
+//! # use std::os::unix::io::AsRawFd;
 //! # use std::time::Duration;
 //! use smithay::backend::drm::{DrmDevice, DrmBackend, DrmHandler, drm_device_bind};
 //! use smithay::backend::graphics::egl::EGLGraphicsBackend;
-//! use wayland_server::{StateToken, StateProxy};
+//! #
+//! # #[derive(Debug)]
+//! # pub struct Card(File);
+//! # impl AsRawFd for Card {
+//! #     fn as_raw_fd(&self) -> RawFd {
+//! #         self.0.as_raw_fd()
+//! #     }
+//! # }
+//! # impl BasicDevice for Card {}
+//! # impl ControlDevice for Card {}
 //! #
 //! # fn main() {
 //! #
@@ -133,8 +158,8 @@
 //! # let mut options = OpenOptions::new();
 //! # options.read(true);
 //! # options.write(true);
-//! # let mut device = DrmDevice::new_from_file(
-//! #     options.open("/dev/dri/card0").unwrap(), // try to detect it properly
+//! # let mut device = DrmDevice::new(
+//! #     Card(options.open("/dev/dri/card0").unwrap()), // try to detect it properly
 //! #     None /*put a logger here*/
 //! # ).unwrap();
 //! #
@@ -145,32 +170,28 @@
 //! #     .unwrap();
 //! # let crtc = res_handles.crtcs()[0];
 //! # let mode = connector_info.modes()[0];
-//! # let backend: StateToken<DrmBackend> = device.create_backend(
-//! #     event_loop.state(),
+//! # let backend = device.create_backend(
 //! #     crtc,
 //! #     mode,
 //! #     vec![connector_info.handle()]
-//! # ).unwrap().clone();
+//! # ).unwrap();
 //!
-//! struct MyDrmHandler;
+//! struct MyDrmHandler(DrmBackend<Card>);
 //!
-//! impl DrmHandler<DrmBackend> for MyDrmHandler {
-//!     fn ready<'a, S: Into<StateProxy<'a>>>(
+//! impl DrmHandler<Card> for MyDrmHandler {
+//!     fn ready(
 //!         &mut self,
-//!         state: S,
-//!         _device: &mut DrmDevice<DrmBackend>,
-//!         backend: &StateToken<DrmBackend>,
+//!         _device: &mut DrmDevice<Card>,
 //!         _crtc: CrtcHandle,
 //!         _frame: u32,
 //!         _duration: Duration)
 //!     {
 //!         // render surfaces and swap again
-//!         state.into().get(backend).swap_buffers().unwrap();
+//!         self.0.swap_buffers().unwrap();
 //!     }
-//!     fn error<'a, S: Into<StateProxy<'a>>>(
+//!     fn error(
 //!         &mut self,
-//!         _state: S,
-//!         device: &mut DrmDevice<DrmBackend>,
+//!         device: &mut DrmDevice<Card>,
 //!         error: DrmError)
 //!     {
 //!         panic!("DrmDevice errored: {}", error);
@@ -178,10 +199,10 @@
 //! }
 //!
 //! // render something (like clear_color)
-//! event_loop.state().get(&backend).swap_buffers().unwrap();
+//! backend.swap_buffers().unwrap();
 //!
 //! let device_token = event_loop.state().insert(device);
-//! let _source = drm_device_bind(&mut event_loop, device_token, MyDrmHandler).unwrap();
+//! let _source = drm_device_bind(&mut event_loop, device_token, MyDrmHandler(backend)).unwrap();
 //!
 //! event_loop.run().unwrap();
 //! # }
