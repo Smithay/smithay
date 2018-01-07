@@ -20,18 +20,18 @@ use drm::control::crtc;
 use drm::control::encoder::Info as EncoderInfo;
 use drm::result::Error as DrmError;
 use glium::{Blend, Surface};
-use helpers::{init_shell, GliumDrawer, MyWindowMap, Roles, SurfaceData, Buffer};
+use helpers::{init_shell, Buffer, GliumDrawer, MyWindowMap, Roles, SurfaceData};
 use slog::{Drain, Logger};
 use smithay::backend::drm::{drm_device_bind, DrmBackend, DrmDevice, DrmHandler};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
-use smithay::backend::graphics::egl::wayland::{Format, EGLDisplay, EGLWaylandExtensions};
+use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions, Format};
 use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
 use smithay::wayland::shm::init_shm_global;
 use std::cell::RefCell;
 use std::fs::{File, OpenOptions};
-use std::os::unix::io::RawFd;
 use std::os::unix::io::AsRawFd;
+use std::os::unix::io::RawFd;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -64,8 +64,10 @@ fn main() {
     let mut options = OpenOptions::new();
     options.read(true);
     options.write(true);
-    let mut device =
-        DrmDevice::new(Card(options.clone().open("/dev/dri/card0").unwrap()), log.clone()).unwrap();
+    let mut device = DrmDevice::new(
+        Card(options.clone().open("/dev/dri/card0").unwrap()),
+        log.clone(),
+    ).unwrap();
 
     // Get a set of all modesetting resource handles (excluding planes):
     let res_handles = device.resource_handles().unwrap();
@@ -74,9 +76,7 @@ fn main() {
     let connector_info = res_handles
         .connectors()
         .iter()
-        .map(|conn| {
-            ConnectorInfo::load_from_device(&device, *conn).unwrap()
-        })
+        .map(|conn| ConnectorInfo::load_from_device(&device, *conn).unwrap())
         .find(|conn| conn.connection_state() == ConnectorState::Connected)
         .unwrap();
 
@@ -96,9 +96,11 @@ fn main() {
     let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
 
     // Initialize the hardware backend
-    let renderer = GliumDrawer::from(device
-        .create_backend(crtc, mode, vec![connector_info.handle()])
-        .unwrap());
+    let renderer = GliumDrawer::from(
+        device
+            .create_backend(crtc, mode, vec![connector_info.handle()])
+            .unwrap(),
+    );
     {
         /*
          * Initialize glium
@@ -114,7 +116,7 @@ fn main() {
             Some(egl_display)
         } else {
             None
-        }
+        },
     ));
 
     /*
@@ -123,7 +125,8 @@ fn main() {
 
     init_shm_global(&mut event_loop, vec![], log.clone());
 
-    let (compositor_token, _shell_state_token, window_map) = init_shell(&mut event_loop, log.clone(), egl_display.clone());
+    let (compositor_token, _shell_state_token, window_map) =
+        init_shell(&mut event_loop, log.clone(), egl_display.clone());
 
     /*
      * Add a listening socket:
@@ -162,7 +165,9 @@ pub struct DrmHandlerImpl {
 }
 
 impl DrmHandler<Card> for DrmHandlerImpl {
-    fn ready(&mut self, _device: &mut DrmDevice<Card>, _crtc: crtc::Handle, _frame: u32, _duration: Duration) {
+    fn ready(
+        &mut self, _device: &mut DrmDevice<Card>, _crtc: crtc::Handle, _frame: u32, _duration: Duration
+    ) {
         let mut frame = self.drawer.draw();
         frame.clear_color(0.8, 0.8, 0.9, 1.0);
         // redraw the frame, in a simple but inneficient way
@@ -185,19 +190,21 @@ impl DrmHandler<Card> for DrmHandlerImpl {
                                             Some(Buffer::Egl { ref images }) => {
                                                 match images.format {
                                                     Format::RGB | Format::RGBA => {
-                                                        attributes.user_data.texture = self.drawer.texture_from_egl(&images);
-                                                    },
+                                                        attributes.user_data.texture =
+                                                            self.drawer.texture_from_egl(&images);
+                                                    }
                                                     _ => {
                                                         // we don't handle the more complex formats here.
                                                         attributes.user_data.texture = None;
                                                         remove = true;
-                                                    },
+                                                    }
                                                 };
-                                            },
+                                            }
                                             Some(Buffer::Shm { ref data, ref size }) => {
-                                                attributes.user_data.texture = Some(self.drawer.texture_from_mem(data, *size));
-                                            },
-                                            _ => {},
+                                                attributes.user_data.texture =
+                                                    Some(self.drawer.texture_from_mem(data, *size));
+                                            }
+                                            _ => {}
                                         }
                                         if remove {
                                             attributes.user_data.buffer = None;
@@ -239,8 +246,7 @@ impl DrmHandler<Card> for DrmHandlerImpl {
         frame.finish().unwrap();
     }
 
-    fn error(&mut self, _device: &mut DrmDevice<Card>,
-             error: DrmError) {
+    fn error(&mut self, _device: &mut DrmDevice<Card>, error: DrmError) {
         panic!("{:?}", error);
     }
 }

@@ -1,8 +1,8 @@
 //! Glium compatibility module
 
 use backend::graphics::egl::{EGLGraphicsBackend, SwapBuffersError};
-use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLDisplay};
 use backend::graphics::egl::error::Result as EGLResult;
+use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
 use glium::Frame;
 use glium::SwapBuffersError as GliumSwapBuffersError;
 use glium::backend::{Backend, Context, Facade};
@@ -76,12 +76,12 @@ impl<T: EGLGraphicsBackend + 'static> From<T> for GliumGraphicsBackend<T> {
     }
 }
 
-impl<T: EGLGraphicsBackend + EGLWaylandExtensions + 'static> EGLWaylandExtensions for GliumGraphicsBackend<T> {
+impl<T: EGLGraphicsBackend + EGLWaylandExtensions + 'static> EGLWaylandExtensions
+    for GliumGraphicsBackend<T> {
     fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
         (*self.backend).0.bind_wl_display(display)
     }
 }
-
 
 unsafe impl<T: EGLGraphicsBackend> Backend for InternalBackend<T> {
     fn swap_buffers(&self) -> Result<(), GliumSwapBuffersError> {

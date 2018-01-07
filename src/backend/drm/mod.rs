@@ -212,29 +212,29 @@
 use backend::graphics::egl::context::{EGLContext, GlAttributes};
 use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::native::Gbm;
-use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLDisplay};
+use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
 #[cfg(feature = "backend_session")]
 use backend::session::SessionObserver;
 use drm::Device as BasicDevice;
 use drm::control::{connector, crtc, encoder, Mode, ResourceInfo};
 use drm::control::Device as ControlDevice;
-use drm::result::Error as DrmError;
 use drm::control::framebuffer;
+use drm::result::Error as DrmError;
 use gbm::Device as GbmDevice;
 use nix;
+use nix::sys::stat::{dev_t, fstat};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::Result as IoResult;
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::sync::{Once, ONCE_INIT};
-use std::path::PathBuf;
 use std::time::Duration;
-use nix::sys::stat::{dev_t, fstat};
-use wayland_server::{EventLoopHandle, StateToken};
-use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 #[cfg(feature = "backend_session")]
 use wayland_server::{Display, StateProxy};
+use wayland_server::{EventLoopHandle, StateToken};
+use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 
 mod backend;
 pub mod error;
@@ -299,7 +299,9 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
             );
         });
 
-        let device_id = fstat(dev.as_raw_fd()).chain_err(|| ErrorKind::UnableToGetDeviceId)?.st_rdev;
+        let device_id = fstat(dev.as_raw_fd())
+            .chain_err(|| ErrorKind::UnableToGetDeviceId)?
+            .st_rdev;
 
         let mut drm = DrmDevice {
             // Open the gbm device from the drm device and create a context based on that
@@ -326,17 +328,30 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
         // we want to mode-set, so we better be the master
         drm.set_master().chain_err(|| ErrorKind::DrmMasterFailed)?;
 
-        let res_handles = drm.resource_handles()
-            .chain_err(|| ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", drm.dev_path())))?;
+        let res_handles = drm.resource_handles().chain_err(|| {
+            ErrorKind::DrmDev(format!(
+                "Error loading drm resources on {:?}",
+                drm.dev_path()
+            ))
+        })?;
         for &con in res_handles.connectors() {
-            let con_info = connector::Info::load_from_device(&drm, con)
-                .chain_err(|| ErrorKind::DrmDev(format!("Error loading connector info on {:?}", drm.dev_path())))?;
+            let con_info = connector::Info::load_from_device(&drm, con).chain_err(|| {
+                ErrorKind::DrmDev(format!(
+                    "Error loading connector info on {:?}",
+                    drm.dev_path()
+                ))
+            })?;
             if let Some(enc) = con_info.current_encoder() {
-                let enc_info = encoder::Info::load_from_device(&drm, enc)
-                    .chain_err(|| ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", drm.dev_path())))?;
+                let enc_info = encoder::Info::load_from_device(&drm, enc).chain_err(|| {
+                    ErrorKind::DrmDev(format!(
+                        "Error loading encoder info on {:?}",
+                        drm.dev_path()
+                    ))
+                })?;
                 if let Some(crtc) = enc_info.current_crtc() {
-                    let info = crtc::Info::load_from_device(&drm, crtc)
-                        .chain_err(|| ErrorKind::DrmDev(format!("Error loading crtc info on {:?}", drm.dev_path())))?;
+                    let info = crtc::Info::load_from_device(&drm, crtc).chain_err(|| {
+                        ErrorKind::DrmDev(format!("Error loading crtc info on {:?}", drm.dev_path()))
+                    })?;
                     drm.old_state
                         .entry(crtc)
                         .or_insert((info, Vec::new()))
@@ -358,7 +373,7 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
         &mut self, crtc: crtc::Handle, mode: Mode, connectors: I
     ) -> Result<DrmBackend<A>>
     where
-        I: Into<Vec<connector::Handle>>
+        I: Into<Vec<connector::Handle>>,
     {
         if self.backends.contains_key(&crtc) {
             bail!(ErrorKind::CrtcAlreadyInUse(crtc));
@@ -373,10 +388,12 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
 
         // check if we have an encoder for every connector and the mode mode
         for connector in &connectors {
-            let con_info = connector::Info::load_from_device(self, *connector)
-                .chain_err(|| {
-                    ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
-                })?;
+            let con_info = connector::Info::load_from_device(self, *connector).chain_err(|| {
+                ErrorKind::DrmDev(format!(
+                    "Error loading connector info on {:?}",
+                    self.dev_path()
+                ))
+            })?;
 
             // check the mode
             if !con_info.modes().contains(&mode) {
@@ -389,14 +406,20 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
                 .iter()
                 .map(|encoder| {
                     encoder::Info::load_from_device(self, *encoder).chain_err(|| {
-                        ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", self.dev_path()))
+                        ErrorKind::DrmDev(format!(
+                            "Error loading encoder info on {:?}",
+                            self.dev_path()
+                        ))
                     })
                 })
                 .collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
             let resource_handles = self.resource_handles().chain_err(|| {
-                ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", self.dev_path()))
+                ErrorKind::DrmDev(format!(
+                    "Error loading drm resources on {:?}",
+                    self.dev_path()
+                ))
             })?;
             if !encoders
                 .iter()
@@ -499,10 +522,7 @@ impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {
 pub trait DrmHandler<A: ControlDevice + 'static> {
     /// The `DrmBackend` of crtc has finished swapping buffers and new frame can now
     /// (and should be immediately) be rendered.
-    fn ready(
-        &mut self, device: &mut DrmDevice<A>, crtc: crtc::Handle,
-        frame: u32, duration: Duration,
-    );
+    fn ready(&mut self, device: &mut DrmDevice<A>, crtc: crtc::Handle, frame: u32, duration: Duration);
     /// The `DrmDevice` has thrown an error.
     ///
     /// The related backends are most likely *not* usable anymore and
@@ -548,17 +568,17 @@ where
                     if let crtc::Event::PageFlip(event) = event {
                         let dev = evlh.state().get_mut(dev_token);
                         if dev.active {
-                            if let Some(backend) = dev.backends.get(&event.crtc).iter().flat_map(|x| x.upgrade()).next() {
+                            if let Some(backend) = dev.backends
+                                .get(&event.crtc)
+                                .iter()
+                                .flat_map(|x| x.upgrade())
+                                .next()
+                            {
                                 // we can now unlock the buffer
                                 backend.unlock_buffer();
                                 trace!(logger, "Handling event for backend {:?}", event.crtc);
                                 // and then call the user to render the next frame
-                                handler.ready(
-                                    dev,
-                                    event.crtc,
-                                    event.frame,
-                                    event.duration,
-                                );
+                                handler.ready(dev, event.crtc, event.frame, event.duration);
                             } else {
                                 dev.backends.remove(&event.crtc);
                             }
@@ -569,9 +589,9 @@ where
             };
         },
         error: |evlh, &mut (ref mut dev_token, ref mut handler), _, error| {
-             let mut dev = evlh.state().get_mut(dev_token);
-             warn!(dev.logger, "DrmDevice errored: {}", error);
-             handler.error(&mut dev, error.into());
+            let mut dev = evlh.state().get_mut(dev_token);
+            warn!(dev.logger, "DrmDevice errored: {}", error);
+            handler.error(&mut dev, error.into());
         },
     }
 }
@@ -606,9 +626,7 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
                 if let Err(err) = backend.page_flip(None) {
                     error!(
                         device.logger,
-                        "Failed to activate crtc ({:?}) again. Error: {}",
-                        crtc,
-                        err
+                        "Failed to activate crtc ({:?}) again. Error: {}", crtc, err
                     );
                 }
             } else {

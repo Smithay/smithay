@@ -1,14 +1,14 @@
 extern crate drm;
 #[macro_use]
 extern crate glium;
-extern crate rand;
-extern crate input as libinput;
 extern crate image;
-extern crate udev;
+extern crate input as libinput;
+extern crate rand;
 #[macro_use(define_roles)]
 extern crate smithay;
-extern crate xkbcommon;
+extern crate udev;
 extern crate wayland_server;
+extern crate xkbcommon;
 
 #[macro_use]
 extern crate slog;
@@ -21,25 +21,26 @@ mod helpers;
 
 use drm::control::{Device as ControlDevice, ResourceInfo};
 use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
-use drm::control::encoder::Info as EncoderInfo;
 use drm::control::crtc;
+use drm::control::encoder::Info as EncoderInfo;
 use drm::result::Error as DrmError;
 use glium::{Blend, Surface};
+use helpers::{init_shell, Buffer, GliumDrawer, MyWindowMap, Roles, SurfaceData};
 use image::{ImageBuffer, Rgba};
-use libinput::{Libinput, Device as LibinputDevice, event};
+use libinput::{event, Device as LibinputDevice, Libinput};
 use libinput::event::keyboard::KeyboardEventTrait;
-use helpers::{init_shell, GliumDrawer, MyWindowMap, Roles, SurfaceData, Buffer};
 use slog::{Drain, Logger};
-use smithay::backend::drm::{DrmBackend, DrmDevice, DrmHandler, DevPath};
+use smithay::backend::drm::{DevPath, DrmBackend, DrmDevice, DrmHandler};
 use smithay::backend::graphics::GraphicsBackend;
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
-use smithay::backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLDisplay, Format};
-use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerButtonEvent,
-                              PointerAxisEvent, KeyState};
-use smithay::backend::libinput::{LibinputInputBackend, libinput_bind, PointerAxisEvent as LibinputPointerAxisEvent, LibinputSessionInterface};
-use smithay::backend::udev::{UdevBackend, UdevHandler, udev_backend_bind, primary_gpu, SessionFdDrmDevice};
+use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions, Format};
+use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyState, KeyboardKeyEvent,
+                              PointerAxisEvent, PointerButtonEvent};
+use smithay::backend::libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface,
+                                 PointerAxisEvent as LibinputPointerAxisEvent};
 use smithay::backend::session::{Session, SessionNotifier};
 use smithay::backend::session::direct::{direct_session_bind, DirectSession};
+use smithay::backend::udev::{primary_gpu, udev_backend_bind, SessionFdDrmDevice, UdevBackend, UdevHandler};
 use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
 use smithay::wayland::output::{Mode, Output, PhysicalProperties};
@@ -48,15 +49,15 @@ use smithay::wayland::shm::init_shm_global;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Error as IoError;
+use std::path::PathBuf;
+use std::process::Command;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use std::path::PathBuf;
-use std::process::Command;
-use xkbcommon::xkb::keysyms as xkb;
-use wayland_server::{Display, StateToken, StateProxy};
+use wayland_server::{Display, StateProxy, StateToken};
 use wayland_server::protocol::{wl_output, wl_pointer};
+use xkbcommon::xkb::keysyms as xkb;
 
 struct LibinputInputHandler {
     log: Logger,
@@ -92,17 +93,18 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
 
         let serial = self.next_serial();
-        self.keyboard.input(keycode, state, serial, |modifiers, keysym| {
-            if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace {
-                self.running.store(false, Ordering::SeqCst);
-                false
-            } else if modifiers.logo && keysym == xkb::KEY_Return && state == KeyState::Pressed {
-                let _ = Command::new("weston-terminal").spawn();
-                false
-            } else {
-                true
-            }
-        });
+        self.keyboard
+            .input(keycode, state, serial, |modifiers, keysym| {
+                if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace {
+                    self.running.store(false, Ordering::SeqCst);
+                    false
+                } else if modifiers.logo && keysym == xkb::KEY_Return && state == KeyState::Pressed {
+                    let _ = Command::new("weston-terminal").spawn();
+                    false
+                } else {
+                    true
+                }
+            });
     }
     fn on_pointer_move(&mut self, _: &input::Seat, evt: event::pointer::PointerMotionEvent) {
         let (x, y) = (evt.dx(), evt.dy());
@@ -110,7 +112,9 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
         let mut location = self.pointer_location.borrow_mut();
         location.0 += x;
         location.1 += y;
-        let under = self.window_map.borrow().get_surface_under((location.0, location.1));
+        let under = self.window_map
+            .borrow()
+            .get_surface_under((location.0, location.1));
         self.pointer.motion(
             under.as_ref().map(|&(ref s, (x, y))| (s, x, y)),
             serial,
@@ -118,7 +122,10 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
         );
     }
     fn on_pointer_move_absolute(&mut self, _: &input::Seat, evt: event::pointer::PointerMotionAbsoluteEvent) {
-        let (x, y) = (evt.absolute_x_transformed(self.screen_size.0), evt.absolute_y_transformed(self.screen_size.1));
+        let (x, y) = (
+            evt.absolute_x_transformed(self.screen_size.0),
+            evt.absolute_y_transformed(self.screen_size.1),
+        );
         *self.pointer_location.borrow_mut() = (x, y);
         let serial = self.next_serial();
         let under = self.window_map.borrow().get_surface_under((x, y));
@@ -177,7 +184,9 @@ fn main() {
 
     // A logger facility, here we use the terminal for this example
     let log = Logger::root(
-        slog_term::FullFormat::new(slog_term::PlainSyncDecorator::new(std::io::stdout())).build().fuse(),
+        slog_term::FullFormat::new(slog_term::PlainSyncDecorator::new(std::io::stdout()))
+            .build()
+            .fuse(),
         o!(),
     );
 
@@ -196,7 +205,8 @@ fn main() {
      */
     init_shm_global(&mut event_loop, vec![], log.clone());
 
-    let (compositor_token, _shell_state_token, window_map) = init_shell(&mut event_loop, log.clone(), active_egl_context.clone());
+    let (compositor_token, _shell_state_token, window_map) =
+        init_shell(&mut event_loop, log.clone(), active_egl_context.clone());
 
     /*
      * Initialize session on the current tty
@@ -221,8 +231,11 @@ fn main() {
     let primary_gpu = primary_gpu(&context, &seat).unwrap_or_default();
 
     let bytes = include_bytes!("resources/cursor2.rgba");
-    let udev_token
-        = UdevBackend::new(&mut event_loop, &context, session.clone(), UdevHandlerImpl {
+    let udev_token = UdevBackend::new(
+        &mut event_loop,
+        &context,
+        session.clone(),
+        UdevHandlerImpl {
             compositor_token,
             active_egl_context,
             backends: HashMap::new(),
@@ -232,7 +245,9 @@ fn main() {
             pointer_location: pointer_location.clone(),
             pointer_image: ImageBuffer::from_raw(64, 64, bytes.to_vec()).unwrap(),
             logger: log.clone(),
-        }, log.clone()).unwrap();
+        },
+        log.clone(),
+    ).unwrap();
 
     let udev_session_id = notifier.register(udev_token.clone());
 
@@ -283,7 +298,9 @@ fn main() {
     /*
      * Initialize libinput backend
      */
-    let mut libinput_context = Libinput::new_from_udev::<LibinputSessionInterface<Rc<RefCell<DirectSession>>>>(session.into(), &context);
+    let mut libinput_context = Libinput::new_from_udev::<
+        LibinputSessionInterface<Rc<RefCell<DirectSession>>>,
+    >(session.into(), &context);
     let libinput_session_id = notifier.register(libinput_context.clone());
     libinput_context.udev_assign_seat(&seat).unwrap();
     let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
@@ -337,7 +354,9 @@ struct UdevHandlerImpl {
 }
 
 impl UdevHandlerImpl {
-    pub fn scan_connectors(&self, device: &mut DrmDevice<SessionFdDrmDevice>) -> HashMap<crtc::Handle, GliumDrawer<DrmBackend<SessionFdDrmDevice>>> {
+    pub fn scan_connectors(
+        &self, device: &mut DrmDevice<SessionFdDrmDevice>
+    ) -> HashMap<crtc::Handle, GliumDrawer<DrmBackend<SessionFdDrmDevice>>> {
         // Get a set of all modesetting resource handles (excluding planes):
         let res_handles = device.resource_handles().unwrap();
 
@@ -345,9 +364,7 @@ impl UdevHandlerImpl {
         let connector_infos: Vec<ConnectorInfo> = res_handles
             .connectors()
             .iter()
-            .map(|conn| {
-                ConnectorInfo::load_from_device(device, *conn).unwrap()
-            })
+            .map(|conn| ConnectorInfo::load_from_device(device, *conn).unwrap())
             .filter(|conn| conn.connection_state() == ConnectorState::Connected)
             .inspect(|conn| info!(self.logger, "Connected: {:?}", conn.connector_type()))
             .collect();
@@ -356,16 +373,26 @@ impl UdevHandlerImpl {
 
         // very naive way of finding good crtc/encoder/connector combinations. This problem is np-complete
         for connector_info in connector_infos {
-            let encoder_infos = connector_info.encoders().iter().flat_map(|encoder_handle| EncoderInfo::load_from_device(device, *encoder_handle)).collect::<Vec<EncoderInfo>>();
+            let encoder_infos = connector_info
+                .encoders()
+                .iter()
+                .flat_map(|encoder_handle| EncoderInfo::load_from_device(device, *encoder_handle))
+                .collect::<Vec<EncoderInfo>>();
             for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
                     if !backends.contains_key(&crtc) {
                         let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
-                        // create a backend
-                        let renderer = GliumDrawer::from(device.create_backend(crtc, mode, vec![connector_info.handle()]).unwrap());
+                                                              // create a backend
+                        let renderer = GliumDrawer::from(
+                            device
+                                .create_backend(crtc, mode, vec![connector_info.handle()])
+                                .unwrap(),
+                        );
 
                         // create cursor
-                        renderer.set_cursor_representation(&self.pointer_image, (2, 2)).unwrap();
+                        renderer
+                            .set_cursor_representation(&self.pointer_image, (2, 2))
+                            .unwrap();
 
                         // render first frame
                         {
@@ -386,8 +413,9 @@ impl UdevHandlerImpl {
 }
 
 impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
-    fn device_added<'a, S: Into<StateProxy<'a>>>(&mut self, _state: S, device: &mut DrmDevice<SessionFdDrmDevice>) -> Option<DrmHandlerImpl>
-    {
+    fn device_added<'a, S: Into<StateProxy<'a>>>(
+        &mut self, _state: S, device: &mut DrmDevice<SessionFdDrmDevice>
+    ) -> Option<DrmHandlerImpl> {
         // init hardware acceleration on the primary gpu.
         if device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
             *self.active_egl_context.borrow_mut() = device.bind_wl_display(&*self.display).ok();
@@ -405,14 +433,18 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
         })
     }
 
-    fn device_changed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice>>) {
+    fn device_changed<'a, S: Into<StateProxy<'a>>>(
+        &mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice>>
+    ) {
         //quick and dirt, just re-init all backends
         let mut state = state.into();
         let backends = self.backends.get(&state.get(device).device_id()).unwrap();
         *backends.borrow_mut() = self.scan_connectors(state.get_mut(device));
     }
 
-    fn device_removed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice>>) {
+    fn device_removed<'a, S: Into<StateProxy<'a>>>(
+        &mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice>>
+    ) {
         let state = state.into();
         let device = state.get(device);
 
@@ -439,7 +471,10 @@ pub struct DrmHandlerImpl {
 }
 
 impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
-    fn ready(&mut self, _device: &mut DrmDevice<SessionFdDrmDevice>, crtc: crtc::Handle, _frame: u32, _duration: Duration) {
+    fn ready(
+        &mut self, _device: &mut DrmDevice<SessionFdDrmDevice>, crtc: crtc::Handle, _frame: u32,
+        _duration: Duration,
+    ) {
         if let Some(drawer) = self.backends.borrow().get(&crtc) {
             {
                 let (x, y) = *self.pointer_location.borrow();
@@ -450,73 +485,77 @@ impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
             // redraw the frame, in a simple but inneficient way
             {
                 let screen_dimensions = drawer.get_framebuffer_dimensions();
-                self.window_map
-                .borrow()
-                .with_windows_from_bottom_to_top(|toplevel_surface, initial_place| {
-                    if let Some(wl_surface) = toplevel_surface.get_surface() {
-                        // this surface is a root of a subsurface tree that needs to be drawn
-                        self.compositor_token
-                            .with_surface_tree_upward(
-                                wl_surface,
-                                initial_place,
-                                |_surface, attributes, role, &(mut x, mut y)| {
-                                    // there is actually something to draw !
-                                    if attributes.user_data.texture.is_none() {
-                                        let mut remove = false;
-                                        match attributes.user_data.buffer {
-                                            Some(Buffer::Egl { ref images }) => {
-                                                match images.format {
-                                                    Format::RGB | Format::RGBA => {
-                                                        attributes.user_data.texture = drawer.texture_from_egl(&images);
-                                                    },
-                                                    _ => {
-                                                        // we don't handle the more complex formats here.
-                                                        attributes.user_data.texture = None;
-                                                        remove = true;
-                                                    },
-                                                };
-                                            },
-                                            Some(Buffer::Shm { ref data, ref size }) => {
-                                                attributes.user_data.texture = Some(drawer.texture_from_mem(data, *size));
-                                            },
-                                            _ => {},
+                self.window_map.borrow().with_windows_from_bottom_to_top(
+                    |toplevel_surface, initial_place| {
+                        if let Some(wl_surface) = toplevel_surface.get_surface() {
+                            // this surface is a root of a subsurface tree that needs to be drawn
+                            self.compositor_token
+                                .with_surface_tree_upward(
+                                    wl_surface,
+                                    initial_place,
+                                    |_surface, attributes, role, &(mut x, mut y)| {
+                                        // there is actually something to draw !
+                                        if attributes.user_data.texture.is_none() {
+                                            let mut remove = false;
+                                            match attributes.user_data.buffer {
+                                                Some(Buffer::Egl { ref images }) => {
+                                                    match images.format {
+                                                        Format::RGB | Format::RGBA => {
+                                                            attributes.user_data.texture =
+                                                                drawer.texture_from_egl(&images);
+                                                        }
+                                                        _ => {
+                                                            // we don't handle the more complex formats here.
+                                                            attributes.user_data.texture = None;
+                                                            remove = true;
+                                                        }
+                                                    };
+                                                }
+                                                Some(Buffer::Shm { ref data, ref size }) => {
+                                                    attributes.user_data.texture =
+                                                        Some(drawer.texture_from_mem(data, *size));
+                                                }
+                                                _ => {}
+                                            }
+                                            if remove {
+                                                attributes.user_data.buffer = None;
+                                            }
                                         }
-                                        if remove {
-                                            attributes.user_data.buffer = None;
-                                        }
-                                    }
 
-                                    if let Some(ref texture) = attributes.user_data.texture {
-                                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                                            x += subdata.x;
-                                            y += subdata.y;
+                                        if let Some(ref texture) = attributes.user_data.texture {
+                                            if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                                                x += subdata.x;
+                                                y += subdata.y;
+                                            }
+                                            info!(self.logger, "Render window");
+                                            drawer.render_texture(
+                                                &mut frame,
+                                                texture,
+                                                match *attributes.user_data.buffer.as_ref().unwrap() {
+                                                    Buffer::Egl { ref images } => images.y_inverted,
+                                                    Buffer::Shm { .. } => false,
+                                                },
+                                                match *attributes.user_data.buffer.as_ref().unwrap() {
+                                                    Buffer::Egl { ref images } => {
+                                                        (images.width, images.height)
+                                                    }
+                                                    Buffer::Shm { ref size, .. } => *size,
+                                                },
+                                                (x, y),
+                                                screen_dimensions,
+                                                Blend::alpha_blending(),
+                                            );
+                                            TraversalAction::DoChildren((x, y))
+                                        } else {
+                                            // we are not display, so our children are neither
+                                            TraversalAction::SkipChildren
                                         }
-                                        info!(self.logger, "Render window");
-                                        drawer.render_texture(
-                                            &mut frame,
-                                            texture,
-                                            match *attributes.user_data.buffer.as_ref().unwrap() {
-                                                Buffer::Egl { ref images } => images.y_inverted,
-                                                Buffer::Shm { .. } => false,
-                                            },
-                                            match *attributes.user_data.buffer.as_ref().unwrap() {
-                                                Buffer::Egl { ref images } => (images.width, images.height),
-                                                Buffer::Shm { ref size, .. } => *size,
-                                            },
-                                            (x, y),
-                                            screen_dimensions,
-                                            Blend::alpha_blending(),
-                                        );
-                                        TraversalAction::DoChildren((x, y))
-                                    } else {
-                                        // we are not display, so our children are neither
-                                        TraversalAction::SkipChildren
-                                    }
-                                },
-                            )
-                            .unwrap();
-                    }
-                });
+                                    },
+                                )
+                                .unwrap();
+                        }
+                    },
+                );
             }
             if let Err(err) = frame.finish() {
                 error!(self.logger, "Error during rendering: {:?}", err);
@@ -524,8 +563,7 @@ impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
         }
     }
 
-    fn error(&mut self, _device: &mut DrmDevice<SessionFdDrmDevice>,
-             error: DrmError) {
+    fn error(&mut self, _device: &mut DrmDevice<SessionFdDrmDevice>, error: DrmError) {
         error!(self.logger, "{:?}", error);
     }
 }

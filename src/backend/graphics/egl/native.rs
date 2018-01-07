@@ -1,24 +1,23 @@
 //! Type safe native types for safe context/surface creation
 
-use super::ffi;
 use super::error::*;
-
+use super::ffi;
 #[cfg(feature = "backend_drm")]
-use ::backend::drm::error::{Error as DrmError, ErrorKind as DrmErrorKind, Result as DrmResult};
+use backend::drm::error::{Error as DrmError, ErrorKind as DrmErrorKind, Result as DrmResult};
 #[cfg(feature = "backend_drm")]
-use gbm::{AsRaw, Device as GbmDevice, Format as GbmFormat, BufferObjectFlags, Surface as GbmSurface};
+use gbm::{AsRaw, BufferObjectFlags, Device as GbmDevice, Format as GbmFormat, Surface as GbmSurface};
 #[cfg(feature = "backend_drm")]
 use std::marker::PhantomData;
-#[cfg(any(feature = "backend_drm", feature = "backend_winit"))]
-use std::ptr;
 #[cfg(feature = "backend_drm")]
 use std::os::unix::io::AsRawFd;
+#[cfg(any(feature = "backend_drm", feature = "backend_winit"))]
+use std::ptr;
+#[cfg(feature = "backend_winit")]
+use wayland_client::egl as wegl;
 #[cfg(feature = "backend_winit")]
 use winit::Window as WinitWindow;
 #[cfg(feature = "backend_winit")]
 use winit::os::unix::WindowExt;
-#[cfg(feature = "backend_winit")]
-use wayland_client::egl as wegl;
 
 /// Trait for typed backend variants (X11/Wayland/GBM)
 pub trait Backend {
@@ -32,9 +31,7 @@ pub trait Backend {
     /// The returned `EGLDisplay` needs to be a valid ptr for egl,
     /// but there is no way to test that.
     unsafe fn get_display<F: Fn(&str) -> bool>(
-        display: ffi::NativeDisplayType,
-        has_dp_extension: F,
-        log: ::slog::Logger,
+        display: ffi::NativeDisplayType, has_dp_extension: F, log: ::slog::Logger
     ) -> ffi::egl::types::EGLDisplay;
 }
 
@@ -45,24 +42,28 @@ pub enum Wayland {}
 impl Backend for Wayland {
     type Surface = wegl::WlEglSurface;
 
-    unsafe fn get_display<F>(display: ffi::NativeDisplayType, has_dp_extension: F, log: ::slog::Logger)
-        -> ffi::egl::types::EGLDisplay
+    unsafe fn get_display<F>(
+        display: ffi::NativeDisplayType, has_dp_extension: F, log: ::slog::Logger
+    ) -> ffi::egl::types::EGLDisplay
     where
-        F: Fn(&str) -> bool
+        F: Fn(&str) -> bool,
     {
-        if has_dp_extension("EGL_KHR_platform_wayland")
-            && ffi::egl::GetPlatformDisplay::is_loaded()
-        {
-            trace!(log, "EGL Display Initialization via EGL_KHR_platform_wayland");
+        if has_dp_extension("EGL_KHR_platform_wayland") && ffi::egl::GetPlatformDisplay::is_loaded() {
+            trace!(
+                log,
+                "EGL Display Initialization via EGL_KHR_platform_wayland"
+            );
             ffi::egl::GetPlatformDisplay(
                 ffi::egl::PLATFORM_WAYLAND_KHR,
                 display as *mut _,
                 ptr::null(),
             )
-        } else if has_dp_extension("EGL_EXT_platform_wayland")
-            && ffi::egl::GetPlatformDisplayEXT::is_loaded()
+        } else if has_dp_extension("EGL_EXT_platform_wayland") && ffi::egl::GetPlatformDisplayEXT::is_loaded()
         {
-            trace!(log, "EGL Display Initialization via EGL_EXT_platform_wayland");
+            trace!(
+                log,
+                "EGL Display Initialization via EGL_EXT_platform_wayland"
+            );
             ffi::egl::GetPlatformDisplayEXT(
                 ffi::egl::PLATFORM_WAYLAND_EXT,
                 display as *mut _,
@@ -85,19 +86,16 @@ pub enum X11 {}
 impl Backend for X11 {
     type Surface = XlibWindow;
 
-    unsafe fn get_display<F>(display: ffi::NativeDisplayType, has_dp_extension: F, log: ::slog::Logger)
-        -> ffi::egl::types::EGLDisplay
+    unsafe fn get_display<F>(
+        display: ffi::NativeDisplayType, has_dp_extension: F, log: ::slog::Logger
+    ) -> ffi::egl::types::EGLDisplay
     where
-        F: Fn(&str) -> bool
+        F: Fn(&str) -> bool,
     {
-        if has_dp_extension("EGL_KHR_platform_x11")
-            && ffi::egl::GetPlatformDisplay::is_loaded()
-        {
+        if has_dp_extension("EGL_KHR_platform_x11") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_KHR_platform_x11");
             ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, ptr::null())
-        } else if has_dp_extension("EGL_EXT_platform_x11")
-            && ffi::egl::GetPlatformDisplayEXT::is_loaded()
-        {
+        } else if has_dp_extension("EGL_EXT_platform_x11") && ffi::egl::GetPlatformDisplayEXT::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_EXT_platform_x11");
             ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_X11_EXT, display as *mut _, ptr::null())
         } else {
@@ -115,24 +113,19 @@ pub struct Gbm<T: 'static> {
 impl<T: 'static> Backend for Gbm<T> {
     type Surface = GbmSurface<T>;
 
-    unsafe fn get_display<F>(display: ffi::NativeDisplayType, has_dp_extension: F, log: ::slog::Logger)
-        -> ffi::egl::types::EGLDisplay
+    unsafe fn get_display<F>(
+        display: ffi::NativeDisplayType, has_dp_extension: F, log: ::slog::Logger
+    ) -> ffi::egl::types::EGLDisplay
     where
-        F: Fn(&str) -> bool
+        F: Fn(&str) -> bool,
     {
-        if has_dp_extension("EGL_KHR_platform_gbm")
-            && ffi::egl::GetPlatformDisplay::is_loaded()
-        {
+        if has_dp_extension("EGL_KHR_platform_gbm") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_KHR_platform_gbm");
             ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null())
-        } else if has_dp_extension("EGL_MESA_platform_gbm")
-            && ffi::egl::GetPlatformDisplayEXT::is_loaded()
-        {
+        } else if has_dp_extension("EGL_MESA_platform_gbm") && ffi::egl::GetPlatformDisplayEXT::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
             ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
-        } else if has_dp_extension("EGL_MESA_platform_gbm")
-            && ffi::egl::GetPlatformDisplay::is_loaded()
-        {
+        } else if has_dp_extension("EGL_MESA_platform_gbm") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
             ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
         } else {
@@ -224,7 +217,9 @@ unsafe impl<A: AsRawFd + 'static, T: 'static> NativeDisplay<Gbm<T>> for GbmDevic
     type Arguments = GbmSurfaceArguments;
     type Error = DrmError;
 
-    fn is_backend(&self) -> bool { true }
+    fn is_backend(&self) -> bool {
+        true
+    }
 
     fn ptr(&self) -> Result<ffi::NativeDisplayType> {
         Ok(self.as_raw() as *const _)
@@ -233,13 +228,10 @@ unsafe impl<A: AsRawFd + 'static, T: 'static> NativeDisplay<Gbm<T>> for GbmDevic
     fn create_surface(&self, args: GbmSurfaceArguments) -> DrmResult<GbmSurface<T>> {
         use backend::drm::error::ResultExt as DrmResultExt;
 
-        DrmResultExt::chain_err(GbmDevice::create_surface(
-            self,
-            args.size.0,
-            args.size.1,
-            args.format,
-            args.flags,
-        ), || DrmErrorKind::GbmInitFailed)
+        DrmResultExt::chain_err(
+            GbmDevice::create_surface(self, args.size.0, args.size.1, args.format, args.flags),
+            || DrmErrorKind::GbmInitFailed,
+        )
     }
 }
 
@@ -255,15 +247,21 @@ pub unsafe trait NativeSurface {
 
 #[cfg(feature = "backend_winit")]
 unsafe impl NativeSurface for XlibWindow {
-    fn ptr(&self) -> ffi::NativeWindowType { self.0 as *const _ }
+    fn ptr(&self) -> ffi::NativeWindowType {
+        self.0 as *const _
+    }
 }
 
 #[cfg(feature = "backend_winit")]
 unsafe impl NativeSurface for wegl::WlEglSurface {
-    fn ptr(&self) -> ffi::NativeWindowType { self.ptr() as *const _ }
+    fn ptr(&self) -> ffi::NativeWindowType {
+        self.ptr() as *const _
+    }
 }
 
 #[cfg(feature = "backend_drm")]
 unsafe impl<T: 'static> NativeSurface for GbmSurface<T> {
-    fn ptr(&self) -> ffi::NativeWindowType { self.as_raw() as *const _ }
+    fn ptr(&self) -> ffi::NativeWindowType {
+        self.as_raw() as *const _
+    }
 }

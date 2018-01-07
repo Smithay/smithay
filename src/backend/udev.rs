@@ -9,10 +9,10 @@
 //! See also `examples/udev.rs` for pure hardware backed example of a compositor utilizing this
 //! backend.
 
-use drm::Device as BasicDevice;
-use drm::control::Device as ControlDevice;
 use backend::drm::{drm_device_bind, DrmDevice, DrmHandler};
 use backend::session::{Session, SessionObserver};
+use drm::Device as BasicDevice;
+use drm::control::Device as ControlDevice;
 use nix::fcntl;
 use nix::sys::stat::dev_t;
 use std::collections::HashMap;
@@ -59,11 +59,8 @@ pub struct UdevBackend<
     logger: ::slog::Logger,
 }
 
-impl<
-    H: DrmHandler<SessionFdDrmDevice> + 'static,
-    S: Session + 'static,
-    T: UdevHandler<H> + 'static,
-> UdevBackend<H, S, T> {
+impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevHandler<H> + 'static>
+    UdevBackend<H, S, T> {
     /// Creates a new `UdevBackend` and adds it to the given `EventLoop`'s state.
     ///
     /// ## Arguments
@@ -244,7 +241,12 @@ where
                                         ) {
                                             Ok(fd) => SessionFdDrmDevice(fd),
                                             Err(err) => {
-                                                warn!(logger, "Unable to open drm device {:?}, Error: {:?}. Skipping", path, err);
+                                                warn!(
+                                                    logger,
+                                                    "Unable to open drm device {:?}, Error: {:?}. Skipping",
+                                                    path,
+                                                    err
+                                                );
                                                 continue;
                                             }
                                         }
@@ -355,16 +357,16 @@ where
 }
 
 /// Handler for the `UdevBackend`, allows to open, close and update drm devices as they change during runtime.
-pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static>
-     {
+pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static> {
     /// Called on initialization for every known device and when a new device is detected.
     ///
     /// Returning a `DrmHandler` will initialize the device, returning `None` will ignore the device.
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_added<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &mut DrmDevice<SessionFdDrmDevice>)
-        -> Option<H>;
+    fn device_added<'a, S: Into<StateProxy<'a>>>(
+        &mut self, state: S, device: &mut DrmDevice<SessionFdDrmDevice>
+    ) -> Option<H>;
     /// Called when an open device is changed.
     ///
     /// This usually indicates that some connectors did become available or were unplugged. The handler
@@ -372,7 +374,9 @@ pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static>
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_changed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice>>);
+    fn device_changed<'a, S: Into<StateProxy<'a>>>(
+        &mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice>>
+    );
     /// Called when a device was removed.
     ///
     /// The device will not accept any operations anymore and its file descriptor will be closed once
@@ -380,7 +384,9 @@ pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static>
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_removed<'a, S: Into<StateProxy<'a>>>(&mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice>>);
+    fn device_removed<'a, S: Into<StateProxy<'a>>>(
+        &mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice>>
+    );
     /// Called when the udev context has encountered and error.
     ///
     /// ## Panics

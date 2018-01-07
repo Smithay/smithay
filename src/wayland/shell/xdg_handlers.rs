@@ -230,9 +230,8 @@ fn destroy_surface(surface: &zxdg_surface_v6::ZxdgSurfaceV6) {
     let ptr = surface.get_user_data();
     surface.set_user_data(::std::ptr::null_mut());
     // drop the state
-    let data = unsafe {
-        Box::from_raw(ptr as *mut (zxdg_surface_v6::ZxdgSurfaceV6, zxdg_shell_v6::ZxdgShellV6))
-    };
+    let data =
+        unsafe { Box::from_raw(ptr as *mut (zxdg_surface_v6::ZxdgSurfaceV6, zxdg_shell_v6::ZxdgShellV6)) };
     // explicit call to drop to not forget what we're doing here
     ::std::mem::drop(data);
 }
@@ -544,9 +543,8 @@ where
             with_surface_toplevel_data(idata, toplevel, |toplevel_data| {
                 toplevel_data.parent = parent.map(|toplevel_surface_parent| {
                     let parent_ptr = toplevel_surface_parent.get_user_data();
-                    let &(ref parent_surface, _) = unsafe {
-                        &*(parent_ptr as *mut (wl_surface::WlSurface, zxdg_shell_v6::ZxdgShellV6))
-                    };
+                    let &(ref parent_surface, _) =
+                        unsafe { &*(parent_ptr as *mut (wl_surface::WlSurface, zxdg_shell_v6::ZxdgShellV6)) };
                     unsafe { parent_surface.clone_unchecked() }
                 })
             });

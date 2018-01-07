@@ -12,7 +12,7 @@ extern crate wayland_server;
 mod helpers;
 
 use glium::Surface;
-use helpers::{init_shell, GliumDrawer, MyWindowMap, Buffer};
+use helpers::{init_shell, Buffer, GliumDrawer, MyWindowMap};
 use slog::{Drain, Logger};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::egl::wayland::{EGLWaylandExtensions, Format};
@@ -143,7 +143,7 @@ fn main() {
             Some(egl_display)
         } else {
             None
-        }
+        },
     ));
 
     let (w, h) = renderer.get_framebuffer_dimensions();
@@ -155,7 +155,8 @@ fn main() {
 
     init_shm_global(&mut event_loop, vec![], log.clone());
 
-    let (compositor_token, _shell_state_token, window_map) = init_shell(&mut event_loop, log.clone(), egl_display);
+    let (compositor_token, _shell_state_token, window_map) =
+        init_shell(&mut event_loop, log.clone(), egl_display);
 
     let (seat_token, _) = Seat::new(&mut event_loop, "winit".into(), log.clone());
 
@@ -240,19 +241,21 @@ fn main() {
                                             Some(Buffer::Egl { ref images }) => {
                                                 match images.format {
                                                     Format::RGB | Format::RGBA => {
-                                                        attributes.user_data.texture = drawer.texture_from_egl(&images);
-                                                    },
+                                                        attributes.user_data.texture =
+                                                            drawer.texture_from_egl(&images);
+                                                    }
                                                     _ => {
                                                         // we don't handle the more complex formats here.
                                                         attributes.user_data.texture = None;
                                                         remove = true;
-                                                    },
+                                                    }
                                                 };
-                                            },
+                                            }
                                             Some(Buffer::Shm { ref data, ref size }) => {
-                                                attributes.user_data.texture = Some(drawer.texture_from_mem(data, *size));
-                                            },
-                                            _ => {},
+                                                attributes.user_data.texture =
+                                                    Some(drawer.texture_from_mem(data, *size));
+                                            }
+                                            _ => {}
                                         }
                                         if remove {
                                             attributes.user_data.buffer = None;
@@ -280,14 +283,16 @@ fn main() {
                                             glium::Blend {
                                                 color: glium::BlendingFunction::Addition {
                                                     source: glium::LinearBlendingFactor::One,
-                                                    destination: glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                                    destination:
+                                                        glium::LinearBlendingFactor::OneMinusSourceAlpha,
                                                 },
                                                 alpha: glium::BlendingFunction::Addition {
                                                     source: glium::LinearBlendingFactor::One,
-                                                    destination: glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                                    destination:
+                                                        glium::LinearBlendingFactor::OneMinusSourceAlpha,
                                                 },
                                                 ..Default::default()
-                                            }
+                                            },
                                         );
                                         TraversalAction::DoChildren((x, y))
                                     } else {

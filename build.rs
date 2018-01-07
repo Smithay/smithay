@@ -40,9 +40,7 @@ fn main() {
         (3, 2),
         Profile::Compatibility,
         Fallbacks::None,
-        [
-            "GL_OES_EGL_image",
-        ],
+        ["GL_OES_EGL_image"],
     ).write_bindings(gl_generator::GlobalGenerator, &mut file)
         .unwrap();
 }

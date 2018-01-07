@@ -18,7 +18,7 @@ pub mod native;
 pub mod surface;
 pub use self::surface::EGLSurface;
 pub mod wayland;
-pub use self::wayland::{EGLWaylandExtensions, EGLImages, BufferAccessError};
+pub use self::wayland::{BufferAccessError, EGLImages, EGLWaylandExtensions};
 
 /// Error that can happen when swapping buffers.
 #[derive(Debug, Clone, PartialEq)]
@@ -73,8 +73,12 @@ pub struct EglExtensionNotSupportedError(&'static [&'static str]);
 
 impl fmt::Display for EglExtensionNotSupportedError {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
-        write!(formatter, "None of the following EGL extensions is supported by the underlying EGL implementation,
-                     at least one is required: {:?}", self.0)
+        write!(
+            formatter,
+            "None of the following EGL extensions is supported by the underlying EGL implementation,
+                     at least one is required: {:?}",
+            self.0
+        )
     }
 }
 

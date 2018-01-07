@@ -1,10 +1,10 @@
 use glium;
-use glium::{Frame, Surface, GlObject};
+use glium::{Frame, GlObject, Surface};
 use glium::index::PrimitiveType;
-use glium::texture::{MipmapsOption, UncompressedFloatFormat, Texture2d};
+use glium::texture::{MipmapsOption, Texture2d, UncompressedFloatFormat};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::egl::error::Result as EGLResult;
-use smithay::backend::graphics::egl::wayland::{Format, EGLImages, EGLDisplay, EGLWaylandExtensions};
+use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLImages, EGLWaylandExtensions, Format};
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
 use std::borrow::Borrow;
 use std::ops::Deref;
@@ -120,9 +120,7 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
         Texture2d::new(&self.display, image).unwrap()
     }
 
-    pub fn texture_from_egl(&self, images: &EGLImages)
-        -> Option<Texture2d>
-    {
+    pub fn texture_from_egl(&self, images: &EGLImages) -> Option<Texture2d> {
         let format = match images.format {
             Format::RGB => UncompressedFloatFormat::U8U8U8,
             Format::RGBA => UncompressedFloatFormat::U8U8U8U8,
@@ -136,15 +134,19 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
             images.width,
             images.height,
         ).unwrap();
-        unsafe { images.bind_to_texture(0, opengl_texture.get_id()).expect("Failed to bind to texture"); }
+        unsafe {
+            images
+                .bind_to_texture(0, opengl_texture.get_id())
+                .expect("Failed to bind to texture");
+        }
         Some(opengl_texture)
     }
 
-    pub fn render_texture(&self, target: &mut glium::Frame, texture: &Texture2d,
-                  y_inverted: bool, surface_dimensions: (u32, u32),
-                  surface_location: (i32, i32), screen_size: (u32, u32),
-                  blending: glium::Blend)
-    {
+    pub fn render_texture(
+        &self, target: &mut glium::Frame, texture: &Texture2d, y_inverted: bool,
+        surface_dimensions: (u32, u32), surface_location: (i32, i32), screen_size: (u32, u32),
+        blending: glium::Blend,
+    ) {
         let xscale = 2.0 * (surface_dimensions.0 as f32) / (screen_size.0 as f32);
         let mut yscale = -2.0 * (surface_dimensions.1 as f32) / (screen_size.1 as f32);
 
@@ -175,10 +177,10 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                 &glium::DrawParameters {
                     blend: blending,
                     ..Default::default()
-                }
+                },
             )
             .unwrap();
-        }
+    }
 
     #[inline]
     pub fn draw(&self) -> Frame {

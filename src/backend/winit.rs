@@ -1,12 +1,12 @@
 //! Implementation of backend traits for types provided by `winit`
 
 use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{EGLGraphicsBackend, EGLContext, EGLSurface, PixelFormat, SwapBuffersError};
+use backend::graphics::egl::{EGLContext, EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError};
+use backend::graphics::egl::context::GlAttributes;
 use backend::graphics::egl::error as egl_error;
 use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::native;
-use backend::graphics::egl::context::GlAttributes;
-use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLDisplay};
+use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
 use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState,
                      KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
                      PointerMotionAbsoluteEvent, Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent,
@@ -16,10 +16,10 @@ use std::cmp;
 use std::error;
 use std::fmt;
 use std::rc::Rc;
-use winit::{ElementState, Event, EventsLoop, KeyboardInput, MouseButton as WinitMouseButton, MouseCursor,
-            MouseScrollDelta, Touch, TouchPhase, WindowBuilder, WindowEvent, Window as WinitWindow};
 use wayland_client::egl as wegl;
 use wayland_server::Display;
+use winit::{ElementState, Event, EventsLoop, KeyboardInput, MouseButton as WinitMouseButton, MouseCursor,
+            MouseScrollDelta, Touch, TouchPhase, Window as WinitWindow, WindowBuilder, WindowEvent};
 
 error_chain! {
     errors {
@@ -139,32 +139,18 @@ where
     let reqs = Default::default();
     let window = Rc::new(
         if native::NativeDisplay::<native::Wayland>::is_backend(&winit_window) {
-            let context = EGLContext::<native::Wayland, WinitWindow>::new(
-                winit_window,
-                attributes,
-                reqs,
-                log.clone(),
-            )?;
+            let context =
+                EGLContext::<native::Wayland, WinitWindow>::new(winit_window, attributes, reqs, log.clone())?;
             let surface = context.create_surface(())?;
-            Window::Wayland {
-                context,
-                surface
-            }
+            Window::Wayland { context, surface }
         } else if native::NativeDisplay::<native::X11>::is_backend(&winit_window) {
-            let context = EGLContext::<native::X11, WinitWindow>::new(
-                winit_window,
-                attributes,
-                reqs,
-                log.clone(),
-            )?;
+            let context =
+                EGLContext::<native::X11, WinitWindow>::new(winit_window, attributes, reqs, log.clone())?;
             let surface = context.create_surface(())?;
-            Window::X11 {
-                context,
-                surface
-            }
+            Window::X11 { context, surface }
         } else {
             bail!(ErrorKind::NotSupported);
-        }
+        },
     );
 
     Ok((
@@ -237,8 +223,14 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
 
     fn is_current(&self) -> bool {
         match *self.window {
-            Window::Wayland { ref context, ref surface } => context.is_current() && surface.is_current(),
-            Window::X11 { ref context, ref surface } => context.is_current() && surface.is_current(),
+            Window::Wayland {
+                ref context,
+                ref surface,
+            } => context.is_current() && surface.is_current(),
+            Window::X11 {
+                ref context,
+                ref surface,
+            } => context.is_current() && surface.is_current(),
         }
     }
 
@@ -649,8 +641,10 @@ impl InputBackend for WinitInputBackend {
                             trace!(logger, "Resizing window to {:?}", (x, y));
                             window.window().set_inner_size(x, y);
                             match **window {
-                                Window::Wayland { ref surface, .. } => surface.resize(x as i32, y as i32, 0, 0),
-                                _ => {},
+                                Window::Wayland { ref surface, .. } => {
+                                    surface.resize(x as i32, y as i32, 0, 0)
+                                }
+                                _ => {}
                             };
                         }
                         (

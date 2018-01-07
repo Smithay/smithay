@@ -4,7 +4,6 @@ use super::{EGLContext, SwapBuffersError};
 use super::error::*;
 use super::ffi;
 use super::native;
-
 use std::ops::{Deref, DerefMut};
 use std::rc::{Rc, Weak};
 
@@ -30,9 +29,8 @@ impl<N: native::NativeSurface> DerefMut for EGLSurface<N> {
 }
 
 impl<N: native::NativeSurface> EGLSurface<N> {
-    pub(crate) fn new<B: native::Backend<Surface=N>, D: native::NativeDisplay<B>>(
-        context: &EGLContext<B, D>,
-        native: N,
+    pub(crate) fn new<B: native::Backend<Surface = N>, D: native::NativeDisplay<B>>(
+        context: &EGLContext<B, D>, native: N
     ) -> Result<EGLSurface<N>> {
         let surface = unsafe {
             ffi::egl::CreateWindowSurface(
@@ -58,9 +56,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
     /// Swaps buffers at the end of a frame.
     pub fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         if let Some(display) = self.display.upgrade() {
-            let ret = unsafe {
-                ffi::egl::SwapBuffers((*display) as *const _, self.surface as *const _)
-            };
+            let ret = unsafe { ffi::egl::SwapBuffers((*display) as *const _, self.surface as *const _) };
 
             if ret == 0 {
                 match unsafe { ffi::egl::GetError() } as u32 {

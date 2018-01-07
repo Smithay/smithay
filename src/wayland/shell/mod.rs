@@ -449,8 +449,7 @@ impl<SD> ShellClient<SD> {
         }
         match self.kind {
             ShellClientKind::Wl(ref shell) => {
-                let mutex =
-                    unsafe { &*(shell.get_user_data() as *mut self::wl_handlers::ShellUserData<SD>) };
+                let mutex = unsafe { &*(shell.get_user_data() as *mut self::wl_handlers::ShellUserData<SD>) };
                 let mut guard = mutex.lock().unwrap();
                 if guard.0.pending_ping == 0 {
                     return Err(());
@@ -487,8 +486,7 @@ impl<SD> ShellClient<SD> {
         }
         match self.kind {
             ShellClientKind::Wl(ref shell) => {
-                let mutex =
-                    unsafe { &*(shell.get_user_data() as *mut self::wl_handlers::ShellUserData<SD>) };
+                let mutex = unsafe { &*(shell.get_user_data() as *mut self::wl_handlers::ShellUserData<SD>) };
                 let mut guard = mutex.lock().unwrap();
                 Ok(f(&mut guard.0.data))
             }

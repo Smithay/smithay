@@ -3,23 +3,22 @@
 use super::{ffi, EGLSurface, PixelFormat};
 use super::error::*;
 use super::native;
-
 #[cfg(feature = "backend_drm")]
-use gbm::{Device as GbmDevice};
+use drm::Device as BasicDevice;
 #[cfg(feature = "backend_drm")]
-use drm::{Device as BasicDevice};
+use drm::control::Device as ControlDevice;
 #[cfg(feature = "backend_drm")]
-use drm::control::{Device as ControlDevice};
-use nix::libc::{c_void, c_int};
+use gbm::Device as GbmDevice;
+use nix::libc::{c_int, c_void};
 use slog;
-use std::ffi::{CString, CStr};
+use std::ffi::{CStr, CString};
 use std::marker::PhantomData;
-use std::rc::Rc;
-use std::ptr;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 #[cfg(feature = "backend_drm")]
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::ptr;
+use std::rc::Rc;
 
 /// EGL context for rendering
 pub struct EGLContext<B: native::Backend, N: native::NativeDisplay<B>> {
@@ -51,13 +50,10 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> DerefMut for EGLContext<B,
 impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     /// Create a new `EGLContext` from a given `NativeDisplay`
     pub fn new<L>(
-        native: N,
-        attributes: GlAttributes,
-        reqs: PixelFormatRequirements,
-        logger: L
+        native: N, attributes: GlAttributes, reqs: PixelFormatRequirements, logger: L
     ) -> Result<EGLContext<B, N>>
     where
-        L: Into<Option<::slog::Logger>>
+        L: Into<Option<::slog::Logger>>,
     {
         let log = ::slog_or_stdlog(logger.into()).new(o!("smithay_module" => "renderer_egl"));
         let ptr = native.ptr()?;
@@ -86,11 +82,10 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     }
 
     unsafe fn new_internal(
-        ptr: ffi::NativeDisplayType,
-        mut attributes: GlAttributes,
-        reqs: PixelFormatRequirements,
+        ptr: ffi::NativeDisplayType, mut attributes: GlAttributes, reqs: PixelFormatRequirements,
         log: ::slog::Logger,
-    ) -> Result<(
+    ) -> Result<
+        (
             Rc<ffi::egl::types::EGLContext>,
             Rc<ffi::egl::types::EGLDisplay>,
             ffi::egl::types::EGLConfig,
@@ -98,8 +93,8 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             PixelFormat,
             bool,
             bool,
-        )>
-    {
+        ),
+    > {
         // If no version is given, try OpenGLES 3.0, if available,
         // fallback to 2.0 otherwise
         let version = match attributes.version {
@@ -178,7 +173,11 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
 
         debug!(log, "EGL No-Display Extensions: {:?}", dp_extensions);
 
-        let display = B::get_display(ptr, |e: &str| dp_extensions.iter().any(|s| s == e), log.clone());
+        let display = B::get_display(
+            ptr,
+            |e: &str| dp_extensions.iter().any(|s| s == e),
+            log.clone(),
+        );
         if display == ffi::egl::NO_DISPLAY {
             error!(log, "EGL Display is not valid");
             bail!(ErrorKind::DisplayNotSupported);
@@ -455,7 +454,9 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
 
         // the list of gl extensions supported by the context
         let gl_extensions = {
-            let data = CStr::from_ptr(ffi::gl::GetString(ffi::gl::EXTENSIONS) as *const _).to_bytes().to_vec();
+            let data = CStr::from_ptr(ffi::gl::GetString(ffi::gl::EXTENSIONS) as *const _)
+                .to_bytes()
+                .to_vec();
             let list = String::from_utf8(data).unwrap();
             list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
         };
@@ -468,15 +469,24 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             config_id,
             surface_attributes,
             desc,
-            extensions.iter().any(|s| *s == "EGL_WL_bind_wayland_display"),
-            gl_extensions.iter().any(|s| *s == "GL_OES_EGL_image" || *s == "GL_OES_EGL_image_base"),
+            extensions
+                .iter()
+                .any(|s| *s == "EGL_WL_bind_wayland_display"),
+            gl_extensions
+                .iter()
+                .any(|s| *s == "GL_OES_EGL_image" || *s == "GL_OES_EGL_image_base"),
         ))
     }
 
     /// Creates a surface for rendering
     pub fn create_surface(&self, args: N::Arguments) -> Result<EGLSurface<B::Surface>> {
         trace!(self.logger, "Creating EGL window surface.");
-        let res = EGLSurface::new(self, self.native.create_surface(args).chain_err(|| ErrorKind::SurfaceCreationFailed)?);
+        let res = EGLSurface::new(
+            self,
+            self.native
+                .create_surface(args)
+                .chain_err(|| ErrorKind::SurfaceCreationFailed)?,
+        );
         if res.is_ok() {
             debug!(self.logger, "EGL surface successfully created");
         }
