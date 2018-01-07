@@ -6,6 +6,7 @@ use std::rc::{Rc, Weak};
 use std::fmt;
 use wayland_server::{Display, Resource, StateToken, StateProxy};
 use wayland_server::protocol::wl_buffer::WlBuffer;
+use wayland_sys::server::wl_display;
 
 /// Error that can occur when accessing an EGL buffer
 pub enum BufferAccessError {
@@ -191,27 +192,13 @@ pub trait EGLWaylandExtensions {
     /// This might return `OtherEGLDisplayAlreadyBound` if called for the same
     /// `Display` multiple times, as only one context may be bound at any given time.
     fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay>;
-
-    /// Unbinds this EGL context from the given Wayland display.
-    ///
-    /// This will stop clients from using previously available extensions
-    /// to utilize hardware-accelerated surface via EGL.
-    ///
-    /// ## Errors
-    ///
-    /// This might return `WlExtensionNotSupported` if binding is not supported
-    /// by the EGL implementation.
-    ///
-    /// This might return `OtherEGLDisplayAlreadyBound` if called for the same
-    /// `Display` multiple times, as only one context may be bound at any given time.
-    fn unbind_wl_display(&self, display: &Display) -> Result<()>;
 }
 
-pub struct EGLDisplay(Weak<ffi::egl::types::EGLDisplay>);
+pub struct EGLDisplay(Weak<ffi::egl::types::EGLDisplay>, *mut wl_display);
 
 impl EGLDisplay {
-    pub fn new<B: native::Backend, N: native::NativeDisplay<B>>(context: &EGLContext<B, N>) -> EGLDisplay {
-        EGLDisplay(Rc::downgrade(&context.display))
+    fn new<B: native::Backend, N: native::NativeDisplay<B>>(context: &EGLContext<B, N>, display: *mut wl_display) -> EGLDisplay {
+        EGLDisplay(Rc::downgrade(&context.display), display)
     }
 
     pub fn egl_buffer_contents(&self, buffer: WlBuffer) -> ::std::result::Result<EGLImages, BufferAccessError> {
@@ -284,13 +271,20 @@ impl EGLDisplay {
     }
 }
 
+impl Drop for EGLDisplay {
+    fn drop(&mut self) {
+        if let Some(display) = self.0.upgrade() {
+            if !self.1.is_null() {
+                unsafe { ffi::egl::UnbindWaylandDisplayWL(*display, self.1 as *mut _); }
+            }
+        }
+    }
+}
+
 impl<E: EGLWaylandExtensions> EGLWaylandExtensions for Rc<E>
 {
     fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay> {
         (**self).bind_wl_display(display)
-    }
-    fn unbind_wl_display(&self, display: &Display) -> Result<()> {
-        (**self).unbind_wl_display(display)
     }
 }
 
@@ -306,17 +300,6 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLWaylandExtensions for E
         if res == 0 {
             bail!(ErrorKind::OtherEGLDisplayAlreadyBound);
         }
-        Ok(EGLDisplay::new(self))
-    }
-
-    fn unbind_wl_display(&self, display: &Display) -> Result<()> {
-        if !self.wl_drm_support {
-            bail!(ErrorKind::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
-        }
-        let res = unsafe { ffi::egl::UnbindWaylandDisplayWL(*self.display, display.ptr() as *mut _) };
-        if res == 0 {
-            bail!(ErrorKind::NoEGLDisplayBound);
-        }
-        Ok(())
+        Ok(EGLDisplay::new(self, unsafe { display.ptr() }))
     }
 }

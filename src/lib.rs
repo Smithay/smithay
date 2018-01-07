@@ -13,6 +13,7 @@ extern crate nix;
 extern crate tempfile;
 extern crate wayland_protocols;
 extern crate wayland_server;
+extern crate wayland_sys;
 extern crate xkbcommon;
 
 #[cfg(feature = "backend_drm")]

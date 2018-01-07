@@ -266,13 +266,6 @@ impl EGLWaylandExtensions for WinitGraphicsBackend {
             Window::X11 { ref context, .. } => context.bind_wl_display(display),
         }
     }
-
-    fn unbind_wl_display(&self, display: &Display) -> EGLResult<()> {
-        match *self.window {
-            Window::Wayland { ref context, .. } => context.unbind_wl_display(display),
-            Window::X11 { ref context, .. } => context.unbind_wl_display(display),
-        }
-    }
 }
 
 /// Errors that may happen when driving the event loop of `WinitInputBackend`

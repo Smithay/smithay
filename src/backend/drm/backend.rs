@@ -467,8 +467,4 @@ impl<A: Device + 'static> EGLWaylandExtensions for DrmBackend<A> {
     fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
         self.backend.context.bind_wl_display(display)
     }
-
-    fn unbind_wl_display(&self, display: &Display) -> EGLResult<()> {
-        self.backend.context.unbind_wl_display(display)
-    }
 }

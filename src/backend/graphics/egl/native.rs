@@ -67,7 +67,7 @@ impl Backend for Wayland {
 }
 
 #[cfg(feature = "backend_winit")]
-pub struct XlibWindow(*const c_void);
+pub struct XlibWindow(u64);
 #[cfg(feature = "backend_winit")]
 pub enum X11 {}
 #[cfg(feature = "backend_winit")]
@@ -241,7 +241,7 @@ pub unsafe trait NativeSurface {
 
 #[cfg(feature = "backend_winit")]
 unsafe impl NativeSurface for XlibWindow {
-    fn ptr(&self) -> ffi::NativeWindowType { self.0 }
+    fn ptr(&self) -> ffi::NativeWindowType { self.0 as *const _ }
 }
 
 #[cfg(feature = "backend_winit")]

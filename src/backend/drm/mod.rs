@@ -441,10 +441,6 @@ impl<A: ControlDevice + 'static> EGLWaylandExtensions for DrmDevice<A> {
     fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
         self.context.bind_wl_display(display)
     }
-
-    fn unbind_wl_display(&self, display: &Display) -> EGLResult<()> {
-        self.context.unbind_wl_display(display)
-    }
 }
 
 impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {

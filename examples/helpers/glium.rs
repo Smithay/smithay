@@ -192,7 +192,4 @@ impl<G: EGLWaylandExtensions + EGLGraphicsBackend + 'static> EGLWaylandExtension
     fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
         self.display.bind_wl_display(display)
     }
-    fn unbind_wl_display(&self, display: &Display) -> EGLResult<()> {
-        self.display.unbind_wl_display(display)
-    }
 }
