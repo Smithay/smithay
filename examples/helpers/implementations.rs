@@ -25,8 +25,6 @@ pub enum Buffer {
     Shm { data: Vec<u8>, size: (u32, u32) },
 }
 
-unsafe impl Send for Buffer {}
-
 pub fn surface_implementation() -> SurfaceUserImplementation<SurfaceData, Roles, Rc<RefCell<Option<EGLDisplay>>>> {
     SurfaceUserImplementation {
         commit: |_, display, surface, token| {
