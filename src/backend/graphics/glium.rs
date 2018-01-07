@@ -1,7 +1,7 @@
 //! Glium compatibility module
 
-use backend::graphics::egl::{EGLGraphicsBackend, SwapBuffersError, EglExtensionNotSupportedError};
-use backend::graphics::egl::wayland::{BufferAccessError, EGLImages, EGLWaylandExtensions, EGLDisplay};
+use backend::graphics::egl::{EGLGraphicsBackend, SwapBuffersError};
+use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLDisplay};
 use backend::graphics::egl::error::Result as EGLResult;
 use glium::Frame;
 use glium::SwapBuffersError as GliumSwapBuffersError;
@@ -11,7 +11,6 @@ use std::borrow::Borrow;
 use std::os::raw::c_void;
 use std::rc::Rc;
 use wayland_server::Display;
-use wayland_server::protocol::wl_buffer::WlBuffer;
 
 impl From<SwapBuffersError> for GliumSwapBuffersError {
     fn from(error: SwapBuffersError) -> Self {

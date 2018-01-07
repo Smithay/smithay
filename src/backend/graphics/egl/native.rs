@@ -16,8 +16,6 @@ use winit::Window as WinitWindow;
 #[cfg(feature = "backend_winit")]
 use winit::os::unix::WindowExt;
 #[cfg(feature = "backend_winit")]
-use nix::libc::c_void;
-#[cfg(feature = "backend_winit")]
 use wayland_client::egl as wegl;
 
 pub trait Backend {

@@ -8,8 +8,6 @@
 use super::GraphicsBackend;
 use nix::libc::c_void;
 use std::fmt;
-use wayland_server::Display;
-use wayland_server::protocol::wl_buffer::WlBuffer;
 
 pub mod context;
 pub use self::context::EGLContext;

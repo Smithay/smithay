@@ -1,10 +1,10 @@
 use super::error::*;
 use super::DevPath;
 use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{EGLGraphicsBackend, EGLContext, EGLSurface, PixelFormat, SwapBuffersError, EglExtensionNotSupportedError};
+use backend::graphics::egl::{EGLGraphicsBackend, EGLContext, EGLSurface, PixelFormat, SwapBuffersError};
 use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::native::{Gbm, GbmSurfaceArguments};
-use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLDisplay, BufferAccessError, EGLImages};
+use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLDisplay};
 use drm::control::{Device, ResourceInfo};
 use drm::control::{connector, crtc, encoder, framebuffer, Mode};
 use gbm::{Device as GbmDevice, BufferObject, BufferObjectFlags, Format as GbmFormat, Surface as GbmSurface, SurfaceBufferHandle};
@@ -13,7 +13,6 @@ use nix::libc::c_void;
 use std::cell::Cell;
 use std::rc::{Rc, Weak};
 use wayland_server::Display;
-use wayland_server::protocol::wl_buffer::WlBuffer;
 
 pub struct DrmBackend<A: Device + 'static> {
     backend: Rc<DrmBackendInternal<A>>,

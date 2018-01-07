@@ -14,7 +14,7 @@ use drm::control::Device as ControlDevice;
 use backend::drm::{drm_device_bind, DrmDevice, DrmHandler};
 use backend::session::{Session, SessionObserver};
 use nix::fcntl;
-use nix::sys::stat::{dev_t, fstat};
+use nix::sys::stat::dev_t;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io::{Error as IoError, Result as IoResult};

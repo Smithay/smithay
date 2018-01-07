@@ -1,12 +1,12 @@
 //! Implementation of backend traits for types provided by `winit`
 
 use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{EGLGraphicsBackend, EGLContext, EGLSurface, PixelFormat, SwapBuffersError, EglExtensionNotSupportedError};
+use backend::graphics::egl::{EGLGraphicsBackend, EGLContext, EGLSurface, PixelFormat, SwapBuffersError};
 use backend::graphics::egl::error as egl_error;
 use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::native;
 use backend::graphics::egl::context::GlAttributes;
-use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLImages, Format, BufferAccessError, EGLDisplay};
+use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLDisplay};
 use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState,
                      KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
                      PointerMotionAbsoluteEvent, Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent,
@@ -20,7 +20,6 @@ use winit::{ElementState, Event, EventsLoop, KeyboardInput, MouseButton as Winit
             MouseScrollDelta, Touch, TouchPhase, WindowBuilder, WindowEvent, Window as WinitWindow};
 use wayland_client::egl as wegl;
 use wayland_server::Display;
-use wayland_server::protocol::wl_buffer::WlBuffer;
 
 error_chain! {
     errors {

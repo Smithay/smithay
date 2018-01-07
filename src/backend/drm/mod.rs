@@ -188,11 +188,10 @@
 //! ```
 
 #[cfg(feature = "backend_session")]
-use backend::graphics::egl::EglExtensionNotSupportedError;
-use backend::graphics::egl::context::{EGLContext, GlAttributes, PixelFormatRequirements};
+use backend::graphics::egl::context::{EGLContext, GlAttributes};
 use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::native::Gbm;
-use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLDisplay, BufferAccessError, EGLImages};
+use backend::graphics::egl::wayland::{EGLWaylandExtensions, EGLDisplay};
 #[cfg(feature = "backend_session")]
 use backend::session::SessionObserver;
 use drm::Device as BasicDevice;
@@ -215,7 +214,6 @@ use wayland_server::{EventLoopHandle, StateToken};
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 #[cfg(feature = "backend_session")]
 use wayland_server::{Display, StateProxy};
-use wayland_server::protocol::wl_buffer::WlBuffer;
 
 mod backend;
 pub mod error;
@@ -569,34 +567,33 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
     }
 
     fn activate<'a>(&mut self, state: &mut StateProxy<'a>) {
-        state.with_value(self, |state, device| {
-            device.active = true;
-            if let Err(err) = device.set_master() {
-                crit!(
-                    device.logger,
-                    "Failed to acquire drm master again. Error: {}",
-                    err
-                );
-            }
-            let mut crtcs = Vec::new();
-            for (crtc, backend) in device.backends.iter() {
-                if let Some(backend) = backend.upgrade() {
-                    backend.unlock_buffer();
-                    if let Err(err) = backend.page_flip(None) {
-                        error!(
-                            device.logger,
-                            "Failed to activate crtc ({:?}) again. Error: {}",
-                            crtc,
-                            err
-                        );
-                    }
-                } else {
-                    crtcs.push(*crtc);
+        let mut device = state.get_mut(self);
+        device.active = true;
+        if let Err(err) = device.set_master() {
+            crit!(
+                device.logger,
+                "Failed to acquire drm master again. Error: {}",
+                err
+            );
+        }
+        let mut crtcs = Vec::new();
+        for (crtc, backend) in device.backends.iter() {
+            if let Some(backend) = backend.upgrade() {
+                backend.unlock_buffer();
+                if let Err(err) = backend.page_flip(None) {
+                    error!(
+                        device.logger,
+                        "Failed to activate crtc ({:?}) again. Error: {}",
+                        crtc,
+                        err
+                    );
                 }
+            } else {
+                crtcs.push(*crtc);
             }
-            for crtc in crtcs {
-                device.backends.remove(&crtc);
-            }
-        })
+        }
+        for crtc in crtcs {
+            device.backends.remove(&crtc);
+        }
     }
 }

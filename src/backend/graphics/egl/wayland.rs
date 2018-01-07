@@ -4,7 +4,7 @@ use backend::graphics::egl::ffi::egl::types::EGLImage;
 use nix::libc::{c_uint};
 use std::rc::{Rc, Weak};
 use std::fmt;
-use wayland_server::{Display, Resource, StateToken, StateProxy};
+use wayland_server::{Display, Resource};
 use wayland_server::protocol::wl_buffer::WlBuffer;
 use wayland_sys::server::wl_display;
 
