@@ -208,7 +208,6 @@
 //! # }
 //! ```
 
-#[cfg(feature = "backend_session")]
 use backend::graphics::egl::context::{EGLContext, GlAttributes};
 use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::native::Gbm;
@@ -231,9 +230,9 @@ use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::sync::{Once, ONCE_INIT};
 use std::time::Duration;
+use wayland_server::{Display, EventLoopHandle, StateToken};
 #[cfg(feature = "backend_session")]
-use wayland_server::{Display, StateProxy};
-use wayland_server::{EventLoopHandle, StateToken};
+use wayland_server::StateProxy;
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 
 mod backend;
