@@ -123,7 +123,7 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevH
                     },
                     Err(err) => {
                         warn!(logger, "Failed to initialize device {:?}. Error: {:?}. Skipping", path, err);
-                        return None;
+                        None
                     }
                 }
             })

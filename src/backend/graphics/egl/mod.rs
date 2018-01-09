@@ -1,10 +1,11 @@
 //! Common traits and types for egl rendering
 
-/// Large parts of this module are taken from
-/// https://github.com/tomaka/glutin/tree/044e651edf67a2029eecc650dd42546af1501414/src/api/egl/
-///
-/// It therefore falls under glutin's Apache 2.0 license
-/// (see https://github.com/tomaka/glutin/tree/044e651edf67a2029eecc650dd42546af1501414/LICENSE)
+// Large parts of this module are taken from
+// https://github.com/tomaka/glutin/tree/044e651edf67a2029eecc650dd42546af1501414/src/api/egl/
+//
+// It therefore falls under glutin's Apache 2.0 license
+// (see https://github.com/tomaka/glutin/tree/044e651edf67a2029eecc650dd42546af1501414/LICENSE)
+
 use super::GraphicsBackend;
 use nix::libc::c_void;
 use std::fmt;

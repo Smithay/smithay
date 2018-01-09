@@ -1,4 +1,4 @@
-//! Wayland specific EGL functionality - EGL based WlBuffers.
+//! Wayland specific EGL functionality - EGL based `WlBuffer`s.
 //!
 //! The types of this module can be used to initialize hardware acceleration rendering
 //! based on EGL for clients as it may enabled usage of `EGLImage` based `WlBuffer`s.
@@ -81,7 +81,7 @@ impl From<EglExtensionNotSupportedError> for BufferAccessError {
     }
 }
 
-/// Error that might happen when binding an EGLImage to a gl texture
+/// Error that might happen when binding an `EGLImage` to a gl texture
 #[derive(Debug, Clone, PartialEq)]
 pub enum TextureCreationError {
     /// The given plane index is out of bounds
