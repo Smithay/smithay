@@ -43,6 +43,9 @@ containers:
             - !Container base
             - !Env HOME: /work/.vagga/nightly-home
             - !Sh curl https://sh.rustup.rs -sSf | sh -s -- -y --default-host x86_64-unknown-linux-gnu --default-toolchain nightly --no-modify-path
+            - !Env PATH: /bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:/work/.vagga/nightly-home/.cargo/bin:/work/.vagga/nightly-home/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/
+            - !Sh rustup self update
+            - !Sh rustup component add rustfmt-preview
 
 commands:
     update-stable: !Command
@@ -58,8 +61,7 @@ commands:
     update-nightly: !Command
         description: Update container
         container: nightly
-        run: |
-            rustup update
+        run: rustup update
 
     cargo-stable: !Command
         description: Run cargo

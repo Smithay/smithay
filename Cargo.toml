@@ -7,31 +7,32 @@ description = "Smithay is a library for writing wayland compositors."
 repository = "https://github.com/Smithay/smithay"
 
 [dependencies]
-wayland-server = "0.12.0"
+wayland-server = "0.12.5"
+wayland-sys = "0.12.5"
 nix = "0.9.0"
 xkbcommon = "0.2.1"
 tempfile = "2.1.5"
-slog = { version = "2.0.0" }
-slog-stdlog = "2.0.0-0.2"
+slog = { version = "2.1.1" }
+slog-stdlog = "3.0.2"
 libloading = "0.4.0"
-wayland-client = { version = "0.9.9", optional = true }
-winit = { version = "0.8.2", optional = true }
+wayland-client = { version = "0.12.5", optional = true }
+winit = { version = "0.10.0", optional = true }
 drm = { version = "^0.3.1", optional = true }
-gbm = { version = "^0.3.0", optional = true, default-features = false, features = ["drm-support"] }
-glium = { version = "0.17.1", optional = true, default-features = false }
+gbm = { version = "^0.4.0", optional = true, default-features = false, features = ["drm-support"] }
+glium = { version = "0.19.0", optional = true, default-features = false }
 input = { version = "0.4.0", optional = true }
 udev = { version = "0.2.0", optional = true }
-rental = "0.4.11"
-wayland-protocols = { version = "0.12.0", features = ["unstable_protocols", "server"] }
+wayland-protocols = { version = "0.12.5", features = ["unstable_protocols", "server"] }
 image = "0.17.0"
 error-chain = "0.11.0"
+lazy_static = "1.0.0"
 
 [build-dependencies]
-gl_generator = "0.5"
+gl_generator = "0.7"
 
 [dev-dependencies]
-slog-term = "2.0"
-slog-async = "2.0"
+slog-term = "2.3"
+slog-async = "2.2"
 rand = "0.3"
 ctrlc = { version = "3.0", features = ["termination"] }
 

@@ -12,9 +12,10 @@ extern crate wayland_server;
 mod helpers;
 
 use glium::Surface;
-use helpers::{init_shell, GliumDrawer, MyWindowMap};
+use helpers::{init_shell, Buffer, GliumDrawer, MyWindowMap};
 use slog::{Drain, Logger};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
+use smithay::backend::graphics::egl::wayland::{EGLWaylandExtensions, Format};
 use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerAxisEvent,
                               PointerButtonEvent, PointerMotionAbsoluteEvent};
 use smithay::backend::winit;
@@ -136,13 +137,26 @@ fn main() {
 
     let (mut display, mut event_loop) = wayland_server::create_display();
 
+    let egl_display = Rc::new(RefCell::new(
+        if let Ok(egl_display) = renderer.bind_wl_display(&display) {
+            info!(log, "EGL hardware-acceleration enabled");
+            Some(egl_display)
+        } else {
+            None
+        },
+    ));
+
+    let (w, h) = renderer.get_framebuffer_dimensions();
+    let drawer = GliumDrawer::from(renderer);
+
     /*
      * Initialize the globals
      */
 
     init_shm_global(&mut event_loop, vec![], log.clone());
 
-    let (compositor_token, _shell_state_token, window_map) = init_shell(&mut event_loop, log.clone());
+    let (compositor_token, _shell_state_token, window_map) =
+        init_shell(&mut event_loop, log.clone(), egl_display);
 
     let (seat_token, _) = Seat::new(&mut event_loop, "winit".into(), log.clone());
 
@@ -166,7 +180,6 @@ fn main() {
         log.clone(),
     );
 
-    let (w, h) = renderer.get_framebuffer_dimensions();
     event_loop
         .state()
         .get_mut(&output_token)
@@ -188,11 +201,6 @@ fn main() {
             refresh: 60_000,
         });
 
-    /*
-     * Initialize glium
-     */
-    let drawer = GliumDrawer::from(renderer);
-
     input.set_handler(WinitInputHandler {
         log: log.clone(),
         pointer,
@@ -212,7 +220,7 @@ fn main() {
         input.dispatch_new_events().unwrap();
 
         let mut frame = drawer.draw();
-        frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, None, None);
+        frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
         // redraw the frame, in a simple but inneficient way
         {
             let screen_dimensions = drawer.get_framebuffer_dimensions();
@@ -226,18 +234,65 @@ fn main() {
                                 wl_surface,
                                 initial_place,
                                 |_surface, attributes, role, &(mut x, mut y)| {
-                                    if let Some((ref contents, (w, h))) = attributes.user_data.buffer {
-                                        // there is actually something to draw !
+                                    // there is actually something to draw !
+                                    if attributes.user_data.texture.is_none() {
+                                        let mut remove = false;
+                                        match attributes.user_data.buffer {
+                                            Some(Buffer::Egl { ref images }) => {
+                                                match images.format {
+                                                    Format::RGB | Format::RGBA => {
+                                                        attributes.user_data.texture =
+                                                            drawer.texture_from_egl(&images);
+                                                    }
+                                                    _ => {
+                                                        // we don't handle the more complex formats here.
+                                                        attributes.user_data.texture = None;
+                                                        remove = true;
+                                                    }
+                                                };
+                                            }
+                                            Some(Buffer::Shm { ref data, ref size }) => {
+                                                attributes.user_data.texture =
+                                                    Some(drawer.texture_from_mem(data, *size));
+                                            }
+                                            _ => {}
+                                        }
+                                        if remove {
+                                            attributes.user_data.buffer = None;
+                                        }
+                                    }
+
+                                    if let Some(ref texture) = attributes.user_data.texture {
                                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                                             x += subdata.x;
                                             y += subdata.y;
                                         }
-                                        drawer.render(
+                                        drawer.render_texture(
                                             &mut frame,
-                                            contents,
-                                            (w, h),
+                                            texture,
+                                            match *attributes.user_data.buffer.as_ref().unwrap() {
+                                                Buffer::Egl { ref images } => images.y_inverted,
+                                                Buffer::Shm { .. } => false,
+                                            },
+                                            match *attributes.user_data.buffer.as_ref().unwrap() {
+                                                Buffer::Egl { ref images } => (images.width, images.height),
+                                                Buffer::Shm { ref size, .. } => *size,
+                                            },
                                             (x, y),
                                             screen_dimensions,
+                                            glium::Blend {
+                                                color: glium::BlendingFunction::Addition {
+                                                    source: glium::LinearBlendingFactor::One,
+                                                    destination:
+                                                        glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                                },
+                                                alpha: glium::BlendingFunction::Addition {
+                                                    source: glium::LinearBlendingFactor::One,
+                                                    destination:
+                                                        glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                                },
+                                                ..Default::default()
+                                            },
                                         );
                                         TraversalAction::DoChildren((x, y))
                                     } else {

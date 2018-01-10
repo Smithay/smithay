@@ -19,8 +19,9 @@ where
     SD: 'static,
 {
     // Find the topmost surface under this point if any and the location of this point in the surface
-    fn matching<F>(&self, point: (f64, f64), ctoken: CompositorToken<U, R, CID>, get_size: F)
-                   -> Option<(wl_surface::WlSurface, (f64, f64))>
+    fn matching<F>(
+        &self, point: (f64, f64), ctoken: CompositorToken<U, R, CID>, get_size: F
+    ) -> Option<(wl_surface::WlSurface, (f64, f64))>
     where
         F: Fn(&SurfaceAttributes<U>) -> Option<(i32, i32)>,
     {
@@ -33,27 +34,29 @@ where
             let _ = ctoken.with_surface_tree_downward(
                 wl_surface,
                 self.location,
-                |wl_surface, attributes, role, &(mut x, mut y)| if let Some((w, h)) = get_size(attributes) {
-                    if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                        x += subdata.x;
-                        y += subdata.y;
-                    }
-                    let my_rect = Rectangle {
-                        x,
-                        y,
-                        width: w,
-                        height: h,
-                    };
-                    if my_rect.contains((point.0 as i32, point.1 as i32)) {
-                        found = wl_surface.clone().map(|s| {
-                            (s, (point.0 - my_rect.x as f64, point.1 - my_rect.y as f64))
-                        });
-                        TraversalAction::Break
+                |wl_surface, attributes, role, &(mut x, mut y)| {
+                    if let Some((w, h)) = get_size(attributes) {
+                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                            x += subdata.x;
+                            y += subdata.y;
+                        }
+                        let my_rect = Rectangle {
+                            x,
+                            y,
+                            width: w,
+                            height: h,
+                        };
+                        if my_rect.contains((point.0 as i32, point.1 as i32)) {
+                            found = wl_surface
+                                .clone()
+                                .map(|s| (s, (point.0 - my_rect.x as f64, point.1 - my_rect.y as f64)));
+                            TraversalAction::Break
+                        } else {
+                            TraversalAction::DoChildren((x, y))
+                        }
                     } else {
-                        TraversalAction::DoChildren((x, y))
+                        TraversalAction::SkipChildren
                     }
-                } else {
-                    TraversalAction::SkipChildren
                 },
             );
         }
@@ -151,8 +154,9 @@ where
         None
     }
 
-    pub fn get_surface_and_bring_to_top(&mut self, point: (f64, f64))
-                                        -> Option<(wl_surface::WlSurface, (f64, f64))> {
+    pub fn get_surface_and_bring_to_top(
+        &mut self, point: (f64, f64)
+    ) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         let mut found = None;
         for (i, w) in self.windows.iter().enumerate() {
             if let Some(surface) = w.matching(point, self.ctoken, &self.get_size) {

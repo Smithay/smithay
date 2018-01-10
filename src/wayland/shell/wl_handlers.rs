@@ -271,8 +271,7 @@ where
 {
     wl_shell_surface::Implementation {
         pong: |evlh, idata, _, shell_surface, serial| {
-            let &(_, ref shell) =
-                unsafe { &*(shell_surface.get_user_data() as *mut ShellSurfaceUserData) };
+            let &(_, ref shell) = unsafe { &*(shell_surface.get_user_data() as *mut ShellSurfaceUserData) };
             let valid = {
                 let mutex = unsafe { &*(shell.get_user_data() as *mut ShellUserData<SD>) };
                 let mut guard = mutex.lock().unwrap();

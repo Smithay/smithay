@@ -29,7 +29,18 @@ fn main() {
             "EGL_MESA_platform_gbm",
             "EGL_EXT_platform_wayland",
             "EGL_EXT_platform_device",
+            "EGL_KHR_image_base",
         ],
-    ).write_bindings(gl_generator::StructGenerator, &mut file)
+    ).write_bindings(gl_generator::GlobalGenerator, &mut file)
+        .unwrap();
+
+    let mut file = File::create(&dest.join("gl_bindings.rs")).unwrap();
+    Registry::new(
+        Api::Gles2,
+        (3, 2),
+        Profile::Compatibility,
+        Fallbacks::None,
+        ["GL_OES_EGL_image"],
+    ).write_bindings(gl_generator::GlobalGenerator, &mut file)
         .unwrap();
 }

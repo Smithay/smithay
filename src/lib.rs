@@ -8,13 +8,12 @@
 #![recursion_limit = "1024"]
 
 extern crate image;
-#[macro_use]
+#[cfg_attr(feature = "backend_session", macro_use)]
 extern crate nix;
-#[macro_use]
-extern crate rental;
 extern crate tempfile;
 extern crate wayland_protocols;
 extern crate wayland_server;
+extern crate wayland_sys;
 extern crate xkbcommon;
 
 #[cfg(feature = "backend_drm")]
@@ -47,6 +46,9 @@ extern crate slog_stdlog;
 
 #[macro_use]
 extern crate error_chain;
+
+#[macro_use]
+extern crate lazy_static;
 
 pub mod backend;
 pub mod wayland;

@@ -236,7 +236,9 @@ fn seat_global_bind(
 ) {
     evlh.register(&seat, seat_implementation(), token.clone(), None);
     let seat_mgr = evlh.state().get_mut(token);
-    seat.name(seat_mgr.name.clone());
+    if seat.version() >= 2 {
+        seat.name(seat_mgr.name.clone());
+    }
     seat.capabilities(seat_mgr.compute_caps());
     seat_mgr.known_seats.push(seat);
 }

@@ -1,10 +1,14 @@
 use glium;
-use glium::{Frame, Surface};
+use glium::{Frame, GlObject, Surface};
 use glium::index::PrimitiveType;
+use glium::texture::{MipmapsOption, Texture2d, UncompressedFloatFormat};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
+use smithay::backend::graphics::egl::error::Result as EGLResult;
+use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLImages, EGLWaylandExtensions, Format};
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
 use std::borrow::Borrow;
 use std::ops::Deref;
+use wayland_server::Display;
 
 #[derive(Copy, Clone)]
 struct Vertex {
@@ -106,21 +110,53 @@ impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> From<T> fo
 }
 
 impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
-    pub fn render(&self, target: &mut glium::Frame, contents: &[u8], surface_dimensions: (u32, u32),
-                  surface_location: (i32, i32), screen_size: (u32, u32)) {
+    pub fn texture_from_mem(&self, contents: &[u8], surface_dimensions: (u32, u32)) -> Texture2d {
         let image = glium::texture::RawImage2d {
             data: contents.into(),
             width: surface_dimensions.0,
             height: surface_dimensions.1,
             format: glium::texture::ClientFormat::U8U8U8U8,
         };
-        let opengl_texture = glium::texture::Texture2d::new(&self.display, image).unwrap();
+        Texture2d::new(&self.display, image).unwrap()
+    }
 
+    pub fn texture_from_egl(&self, images: &EGLImages) -> Option<Texture2d> {
+        let format = match images.format {
+            Format::RGB => UncompressedFloatFormat::U8U8U8,
+            Format::RGBA => UncompressedFloatFormat::U8U8U8U8,
+            _ => return None,
+        };
+
+        let opengl_texture = Texture2d::empty_with_format(
+            &self.display,
+            format,
+            MipmapsOption::NoMipmap,
+            images.width,
+            images.height,
+        ).unwrap();
+        unsafe {
+            images
+                .bind_to_texture(0, opengl_texture.get_id())
+                .expect("Failed to bind to texture");
+        }
+        Some(opengl_texture)
+    }
+
+    pub fn render_texture(
+        &self, target: &mut glium::Frame, texture: &Texture2d, y_inverted: bool,
+        surface_dimensions: (u32, u32), surface_location: (i32, i32), screen_size: (u32, u32),
+        blending: glium::Blend,
+    ) {
         let xscale = 2.0 * (surface_dimensions.0 as f32) / (screen_size.0 as f32);
-        let yscale = -2.0 * (surface_dimensions.1 as f32) / (screen_size.1 as f32);
+        let mut yscale = -2.0 * (surface_dimensions.1 as f32) / (screen_size.1 as f32);
 
         let x = 2.0 * (surface_location.0 as f32) / (screen_size.0 as f32) - 1.0;
-        let y = 1.0 - 2.0 * (surface_location.1 as f32) / (screen_size.1 as f32);
+        let mut y = 1.0 - 2.0 * (surface_location.1 as f32) / (screen_size.1 as f32);
+
+        if y_inverted {
+            yscale = -yscale;
+            y -= surface_dimensions.1 as f32;
+        }
 
         let uniforms = uniform! {
             matrix: [
@@ -129,7 +165,7 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                 [  0.0 ,   0.0  , 1.0, 0.0],
                 [   x  ,    y   , 0.0, 1.0]
             ],
-            tex: &opengl_texture
+            tex: texture,
         };
 
         target
@@ -138,7 +174,10 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                 &self.index_buffer,
                 &self.program,
                 &uniforms,
-                &Default::default(),
+                &glium::DrawParameters {
+                    blend: blending,
+                    ..Default::default()
+                },
             )
             .unwrap();
     }
@@ -146,5 +185,11 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
     #[inline]
     pub fn draw(&self) -> Frame {
         self.display.draw()
+    }
+}
+
+impl<G: EGLWaylandExtensions + EGLGraphicsBackend + 'static> EGLWaylandExtensions for GliumDrawer<G> {
+    fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
+        self.display.bind_wl_display(display)
     }
 }

@@ -73,7 +73,6 @@ script:
             vagga cargo-$TRAVIS_RUST_VERSION doc --no-deps
         ;;
         "cargo-fmt")
-            vagga cargo-$TRAVIS_RUST_VERSION install -f rustfmt-nightly &&
             vagga cargo-$TRAVIS_RUST_VERSION fmt -- --write-mode=diff
         ;;
         "cargo-clippy")

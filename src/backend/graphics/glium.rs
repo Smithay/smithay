@@ -1,6 +1,8 @@
 //! Glium compatibility module
 
 use backend::graphics::egl::{EGLGraphicsBackend, SwapBuffersError};
+use backend::graphics::egl::error::Result as EGLResult;
+use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
 use glium::Frame;
 use glium::SwapBuffersError as GliumSwapBuffersError;
 use glium::backend::{Backend, Context, Facade};
@@ -8,6 +10,7 @@ use glium::debug::DebugCallbackBehavior;
 use std::borrow::Borrow;
 use std::os::raw::c_void;
 use std::rc::Rc;
+use wayland_server::Display;
 
 impl From<SwapBuffersError> for GliumSwapBuffersError {
     fn from(error: SwapBuffersError) -> Self {
@@ -70,6 +73,13 @@ impl<T: EGLGraphicsBackend> Facade for GliumGraphicsBackend<T> {
 impl<T: EGLGraphicsBackend + 'static> From<T> for GliumGraphicsBackend<T> {
     fn from(backend: T) -> Self {
         GliumGraphicsBackend::new(backend)
+    }
+}
+
+impl<T: EGLGraphicsBackend + EGLWaylandExtensions + 'static> EGLWaylandExtensions
+    for GliumGraphicsBackend<T> {
+    fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
+        (*self.backend).0.bind_wl_display(display)
     }
 }
 
