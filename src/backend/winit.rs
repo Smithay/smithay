@@ -71,6 +71,7 @@ pub struct WinitGraphicsBackend {
 /// You need to call `dispatch_new_events` periodically to receive any events.
 pub struct WinitInputBackend {
     events_loop: EventsLoop,
+    events_handler: Option<Box<WinitEventsHandler>>,
     window: Rc<Window>,
     time_counter: u32,
     key_counter: u32,
@@ -160,6 +161,7 @@ where
         },
         WinitInputBackend {
             events_loop,
+            events_handler: None,
             window,
             time_counter: 0,
             key_counter: 0,
@@ -176,6 +178,20 @@ where
             logger: log.new(o!("smithay_winit_component" => "input")),
         },
     ))
+}
+
+/// Handler trait to recieve window-related events to provide a better *nested* experience.
+pub trait WinitEventsHandler {
+    /// The window was resized, can be used to adjust the associated `wayland::output::Output`s mode.
+    fn resized(&mut self, evlh: &mut EventLoopHandle, width: u32, height: u32);
+    /// The window was moved
+    fn moved(&mut self, evlh: &mut EventLoopHandle, x: i32, h: i32);
+    /// The window gained or lost focus
+    fn focus_changed(&mut self, evlh: &mut EventLoopHandle, focused: bool);
+    /// The window needs to be redrawn
+    fn refresh(&mut self, evlh: &mut EventLoopHandle);
+    /// The window's hidpi factor changed
+    fn hidpi_changed(&mut self, evlh: &mut EventLoopHandle, scale: f32);
 }
 
 impl WinitGraphicsBackend {
@@ -565,6 +581,27 @@ impl TouchCancelEvent for WinitTouchCancelledEvent {
     }
 }
 
+impl WinitInputBackend {
+    /// Set the events handler
+    pub fn set_events_handler<H: WinitEventsHandler + 'static>(&mut self, handler: H) {
+        self.events_handler = Some(Box::new(handler));
+        info!(self.logger, "New events handler set.");
+    }
+
+    /// Get a reference to the set events handler, if any
+    pub fn get_events_handler(&mut self) -> Option<&mut WinitEventsHandler> {
+        self.events_handler
+            .as_mut()
+            .map(|handler| &mut **handler as &mut WinitEventsHandler)
+    }
+
+    /// Clear out the currently set events handler
+    pub fn clear_events_handler(&mut self) {
+        self.events_handler = None;
+        info!(self.logger, "Events handler unset.");
+    }
+}
+
 impl InputBackend for WinitInputBackend {
     type InputConfig = ();
     type EventError = WinitInputError;
@@ -641,20 +678,34 @@ impl InputBackend for WinitInputBackend {
             let seat = &self.seat;
             let window = &self.window;
             let mut handler = self.handler.as_mut();
+            let mut events_handler = self.events_handler.as_mut();
             let logger = &self.logger;
 
             self.events_loop.poll_events(move |event| {
                 if let Event::WindowEvent { event, .. } = event {
-                    match (event, handler.as_mut()) {
-                        (WindowEvent::Resized(x, y), _) => {
-                            trace!(logger, "Resizing window to {:?}", (x, y));
-                            window.window().set_inner_size(x, y);
+                    match (event, handler.as_mut(), events_handler.as_mut()) {
+                        (WindowEvent::Resized(w, h), _, events_handler) => {
+                            trace!(logger, "Resizing window to {:?}", (w, h));
+                            window.window().set_inner_size(w, h);
                             match **window {
                                 Window::Wayland { ref surface, .. } => {
-                                    surface.resize(x as i32, y as i32, 0, 0)
+                                    surface.resize(w as i32, h as i32, 0, 0)
                                 }
                                 _ => {}
                             };
+                            if let Some(events_handler) = events_handler {
+                                events_handler.resized(evlh, w, h);
+                            }
+                        }
+                        (WindowEvent::Moved(x, y), _, Some(events_handler)) => {
+                            events_handler.moved(evlh, x, y)
+                        }
+                        (WindowEvent::Focused(focus), _, Some(events_handler)) => {
+                            events_handler.focus_changed(evlh, focus)
+                        }
+                        (WindowEvent::Refresh, _, Some(events_handler)) => events_handler.refresh(evlh),
+                        (WindowEvent::HiDPIFactorChanged(factor), _, Some(events_handler)) => {
+                            events_handler.hidpi_changed(evlh, factor)
                         }
                         (
                             WindowEvent::KeyboardInput {
@@ -665,6 +716,7 @@ impl InputBackend for WinitInputBackend {
                                 ..
                             },
                             Some(handler),
+                            _,
                         ) => {
                             match state {
                                 ElementState::Pressed => *key_counter += 1,
@@ -693,6 +745,7 @@ impl InputBackend for WinitInputBackend {
                                 position: (x, y), ..
                             },
                             Some(handler),
+                            _,
                         ) => {
                             trace!(logger, "Calling on_pointer_move_absolute with {:?}", (x, y));
                             handler.on_pointer_move_absolute(
@@ -706,7 +759,7 @@ impl InputBackend for WinitInputBackend {
                                 },
                             )
                         }
-                        (WindowEvent::MouseWheel { delta, .. }, Some(handler)) => match delta {
+                        (WindowEvent::MouseWheel { delta, .. }, Some(handler), _) => match delta {
                             MouseScrollDelta::LineDelta(x, y) | MouseScrollDelta::PixelDelta(x, y) => {
                                 if x != 0.0 {
                                     let event = WinitMouseWheelEvent {
@@ -736,7 +789,7 @@ impl InputBackend for WinitInputBackend {
                                 }
                             }
                         },
-                        (WindowEvent::MouseInput { state, button, .. }, Some(handler)) => {
+                        (WindowEvent::MouseInput { state, button, .. }, Some(handler), _) => {
                             trace!(
                                 logger,
                                 "Calling on_pointer_button with {:?}",
@@ -760,6 +813,7 @@ impl InputBackend for WinitInputBackend {
                                 ..
                             }),
                             Some(handler),
+                            _,
                         ) => {
                             trace!(logger, "Calling on_touch_down at {:?}", (x, y));
                             handler.on_touch_down(
@@ -781,6 +835,7 @@ impl InputBackend for WinitInputBackend {
                                 ..
                             }),
                             Some(handler),
+                            _,
                         ) => {
                             trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
                             handler.on_touch_motion(
@@ -802,6 +857,7 @@ impl InputBackend for WinitInputBackend {
                                 ..
                             }),
                             Some(handler),
+                            _,
                         ) => {
                             trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
                             handler.on_touch_motion(
@@ -831,6 +887,7 @@ impl InputBackend for WinitInputBackend {
                                 ..
                             }),
                             Some(handler),
+                            _,
                         ) => {
                             trace!(logger, "Calling on_touch_cancel");
                             handler.on_touch_cancel(
@@ -842,7 +899,7 @@ impl InputBackend for WinitInputBackend {
                                 },
                             )
                         }
-                        (WindowEvent::Closed, _) => {
+                        (WindowEvent::Closed, _, _) => {
                             warn!(logger, "Window closed");
                             *closed_ptr = true;
                         }
