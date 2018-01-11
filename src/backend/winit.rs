@@ -178,6 +178,13 @@ where
     ))
 }
 
+impl WinitGraphicsBackend {
+    /// Get a reference to the internally used `winit::Window`
+    pub fn winit_window(&self) -> &WinitWindow {
+        self.window.window()
+    }
+}
+
 impl GraphicsBackend for WinitGraphicsBackend {
     type CursorFormat = MouseCursor;
     type Error = ();
