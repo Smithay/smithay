@@ -55,7 +55,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use wayland_server::{Display, StateProxy, StateToken};
+use wayland_server::{Display, EventLoopHandle, StateProxy, StateToken};
 use wayland_server::protocol::{wl_output, wl_pointer};
 use xkbcommon::xkb::keysyms as xkb;
 
@@ -78,16 +78,18 @@ impl LibinputInputHandler {
 }
 
 impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
-    fn on_seat_created(&mut self, _: &input::Seat) {
+    fn on_seat_created(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat) {
         /* we just create a single static one */
     }
-    fn on_seat_destroyed(&mut self, _: &input::Seat) {
+    fn on_seat_destroyed(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat) {
         /* we just create a single static one */
     }
-    fn on_seat_changed(&mut self, _: &input::Seat) {
+    fn on_seat_changed(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat) {
         /* we just create a single static one */
     }
-    fn on_keyboard_key(&mut self, _: &input::Seat, evt: event::keyboard::KeyboardKeyEvent) {
+    fn on_keyboard_key(
+        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: event::keyboard::KeyboardKeyEvent
+    ) {
         let keycode = evt.key();
         let state = evt.state();
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
@@ -106,7 +108,9 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
                 }
             });
     }
-    fn on_pointer_move(&mut self, _: &input::Seat, evt: event::pointer::PointerMotionEvent) {
+    fn on_pointer_move(
+        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: event::pointer::PointerMotionEvent
+    ) {
         let (x, y) = (evt.dx(), evt.dy());
         let serial = self.next_serial();
         let mut location = self.pointer_location.borrow_mut();
@@ -121,7 +125,10 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
             evt.time(),
         );
     }
-    fn on_pointer_move_absolute(&mut self, _: &input::Seat, evt: event::pointer::PointerMotionAbsoluteEvent) {
+    fn on_pointer_move_absolute(
+        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat,
+        evt: event::pointer::PointerMotionAbsoluteEvent,
+    ) {
         let (x, y) = (
             evt.absolute_x_transformed(self.screen_size.0),
             evt.absolute_y_transformed(self.screen_size.1),
@@ -135,7 +142,9 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
             evt.time(),
         );
     }
-    fn on_pointer_button(&mut self, _: &input::Seat, evt: event::pointer::PointerButtonEvent) {
+    fn on_pointer_button(
+        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: event::pointer::PointerButtonEvent
+    ) {
         let serial = self.next_serial();
         let button = evt.button();
         let state = match evt.state() {
@@ -152,29 +161,39 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
         };
         self.pointer.button(button, state, serial, evt.time());
     }
-    fn on_pointer_axis(&mut self, _: &input::Seat, evt: LibinputPointerAxisEvent) {
+    fn on_pointer_axis(
+        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: LibinputPointerAxisEvent
+    ) {
         let axis = match evt.axis() {
             input::Axis::Vertical => wayland_server::protocol::wl_pointer::Axis::VerticalScroll,
             input::Axis::Horizontal => wayland_server::protocol::wl_pointer::Axis::HorizontalScroll,
         };
         self.pointer.axis(axis, evt.amount(), evt.time());
     }
-    fn on_touch_down(&mut self, _: &input::Seat, _: event::touch::TouchDownEvent) {
+    fn on_touch_down(
+        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: event::touch::TouchDownEvent
+    ) {
         /* not done in this example */
     }
-    fn on_touch_motion(&mut self, _: &input::Seat, _: event::touch::TouchMotionEvent) {
+    fn on_touch_motion(
+        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: event::touch::TouchMotionEvent
+    ) {
         /* not done in this example */
     }
-    fn on_touch_up(&mut self, _: &input::Seat, _: event::touch::TouchUpEvent) {
+    fn on_touch_up(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: event::touch::TouchUpEvent) {
         /* not done in this example */
     }
-    fn on_touch_cancel(&mut self, _: &input::Seat, _: event::touch::TouchCancelEvent) {
+    fn on_touch_cancel(
+        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: event::touch::TouchCancelEvent
+    ) {
         /* not done in this example */
     }
-    fn on_touch_frame(&mut self, _: &input::Seat, _: event::touch::TouchFrameEvent) {
+    fn on_touch_frame(
+        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: event::touch::TouchFrameEvent
+    ) {
         /* not done in this example */
     }
-    fn on_input_config_changed(&mut self, _: &mut [LibinputDevice]) {
+    fn on_input_config_changed(&mut self, _evlh: &mut EventLoopHandle, _: &mut [LibinputDevice]) {
         /* not done in this example */
     }
 }
@@ -304,16 +323,19 @@ fn main() {
     let libinput_session_id = notifier.register(libinput_context.clone());
     libinput_context.udev_assign_seat(&seat).unwrap();
     let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
-    libinput_backend.set_handler(LibinputInputHandler {
-        log: log.clone(),
-        pointer,
-        keyboard,
-        window_map: window_map.clone(),
-        pointer_location,
-        screen_size: (w, h),
-        serial: 0,
-        running: running.clone(),
-    });
+    libinput_backend.set_handler(
+        &mut event_loop,
+        LibinputInputHandler {
+            log: log.clone(),
+            pointer,
+            keyboard,
+            window_map: window_map.clone(),
+            pointer_location,
+            screen_size: (w, h),
+            serial: 0,
+            running: running.clone(),
+        },
+    );
     let libinput_event_source = libinput_bind(libinput_backend, &mut event_loop).unwrap();
 
     let session_event_source = direct_session_bind(notifier, &mut event_loop, log.clone()).unwrap();
