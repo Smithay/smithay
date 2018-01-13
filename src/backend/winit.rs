@@ -17,7 +17,7 @@ use std::error;
 use std::fmt;
 use std::rc::Rc;
 use wayland_client::egl as wegl;
-use wayland_server::Display;
+use wayland_server::{Display, EventLoopHandle};
 use winit::{ElementState, Event, EventsLoop, KeyboardInput, MouseButton as WinitMouseButton, MouseCursor,
             MouseScrollDelta, Touch, TouchPhase, Window as WinitWindow, WindowBuilder, WindowEvent};
 
@@ -573,13 +573,13 @@ impl InputBackend for WinitInputBackend {
     type TouchCancelEvent = WinitTouchCancelledEvent;
     type TouchFrameEvent = UnusedEvent;
 
-    fn set_handler<H: InputHandler<Self> + 'static>(&mut self, mut handler: H) {
+    fn set_handler<H: InputHandler<Self> + 'static>(&mut self, evlh: &mut EventLoopHandle, mut handler: H) {
         if self.handler.is_some() {
-            self.clear_handler();
+            self.clear_handler(evlh);
         }
         info!(self.logger, "New input handler set.");
         trace!(self.logger, "Calling on_seat_created with {:?}", self.seat);
-        handler.on_seat_created(&self.seat);
+        handler.on_seat_created(evlh, &self.seat);
         self.handler = Some(Box::new(handler));
     }
 
@@ -589,14 +589,14 @@ impl InputBackend for WinitInputBackend {
             .map(|handler| handler as &mut InputHandler<Self>)
     }
 
-    fn clear_handler(&mut self) {
+    fn clear_handler(&mut self, evlh: &mut EventLoopHandle) {
         if let Some(mut handler) = self.handler.take() {
             trace!(
                 self.logger,
                 "Calling on_seat_destroyed with {:?}",
                 self.seat
             );
-            handler.on_seat_destroyed(&self.seat);
+            handler.on_seat_destroyed(evlh, &self.seat);
         }
         info!(self.logger, "Removing input handler");
     }
@@ -617,11 +617,13 @@ impl InputBackend for WinitInputBackend {
     ///
     /// The linked `WinitGraphicsBackend` will error with a lost Context and should
     /// not be used anymore as well.
-    fn dispatch_new_events(&mut self) -> ::std::result::Result<(), WinitInputError> {
+    fn dispatch_new_events(
+        &mut self, evlh: &mut EventLoopHandle
+    ) -> ::std::result::Result<(), WinitInputError> {
         let mut closed = false;
 
         {
-            // NOTE: This ugly pile of references is here, because rustc could
+            // NOTE: This ugly pile of references is here, because rustc could not
             // figure out how to reference all these objects correctly into the
             // upcoming closure, which is why all are borrowed manually and the
             // assignments are then moved into the closure to avoid rustc's
@@ -669,6 +671,7 @@ impl InputBackend for WinitInputBackend {
                                 (scancode, state)
                             );
                             handler.on_keyboard_key(
+                                evlh,
                                 seat,
                                 WinitKeyboardInputEvent {
                                     time: *time_counter,
@@ -686,6 +689,7 @@ impl InputBackend for WinitInputBackend {
                         ) => {
                             trace!(logger, "Calling on_pointer_move_absolute with {:?}", (x, y));
                             handler.on_pointer_move_absolute(
+                                evlh,
                                 seat,
                                 WinitMouseMovedEvent {
                                     window: window.clone(),
@@ -708,7 +712,7 @@ impl InputBackend for WinitInputBackend {
                                         "Calling on_pointer_axis for Axis::Horizontal with {:?}",
                                         x
                                     );
-                                    handler.on_pointer_axis(seat, event);
+                                    handler.on_pointer_axis(evlh, seat, event);
                                 }
                                 if y != 0.0 {
                                     let event = WinitMouseWheelEvent {
@@ -721,7 +725,7 @@ impl InputBackend for WinitInputBackend {
                                         "Calling on_pointer_axis for Axis::Vertical with {:?}",
                                         y
                                     );
-                                    handler.on_pointer_axis(seat, event);
+                                    handler.on_pointer_axis(evlh, seat, event);
                                 }
                             }
                         },
@@ -732,6 +736,7 @@ impl InputBackend for WinitInputBackend {
                                 (button, state)
                             );
                             handler.on_pointer_button(
+                                evlh,
                                 seat,
                                 WinitMouseInputEvent {
                                     time: *time_counter,
@@ -751,6 +756,7 @@ impl InputBackend for WinitInputBackend {
                         ) => {
                             trace!(logger, "Calling on_touch_down at {:?}", (x, y));
                             handler.on_touch_down(
+                                evlh,
                                 seat,
                                 WinitTouchStartedEvent {
                                     window: window.clone(),
@@ -771,6 +777,7 @@ impl InputBackend for WinitInputBackend {
                         ) => {
                             trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
                             handler.on_touch_motion(
+                                evlh,
                                 seat,
                                 WinitTouchMovedEvent {
                                     window: window.clone(),
@@ -791,6 +798,7 @@ impl InputBackend for WinitInputBackend {
                         ) => {
                             trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
                             handler.on_touch_motion(
+                                evlh,
                                 seat,
                                 WinitTouchMovedEvent {
                                     window: window.clone(),
@@ -801,6 +809,7 @@ impl InputBackend for WinitInputBackend {
                             );
                             trace!(logger, "Calling on_touch_up");
                             handler.on_touch_up(
+                                evlh,
                                 seat,
                                 WinitTouchEndedEvent {
                                     time: *time_counter,
@@ -818,6 +827,7 @@ impl InputBackend for WinitInputBackend {
                         ) => {
                             trace!(logger, "Calling on_touch_cancel");
                             handler.on_touch_cancel(
+                                evlh,
                                 seat,
                                 WinitTouchCancelledEvent {
                                     time: *time_counter,
