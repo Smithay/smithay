@@ -91,7 +91,7 @@ deploy:
   provider: pages
   skip_cleanup: true
   github_token: $GITHUB_TOKEN
-  local_dir: "${TRAVIS_BUILD_DIR}/target/doc"
+  local_dir: "./target/doc"
   on:
     branch: master
     rust: stable
