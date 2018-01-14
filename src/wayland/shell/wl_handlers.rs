@@ -84,7 +84,7 @@ where
                 return;
             }
             shell_surface
-                .set_user_data(Box::into_raw(Box::new(unsafe { surface.clone_unchecked() })) as *mut _);
+                .set_user_data(Box::into_raw(Box::new(unsafe { (surface.clone_unchecked(), shell.clone_unchecked()) })) as *mut _);
             evlh.register(
                 &shell_surface,
                 shell_surface_implementation(),
