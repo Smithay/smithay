@@ -318,7 +318,7 @@ impl backend::InputBackend for LibinputInputBackend {
                             let device_seat = added.seat();
                             self.devices.push(added);
 
-                            match self.seats.entry(device_seat) {
+                            match self.seats.entry(device_seat.clone()) {
                                 Entry::Occupied(mut seat_entry) => {
                                     let old_seat = seat_entry.get_mut();
                                     {
@@ -335,8 +335,15 @@ impl backend::InputBackend for LibinputInputBackend {
                                 Entry::Vacant(seat_entry) => {
                                     let mut hasher = DefaultHasher::default();
                                     seat_entry.key().hash(&mut hasher);
-                                    let seat =
-                                        seat_entry.insert(backend::Seat::new(hasher.finish(), new_caps));
+                                    let seat = seat_entry.insert(backend::Seat::new(
+                                        hasher.finish(),
+                                        format!(
+                                            "{}:{}",
+                                            device_seat.physical_name(),
+                                            device_seat.logical_name()
+                                        ),
+                                        new_caps,
+                                    ));
                                     if let Some(ref mut handler) = self.handler {
                                         trace!(self.logger, "Calling on_seat_created with {:?}", seat);
                                         handler.on_seat_created(evlh, seat);
@@ -384,9 +391,9 @@ impl backend::InputBackend for LibinputInputBackend {
                                 }
                             // it has, notify about updates
                             } else if let Some(ref mut handler) = self.handler {
-                                let seat = self.seats[&device_seat];
+                                let seat = &self.seats[&device_seat];
                                 trace!(self.logger, "Calling on_seat_changed with {:?}", seat);
-                                handler.on_seat_changed(evlh, &seat);
+                                handler.on_seat_changed(evlh, seat);
                             }
                         }
                     }
