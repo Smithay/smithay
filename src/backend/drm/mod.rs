@@ -221,7 +221,7 @@ use drm::control::framebuffer;
 use drm::result::Error as DrmError;
 use gbm::Device as GbmDevice;
 use nix;
-use nix::sys::stat::{dev_t, fstat};
+use nix::sys::stat::{self, dev_t, fstat};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::Result as IoResult;
@@ -597,8 +597,14 @@ where
 
 #[cfg(feature = "backend_session")]
 impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
-    fn pause<'a>(&mut self, state: &mut StateProxy<'a>) {
+    fn pause<'a>(&mut self, state: &mut StateProxy<'a>, devnum: Option<(u32, u32)>) {
         let device = state.get_mut(self);
+        if let Some((major, minor)) = devnum {
+            if major as u64 != stat::major(device.device_id) ||
+               minor as u64 != stat::minor(device.device_id) {
+                   return;
+               }
+        }
         device.active = false;
         if let Err(err) = device.drop_master() {
             error!(
@@ -608,8 +614,17 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
         }
     }
 
-    fn activate<'a>(&mut self, state: &mut StateProxy<'a>) {
+    fn activate<'a>(&mut self, state: &mut StateProxy<'a>, devnum: Option<(u32, u32, Option<RawFd>)>) {
         let device = state.get_mut(self);
+        if let Some((major, minor, fd)) = devnum {
+            if major as u64 != stat::major(device.device_id) ||
+               minor as u64 != stat::minor(device.device_id)
+            {
+               return;
+           } else if let Some(fd) = fd {
+               nix::unistd::dup2(device.as_raw_fd(), fd).expect("Failed to replace file descriptor of drm device");
+           }
+        }
         device.active = true;
         if let Err(err) = device.set_master() {
             crit!(

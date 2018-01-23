@@ -376,7 +376,7 @@ pub fn direct_session_bind(
                 info!(notifier.logger, "Session shall become inactive");
                 for signal in &mut notifier.signals {
                     if let &mut Some(ref mut signal) = signal {
-                        signal.pause(&mut evlh.state().as_proxy());
+                        signal.pause(&mut evlh.state().as_proxy(), None);
                     }
                 }
                 notifier.active.store(false, Ordering::SeqCst);
@@ -391,7 +391,7 @@ pub fn direct_session_bind(
                 }
                 for signal in &mut notifier.signals {
                     if let &mut Some(ref mut signal) = signal {
-                        signal.activate(&mut evlh.state().as_proxy());
+                        signal.activate(&mut evlh.state().as_proxy(), None);
                     }
                 }
                 notifier.active.store(true, Ordering::SeqCst);

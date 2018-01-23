@@ -14,6 +14,12 @@ use std::rc::Rc;
 use wayland_server::{EventLoopHandle, StateProxy};
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 
+// No idea if this is the same across unix platforms
+// Lets make this linux exclusive for now, once someone tries to build it for
+// any BSD-like system, they can verify if this is right and make a PR to change this.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const INPUT_MAJOR: u32 = 13;
+
 /// Libinput based `InputBackend`.
 ///
 /// Tracks input of all devices given manually or via a udev seat to a provided libinput
@@ -568,12 +574,19 @@ impl From<event::pointer::ButtonState> for backend::MouseButtonState {
 
 #[cfg(feature = "backend_session")]
 impl SessionObserver for libinput::Libinput {
-    fn pause<'a>(&mut self, _state: &mut StateProxy<'a>) {
+    fn pause<'a>(&mut self, _state: &mut StateProxy<'a>, device: Option<(u32, u32)>) {
+        if let Some((major, _)) = device {
+            if major != INPUT_MAJOR {
+                return;
+            }
+        }
+        // lets hope multiple suspends are okay in case of logind?
         self.suspend()
     }
 
-    fn activate<'a>(&mut self, _state: &mut StateProxy<'a>) {
-        // TODO Is this the best way to handle this failure?
+    fn activate<'a>(&mut self, _state: &mut StateProxy<'a>, _device: Option<(u32, u32, Option<RawFd>)>) {
+        // libinput closes the devices on suspend, so we should not get any INPUT_MAJOR calls
+        // also lets hope multiple resumes are okay in case of logind
         self.resume().expect("Unable to resume libinput context");
     }
 }

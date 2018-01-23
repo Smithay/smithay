@@ -22,6 +22,8 @@ gbm = { version = "^0.4.0", optional = true, default-features = false, features 
 glium = { version = "0.19.0", optional = true, default-features = false }
 input = { version = "0.4.0", optional = true }
 udev = { version = "0.2.0", optional = true }
+dbus = { version = "0.6.1", optional = true }
+systemd = { git = "https://github.com/Drakulix/rust-systemd", branch = "feature/login_functions", optional = true }
 wayland-protocols = { version = "0.12.5", features = ["unstable_protocols", "server"] }
 image = "0.17.0"
 error-chain = "0.11.0"
@@ -37,11 +39,12 @@ rand = "0.3"
 ctrlc = { version = "3.0", features = ["termination"] }
 
 [features]
-default = ["backend_winit", "backend_drm", "backend_libinput", "backend_udev", "renderer_glium"]
+default = ["backend_winit", "backend_drm", "backend_libinput", "backend_udev", "renderer_glium", "backend_session_logind"]
 backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen"]
 backend_drm = ["drm", "gbm"]
 backend_libinput = ["input"]
 backend_session = []
 backend_session_udev = ["udev", "backend_session"]
+backend_session_logind = ["dbus", "systemd", "backend_session"]
 backend_udev = ["udev", "backend_drm", "backend_session_udev"]
 renderer_glium = ["glium"]

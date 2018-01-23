@@ -24,12 +24,10 @@ extern crate gbm;
 extern crate input;
 #[cfg(feature = "udev")]
 extern crate udev;
-/*
-#[cfg(feature = "backend_session_logind")]
+#[cfg(feature = "dbus")]
 extern crate dbus;
 #[cfg(feature = "backend_session_logind")]
 extern crate systemd;
-*/
 #[cfg(feature = "backend_winit")]
 extern crate wayland_client;
 #[cfg(feature = "backend_winit")]

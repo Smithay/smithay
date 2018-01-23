@@ -68,16 +68,26 @@ pub trait SessionNotifier {
 /// It might be impossible to interact with devices while the session is disabled.
 /// This interface provides callbacks for when that happens.
 pub trait SessionObserver {
-    /// Session is about to be paused.
+    /// Session/Device is about to be paused.
     ///
     /// In case the implementor is a `StateToken` the state of the `EventLoop`
     /// is provided via a `StateProxy`.
-    fn pause<'a>(&mut self, state: &mut StateProxy<'a>);
-    /// Session got active again
+    ///
+    /// If only a specific device shall be closed a device number in the form of
+    /// (major, minor) is provided. All observers not using the specified device should
+    /// ignore the signal in that case.
+    fn pause<'a>(&mut self, state: &mut StateProxy<'a>, device: Option<(u32, u32)>);
+    /// Session/Device got active again
     ///
     /// In case the implementor is a `StateToken` the state of the `EventLoop`
     /// is provided via a `StateProxy`.
-    fn activate<'a>(&mut self, state: &mut StateProxy<'a>);
+    ///
+    /// If only a specific device shall be activated again a device number in the form of
+    /// (major, major, Option<RawFd>) is provided. Optionally the session may decide to replace
+    /// the currently open file descriptor of the device with a new one. In that case the old one
+    /// should not be used anymore and be closed. All observers not using the specified device should
+    /// ignore the signal in that case.
+    fn activate<'a>(&mut self, state: &mut StateProxy<'a>, device: Option<(u32, u32, Option<RawFd>)>);
 }
 
 impl Session for () {
@@ -163,3 +173,5 @@ impl AsErrno for () {
 }
 
 pub mod direct;
+mod dbus;
+pub use self::dbus::*;
