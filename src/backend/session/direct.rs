@@ -365,12 +365,9 @@ impl SessionNotifier for DirectSessionNotifier {
 /// Allows the `DirectSessionNotifier` to listen for the incoming signals signalling the session state.
 /// If you don't use this function `DirectSessionNotifier` will not correctly tell you the current
 /// session state.
-pub fn direct_session_bind<L>(
-    notifier: DirectSessionNotifier, evlh: &mut EventLoopHandle, _logger: L
-) -> IoResult<SignalEventSource<DirectSessionNotifier>>
-where
-    L: Into<Option<::slog::Logger>>,
-{
+pub fn direct_session_bind(
+    notifier: DirectSessionNotifier, evlh: &mut EventLoopHandle
+) -> IoResult<SignalEventSource<DirectSessionNotifier>> {
     let signal = notifier.signal;
 
     evlh.add_signal_event_source(
