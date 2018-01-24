@@ -172,6 +172,7 @@ impl AsErrno for () {
     }
 }
 
+pub mod auto;
 pub mod direct;
 mod dbus;
 pub use self::dbus::*;
