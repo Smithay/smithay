@@ -48,6 +48,7 @@ use smithay::wayland::seat::{KeyboardHandle, PointerHandle, Seat};
 use smithay::wayland::shm::init_shm_global;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::env;
 use std::io::Error as IoError;
 use std::path::PathBuf;
 use std::process::Command;
@@ -236,6 +237,7 @@ fn main() {
      */
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
     println!("Listening on socket: {}", name);
+    env::set_var("WAYLAND_DISPLAY", name);
     let display = Rc::new(display);
 
     /*
