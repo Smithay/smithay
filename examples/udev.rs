@@ -105,7 +105,9 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
         self.keyboard
             .input(keycode, state, serial, move |modifiers, keysym| {
                 debug!(log, "keysym"; "state" => format!("{:?}", state), "mods" => format!("{:?}", modifiers), "keysym" => xkbcommon::xkb::keysym_get_name(keysym));
-                if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace && state == KeyState::Pressed {
+                if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace
+                    && state == KeyState::Pressed
+                {
                     info!(log, "Stopping example using Ctrl+Alt+Backspace");
                     running.store(false, Ordering::SeqCst);
                     false
@@ -113,7 +115,9 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
                     info!(log, "Stopping example using Logo+Q");
                     running.store(false, Ordering::SeqCst);
                     false
-                } else if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_XF86Switch_VT_1 && state == KeyState::Pressed {
+                } else if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_XF86Switch_VT_1
+                    && state == KeyState::Pressed
+                {
                     info!(log, "Trying to switch to vt 1");
                     if let Err(err) = session.change_vt(1) {
                         error!(log, "Error switching to vt 1: {}", err);
@@ -337,9 +341,8 @@ fn main() {
     /*
      * Initialize libinput backend
      */
-    let mut libinput_context = Libinput::new_from_udev::<
-        LibinputSessionInterface<AutoSession>,
-    >(session.clone().into(), &context);
+    let mut libinput_context =
+        Libinput::new_from_udev::<LibinputSessionInterface<AutoSession>>(session.clone().into(), &context);
     let libinput_session_id = notifier.register(libinput_context.clone());
     libinput_context.udev_assign_seat(&seat).unwrap();
     let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());

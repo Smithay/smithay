@@ -30,17 +30,18 @@
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
 
-use ::backend::session::{AsErrno, Session, SessionNotifier, SessionObserver};
+use backend::session::{AsErrno, Session, SessionNotifier, SessionObserver};
+use dbus::{BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interface, Member, Message,
+           MessageItem, OwnedFd, Path as DbusPath, Watch, WatchEvent};
 use nix::fcntl::OFlag;
-use nix::sys::stat::{stat, fstat, major, minor};
+use nix::sys::stat::{fstat, major, minor, stat};
 use std::cell::RefCell;
 use std::io::Result as IoResult;
 use std::os::unix::io::RawFd;
-use std::rc::{Rc, Weak};
 use std::path::Path;
+use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use systemd::login;
-use dbus::{BusType, Connection, ConnectionItems, ConnectionItem, Message, BusName, Interface, Member, Path as DbusPath, OwnedFd, MessageItem, Watch, WatchEvent};
 use wayland_server::EventLoopHandle;
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 
@@ -62,14 +63,14 @@ pub struct LogindSession {
 
 /// `SessionNotifier` via the logind dbus interface
 pub struct LogindSessionNotifier {
-    internal: Rc<LogindSessionImpl>
+    internal: Rc<LogindSessionImpl>,
 }
 
 impl LogindSession {
     /// Tries to create a new session via the logind dbus interface.
     pub fn new<L>(logger: L) -> Result<(LogindSession, LogindSessionNotifier)>
     where
-        L: Into<Option<::slog::Logger>>
+        L: Into<Option<::slog::Logger>>,
     {
         let logger = ::slog_or_stdlog(logger)
             .new(o!("smithay_module" => "backend_session", "session_type" => "logind"));
@@ -88,35 +89,50 @@ impl LogindSession {
             "/org/freedesktop/login1",
             "org.freedesktop.login1.Manager",
             "GetSession",
-            Some(vec![session_id.clone().into()])
+            Some(vec![session_id.clone().into()]),
         )?.get1::<DbusPath<'static>>()
-        .chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
+            .chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
 
         // Match all signals that we want to receive and handle
-        let match1 = String::from("type='signal',\
-            sender='org.freedesktop.login1',\
-            interface='org.freedesktop.login1.Manager',\
-            member='SessionRemoved',\
-            path='/org/freedesktop/login1'");
-        conn.add_match(&match1).chain_err(|| ErrorKind::DbusMatchFailed(match1))?;
-        let match2 = format!("type='signal',\
-            sender='org.freedesktop.login1',\
-            interface='org.freedesktop.login1.Session',\
-            member='PauseDevice',\
-            path='{}'", &session_path);
-        conn.add_match(&match2).chain_err(|| ErrorKind::DbusMatchFailed(match2))?;
-        let match3 = format!("type='signal',\
-            sender='org.freedesktop.login1',\
-            interface='org.freedesktop.login1.Session',\
-            member='ResumeDevice',\
-            path='{}'", &session_path);
-        conn.add_match(&match3).chain_err(|| ErrorKind::DbusMatchFailed(match3))?;
-        let match4 = format!("type='signal',\
-            sender='org.freedesktop.login1',\
-            interface='org.freedesktop.DBus.Properties',\
-            member='PropertiesChanged',\
-            path='{}'", &session_path);
-        conn.add_match(&match4).chain_err(|| ErrorKind::DbusMatchFailed(match4))?;
+        let match1 = String::from(
+            "type='signal',\
+             sender='org.freedesktop.login1',\
+             interface='org.freedesktop.login1.Manager',\
+             member='SessionRemoved',\
+             path='/org/freedesktop/login1'",
+        );
+        conn.add_match(&match1)
+            .chain_err(|| ErrorKind::DbusMatchFailed(match1))?;
+        let match2 = format!(
+            "type='signal',\
+             sender='org.freedesktop.login1',\
+             interface='org.freedesktop.login1.Session',\
+             member='PauseDevice',\
+             path='{}'",
+            &session_path
+        );
+        conn.add_match(&match2)
+            .chain_err(|| ErrorKind::DbusMatchFailed(match2))?;
+        let match3 = format!(
+            "type='signal',\
+             sender='org.freedesktop.login1',\
+             interface='org.freedesktop.login1.Session',\
+             member='ResumeDevice',\
+             path='{}'",
+            &session_path
+        );
+        conn.add_match(&match3)
+            .chain_err(|| ErrorKind::DbusMatchFailed(match3))?;
+        let match4 = format!(
+            "type='signal',\
+             sender='org.freedesktop.login1',\
+             interface='org.freedesktop.DBus.Properties',\
+             member='PropertiesChanged',\
+             path='{}'",
+            &session_path
+        );
+        conn.add_match(&match4)
+            .chain_err(|| ErrorKind::DbusMatchFailed(match4))?;
 
         // Activate (switch to) the session and take control
         LogindSessionImpl::blocking_call(
@@ -153,9 +169,7 @@ impl LogindSession {
                 internal: Rc::downgrade(&internal),
                 seat,
             },
-            LogindSessionNotifier {
-                internal,
-            }
+            LogindSessionNotifier { internal },
         ))
     }
 }
@@ -171,14 +185,9 @@ impl LogindSessionNotifier {
 }
 
 impl LogindSessionImpl {
-    fn blocking_call<'d, 'p, 'i, 'm, D, P, I, M>
-    (
-        conn: &Connection,
-        destination: D,
-        path: P,
-        interface: I,
-        method: M,
-        arguments: Option<Vec<MessageItem>>
+    fn blocking_call<'d, 'p, 'i, 'm, D, P, I, M>(
+        conn: &Connection, destination: D, path: P, interface: I, method: M,
+        arguments: Option<Vec<MessageItem>>,
     ) -> Result<Message>
     where
         D: Into<BusName<'d>>,
@@ -198,21 +207,26 @@ impl LogindSessionImpl {
         };
 
         let mut message = conn.send_with_reply_and_block(message, 1000)
-        .chain_err(|| ErrorKind::FailedToSendDbusCall(
-            destination.clone(),
-            path.clone(),
-            interface.clone(),
-            method.clone()
-        ))?;
+            .chain_err(|| {
+                ErrorKind::FailedToSendDbusCall(
+                    destination.clone(),
+                    path.clone(),
+                    interface.clone(),
+                    method.clone(),
+                )
+            })?;
 
         match message.as_result() {
             Ok(_) => Ok(message),
-            Err(err) => Err(Error::with_chain(err, ErrorKind::DbusCallFailed(
-                destination.clone(),
-                path.clone(),
-                interface.clone(),
-                method.clone()
-            )))
+            Err(err) => Err(Error::with_chain(
+                err,
+                ErrorKind::DbusCallFailed(
+                    destination.clone(),
+                    path.clone(),
+                    interface.clone(),
+                    method.clone(),
+                ),
+            )),
         }
     }
 
@@ -221,7 +235,7 @@ impl LogindSessionImpl {
             let message = if let ConnectionItem::Signal(ref s) = item {
                 s
             } else {
-                continue
+                continue;
             };
             if &*message.interface().unwrap() == "org.freedesktop.login1.Manager"
                 && &*message.member().unwrap() == "SessionRemoved"
@@ -243,7 +257,10 @@ impl LogindSessionImpl {
                     let major = major.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
                     let minor = minor.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
                     let pause_type = pause_type.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
-                    debug!(self.logger, "Request of type \"{}\" to close device ({},{})", pause_type, major, minor);
+                    debug!(
+                        self.logger,
+                        "Request of type \"{}\" to close device ({},{})", pause_type, major, minor
+                    );
                     for signal in &mut *self.signals.borrow_mut() {
                         if let &mut Some(ref mut signal) = signal {
                             signal.pause(&mut evlh.state().as_proxy(), Some((major, minor)));
@@ -260,14 +277,15 @@ impl LogindSessionImpl {
                             self.session_path.clone(),
                             "org.freedesktop.login1.Session",
                             "PauseDeviceComplete",
-                            Some(vec![major.into(), minor.into()])
+                            Some(vec![major.into(), minor.into()]),
                         )?;
                     }
                 } else if &*message.member().unwrap() == "ResumeDevice" {
                     let (major, minor, fd) = message.get3::<u32, u32, OwnedFd>();
                     let major = major.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
                     let minor = minor.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
-                    let fd    = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?.into_fd();
+                    let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?
+                        .into_fd();
                     debug!(self.logger, "Reactivating device ({},{})", major, minor);
                     for signal in &mut *self.signals.borrow_mut() {
                         if let &mut Some(ref mut signal) = signal {
@@ -278,9 +296,10 @@ impl LogindSessionImpl {
             } else if &*message.interface().unwrap() == "org.freedesktop.DBus.Properties"
                 && &*message.member().unwrap() == "PropertiesChanged"
             {
-                use dbus::arg::{Array, Dict, Iter, Variant, Get};
+                use dbus::arg::{Array, Dict, Get, Iter, Variant};
 
-                let (_, changed, _) = message.get3::<String, Dict<String, Variant<Iter>, Iter>, Array<String, Iter>>();
+                let (_, changed, _) =
+                    message.get3::<String, Dict<String, Variant<Iter>, Iter>, Array<String, Iter>>();
                 let mut changed = changed.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
                 if let Some((_, mut value)) = changed.find(|&(ref key, _)| &*key == "Active") {
                     if let Some(active) = Get::get(&mut value.0) {
@@ -303,15 +322,16 @@ impl Session for LogindSession {
             let (fd, _paused) = LogindSessionImpl::blocking_call(
                 &*session.conn.borrow(),
                 "org.freedesktop.login1",
-		        session.session_path.clone(),
+                session.session_path.clone(),
                 "org.freedesktop.login1.Session",
                 "TakeDevice",
                 Some(vec![
                     (major(stat.st_rdev) as u32).into(),
                     (minor(stat.st_rdev) as u32).into(),
-                ])
+                ]),
             )?.get2::<OwnedFd, bool>();
-            let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?.into_fd();
+            let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?
+                .into_fd();
             Ok(fd)
         } else {
             bail!(ErrorKind::SessionLost)
@@ -324,13 +344,13 @@ impl Session for LogindSession {
             LogindSessionImpl::blocking_call(
                 &*session.conn.borrow(),
                 "org.freedesktop.login1",
-		        session.session_path.clone(),
+                session.session_path.clone(),
                 "org.freedesktop.login1.Session",
                 "ReleaseDevice",
                 Some(vec![
                     (major(stat.st_rdev) as u32).into(),
                     (minor(stat.st_rdev) as u32).into(),
-                ])
+                ]),
             ).map(|_| ())
         } else {
             bail!(ErrorKind::SessionLost)
@@ -354,12 +374,10 @@ impl Session for LogindSession {
             LogindSessionImpl::blocking_call(
                 &*session.conn.borrow_mut(),
                 "org.freedesktop.login1",
-    	        "/org/freedesktop/login1/seat/self",
+                "/org/freedesktop/login1/seat/self",
                 "org.freedesktop.login1.Seat",
                 "SwitchTo",
-                Some(vec![
-                    (vt_num as u32).into(),
-                ])
+                Some(vec![(vt_num as u32).into()]),
             ).map(|_| ())
         } else {
             bail!(ErrorKind::SessionLost)
@@ -375,7 +393,10 @@ impl SessionNotifier for LogindSessionNotifier {
     type Id = Id;
 
     fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Id {
-        self.internal.signals.borrow_mut().push(Some(Box::new(signal)));
+        self.internal
+            .signals
+            .borrow_mut()
+            .push(Some(Box::new(signal)));
         Id(self.internal.signals.borrow().len() - 1)
     }
     fn unregister(&mut self, signal: Id) {
@@ -409,20 +430,23 @@ pub struct BoundLogindSession {
 /// session state and call it's `SessionObservers`.
 pub fn logind_session_bind(
     notifier: LogindSessionNotifier, evlh: &mut EventLoopHandle
-) -> IoResult<BoundLogindSession>
-{
+) -> IoResult<BoundLogindSession> {
     let watches = notifier.internal.conn.borrow().watch_fds();
-    let sources = watches.clone().into_iter().map(|watch| {
-        let mut interest = FdInterest::empty();
-        interest.set(FdInterest::READ, watch.readable());
-        interest.set(FdInterest::WRITE, watch.writable());
-        evlh.add_fd_event_source(
-            watch.fd(),
-            fd_event_source_implementation(),
-            notifier.internal.clone(),
-            interest
-        )
-    }).collect::<IoResult<Vec<FdEventSource<Rc<LogindSessionImpl>>>>>()?;
+    let sources = watches
+        .clone()
+        .into_iter()
+        .map(|watch| {
+            let mut interest = FdInterest::empty();
+            interest.set(FdInterest::READ, watch.readable());
+            interest.set(FdInterest::WRITE, watch.writable());
+            evlh.add_fd_event_source(
+                watch.fd(),
+                fd_event_source_implementation(),
+                notifier.internal.clone(),
+                interest,
+            )
+        })
+        .collect::<IoResult<Vec<FdEventSource<Rc<LogindSessionImpl>>>>>()?;
 
     Ok(BoundLogindSession {
         notifier,
@@ -460,13 +484,17 @@ fn fd_event_source_implementation() -> FdEventSourceImpl<Rc<LogindSessionImpl>> 
     FdEventSourceImpl {
         ready: |evlh, session, fd, interest| {
             let conn = session.conn.borrow();
-            let items = conn.watch_handle(fd, match interest {
-                x if x.contains(FdInterest::READ) && x.contains(FdInterest::WRITE) =>
-                    WatchEvent::Readable as u32 | WatchEvent::Writable as u32,
-                x if x.contains(FdInterest::READ) => WatchEvent::Readable as u32,
-                x if x.contains(FdInterest::WRITE) => WatchEvent::Writable as u32,
-                _ => return,
-            });
+            let items = conn.watch_handle(
+                fd,
+                match interest {
+                    x if x.contains(FdInterest::READ) && x.contains(FdInterest::WRITE) => {
+                        WatchEvent::Readable as u32 | WatchEvent::Writable as u32
+                    }
+                    x if x.contains(FdInterest::READ) => WatchEvent::Readable as u32,
+                    x if x.contains(FdInterest::WRITE) => WatchEvent::Writable as u32,
+                    _ => return,
+                },
+            );
             if let Err(err) = session.handle_signals(evlh, items) {
                 error!(session.logger, "Error handling dbus signals: {}", err);
             }

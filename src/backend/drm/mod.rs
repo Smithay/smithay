@@ -219,7 +219,7 @@ use drm::control::{connector, crtc, encoder, Mode, ResourceInfo};
 use drm::control::Device as ControlDevice;
 use drm::control::framebuffer;
 use drm::result::Error as DrmError;
-use gbm::{Device as GbmDevice, BufferObject};
+use gbm::{BufferObject, Device as GbmDevice};
 use nix;
 use nix::sys::stat::{self, dev_t, fstat};
 use std::collections::HashMap;
@@ -328,7 +328,10 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
 
         // we want to mode-set, so we better be the master, if we run via a tty session
         if let Err(_) = drm.set_master() {
-            warn!(log, "Unable to become drm master, assuming unpriviledged mode");
+            warn!(
+                log,
+                "Unable to become drm master, assuming unpriviledged mode"
+            );
             drm.priviledged = false;
         };
 
@@ -607,10 +610,10 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
     fn pause<'a>(&mut self, state: &mut StateProxy<'a>, devnum: Option<(u32, u32)>) {
         let device = state.get_mut(self);
         if let Some((major, minor)) = devnum {
-            if major as u64 != stat::major(device.device_id) ||
-               minor as u64 != stat::minor(device.device_id) {
-                   return;
-               }
+            if major as u64 != stat::major(device.device_id) || minor as u64 != stat::minor(device.device_id)
+            {
+                return;
+            }
         }
         device.active = false;
         if device.priviledged {
@@ -626,14 +629,14 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
     fn activate<'a>(&mut self, state: &mut StateProxy<'a>, devnum: Option<(u32, u32, Option<RawFd>)>) {
         let device = state.get_mut(self);
         if let Some((major, minor, fd)) = devnum {
-            if major as u64 != stat::major(device.device_id) ||
-               minor as u64 != stat::minor(device.device_id)
+            if major as u64 != stat::major(device.device_id) || minor as u64 != stat::minor(device.device_id)
             {
-               return;
-           } else if let Some(fd) = fd {
-               info!(device.logger, "Replacing fd");
-               nix::unistd::dup2(device.as_raw_fd(), fd).expect("Failed to replace file descriptor of drm device");
-           }
+                return;
+            } else if let Some(fd) = fd {
+                info!(device.logger, "Replacing fd");
+                nix::unistd::dup2(device.as_raw_fd(), fd)
+                    .expect("Failed to replace file descriptor of drm device");
+            }
         }
         device.active = true;
         if device.priviledged {
@@ -657,8 +660,8 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
                 }
                 // reset cursor
                 {
-                    let &(ref cursor, ref hotspot) : &(BufferObject<()>, (u32, u32))
-                        = unsafe { &*backend.cursor.as_ptr() };
+                    let &(ref cursor, ref hotspot): &(BufferObject<()>, (u32, u32)) =
+                        unsafe { &*backend.cursor.as_ptr() };
                     if crtc::set_cursor2(
                         &*backend.context,
                         *crtc,
@@ -667,10 +670,7 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
                     ).is_err()
                     {
                         if let Err(err) = crtc::set_cursor(&*backend.context, *crtc, cursor) {
-                            error!(
-                                device.logger,
-                                "Failed to reset cursor. Error: {}", err
-                            );
+                            error!(device.logger, "Failed to reset cursor. Error: {}", err);
                         }
                     }
                 }

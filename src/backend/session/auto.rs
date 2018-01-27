@@ -29,19 +29,18 @@
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
 
-use std::io::{Result as IoResult};
-use std::rc::Rc;
+use super::{AsErrno, Session, SessionNotifier, SessionObserver};
+use super::direct::{self, direct_session_bind, DirectSession, DirectSessionNotifier};
+#[cfg(feature = "backend_session_logind")]
+use super::logind::{self, logind_session_bind, BoundLogindSession, LogindSession, LogindSessionNotifier};
+use nix::fcntl::OFlag;
 use std::cell::RefCell;
+use std::io::Result as IoResult;
 use std::os::unix::io::RawFd;
 use std::path::Path;
-use nix::fcntl::OFlag;
-use wayland_server::{EventLoopHandle};
+use std::rc::Rc;
+use wayland_server::EventLoopHandle;
 use wayland_server::sources::SignalEventSource;
-
-use super::{Session, SessionNotifier, SessionObserver, AsErrno};
-#[cfg(feature = "backend_session_logind")]
-use super::logind::{self, LogindSession, LogindSessionNotifier, BoundLogindSession, logind_session_bind};
-use super::direct::{self, DirectSession, DirectSessionNotifier, direct_session_bind};
 
 /// `Session` using the best available inteface
 #[derive(Clone)]
@@ -80,8 +79,7 @@ pub enum BoundAutoSession {
 pub struct AutoId(AutoIdInternal);
 #[derive(PartialEq, Eq)]
 enum AutoIdInternal {
-    #[cfg(feature = "backend_session_logind")]
-    Logind(logind::Id),
+    #[cfg(feature = "backend_session_logind")] Logind(logind::Id),
     Direct(direct::Id),
 }
 
@@ -89,22 +87,32 @@ impl AutoSession {
     /// Tries to create a new session via the best available interface.
     #[cfg(feature = "backend_session_logind")]
     pub fn new<L>(logger: L) -> Option<(AutoSession, AutoSessionNotifier)>
-        where L: Into<Option<::slog::Logger>>
+    where
+        L: Into<Option<::slog::Logger>>,
     {
         let logger = ::slog_or_stdlog(logger)
             .new(o!("smithay_module" => "backend_session_auto", "session_type" => "auto"));
 
         info!(logger, "Trying to create logind session");
         match LogindSession::new(logger.clone()) {
-            Ok((session, notifier)) => Some((AutoSession::Logind(session), AutoSessionNotifier::Logind(notifier))),
+            Ok((session, notifier)) => Some((
+                AutoSession::Logind(session),
+                AutoSessionNotifier::Logind(notifier),
+            )),
             Err(err) => {
                 warn!(logger, "Failed to create logind session: {}", err);
                 info!(logger, "Falling back to create tty session");
                 match DirectSession::new(None, logger.clone()) {
-                    Ok((session, notifier)) => Some((AutoSession::Direct(Rc::new(RefCell::new(session))), AutoSessionNotifier::Direct(notifier))),
+                    Ok((session, notifier)) => Some((
+                        AutoSession::Direct(Rc::new(RefCell::new(session))),
+                        AutoSessionNotifier::Direct(notifier),
+                    )),
                     Err(err) => {
                         warn!(logger, "Failed to create direct session: {}", err);
-                        error!(logger, "Could not create any session, possibilities exhausted");
+                        error!(
+                            logger,
+                            "Could not create any session, possibilities exhausted"
+                        );
                         None
                     }
                 }
@@ -114,17 +122,24 @@ impl AutoSession {
 
     #[cfg(not(feature = "backend_session_logind"))]
     pub fn new<L>(logger: L) -> Option<(AutoSession, AutoSessionNotifier)>
-        where L: Into<Option<::slog::Logger>>
+    where
+        L: Into<Option<::slog::Logger>>,
     {
         let logger = ::slog_or_stdlog(logger)
             .new(o!("smithay_module" => "backend_session_auto", "session_type" => "auto"));
 
         info!(logger, "Trying to create tty session");
         match DirectSession::new(None, logger.clone()) {
-            Ok((session, notifier)) => Some((AutoSession::Direct(Rc::new(RefCell::new(session))), AutoSessionNotifier::Direct(notifier))),
+            Ok((session, notifier)) => Some((
+                AutoSession::Direct(Rc::new(RefCell::new(session))),
+                AutoSessionNotifier::Direct(notifier),
+            )),
             Err(err) => {
                 warn!(logger, "Failed to create direct session: {}", err);
-                error!(logger, "Could not create any session, possibilities exhausted");
+                error!(
+                    logger,
+                    "Could not create any session, possibilities exhausted"
+                );
                 None
             }
         }
@@ -136,7 +151,9 @@ impl AutoSession {
 /// Allows the `AutoSessionNotifier` to listen for incoming signals signalling the session state.
 /// If you don't use this function `AutoSessionNotifier` will not correctly tell you the
 /// session state and call it's `SessionObservers`.
-pub fn auto_session_bind(notifier: AutoSessionNotifier, evlh: &mut EventLoopHandle) -> IoResult<BoundAutoSession> {
+pub fn auto_session_bind(
+    notifier: AutoSessionNotifier, evlh: &mut EventLoopHandle
+) -> IoResult<BoundAutoSession> {
     Ok(match notifier {
         #[cfg(feature = "backend_session_logind")]
         AutoSessionNotifier::Logind(logind) => BoundAutoSession::Logind(logind_session_bind(logind, evlh)?),
@@ -192,15 +209,23 @@ impl SessionNotifier for AutoSessionNotifier {
     fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Self::Id {
         match self {
             #[cfg(feature = "backend_session_logind")]
-            &mut AutoSessionNotifier::Logind(ref mut logind) => AutoId(AutoIdInternal::Logind(logind.register(signal))),
-            &mut AutoSessionNotifier::Direct(ref mut direct) => AutoId(AutoIdInternal::Direct(direct.register(signal))),
+            &mut AutoSessionNotifier::Logind(ref mut logind) => {
+                AutoId(AutoIdInternal::Logind(logind.register(signal)))
+            }
+            &mut AutoSessionNotifier::Direct(ref mut direct) => {
+                AutoId(AutoIdInternal::Direct(direct.register(signal)))
+            }
         }
     }
     fn unregister(&mut self, signal: Self::Id) {
         match (self, signal) {
             #[cfg(feature = "backend_session_logind")]
-            (&mut AutoSessionNotifier::Logind(ref mut logind), AutoId(AutoIdInternal::Logind(signal))) => logind.unregister(signal),
-            (&mut AutoSessionNotifier::Direct(ref mut direct), AutoId(AutoIdInternal::Direct(signal))) => direct.unregister(signal),
+            (&mut AutoSessionNotifier::Logind(ref mut logind), AutoId(AutoIdInternal::Logind(signal))) => {
+                logind.unregister(signal)
+            }
+            (&mut AutoSessionNotifier::Direct(ref mut direct), AutoId(AutoIdInternal::Direct(signal))) => {
+                direct.unregister(signal)
+            }
             _ => unreachable!(),
         }
     }

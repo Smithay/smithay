@@ -96,14 +96,17 @@ impl<A: Device + 'static> DrmBackend<A> {
         })?;
         front_bo.set_userdata(fb).unwrap();
 
-        let cursor = Cell::new((context
-            .create_buffer_object(
-                1,
-                1,
-                GbmFormat::ARGB8888,
-                BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
-            )
-            .chain_err(|| ErrorKind::GbmInitFailed)?, (0,0)));
+        let cursor = Cell::new((
+            context
+                .create_buffer_object(
+                    1,
+                    1,
+                    GbmFormat::ARGB8888,
+                    BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
+                )
+                .chain_err(|| ErrorKind::GbmInitFailed)?,
+            (0, 0),
+        ));
 
         Ok(DrmBackend {
             backend: Rc::new(DrmBackendInternal {
