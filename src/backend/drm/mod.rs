@@ -219,7 +219,7 @@ use drm::control::{connector, crtc, encoder, Mode, ResourceInfo};
 use drm::control::Device as ControlDevice;
 use drm::control::framebuffer;
 use drm::result::Error as DrmError;
-use gbm::Device as GbmDevice;
+use gbm::{Device as GbmDevice, BufferObject};
 use nix;
 use nix::sys::stat::{self, dev_t, fstat};
 use std::collections::HashMap;
@@ -654,6 +654,25 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
                         device.logger,
                         "Failed to activate crtc ({:?}) again. Error: {}", crtc, err
                     );
+                }
+                // reset cursor
+                {
+                    let &(ref cursor, ref hotspot) : &(BufferObject<()>, (u32, u32))
+                        = unsafe { &*backend.cursor.as_ptr() };
+                    if crtc::set_cursor2(
+                        &*backend.context,
+                        *crtc,
+                        cursor,
+                        ((*hotspot).0 as i32, (*hotspot).1 as i32),
+                    ).is_err()
+                    {
+                        if let Err(err) = crtc::set_cursor(&*backend.context, *crtc, cursor) {
+                            error!(
+                                device.logger,
+                                "Failed to reset cursor. Error: {}", err
+                            );
+                        }
+                    }
                 }
             } else {
                 crtcs.push(*crtc);

@@ -24,8 +24,8 @@ pub struct DrmBackend<A: Device + 'static> {
 }
 
 pub(crate) struct DrmBackendInternal<A: Device + 'static> {
-    context: Rc<EGLContext<Gbm<framebuffer::Info>, GbmDevice<A>>>,
-    cursor: Cell<BufferObject<()>>,
+    pub(crate) context: Rc<EGLContext<Gbm<framebuffer::Info>, GbmDevice<A>>>,
+    pub(crate) cursor: Cell<(BufferObject<()>, (u32, u32))>,
     current_frame_buffer: Cell<framebuffer::Info>,
     front_buffer: Cell<SurfaceBufferHandle<framebuffer::Info>>,
     next_buffer: Cell<Option<SurfaceBufferHandle<framebuffer::Info>>>,
@@ -96,14 +96,14 @@ impl<A: Device + 'static> DrmBackend<A> {
         })?;
         front_bo.set_userdata(fb).unwrap();
 
-        let cursor = Cell::new(context
+        let cursor = Cell::new((context
             .create_buffer_object(
                 1,
                 1,
                 GbmFormat::ARGB8888,
                 BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
             )
-            .chain_err(|| ErrorKind::GbmInitFailed)?);
+            .chain_err(|| ErrorKind::GbmInitFailed)?, (0,0)));
 
         Ok(DrmBackend {
             backend: Rc::new(DrmBackendInternal {
@@ -455,7 +455,7 @@ impl<A: Device + 'static> GraphicsBackend for DrmBackend<A> {
         }
 
         // and store it
-        self.backend.cursor.set(cursor);
+        self.backend.cursor.set((cursor, hotspot));
         Ok(())
     }
 }
