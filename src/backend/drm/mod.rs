@@ -251,6 +251,7 @@ pub struct DrmDevice<A: ControlDevice + 'static> {
     device_id: dev_t,
     backends: HashMap<crtc::Handle, Weak<DrmBackendInternal<A>>>,
     active: bool,
+    priviledged: bool,
     logger: ::slog::Logger,
 }
 
@@ -319,13 +320,17 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
             device_id,
             old_state: HashMap::new(),
             active: true,
+            priviledged: true,
             logger: log.clone(),
         };
 
         info!(log, "DrmDevice initializing");
 
-        // we want to mode-set, so we better be the master
-        drm.set_master().chain_err(|| ErrorKind::DrmMasterFailed)?;
+        // we want to mode-set, so we better be the master, if we run via a tty session
+        if let Err(_) = drm.set_master() {
+            warn!(log, "Unable to become drm master, assuming unpriviledged mode");
+            drm.priviledged = false;
+        };
 
         let res_handles = drm.resource_handles().chain_err(|| {
             ErrorKind::DrmDev(format!(
@@ -506,11 +511,13 @@ impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {
                 );
             }
         }
-        if let Err(err) = self.drop_master() {
-            error!(
-                self.logger,
-                "Failed to drop drm master state. Error: {}", err
-            );
+        if self.priviledged {
+            if let Err(err) = self.drop_master() {
+                error!(
+                    self.logger,
+                    "Failed to drop drm master state. Error: {}", err
+                );
+            }
         }
     }
 }
@@ -606,11 +613,13 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
                }
         }
         device.active = false;
-        if let Err(err) = device.drop_master() {
-            error!(
-                device.logger,
-                "Failed to drop drm master state. Error: {}", err
-            );
+        if device.priviledged {
+            if let Err(err) = device.drop_master() {
+                error!(
+                    device.logger,
+                    "Failed to drop drm master state. Error: {}", err
+                );
+            }
         }
     }
 
@@ -622,16 +631,19 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
             {
                return;
            } else if let Some(fd) = fd {
+               info!(device.logger, "Replacing fd");
                nix::unistd::dup2(device.as_raw_fd(), fd).expect("Failed to replace file descriptor of drm device");
            }
         }
         device.active = true;
-        if let Err(err) = device.set_master() {
-            crit!(
-                device.logger,
-                "Failed to acquire drm master again. Error: {}",
-                err
-            );
+        if device.priviledged {
+            if let Err(err) = device.set_master() {
+                crit!(
+                    device.logger,
+                    "Failed to acquire drm master again. Error: {}",
+                    err
+                );
+            }
         }
         let mut crtcs = Vec::new();
         for (crtc, backend) in device.backends.iter() {
