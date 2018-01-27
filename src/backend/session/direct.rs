@@ -27,7 +27,7 @@
 //! ### Usage of the session
 //!
 //! The session may be used to open devices manually through the `Session` interface
-//! or be passed to other object that need to open devices themselves.
+//! or be passed to other objects that need it to open devices themselves.
 //!
 //! Examples for those are e.g. the `LibinputInputBackend` (its context might be initialized through a
 //! `Session` via the `LibinputSessionInterface`) or the `UdevBackend`.
@@ -160,7 +160,7 @@ pub struct DirectSessionNotifier {
 }
 
 impl DirectSession {
-    /// Tries to creates a new session via the legacy virtual terminal interface.
+    /// Tries to create a new session via the legacy virtual terminal interface.
     ///
     /// If you do not provide a tty device path, it will try to open the currently active tty if any.
     pub fn new<L>(tty: Option<&Path>, logger: L) -> Result<(DirectSession, DirectSessionNotifier)>
@@ -362,9 +362,9 @@ impl SessionNotifier for DirectSessionNotifier {
 
 /// Bind a `DirectSessionNotifier` to an `EventLoop`.
 ///
-/// Allows the `DirectSessionNotifier` to listen for the incoming signals signalling the session state.
+/// Allows the `DirectSessionNotifier` to listen for incoming signals signalling the session state.
 /// If you don't use this function `DirectSessionNotifier` will not correctly tell you the current
-/// session state.
+/// session state and call it's `SessionObservers`.
 pub fn direct_session_bind(
     notifier: DirectSessionNotifier, evlh: &mut EventLoopHandle
 ) -> IoResult<SignalEventSource<DirectSessionNotifier>> {

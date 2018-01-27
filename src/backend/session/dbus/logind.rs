@@ -1,3 +1,35 @@
+//!
+//! Implementation of the `Session` trait through the logind dbus interface.
+//!
+//! This requires systemd and dbus to be available and started on the system.
+//!
+//! ## How to use it
+//!
+//! ### Initialization
+//!
+//! To initialize a session just call `LogindSession::new`. A new session will be opened, if the
+//! call is successful and will be closed once the `LogindSessionNotifier` is dropped.
+//!
+//! ### Usage of the session
+//!
+//! The session may be used to open devices manually through the `Session` interface
+//! or be passed to other objects that need it to open devices themselves.
+//! The `LogindSession` is clonable and may be passed to multiple devices easily.
+//!
+//! Examples for those are e.g. the `LibinputInputBackend` (its context might be initialized through a
+//! `Session` via the `LibinputSessionInterface`) or the `UdevBackend`.
+//!
+//! ### Usage of the session notifier
+//!
+//! The notifier might be used to pause device access, when the session gets paused (e.g. by
+//! switching the tty via `LogindSession::change_vt`) and to automatically enable it again,
+//! when the session becomes active again.
+//!
+//! It is crutial to avoid errors during that state. Examples for object that might be registered
+//! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
+//! automatically by the `UdevBackend`, if not done manually).
+//! ```
+
 use ::backend::session::{AsErrno, Session, SessionNotifier, SessionObserver};
 use nix::fcntl::OFlag;
 use nix::sys::stat::{stat, fstat, major, minor};
@@ -21,17 +53,20 @@ struct LogindSessionImpl {
     logger: ::slog::Logger,
 }
 
+/// `Session` via the logind dbus interface
 #[derive(Clone)]
 pub struct LogindSession {
     internal: Weak<LogindSessionImpl>,
     seat: String,
 }
 
+/// `SessionNotifier` via the logind dbus interface
 pub struct LogindSessionNotifier {
     internal: Rc<LogindSessionImpl>
 }
 
 impl LogindSession {
+    /// Tries to create a new session via the logind dbus interface.
     pub fn new<L>(logger: L) -> Result<(LogindSession, LogindSessionNotifier)>
     where
         L: Into<Option<::slog::Logger>>
@@ -39,17 +74,14 @@ impl LogindSession {
         let logger = ::slog_or_stdlog(logger)
             .new(o!("smithay_module" => "backend_session", "session_type" => "logind"));
 
+        // Acquire session_id, seat and vt (if any) via libsystemd
         let session_id = login::get_session(None).chain_err(|| ErrorKind::FailedToGetSession)?;
         let seat = login::get_seat(session_id.clone()).chain_err(|| ErrorKind::FailedToGetSeat)?;
-        /*let vt = if seat == "seat0" {
-            Some(login::get_vt(session_id.clone()).chain_err(|| ErrorKind::FailedToGetVT)?)
-        } else {
-            None
-        };*/
         let vt = login::get_vt(session_id.clone()).ok();
 
+        // Create dbus connection
         let conn = Connection::get_private(BusType::System).chain_err(|| ErrorKind::FailedDbusConnection)?;
-
+        // and get the session path
         let session_path = LogindSessionImpl::blocking_call(
             &conn,
             "org.freedesktop.login1",
@@ -60,6 +92,7 @@ impl LogindSession {
         )?.get1::<DbusPath<'static>>()
         .chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
 
+        // Match all signals that we want to receive and handle
         let match1 = String::from("type='signal',\
             sender='org.freedesktop.login1',\
             interface='org.freedesktop.login1.Manager',\
@@ -85,6 +118,7 @@ impl LogindSession {
             path='{}'", &session_path);
         conn.add_match(&match4).chain_err(|| ErrorKind::DbusMatchFailed(match4))?;
 
+        // Activate (switch to) the session and take control
         LogindSessionImpl::blocking_call(
             &conn,
             "org.freedesktop.login1",
@@ -93,7 +127,6 @@ impl LogindSession {
             "Activate",
             None,
         )?;
-
         LogindSessionImpl::blocking_call(
             &conn,
             "org.freedesktop.login1",
@@ -128,6 +161,7 @@ impl LogindSession {
 }
 
 impl LogindSessionNotifier {
+    /// Creates a new session object beloging to this notifier.
     pub fn session(&self) -> LogindSession {
         LogindSession {
             internal: Rc::downgrade(&self.internal),
@@ -357,12 +391,22 @@ impl SessionNotifier for LogindSessionNotifier {
     }
 }
 
+/// Bound logind session that is driven by the `wayland_server::EventLoop`.
+///
+/// See `logind_session_bind` for details.
+///
+/// Dropping this object will close the logind session just like the `LogindSessionNotifier`.
 pub struct BoundLogindSession {
     notifier: LogindSessionNotifier,
-    watches: Vec<Watch>,
+    _watches: Vec<Watch>,
     sources: Vec<FdEventSource<Rc<LogindSessionImpl>>>,
 }
 
+/// Bind a `LogindSessionNotifier` to an `EventLoop`.
+///
+/// Allows the `LogindSessionNotifier` to listen for incoming signals signalling the session state.
+/// If you don't use this function `LogindSessionNotifier` will not correctly tell you the logind
+/// session state and call it's `SessionObservers`.
 pub fn logind_session_bind(
     notifier: LogindSessionNotifier, evlh: &mut EventLoopHandle
 ) -> IoResult<BoundLogindSession>
@@ -382,13 +426,14 @@ pub fn logind_session_bind(
 
     Ok(BoundLogindSession {
         notifier,
-        watches,
+        _watches: watches,
         sources,
     })
 }
 
 impl BoundLogindSession {
-    pub fn close(self) -> LogindSessionNotifier {
+    /// Unbind the logind session from the `EventLoop`
+    pub fn unbind(self) -> LogindSessionNotifier {
         for source in self.sources {
             source.remove();
         }
@@ -399,6 +444,7 @@ impl BoundLogindSession {
 impl Drop for LogindSessionNotifier {
     fn drop(&mut self) {
         info!(self.internal.logger, "Closing logind session");
+        // Release control again and drop everything closing the connection
         let _ = LogindSessionImpl::blocking_call(
             &*self.internal.conn.borrow(),
             "org.freedesktop.login1",

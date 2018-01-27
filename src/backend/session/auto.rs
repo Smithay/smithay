@@ -1,3 +1,34 @@
+//!
+//! Implementation of the `Session` trait through various implementations
+//! automatically choosing the best available interface.
+//!
+//! ## How to use it
+//!
+//! ### Initialization
+//!
+//! To initialize a session just call `AutoSession::new`. A new session will be opened, if the
+//! any available interface is successful and will be closed once the `AutoSessionNotifier` is dropped.
+//!
+//! ### Usage of the session
+//!
+//! The session may be used to open devices manually through the `Session` interface
+//! or be passed to other objects that need it to open devices themselves.
+//! The `AutoSession` is clonable and may be passed to multiple devices easily.
+//!
+//! Examples for those are e.g. the `LibinputInputBackend` (its context might be initialized through a
+//! `Session` via the `LibinputSessionInterface`) or the `UdevBackend`.
+//!
+//! ### Usage of the session notifier
+//!
+//! The notifier might be used to pause device access, when the session gets paused (e.g. by
+//! switching the tty via `AutoSession::change_vt`) and to automatically enable it again,
+//! when the session becomes active again.
+//!
+//! It is crutial to avoid errors during that state. Examples for object that might be registered
+//! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
+//! automatically by the `UdevBackend`, if not done manually).
+//! ```
+
 use std::io::{Result as IoResult};
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -12,25 +43,39 @@ use super::{Session, SessionNotifier, SessionObserver, AsErrno};
 use super::logind::{self, LogindSession, LogindSessionNotifier, BoundLogindSession, logind_session_bind};
 use super::direct::{self, DirectSession, DirectSessionNotifier, direct_session_bind};
 
+/// `Session` using the best available inteface
 #[derive(Clone)]
 pub enum AutoSession {
+    /// Logind session
     #[cfg(feature = "backend_session_logind")]
     Logind(LogindSession),
+    /// Direct / tty session
     Direct(Rc<RefCell<DirectSession>>),
 }
 
+/// `SessionNotifier` using the best available inteface
 pub enum AutoSessionNotifier {
+    /// Logind session nofifier
     #[cfg(feature = "backend_session_logind")]
     Logind(LogindSessionNotifier),
+    /// Direct / tty session notifier
     Direct(DirectSessionNotifier),
 }
 
+/// Bound session that is driven by the `wayland_server::EventLoop`.
+///
+/// See `auto_session_bind` for details.
+///
+/// Dropping this object will close the session just like the `AutoSessionNotifier`.
 pub enum BoundAutoSession {
+    /// Bound logind session
     #[cfg(feature = "backend_session_logind")]
     Logind(BoundLogindSession),
+    /// Bound direct / tty session
     Direct(SignalEventSource<DirectSessionNotifier>),
 }
 
+/// Id's used by the `AutoSessionNotifier` internally.
 #[derive(PartialEq, Eq)]
 pub struct AutoId(AutoIdInternal);
 #[derive(PartialEq, Eq)]
@@ -41,6 +86,7 @@ enum AutoIdInternal {
 }
 
 impl AutoSession {
+    /// Tries to create a new session via the best available interface.
     #[cfg(feature = "backend_session_logind")]
     pub fn new<L>(logger: L) -> Option<(AutoSession, AutoSessionNotifier)>
         where L: Into<Option<::slog::Logger>>
@@ -85,6 +131,11 @@ impl AutoSession {
     }
 }
 
+/// Bind an `AutoSessionNotifier` to an `EventLoop`.
+///
+/// Allows the `AutoSessionNotifier` to listen for incoming signals signalling the session state.
+/// If you don't use this function `AutoSessionNotifier` will not correctly tell you the
+/// session state and call it's `SessionObservers`.
 pub fn auto_session_bind(notifier: AutoSessionNotifier, evlh: &mut EventLoopHandle) -> IoResult<BoundAutoSession> {
     Ok(match notifier {
         #[cfg(feature = "backend_session_logind")]
@@ -171,10 +222,11 @@ impl SessionNotifier for AutoSessionNotifier {
 }
 
 impl BoundAutoSession {
-    pub fn remove(self) -> AutoSessionNotifier {
+    /// Unbind the session from the `EventLoop` again
+    pub fn unbind(self) -> AutoSessionNotifier {
         match self {
             #[cfg(feature = "backend_session_logind")]
-            BoundAutoSession::Logind(logind) => AutoSessionNotifier::Logind(logind.close()),
+            BoundAutoSession::Logind(logind) => AutoSessionNotifier::Logind(logind.unbind()),
             BoundAutoSession::Direct(source) => AutoSessionNotifier::Direct(source.remove()),
         }
     }
@@ -182,11 +234,11 @@ impl BoundAutoSession {
 
 error_chain! {
     links {
-        Logind(logind::Error, logind::ErrorKind) #[cfg(feature = "backend_session_logind")];
+        Logind(logind::Error, logind::ErrorKind) #[cfg(feature = "backend_session_logind")] #[doc = "Underlying logind session error"];
     }
 
     foreign_links {
-        Direct(::nix::Error);
+        Direct(::nix::Error) #[doc = "Underlying direct tty session error"];
     }
 }
 
