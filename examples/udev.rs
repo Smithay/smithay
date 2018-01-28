@@ -376,7 +376,7 @@ fn main() {
 
     println!("Bye Bye");
 
-    let mut notifier = session_event_source.remove();
+    let mut notifier = session_event_source.unbind();
     notifier.unregister(udev_session_id);
     notifier.unregister(libinput_session_id);
 
