@@ -47,3 +47,9 @@ backend_session_udev = ["udev", "backend_session"]
 backend_session_logind = ["dbus", "systemd", "backend_session"]
 backend_udev = ["udev", "backend_drm", "backend_session_udev"]
 renderer_glium = ["glium"]
+
+[patch.crates-io]
+wayland-server = { git = "https://github.com/Drakulix/wayland-rs.git", branch = "feature/with_idata" }
+wayland-protocols = { git = "https://github.com/Drakulix/wayland-rs.git", branch = "feature/with_idata" }
+wayland-client = { git = "https://github.com/Drakulix/wayland-rs.git", branch = "feature/with_idata" }
+wayland-sys = { git = "https://github.com/Drakulix/wayland-rs.git", branch = "feature/with_idata" }

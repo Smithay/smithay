@@ -54,7 +54,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use wayland_server::{Display, EventLoopHandle, StateProxy, StateToken};
+use wayland_server::{Display, EventLoopHandle};
+use wayland_server::sources::EventSource;
 use wayland_server::protocol::{wl_output, wl_pointer};
 use xkbcommon::xkb::keysyms as xkb;
 
@@ -270,7 +271,7 @@ fn main() {
     let primary_gpu = primary_gpu(&context, &seat).unwrap_or_default();
 
     let bytes = include_bytes!("resources/cursor2.rgba");
-    let udev_token = UdevBackend::new(
+    let mut udev_backend = UdevBackend::new(
         &mut event_loop,
         &context,
         session.clone(),
@@ -288,7 +289,7 @@ fn main() {
         log.clone(),
     ).unwrap();
 
-    let udev_session_id = notifier.register(udev_token.clone());
+    let udev_session_id = notifier.register(&mut udev_backend);
 
     let (seat_token, _) = Seat::new(&mut event_loop, session.seat().into(), log.clone());
 
@@ -339,7 +340,7 @@ fn main() {
      */
     let mut libinput_context =
         Libinput::new_from_udev::<LibinputSessionInterface<AutoSession>>(session.clone().into(), &context);
-    let libinput_session_id = notifier.register(libinput_context.clone());
+    let libinput_session_id = notifier.register(&mut libinput_context);
     libinput_context.udev_assign_seat(&seat).unwrap();
     let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
     libinput_backend.set_handler(
@@ -359,7 +360,7 @@ fn main() {
     let libinput_event_source = libinput_bind(libinput_backend, &mut event_loop).unwrap();
 
     let session_event_source = auto_session_bind(notifier, &mut event_loop).unwrap();
-    let udev_event_source = udev_backend_bind(&mut event_loop, udev_token).unwrap();
+    let udev_event_source = udev_backend_bind(&mut event_loop, udev_backend).unwrap();
 
     while running.load(Ordering::SeqCst) {
         if let Err(_) = event_loop.dispatch(Some(16)) {
@@ -378,9 +379,8 @@ fn main() {
 
     libinput_event_source.remove();
 
-    let udev_token = udev_event_source.remove();
-    let udev = event_loop.state().remove(udev_token);
-    udev.close(event_loop.state());
+    // destroy the udev backend freeing the drm devices
+    udev_event_source.remove().close(&mut event_loop)
 }
 
 struct UdevHandlerImpl {
@@ -455,8 +455,8 @@ impl UdevHandlerImpl {
 }
 
 impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
-    fn device_added<'a, S: Into<StateProxy<'a>>>(
-        &mut self, _state: S, device: &mut DrmDevice<SessionFdDrmDevice>
+    fn device_added(
+        &mut self, _evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>
     ) -> Option<DrmHandlerImpl> {
         // init hardware acceleration on the primary gpu.
         if device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
@@ -475,21 +475,17 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
         })
     }
 
-    fn device_changed<'a, S: Into<StateProxy<'a>>>(
-        &mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice>>
+    fn device_changed(
+        &mut self, _evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>
     ) {
         //quick and dirt, just re-init all backends
-        let mut state = state.into();
-        let backends = self.backends.get(&state.get(device).device_id()).unwrap();
-        *backends.borrow_mut() = self.scan_connectors(state.get_mut(device));
+        let backends = self.backends.get(&device.device_id()).unwrap();
+        *backends.borrow_mut() = self.scan_connectors(device);
     }
 
-    fn device_removed<'a, S: Into<StateProxy<'a>>>(
-        &mut self, state: S, device: &StateToken<DrmDevice<SessionFdDrmDevice>>
+    fn device_removed(
+        &mut self, _evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>
     ) {
-        let state = state.into();
-        let device = state.get(device);
-
         // drop the backends on this side
         self.backends.remove(&device.device_id());
 
@@ -499,7 +495,7 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
         }
     }
 
-    fn error<'a, S: Into<StateProxy<'a>>>(&mut self, _state: S, error: IoError) {
+    fn error(&mut self, _evlh: &mut EventLoopHandle, error: IoError) {
         error!(self.logger, "{:?}", error);
     }
 }

@@ -29,7 +29,7 @@
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
 
-use super::{AsErrno, Session, SessionNotifier, SessionObserver};
+use super::{AsErrno, Session, SessionNotifier, SessionObserver, AsSessionObserver};
 use super::direct::{self, direct_session_bind, DirectSession, DirectSessionNotifier};
 #[cfg(feature = "backend_session_logind")]
 use super::logind::{self, logind_session_bind, BoundLogindSession, LogindSession, LogindSessionNotifier};
@@ -40,7 +40,7 @@ use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::rc::Rc;
 use wayland_server::EventLoopHandle;
-use wayland_server::sources::SignalEventSource;
+use wayland_server::sources::{EventSource, SignalEventSource};
 
 /// `Session` using the best available inteface
 #[derive(Clone)]
@@ -207,7 +207,9 @@ impl Session for AutoSession {
 impl SessionNotifier for AutoSessionNotifier {
     type Id = AutoId;
 
-    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Self::Id {
+    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(&mut self, signal: &mut A)
+        -> Self::Id
+    {
         match self {
             #[cfg(feature = "backend_session_logind")]
             &mut AutoSessionNotifier::Logind(ref mut logind) => {

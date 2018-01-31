@@ -30,7 +30,7 @@
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
 
-use backend::session::{AsErrno, Session, SessionNotifier, SessionObserver};
+use backend::session::{AsErrno, Session, SessionNotifier, SessionObserver, AsSessionObserver};
 use dbus::{BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interface, Member, Message,
            MessageItem, OwnedFd, Path as DbusPath, Watch, WatchEvent};
 use nix::fcntl::OFlag;
@@ -43,7 +43,7 @@ use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use systemd::login;
 use wayland_server::EventLoopHandle;
-use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
+use wayland_server::sources::{EventSource, FdEventSource, FdEventSourceImpl, FdInterest};
 
 struct LogindSessionImpl {
     conn: RefCell<Connection>,
@@ -246,7 +246,7 @@ impl LogindSessionImpl {
                 //So lets just put it to sleep.. forever
                 for signal in &mut *self.signals.borrow_mut() {
                     if let &mut Some(ref mut signal) = signal {
-                        signal.pause(&mut evlh.state().as_proxy(), None);
+                        signal.pause(evlh, None);
                     }
                 }
                 self.active.store(false, Ordering::SeqCst);
@@ -263,7 +263,7 @@ impl LogindSessionImpl {
                     );
                     for signal in &mut *self.signals.borrow_mut() {
                         if let &mut Some(ref mut signal) = signal {
-                            signal.pause(&mut evlh.state().as_proxy(), Some((major, minor)));
+                            signal.pause(evlh, Some((major, minor)));
                         }
                     }
                     // the other possible types are "force" or "gone" (unplugged),
@@ -289,7 +289,7 @@ impl LogindSessionImpl {
                     debug!(self.logger, "Reactivating device ({},{})", major, minor);
                     for signal in &mut *self.signals.borrow_mut() {
                         if let &mut Some(ref mut signal) = signal {
-                            signal.activate(&mut evlh.state().as_proxy(), Some((major, minor, Some(fd))));
+                            signal.activate(evlh, Some((major, minor, Some(fd))));
                         }
                     }
                 }
@@ -392,11 +392,13 @@ pub struct Id(usize);
 impl SessionNotifier for LogindSessionNotifier {
     type Id = Id;
 
-    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Id {
+    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(&mut self, signal: &mut A)
+        -> Self::Id
+    {
         self.internal
             .signals
             .borrow_mut()
-            .push(Some(Box::new(signal)));
+            .push(Some(Box::new(signal.observer())));
         Id(self.internal.signals.borrow().len() - 1)
     }
     fn unregister(&mut self, signal: Id) {

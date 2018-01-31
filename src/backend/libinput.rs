@@ -11,7 +11,7 @@ use std::io::{Error as IoError, Result as IoResult};
 use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::rc::Rc;
-use wayland_server::{EventLoopHandle, StateProxy};
+use wayland_server::EventLoopHandle;
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 
 // No idea if this is the same across unix platforms
@@ -586,7 +586,7 @@ impl From<event::pointer::ButtonState> for backend::MouseButtonState {
 
 #[cfg(feature = "backend_session")]
 impl SessionObserver for libinput::Libinput {
-    fn pause<'a>(&mut self, _state: &mut StateProxy<'a>, device: Option<(u32, u32)>) {
+    fn pause(&mut self, _state: &mut EventLoopHandle, device: Option<(u32, u32)>) {
         if let Some((major, _)) = device {
             if major != INPUT_MAJOR {
                 return;
@@ -596,7 +596,7 @@ impl SessionObserver for libinput::Libinput {
         self.suspend()
     }
 
-    fn activate<'a>(&mut self, _state: &mut StateProxy<'a>, _device: Option<(u32, u32, Option<RawFd>)>) {
+    fn activate(&mut self, _state: &mut EventLoopHandle, _device: Option<(u32, u32, Option<RawFd>)>) {
         // libinput closes the devices on suspend, so we should not get any INPUT_MAJOR calls
         // also lets hope multiple resumes are okay in case of logind
         self.resume().expect("Unable to resume libinput context");

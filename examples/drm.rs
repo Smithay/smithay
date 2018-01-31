@@ -137,10 +137,9 @@ fn main() {
     /*
      * Register the DrmDevice on the EventLoop
      */
-    let device_token = event_loop.state().insert(device);
     let _source = drm_device_bind(
         &mut event_loop,
-        device_token,
+        device,
         DrmHandlerImpl {
             compositor_token,
             window_map: window_map.clone(),

@@ -16,7 +16,7 @@ use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use wayland_server::StateProxy;
+use wayland_server::EventLoopHandle;
 
 /// General session interface.
 ///
@@ -53,7 +53,7 @@ pub trait SessionNotifier {
     /// Registers a given `SessionObserver`.
     ///
     /// Returns an id of the inserted observer, can be used to remove it again.
-    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Self::Id;
+    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(&mut self, signal: &mut A) -> Self::Id;
     /// Removes an observer by its given id from `SessionNotifier::register`.
     fn unregister(&mut self, signal: Self::Id);
 
@@ -63,6 +63,20 @@ pub trait SessionNotifier {
     fn seat(&self) -> &str;
 }
 
+/// Trait describing the ability to return a `SessionObserver` related to Self.
+///
+/// The returned `SessionObserver` is responsible to handle the `pause` and `activate` signals.
+pub trait AsSessionObserver<S: SessionObserver + 'static> {
+    /// Create a `SessionObserver` linked to this object
+    fn observer(&mut self) -> S;
+}
+
+impl<T: SessionObserver + Clone + 'static> AsSessionObserver<T> for T {
+    fn observer(&mut self) -> T {
+        self.clone()
+    }
+}
+
 /// Trait describing the ability to be notified when the session pauses or becomes active again.
 ///
 /// It might be impossible to interact with devices while the session is disabled.
@@ -70,24 +84,18 @@ pub trait SessionNotifier {
 pub trait SessionObserver {
     /// Session/Device is about to be paused.
     ///
-    /// In case the implementor is a `StateToken` the state of the `EventLoop`
-    /// is provided via a `StateProxy`.
-    ///
     /// If only a specific device shall be closed a device number in the form of
     /// (major, minor) is provided. All observers not using the specified device should
     /// ignore the signal in that case.
-    fn pause<'a>(&mut self, state: &mut StateProxy<'a>, device: Option<(u32, u32)>);
+    fn pause(&mut self, evlh: &mut EventLoopHandle, device: Option<(u32, u32)>);
     /// Session/Device got active again
-    ///
-    /// In case the implementor is a `StateToken` the state of the `EventLoop`
-    /// is provided via a `StateProxy`.
     ///
     /// If only a specific device shall be activated again a device number in the form of
     /// (major, major, Option<RawFd>) is provided. Optionally the session may decide to replace
     /// the currently open file descriptor of the device with a new one. In that case the old one
     /// should not be used anymore and be closed. All observers not using the specified device should
     /// ignore the signal in that case.
-    fn activate<'a>(&mut self, state: &mut StateProxy<'a>, device: Option<(u32, u32, Option<RawFd>)>);
+    fn activate(&mut self, evlh: &mut EventLoopHandle, device: Option<(u32, u32, Option<RawFd>)>);
 }
 
 impl Session for () {
