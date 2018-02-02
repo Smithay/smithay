@@ -529,12 +529,12 @@ impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {
 pub trait DrmHandler<A: ControlDevice + 'static> {
     /// The `DrmBackend` of crtc has finished swapping buffers and new frame can now
     /// (and should be immediately) be rendered.
-    fn ready(&mut self, device: &mut DrmDevice<A>, crtc: crtc::Handle, frame: u32, duration: Duration);
+    fn ready(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<A>, crtc: crtc::Handle, frame: u32, duration: Duration);
     /// The `DrmDevice` has thrown an error.
     ///
     /// The related backends are most likely *not* usable anymore and
     /// the whole stack has to be recreated..
-    fn error(&mut self, device: &mut DrmDevice<A>, error: DrmError);
+    fn error(&mut self,  evlh: &mut EventLoopHandle, device: &mut DrmDevice<A>, error: DrmError);
 }
 
 /// Bind a `DrmDevice` to an `EventLoop`,
@@ -562,7 +562,7 @@ where
     H: DrmHandler<A> + 'static,
 {
     FdEventSourceImpl {
-        ready: |_evlh, &mut (ref mut device, ref mut handler), _, _| {
+        ready: |evlh, &mut (ref mut device, ref mut handler), _, _| {
             match crtc::receive_events(device) {
                 Ok(events) => for event in events {
                     if let crtc::Event::PageFlip(event) = event {
@@ -578,19 +578,19 @@ where
                                 backend.unlock_buffer();
                                 trace!(device.logger, "Handling event for backend {:?}", event.crtc);
                                 // and then call the user to render the next frame
-                                handler.ready(device, event.crtc, event.frame, event.duration);
+                                handler.ready(evlh, device, event.crtc, event.frame, event.duration);
                             } else {
                                 device.backends.borrow_mut().remove(&event.crtc);
                             }
                         }
                     }
                 },
-                Err(err) => handler.error(device, err),
+                Err(err) => handler.error(evlh, device, err),
             };
         },
         error: |_evlh, &mut (ref mut device, ref mut handler), _, error| {
             warn!(device.logger, "DrmDevice errored: {}", error);
-            handler.error(device, error.into());
+            handler.error(evlh, device, error.into());
         },
     }
 }
