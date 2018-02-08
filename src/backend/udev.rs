@@ -60,7 +60,8 @@ pub struct UdevBackend<
 }
 
 impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevHandler<H> + 'static>
-    UdevBackend<H, S, T> {
+    UdevBackend<H, S, T>
+{
     /// Creates a new `UdevBackend` and adds it to the given `EventLoop`'s state.
     ///
     /// ## Arguments
@@ -177,7 +178,8 @@ impl<
     H: DrmHandler<SessionFdDrmDevice> + 'static,
     S: Session + 'static,
     T: UdevHandler<H> + 'static,
-> SessionObserver for StateToken<UdevBackend<H, S, T>> {
+> SessionObserver for StateToken<UdevBackend<H, S, T>>
+{
     fn pause<'a>(&mut self, state: &mut StateProxy<'a>) {
         state.with_value(self, |state, udev| {
             for &mut (ref mut device, _) in udev.devices.values_mut() {

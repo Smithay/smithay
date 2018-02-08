@@ -203,6 +203,11 @@ impl<A: Device + 'static> DrmBackend<A> {
         self.connectors.retain(|x| *x != connector);
     }
 
+    /// Gets the currently used mode
+    pub fn current_mode(&self) -> Mode {
+        self.mode
+    }
+
     /// Changes the currently set mode
     ///
     /// # Errors
