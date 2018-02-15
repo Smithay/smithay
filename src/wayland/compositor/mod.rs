@@ -93,7 +93,7 @@ use self::roles::{Role, RoleType, WrongRole};
 use self::tree::SurfaceData;
 pub use self::tree::TraversalAction;
 use utils::Rectangle;
-use wayland_server::{resource_is_registered, EventLoop, EventLoopHandle, Global};
+use wayland_server::{resource_is_registered, EventLoopHandle, Global};
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_compositor, wl_output, wl_region,
                                wl_subcompositor, wl_surface};
 
@@ -529,7 +529,7 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
 /// It also returns the two global handles, in case you whish to remove these
 /// globals from the event loop in the future.
 pub fn compositor_init<U, R, ID, L>(
-    evl: &mut EventLoop, implem: SurfaceUserImplementation<U, R, ID>, idata: ID, logger: L
+    evlh: &mut EventLoopHandle, implem: SurfaceUserImplementation<U, R, ID>, idata: ID, logger: L
 ) -> (
     CompositorToken<U, R, ID>,
     Global<wl_compositor::WlCompositor, self::handlers::SurfaceIData<U, R, ID>>,
@@ -548,8 +548,8 @@ where
         idata,
     );
     let compositor_global_token =
-        evl.register_global::<wl_compositor::WlCompositor, _>(4, self::handlers::compositor_bind, idata);
-    let subcompositor_global_token = evl.register_global::<wl_subcompositor::WlSubcompositor, _>(
+        evlh.register_global::<wl_compositor::WlCompositor, _>(4, self::handlers::compositor_bind, idata);
+    let subcompositor_global_token = evlh.register_global::<wl_subcompositor::WlSubcompositor, _>(
         1,
         self::handlers::subcompositor_bind::<U, R>,
         (),

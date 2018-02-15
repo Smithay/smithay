@@ -113,7 +113,7 @@ use wayland::compositor::roles::Role;
 use wayland_protocols::unstable::xdg_shell::v6::server::{zxdg_popup_v6,
                                                          zxdg_positioner_v6 as xdg_positioner,
                                                          zxdg_shell_v6, zxdg_surface_v6, zxdg_toplevel_v6};
-use wayland_server::{EventLoop, EventLoopHandle, EventResult, Global, Liveness, Resource, StateToken};
+use wayland_server::{EventLoopHandle, EventResult, Global, Liveness, Resource, StateToken};
 use wayland_server::protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface};
 
 mod wl_handlers;
@@ -301,7 +301,7 @@ impl<U, R, CID, SID, SD> Clone for ShellSurfaceIData<U, R, CID, SID, SD> {
 /// It also returns the two global handles, in case you whish to remove these
 /// globals from the event loop in the future.
 pub fn shell_init<U, R, CID, SID, SD, L>(
-    evl: &mut EventLoop, token: CompositorToken<U, R, CID>,
+    evlh: &mut EventLoopHandle, token: CompositorToken<U, R, CID>,
     implementation: ShellSurfaceUserImplementation<U, R, CID, SID, SD>, idata: SID, logger: L,
 ) -> (
     StateToken<ShellState<U, R, CID, SD>>,
@@ -321,7 +321,7 @@ where
         known_toplevels: Vec::new(),
         known_popups: Vec::new(),
     };
-    let shell_state_token = evl.state().insert(shell_state);
+    let shell_state_token = evlh.state().insert(shell_state);
 
     let shell_surface_idata = ShellSurfaceIData {
         log: log.new(o!("smithay_module" => "shell_handler")),
@@ -332,12 +332,12 @@ where
     };
 
     // TODO: init globals
-    let wl_shell_global = evl.register_global(
+    let wl_shell_global = evlh.register_global(
         1,
         self::wl_handlers::wl_shell_bind::<U, R, CID, SID, SD>,
         shell_surface_idata.clone(),
     );
-    let xdg_shell_global = evl.register_global(
+    let xdg_shell_global = evlh.register_global(
         1,
         self::xdg_handlers::xdg_shell_bind::<U, R, CID, SID, SD>,
         shell_surface_idata.clone(),

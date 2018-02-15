@@ -64,7 +64,7 @@
 use self::pool::{Pool, ResizeError};
 use std::rc::Rc;
 use std::sync::Arc;
-use wayland_server::{resource_is_registered, Client, EventLoop, EventLoopHandle, Global, Resource};
+use wayland_server::{resource_is_registered, Client, EventLoopHandle, Global, Resource};
 use wayland_server::protocol::{wl_buffer, wl_shm, wl_shm_pool};
 
 mod pool;
@@ -89,7 +89,7 @@ pub struct ShmGlobalData {
 /// returns the global handle, in case you whish to remove this global in
 /// the future.
 pub fn init_shm_global<L>(
-    evl: &mut EventLoop, mut formats: Vec<wl_shm::Format>, logger: L
+    evlh: &mut EventLoopHandle, mut formats: Vec<wl_shm::Format>, logger: L
 ) -> Global<wl_shm::WlShm, ShmGlobalData>
 where
     L: Into<Option<::slog::Logger>>,
@@ -104,7 +104,7 @@ where
         log: log.new(o!("smithay_module" => "shm_handler")),
     };
 
-    evl.register_global::<wl_shm::WlShm, _>(1, shm_global_bind, data)
+    evlh.register_global::<wl_shm::WlShm, _>(1, shm_global_bind, data)
 }
 
 /// Error that can occur when accessing an SHM buffer

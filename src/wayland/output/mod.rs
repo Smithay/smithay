@@ -54,7 +54,7 @@
 //! # }
 //! ```
 
-use wayland_server::{Client, EventLoop, EventLoopHandle, Global, Liveness, Resource, StateToken};
+use wayland_server::{Client, EventLoopHandle, Global, Liveness, Resource, StateToken};
 use wayland_server::protocol::wl_output;
 
 #[derive(Copy, Clone, PartialEq)]
@@ -113,7 +113,7 @@ impl Output {
     /// returns the state token allowing you to access it, as well as the global handle,
     /// in case you whish to remove this global in  the future.
     pub fn new<L>(
-        evl: &mut EventLoop, name: String, physical: PhysicalProperties, logger: L
+        evlh: &mut EventLoopHandle, name: String, physical: PhysicalProperties, logger: L
     ) -> (
         StateToken<Output>,
         Global<wl_output::WlOutput, StateToken<Output>>,
@@ -125,7 +125,7 @@ impl Output {
 
         info!(log, "Creating new wl_output"; "name" => &name);
 
-        let token = evl.state().insert(Output {
+        let token = evlh.state().insert(Output {
             name: name,
             log: log,
             instances: Vec::new(),
@@ -138,7 +138,7 @@ impl Output {
             preferred_mode: None,
         });
 
-        let global = evl.register_global(3, output_bind, token.clone());
+        let global = evlh.register_global(3, output_bind, token.clone());
 
         (token, global)
     }

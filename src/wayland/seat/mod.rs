@@ -59,7 +59,7 @@ mod pointer;
 
 pub use self::keyboard::{Error as KeyboardError, KeyboardHandle};
 pub use self::pointer::PointerHandle;
-use wayland_server::{Client, EventLoop, EventLoopHandle, Global, Liveness, Resource, StateToken};
+use wayland_server::{Client, EventLoopHandle, Global, Liveness, Resource, StateToken};
 use wayland_server::protocol::{wl_keyboard, wl_pointer, wl_seat};
 
 /// Internal data of a seat global
@@ -88,7 +88,7 @@ impl Seat {
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
     pub fn new<L>(
-        evl: &mut EventLoop, name: String, logger: L
+        evlh: &mut EventLoopHandle, name: String, logger: L
     ) -> (StateToken<Seat>, Global<wl_seat::WlSeat, StateToken<Seat>>)
     where
         L: Into<Option<::slog::Logger>>,
@@ -101,9 +101,9 @@ impl Seat {
             keyboard: None,
             known_seats: Vec::new(),
         };
-        let token = evl.state().insert(seat);
+        let token = evlh.state().insert(seat);
         // TODO: support version 5 (axis)
-        let global = evl.register_global(4, seat_global_bind, token.clone());
+        let global = evlh.register_global(4, seat_global_bind, token.clone());
         (token, global)
     }
 
