@@ -77,7 +77,8 @@ impl<T: EGLGraphicsBackend + 'static> From<T> for GliumGraphicsBackend<T> {
 }
 
 impl<T: EGLGraphicsBackend + EGLWaylandExtensions + 'static> EGLWaylandExtensions
-    for GliumGraphicsBackend<T> {
+    for GliumGraphicsBackend<T>
+{
     fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
         (*self.backend).0.bind_wl_display(display)
     }
