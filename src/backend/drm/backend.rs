@@ -5,6 +5,7 @@ use backend::graphics::egl::{EGLContext, EGLGraphicsBackend, EGLSurface, PixelFo
 use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::native::{Gbm, GbmSurfaceArguments};
 use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
+use drm::Device as BasicDevice;
 use drm::control::{Device, ResourceInfo};
 use drm::control::{connector, crtc, encoder, framebuffer, Mode};
 use gbm::{BufferObject, BufferObjectFlags, Device as GbmDevice, Format as GbmFormat, Surface as GbmSurface,
@@ -12,6 +13,7 @@ use gbm::{BufferObject, BufferObjectFlags, Device as GbmDevice, Format as GbmFor
 use image::{ImageBuffer, Rgba};
 use nix::libc::c_void;
 use std::cell::Cell;
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use wayland_server::Display;
 
@@ -527,6 +529,16 @@ impl<A: Device + 'static> EGLGraphicsBackend for DrmBackend<A> {
         self.backend.context.get_pixel_format()
     }
 }
+
+// for users convenience
+impl<A: Device + 'static> AsRawFd for DrmBackend<A> {
+    fn as_raw_fd(&self) -> RawFd {
+        self.backend.context.as_raw_fd()
+    }
+}
+
+impl<A: Device + 'static> BasicDevice for DrmBackend<A> {}
+impl<A: Device + 'static> Device for DrmBackend<A> {}
 
 impl<A: Device + 'static> EGLWaylandExtensions for DrmBackend<A> {
     fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
