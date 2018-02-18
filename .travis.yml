@@ -36,6 +36,7 @@ env:
     - FEATURES="backend_udev"
     - FEATURES="backend_session"
     - FEATURES="backend_session_udev"
+    - FEATURES="backend_session_logind"
     - FEATURES="renderer_glium"
       # test default features
     - FEATURES="default"

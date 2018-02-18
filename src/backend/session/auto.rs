@@ -79,7 +79,8 @@ pub enum BoundAutoSession {
 pub struct AutoId(AutoIdInternal);
 #[derive(PartialEq, Eq)]
 enum AutoIdInternal {
-    #[cfg(feature = "backend_session_logind")] Logind(logind::Id),
+    #[cfg(feature = "backend_session_logind")]
+    Logind(logind::Id),
     Direct(direct::Id),
 }
 
