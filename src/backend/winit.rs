@@ -167,6 +167,7 @@ where
             key_counter: 0,
             seat: Seat::new(
                 0,
+                "winit",
                 SeatCapabilities {
                     pointer: true,
                     keyboard: true,

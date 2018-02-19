@@ -1,6 +1,7 @@
 //! Common traits for input backends to receive input from.
 
 use std::error::Error;
+use std::string::ToString;
 use wayland_server::EventLoopHandle;
 
 /// A seat describes a group of input devices and at least one
@@ -14,16 +15,18 @@ use wayland_server::EventLoopHandle;
 /// hash, but capabilities of cloned and copied `Seat`s will not be updated by smithay.
 /// Always referr to the `Seat` given by a callback for up-to-date information. You may
 /// use this to calculate the differences since the last callback.
-#[derive(Debug, Clone, Copy, Eq)]
+#[derive(Debug, Clone, Eq)]
 pub struct Seat {
     id: u64,
+    name: String,
     capabilities: SeatCapabilities,
 }
 
 impl Seat {
-    pub(crate) fn new(id: u64, capabilities: SeatCapabilities) -> Seat {
+    pub(crate) fn new<S: ToString>(id: u64, name: S, capabilities: SeatCapabilities) -> Seat {
         Seat {
             id: id,
+            name: name.to_string(),
             capabilities: capabilities,
         }
     }
@@ -35,6 +38,11 @@ impl Seat {
     /// Get the currently capabilities of this `Seat`
     pub fn capabilities(&self) -> &SeatCapabilities {
         &self.capabilities
+    }
+
+    /// Get the name of this `Seat`
+    pub fn name(&self) -> &str {
+        &*self.name
     }
 }
 
