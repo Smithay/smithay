@@ -15,8 +15,6 @@ extern crate slog;
 extern crate slog_async;
 extern crate slog_term;
 
-extern crate ctrlc;
-
 mod helpers;
 
 use drm::control::{Device as ControlDevice, ResourceInfo};
@@ -258,10 +256,6 @@ fn main() {
     let (session, mut notifier) = AutoSession::new(log.clone()).unwrap();
 
     let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
-    ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
-    }).expect("Error setting Ctrl-C handler");
 
     let pointer_location = Rc::new(RefCell::new((0.0, 0.0)));
 

@@ -36,7 +36,6 @@ gl_generator = "0.7"
 slog-term = "2.3"
 slog-async = "2.2"
 rand = "0.3"
-ctrlc = { version = "3.0", features = ["termination"] }
 
 [features]
 default = ["backend_winit", "backend_drm", "backend_libinput", "backend_udev", "renderer_glium", "backend_session_logind"]
