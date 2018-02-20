@@ -44,7 +44,6 @@
 //! It is crutial to avoid errors during that state. Examples for object that might be registered
 //! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
 //! automatically by the `UdevBackend`, if not done manually).
-//! ```
 
 use super::{AsErrno, Session, SessionNotifier, SessionObserver};
 use nix::{Error as NixError, Result as NixResult};
