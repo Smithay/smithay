@@ -15,8 +15,6 @@ extern crate slog;
 extern crate slog_async;
 extern crate slog_term;
 
-extern crate ctrlc;
-
 mod helpers;
 
 use drm::control::{Device as ControlDevice, ResourceInfo};
@@ -39,7 +37,7 @@ use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyState,
 use smithay::backend::libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface,
                                  PointerAxisEvent as LibinputPointerAxisEvent};
 use smithay::backend::session::{Session, SessionNotifier};
-use smithay::backend::session::direct::{direct_session_bind, DirectSession};
+use smithay::backend::session::auto::{auto_session_bind, AutoSession};
 use smithay::backend::udev::{primary_gpu, udev_backend_bind, SessionFdDrmDevice, UdevBackend, UdevHandler};
 use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
@@ -48,6 +46,7 @@ use smithay::wayland::seat::{KeyboardHandle, PointerHandle, Seat};
 use smithay::wayland::shm::init_shm_global;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::env;
 use std::io::Error as IoError;
 use std::path::PathBuf;
 use std::process::Command;
@@ -67,6 +66,7 @@ struct LibinputInputHandler {
     pointer_location: Rc<RefCell<(f64, f64)>>,
     screen_size: (u32, u32),
     serial: u32,
+    session: AutoSession,
     running: Arc<AtomicBool>,
 }
 
@@ -93,14 +93,36 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
         let keycode = evt.key();
         let state = evt.state();
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
-
         let serial = self.next_serial();
+
+        // we cannot borrow `self` into the closure, because we need self.keyboard.
+        // but rust does not borrow all fields separately, so we need to do that manually...
+        let running = &self.running;
+        let mut session = &mut self.session;
+        let log = &self.log;
         self.keyboard
-            .input(keycode, state, serial, |modifiers, keysym| {
-                if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace {
-                    self.running.store(false, Ordering::SeqCst);
+            .input(keycode, state, serial, move |modifiers, keysym| {
+                debug!(log, "keysym"; "state" => format!("{:?}", state), "mods" => format!("{:?}", modifiers), "keysym" => xkbcommon::xkb::keysym_get_name(keysym));
+                if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace
+                    && state == KeyState::Pressed
+                {
+                    info!(log, "Stopping example using Ctrl+Alt+Backspace");
+                    running.store(false, Ordering::SeqCst);
+                    false
+                } else if modifiers.logo && keysym == xkb::KEY_q {
+                    info!(log, "Stopping example using Logo+Q");
+                    running.store(false, Ordering::SeqCst);
+                    false
+                } else if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_XF86Switch_VT_1
+                    && state == KeyState::Pressed
+                {
+                    info!(log, "Trying to switch to vt 1");
+                    if let Err(err) = session.change_vt(1) {
+                        error!(log, "Error switching to vt 1: {}", err);
+                    }
                     false
                 } else if modifiers.logo && keysym == xkb::KEY_Return && state == KeyState::Pressed {
+                    info!(log, "Launching terminal");
                     let _ = Command::new("weston-terminal").spawn();
                     false
                 } else {
@@ -217,6 +239,7 @@ fn main() {
      */
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
     println!("Listening on socket: {}", name);
+    env::set_var("WAYLAND_DISPLAY", name);
     let display = Rc::new(display);
 
     /*
@@ -228,16 +251,11 @@ fn main() {
         init_shell(&mut event_loop, log.clone(), active_egl_context.clone());
 
     /*
-     * Initialize session on the current tty
+     * Initialize session
      */
-    let (session, mut notifier) = DirectSession::new(None, log.clone()).unwrap();
-    let session = Rc::new(RefCell::new(session));
+    let (session, mut notifier) = AutoSession::new(log.clone()).unwrap();
 
     let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
-    ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
-    }).expect("Error setting Ctrl-C handler");
 
     let pointer_location = Rc::new(RefCell::new((0.0, 0.0)));
 
@@ -317,9 +335,8 @@ fn main() {
     /*
      * Initialize libinput backend
      */
-    let mut libinput_context = Libinput::new_from_udev::<
-        LibinputSessionInterface<Rc<RefCell<DirectSession>>>,
-    >(session.into(), &context);
+    let mut libinput_context =
+        Libinput::new_from_udev::<LibinputSessionInterface<AutoSession>>(session.clone().into(), &context);
     let libinput_session_id = notifier.register(libinput_context.clone());
     libinput_context.udev_assign_seat(&seat).unwrap();
     let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
@@ -333,12 +350,13 @@ fn main() {
             pointer_location,
             screen_size: (w, h),
             serial: 0,
+            session: session,
             running: running.clone(),
         },
     );
     let libinput_event_source = libinput_bind(libinput_backend, &mut event_loop).unwrap();
 
-    let session_event_source = direct_session_bind(notifier, &mut event_loop, log.clone()).unwrap();
+    let session_event_source = auto_session_bind(notifier, &mut event_loop).unwrap();
     let udev_event_source = udev_backend_bind(&mut event_loop, udev_token).unwrap();
 
     while running.load(Ordering::SeqCst) {
@@ -352,7 +370,7 @@ fn main() {
 
     println!("Bye Bye");
 
-    let mut notifier = session_event_source.remove();
+    let mut notifier = session_event_source.unbind();
     notifier.unregister(udev_session_id);
     notifier.unregister(libinput_session_id);
 

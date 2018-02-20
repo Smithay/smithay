@@ -180,18 +180,18 @@ impl<
     T: UdevHandler<H> + 'static,
 > SessionObserver for StateToken<UdevBackend<H, S, T>>
 {
-    fn pause<'a>(&mut self, state: &mut StateProxy<'a>) {
+    fn pause<'a>(&mut self, state: &mut StateProxy<'a>, devnum: Option<(u32, u32)>) {
         state.with_value(self, |state, udev| {
             for &mut (ref mut device, _) in udev.devices.values_mut() {
-                device.pause(state);
+                device.pause(state, devnum);
             }
         });
     }
 
-    fn activate<'a>(&mut self, state: &mut StateProxy<'a>) {
+    fn activate<'a>(&mut self, state: &mut StateProxy<'a>, devnum: Option<(u32, u32, Option<RawFd>)>) {
         state.with_value(self, |state, udev| {
             for &mut (ref mut device, _) in udev.devices.values_mut() {
-                device.activate(state);
+                device.activate(state, devnum);
             }
         });
     }

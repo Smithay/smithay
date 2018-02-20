@@ -16,20 +16,18 @@ extern crate wayland_server;
 extern crate wayland_sys;
 extern crate xkbcommon;
 
+#[cfg(feature = "dbus")]
+extern crate dbus;
 #[cfg(feature = "backend_drm")]
 extern crate drm;
 #[cfg(feature = "backend_drm")]
 extern crate gbm;
 #[cfg(feature = "backend_libinput")]
 extern crate input;
-#[cfg(feature = "udev")]
-extern crate udev;
-/*
-#[cfg(feature = "backend_session_logind")]
-extern crate dbus;
 #[cfg(feature = "backend_session_logind")]
 extern crate systemd;
-*/
+#[cfg(feature = "udev")]
+extern crate udev;
 #[cfg(feature = "backend_winit")]
 extern crate wayland_client;
 #[cfg(feature = "backend_winit")]

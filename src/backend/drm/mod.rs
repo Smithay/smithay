@@ -219,9 +219,9 @@ use drm::control::{connector, crtc, encoder, Mode, ResourceInfo};
 use drm::control::Device as ControlDevice;
 use drm::control::framebuffer;
 use drm::result::Error as DrmError;
-use gbm::Device as GbmDevice;
+use gbm::{BufferObject, Device as GbmDevice};
 use nix;
-use nix::sys::stat::{dev_t, fstat};
+use nix::sys::stat::{self, dev_t, fstat};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::Result as IoResult;
@@ -251,6 +251,7 @@ pub struct DrmDevice<A: ControlDevice + 'static> {
     device_id: dev_t,
     backends: HashMap<crtc::Handle, Weak<DrmBackendInternal<A>>>,
     active: bool,
+    priviledged: bool,
     logger: ::slog::Logger,
 }
 
@@ -319,13 +320,20 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
             device_id,
             old_state: HashMap::new(),
             active: true,
+            priviledged: true,
             logger: log.clone(),
         };
 
         info!(log, "DrmDevice initializing");
 
-        // we want to mode-set, so we better be the master
-        drm.set_master().chain_err(|| ErrorKind::DrmMasterFailed)?;
+        // we want to mode-set, so we better be the master, if we run via a tty session
+        if let Err(_) = drm.set_master() {
+            warn!(
+                log,
+                "Unable to become drm master, assuming unpriviledged mode"
+            );
+            drm.priviledged = false;
+        };
 
         let res_handles = drm.resource_handles().chain_err(|| {
             ErrorKind::DrmDev(format!(
@@ -506,11 +514,13 @@ impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {
                 );
             }
         }
-        if let Err(err) = self.drop_master() {
-            error!(
-                self.logger,
-                "Failed to drop drm master state. Error: {}", err
-            );
+        if self.priviledged {
+            if let Err(err) = self.drop_master() {
+                error!(
+                    self.logger,
+                    "Failed to drop drm master state. Error: {}", err
+                );
+            }
         }
     }
 }
@@ -597,26 +607,61 @@ where
 
 #[cfg(feature = "backend_session")]
 impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
-    fn pause<'a>(&mut self, state: &mut StateProxy<'a>) {
+    fn pause<'a>(&mut self, state: &mut StateProxy<'a>, devnum: Option<(u32, u32)>) {
         let device = state.get_mut(self);
+        if let Some((major, minor)) = devnum {
+            if major as u64 != stat::major(device.device_id) || minor as u64 != stat::minor(device.device_id)
+            {
+                return;
+            }
+        }
+        for (handle, &(ref info, ref connectors)) in device.old_state.iter() {
+            if let Err(err) = crtc::set(
+                &*device.context,
+                *handle,
+                info.fb(),
+                connectors,
+                info.position(),
+                info.mode(),
+            ) {
+                error!(
+                    device.logger,
+                    "Failed to reset crtc ({:?}). Error: {}", handle, err
+                );
+            }
+        }
         device.active = false;
-        if let Err(err) = device.drop_master() {
-            error!(
-                device.logger,
-                "Failed to drop drm master state. Error: {}", err
-            );
+        if device.priviledged {
+            if let Err(err) = device.drop_master() {
+                error!(
+                    device.logger,
+                    "Failed to drop drm master state. Error: {}", err
+                );
+            }
         }
     }
 
-    fn activate<'a>(&mut self, state: &mut StateProxy<'a>) {
+    fn activate<'a>(&mut self, state: &mut StateProxy<'a>, devnum: Option<(u32, u32, Option<RawFd>)>) {
         let device = state.get_mut(self);
+        if let Some((major, minor, fd)) = devnum {
+            if major as u64 != stat::major(device.device_id) || minor as u64 != stat::minor(device.device_id)
+            {
+                return;
+            } else if let Some(fd) = fd {
+                info!(device.logger, "Replacing fd");
+                nix::unistd::dup2(device.as_raw_fd(), fd)
+                    .expect("Failed to replace file descriptor of drm device");
+            }
+        }
         device.active = true;
-        if let Err(err) = device.set_master() {
-            crit!(
-                device.logger,
-                "Failed to acquire drm master again. Error: {}",
-                err
-            );
+        if device.priviledged {
+            if let Err(err) = device.set_master() {
+                crit!(
+                    device.logger,
+                    "Failed to acquire drm master again. Error: {}",
+                    err
+                );
+            }
         }
         let mut crtcs = Vec::new();
         for (crtc, backend) in device.backends.iter() {
@@ -627,6 +672,22 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
                         device.logger,
                         "Failed to activate crtc ({:?}) again. Error: {}", crtc, err
                     );
+                }
+                // reset cursor
+                {
+                    let &(ref cursor, ref hotspot): &(BufferObject<()>, (u32, u32)) =
+                        unsafe { &*backend.cursor.as_ptr() };
+                    if crtc::set_cursor2(
+                        &*backend.context,
+                        *crtc,
+                        cursor,
+                        ((*hotspot).0 as i32, (*hotspot).1 as i32),
+                    ).is_err()
+                    {
+                        if let Err(err) = crtc::set_cursor(&*backend.context, *crtc, cursor) {
+                            error!(device.logger, "Failed to reset cursor. Error: {}", err);
+                        }
+                    }
                 }
             } else {
                 crtcs.push(*crtc);
