@@ -615,6 +615,21 @@ impl<A: ControlDevice + 'static> SessionObserver for StateToken<DrmDevice<A>> {
                 return;
             }
         }
+        for (handle, &(ref info, ref connectors)) in device.old_state.iter() {
+            if let Err(err) = crtc::set(
+                &*device.context,
+                *handle,
+                info.fb(),
+                connectors,
+                info.position(),
+                info.mode(),
+            ) {
+                error!(
+                    device.logger,
+                    "Failed to reset crtc ({:?}). Error: {}", handle, err
+                );
+            }
+        }
         device.active = false;
         if device.priviledged {
             if let Err(err) = device.drop_master() {
