@@ -30,7 +30,7 @@ error-chain = "0.11.0"
 lazy_static = "1.0.0"
 
 [build-dependencies]
-gl_generator = "0.7"
+gl_generator = "0.9"
 
 [dev-dependencies]
 slog-term = "2.3"
