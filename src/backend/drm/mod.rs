@@ -591,7 +591,7 @@ where
                 Err(err) => handler.error(evlh, device, err),
             };
         },
-        error: |_evlh, &mut (ref mut device, ref mut handler), _, error| {
+        error: |evlh, &mut (ref mut device, ref mut handler), _, error| {
             warn!(device.logger, "DrmDevice errored: {}", error);
             handler.error(evlh, device, error.into());
         },
@@ -603,6 +603,7 @@ pub struct DrmDeviceObserver<A: ControlDevice + 'static> {
     context: Weak<EGLContext<Gbm<framebuffer::Info>, GbmDevice<A>>>,
     device_id: dev_t,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<DrmBackendInternal<A>>>>>,
+    old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     active: Arc<AtomicBool>,
     priviledged: bool,
     logger: ::slog::Logger,
@@ -614,6 +615,7 @@ impl<A: ControlDevice + 'static> AsSessionObserver<DrmDeviceObserver<A>> for Drm
             context: Rc::downgrade(&self.context),
             device_id: self.device_id.clone(),
             backends: self.backends.clone(),
+            old_state: self.old_state.clone(),
             active: self.active.clone(),
             priviledged: self.priviledged,
             logger: self.logger.clone(),
@@ -629,19 +631,21 @@ impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
                 return;
             }
         }
-        for (handle, &(ref info, ref connectors)) in self.old_state.iter() {
-            if let Err(err) = crtc::set(
-                &*self.context,
-                *handle,
-                info.fb(),
-                connectors,
-                info.position(),
-                info.mode(),
-            ) {
-                error!(
-                    self.logger,
-                    "Failed to reset crtc ({:?}). Error: {}", handle, err
-                );
+        if let Some(device) = self.context.upgrade() {
+            for (handle, &(ref info, ref connectors)) in self.old_state.iter() {
+                if let Err(err) = crtc::set(
+                    &*device,
+                    *handle,
+                    info.fb(),
+                    connectors,
+                    info.position(),
+                    info.mode(),
+                ) {
+                    error!(
+                        self.logger,
+                        "Failed to reset crtc ({:?}). Error: {}", handle, err
+                    );
+                }
             }
         }
         self.active.store(false, Ordering::SeqCst);
