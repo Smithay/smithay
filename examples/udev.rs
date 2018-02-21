@@ -506,7 +506,7 @@ pub struct DrmHandlerImpl {
 
 impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
     fn ready(
-        &mut self, _device: &mut DrmDevice<SessionFdDrmDevice>, crtc: crtc::Handle, _frame: u32,
+        &mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<SessionFdDrmDevice>, crtc: crtc::Handle, _frame: u32,
         _duration: Duration,
     ) {
         if let Some(drawer) = self.backends.borrow().get(&crtc) {
@@ -597,7 +597,7 @@ impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
         }
     }
 
-    fn error(&mut self, _device: &mut DrmDevice<SessionFdDrmDevice>, error: DrmError) {
+    fn error(&mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<SessionFdDrmDevice>, error: DrmError) {
         error!(self.logger, "{:?}", error);
     }
 }

@@ -139,6 +139,7 @@
 //! # use std::time::Duration;
 //! use smithay::backend::drm::{DrmDevice, DrmBackend, DrmHandler, drm_device_bind};
 //! use smithay::backend::graphics::egl::EGLGraphicsBackend;
+//! use wayland_server::EventLoopHandle;
 //! #
 //! # #[derive(Debug)]
 //! # pub struct Card(File);
@@ -180,6 +181,7 @@
 //! impl DrmHandler<Card> for MyDrmHandler {
 //!     fn ready(
 //!         &mut self,
+//!         _evlh: &mut EventLoopHandle,
 //!         _device: &mut DrmDevice<Card>,
 //!         _crtc: CrtcHandle,
 //!         _frame: u32,
@@ -190,6 +192,7 @@
 //!     }
 //!     fn error(
 //!         &mut self,
+//!         _evlh: &mut EventLoopHandle,
 //!         device: &mut DrmDevice<Card>,
 //!         error: DrmError)
 //!     {
