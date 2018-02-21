@@ -529,12 +529,15 @@ impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {
 pub trait DrmHandler<A: ControlDevice + 'static> {
     /// The `DrmBackend` of crtc has finished swapping buffers and new frame can now
     /// (and should be immediately) be rendered.
-    fn ready(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<A>, crtc: crtc::Handle, frame: u32, duration: Duration);
+    fn ready(
+        &mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<A>, crtc: crtc::Handle, frame: u32,
+        duration: Duration,
+    );
     /// The `DrmDevice` has thrown an error.
     ///
     /// The related backends are most likely *not* usable anymore and
     /// the whole stack has to be recreated..
-    fn error(&mut self,  evlh: &mut EventLoopHandle, device: &mut DrmDevice<A>, error: DrmError);
+    fn error(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<A>, error: DrmError);
 }
 
 /// Bind a `DrmDevice` to an `EventLoop`,
@@ -622,8 +625,7 @@ impl<A: ControlDevice + 'static> AsSessionObserver<DrmDeviceObserver<A>> for Drm
 impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
     fn pause(&mut self, _evlh: &mut EventLoopHandle, devnum: Option<(u32, u32)>) {
         if let Some((major, minor)) = devnum {
-            if major as u64 != stat::major(self.device_id) || minor as u64 != stat::minor(self.device_id)
-            {
+            if major as u64 != stat::major(self.device_id) || minor as u64 != stat::minor(self.device_id) {
                 return;
             }
         }
@@ -657,8 +659,7 @@ impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
 
     fn activate(&mut self, _evlh: &mut EventLoopHandle, devnum: Option<(u32, u32, Option<RawFd>)>) {
         if let Some((major, minor, fd)) = devnum {
-            if major as u64 != stat::major(self.device_id) || minor as u64 != stat::minor(self.device_id)
-            {
+            if major as u64 != stat::major(self.device_id) || minor as u64 != stat::minor(self.device_id) {
                 return;
             } else if let Some(fd) = fd {
                 info!(self.logger, "Replacing fd");

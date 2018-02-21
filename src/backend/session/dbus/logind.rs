@@ -30,7 +30,7 @@
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
 
-use backend::session::{AsErrno, Session, SessionNotifier, SessionObserver, AsSessionObserver};
+use backend::session::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
 use dbus::{BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interface, Member, Message,
            MessageItem, OwnedFd, Path as DbusPath, Watch, WatchEvent};
 use nix::fcntl::OFlag;
@@ -392,9 +392,9 @@ pub struct Id(usize);
 impl SessionNotifier for LogindSessionNotifier {
     type Id = Id;
 
-    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(&mut self, signal: &mut A)
-        -> Self::Id
-    {
+    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(
+        &mut self, signal: &mut A
+    ) -> Self::Id {
         self.internal
             .signals
             .borrow_mut()

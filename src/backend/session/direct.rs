@@ -45,7 +45,7 @@
 //! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
 //! automatically by the `UdevBackend`, if not done manually).
 
-use super::{AsErrno, Session, SessionNotifier, SessionObserver, AsSessionObserver};
+use super::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
 use nix::{Error as NixError, Result as NixResult};
 use nix::fcntl::{self, open, OFlag};
 use nix::libc::c_int;
@@ -344,9 +344,9 @@ pub struct Id(usize);
 impl SessionNotifier for DirectSessionNotifier {
     type Id = Id;
 
-    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(&mut self, signal: &mut A)
-        -> Self::Id
-    {
+    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(
+        &mut self, signal: &mut A
+    ) -> Self::Id {
         self.signals.push(Some(Box::new(signal.observer())));
         Id(self.signals.len() - 1)
     }

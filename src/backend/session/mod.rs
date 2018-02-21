@@ -53,7 +53,8 @@ pub trait SessionNotifier {
     /// Registers a given `SessionObserver`.
     ///
     /// Returns an id of the inserted observer, can be used to remove it again.
-    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(&mut self, signal: &mut A) -> Self::Id;
+    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(&mut self, signal: &mut A)
+        -> Self::Id;
     /// Removes an observer by its given id from `SessionNotifier::register`.
     fn unregister(&mut self, signal: Self::Id);
 

@@ -55,8 +55,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use wayland_server::{Display, EventLoopHandle};
-use wayland_server::sources::EventSource;
 use wayland_server::protocol::{wl_output, wl_pointer};
+use wayland_server::sources::EventSource;
 use xkbcommon::xkb::keysyms as xkb;
 
 struct LibinputInputHandler {
@@ -475,17 +475,13 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
         })
     }
 
-    fn device_changed(
-        &mut self, _evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>
-    ) {
+    fn device_changed(&mut self, _evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>) {
         //quick and dirt, just re-init all backends
         let backends = self.backends.get(&device.device_id()).unwrap();
         *backends.borrow_mut() = self.scan_connectors(device);
     }
 
-    fn device_removed(
-        &mut self, _evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>
-    ) {
+    fn device_removed(&mut self, _evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>) {
         // drop the backends on this side
         self.backends.remove(&device.device_id());
 

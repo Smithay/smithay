@@ -10,7 +10,7 @@
 //! backend.
 
 use backend::drm::{drm_device_bind, DrmDevice, DrmHandler};
-use backend::session::{Session, SessionObserver, AsSessionObserver};
+use backend::session::{AsSessionObserver, Session, SessionObserver};
 use drm::Device as BasicDevice;
 use drm::control::Device as ControlDevice;
 use nix::fcntl;
@@ -171,7 +171,8 @@ impl<
     H: DrmHandler<SessionFdDrmDevice> + 'static,
     S: Session + 'static,
     T: UdevHandler<H> + 'static,
-> AsSessionObserver<UdevBackendObserver<H>> for UdevBackend<H, S, T> {
+> AsSessionObserver<UdevBackendObserver<H>> for UdevBackend<H, S, T>
+{
     fn observer(&mut self) -> UdevBackendObserver<H> {
         UdevBackendObserver {
             devices: Rc::downgrade(&self.devices),
@@ -180,8 +181,7 @@ impl<
     }
 }
 
-impl<H: DrmHandler<SessionFdDrmDevice> + 'static> SessionObserver for UdevBackendObserver<H>
-{
+impl<H: DrmHandler<SessionFdDrmDevice> + 'static> SessionObserver for UdevBackendObserver<H> {
     fn pause<'a>(&mut self, evlh: &mut EventLoopHandle, devnum: Option<(u32, u32)>) {
         if let Some(devices) = self.devices.upgrade() {
             for fd_event_source in devices.borrow_mut().values_mut() {
@@ -285,8 +285,7 @@ where
                                         if let Err(err) = udev.session.close(fd) {
                                             warn!(
                                                 udev.logger,
-                                                "Failed to close dropped device. Error: {:?}. Ignoring",
-                                                err
+                                                "Failed to close dropped device. Error: {:?}. Ignoring", err
                                             );
                                         };
                                     }
@@ -322,7 +321,7 @@ where
                                 };
                             }
                         }
-                    },
+                    }
                     // New connector
                     EventType::Change => {
                         info!(udev.logger, "Device Changed");
@@ -341,14 +340,12 @@ where
                         } else {
                             info!(udev.logger, "changed, but no devnum");
                         }
-                    },
+                    }
                     _ => {}
                 }
             }
         },
-        error: |evlh, udev, _, err| {
-            udev.handler.error(evlh, err)
-        },
+        error: |evlh, udev, _, err| udev.handler.error(evlh, err),
     }
 }
 
@@ -370,9 +367,7 @@ pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static> {
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_changed(
-        &mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>
-    );
+    fn device_changed(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>);
     /// Called when a device was removed.
     ///
     /// The device will not accept any operations anymore and its file descriptor will be closed once
@@ -380,9 +375,7 @@ pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static> {
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_removed(
-        &mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>
-    );
+    fn device_removed(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>);
     /// Called when the udev context has encountered and error.
     ///
     /// ## Panics
