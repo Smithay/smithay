@@ -113,12 +113,14 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
                     info!(log, "Stopping example using Logo+Q");
                     running.store(false, Ordering::SeqCst);
                     false
-                } else if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_XF86Switch_VT_1
+                } else if modifiers.ctrl && modifiers.alt && keysym >= xkb::KEY_XF86Switch_VT_1
+                    && keysym <= xkb::KEY_XF86Switch_VT_12
                     && state == KeyState::Pressed
                 {
-                    info!(log, "Trying to switch to vt 1");
-                    if let Err(err) = session.change_vt(1) {
-                        error!(log, "Error switching to vt 1: {}", err);
+                    let vt = (keysym - xkb::KEY_XF86Switch_VT_1 + 1) as i32;
+                    info!(log, "Trying to switch to vt {}", vt);
+                    if let Err(err) = session.change_vt(vt) {
+                        error!(log, "Error switching to vt {}: {}", vt, err);
                     }
                     false
                 } else if modifiers.logo && keysym == xkb::KEY_Return && state == KeyState::Pressed {
