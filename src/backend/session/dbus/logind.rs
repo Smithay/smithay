@@ -36,7 +36,7 @@ use dbus::{BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interf
 use nix::fcntl::OFlag;
 use nix::sys::stat::{fstat, major, minor, stat};
 use std::cell::RefCell;
-use std::io::Result as IoResult;
+use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::rc::{Rc, Weak};
@@ -432,8 +432,10 @@ pub struct BoundLogindSession {
 /// session state and call it's `SessionObservers`.
 pub fn logind_session_bind(
     notifier: LogindSessionNotifier, evlh: &mut EventLoopHandle
-) -> IoResult<BoundLogindSession> {
+) -> ::std::result::Result<BoundLogindSession, (IoError, LogindSessionNotifier)> {
     let watches = notifier.internal.conn.borrow().watch_fds();
+
+    let internal_for_error = notifier.internal.clone();
     let sources = watches
         .clone()
         .into_iter()
@@ -448,7 +450,15 @@ pub fn logind_session_bind(
                 interest,
             )
         })
-        .collect::<IoResult<Vec<FdEventSource<Rc<LogindSessionImpl>>>>>()?;
+        .collect::<::std::result::Result<Vec<FdEventSource<Rc<LogindSessionImpl>>>, (IoError, _)>>()
+        .map_err(|(err, _)| {
+            (
+                err,
+                LogindSessionNotifier {
+                    internal: internal_for_error,
+                },
+            )
+        })?;
 
     Ok(BoundLogindSession {
         notifier,

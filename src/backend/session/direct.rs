@@ -52,7 +52,7 @@ use nix::libc::c_int;
 use nix::sys::signal::{self, Signal};
 use nix::sys::stat::{dev_t, fstat, major, minor, Mode};
 use nix::unistd::{close, dup};
-use std::io::Result as IoResult;
+use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::sync::Arc;
@@ -369,7 +369,7 @@ impl SessionNotifier for DirectSessionNotifier {
 /// session state and call it's `SessionObservers`.
 pub fn direct_session_bind(
     notifier: DirectSessionNotifier, evlh: &mut EventLoopHandle
-) -> IoResult<SignalEventSource<DirectSessionNotifier>> {
+) -> ::std::result::Result<SignalEventSource<DirectSessionNotifier>, (IoError, DirectSessionNotifier)> {
     let signal = notifier.signal;
 
     evlh.add_signal_event_source(

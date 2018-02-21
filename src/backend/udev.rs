@@ -18,7 +18,7 @@ use nix::sys::stat::dev_t;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::io::{Error as IoError, Result as IoResult};
+use std::io::Error as IoError;
 use std::mem::drop;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
@@ -92,20 +92,21 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevH
                 ) {
                     // Call the handler, which might add it to the runloop
                     Ok(mut device) => {
-                        let fd = device.as_raw_fd();
                         let devnum = device.device_id();
+                        let fd = device.as_raw_fd();
                         match handler.device_added(evlh, &mut device) {
                             Some(drm_handler) => {
-                                if let Ok(event_source) = drm_device_bind(&mut evlh, device, drm_handler) {
-                                    Some((devnum, event_source))
-                                } else {
-                                    //TODO fix wayland_server to return idata on error
-                                    // handler.device_removed(evlh, &mut device);
-                                    // drop(device);
-                                    if let Err(err) = session.close(fd) {
-                                        warn!(logger, "Failed to close dropped device. Error: {:?}. Ignoring", err);
-                                    };
-                                    None
+                                match drm_device_bind(&mut evlh, device, drm_handler) {
+                                    Ok(event_source) => Some((devnum, event_source)),
+                                    Err((err, (mut device, _))) => {
+                                        warn!(logger, "Failed to bind device. Error: {:?}.", err);
+                                        handler.device_removed(evlh, &mut device);
+                                        drop(device);
+                                        if let Err(err) = session.close(fd) {
+                                            warn!(logger, "Failed to close dropped device. Error: {:?}. Ignoring", err);
+                                        };
+                                        None
+                                    }
                                 }
                             },
                             None => {
@@ -211,7 +212,7 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static> SessionObserver for UdevBacken
 /// No runtime functionality can be provided without using this function.
 pub fn udev_backend_bind<S, H, T>(
     evlh: &mut EventLoopHandle, udev: UdevBackend<H, S, T>
-) -> IoResult<FdEventSource<UdevBackend<H, S, T>>>
+) -> ::std::result::Result<FdEventSource<UdevBackend<H, S, T>>, (IoError, UdevBackend<H, S, T>)>
 where
     H: DrmHandler<SessionFdDrmDevice> + 'static,
     T: UdevHandler<H> + 'static,
@@ -273,15 +274,14 @@ where
                             };
                             let fd = device.as_raw_fd();
                             match udev.handler.device_added(evlh, &mut device) {
-                                Some(drm_handler) => {
-                                    if let Ok(fd_event_source) =
-                                        drm_device_bind(&mut evlh, device, drm_handler)
-                                    {
+                                Some(drm_handler) => match drm_device_bind(&mut evlh, device, drm_handler) {
+                                    Ok(fd_event_source) => {
                                         udev.devices.borrow_mut().insert(devnum, fd_event_source);
-                                    } else {
-                                        //TODO fix wayland_server to return idata on error
-                                        //udev.handler.device_removed(evlh, &mut device);
-                                        //drop(device);
+                                    }
+                                    Err((err, (mut device, _))) => {
+                                        warn!(udev.logger, "Failed to bind device. Error: {:?}.", err);
+                                        udev.handler.device_removed(evlh, &mut device);
+                                        drop(device);
                                         if let Err(err) = udev.session.close(fd) {
                                             warn!(
                                                 udev.logger,
@@ -289,8 +289,9 @@ where
                                             );
                                         };
                                     }
-                                }
+                                },
                                 None => {
+                                    udev.handler.device_removed(evlh, &mut device);
                                     drop(device);
                                     if let Err(err) = udev.session.close(fd) {
                                         warn!(

@@ -35,7 +35,7 @@ use super::direct::{self, direct_session_bind, DirectSession, DirectSessionNotif
 use super::logind::{self, logind_session_bind, BoundLogindSession, LogindSession, LogindSessionNotifier};
 use nix::fcntl::OFlag;
 use std::cell::RefCell;
-use std::io::Result as IoResult;
+use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::rc::Rc;
@@ -154,11 +154,13 @@ impl AutoSession {
 /// session state and call it's `SessionObservers`.
 pub fn auto_session_bind(
     notifier: AutoSessionNotifier, evlh: &mut EventLoopHandle
-) -> IoResult<BoundAutoSession> {
+) -> ::std::result::Result<BoundAutoSession, (IoError, AutoSessionNotifier)> {
     Ok(match notifier {
         #[cfg(feature = "backend_session_logind")]
-        AutoSessionNotifier::Logind(logind) => BoundAutoSession::Logind(logind_session_bind(logind, evlh)?),
-        AutoSessionNotifier::Direct(direct) => BoundAutoSession::Direct(direct_session_bind(direct, evlh)?),
+        AutoSessionNotifier::Logind(logind) => BoundAutoSession::Logind(logind_session_bind(logind, evlh)
+            .map_err(|(error, notifier)| (error, AutoSessionNotifier::Logind(notifier)))?),
+        AutoSessionNotifier::Direct(direct) => BoundAutoSession::Direct(direct_session_bind(direct, evlh)
+            .map_err(|(error, notifier)| (error, AutoSessionNotifier::Direct(notifier)))?),
     })
 }
 

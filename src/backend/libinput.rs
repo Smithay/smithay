@@ -7,7 +7,7 @@ use input as libinput;
 use input::event;
 use std::collections::hash_map::{DefaultHasher, Entry, HashMap};
 use std::hash::{Hash, Hasher};
-use std::io::{Error as IoError, Result as IoResult};
+use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::rc::Rc;
@@ -635,7 +635,7 @@ impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
 /// `dispatch_new_events`. Should be used to achieve the smallest possible latency.
 pub fn libinput_bind(
     backend: LibinputInputBackend, evlh: &mut EventLoopHandle
-) -> IoResult<FdEventSource<LibinputInputBackend>> {
+) -> ::std::result::Result<FdEventSource<LibinputInputBackend>, (IoError, LibinputInputBackend)> {
     let fd = unsafe { backend.context.fd() };
     evlh.add_fd_event_source(
         fd,

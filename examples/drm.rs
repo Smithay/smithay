@@ -147,7 +147,8 @@ fn main() {
             drawer: renderer,
             logger: log,
         },
-    ).unwrap();
+    ).map_err(|(err, _)| err)
+        .unwrap();
 
     loop {
         event_loop.dispatch(Some(16)).unwrap();
@@ -166,7 +167,8 @@ pub struct DrmHandlerImpl {
 
 impl DrmHandler<Card> for DrmHandlerImpl {
     fn ready(
-        &mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<Card>, _crtc: crtc::Handle, _frame: u32, _duration: Duration
+        &mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<Card>, _crtc: crtc::Handle,
+        _frame: u32, _duration: Duration,
     ) {
         let mut frame = self.drawer.draw();
         frame.clear_color(0.8, 0.8, 0.9, 1.0);

@@ -357,10 +357,16 @@ fn main() {
             running: running.clone(),
         },
     );
-    let libinput_event_source = libinput_bind(libinput_backend, &mut event_loop).unwrap();
+    let libinput_event_source = libinput_bind(libinput_backend, &mut event_loop)
+        .map_err(|(err, _)| err)
+        .unwrap();
 
-    let session_event_source = auto_session_bind(notifier, &mut event_loop).unwrap();
-    let udev_event_source = udev_backend_bind(&mut event_loop, udev_backend).unwrap();
+    let session_event_source = auto_session_bind(notifier, &mut event_loop)
+        .map_err(|(err, _)| err)
+        .unwrap();
+    let udev_event_source = udev_backend_bind(&mut event_loop, udev_backend)
+        .map_err(|(err, _)| err)
+        .unwrap();
 
     while running.load(Ordering::SeqCst) {
         if let Err(_) = event_loop.dispatch(Some(16)) {
@@ -506,8 +512,8 @@ pub struct DrmHandlerImpl {
 
 impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
     fn ready(
-        &mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<SessionFdDrmDevice>, crtc: crtc::Handle, _frame: u32,
-        _duration: Duration,
+        &mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<SessionFdDrmDevice>,
+        crtc: crtc::Handle, _frame: u32, _duration: Duration,
     ) {
         if let Some(drawer) = self.backends.borrow().get(&crtc) {
             {
@@ -597,7 +603,9 @@ impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
         }
     }
 
-    fn error(&mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<SessionFdDrmDevice>, error: DrmError) {
+    fn error(
+        &mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<SessionFdDrmDevice>, error: DrmError
+    ) {
         error!(self.logger, "{:?}", error);
     }
 }

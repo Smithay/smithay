@@ -203,7 +203,7 @@
 //! // render something (like clear_color)
 //! backend.swap_buffers().unwrap();
 //!
-//! let _source = drm_device_bind(&mut event_loop, device, MyDrmHandler(backend)).unwrap();
+//! let _source = drm_device_bind(&mut event_loop, device, MyDrmHandler(backend)).map_err(|(err, _)| err).unwrap();
 //!
 //! event_loop.run().unwrap();
 //! # }
@@ -226,7 +226,7 @@ use nix::sys::stat::{self, dev_t, fstat};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::io::Result as IoResult;
+use std::io::Error as IoError;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
@@ -548,7 +548,7 @@ pub trait DrmHandler<A: ControlDevice + 'static> {
 /// This will cause it to recieve events and feed them into an `DrmHandler`
 pub fn drm_device_bind<A, H>(
     evlh: &mut EventLoopHandle, device: DrmDevice<A>, handler: H
-) -> IoResult<FdEventSource<(DrmDevice<A>, H)>>
+) -> ::std::result::Result<FdEventSource<(DrmDevice<A>, H)>, (IoError, (DrmDevice<A>, H))>
 where
     A: ControlDevice + 'static,
     H: DrmHandler<A> + 'static,
@@ -612,6 +612,7 @@ pub struct DrmDeviceObserver<A: ControlDevice + 'static> {
     logger: ::slog::Logger,
 }
 
+#[cfg(feature = "backend_session")]
 impl<A: ControlDevice + 'static> AsSessionObserver<DrmDeviceObserver<A>> for DrmDevice<A> {
     fn observer(&mut self) -> DrmDeviceObserver<A> {
         DrmDeviceObserver {
