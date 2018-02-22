@@ -34,6 +34,7 @@ use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;
 use std::rc::Rc;
 use std::time::Duration;
+use wayland_server::EventLoopHandle;
 
 #[derive(Debug)]
 pub struct Card(File);
@@ -137,17 +138,17 @@ fn main() {
     /*
      * Register the DrmDevice on the EventLoop
      */
-    let device_token = event_loop.state().insert(device);
     let _source = drm_device_bind(
         &mut event_loop,
-        device_token,
+        device,
         DrmHandlerImpl {
             compositor_token,
             window_map: window_map.clone(),
             drawer: renderer,
             logger: log,
         },
-    ).unwrap();
+    ).map_err(|(err, _)| err)
+        .unwrap();
 
     loop {
         event_loop.dispatch(Some(16)).unwrap();
@@ -166,7 +167,8 @@ pub struct DrmHandlerImpl {
 
 impl DrmHandler<Card> for DrmHandlerImpl {
     fn ready(
-        &mut self, _device: &mut DrmDevice<Card>, _crtc: crtc::Handle, _frame: u32, _duration: Duration
+        &mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<Card>, _crtc: crtc::Handle,
+        _frame: u32, _duration: Duration,
     ) {
         let mut frame = self.drawer.draw();
         frame.clear_color(0.8, 0.8, 0.9, 1.0);
@@ -246,7 +248,7 @@ impl DrmHandler<Card> for DrmHandlerImpl {
         frame.finish().unwrap();
     }
 
-    fn error(&mut self, _device: &mut DrmDevice<Card>, error: DrmError) {
+    fn error(&mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<Card>, error: DrmError) {
         panic!("{:?}", error);
     }
 }

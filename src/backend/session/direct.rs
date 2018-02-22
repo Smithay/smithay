@@ -45,14 +45,14 @@
 //! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
 //! automatically by the `UdevBackend`, if not done manually).
 
-use super::{AsErrno, Session, SessionNotifier, SessionObserver};
+use super::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
 use nix::{Error as NixError, Result as NixResult};
 use nix::fcntl::{self, open, OFlag};
 use nix::libc::c_int;
 use nix::sys::signal::{self, Signal};
 use nix::sys::stat::{dev_t, fstat, major, minor, Mode};
 use nix::unistd::{close, dup};
-use std::io::Result as IoResult;
+use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::sync::Arc;
@@ -344,8 +344,10 @@ pub struct Id(usize);
 impl SessionNotifier for DirectSessionNotifier {
     type Id = Id;
 
-    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Id {
-        self.signals.push(Some(Box::new(signal)));
+    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(
+        &mut self, signal: &mut A
+    ) -> Self::Id {
+        self.signals.push(Some(Box::new(signal.observer())));
         Id(self.signals.len() - 1)
     }
     fn unregister(&mut self, signal: Id) {
@@ -367,7 +369,7 @@ impl SessionNotifier for DirectSessionNotifier {
 /// session state and call it's `SessionObservers`.
 pub fn direct_session_bind(
     notifier: DirectSessionNotifier, evlh: &mut EventLoopHandle
-) -> IoResult<SignalEventSource<DirectSessionNotifier>> {
+) -> ::std::result::Result<SignalEventSource<DirectSessionNotifier>, (IoError, DirectSessionNotifier)> {
     let signal = notifier.signal;
 
     evlh.add_signal_event_source(
@@ -376,7 +378,7 @@ pub fn direct_session_bind(
                 info!(notifier.logger, "Session shall become inactive");
                 for signal in &mut notifier.signals {
                     if let &mut Some(ref mut signal) = signal {
-                        signal.pause(&mut evlh.state().as_proxy(), None);
+                        signal.pause(evlh, None);
                     }
                 }
                 notifier.active.store(false, Ordering::SeqCst);
@@ -391,7 +393,7 @@ pub fn direct_session_bind(
                 }
                 for signal in &mut notifier.signals {
                     if let &mut Some(ref mut signal) = signal {
-                        signal.activate(&mut evlh.state().as_proxy(), None);
+                        signal.activate(evlh, None);
                     }
                 }
                 notifier.active.store(true, Ordering::SeqCst);
