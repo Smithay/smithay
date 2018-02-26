@@ -174,7 +174,7 @@ impl DrmHandler<Card> for DrmHandlerImpl {
         frame.clear_color(0.8, 0.8, 0.9, 1.0);
         // redraw the frame, in a simple but inneficient way
         {
-            let screen_dimensions = self.drawer.get_framebuffer_dimensions();
+            let screen_dimensions = self.drawer.borrow().get_framebuffer_dimensions();
             self.window_map
                 .borrow()
                 .with_windows_from_bottom_to_top(|toplevel_surface, initial_place| {

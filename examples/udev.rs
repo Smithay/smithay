@@ -439,6 +439,7 @@ impl UdevHandlerImpl {
 
                         // create cursor
                         renderer
+                            .borrow()
                             .set_cursor_representation(&self.pointer_image, (2, 2))
                             .unwrap();
 
@@ -518,13 +519,15 @@ impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
         if let Some(drawer) = self.backends.borrow().get(&crtc) {
             {
                 let (x, y) = *self.pointer_location.borrow();
-                let _ = drawer.set_cursor_position(x.trunc().abs() as u32, y.trunc().abs() as u32);
+                let _ = drawer
+                    .borrow()
+                    .set_cursor_position(x.trunc().abs() as u32, y.trunc().abs() as u32);
             }
             let mut frame = drawer.draw();
             frame.clear_color(0.8, 0.8, 0.9, 1.0);
             // redraw the frame, in a simple but inneficient way
             {
-                let screen_dimensions = drawer.get_framebuffer_dimensions();
+                let screen_dimensions = drawer.borrow().get_framebuffer_dimensions();
                 self.window_map.borrow().with_windows_from_bottom_to_top(
                     |toplevel_surface, initial_place| {
                         if let Some(wl_surface) = toplevel_surface.get_surface() {

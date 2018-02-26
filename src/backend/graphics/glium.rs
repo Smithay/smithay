@@ -7,7 +7,7 @@ use glium::Frame;
 use glium::SwapBuffersError as GliumSwapBuffersError;
 use glium::backend::{Backend, Context, Facade};
 use glium::debug::DebugCallbackBehavior;
-use std::borrow::Borrow;
+use std::cell::{Ref, RefCell, RefMut};
 use std::os::raw::c_void;
 use std::rc::Rc;
 use wayland_server::Display;
@@ -28,11 +28,11 @@ pub struct GliumGraphicsBackend<T: EGLGraphicsBackend> {
     backend: Rc<InternalBackend<T>>,
 }
 
-struct InternalBackend<T: EGLGraphicsBackend>(T);
+struct InternalBackend<T: EGLGraphicsBackend>(RefCell<T>);
 
 impl<T: EGLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
     fn new(backend: T) -> GliumGraphicsBackend<T> {
-        let internal = Rc::new(InternalBackend(backend));
+        let internal = Rc::new(InternalBackend(RefCell::new(backend)));
 
         GliumGraphicsBackend {
             // cannot fail
@@ -56,11 +56,24 @@ impl<T: EGLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
             self.backend.get_framebuffer_dimensions(),
         )
     }
-}
 
-impl<T: EGLGraphicsBackend> Borrow<T> for GliumGraphicsBackend<T> {
-    fn borrow(&self) -> &T {
-        &self.backend.0
+    /// Borrow the underlying backend.
+    ///
+    /// This follows the same semantics as `std::cell:RefCell`.
+    /// Multiple read-only borrows are possible. Borrowing the
+    /// backend while there is a mutable reference will panic.
+    pub fn borrow(&self) -> Ref<T> {
+        self.backend.0.borrow()
+    }
+
+    /// Borrow the underlying backend mutably.
+    ///
+    /// This follows the same semantics as `std::cell:RefCell`.
+    /// Holding any other borrow while trying to borrow the backend
+    /// mutably will panic. Note that glium will borrow the backend
+    /// (not mutably) during rendering.
+    pub fn borrow_mut(&mut self) -> RefMut<T> {
+        self.backend.0.borrow_mut()
     }
 }
 
@@ -80,28 +93,28 @@ impl<T: EGLGraphicsBackend + EGLWaylandExtensions + 'static> EGLWaylandExtension
     for GliumGraphicsBackend<T>
 {
     fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
-        (*self.backend).0.bind_wl_display(display)
+        (*self.backend).0.borrow().bind_wl_display(display)
     }
 }
 
 unsafe impl<T: EGLGraphicsBackend> Backend for InternalBackend<T> {
     fn swap_buffers(&self) -> Result<(), GliumSwapBuffersError> {
-        self.0.swap_buffers().map_err(Into::into)
+        self.0.borrow().swap_buffers().map_err(Into::into)
     }
 
     unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        self.0.get_proc_address(symbol) as *const c_void
+        self.0.borrow().get_proc_address(symbol) as *const c_void
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
-        self.0.get_framebuffer_dimensions()
+        self.0.borrow().get_framebuffer_dimensions()
     }
 
     fn is_current(&self) -> bool {
-        self.0.is_current()
+        self.0.borrow().is_current()
     }
 
     unsafe fn make_current(&self) {
-        self.0.make_current().expect("Context was lost")
+        self.0.borrow().make_current().expect("Context was lost")
     }
 }
