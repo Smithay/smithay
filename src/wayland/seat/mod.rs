@@ -203,6 +203,11 @@ impl Seat {
         }
     }
 
+    /// Checks wether a given `WlSeat` is associated with this `Seat`
+    pub fn owns(&self, seat: &wl_seat::WlSeat) -> bool {
+        self.known_seats.iter().any(|s| s.equals(seat))
+    }
+
     /// Cleanup internal states from old resources
     ///
     /// Deletes all remnnant of ressources from clients that
