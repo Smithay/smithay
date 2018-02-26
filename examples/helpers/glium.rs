@@ -6,7 +6,7 @@ use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::egl::error::Result as EGLResult;
 use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLImages, EGLWaylandExtensions, Format};
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
-use std::borrow::Borrow;
+use std::cell::Ref;
 use std::ops::Deref;
 use wayland_server::Display;
 
@@ -25,16 +25,8 @@ pub struct GliumDrawer<F: EGLGraphicsBackend + 'static> {
     program: glium::Program,
 }
 
-impl<F: EGLGraphicsBackend + 'static> Deref for GliumDrawer<F> {
-    type Target = F;
-
-    fn deref(&self) -> &F {
-        self.borrow()
-    }
-}
-
-impl<F: EGLGraphicsBackend + 'static> Borrow<F> for GliumDrawer<F> {
-    fn borrow(&self) -> &F {
+impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
+    pub fn borrow(&self) -> Ref<F> {
         self.display.borrow()
     }
 }

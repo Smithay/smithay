@@ -241,7 +241,7 @@ fn main() {
         frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
         // redraw the frame, in a simple but inneficient way
         {
-            let screen_dimensions = drawer.get_framebuffer_dimensions();
+            let screen_dimensions = drawer.borrow().get_framebuffer_dimensions();
             window_map
                 .borrow()
                 .with_windows_from_bottom_to_top(|toplevel_surface, initial_place| {
