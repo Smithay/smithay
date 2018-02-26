@@ -75,9 +75,9 @@ pub enum BoundAutoSession {
 }
 
 /// Id's used by the `AutoSessionNotifier` internally.
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct AutoId(AutoIdInternal);
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum AutoIdInternal {
     #[cfg(feature = "backend_session_logind")]
     Logind(logind::Id),
