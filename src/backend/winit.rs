@@ -360,21 +360,27 @@ impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        (self.x * width as f64
-            / self.window
-                .window()
-                .get_inner_size()
-                .unwrap_or((width, 0))
-                .0 as f64) as u32
+        cmp::max(
+            (self.x * width as f64
+                / self.window
+                    .window()
+                    .get_inner_size()
+                    .unwrap_or((width, 0))
+                    .0 as f64) as i32,
+            0,
+        ) as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        (self.y * height as f64
-            / self.window
-                .window()
-                .get_inner_size()
-                .unwrap_or((0, height))
-                .1 as f64) as u32
+        cmp::max(
+            (self.y * height as f64
+                / self.window
+                    .window()
+                    .get_inner_size()
+                    .unwrap_or((0, height))
+                    .1 as f64) as i32,
+            0,
+        ) as u32
     }
 }
 
