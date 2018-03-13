@@ -133,11 +133,11 @@ impl backend::Event for event::pointer::PointerMotionEvent {
 }
 
 impl backend::PointerMotionEvent for event::pointer::PointerMotionEvent {
-    fn delta_x(&self) -> u32 {
-        self.dx() as u32
+    fn delta_x(&self) -> i32 {
+        self.dx() as i32
     }
-    fn delta_y(&self) -> u32 {
-        self.dy() as u32
+    fn delta_y(&self) -> i32 {
+        self.dy() as i32
     }
 }
 
