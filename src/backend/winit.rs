@@ -16,6 +16,7 @@ use std::cmp;
 use std::error;
 use std::fmt;
 use std::rc::Rc;
+use std::time::Instant;
 use wayland_client::egl as wegl;
 use wayland_server::{Display, EventLoopHandle};
 use winit::{ElementState, Event, EventsLoop, KeyboardInput, MouseButton as WinitMouseButton, MouseCursor,
@@ -73,7 +74,7 @@ pub struct WinitInputBackend {
     events_loop: EventsLoop,
     events_handler: Option<Box<WinitEventsHandler>>,
     window: Rc<Window>,
-    time_counter: u32,
+    time: Instant,
     key_counter: u32,
     seat: Seat,
     input_config: (),
@@ -163,7 +164,7 @@ where
             events_loop,
             events_handler: None,
             window,
-            time_counter: 0,
+            time: Instant::now(),
             key_counter: 0,
             seat: Seat::new(
                 0,
@@ -675,7 +676,7 @@ impl InputBackend for WinitInputBackend {
             // wrong interference.
             let mut closed_ptr = &mut closed;
             let mut key_counter = &mut self.key_counter;
-            let mut time_counter = &mut self.time_counter;
+            let time = &self.time;
             let seat = &self.seat;
             let window = &self.window;
             let mut handler = self.handler.as_mut();
@@ -684,6 +685,9 @@ impl InputBackend for WinitInputBackend {
 
             self.events_loop.poll_events(move |event| {
                 if let Event::WindowEvent { event, .. } = event {
+                    let duration = Instant::now().duration_since(*time);
+                    let nanos = duration.subsec_nanos() as u64;
+                    let time = ((1000 * duration.as_secs()) + (nanos / 1_000_000)) as u32;
                     match (event, handler.as_mut(), events_handler.as_mut()) {
                         (WindowEvent::Resized(w, h), _, events_handler) => {
                             trace!(logger, "Resizing window to {:?}", (w, h));
@@ -734,7 +738,7 @@ impl InputBackend for WinitInputBackend {
                                 evlh,
                                 seat,
                                 WinitKeyboardInputEvent {
-                                    time: *time_counter,
+                                    time,
                                     key: scancode,
                                     count: *key_counter,
                                     state: state,
@@ -754,7 +758,7 @@ impl InputBackend for WinitInputBackend {
                                 seat,
                                 WinitMouseMovedEvent {
                                     window: window.clone(),
-                                    time: *time_counter,
+                                    time,
                                     x: x,
                                     y: y,
                                 },
@@ -765,7 +769,7 @@ impl InputBackend for WinitInputBackend {
                                 if x != 0.0 {
                                     let event = WinitMouseWheelEvent {
                                         axis: Axis::Horizontal,
-                                        time: *time_counter,
+                                        time,
                                         delta: delta,
                                     };
                                     trace!(
@@ -778,7 +782,7 @@ impl InputBackend for WinitInputBackend {
                                 if y != 0.0 {
                                     let event = WinitMouseWheelEvent {
                                         axis: Axis::Vertical,
-                                        time: *time_counter,
+                                        time,
                                         delta: delta,
                                     };
                                     trace!(
@@ -800,7 +804,7 @@ impl InputBackend for WinitInputBackend {
                                 evlh,
                                 seat,
                                 WinitMouseInputEvent {
-                                    time: *time_counter,
+                                    time,
                                     button: button,
                                     state: state,
                                 },
@@ -822,7 +826,7 @@ impl InputBackend for WinitInputBackend {
                                 seat,
                                 WinitTouchStartedEvent {
                                     window: window.clone(),
-                                    time: *time_counter,
+                                    time,
                                     location: (x, y),
                                     id: id,
                                 },
@@ -844,7 +848,7 @@ impl InputBackend for WinitInputBackend {
                                 seat,
                                 WinitTouchMovedEvent {
                                     window: window.clone(),
-                                    time: *time_counter,
+                                    time,
                                     location: (x, y),
                                     id: id,
                                 },
@@ -866,20 +870,13 @@ impl InputBackend for WinitInputBackend {
                                 seat,
                                 WinitTouchMovedEvent {
                                     window: window.clone(),
-                                    time: *time_counter,
+                                    time,
                                     location: (x, y),
                                     id: id,
                                 },
                             );
                             trace!(logger, "Calling on_touch_up");
-                            handler.on_touch_up(
-                                evlh,
-                                seat,
-                                WinitTouchEndedEvent {
-                                    time: *time_counter,
-                                    id: id,
-                                },
-                            );
+                            handler.on_touch_up(evlh, seat, WinitTouchEndedEvent { time, id: id });
                         }
                         (
                             WindowEvent::Touch(Touch {
@@ -891,14 +888,7 @@ impl InputBackend for WinitInputBackend {
                             _,
                         ) => {
                             trace!(logger, "Calling on_touch_cancel");
-                            handler.on_touch_cancel(
-                                evlh,
-                                seat,
-                                WinitTouchCancelledEvent {
-                                    time: *time_counter,
-                                    id: id,
-                                },
-                            )
+                            handler.on_touch_cancel(evlh, seat, WinitTouchCancelledEvent { time, id: id })
                         }
                         (WindowEvent::Closed, _, _) => {
                             warn!(logger, "Window closed");
@@ -906,7 +896,6 @@ impl InputBackend for WinitInputBackend {
                         }
                         _ => {}
                     }
-                    *time_counter += 1;
                 }
             });
         }
