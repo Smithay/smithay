@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use wayland_server::{Liveness, Resource};
 use wayland_server::protocol::{wl_pointer, wl_surface};
 
@@ -73,6 +73,7 @@ impl PointerHandle {
         if leave {
             guard.with_focused_pointers(|pointer, surface| {
                 pointer.leave(serial, surface);
+                pointer.frame();
             });
             guard.focus = None;
         }
@@ -83,11 +84,13 @@ impl PointerHandle {
                 guard.focus = surface.clone();
                 guard.with_focused_pointers(|pointer, surface| {
                     pointer.enter(serial, surface, x, y);
+                    pointer.frame();
                 })
             } else {
                 // we were on top of a surface and remained on it
                 guard.with_focused_pointers(|pointer, _| {
                     pointer.motion(time, x, y);
+                    pointer.frame();
                 })
             }
         }
@@ -101,15 +104,18 @@ impl PointerHandle {
         let guard = self.inner.lock().unwrap();
         guard.with_focused_pointers(|pointer, _| {
             pointer.button(serial, time, button, state);
+            pointer.frame();
         })
     }
 
-    /// send axis events
-    pub fn axis(&self, axis: wl_pointer::Axis, value: f64, time: u32) {
-        let guard = self.inner.lock().unwrap();
-        guard.with_focused_pointers(|pointer, _| {
-            pointer.axis(time, axis, value);
-        })
+    /// Start an axis frame
+    /// 
+    /// A single frame will group multiple scroll events as if they happended in the same instance.
+    /// Dropping the returned `PointerAxisHandle` will group the events together.
+    pub fn axis<'a>(&'a self) -> PointerAxisHandle<'a>  {
+        PointerAxisHandle {
+            inner: self.inner.lock().unwrap(),
+        }
     }
 
     pub(crate) fn cleanup_old_pointers(&self) {
@@ -117,6 +123,76 @@ impl PointerHandle {
         guard
             .known_pointers
             .retain(|p| p.status() != Liveness::Dead);
+    }
+}
+
+/// A frame of pointer axis events.
+/// 
+/// Can be used with the builder pattern, e.g.:
+/// ```ignore
+/// pointer.axis()
+///     .source(AxisSource::Wheel)
+///     .discrete(Axis::Vertical, 6)
+///     .value(Axis::Vertical, 30, time)
+///     .stop(Axis::Vertical);
+/// ```
+pub struct PointerAxisHandle<'a> {
+    inner: MutexGuard<'a, PointerInternal>
+}
+
+impl<'a> PointerAxisHandle<'a> {
+    /// Specify the source of the axis events
+    /// 
+    /// This event is optional, if no source is known, you can ignore this call.
+    /// Only one source event is allowed per frame.
+    /// 
+    /// Using the `AxisSource::Finger` requires a stop event to be send,
+    /// when the user lifts off the finger (not necessarily in the same frame).
+    pub fn source(&mut self, source: wl_pointer::AxisSource) -> &mut Self {
+        self.inner.with_focused_pointers(|pointer, _| {
+            pointer.axis_source(source);
+        });
+        self
+    }
+    
+    /// Specify discrete scrolling steps additionally to the computed value.
+    /// 
+    /// This event is optional and gives the client additional information about
+    /// the nature of the axis event. E.g. a scroll wheel might issue separate steps,
+    /// while a touchpad may never issue this event as it has no steps.
+    pub fn discrete(&mut self, axis: wl_pointer::Axis, steps: i32) -> &mut Self {
+        self.inner.with_focused_pointers(|pointer, _| {
+            pointer.axis_discrete(axis, steps);
+        });
+        self
+    }
+
+    /// The actual scroll value. This event is the only required one, but can also
+    /// be send multiple times. The values off one frame will be accumulated by the client.
+    pub fn value(&mut self, axis: wl_pointer::Axis, value: f64, time: u32) -> &mut Self {
+        self.inner.with_focused_pointers(|pointer, _| {
+            pointer.axis(time, axis, value);
+        });
+        self
+    }
+
+    /// Notification of stop of scrolling on an axis.
+    /// 
+    /// This event is required for sources of the `AxisSource::Finger` type
+    /// and otherwise optional.
+    pub fn stop(&mut self, axis: wl_pointer::Axis, time: u32) -> &mut Self {
+        self.inner.with_focused_pointers(|pointer, _| {
+            pointer.axis_stop(time, axis);
+        });
+        self
+    }
+}
+
+impl<'a> Drop for PointerAxisHandle<'a> {
+    fn drop(&mut self) {
+        self.inner.with_focused_pointers(|pointer, _| {
+            pointer.frame();
+        })
     }
 }
 

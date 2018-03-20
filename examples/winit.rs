@@ -112,7 +112,26 @@ impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
             input::Axis::Vertical => wayland_server::protocol::wl_pointer::Axis::VerticalScroll,
             input::Axis::Horizontal => wayland_server::protocol::wl_pointer::Axis::HorizontalScroll,
         };
-        self.pointer.axis(axis, evt.amount(), evt.time());
+        let source = match evt.source() {
+            input::AxisSource::Continuous => wayland_server::protocol::wl_pointer::AxisSource::Continuous,
+            input::AxisSource::Wheel => wayland_server::protocol::wl_pointer::AxisSource::Wheel,
+            _ => unreachable!(), //winit does not have more specific sources
+        };
+        let amount = match evt.source() {
+            input::AxisSource::Continuous => evt.amount(),
+            input::AxisSource::Wheel => evt.amount() * 3.0, // amount represents steps in that case,
+            _ => unreachable!(), //winit does not have more specific sources
+        };
+
+        {
+            let mut event = self.pointer.axis();
+            event.source(source)
+                 .value(axis, amount, evt.time());
+            if let input::AxisSource::Wheel = evt.source() {
+                event.discrete(axis, evt.amount() as i32);
+            }
+            // drop and submit the axis event
+        }
     }
     fn on_touch_down(
         &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: winit::WinitTouchStartedEvent
