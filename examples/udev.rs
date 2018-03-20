@@ -209,7 +209,7 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
             if let input::AxisSource::Wheel = evt.source() {
                 event.discrete(axis, evt.amount() as i32);
             }
-            // drop and submit the axis event
+            event.done();
         }
     }
     fn on_touch_down(
