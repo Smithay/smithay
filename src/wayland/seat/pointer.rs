@@ -201,6 +201,11 @@ impl<'a> PointerAxisHandle<'a> {
         self
     }
 
+    /// Finish this event
+    ///
+    /// This will group all axis calls together.
+    /// Note: They are already submitted to the client, obmitting this call just
+    /// leaves room for additional events.
     pub fn done(&mut self) {
         self.inner.with_focused_pointers(|pointer, _| {
             if pointer.version() >= 5 {
