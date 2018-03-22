@@ -388,7 +388,6 @@ impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Winit-Backend internal event wrapping winit's types into a `PointerAxisEvent`
 pub struct WinitMouseWheelEvent {
-    axis: Axis,
     time: u32,
     delta: MouseScrollDelta,
 }
@@ -400,10 +399,6 @@ impl BackendEvent for WinitMouseWheelEvent {
 }
 
 impl PointerAxisEvent for WinitMouseWheelEvent {
-    fn axis(&self) -> Axis {
-        self.axis
-    }
-
     fn source(&self) -> AxisSource {
         match self.delta {
             MouseScrollDelta::LineDelta(_, _) => AxisSource::Wheel,
@@ -411,12 +406,19 @@ impl PointerAxisEvent for WinitMouseWheelEvent {
         }
     }
 
-    fn amount(&self) -> f64 {
-        match (self.axis, self.delta) {
-            (Axis::Horizontal, MouseScrollDelta::LineDelta(x, _))
-            | (Axis::Horizontal, MouseScrollDelta::PixelDelta(x, _)) => x as f64,
-            (Axis::Vertical, MouseScrollDelta::LineDelta(_, y))
-            | (Axis::Vertical, MouseScrollDelta::PixelDelta(_, y)) => y as f64,
+    fn amount(&self, axis: &Axis) -> Option<f64> {
+        match (axis, self.delta) {
+            (&Axis::Horizontal, MouseScrollDelta::PixelDelta(x, _)) => Some(x as f64),
+            (&Axis::Vertical, MouseScrollDelta::PixelDelta(_, y)) => Some(y as f64),
+            (_, MouseScrollDelta::LineDelta(_, _)) => None,
+        }
+    }
+
+    fn amount_discrete(&self, axis: &Axis) -> Option<f64> {
+        match (axis, self.delta) {
+            (&Axis::Horizontal, MouseScrollDelta::LineDelta(x, _)) => Some(x as f64),
+            (&Axis::Vertical, MouseScrollDelta::LineDelta(_, y)) => Some(y as f64),
+            (_, MouseScrollDelta::PixelDelta(_, _)) => None,
         }
     }
 }
@@ -764,36 +766,11 @@ impl InputBackend for WinitInputBackend {
                                 },
                             )
                         }
-                        (WindowEvent::MouseWheel { delta, .. }, Some(handler), _) => match delta {
-                            MouseScrollDelta::LineDelta(x, y) | MouseScrollDelta::PixelDelta(x, y) => {
-                                if x != 0.0 {
-                                    let event = WinitMouseWheelEvent {
-                                        axis: Axis::Horizontal,
-                                        time,
-                                        delta: delta,
-                                    };
-                                    trace!(
-                                        logger,
-                                        "Calling on_pointer_axis for Axis::Horizontal with {:?}",
-                                        x
-                                    );
-                                    handler.on_pointer_axis(evlh, seat, event);
-                                }
-                                if y != 0.0 {
-                                    let event = WinitMouseWheelEvent {
-                                        axis: Axis::Vertical,
-                                        time,
-                                        delta: delta,
-                                    };
-                                    trace!(
-                                        logger,
-                                        "Calling on_pointer_axis for Axis::Vertical with {:?}",
-                                        y
-                                    );
-                                    handler.on_pointer_axis(evlh, seat, event);
-                                }
-                            }
-                        },
+                        (WindowEvent::MouseWheel { delta, .. }, Some(handler), _) => {
+                            let event = WinitMouseWheelEvent { time, delta };
+                            trace!(logger, "Calling on_pointer_axis with {:?}", delta);
+                            handler.on_pointer_axis(evlh, seat, event);
+                        }
                         (WindowEvent::MouseInput { state, button, .. }, Some(handler), _) => {
                             trace!(
                                 logger,

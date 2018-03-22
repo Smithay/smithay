@@ -108,27 +108,46 @@ impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
     fn on_pointer_axis(
         &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: winit::WinitMouseWheelEvent
     ) {
-        let axis = match evt.axis() {
-            input::Axis::Vertical => wayland_server::protocol::wl_pointer::Axis::VerticalScroll,
-            input::Axis::Horizontal => wayland_server::protocol::wl_pointer::Axis::HorizontalScroll,
-        };
         let source = match evt.source() {
             input::AxisSource::Continuous => wayland_server::protocol::wl_pointer::AxisSource::Continuous,
             input::AxisSource::Wheel => wayland_server::protocol::wl_pointer::AxisSource::Wheel,
             _ => unreachable!(), //winit does not have more specific sources
         };
-        let amount = match evt.source() {
-            input::AxisSource::Continuous => evt.amount(),
-            input::AxisSource::Wheel => evt.amount() * 3.0, // amount represents steps in that case,
-            _ => unreachable!(), //winit does not have more specific sources
-        };
+        let horizontal_amount = evt.amount(&input::Axis::Horizontal)
+            .unwrap_or_else(|| evt.amount_discrete(&input::Axis::Horizontal).unwrap() * 3.0);
+        let vertical_amount = evt.amount(&input::Axis::Vertical)
+            .unwrap_or_else(|| evt.amount_discrete(&input::Axis::Vertical).unwrap() * 3.0);
+        let horizontal_amount_discrete = evt.amount_discrete(&input::Axis::Horizontal);
+        let vertical_amount_discrete = evt.amount_discrete(&input::Axis::Vertical);
 
         {
             let mut event = self.pointer.axis();
-            event.source(source)
-                 .value(axis, amount, evt.time());
-            if let input::AxisSource::Wheel = evt.source() {
-                event.discrete(axis, evt.amount() as i32);
+            event.source(source);
+            if horizontal_amount != 0.0 {
+                event.value(
+                    wayland_server::protocol::wl_pointer::Axis::HorizontalScroll,
+                    horizontal_amount,
+                    evt.time(),
+                );
+                if let Some(discrete) = horizontal_amount_discrete {
+                    event.discrete(
+                        wayland_server::protocol::wl_pointer::Axis::HorizontalScroll,
+                        discrete as i32,
+                    );
+                }
+            }
+            if vertical_amount != 0.0 {
+                event.value(
+                    wayland_server::protocol::wl_pointer::Axis::VerticalScroll,
+                    vertical_amount,
+                    evt.time(),
+                );
+                if let Some(discrete) = vertical_amount_discrete {
+                    event.discrete(
+                        wayland_server::protocol::wl_pointer::Axis::VerticalScroll,
+                        discrete as i32,
+                    );
+                }
             }
             event.done();
         }
