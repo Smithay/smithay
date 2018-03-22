@@ -58,7 +58,7 @@ mod keyboard;
 mod pointer;
 
 pub use self::keyboard::{Error as KeyboardError, KeyboardHandle, ModifiersState};
-pub use self::pointer::PointerHandle;
+pub use self::pointer::{PointerAxisHandle, PointerHandle};
 use wayland_server::{Client, EventLoopHandle, Global, Liveness, Resource, StateToken};
 use wayland_server::protocol::{wl_keyboard, wl_pointer, wl_seat};
 
