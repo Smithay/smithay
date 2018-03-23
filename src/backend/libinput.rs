@@ -1,6 +1,7 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
 use backend::input as backend;
+use backend::input::Axis;
 #[cfg(feature = "backend_session")]
 use backend::session::{AsErrno, Session, SessionObserver};
 use input as libinput;
@@ -10,7 +11,6 @@ use std::hash::{Hash, Hasher};
 use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
-use std::rc::Rc;
 use wayland_server::EventLoopHandle;
 use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
 
@@ -73,35 +73,23 @@ impl backend::KeyboardKeyEvent for event::keyboard::KeyboardKeyEvent {
     }
 }
 
-/// Wrapper for libinput pointer axis events to implement `backend::input::PointerAxisEvent`
-pub struct PointerAxisEvent {
-    axis: event::pointer::Axis,
-    event: Rc<event::pointer::PointerAxisEvent>,
-}
-
-impl<'a> backend::Event for PointerAxisEvent {
+impl<'a> backend::Event for event::pointer::PointerAxisEvent {
     fn time(&self) -> u32 {
-        use input::event::pointer::PointerEventTrait;
-        self.event.time()
+        event::pointer::PointerEventTrait::time(self)
     }
 }
 
-impl<'a> backend::PointerAxisEvent for PointerAxisEvent {
-    fn axis(&self) -> backend::Axis {
-        self.axis.into()
+impl backend::PointerAxisEvent for event::pointer::PointerAxisEvent {
+    fn amount(&self, axis: &Axis) -> Option<f64> {
+        Some(self.axis_value((*axis).into()))
+    }
+
+    fn amount_discrete(&self, axis: &Axis) -> Option<f64> {
+        self.axis_value_discrete((*axis).into())
     }
 
     fn source(&self) -> backend::AxisSource {
-        self.event.axis_source().into()
-    }
-
-    fn amount(&self) -> f64 {
-        match self.source() {
-            backend::AxisSource::Finger | backend::AxisSource::Continuous => self.event.axis_value(self.axis),
-            backend::AxisSource::Wheel | backend::AxisSource::WheelTilt => {
-                self.event.axis_value_discrete(self.axis).unwrap()
-            }
-        }
+        self.axis_source().into()
     }
 }
 
@@ -258,7 +246,7 @@ impl backend::InputBackend for LibinputInputBackend {
     type EventError = IoError;
 
     type KeyboardKeyEvent = event::keyboard::KeyboardKeyEvent;
-    type PointerAxisEvent = PointerAxisEvent;
+    type PointerAxisEvent = event::pointer::PointerAxisEvent;
     type PointerButtonEvent = event::pointer::PointerButtonEvent;
     type PointerMotionEvent = event::pointer::PointerMotionEvent;
     type PointerMotionAbsoluteEvent = event::pointer::PointerMotionAbsoluteEvent;
@@ -492,37 +480,8 @@ impl backend::InputBackend for LibinputInputBackend {
                                     handler.on_pointer_move_absolute(evlh, seat, motion_abs_event);
                                 }
                                 PointerEvent::Axis(axis_event) => {
-                                    let rc_axis_event = Rc::new(axis_event);
-                                    if rc_axis_event.has_axis(Axis::Vertical) {
-                                        trace!(
-                                            self.logger,
-                                            "Calling on_pointer_axis for Axis::Vertical with {:?}",
-                                            *rc_axis_event
-                                        );
-                                        handler.on_pointer_axis(
-                                            evlh,
-                                            seat,
-                                            self::PointerAxisEvent {
-                                                axis: Axis::Vertical,
-                                                event: rc_axis_event.clone(),
-                                            },
-                                        );
-                                    }
-                                    if rc_axis_event.has_axis(Axis::Horizontal) {
-                                        trace!(
-                                            self.logger,
-                                            "Calling on_pointer_axis for Axis::Horizontal with {:?}",
-                                            *rc_axis_event
-                                        );
-                                        handler.on_pointer_axis(
-                                            evlh,
-                                            seat,
-                                            self::PointerAxisEvent {
-                                                axis: Axis::Horizontal,
-                                                event: rc_axis_event.clone(),
-                                            },
-                                        );
-                                    }
+                                    trace!(self.logger, "Calling on_pointer_axis with {:?}", axis_event);
+                                    handler.on_pointer_axis(evlh, seat, axis_event);
                                 }
                                 PointerEvent::Button(button_event) => {
                                     trace!(
@@ -560,6 +519,15 @@ impl From<event::pointer::Axis> for backend::Axis {
         match libinput {
             event::pointer::Axis::Vertical => backend::Axis::Vertical,
             event::pointer::Axis::Horizontal => backend::Axis::Horizontal,
+        }
+    }
+}
+
+impl From<backend::Axis> for event::pointer::Axis {
+    fn from(axis: backend::Axis) -> Self {
+        match axis {
+            backend::Axis::Vertical => event::pointer::Axis::Vertical,
+            backend::Axis::Horizontal => event::pointer::Axis::Horizontal,
         }
     }
 }
