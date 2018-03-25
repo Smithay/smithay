@@ -14,7 +14,7 @@ pub use xkbcommon::xkb::{keysyms, Keysym};
 ///
 /// For some modifiers, this means that the key is currently pressed, others are toggled
 /// (like caps lock).
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ModifiersState {
     /// The "control" key
     pub ctrl: bool,
