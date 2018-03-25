@@ -615,6 +615,18 @@ where
         configured
     }
 
+    /// Send a "close" event to the client
+    pub fn send_close(&self) -> EventResult<()> {
+        if !self.alive() {
+            return EventResult::Destroyed;
+        }
+        match self.shell_surface {
+            SurfaceKind::Wl(_) => EventResult::Sent(()),
+            SurfaceKind::XdgToplevel(ref s) => s.close(),
+            SurfaceKind::XdgPopup(_) => unreachable!(),
+        }
+    }
+
     /// Access the underlying `wl_surface` of this toplevel surface
     ///
     /// Returns `None` if the toplevel surface actually no longer exists.
