@@ -72,7 +72,7 @@ impl<T: EGLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
     /// Holding any other borrow while trying to borrow the backend
     /// mutably will panic. Note that glium will borrow the backend
     /// (not mutably) during rendering.
-    pub fn borrow_mut(&mut self) -> RefMut<T> {
+    pub fn borrow_mut(&self) -> RefMut<T> {
         self.backend.0.borrow_mut()
     }
 }
