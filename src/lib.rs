@@ -48,8 +48,8 @@ extern crate error_chain;
 #[macro_use]
 extern crate lazy_static;
 
-pub mod backend;
-pub mod wayland;
+//pub mod backend;
+//pub mod wayland;
 pub mod utils;
 
 fn slog_or_stdlog<L>(logger: L) -> ::slog::Logger
