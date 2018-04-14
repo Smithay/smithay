@@ -22,10 +22,11 @@
 //! use wayland_server::protocol::wl_output;
 //!
 //! # fn main() {
-//! # let (display, mut event_loop) = wayland_server::create_display();
+//! # let (mut display, event_loop) = wayland_server::Display::new();
 //! // Insert the Output with given name and physical properties
-//! let (output_state_token, _output_global) = Output::new(
-//!     &mut event_loop, // the event loop
+//! let (output, _output_global) = Output::new(
+//!     &mut display, // the display
+//!     event_loop.token(), // the LoopToken
 //!     "output-0".into(), // the name of this output,
 //!     PhysicalProperties {
 //!         width: 200, // width in mm
@@ -37,33 +38,33 @@
 //!     None // insert a logger here
 //! );
 //! // Now you can configure it
-//! {
-//!     let output = event_loop.state().get_mut(&output_state_token);
-//!     // set the current state
-//!     output.change_current_state(
-//!         Some(Mode { width: 1902, height: 1080, refresh: 60000 }), // the resolution mode,
-//!         Some(wl_output::Transform::Normal), // global screen transformation
-//!         Some(1), // global screen scaling factor
-//!     );
-//!     // set the prefered mode
-//!     output.set_preferred(Mode { width: 1920, height: 1080, refresh: 60000 });
-//!     // add other supported modes
-//!     output.add_mode(Mode { width: 800, height: 600, refresh: 60000 });
-//!     output.add_mode(Mode { width: 1024, height: 768, refresh: 60000 });
-//! }
+//! output.change_current_state(
+//!     Some(Mode { width: 1902, height: 1080, refresh: 60000 }), // the resolution mode,
+//!     Some(wl_output::Transform::Normal), // global screen transformation
+//!     Some(1), // global screen scaling factor
+//! );
+//! // set the prefered mode
+//! output.set_preferred(Mode { width: 1920, height: 1080, refresh: 60000 });
+//! // add other supported modes
+//! output.add_mode(Mode { width: 800, height: 600, refresh: 60000 });
+//! output.add_mode(Mode { width: 1024, height: 768, refresh: 60000 });
 //! # }
 //! ```
 
-use wayland_server::{Client, EventLoopHandle, Global, Liveness, Resource, StateToken};
-use wayland_server::protocol::wl_output;
+use std::sync::{Arc, Mutex};
 
-#[derive(Copy, Clone, PartialEq)]
+use wayland_server::{Display, Global, LoopToken, NewResource, Resource};
+use wayland_server::commons::{downcast_impl, Implementation};
+use wayland_server::protocol::wl_output::{Event, Mode as WMode, Request, WlOutput};
+pub use wayland_server::protocol::wl_output::{Subpixel, Transform};
+
 /// An output mode
 ///
 /// A possible combination of dimensions and refresh rate for an output.
 ///
 /// This should only describe the characteristics of the video driver,
 /// not taking into account any global scaling.
+#[derive(Copy, Clone, PartialEq)]
 pub struct Mode {
     /// The width in pixels
     pub width: i32,
@@ -82,68 +83,28 @@ pub struct PhysicalProperties {
     /// The height in milimeters
     pub height: i32,
     /// The subpixel geometry
-    pub subpixel: wl_output::Subpixel,
+    pub subpixel: Subpixel,
     /// Textual representation of the manufacturer
     pub maker: String,
     /// Textual representation of the model
     pub model: String,
 }
 
-/// An output as seen by the clients
-///
-/// This handle is stored in the events loop, and allows you to notify clients
-/// about any change in the properties of this output.
-pub struct Output {
+struct Inner {
     name: String,
     log: ::slog::Logger,
-    instances: Vec<wl_output::WlOutput>,
+    instances: Vec<Resource<WlOutput>>,
     physical: PhysicalProperties,
     location: (i32, i32),
-    transform: wl_output::Transform,
+    transform: Transform,
     scale: i32,
     modes: Vec<Mode>,
     current_mode: Option<Mode>,
     preferred_mode: Option<Mode>,
 }
 
-impl Output {
-    /// Create a new output global with given name and physical properties
-    ///
-    /// The global is directly registered into the eventloop, and this function
-    /// returns the state token allowing you to access it, as well as the global handle,
-    /// in case you whish to remove this global in  the future.
-    pub fn new<L>(
-        evlh: &mut EventLoopHandle, name: String, physical: PhysicalProperties, logger: L
-    ) -> (
-        StateToken<Output>,
-        Global<wl_output::WlOutput, StateToken<Output>>,
-    )
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "output_handler"));
-
-        info!(log, "Creating new wl_output"; "name" => &name);
-
-        let token = evlh.state().insert(Output {
-            name: name,
-            log: log,
-            instances: Vec::new(),
-            physical: physical,
-            location: (0, 0),
-            transform: wl_output::Transform::Normal,
-            scale: 1,
-            modes: Vec::new(),
-            current_mode: None,
-            preferred_mode: None,
-        });
-
-        let global = evlh.register_global(3, output_bind, token.clone());
-
-        (token, global)
-    }
-
-    fn new_global(&mut self, output: wl_output::WlOutput) {
+impl Inner {
+    fn new_global(&mut self, output: Resource<WlOutput>) {
         trace!(self.log, "New global instanciated.");
 
         if self.modes.is_empty() {
@@ -158,51 +119,140 @@ impl Output {
 
         self.send_geometry(&output);
         for &mode in &self.modes {
-            let mut flags = wl_output::Mode::empty();
+            let mut flags = WMode::empty();
             if Some(mode) == self.current_mode {
-                flags |= wl_output::Mode::Current;
+                flags |= WMode::Current;
             }
             if Some(mode) == self.preferred_mode {
-                flags |= wl_output::Mode::Preferred;
+                flags |= WMode::Preferred;
             }
-            output.mode(flags, mode.width, mode.height, mode.refresh);
+            output.send(Event::Mode {
+                flags: flags,
+                width: mode.width,
+                height: mode.height,
+                refresh: mode.refresh,
+            });
         }
         if output.version() >= 2 {
-            output.scale(self.scale);
-            output.done();
+            output.send(Event::Scale { factor: self.scale });
+            output.send(Event::Done);
         }
 
         self.instances.push(output);
     }
 
-    fn send_geometry(&self, output: &wl_output::WlOutput) {
-        output.geometry(
-            self.location.0,
-            self.location.1,
-            self.physical.width,
-            self.physical.height,
-            self.physical.subpixel,
-            self.physical.maker.clone(),
-            self.physical.model.clone(),
-            self.transform,
-        );
+    fn send_geometry(&self, output: &Resource<WlOutput>) {
+        output.send(Event::Geometry {
+            x: self.location.0,
+            y: self.location.1,
+            physical_width: self.physical.width,
+            physical_height: self.physical.height,
+            subpixel: self.physical.subpixel,
+            make: self.physical.maker.clone(),
+            model: self.physical.model.clone(),
+            transform: self.transform,
+        });
+    }
+}
+
+struct InnerWrapper {
+    inner: Arc<Mutex<Inner>>,
+}
+
+// This implementation does nothing, we just use it as a stable type to downcast the
+// implementation in the destructor of wl_output, in order to retrieve the Arc to the
+// inner and remove this output from the list
+impl Implementation<Resource<WlOutput>, Request> for InnerWrapper {
+    fn receive(&mut self, req: Request, _res: Resource<WlOutput>) {
+        // this will break if new variants are added :)
+        let Request::Release = req;
+    }
+}
+
+/// An output as seen by the clients
+///
+/// This handle is stored in the events loop, and allows you to notify clients
+/// about any change in the properties of this output.
+pub struct Output {
+    inner: Arc<Mutex<Inner>>,
+}
+
+impl Output {
+    /// Create a new output global with given name and physical properties
+    ///
+    /// The global is directly registered into the eventloop, and this function
+    /// returns the state token allowing you to access it, as well as the global handle,
+    /// in case you whish to remove this global in  the future.
+    pub fn new<L>(
+        display: &mut Display,
+        token: LoopToken,
+        name: String,
+        physical: PhysicalProperties,
+        logger: L,
+    ) -> (Output, Global<WlOutput>)
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
+        let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "output_handler"));
+
+        info!(log, "Creating new wl_output"; "name" => &name);
+
+        let inner = Arc::new(Mutex::new(Inner {
+            name: name,
+            log: log,
+            instances: Vec::new(),
+            physical: physical,
+            location: (0, 0),
+            transform: Transform::Normal,
+            scale: 1,
+            modes: Vec::new(),
+            current_mode: None,
+            preferred_mode: None,
+        }));
+
+        let output = Output {
+            inner: inner.clone(),
+        };
+
+        let global = display.create_global(&token, 3, move |_version, new_output: NewResource<_>| {
+            let output = new_output.implement(
+                InnerWrapper {
+                    inner: inner.clone(),
+                },
+                Some(|output, boxed_impl| {
+                    let wrapper: Box<InnerWrapper> =
+                        downcast_impl(boxed_impl).unwrap_or_else(|_| unreachable!());
+                    wrapper
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .instances
+                        .retain(|o| !o.equals(&output));
+                }),
+            );
+            inner.lock().unwrap().new_global(output);
+        });
+
+        (output, global)
     }
 
     /// Sets the preferred mode of this output
     ///
     /// If the provided mode was not previously known to this output, it is added to its
     /// internal list.
-    pub fn set_preferred(&mut self, mode: Mode) {
-        self.preferred_mode = Some(mode);
-        if self.modes.iter().find(|&m| *m == mode).is_none() {
-            self.modes.push(mode);
+    pub fn set_preferred(&self, mode: Mode) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.preferred_mode = Some(mode);
+        if inner.modes.iter().find(|&m| *m == mode).is_none() {
+            inner.modes.push(mode);
         }
     }
 
     /// Adds a mode to the list of known modes to this output
-    pub fn add_mode(&mut self, mode: Mode) {
-        if self.modes.iter().find(|&m| *m == mode).is_none() {
-            self.modes.push(mode);
+    pub fn add_mode(&self, mode: Mode) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.modes.iter().find(|&m| *m == mode).is_none() {
+            inner.modes.push(mode);
         }
     }
 
@@ -210,13 +260,14 @@ impl Output {
     ///
     /// It will not de-advertize it from existing clients (the protocol does not
     /// allow it), but it won't be advertized to now clients from now on.
-    pub fn delete_mode(&mut self, mode: Mode) {
-        self.modes.retain(|&m| m != mode);
-        if self.current_mode == Some(mode) {
-            self.current_mode = None;
+    pub fn delete_mode(&self, mode: Mode) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.modes.retain(|&m| m != mode);
+        if inner.current_mode == Some(mode) {
+            inner.current_mode = None;
         }
-        if self.preferred_mode == Some(mode) {
-            self.preferred_mode = None;
+        if inner.preferred_mode == Some(mode) {
+            inner.preferred_mode = None;
         }
     }
 
@@ -230,75 +281,58 @@ impl Output {
     ///
     /// By default, transform status is `Normal`, and scale is `1`.
     pub fn change_current_state(
-        &mut self, new_mode: Option<Mode>, new_transform: Option<wl_output::Transform>,
+        &self,
+        new_mode: Option<Mode>,
+        new_transform: Option<Transform>,
         new_scale: Option<i32>,
     ) {
+        let mut inner = self.inner.lock().unwrap();
         if let Some(mode) = new_mode {
-            if self.modes.iter().find(|&m| *m == mode).is_none() {
-                self.modes.push(mode);
+            if inner.modes.iter().find(|&m| *m == mode).is_none() {
+                inner.modes.push(mode);
             }
-            self.current_mode = new_mode;
+            inner.current_mode = new_mode;
         }
         if let Some(transform) = new_transform {
-            self.transform = transform;
+            inner.transform = transform;
         }
         if let Some(scale) = new_scale {
-            self.scale = scale;
+            inner.scale = scale;
         }
-        let mut flags = wl_output::Mode::Current;
-        if self.preferred_mode == new_mode {
-            flags |= wl_output::Mode::Preferred;
+        let mut flags = WMode::Current;
+        if inner.preferred_mode == new_mode {
+            flags |= WMode::Preferred;
         }
-        for output in &self.instances {
+        for output in &inner.instances {
             if let Some(mode) = new_mode {
-                output.mode(flags, mode.width, mode.height, mode.refresh);
+                output.send(Event::Mode {
+                    flags: flags,
+                    width: mode.width,
+                    height: mode.height,
+                    refresh: mode.refresh,
+                });
             }
             if new_transform.is_some() {
-                self.send_geometry(output);
+                inner.send_geometry(output);
             }
             if let Some(scale) = new_scale {
                 if output.version() >= 2 {
-                    output.scale(scale);
+                    output.send(Event::Scale { factor: scale });
                 }
             }
             if output.version() >= 2 {
-                output.done();
+                output.send(Event::Done);
             }
         }
     }
 
     /// Chech is given wl_output instance is managed by this `Output`.
-    pub fn owns(&self, output: &wl_output::WlOutput) -> bool {
-        self.instances.iter().any(|o| o.equals(output))
-    }
-
-    /// Cleanup internal `wl_output` instances list
-    ///
-    /// Clients do not necessarily notify the server on the destruction
-    /// of their `wl_output` instances. This can lead to accumulation of
-    /// stale values in the internal instances list. This methods delete
-    /// them.
-    ///
-    /// It can be good to call this regularly (but not necessarily very often).
-    pub fn cleanup(&mut self) {
-        self.instances.retain(|o| o.status() == Liveness::Alive);
-    }
-}
-
-fn output_bind(
-    evlh: &mut EventLoopHandle, token: &mut StateToken<Output>, _: &Client, global: wl_output::WlOutput
-) {
-    evlh.register(&global, output_implementation(), token.clone(), None);
-    evlh.state().get_mut(token).new_global(global);
-}
-
-fn output_implementation() -> wl_output::Implementation<StateToken<Output>> {
-    wl_output::Implementation {
-        release: |evlh, token, _, output| {
-            evlh.state()
-                .get_mut(token)
-                .instances
-                .retain(|o| !o.equals(output));
-        },
+    pub fn owns(&self, output: &Resource<WlOutput>) -> bool {
+        self.inner
+            .lock()
+            .unwrap()
+            .instances
+            .iter()
+            .any(|o| o.equals(output))
     }
 }
