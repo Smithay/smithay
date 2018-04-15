@@ -10,9 +10,9 @@
 //! You need to instanciate an `Output` for each output global you want
 //! to advertize to clients.
 //!
-//! Just insert it in your event loop using the `Output::new(..)` method.
-//! It returns a state token that gives you access to the `Output` in order
-//! to change it if needed (if the current resolution mode changes for example),
+//! Just add it to your Display using the `Output::new(..)` method.
+//! You can use the returned `Output` to change the properties of your
+//! output (if the current resolution mode changes for example),
 //! it'll automatically forward any changes to the clients.
 //!
 //! ```
@@ -23,7 +23,7 @@
 //!
 //! # fn main() {
 //! # let (mut display, event_loop) = wayland_server::Display::new();
-//! // Insert the Output with given name and physical properties
+//! // Create the Output with given name and physical properties
 //! let (output, _output_global) = Output::new(
 //!     &mut display, // the display
 //!     event_loop.token(), // the LoopToken

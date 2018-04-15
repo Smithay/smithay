@@ -11,7 +11,7 @@
 //! [the similar helpers](https://cgit.freedesktop.org/wayland/wayland/tree/src/wayland-shm.c)
 //! of the wayland C libraries.
 //!
-//! To use it, first add a `ShmGlobal` to your event loop, specifying the formats
+//! To use it, first add a `ShmGlobal` to your display, specifying the formats
 //! you want to support (ARGB8888 and XRGB8888 are always considered as supported,
 //! as specified by the wayland protocol) and obtain its `ShmToken`.
 //!
