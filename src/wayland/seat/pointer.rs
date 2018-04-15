@@ -1,12 +1,13 @@
 use std::sync::{Arc, Mutex, MutexGuard};
-use wayland_server::{Liveness, Resource};
-use wayland_server::protocol::{wl_pointer, wl_surface};
+use wayland_server::{NewResource, Resource};
+use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::protocol::wl_pointer::{Axis, AxisSource, ButtonState, Event, Request, WlPointer};
 
 // TODO: handle pointer surface role
 
 struct PointerInternal {
-    known_pointers: Vec<wl_pointer::WlPointer>,
-    focus: Option<wl_surface::WlSurface>,
+    known_pointers: Vec<Resource<WlPointer>>,
+    focus: Option<Resource<WlSurface>>,
 }
 
 impl PointerInternal {
@@ -19,7 +20,7 @@ impl PointerInternal {
 
     fn with_focused_pointers<F>(&self, mut f: F)
     where
-        F: FnMut(&wl_pointer::WlPointer, &wl_surface::WlSurface),
+        F: FnMut(&Resource<WlPointer>, &Resource<WlSurface>),
     {
         if let Some(ref focus) = self.focus {
             for ptr in &self.known_pointers {
@@ -44,7 +45,7 @@ pub struct PointerHandle {
 }
 
 impl PointerHandle {
-    pub(crate) fn new_pointer(&self, pointer: wl_pointer::WlPointer) {
+    pub(crate) fn new_pointer(&self, pointer: Resource<WlPointer>) {
         let mut guard = self.inner.lock().unwrap();
         guard.known_pointers.push(pointer);
     }
@@ -59,7 +60,7 @@ impl PointerHandle {
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of enter/motion/leave events.
-    pub fn motion(&self, location: Option<(&wl_surface::WlSurface, f64, f64)>, serial: u32, time: u32) {
+    pub fn motion(&self, location: Option<(&Resource<WlSurface>, f64, f64)>, serial: u32, time: u32) {
         let mut guard = self.inner.lock().unwrap();
         // do we leave a surface ?
         let mut leave = true;
@@ -72,9 +73,12 @@ impl PointerHandle {
         }
         if leave {
             guard.with_focused_pointers(|pointer, surface| {
-                pointer.leave(serial, surface);
+                pointer.send(Event::Leave {
+                    serial,
+                    surface: surface.clone(),
+                });
                 if pointer.version() >= 5 {
-                    pointer.frame();
+                    pointer.send(Event::Frame);
                 }
             });
             guard.focus = None;
@@ -83,19 +87,28 @@ impl PointerHandle {
         // do we enter one ?
         if let Some((surface, x, y)) = location {
             if guard.focus.is_none() {
-                guard.focus = surface.clone();
+                guard.focus = Some(surface.clone());
                 guard.with_focused_pointers(|pointer, surface| {
-                    pointer.enter(serial, surface, x, y);
+                    pointer.send(Event::Enter {
+                        serial,
+                        surface: surface.clone(),
+                        surface_x: x,
+                        surface_y: y,
+                    });
                     if pointer.version() >= 5 {
-                        pointer.frame();
+                        pointer.send(Event::Frame);
                     }
                 })
             } else {
                 // we were on top of a surface and remained on it
                 guard.with_focused_pointers(|pointer, _| {
-                    pointer.motion(time, x, y);
+                    pointer.send(Event::Motion {
+                        time,
+                        surface_x: x,
+                        surface_y: y,
+                    });
                     if pointer.version() >= 5 {
-                        pointer.frame();
+                        pointer.send(Event::Frame);
                     }
                 })
             }
@@ -106,12 +119,17 @@ impl PointerHandle {
     ///
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
-    pub fn button(&self, button: u32, state: wl_pointer::ButtonState, serial: u32, time: u32) {
+    pub fn button(&self, button: u32, state: ButtonState, serial: u32, time: u32) {
         let guard = self.inner.lock().unwrap();
         guard.with_focused_pointers(|pointer, _| {
-            pointer.button(serial, time, button, state);
+            pointer.send(Event::Button {
+                serial,
+                time,
+                button,
+                state,
+            });
             if pointer.version() >= 5 {
-                pointer.frame();
+                pointer.send(Event::Frame);
             }
         })
     }
@@ -125,18 +143,12 @@ impl PointerHandle {
             inner: self.inner.lock().unwrap(),
         }
     }
-
-    pub(crate) fn cleanup_old_pointers(&self) {
-        let mut guard = self.inner.lock().unwrap();
-        guard
-            .known_pointers
-            .retain(|p| p.status() != Liveness::Dead);
-    }
 }
 
 /// A frame of pointer axis events.
 ///
 /// Can be used with the builder pattern, e.g.:
+///
 /// ```ignore
 /// pointer.axis()
 ///     .source(AxisSource::Wheel)
@@ -156,10 +168,12 @@ impl<'a> PointerAxisHandle<'a> {
     ///
     /// Using the `AxisSource::Finger` requires a stop event to be send,
     /// when the user lifts off the finger (not necessarily in the same frame).
-    pub fn source(&mut self, source: wl_pointer::AxisSource) -> &mut Self {
+    pub fn source(&mut self, source: AxisSource) -> &mut Self {
         self.inner.with_focused_pointers(|pointer, _| {
             if pointer.version() >= 5 {
-                pointer.axis_source(source);
+                pointer.send(Event::AxisSource {
+                    axis_source: source,
+                });
             }
         });
         self
@@ -170,10 +184,13 @@ impl<'a> PointerAxisHandle<'a> {
     /// This event is optional and gives the client additional information about
     /// the nature of the axis event. E.g. a scroll wheel might issue separate steps,
     /// while a touchpad may never issue this event as it has no steps.
-    pub fn discrete(&mut self, axis: wl_pointer::Axis, steps: i32) -> &mut Self {
+    pub fn discrete(&mut self, axis: Axis, steps: i32) -> &mut Self {
         self.inner.with_focused_pointers(|pointer, _| {
             if pointer.version() >= 5 {
-                pointer.axis_discrete(axis, steps);
+                pointer.send(Event::AxisDiscrete {
+                    axis,
+                    discrete: steps,
+                });
             }
         });
         self
@@ -181,9 +198,9 @@ impl<'a> PointerAxisHandle<'a> {
 
     /// The actual scroll value. This event is the only required one, but can also
     /// be send multiple times. The values off one frame will be accumulated by the client.
-    pub fn value(&mut self, axis: wl_pointer::Axis, value: f64, time: u32) -> &mut Self {
+    pub fn value(&mut self, axis: Axis, value: f64, time: u32) -> &mut Self {
         self.inner.with_focused_pointers(|pointer, _| {
-            pointer.axis(time, axis, value);
+            pointer.send(Event::Axis { time, axis, value });
         });
         self
     }
@@ -192,10 +209,10 @@ impl<'a> PointerAxisHandle<'a> {
     ///
     /// This event is required for sources of the `AxisSource::Finger` type
     /// and otherwise optional.
-    pub fn stop(&mut self, axis: wl_pointer::Axis, time: u32) -> &mut Self {
+    pub fn stop(&mut self, axis: Axis, time: u32) -> &mut Self {
         self.inner.with_focused_pointers(|pointer, _| {
             if pointer.version() >= 5 {
-                pointer.axis_stop(time, axis);
+                pointer.send(Event::AxisStop { time, axis });
             }
         });
         self
@@ -209,7 +226,7 @@ impl<'a> PointerAxisHandle<'a> {
     pub fn done(&mut self) {
         self.inner.with_focused_pointers(|pointer, _| {
             if pointer.version() >= 5 {
-                pointer.frame();
+                pointer.send(Event::Frame);
             }
         })
     }
@@ -219,4 +236,36 @@ pub(crate) fn create_pointer_handler() -> PointerHandle {
     PointerHandle {
         inner: Arc::new(Mutex::new(PointerInternal::new())),
     }
+}
+
+pub(crate) fn implement_pointer(
+    new_pointer: NewResource<WlPointer>,
+    handle: Option<&PointerHandle>,
+) -> Resource<WlPointer> {
+    let destructor = match handle {
+        Some(h) => {
+            let inner = h.inner.clone();
+            Some(move |pointer: Resource<_>, _| {
+                inner
+                    .lock()
+                    .unwrap()
+                    .known_pointers
+                    .retain(|p| !p.equals(&pointer))
+            })
+        }
+        None => None,
+    };
+    new_pointer.implement(
+        |request, _pointer| {
+            match request {
+                Request::SetCursor { .. } => {
+                    // TODO
+                }
+                Request::Release => {
+                    // Our destructors already handle it
+                }
+            }
+        },
+        destructor,
+    )
 }

@@ -10,14 +10,14 @@
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
-//!
 //! use smithay::wayland::seat::Seat;
 //!
 //! # fn main(){
-//! # let (_display, mut event_loop) = wayland_server::create_display();
+//! # let (mut display, event_loop) = wayland_server::Display::new();
 //! // insert the seat:
-//! let (seat_state_token, seat_global) = Seat::new(
-//!     &mut event_loop,
+//! let (seat, seat_global) = Seat::new(
+//!     &mut display, // the display
+//!     event_loop.token(), // a LoopToken
 //!     "seat-0".into(), // the name of the seat, will be advertize to clients
 //!     None /* insert a logger here*/
 //! );
@@ -31,8 +31,7 @@
 //! Currently, only pointer and keyboard capabilities are supported by
 //! smithay.
 //!
-//! You can add these capabilities via methods of the `Seat` struct that was
-//! inserted in the event loop, that you can retreive via its token:
+//! You can add these capabilities via methods of the `Seat` struct:
 //!
 //! ```
 //! # extern crate wayland_server;
@@ -41,28 +40,59 @@
 //! # use smithay::wayland::seat::Seat;
 //! #
 //! # fn main(){
-//! # let (_display, mut event_loop) = wayland_server::create_display();
-//! # let (seat_state_token, seat_global) = Seat::new(
-//! #     &mut event_loop,
+//! # let (mut display, event_loop) = wayland_server::Display::new();
+//! # let (mut seat, seat_global) = Seat::new(
+//! #     &mut display,
+//! #     event_loop.token(),
 //! #     "seat-0".into(), // the name of the seat, will be advertize to clients
 //! #     None /* insert a logger here*/
 //! # );
-//! let pointer_handle = event_loop.state().get_mut(&seat_state_token).add_pointer();
+//! let pointer_handle = seat.add_pointer();
 //! # }
 //! ```
 //!
 //! These handles can be cloned and sent accross thread, so you can keep one around
 //! in your event-handling code to forward inputs to your clients.
 
+use std::sync::{Arc, Mutex};
+
 mod keyboard;
 mod pointer;
 
 pub use self::keyboard::{Error as KeyboardError, KeyboardHandle, ModifiersState};
 pub use self::pointer::{PointerAxisHandle, PointerHandle};
-use wayland_server::{Client, EventLoopHandle, Global, Liveness, Resource, StateToken};
-use wayland_server::protocol::{wl_keyboard, wl_pointer, wl_seat};
+use wayland_server::{Display, Global, LoopToken, NewResource, Resource};
+use wayland_server::protocol::wl_seat;
 
-/// Internal data of a seat global
+struct Inner {
+    log: ::slog::Logger,
+    name: String,
+    pointer: Option<PointerHandle>,
+    keyboard: Option<KeyboardHandle>,
+    known_seats: Vec<Resource<wl_seat::WlSeat>>,
+}
+
+impl Inner {
+    fn compute_caps(&self) -> wl_seat::Capability {
+        let mut caps = wl_seat::Capability::empty();
+        if self.pointer.is_some() {
+            caps |= wl_seat::Capability::Pointer;
+        }
+        if self.keyboard.is_some() {
+            caps |= wl_seat::Capability::Keyboard;
+        }
+        caps
+    }
+
+    fn send_all_caps(&self) {
+        let capabilities = self.compute_caps();
+        for seat in &self.known_seats {
+            seat.send(wl_seat::Event::Capabilities { capabilities });
+        }
+    }
+}
+
+/// A Seat handle
 ///
 /// This struct gives you access to the control of the
 /// capabilities of the associated seat.
@@ -71,11 +101,7 @@ use wayland_server::protocol::{wl_keyboard, wl_pointer, wl_seat};
 ///
 /// See module-level documentation for details of use.
 pub struct Seat {
-    log: ::slog::Logger,
-    name: String,
-    pointer: Option<PointerHandle>,
-    keyboard: Option<KeyboardHandle>,
-    known_seats: Vec<wl_seat::WlSeat>,
+    inner: Arc<Mutex<Inner>>,
 }
 
 impl Seat {
@@ -88,22 +114,39 @@ impl Seat {
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
     pub fn new<L>(
-        evlh: &mut EventLoopHandle, name: String, logger: L
-    ) -> (StateToken<Seat>, Global<wl_seat::WlSeat, StateToken<Seat>>)
+        display: &mut Display,
+        token: LoopToken,
+        name: String,
+        logger: L,
+    ) -> (Seat, Global<wl_seat::WlSeat>)
     where
         L: Into<Option<::slog::Logger>>,
     {
         let log = ::slog_or_stdlog(logger);
-        let seat = Seat {
+        let inner = Arc::new(Mutex::new(Inner {
             log: log.new(o!("smithay_module" => "seat_handler", "seat_name" => name.clone())),
             name: name,
             pointer: None,
             keyboard: None,
             known_seats: Vec::new(),
+        }));
+        let seat = Seat {
+            inner: inner.clone(),
         };
-        let token = evlh.state().insert(seat);
-        let global = evlh.register_global(5, seat_global_bind, token.clone());
-        (token, global)
+        let global = display.create_global(&token, 5, move |_version, new_seat| {
+            let seat = implement_seat(new_seat, inner.clone());
+            let mut inner = inner.lock().unwrap();
+            if seat.version() >= 2 {
+                seat.send(wl_seat::Event::Name {
+                    name: inner.name.clone(),
+                });
+            }
+            seat.send(wl_seat::Event::Capabilities {
+                capabilities: inner.compute_caps(),
+            });
+            inner.known_seats.push(seat);
+        });
+        (seat, global)
     }
 
     /// Adds the pointer capability to this seat
@@ -115,21 +158,16 @@ impl Seat {
     /// will overwrite it, and will be seen by the clients as if the
     /// mouse was unplugged and a new one was plugged.
     pub fn add_pointer(&mut self) -> PointerHandle {
+        let mut inner = self.inner.lock().unwrap();
         let pointer = self::pointer::create_pointer_handler();
-        if self.pointer.is_some() {
+        if inner.pointer.is_some() {
             // there is already a pointer, remove it and notify the clients
             // of the change
-            self.pointer = None;
-            let caps = self.compute_caps();
-            for seat in &self.known_seats {
-                seat.capabilities(caps);
-            }
+            inner.pointer = None;
+            inner.send_all_caps();
         }
-        self.pointer = Some(pointer.clone());
-        let caps = self.compute_caps();
-        for seat in &self.known_seats {
-            seat.capabilities(caps);
-        }
+        inner.pointer = Some(pointer.clone());
+        inner.send_all_caps();
         pointer
     }
 
@@ -137,12 +175,10 @@ impl Seat {
     ///
     /// Clients will be appropriately notified.
     pub fn remove_pointer(&mut self) {
-        if self.pointer.is_some() {
-            self.pointer = None;
-            let caps = self.compute_caps();
-            for seat in &self.known_seats {
-                seat.capabilities(caps);
-            }
+        let mut inner = self.inner.lock().unwrap();
+        if inner.pointer.is_some() {
+            inner.pointer = None;
+            inner.send_all_caps();
         }
     }
 
@@ -159,9 +195,15 @@ impl Seat {
     /// will overwrite it, and will be seen by the clients as if the
     /// keyboard was unplugged and a new one was plugged.
     pub fn add_keyboard(
-        &mut self, model: &str, layout: &str, variant: &str, options: Option<String>, repeat_delay: i32,
+        &mut self,
+        model: &str,
+        layout: &str,
+        variant: &str,
+        options: Option<String>,
+        repeat_delay: i32,
         repeat_rate: i32,
     ) -> Result<KeyboardHandle, KeyboardError> {
+        let mut inner = self.inner.lock().unwrap();
         let keyboard = self::keyboard::create_keyboard_handler(
             "evdev", // we need this one
             model,
@@ -170,22 +212,16 @@ impl Seat {
             options,
             repeat_delay,
             repeat_rate,
-            &self.log,
+            &inner.log,
         )?;
-        if self.keyboard.is_some() {
+        if inner.keyboard.is_some() {
             // there is already a keyboard, remove it and notify the clients
             // of the change
-            self.keyboard = None;
-            let caps = self.compute_caps();
-            for seat in &self.known_seats {
-                seat.capabilities(caps);
-            }
+            inner.keyboard = None;
+            inner.send_all_caps();
         }
-        self.keyboard = Some(keyboard.clone());
-        let caps = self.compute_caps();
-        for seat in &self.known_seats {
-            seat.capabilities(caps);
-        }
+        inner.keyboard = Some(keyboard.clone());
+        inner.send_all_caps();
         Ok(keyboard)
     }
 
@@ -193,95 +229,60 @@ impl Seat {
     ///
     /// Clients will be appropriately notified.
     pub fn remove_keyboard(&mut self) {
-        if self.keyboard.is_some() {
-            self.keyboard = None;
-            let caps = self.compute_caps();
-            for seat in &self.known_seats {
-                seat.capabilities(caps);
-            }
+        let mut inner = self.inner.lock().unwrap();
+        if inner.keyboard.is_some() {
+            inner.keyboard = None;
+            inner.send_all_caps();
         }
     }
 
     /// Checks wether a given `WlSeat` is associated with this `Seat`
-    pub fn owns(&self, seat: &wl_seat::WlSeat) -> bool {
-        self.known_seats.iter().any(|s| s.equals(seat))
-    }
-
-    /// Cleanup internal states from old resources
-    ///
-    /// Deletes all remnnant of ressources from clients that
-    /// are now disconnected.
-    ///
-    /// It can be wise to run this from time to time.
-    pub fn cleanup(&mut self) {
-        if let Some(ref pointer) = self.pointer {
-            pointer.cleanup_old_pointers();
-        }
-        if let Some(ref kbd) = self.keyboard {
-            kbd.cleanup_old_kbds();
-        }
-        self.known_seats.retain(|s| s.status() == Liveness::Alive);
-    }
-
-    fn compute_caps(&self) -> wl_seat::Capability {
-        let mut caps = wl_seat::Capability::empty();
-        if self.pointer.is_some() {
-            caps |= wl_seat::Capability::Pointer;
-        }
-        if self.keyboard.is_some() {
-            caps |= wl_seat::Capability::Keyboard;
-        }
-        caps
+    pub fn owns(&self, seat: &Resource<wl_seat::WlSeat>) -> bool {
+        let inner = self.inner.lock().unwrap();
+        inner.known_seats.iter().any(|s| s.equals(seat))
     }
 }
 
-fn seat_global_bind(
-    evlh: &mut EventLoopHandle, token: &mut StateToken<Seat>, _: &Client, seat: wl_seat::WlSeat
-) {
-    evlh.register(&seat, seat_implementation(), token.clone(), None);
-    let seat_mgr = evlh.state().get_mut(token);
-    if seat.version() >= 2 {
-        seat.name(seat_mgr.name.clone());
-    }
-    seat.capabilities(seat_mgr.compute_caps());
-    seat_mgr.known_seats.push(seat);
-}
-
-fn seat_implementation() -> wl_seat::Implementation<StateToken<Seat>> {
-    wl_seat::Implementation {
-        get_pointer: |evlh, token, _, _, pointer| {
-            evlh.register(&pointer, pointer_implementation(), (), None);
-            if let Some(ref ptr_handle) = evlh.state().get(token).pointer {
-                ptr_handle.new_pointer(pointer);
-            } else {
-                // we should send a protocol error... but the protocol does not allow
-                // us, so this pointer will just remain inactive ¯\_(ツ)_/¯
+fn implement_seat(
+    new_seat: NewResource<wl_seat::WlSeat>,
+    inner: Arc<Mutex<Inner>>,
+) -> Resource<wl_seat::WlSeat> {
+    let dest_inner = inner.clone();
+    new_seat.implement(
+        move |request, _seat| {
+            let inner = inner.lock().unwrap();
+            match request {
+                wl_seat::Request::GetPointer { id } => {
+                    let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref());
+                    if let Some(ref ptr_handle) = inner.pointer {
+                        ptr_handle.new_pointer(pointer);
+                    } else {
+                        // we should send a protocol error... but the protocol does not allow
+                        // us, so this pointer will just remain inactive ¯\_(ツ)_/¯
+                    }
+                }
+                wl_seat::Request::GetKeyboard { id } => {
+                    let keyboard = self::keyboard::implement_keyboard(id, inner.keyboard.as_ref());
+                    if let Some(ref kbd_handle) = inner.keyboard {
+                        kbd_handle.new_kbd(keyboard);
+                    } else {
+                        // same as pointer, should error but cannot
+                    }
+                }
+                wl_seat::Request::GetTouch { id: _ } => {
+                    // TODO
+                }
+                wl_seat::Request::Release => {
+                    // Our destructors already handle it
+                }
             }
         },
-        get_keyboard: |evlh, token, _, _, keyboard| {
-            evlh.register(&keyboard, keyboard_implementation(), (), None);
-            if let Some(ref kbd_handle) = evlh.state().get(token).keyboard {
-                kbd_handle.new_kbd(keyboard);
-            } else {
-                // same, should error but cant
-            }
-        },
-        get_touch: |_evlh, _token, _, _, _touch| {
-            // TODO
-        },
-        release: |_, _, _, _| {},
-    }
-}
-
-fn pointer_implementation() -> wl_pointer::Implementation<()> {
-    wl_pointer::Implementation {
-        set_cursor: |_, _, _, _, _, _, _, _| {},
-        release: |_, _, _, _| {},
-    }
-}
-
-fn keyboard_implementation() -> wl_keyboard::Implementation<()> {
-    wl_keyboard::Implementation {
-        release: |_, _, _, _| {},
-    }
+        Some(move |seat, _| {
+            dest_inner
+                .lock()
+                .unwrap()
+                .known_seats
+                .retain(|s| !s.equals(&seat));
+        }),
+    )
 }
