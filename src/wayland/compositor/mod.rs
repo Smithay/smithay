@@ -93,7 +93,7 @@ use utils::Rectangle;
 use wayland_server::{Display, Global, LoopToken, NewResource, Resource};
 use wayland_server::commons::Implementation;
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor};
-use wayland_server::protocol::wl_surface::{self, WlSurface};
+use wayland_server::protocol::wl_surface::WlSurface;
 
 /// Description of which part of a surface
 /// should be considered damaged and needs to be redrawn
