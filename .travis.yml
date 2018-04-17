@@ -8,6 +8,10 @@ rust:
 
 sudo: required
 
+branches:
+  only:
+    - master
+
 dist: trusty
 
 # We cannot cache .vagga, because we actually do not have read permissions
