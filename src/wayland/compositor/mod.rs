@@ -29,9 +29,7 @@
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
-//! use wayland_server::protocol::wl_compositor::WlCompositor;
-//! use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
-//! use smithay::wayland::compositor::{compositor_init, SurfaceUserImplementation};
+//! use smithay::wayland::compositor::compositor_init;
 //!
 //! // Define some user data to be associated with the surfaces.
 //! // It must implement the Default trait, which will represent the state of a surface which
@@ -45,21 +43,18 @@
 //! define_roles!(MyRoles);
 //!
 //! # fn main() {
-//! # let (_display, mut event_loop) = wayland_server::create_display();
-//! // define your implementation for surface
-//! let my_implementation = SurfaceUserImplementation {
-//!     commit: |evlh, idata, surface, token| { /* ... */ },
-//!     frame: |evlh, idata, surface, callback, token| { /* ... */ }
-//! };
-//! // define your implementation data
-//! let my_implementation_data = ();
-//!
+//! # let (mut display, event_loop) = wayland_server::Display::new();
 //! // Call the init function:
 //! let (token, _, _) = compositor_init::<MyData, MyRoles, _, _>(
-//!     &mut event_loop,
-//!     my_implementation,       // instance of compositor::SurfaceUserImplementation
-//!     my_implementation_data,  // whatever implementation data you need
-//!     None                     // put a logger here
+//!     &mut display,
+//!     event_loop.token(),
+//!     |request, (surface, compositor_token)| {
+//!         /*
+//!           Your handling of the user requests. This closure can also
+//!           be a struct implementing the appropriate Implementation trait.
+//!          */
+//!     },
+//!     None // put a logger here
 //! );
 //!
 //! // this `token` is what you'll use to access the surface associated data
@@ -82,20 +77,23 @@
 //! This `CompositorToken` also provides access to the metadata associated with the role of the
 //! surfaces. See the documentation of the `roles` submodule for a detailed explanation.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 mod handlers;
 mod tree;
 mod region;
 pub mod roles;
 
-pub use self::handlers::SurfaceIData;
 use self::region::RegionData;
 use self::roles::{Role, RoleType, WrongRole};
 use self::tree::SurfaceData;
 pub use self::tree::TraversalAction;
 use utils::Rectangle;
-use wayland_server::{resource_is_registered, EventLoopHandle, Global};
-use wayland_server::protocol::{wl_buffer, wl_callback, wl_compositor, wl_output, wl_region,
-                               wl_subcompositor, wl_surface};
+use wayland_server::{Display, Global, LoopToken, NewResource, Resource};
+use wayland_server::commons::Implementation;
+use wayland_server::protocol::{wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor};
+use wayland_server::protocol::wl_surface::{self, WlSurface};
 
 /// Description of which part of a surface
 /// should be considered damaged and needs to be redrawn
@@ -135,7 +133,7 @@ pub struct SurfaceAttributes<U> {
     /// You are free to set this field to `None` to avoid processing it several
     /// times. It'll be set to `Some(...)` if the user attaches a buffer (or NULL) to
     /// the surface.
-    pub buffer: Option<Option<(wl_buffer::WlBuffer, (i32, i32))>>,
+    pub buffer: Option<Option<(Resource<wl_buffer::WlBuffer>, (i32, i32))>>,
     /// Scale of the contents of the buffer, for higher-resolution contents.
     ///
     /// If it matches the one of the output displaying this surface, no change
@@ -182,12 +180,9 @@ impl<U: Default> Default for SurfaceAttributes<U> {
 /// Attributes defining the behaviour of a sub-surface relative to its parent
 #[derive(Copy, Clone, Debug)]
 pub struct SubsurfaceRole {
-    /// Horizontal location of the top-left corner of this sub-surface relative to
+    /// Location of the top-left corner of this sub-surface relative to
     /// the top-left corner of its parent
-    pub x: i32,
-    /// Vertical location of the top-left corner of this sub-surface relative to
-    /// the top-left corner of its parent
-    pub y: i32,
+    pub location: (i32, i32),
     /// Sync status of this sub-surface
     ///
     /// If `true`, this surface should be repainted synchronously with its parent
@@ -199,8 +194,7 @@ pub struct SubsurfaceRole {
 impl Default for SubsurfaceRole {
     fn default() -> SubsurfaceRole {
         SubsurfaceRole {
-            x: 0,
-            y: 0,
+            location: (0, 0),
             sync: true,
         }
     }
@@ -240,58 +234,52 @@ impl Default for RegionAttributes {
 /// This token can be cloned at will, and is the entry-point to
 /// access data associated with the `wl_surface` and `wl_region` managed
 /// by the `CompositorGlobal` that provided it.
-pub struct CompositorToken<U, R, ID> {
+pub struct CompositorToken<U, R> {
     _data: ::std::marker::PhantomData<*mut U>,
     _role: ::std::marker::PhantomData<*mut R>,
-    _idata: ::std::marker::PhantomData<*mut ID>,
 }
 
 // we implement them manually because #[derive(..)] would require
 // U: Clone and R: Clone
-impl<U, R, ID> Copy for CompositorToken<U, R, ID> {}
-impl<U, R, ID> Clone for CompositorToken<U, R, ID> {
-    fn clone(&self) -> CompositorToken<U, R, ID> {
+impl<U, R> Copy for CompositorToken<U, R> {}
+impl<U, R> Clone for CompositorToken<U, R> {
+    fn clone(&self) -> CompositorToken<U, R> {
         *self
     }
 }
 
-impl<U, R, ID> CompositorToken<U, R, ID> {
-    pub(crate) fn make() -> CompositorToken<U, R, ID> {
+impl<U, R> CompositorToken<U, R> {
+    pub(crate) fn make() -> CompositorToken<U, R> {
         CompositorToken {
             _data: ::std::marker::PhantomData,
             _role: ::std::marker::PhantomData,
-            _idata: ::std::marker::PhantomData,
         }
     }
 }
 
-impl<U: 'static, R: 'static, ID: 'static> CompositorToken<U, R, ID> {
+impl<U: 'static, R: 'static> CompositorToken<U, R> {
     /// Access the data of a surface
     ///
     /// The closure will be called with the contents of the data associated with this surface.
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_surface_data<F, T>(&self, surface: &wl_surface::WlSurface, f: F) -> T
+    pub fn with_surface_data<F, T>(&self, surface: &Resource<WlSurface>, f: F) -> T
     where
         F: FnOnce(&mut SurfaceAttributes<U>) -> T,
     {
         assert!(
-            resource_is_registered(
-                surface,
-                &self::handlers::surface_implementation::<U, R, ID>()
-            ),
+            surface.is_implemented_with::<self::handlers::SurfaceImplem<U, R>>(),
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe { SurfaceData::<U, R>::with_data(surface, f) }
     }
 }
 
-impl<U, R, ID> CompositorToken<U, R, ID>
+impl<U, R> CompositorToken<U, R>
 where
     U: 'static,
     R: RoleType + Role<SubsurfaceRole> + 'static,
-    ID: 'static,
 {
     /// Access the data of a surface tree from bottom to top
     ///
@@ -304,22 +292,22 @@ where
     /// - The surface object itself
     /// - a mutable reference to its surface attribute data
     /// - a mutable reference to its role data,
-    /// - a custom value that is passer in a fold-like maneer, but only from the output of a parent
+    /// - a custom value that is passed in a fold-like maneer, but only from the output of a parent
     ///   to its children. See `TraversalAction` for details.
     ///
     /// If the surface not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn with_surface_tree_upward<F, T>(
-        &self, surface: &wl_surface::WlSurface, initial: T, f: F
+        &self,
+        surface: &Resource<WlSurface>,
+        initial: T,
+        f: F,
     ) -> Result<(), ()>
     where
-        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+        F: FnMut(&Resource<WlSurface>, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
     {
         assert!(
-            resource_is_registered(
-                surface,
-                &self::handlers::surface_implementation::<U, R, ID>()
-            ),
+            surface.is_implemented_with::<self::handlers::SurfaceImplem<U, R>>(),
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe {
@@ -336,16 +324,16 @@ where
     ///
     /// Behavior is the same as `with_surface_tree_upward`.
     pub fn with_surface_tree_downward<F, T>(
-        &self, surface: &wl_surface::WlSurface, initial: T, f: F
+        &self,
+        surface: &Resource<WlSurface>,
+        initial: T,
+        f: F,
     ) -> Result<(), ()>
     where
-        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+        F: FnMut(&Resource<WlSurface>, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
     {
         assert!(
-            resource_is_registered(
-                surface,
-                &self::handlers::surface_implementation::<U, R, ID>()
-            ),
+            surface.is_implemented_with::<self::handlers::SurfaceImplem<U, R>>(),
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe {
@@ -360,12 +348,9 @@ where
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn get_parent(&self, surface: &wl_surface::WlSurface) -> Option<wl_surface::WlSurface> {
+    pub fn get_parent(&self, surface: &Resource<WlSurface>) -> Option<Resource<WlSurface>> {
         assert!(
-            resource_is_registered(
-                surface,
-                &self::handlers::surface_implementation::<U, R, ID>()
-            ),
+            surface.is_implemented_with::<self::handlers::SurfaceImplem<U, R>>(),
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe { SurfaceData::<U, R>::get_parent(surface) }
@@ -375,29 +360,23 @@ where
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn get_children(&self, surface: &wl_surface::WlSurface) -> Vec<wl_surface::WlSurface> {
+    pub fn get_children(&self, surface: &Resource<WlSurface>) -> Vec<Resource<WlSurface>> {
         assert!(
-            resource_is_registered(
-                surface,
-                &self::handlers::surface_implementation::<U, R, ID>()
-            ),
+            surface.is_implemented_with::<self::handlers::SurfaceImplem<U, R>>(),
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe { SurfaceData::<U, R>::get_children(surface) }
     }
 }
 
-impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
+impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     /// Check wether this surface as a role or not
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn has_a_role(&self, surface: &wl_surface::WlSurface) -> bool {
+    pub fn has_a_role(&self, surface: &Resource<WlSurface>) -> bool {
         assert!(
-            resource_is_registered(
-                surface,
-                &self::handlers::surface_implementation::<U, R, ID>()
-            ),
+            surface.is_implemented_with::<self::handlers::SurfaceImplem<U, R>>(),
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe { SurfaceData::<U, R>::has_a_role(surface) }
@@ -407,15 +386,12 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn has_role<RoleData>(&self, surface: &wl_surface::WlSurface) -> bool
+    pub fn has_role<RoleData>(&self, surface: &Resource<WlSurface>) -> bool
     where
         R: Role<RoleData>,
     {
         assert!(
-            resource_is_registered(
-                surface,
-                &self::handlers::surface_implementation::<U, R, ID>()
-            ),
+            surface.is_implemented_with::<self::handlers::SurfaceImplem<U, R>>(),
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe { SurfaceData::<U, R>::has_role::<RoleData>(surface) }
@@ -427,16 +403,13 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn give_role<RoleData>(&self, surface: &wl_surface::WlSurface) -> Result<(), ()>
+    pub fn give_role<RoleData>(&self, surface: &Resource<WlSurface>) -> Result<(), ()>
     where
         R: Role<RoleData>,
         RoleData: Default,
     {
         assert!(
-            resource_is_registered(
-                surface,
-                &self::handlers::surface_implementation::<U, R, ID>()
-            ),
+            surface.is_implemented_with::<self::handlers::SurfaceImplem<U, R>>(),
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe { SurfaceData::<U, R>::give_role::<RoleData>(surface) }
@@ -449,16 +422,15 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn give_role_with<RoleData>(
-        &self, surface: &wl_surface::WlSurface, data: RoleData
+        &self,
+        surface: &Resource<WlSurface>,
+        data: RoleData,
     ) -> Result<(), RoleData>
     where
         R: Role<RoleData>,
     {
         assert!(
-            resource_is_registered(
-                surface,
-                &self::handlers::surface_implementation::<U, R, ID>()
-            ),
+            surface.is_implemented_with::<self::handlers::SurfaceImplem<U, R>>(),
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe { SurfaceData::<U, R>::give_role_with::<RoleData>(surface, data) }
@@ -470,18 +442,13 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_role_data<RoleData, F, T>(
-        &self, surface: &wl_surface::WlSurface, f: F
-    ) -> Result<T, WrongRole>
+    pub fn with_role_data<RoleData, F, T>(&self, surface: &Resource<WlSurface>, f: F) -> Result<T, WrongRole>
     where
         R: Role<RoleData>,
         F: FnOnce(&mut RoleData) -> T,
     {
         assert!(
-            resource_is_registered(
-                surface,
-                &self::handlers::surface_implementation::<U, R, ID>()
-            ),
+            surface.is_implemented_with::<self::handlers::SurfaceImplem<U, R>>(),
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe { SurfaceData::<U, R>::with_role_data::<RoleData, _, _>(surface, f) }
@@ -493,15 +460,12 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn remove_role<RoleData>(&self, surface: &wl_surface::WlSurface) -> Result<RoleData, WrongRole>
+    pub fn remove_role<RoleData>(&self, surface: &Resource<WlSurface>) -> Result<RoleData, WrongRole>
     where
         R: Role<RoleData>,
     {
         assert!(
-            resource_is_registered(
-                surface,
-                &self::handlers::surface_implementation::<U, R, ID>()
-            ),
+            surface.is_implemented_with::<self::handlers::SurfaceImplem<U, R>>(),
             "Accessing the data of foreign surfaces is not supported."
         );
         unsafe { SurfaceData::<U, R>::remove_role::<RoleData>(surface) }
@@ -511,10 +475,10 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
     ///
     /// If the region is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn get_region_attributes(&self, region: &wl_region::WlRegion) -> RegionAttributes {
+    pub fn get_region_attributes(&self, region: &Resource<wl_region::WlRegion>) -> RegionAttributes {
         assert!(
-            resource_is_registered(region, &self::handlers::region_implementation()),
-            "Accessing the data of foreign surfaces is not supported."
+            region.is_implemented_with::<self::handlers::RegionImplem>(),
+            "Accessing the data of foreign regions is not supported."
         );
         unsafe { RegionData::get_attributes(region) }
     }
@@ -528,46 +492,50 @@ impl<U: 'static, R: RoleType + 'static, ID: 'static> CompositorToken<U, R, ID> {
 ///
 /// It also returns the two global handles, in case you whish to remove these
 /// globals from the event loop in the future.
-pub fn compositor_init<U, R, ID, L>(
-    evlh: &mut EventLoopHandle, implem: SurfaceUserImplementation<U, R, ID>, idata: ID, logger: L
+pub fn compositor_init<U, R, Impl, L>(
+    display: &mut Display,
+    token: LoopToken,
+    implem: Impl,
+    logger: L,
 ) -> (
-    CompositorToken<U, R, ID>,
-    Global<wl_compositor::WlCompositor, self::handlers::SurfaceIData<U, R, ID>>,
-    Global<wl_subcompositor::WlSubcompositor, ()>,
+    CompositorToken<U, R>,
+    Global<wl_compositor::WlCompositor>,
+    Global<wl_subcompositor::WlSubcompositor>,
 )
 where
     L: Into<Option<::slog::Logger>>,
     U: Default + 'static,
     R: Default + RoleType + Role<SubsurfaceRole> + 'static,
-    ID: 'static,
+    Impl: Implementation<(Resource<WlSurface>, CompositorToken<U, R>), SurfaceEvent> + 'static,
 {
-    let log = ::slog_or_stdlog(logger);
-    let idata = self::handlers::SurfaceIData::make(
-        log.new(o!("smithay_module" => "compositor_handler")),
-        implem,
-        idata,
-    );
-    let compositor_global_token =
-        evlh.register_global::<wl_compositor::WlCompositor, _>(4, self::handlers::compositor_bind, idata);
-    let subcompositor_global_token = evlh.register_global::<wl_subcompositor::WlSubcompositor, _>(
-        1,
-        self::handlers::subcompositor_bind::<U, R>,
-        (),
-    );
+    let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "compositor_handler"));
+    let implem = Rc::new(RefCell::new(implem));
 
-    (
-        CompositorToken::make(),
-        compositor_global_token,
-        subcompositor_global_token,
-    )
+    let comp_token = token.clone();
+    let sub_token = token.clone();
+
+    let compositor = display.create_global(&token, 4, move |_version, new_compositor| {
+        self::handlers::implement_compositor::<U, R, Impl>(
+            new_compositor,
+            comp_token.clone(),
+            log.clone(),
+            implem.clone(),
+        );
+    });
+
+    let subcompositor = display.create_global(&token, 1, move |_version, new_subcompositor| {
+        self::handlers::implement_subcompositor::<U, R>(new_subcompositor, sub_token.clone());
+    });
+
+    (CompositorToken::make(), compositor, subcompositor)
 }
 
-/// Sub-implementation for surface event handling
+/// User-handled events for surfaces
 ///
-/// The global provided by Smithay cannot process these events for you, so they
-/// are forwarded directly to this implementation that you must provide
-/// at creation of the compositor global.
-pub struct SurfaceUserImplementation<U, R, ID> {
+/// The global provided by smithay cannot process these events for you, so
+/// they are forwarded directly via your provided implementation, and are
+/// described by this global.
+pub enum SurfaceEvent {
     /// The double-buffered state has been validated by the client
     ///
     /// At this point, the pending state that has been accumulated in the `SurfaceAttributes` associated
@@ -575,12 +543,7 @@ pub struct SurfaceUserImplementation<U, R, ID> {
     ///
     /// See [`wayland_server::protocol::wl_surface::Implementation::commit`](https://docs.rs/wayland-server/0.10.1/wayland_server/protocol/wl_surface/struct.Implementation.html#structfield.commit)
     /// for more details
-    pub commit: fn(
-        evlh: &mut EventLoopHandle,
-        idata: &mut ID,
-        surface: &wl_surface::WlSurface,
-        token: CompositorToken<U, R, ID>,
-    ),
+    Commit,
     /// The client asks to be notified when would be a good time to update the contents of this surface
     ///
     /// You must keep the provided `WlCallback` and trigger it at the appropriate time by calling
@@ -588,18 +551,8 @@ pub struct SurfaceUserImplementation<U, R, ID> {
     ///
     /// See [`wayland_server::protocol::wl_surface::Implementation::frame`](https://docs.rs/wayland-server/0.10.1/wayland_server/protocol/wl_surface/struct.Implementation.html#structfield.frame)
     /// for more details
-    pub frame: fn(
-        evlh: &mut EventLoopHandle,
-        idata: &mut ID,
-        surface: &wl_surface::WlSurface,
-        callback: wl_callback::WlCallback,
-        token: CompositorToken<U, R, ID>,
-    ),
-}
-
-impl<U, R, ID> Copy for SurfaceUserImplementation<U, R, ID> {}
-impl<U, R, ID> Clone for SurfaceUserImplementation<U, R, ID> {
-    fn clone(&self) -> SurfaceUserImplementation<U, R, ID> {
-        *self
-    }
+    Frame {
+        /// The created `WlCallback`
+        callback: NewResource<wl_callback::WlCallback>,
+    },
 }

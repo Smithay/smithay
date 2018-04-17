@@ -1,8 +1,8 @@
 use super::{SubsurfaceRole, SurfaceAttributes};
 use super::roles::*;
 use std::sync::Mutex;
-use wayland_server::{Liveness, Resource};
-use wayland_server::protocol::wl_surface;
+use wayland_server::Resource;
+use wayland_server::protocol::wl_surface::{self, WlSurface};
 
 /// Node of a subsurface tree, holding some user specified data type U
 /// at each node
@@ -24,8 +24,8 @@ use wayland_server::protocol::wl_surface;
 /// All the methods here are unsafe, because they assume the provided `wl_surface` object
 /// is correctly initialized regarding its `user_data`.
 pub struct SurfaceData<U, R> {
-    parent: Option<wl_surface::WlSurface>,
-    children: Vec<wl_surface::WlSurface>,
+    parent: Option<Resource<WlSurface>>,
+    children: Vec<Resource<WlSurface>>,
     role: R,
     attributes: SurfaceAttributes<U>,
 }
@@ -56,7 +56,7 @@ impl<U: Default, R: Default> SurfaceData<U, R> {
     }
 
     /// Initialize the user_data of a surface, must be called right when the surface is created
-    pub unsafe fn init(surface: &wl_surface::WlSurface) {
+    pub unsafe fn init(surface: &Resource<WlSurface>) {
         surface.set_user_data(Box::into_raw(Box::new(Mutex::new(SurfaceData::<U, R>::new()))) as *mut _)
     }
 }
@@ -66,13 +66,13 @@ where
     U: 'static,
     R: 'static,
 {
-    unsafe fn get_data(surface: &wl_surface::WlSurface) -> &Mutex<SurfaceData<U, R>> {
+    unsafe fn get_data(surface: &Resource<WlSurface>) -> &Mutex<SurfaceData<U, R>> {
         let ptr = surface.get_user_data();
         &*(ptr as *mut _)
     }
 
     /// Cleans the user_data of that surface, must be called when it is destroyed
-    pub unsafe fn cleanup(surface: &wl_surface::WlSurface) {
+    pub unsafe fn cleanup(surface: &Resource<WlSurface>) {
         let ptr = surface.get_user_data();
         surface.set_user_data(::std::ptr::null_mut());
         let my_data_mutex: Box<Mutex<SurfaceData<U, R>>> = Box::from_raw(ptr as *mut _);
@@ -99,31 +99,31 @@ where
 }
 
 impl<U: 'static, R: RoleType + 'static> SurfaceData<U, R> {
-    pub unsafe fn has_a_role(surface: &wl_surface::WlSurface) -> bool {
-        debug_assert!(surface.status() == Liveness::Alive);
+    pub unsafe fn has_a_role(surface: &Resource<WlSurface>) -> bool {
+        debug_assert!(surface.is_alive());
         let data_mutex = Self::get_data(surface);
         let data_guard = data_mutex.lock().unwrap();
         <R as RoleType>::has_role(&data_guard.role)
     }
 
     /// Check wether a surface has a given role
-    pub unsafe fn has_role<RoleData>(surface: &wl_surface::WlSurface) -> bool
+    pub unsafe fn has_role<RoleData>(surface: &Resource<WlSurface>) -> bool
     where
         R: Role<RoleData>,
     {
-        debug_assert!(surface.status() == Liveness::Alive);
+        debug_assert!(surface.is_alive());
         let data_mutex = Self::get_data(surface);
         let data_guard = data_mutex.lock().unwrap();
         <R as Role<RoleData>>::has(&data_guard.role)
     }
 
     /// Register that this surface has a role, fails if it already has one
-    pub unsafe fn give_role<RoleData>(surface: &wl_surface::WlSurface) -> Result<(), ()>
+    pub unsafe fn give_role<RoleData>(surface: &Resource<WlSurface>) -> Result<(), ()>
     where
         R: Role<RoleData>,
         RoleData: Default,
     {
-        debug_assert!(surface.status() == Liveness::Alive);
+        debug_assert!(surface.is_alive());
         let data_mutex = Self::get_data(surface);
         let mut data_guard = data_mutex.lock().unwrap();
         <R as Role<RoleData>>::set(&mut data_guard.role)
@@ -133,12 +133,13 @@ impl<U: 'static, R: RoleType + 'static> SurfaceData<U, R> {
     ///
     /// Fails if it already has one and returns the data
     pub unsafe fn give_role_with<RoleData>(
-        surface: &wl_surface::WlSurface, data: RoleData
+        surface: &Resource<WlSurface>,
+        data: RoleData,
     ) -> Result<(), RoleData>
     where
         R: Role<RoleData>,
     {
-        debug_assert!(surface.status() == Liveness::Alive);
+        debug_assert!(surface.is_alive());
         let data_mutex = Self::get_data(surface);
         let mut data_guard = data_mutex.lock().unwrap();
         <R as Role<RoleData>>::set_with(&mut data_guard.role, data)
@@ -148,25 +149,23 @@ impl<U: 'static, R: RoleType + 'static> SurfaceData<U, R> {
     ///
     /// It is a noop if this surface already didn't have one, but fails if
     /// the role was "subsurface", it must be removed by the `unset_parent` method.
-    pub unsafe fn remove_role<RoleData>(surface: &wl_surface::WlSurface) -> Result<RoleData, WrongRole>
+    pub unsafe fn remove_role<RoleData>(surface: &Resource<WlSurface>) -> Result<RoleData, WrongRole>
     where
         R: Role<RoleData>,
     {
-        debug_assert!(surface.status() == Liveness::Alive);
+        debug_assert!(surface.is_alive());
         let data_mutex = Self::get_data(surface);
         let mut data_guard = data_mutex.lock().unwrap();
         <R as Role<RoleData>>::unset(&mut data_guard.role)
     }
 
     /// Access to the role data
-    pub unsafe fn with_role_data<RoleData, F, T>(
-        surface: &wl_surface::WlSurface, f: F
-    ) -> Result<T, WrongRole>
+    pub unsafe fn with_role_data<RoleData, F, T>(surface: &Resource<WlSurface>, f: F) -> Result<T, WrongRole>
     where
         R: Role<RoleData>,
         F: FnOnce(&mut RoleData) -> T,
     {
-        debug_assert!(surface.status() == Liveness::Alive);
+        debug_assert!(surface.is_alive());
         let data_mutex = Self::get_data(surface);
         let mut data_guard = data_mutex.lock().unwrap();
         let data = <R as Role<RoleData>>::data_mut(&mut data_guard.role)?;
@@ -179,11 +178,9 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
     ///
     /// if this surface already has a role, does nothing and fails, otherwise
     /// its role is now to be a subsurface
-    pub unsafe fn set_parent(
-        child: &wl_surface::WlSurface, parent: &wl_surface::WlSurface
-    ) -> Result<(), ()> {
-        debug_assert!(child.status() == Liveness::Alive);
-        debug_assert!(parent.status() == Liveness::Alive);
+    pub unsafe fn set_parent(child: &Resource<WlSurface>, parent: &Resource<WlSurface>) -> Result<(), ()> {
+        debug_assert!(child.is_alive());
+        debug_assert!(parent.is_alive());
 
         // change child's parent
         {
@@ -192,14 +189,14 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
             // if surface already has a role, it cannot become a subsurface
             <R as Role<SubsurfaceRole>>::set(&mut child_guard.role)?;
             debug_assert!(child_guard.parent.is_none());
-            child_guard.parent = Some(parent.clone_unchecked());
+            child_guard.parent = Some(parent.clone());
         }
         // register child to new parent
         // double scoping is to be robust to have a child be its own parent
         {
             let parent_mutex = Self::get_data(parent);
             let mut parent_guard = parent_mutex.lock().unwrap();
-            parent_guard.children.push(child.clone_unchecked())
+            parent_guard.children.push(child.clone())
         }
         Ok(())
     }
@@ -207,8 +204,8 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
     /// Remove a pre-existing parent of this child
     ///
     /// Does nothing if it has no parent
-    pub unsafe fn unset_parent(child: &wl_surface::WlSurface) {
-        debug_assert!(child.status() == Liveness::Alive);
+    pub unsafe fn unset_parent(child: &Resource<WlSurface>) {
+        debug_assert!(child.is_alive());
         let old_parent = {
             let child_mutex = Self::get_data(child);
             let mut child_guard = child_mutex.lock().unwrap();
@@ -229,44 +226,38 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
     }
 
     /// Retrieve the parent surface (if any) of this surface
-    pub unsafe fn get_parent(child: &wl_surface::WlSurface) -> Option<wl_surface::WlSurface> {
+    pub unsafe fn get_parent(child: &Resource<WlSurface>) -> Option<Resource<WlSurface>> {
         let child_mutex = Self::get_data(child);
         let child_guard = child_mutex.lock().unwrap();
-        child_guard.parent.as_ref().map(|p| p.clone_unchecked())
+        child_guard.parent.as_ref().map(|p| p.clone())
     }
 
     /// Retrieve the parent surface (if any) of this surface
-    pub unsafe fn get_children(child: &wl_surface::WlSurface) -> Vec<wl_surface::WlSurface> {
+    pub unsafe fn get_children(child: &Resource<WlSurface>) -> Vec<Resource<WlSurface>> {
         let child_mutex = Self::get_data(child);
         let child_guard = child_mutex.lock().unwrap();
-        child_guard
-            .children
-            .iter()
-            .map(|p| p.clone_unchecked())
-            .collect()
+        child_guard.children.iter().map(|p| p.clone()).collect()
     }
 
     /// Reorders a surface relative to one of its sibling
     ///
     /// Fails if `relative_to` is not a sibling or parent of `surface`.
     pub unsafe fn reorder(
-        surface: &wl_surface::WlSurface, to: Location, relative_to: &wl_surface::WlSurface
+        surface: &Resource<WlSurface>,
+        to: Location,
+        relative_to: &Resource<WlSurface>,
     ) -> Result<(), ()> {
         let parent = {
             let data_mutex = Self::get_data(surface);
             let data_guard = data_mutex.lock().unwrap();
-            data_guard
-                .parent
-                .as_ref()
-                .map(|p| p.clone_unchecked())
-                .unwrap()
+            data_guard.parent.as_ref().map(|p| p.clone()).unwrap()
         };
         if parent.equals(relative_to) {
             // TODO: handle positioning relative to parent
             return Ok(());
         }
 
-        fn index_of(surface: &wl_surface::WlSurface, slice: &[wl_surface::WlSurface]) -> Option<usize> {
+        fn index_of(surface: &Resource<WlSurface>, slice: &[Resource<WlSurface>]) -> Option<usize> {
             for (i, s) in slice.iter().enumerate() {
                 if s.equals(surface) {
                     return Some(i);
@@ -300,7 +291,7 @@ impl<U: 'static, R: 'static> SurfaceData<U, R> {
     ///
     /// Note that an internal lock is taken during access of this data,
     /// so the tree cannot be manipulated at the same time
-    pub unsafe fn with_data<T, F>(surface: &wl_surface::WlSurface, f: F) -> T
+    pub unsafe fn with_data<T, F>(surface: &Resource<WlSurface>, f: F) -> T
     where
         F: FnOnce(&mut SurfaceAttributes<U>) -> T,
     {
@@ -317,17 +308,20 @@ impl<U: 'static, R: 'static> SurfaceData<U, R> {
     ///
     /// The callback returns wether the traversal should continue or not. Returning
     /// false will cause an early-stopping.
-    pub unsafe fn map_tree<F, T>(root: &wl_surface::WlSurface, initial: T, mut f: F, reverse: bool)
+    pub unsafe fn map_tree<F, T>(root: &Resource<WlSurface>, initial: T, mut f: F, reverse: bool)
     where
-        F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+        F: FnMut(&Resource<WlSurface>, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
     {
         // helper function for recursion
         unsafe fn map<U: 'static, R: 'static, F, T>(
-            surface: &wl_surface::WlSurface, root: &wl_surface::WlSurface, initial: &T, f: &mut F,
+            surface: &Resource<WlSurface>,
+            root: &Resource<WlSurface>,
+            initial: &T,
+            f: &mut F,
             reverse: bool,
         ) -> bool
         where
-            F: FnMut(&wl_surface::WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+            F: FnMut(&Resource<WlSurface>, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
         {
             // stop if we met the root, so to not deadlock/inifinte loop
             if surface.equals(root) {

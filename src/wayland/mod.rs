@@ -18,7 +18,7 @@
 //!   not previously destroyed all the globals using it, otherwise you'll
 //!   quickly encounter a panic.
 
-//pub mod compositor;
+pub mod compositor;
 pub mod output;
 pub mod seat;
 pub mod shm;
