@@ -43,6 +43,7 @@ use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use systemd::login;
 use wayland_server::LoopToken;
+use wayland_server::commons::Implementation;
 use wayland_server::sources::{FdEvent, FdInterest, Source};
 
 struct LogindSessionImpl {
@@ -456,7 +457,7 @@ pub fn logind_session_bind(
                 notifier.clone(),
             )
         })
-        .collect::<::std::result::Result<Vec<FdEventSource<Rc<LogindSessionImpl>>>, (IoError, _)>>()
+        .collect::<::std::result::Result<Vec<Source<FdEvent>>, (IoError, _)>>()
         .map_err(|(err, _)| {
             (
                 err,
@@ -528,7 +529,7 @@ impl Implementation<(), FdEvent> for LogindSessionNotifier {
                 let conn = self.internal.conn.borrow();
                 let items = conn.watch_handle(fd, WatchEvent::Error as u32);
                 if let Err(err) = self.internal.handle_signals(items) {
-                    error!(session.logger, "Error handling dbus signals: {}", err);
+                    error!(self.internal.logger, "Error handling dbus signals: {}", err);
                 }
             }
         }
