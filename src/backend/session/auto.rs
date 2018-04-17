@@ -39,8 +39,9 @@ use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::rc::Rc;
-use wayland_server::EventLoopHandle;
-use wayland_server::sources::{EventSource, SignalEventSource};
+use wayland_server::LoopToken;
+use wayland_server::commons::downcast_impl;
+use wayland_server::sources::{SignalEvent, Source};
 
 /// `Session` using the best available inteface
 #[derive(Clone)]
@@ -71,7 +72,7 @@ pub enum BoundAutoSession {
     #[cfg(feature = "backend_session_logind")]
     Logind(BoundLogindSession),
     /// Bound direct / tty session
-    Direct(SignalEventSource<DirectSessionNotifier>),
+    Direct(Source<SignalEvent>),
 }
 
 /// Id's used by the `AutoSessionNotifier` internally.
@@ -153,13 +154,14 @@ impl AutoSession {
 /// If you don't use this function `AutoSessionNotifier` will not correctly tell you the
 /// session state and call it's `SessionObservers`.
 pub fn auto_session_bind(
-    notifier: AutoSessionNotifier, evlh: &mut EventLoopHandle
+    notifier: AutoSessionNotifier,
+    token: &LoopToken,
 ) -> ::std::result::Result<BoundAutoSession, (IoError, AutoSessionNotifier)> {
     Ok(match notifier {
         #[cfg(feature = "backend_session_logind")]
-        AutoSessionNotifier::Logind(logind) => BoundAutoSession::Logind(logind_session_bind(logind, evlh)
+        AutoSessionNotifier::Logind(logind) => BoundAutoSession::Logind(logind_session_bind(logind, token)
             .map_err(|(error, notifier)| (error, AutoSessionNotifier::Logind(notifier)))?),
-        AutoSessionNotifier::Direct(direct) => BoundAutoSession::Direct(direct_session_bind(direct, evlh)
+        AutoSessionNotifier::Direct(direct) => BoundAutoSession::Direct(direct_session_bind(direct, token)
             .map_err(|(error, notifier)| (error, AutoSessionNotifier::Direct(notifier)))?),
     })
 }
@@ -210,7 +212,8 @@ impl SessionNotifier for AutoSessionNotifier {
     type Id = AutoId;
 
     fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(
-        &mut self, signal: &mut A
+        &mut self,
+        signal: &mut A,
     ) -> Self::Id {
         match self {
             #[cfg(feature = "backend_session_logind")]
@@ -257,7 +260,9 @@ impl BoundAutoSession {
         match self {
             #[cfg(feature = "backend_session_logind")]
             BoundAutoSession::Logind(logind) => AutoSessionNotifier::Logind(logind.unbind()),
-            BoundAutoSession::Direct(source) => AutoSessionNotifier::Direct(source.remove()),
+            BoundAutoSession::Direct(source) => {
+                AutoSessionNotifier::Direct(*downcast_impl(source.remove()).unwrap_or_else(|_| unreachable!()))
+            }
         }
     }
 }

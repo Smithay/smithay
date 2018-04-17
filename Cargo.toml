@@ -9,7 +9,7 @@ repository = "https://github.com/Smithay/smithay"
 [dependencies]
 wayland-server = "0.20.0"
 wayland-sys = "0.20.0"
-nix = "0.9.0"
+nix = "0.10.0"
 xkbcommon = "0.2.1"
 tempfile = "2.1.5"
 slog = { version = "2.1.1" }

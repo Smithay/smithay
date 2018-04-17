@@ -16,7 +16,6 @@ use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use wayland_server::EventLoopHandle;
 
 /// General session interface.
 ///
@@ -88,7 +87,7 @@ pub trait SessionObserver {
     /// If only a specific device shall be closed a device number in the form of
     /// (major, minor) is provided. All observers not using the specified device should
     /// ignore the signal in that case.
-    fn pause(&mut self, evlh: &mut EventLoopHandle, device: Option<(u32, u32)>);
+    fn pause(&mut self, device: Option<(u32, u32)>);
     /// Session/Device got active again
     ///
     /// If only a specific device shall be activated again a device number in the form of
@@ -96,7 +95,7 @@ pub trait SessionObserver {
     /// the currently open file descriptor of the device with a new one. In that case the old one
     /// should not be used anymore and be closed. All observers not using the specified device should
     /// ignore the signal in that case.
-    fn activate(&mut self, evlh: &mut EventLoopHandle, device: Option<(u32, u32, Option<RawFd>)>);
+    fn activate(&mut self, device: Option<(u32, u32, Option<RawFd>)>);
 }
 
 impl Session for () {
