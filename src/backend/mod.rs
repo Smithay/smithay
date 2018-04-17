@@ -15,7 +15,7 @@
 //! - libinput
 
 pub mod input;
-//pub mod graphics;
+pub mod graphics;
 
 //#[cfg(feature = "backend_winit")]
 //pub mod winit;
