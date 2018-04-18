@@ -192,7 +192,9 @@ impl EGLImages {
     ///
     /// The given `tex_id` needs to be a valid GL texture otherwise undefined behavior might occur.
     pub unsafe fn bind_to_texture(
-        &self, plane: usize, tex_id: c_uint
+        &self,
+        plane: usize,
+        tex_id: c_uint,
     ) -> ::std::result::Result<(), TextureCreationError> {
         if self.display.upgrade().is_some() {
             let mut old_tex_id: i32 = 0;
@@ -255,7 +257,8 @@ pub struct EGLDisplay(Weak<ffi::egl::types::EGLDisplay>, *mut wl_display);
 
 impl EGLDisplay {
     fn new<B: native::Backend, N: native::NativeDisplay<B>>(
-        context: &EGLContext<B, N>, display: *mut wl_display
+        context: &EGLContext<B, N>,
+        display: *mut wl_display,
     ) -> EGLDisplay {
         EGLDisplay(Rc::downgrade(&context.display), display)
     }
@@ -266,7 +269,8 @@ impl EGLDisplay {
     /// a `BufferAccessError::NotManaged(WlBuffer)` is returned with the original buffer
     /// to render it another way.
     pub fn egl_buffer_contents(
-        &self, buffer: Resource<WlBuffer>
+        &self,
+        buffer: Resource<WlBuffer>,
     ) -> ::std::result::Result<EGLImages, BufferAccessError> {
         if let Some(display) = self.0.upgrade() {
             let mut format: i32 = 0;

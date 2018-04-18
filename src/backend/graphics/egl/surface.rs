@@ -30,7 +30,8 @@ impl<N: native::NativeSurface> DerefMut for EGLSurface<N> {
 
 impl<N: native::NativeSurface> EGLSurface<N> {
     pub(crate) fn new<B: native::Backend<Surface = N>, D: native::NativeDisplay<B>>(
-        context: &EGLContext<B, D>, native: N
+        context: &EGLContext<B, D>,
+        native: N,
     ) -> Result<EGLSurface<N>> {
         let surface = unsafe {
             ffi::egl::CreateWindowSurface(

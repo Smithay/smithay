@@ -451,11 +451,7 @@ pub fn logind_session_bind(
             let mut interest = FdInterest::empty();
             interest.set(FdInterest::READ, watch.readable());
             interest.set(FdInterest::WRITE, watch.writable());
-            token.add_fd_event_source(
-                watch.fd(),
-                interest,
-                notifier.clone(),
-            )
+            token.add_fd_event_source(watch.fd(), interest, notifier.clone())
         })
         .collect::<::std::result::Result<Vec<Source<FdEvent>>, (IoError, _)>>()
         .map_err(|(err, _)| {

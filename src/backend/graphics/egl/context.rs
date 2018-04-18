@@ -50,7 +50,10 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> DerefMut for EGLContext<B,
 impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     /// Create a new `EGLContext` from a given `NativeDisplay`
     pub fn new<L>(
-        native: N, attributes: GlAttributes, reqs: PixelFormatRequirements, logger: L
+        native: N,
+        attributes: GlAttributes,
+        reqs: PixelFormatRequirements,
+        logger: L,
     ) -> Result<EGLContext<B, N>>
     where
         L: Into<Option<::slog::Logger>>,
@@ -82,7 +85,9 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     }
 
     unsafe fn new_internal(
-        ptr: ffi::NativeDisplayType, mut attributes: GlAttributes, reqs: PixelFormatRequirements,
+        ptr: ffi::NativeDisplayType,
+        mut attributes: GlAttributes,
+        reqs: PixelFormatRequirements,
         log: ::slog::Logger,
     ) -> Result<
         (
