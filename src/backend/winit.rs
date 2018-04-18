@@ -18,7 +18,7 @@ use std::fmt;
 use std::rc::Rc;
 use std::time::Instant;
 use wayland_client::egl as wegl;
-use wayland_server::{Display, EventLoopHandle};
+use wayland_server::Display;
 use winit::{ElementState, Event, EventsLoop, KeyboardInput, MouseButton as WinitMouseButton, MouseCursor,
             MouseScrollDelta, Touch, TouchPhase, Window as WinitWindow, WindowBuilder, WindowEvent};
 
@@ -102,7 +102,8 @@ where
 /// graphics backend trait, from a given `WindowBuilder` struct and a corresponding
 /// `WinitInputBackend`, which implements the `InputBackend` trait
 pub fn init_from_builder<L>(
-    builder: WindowBuilder, logger: L
+    builder: WindowBuilder,
+    logger: L,
 ) -> Result<(WinitGraphicsBackend, WinitInputBackend)>
 where
     L: Into<Option<::slog::Logger>>,
@@ -124,7 +125,9 @@ where
 /// `GlAttributes` for further customization of the rendering pipeline and a
 /// corresponding `WinitInputBackend`, which implements the `InputBackend` trait.
 pub fn init_from_builder_with_gl_attr<L>(
-    builder: WindowBuilder, attributes: GlAttributes, logger: L
+    builder: WindowBuilder,
+    attributes: GlAttributes,
+    logger: L,
 ) -> Result<(WinitGraphicsBackend, WinitInputBackend)>
 where
     L: Into<Option<::slog::Logger>>,
@@ -185,15 +188,15 @@ where
 /// Handler trait to recieve window-related events to provide a better *nested* experience.
 pub trait WinitEventsHandler {
     /// The window was resized, can be used to adjust the associated `wayland::output::Output`s mode.
-    fn resized(&mut self, evlh: &mut EventLoopHandle, width: u32, height: u32);
+    fn resized(&mut self, width: u32, height: u32);
     /// The window was moved
-    fn moved(&mut self, evlh: &mut EventLoopHandle, x: i32, h: i32);
+    fn moved(&mut self, x: i32, h: i32);
     /// The window gained or lost focus
-    fn focus_changed(&mut self, evlh: &mut EventLoopHandle, focused: bool);
+    fn focus_changed(&mut self, focused: bool);
     /// The window needs to be redrawn
-    fn refresh(&mut self, evlh: &mut EventLoopHandle);
+    fn refresh(&mut self);
     /// The window's hidpi factor changed
-    fn hidpi_changed(&mut self, evlh: &mut EventLoopHandle, scale: f32);
+    fn hidpi_changed(&mut self, scale: f32);
 }
 
 impl WinitGraphicsBackend {
@@ -213,7 +216,9 @@ impl GraphicsBackend for WinitGraphicsBackend {
     }
 
     fn set_cursor_representation(
-        &self, cursor: &Self::CursorFormat, _hotspot: (u32, u32)
+        &self,
+        cursor: &Self::CursorFormat,
+        _hotspot: (u32, u32),
     ) -> ::std::result::Result<(), ()> {
         // Cannot log this one, as `CursorFormat` is not `Debug` and should not be
         debug!(self.logger, "Changing cursor representation");
@@ -621,13 +626,13 @@ impl InputBackend for WinitInputBackend {
     type TouchCancelEvent = WinitTouchCancelledEvent;
     type TouchFrameEvent = UnusedEvent;
 
-    fn set_handler<H: InputHandler<Self> + 'static>(&mut self, evlh: &mut EventLoopHandle, mut handler: H) {
+    fn set_handler<H: InputHandler<Self> + 'static>(&mut self, mut handler: H) {
         if self.handler.is_some() {
-            self.clear_handler(evlh);
+            self.clear_handler();
         }
         info!(self.logger, "New input handler set.");
         trace!(self.logger, "Calling on_seat_created with {:?}", self.seat);
-        handler.on_seat_created(evlh, &self.seat);
+        handler.on_seat_created(&self.seat);
         self.handler = Some(Box::new(handler));
     }
 
@@ -637,14 +642,14 @@ impl InputBackend for WinitInputBackend {
             .map(|handler| handler as &mut InputHandler<Self>)
     }
 
-    fn clear_handler(&mut self, evlh: &mut EventLoopHandle) {
+    fn clear_handler(&mut self) {
         if let Some(mut handler) = self.handler.take() {
             trace!(
                 self.logger,
                 "Calling on_seat_destroyed with {:?}",
                 self.seat
             );
-            handler.on_seat_destroyed(evlh, &self.seat);
+            handler.on_seat_destroyed(&self.seat);
         }
         info!(self.logger, "Removing input handler");
     }
@@ -665,9 +670,7 @@ impl InputBackend for WinitInputBackend {
     ///
     /// The linked `WinitGraphicsBackend` will error with a lost Context and should
     /// not be used anymore as well.
-    fn dispatch_new_events(
-        &mut self, evlh: &mut EventLoopHandle
-    ) -> ::std::result::Result<(), WinitInputError> {
+    fn dispatch_new_events(&mut self) -> ::std::result::Result<(), WinitInputError> {
         let mut closed = false;
 
         {
@@ -701,18 +704,16 @@ impl InputBackend for WinitInputBackend {
                                 _ => {}
                             };
                             if let Some(events_handler) = events_handler {
-                                events_handler.resized(evlh, w, h);
+                                events_handler.resized(w, h);
                             }
                         }
-                        (WindowEvent::Moved(x, y), _, Some(events_handler)) => {
-                            events_handler.moved(evlh, x, y)
-                        }
+                        (WindowEvent::Moved(x, y), _, Some(events_handler)) => events_handler.moved(x, y),
                         (WindowEvent::Focused(focus), _, Some(events_handler)) => {
-                            events_handler.focus_changed(evlh, focus)
+                            events_handler.focus_changed(focus)
                         }
-                        (WindowEvent::Refresh, _, Some(events_handler)) => events_handler.refresh(evlh),
+                        (WindowEvent::Refresh, _, Some(events_handler)) => events_handler.refresh(),
                         (WindowEvent::HiDPIFactorChanged(factor), _, Some(events_handler)) => {
-                            events_handler.hidpi_changed(evlh, factor)
+                            events_handler.hidpi_changed(factor)
                         }
                         (
                             WindowEvent::KeyboardInput {
@@ -737,7 +738,6 @@ impl InputBackend for WinitInputBackend {
                                 (scancode, state)
                             );
                             handler.on_keyboard_key(
-                                evlh,
                                 seat,
                                 WinitKeyboardInputEvent {
                                     time,
@@ -756,7 +756,6 @@ impl InputBackend for WinitInputBackend {
                         ) => {
                             trace!(logger, "Calling on_pointer_move_absolute with {:?}", (x, y));
                             handler.on_pointer_move_absolute(
-                                evlh,
                                 seat,
                                 WinitMouseMovedEvent {
                                     window: window.clone(),
@@ -769,7 +768,7 @@ impl InputBackend for WinitInputBackend {
                         (WindowEvent::MouseWheel { delta, .. }, Some(handler), _) => {
                             let event = WinitMouseWheelEvent { time, delta };
                             trace!(logger, "Calling on_pointer_axis with {:?}", delta);
-                            handler.on_pointer_axis(evlh, seat, event);
+                            handler.on_pointer_axis(seat, event);
                         }
                         (WindowEvent::MouseInput { state, button, .. }, Some(handler), _) => {
                             trace!(
@@ -778,7 +777,6 @@ impl InputBackend for WinitInputBackend {
                                 (button, state)
                             );
                             handler.on_pointer_button(
-                                evlh,
                                 seat,
                                 WinitMouseInputEvent {
                                     time,
@@ -799,7 +797,6 @@ impl InputBackend for WinitInputBackend {
                         ) => {
                             trace!(logger, "Calling on_touch_down at {:?}", (x, y));
                             handler.on_touch_down(
-                                evlh,
                                 seat,
                                 WinitTouchStartedEvent {
                                     window: window.clone(),
@@ -821,7 +818,6 @@ impl InputBackend for WinitInputBackend {
                         ) => {
                             trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
                             handler.on_touch_motion(
-                                evlh,
                                 seat,
                                 WinitTouchMovedEvent {
                                     window: window.clone(),
@@ -843,7 +839,6 @@ impl InputBackend for WinitInputBackend {
                         ) => {
                             trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
                             handler.on_touch_motion(
-                                evlh,
                                 seat,
                                 WinitTouchMovedEvent {
                                     window: window.clone(),
@@ -853,7 +848,7 @@ impl InputBackend for WinitInputBackend {
                                 },
                             );
                             trace!(logger, "Calling on_touch_up");
-                            handler.on_touch_up(evlh, seat, WinitTouchEndedEvent { time, id: id });
+                            handler.on_touch_up(seat, WinitTouchEndedEvent { time, id: id });
                         }
                         (
                             WindowEvent::Touch(Touch {
@@ -865,7 +860,7 @@ impl InputBackend for WinitInputBackend {
                             _,
                         ) => {
                             trace!(logger, "Calling on_touch_cancel");
-                            handler.on_touch_cancel(evlh, seat, WinitTouchCancelledEvent { time, id: id })
+                            handler.on_touch_cancel(seat, WinitTouchCancelledEvent { time, id: id })
                         }
                         (WindowEvent::Closed, _, _) => {
                             warn!(logger, "Window closed");
