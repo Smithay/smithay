@@ -66,8 +66,6 @@
 //! impl ControlDevice for Card {}
 //!
 //! # fn main() {
-//! let (_display, mut event_loop) = wayland_server::create_display();
-//!
 //! // Open the drm device
 //! let mut options = OpenOptions::new();
 //! options.read(true);
@@ -139,7 +137,6 @@
 //! # use std::time::Duration;
 //! use smithay::backend::drm::{DrmDevice, DrmBackend, DrmHandler, drm_device_bind};
 //! use smithay::backend::graphics::egl::EGLGraphicsBackend;
-//! use wayland_server::EventLoopHandle;
 //! #
 //! # #[derive(Debug)]
 //! # pub struct Card(File);
@@ -153,7 +150,7 @@
 //! #
 //! # fn main() {
 //! #
-//! # let (_display, mut event_loop) = wayland_server::create_display();
+//! # let (_display, mut event_loop) = wayland_server::Display::new();
 //! #
 //! # let mut options = OpenOptions::new();
 //! # options.read(true);
@@ -181,7 +178,6 @@
 //! impl DrmHandler<Card> for MyDrmHandler {
 //!     fn ready(
 //!         &mut self,
-//!         _evlh: &mut EventLoopHandle,
 //!         _device: &mut DrmDevice<Card>,
 //!         _crtc: CrtcHandle,
 //!         _frame: u32,
@@ -192,7 +188,6 @@
 //!     }
 //!     fn error(
 //!         &mut self,
-//!         _evlh: &mut EventLoopHandle,
 //!         device: &mut DrmDevice<Card>,
 //!         error: DrmError)
 //!     {
@@ -203,7 +198,11 @@
 //! // render something (like clear_color)
 //! backend.swap_buffers().unwrap();
 //!
-//! let _source = drm_device_bind(&mut event_loop, device, MyDrmHandler(backend)).map_err(|(err, _)| err).unwrap();
+//! let (_source, _device_rc) = drm_device_bind(
+//!     &event_loop.token(),
+//!     device,
+//!     MyDrmHandler(backend)
+//! ).map_err(|(err, _)| err).unwrap();
 //!
 //! event_loop.run().unwrap();
 //! # }
