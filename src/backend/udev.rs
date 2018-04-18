@@ -351,7 +351,6 @@ where
                                 info!(self.logger, "Devnum: {:b}", devnum);
                                 if let Some(&(_, ref device)) = self.devices.borrow_mut().get(&devnum) {
                                     let handler = &mut self.handler;
-                                    let logger = &self.logger;
                                     handler.device_changed(&mut device.borrow_mut());
                                 } else {
                                     info!(self.logger, "changed, but device not tracked by backend");

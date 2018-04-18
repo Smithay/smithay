@@ -233,7 +233,7 @@ use std::sync::{Arc, Once, ONCE_INIT};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use wayland_server::{Display, LoopToken};
-use wayland_server::commons::{downcast_impl, Implementation};
+use wayland_server::commons::Implementation;
 use wayland_server::sources::{FdEvent, FdInterest, Source};
 
 mod backend;

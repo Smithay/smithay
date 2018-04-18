@@ -11,8 +11,9 @@ use std::hash::{Hash, Hasher};
 use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
-use wayland_server::EventLoopHandle;
-use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
+use wayland_server::LoopToken;
+use wayland_server::commons::Implementation;
+use wayland_server::sources::{FdEvent, FdInterest, Source};
 
 // No idea if this is the same across unix platforms
 // Lets make this linux exclusive for now, once someone tries to build it for
@@ -256,16 +257,14 @@ impl backend::InputBackend for LibinputInputBackend {
     type TouchCancelEvent = event::touch::TouchCancelEvent;
     type TouchFrameEvent = event::touch::TouchFrameEvent;
 
-    fn set_handler<H: backend::InputHandler<Self> + 'static>(
-        &mut self, evlh: &mut EventLoopHandle, mut handler: H
-    ) {
+    fn set_handler<H: backend::InputHandler<Self> + 'static>(&mut self, mut handler: H) {
         if self.handler.is_some() {
-            self.clear_handler(evlh);
+            self.clear_handler();
         }
         info!(self.logger, "New input handler set");
         for seat in self.seats.values() {
             trace!(self.logger, "Calling on_seat_created with {:?}", seat);
-            handler.on_seat_created(evlh, seat);
+            handler.on_seat_created(seat);
         }
         self.handler = Some(Box::new(handler));
     }
@@ -276,11 +275,11 @@ impl backend::InputBackend for LibinputInputBackend {
             .map(|handler| handler as &mut backend::InputHandler<Self>)
     }
 
-    fn clear_handler(&mut self, evlh: &mut EventLoopHandle) {
+    fn clear_handler(&mut self) {
         if let Some(mut handler) = self.handler.take() {
             for seat in self.seats.values() {
                 trace!(self.logger, "Calling on_seat_destroyed with {:?}", seat);
-                handler.on_seat_destroyed(evlh, seat);
+                handler.on_seat_destroyed(seat);
             }
             info!(self.logger, "Removing input handler");
         }
@@ -290,7 +289,7 @@ impl backend::InputBackend for LibinputInputBackend {
         &mut self.devices
     }
 
-    fn dispatch_new_events(&mut self, evlh: &mut EventLoopHandle) -> Result<(), IoError> {
+    fn dispatch_new_events(&mut self) -> Result<(), IoError> {
         use input::event::EventTrait;
 
         self.context.dispatch()?;
@@ -323,7 +322,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                     }
                                     if let Some(ref mut handler) = self.handler {
                                         trace!(self.logger, "Calling on_seat_changed with {:?}", old_seat);
-                                        handler.on_seat_changed(evlh, old_seat);
+                                        handler.on_seat_changed(old_seat);
                                     }
                                 }
                                 Entry::Vacant(seat_entry) => {
@@ -340,7 +339,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                     ));
                                     if let Some(ref mut handler) = self.handler {
                                         trace!(self.logger, "Calling on_seat_created with {:?}", seat);
-                                        handler.on_seat_created(evlh, seat);
+                                        handler.on_seat_created(seat);
                                     }
                                 }
                             }
@@ -379,7 +378,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                 if let Some(seat) = self.seats.remove(&device_seat) {
                                     if let Some(ref mut handler) = self.handler {
                                         trace!(self.logger, "Calling on_seat_destroyed with {:?}", seat);
-                                        handler.on_seat_destroyed(evlh, &seat);
+                                        handler.on_seat_destroyed(&seat);
                                     }
                                 } else {
                                     warn!(self.logger, "Seat destroyed that was never created");
@@ -389,7 +388,7 @@ impl backend::InputBackend for LibinputInputBackend {
                             } else if let Some(ref mut handler) = self.handler {
                                 if let Some(seat) = self.seats.get(&device_seat) {
                                     trace!(self.logger, "Calling on_seat_changed with {:?}", seat);
-                                    handler.on_seat_changed(evlh, &seat);
+                                    handler.on_seat_changed(&seat);
                                 } else {
                                     warn!(self.logger, "Seat changed that was never created");
                                     continue;
@@ -398,7 +397,7 @@ impl backend::InputBackend for LibinputInputBackend {
                         }
                     }
                     if let Some(ref mut handler) = self.handler {
-                        handler.on_input_config_changed(evlh, &mut self.devices);
+                        handler.on_input_config_changed(&mut self.devices);
                     }
                 }
                 libinput::Event::Touch(touch_event) => {
@@ -409,7 +408,7 @@ impl backend::InputBackend for LibinputInputBackend {
                             match touch_event {
                                 TouchEvent::Down(down_event) => {
                                     trace!(self.logger, "Calling on_touch_down with {:?}", down_event);
-                                    handler.on_touch_down(evlh, seat, down_event)
+                                    handler.on_touch_down(seat, down_event)
                                 }
                                 TouchEvent::Motion(motion_event) => {
                                     trace!(
@@ -417,11 +416,11 @@ impl backend::InputBackend for LibinputInputBackend {
                                         "Calling on_touch_motion with {:?}",
                                         motion_event
                                     );
-                                    handler.on_touch_motion(evlh, seat, motion_event)
+                                    handler.on_touch_motion(seat, motion_event)
                                 }
                                 TouchEvent::Up(up_event) => {
                                     trace!(self.logger, "Calling on_touch_up with {:?}", up_event);
-                                    handler.on_touch_up(evlh, seat, up_event)
+                                    handler.on_touch_up(seat, up_event)
                                 }
                                 TouchEvent::Cancel(cancel_event) => {
                                     trace!(
@@ -429,11 +428,11 @@ impl backend::InputBackend for LibinputInputBackend {
                                         "Calling on_touch_cancel with {:?}",
                                         cancel_event
                                     );
-                                    handler.on_touch_cancel(evlh, seat, cancel_event)
+                                    handler.on_touch_cancel(seat, cancel_event)
                                 }
                                 TouchEvent::Frame(frame_event) => {
                                     trace!(self.logger, "Calling on_touch_frame with {:?}", frame_event);
-                                    handler.on_touch_frame(evlh, seat, frame_event)
+                                    handler.on_touch_frame(seat, frame_event)
                                 }
                             }
                         } else {
@@ -449,7 +448,7 @@ impl backend::InputBackend for LibinputInputBackend {
                             let device_seat = key_event.device().seat();
                             if let &Some(ref seat) = &self.seats.get(&device_seat) {
                                 trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
-                                handler.on_keyboard_key(evlh, seat, key_event);
+                                handler.on_keyboard_key(seat, key_event);
                             } else {
                                 warn!(self.logger, "Recieved key event of non existing Seat");
                                 continue;
@@ -469,7 +468,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                         "Calling on_pointer_move with {:?}",
                                         motion_event
                                     );
-                                    handler.on_pointer_move(evlh, seat, motion_event);
+                                    handler.on_pointer_move(seat, motion_event);
                                 }
                                 PointerEvent::MotionAbsolute(motion_abs_event) => {
                                     trace!(
@@ -477,11 +476,11 @@ impl backend::InputBackend for LibinputInputBackend {
                                         "Calling on_pointer_move_absolute with {:?}",
                                         motion_abs_event
                                     );
-                                    handler.on_pointer_move_absolute(evlh, seat, motion_abs_event);
+                                    handler.on_pointer_move_absolute(seat, motion_abs_event);
                                 }
                                 PointerEvent::Axis(axis_event) => {
                                     trace!(self.logger, "Calling on_pointer_axis with {:?}", axis_event);
-                                    handler.on_pointer_axis(evlh, seat, axis_event);
+                                    handler.on_pointer_axis(seat, axis_event);
                                 }
                                 PointerEvent::Button(button_event) => {
                                     trace!(
@@ -489,7 +488,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                         "Calling on_pointer_button with {:?}",
                                         button_event
                                     );
-                                    handler.on_pointer_button(evlh, seat, button_event);
+                                    handler.on_pointer_button(seat, button_event);
                                 }
                             }
                         } else {
@@ -554,7 +553,7 @@ impl From<event::pointer::ButtonState> for backend::MouseButtonState {
 
 #[cfg(feature = "backend_session")]
 impl SessionObserver for libinput::Libinput {
-    fn pause(&mut self, _state: &mut EventLoopHandle, device: Option<(u32, u32)>) {
+    fn pause(&mut self, device: Option<(u32, u32)>) {
         if let Some((major, _)) = device {
             if major != INPUT_MAJOR {
                 return;
@@ -564,7 +563,7 @@ impl SessionObserver for libinput::Libinput {
         self.suspend()
     }
 
-    fn activate(&mut self, _state: &mut EventLoopHandle, _device: Option<(u32, u32, Option<RawFd>)>) {
+    fn activate(&mut self, _device: Option<(u32, u32, Option<RawFd>)>) {
         // libinput closes the devices on suspend, so we should not get any INPUT_MAJOR calls
         // also lets hope multiple resumes are okay in case of logind
         self.resume().expect("Unable to resume libinput context");
@@ -602,27 +601,25 @@ impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
 /// Automatically feeds the backend with incoming events without any manual calls to
 /// `dispatch_new_events`. Should be used to achieve the smallest possible latency.
 pub fn libinput_bind(
-    backend: LibinputInputBackend, evlh: &mut EventLoopHandle
-) -> ::std::result::Result<FdEventSource<LibinputInputBackend>, (IoError, LibinputInputBackend)> {
+    backend: LibinputInputBackend,
+    token: LoopToken,
+) -> ::std::result::Result<Source<FdEvent>, (IoError, LibinputInputBackend)> {
     let fd = unsafe { backend.context.fd() };
-    evlh.add_fd_event_source(
-        fd,
-        fd_event_source_implementation(),
-        backend,
-        FdInterest::READ,
-    )
+    token.add_fd_event_source(fd, FdInterest::READ, backend)
 }
 
-fn fd_event_source_implementation() -> FdEventSourceImpl<LibinputInputBackend> {
-    FdEventSourceImpl {
-        ready: |evlh, ref mut backend, _, _| {
-            use backend::input::InputBackend;
-            if let Err(error) = backend.dispatch_new_events(evlh) {
-                warn!(backend.logger, "Libinput errored: {}", error);
+impl Implementation<(), FdEvent> for LibinputInputBackend {
+    fn receive(&mut self, event: FdEvent, (): ()) {
+        match event {
+            FdEvent::Ready { .. } => {
+                use backend::input::InputBackend;
+                if let Err(error) = self.dispatch_new_events() {
+                    warn!(self.logger, "Libinput errored: {}", error);
+                }
             }
-        },
-        error: |_evlh, ref backend, _, error| {
-            warn!(backend.logger, "Libinput fd errored: {}", error);
-        },
+            FdEvent::Error { error, .. } => {
+                warn!(self.logger, "Libinput fd errored: {}", error);
+            }
+        }
     }
 }
