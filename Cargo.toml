@@ -38,7 +38,7 @@ slog-async = "2.2"
 rand = "0.3"
 
 [features]
-default = ["backend_winit", "backend_drm", "backend_libinput", "backend_udev", "renderer_glium", "backend_session_logind"]
+default = ["backend_winit", "backend_drm", "backend_libinput", "backend_udev", "renderer_glium"]
 backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen"]
 backend_drm = ["drm", "gbm"]
 backend_libinput = ["input"]
