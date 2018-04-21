@@ -48,9 +48,3 @@ backend_session_logind = ["dbus", "systemd", "backend_session"]
 backend_udev = ["udev", "backend_drm", "backend_session_udev"]
 renderer_glium = ["glium"]
 
-[patch.crates-io]
-wayland-server = { git = 'https://github.com/smithay/wayland-rs', branch = 'wayland_rs_20' }
-wayland-client = { git = 'https://github.com/smithay/wayland-rs', branch = 'wayland_rs_20' }
-wayland-protocols = { git = 'https://github.com/smithay/wayland-rs', branch = 'wayland_rs_20' }
-wayland-sys = { git = 'https://github.com/smithay/wayland-rs', branch = 'wayland_rs_20' }
-wayland-commons = { git = 'https://github.com/smithay/wayland-rs', branch = 'wayland_rs_20' }
