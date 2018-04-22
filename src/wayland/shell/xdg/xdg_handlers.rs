@@ -224,6 +224,12 @@ fn destroy_surface<U, R, SD>(
     surface.set_user_data(::std::ptr::null_mut());
     // take back ownership of the userdata
     let data = unsafe { Box::from_raw(ptr as *mut XdgSurfaceUserData) };
+    if !data.0.is_alive() {
+        // the wl_surface is destroyed, this means the client is not
+        // trying to change the role but it's a cleanup (possibly a
+        // disconnecting client), ignore the protocol check.
+        return;
+    }
     implem
         .compositor_token
         .with_role_data::<ShellSurfaceRole, _, _>(&data.0, |rdata| {
@@ -582,25 +588,27 @@ fn destroy_toplevel<U, R, SD>(
     toplevel.set_user_data(::std::ptr::null_mut());
     // take back ownership of the userdata
     let data = *unsafe { Box::from_raw(ptr as *mut ShellSurfaceUserData) };
-    implem
-        .compositor_token
-        .with_role_data::<ShellSurfaceRole, _, _>(&data.0, |data| {
-            data.pending_state = ShellSurfacePendingState::None;
-            data.configured = false;
-        })
-        .expect("xdg_toplevel exists but surface has not shell_surface role?!");
+    if !data.0.is_alive() {
+        // the wl_surface is destroyed, this means the client is not
+        // trying to change the role but it's a cleanup (possibly a
+        // disconnecting client), ignore the protocol check.
+        return;
+    } else {
+        implem
+            .compositor_token
+            .with_role_data::<ShellSurfaceRole, _, _>(&data.0, |data| {
+                data.pending_state = ShellSurfacePendingState::None;
+                data.configured = false;
+            })
+            .expect("xdg_toplevel exists but surface has not shell_surface role?!");
+    }
     // remove this surface from the known ones (as well as any leftover dead surface)
     implem
         .shell_state
         .lock()
         .unwrap()
         .known_toplevels
-        .retain(|other| {
-            other
-                .get_surface()
-                .map(|s| !s.equals(&data.0))
-                .unwrap_or(false)
-        });
+        .retain(|other| other.alive());
 }
 
 /*
@@ -688,23 +696,25 @@ fn destroy_popup<U, R, SD>(
     popup.set_user_data(::std::ptr::null_mut());
     // take back ownership of the userdata
     let data = *unsafe { Box::from_raw(ptr as *mut ShellSurfaceUserData) };
-    implem
-        .compositor_token
-        .with_role_data::<ShellSurfaceRole, _, _>(&data.0, |data| {
-            data.pending_state = ShellSurfacePendingState::None;
-            data.configured = false;
-        })
-        .expect("xdg_popup exists but surface has not shell_surface role?!");
+    if !data.0.is_alive() {
+        // the wl_surface is destroyed, this means the client is not
+        // trying to change the role but it's a cleanup (possibly a
+        // disconnecting client), ignore the protocol check.
+        return;
+    } else {
+        implem
+            .compositor_token
+            .with_role_data::<ShellSurfaceRole, _, _>(&data.0, |data| {
+                data.pending_state = ShellSurfacePendingState::None;
+                data.configured = false;
+            })
+            .expect("xdg_popup exists but surface has not shell_surface role?!");
+    }
     // remove this surface from the known ones (as well as any leftover dead surface)
     implem
         .shell_state
         .lock()
         .unwrap()
         .known_popups
-        .retain(|other| {
-            other
-                .get_surface()
-                .map(|s| !s.equals(&data.0))
-                .unwrap_or(false)
-        });
+        .retain(|other| other.alive());
 }
