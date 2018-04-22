@@ -34,7 +34,6 @@ use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;
 use std::rc::Rc;
 use std::time::Duration;
-use wayland_server::EventLoopHandle;
 
 #[derive(Debug)]
 pub struct Card(File);
@@ -56,7 +55,7 @@ fn main() {
     );
 
     // Initialize the wayland server
-    let (mut display, mut event_loop) = wayland_server::create_display();
+    let (mut display, mut event_loop) = wayland_server::Display::new();
 
     /*
      * Initialize the drm backend
@@ -124,10 +123,10 @@ fn main() {
      * Initialize the globals
      */
 
-    init_shm_global(&mut event_loop, vec![], log.clone());
+    init_shm_global(&mut display, event_loop.token(), vec![], log.clone());
 
     let (compositor_token, _shell_state_token, window_map) =
-        init_shell(&mut event_loop, log.clone(), egl_display.clone());
+        init_shell(&mut display, event_loop.token(), log.clone(), egl_display);
 
     /*
      * Add a listening socket:
@@ -139,7 +138,7 @@ fn main() {
      * Register the DrmDevice on the EventLoop
      */
     let _source = drm_device_bind(
-        &mut event_loop,
+        &event_loop.token(),
         device,
         DrmHandlerImpl {
             compositor_token,
@@ -159,7 +158,7 @@ fn main() {
 }
 
 pub struct DrmHandlerImpl {
-    compositor_token: CompositorToken<SurfaceData, Roles, Rc<RefCell<Option<EGLDisplay>>>>,
+    compositor_token: CompositorToken<SurfaceData, Roles>,
     window_map: Rc<RefCell<MyWindowMap>>,
     drawer: GliumDrawer<DrmBackend<Card>>,
     logger: ::slog::Logger,
@@ -167,8 +166,11 @@ pub struct DrmHandlerImpl {
 
 impl DrmHandler<Card> for DrmHandlerImpl {
     fn ready(
-        &mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<Card>, _crtc: crtc::Handle,
-        _frame: u32, _duration: Duration,
+        &mut self,
+        _device: &mut DrmDevice<Card>,
+        _crtc: crtc::Handle,
+        _frame: u32,
+        _duration: Duration,
     ) {
         let mut frame = self.drawer.draw();
         frame.clear_color(0.8, 0.8, 0.9, 1.0);
@@ -215,8 +217,8 @@ impl DrmHandler<Card> for DrmHandlerImpl {
 
                                     if let Some(ref texture) = attributes.user_data.texture {
                                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                                            x += subdata.x;
-                                            y += subdata.y;
+                                            x += subdata.location.0;
+                                            y += subdata.location.1;
                                         }
                                         info!(self.logger, "Render window");
                                         self.drawer.render_texture(
@@ -248,7 +250,7 @@ impl DrmHandler<Card> for DrmHandlerImpl {
         frame.finish().unwrap();
     }
 
-    fn error(&mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<Card>, error: DrmError) {
+    fn error(&mut self, _device: &mut DrmDevice<Card>, error: DrmError) {
         panic!("{:?}", error);
     }
 }

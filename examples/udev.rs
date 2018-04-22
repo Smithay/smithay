@@ -53,9 +53,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use wayland_server::{Display, EventLoopHandle};
+use wayland_server::Display;
+use wayland_server::commons::downcast_impl;
 use wayland_server::protocol::{wl_output, wl_pointer};
-use wayland_server::sources::EventSource;
 use xkbcommon::xkb::keysyms as xkb;
 
 struct LibinputInputHandler {
@@ -78,18 +78,16 @@ impl LibinputInputHandler {
 }
 
 impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
-    fn on_seat_created(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat) {
+    fn on_seat_created(&mut self, _: &input::Seat) {
         /* we just create a single static one */
     }
-    fn on_seat_destroyed(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat) {
+    fn on_seat_destroyed(&mut self, _: &input::Seat) {
         /* we just create a single static one */
     }
-    fn on_seat_changed(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat) {
+    fn on_seat_changed(&mut self, _: &input::Seat) {
         /* we just create a single static one */
     }
-    fn on_keyboard_key(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: event::keyboard::KeyboardKeyEvent
-    ) {
+    fn on_keyboard_key(&mut self, _: &input::Seat, evt: event::keyboard::KeyboardKeyEvent) {
         let keycode = evt.key();
         let state = evt.state();
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
@@ -100,8 +98,9 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
         let running = &self.running;
         let mut session = &mut self.session;
         let log = &self.log;
+        let time = Event::time(&evt);
         self.keyboard
-            .input(keycode, state, serial, move |modifiers, keysym| {
+            .input(keycode, state, serial, time, move |modifiers, keysym| {
                 debug!(log, "keysym"; "state" => format!("{:?}", state), "mods" => format!("{:?}", modifiers), "keysym" => xkbcommon::xkb::keysym_get_name(keysym));
                 if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace
                     && state == KeyState::Pressed
@@ -132,9 +131,7 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
                 }
             });
     }
-    fn on_pointer_move(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: event::pointer::PointerMotionEvent
-    ) {
+    fn on_pointer_move(&mut self, _: &input::Seat, evt: event::pointer::PointerMotionEvent) {
         let (x, y) = (evt.dx(), evt.dy());
         let serial = self.next_serial();
         let mut location = self.pointer_location.borrow_mut();
@@ -149,10 +146,7 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
             evt.time(),
         );
     }
-    fn on_pointer_move_absolute(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat,
-        evt: event::pointer::PointerMotionAbsoluteEvent,
-    ) {
+    fn on_pointer_move_absolute(&mut self, _: &input::Seat, evt: event::pointer::PointerMotionAbsoluteEvent) {
         let (x, y) = (
             evt.absolute_x_transformed(self.screen_size.0),
             evt.absolute_y_transformed(self.screen_size.1),
@@ -166,9 +160,7 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
             evt.time(),
         );
     }
-    fn on_pointer_button(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: event::pointer::PointerButtonEvent
-    ) {
+    fn on_pointer_button(&mut self, _: &input::Seat, evt: event::pointer::PointerButtonEvent) {
         let serial = self.next_serial();
         let button = evt.button();
         let state = match evt.state() {
@@ -185,9 +177,7 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
         };
         self.pointer.button(button, state, serial, evt.time());
     }
-    fn on_pointer_axis(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: event::pointer::PointerAxisEvent
-    ) {
+    fn on_pointer_axis(&mut self, _: &input::Seat, evt: event::pointer::PointerAxisEvent) {
         let source = match evt.source() {
             input::AxisSource::Continuous => wayland_server::protocol::wl_pointer::AxisSource::Continuous,
             input::AxisSource::Finger => wayland_server::protocol::wl_pointer::AxisSource::Finger,
@@ -244,30 +234,22 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
             event.done();
         }
     }
-    fn on_touch_down(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: event::touch::TouchDownEvent
-    ) {
+    fn on_touch_down(&mut self, _: &input::Seat, _: event::touch::TouchDownEvent) {
         /* not done in this example */
     }
-    fn on_touch_motion(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: event::touch::TouchMotionEvent
-    ) {
+    fn on_touch_motion(&mut self, _: &input::Seat, _: event::touch::TouchMotionEvent) {
         /* not done in this example */
     }
-    fn on_touch_up(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: event::touch::TouchUpEvent) {
+    fn on_touch_up(&mut self, _: &input::Seat, _: event::touch::TouchUpEvent) {
         /* not done in this example */
     }
-    fn on_touch_cancel(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: event::touch::TouchCancelEvent
-    ) {
+    fn on_touch_cancel(&mut self, _: &input::Seat, _: event::touch::TouchCancelEvent) {
         /* not done in this example */
     }
-    fn on_touch_frame(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: event::touch::TouchFrameEvent
-    ) {
+    fn on_touch_frame(&mut self, _: &input::Seat, _: event::touch::TouchFrameEvent) {
         /* not done in this example */
     }
-    fn on_input_config_changed(&mut self, _evlh: &mut EventLoopHandle, _: &mut [LibinputDevice]) {
+    fn on_input_config_changed(&mut self, _: &mut [LibinputDevice]) {
         /* not done in this example */
     }
 }
@@ -284,7 +266,7 @@ fn main() {
     );
 
     // Initialize the wayland server
-    let (mut display, mut event_loop) = wayland_server::create_display();
+    let (mut display, mut event_loop) = wayland_server::Display::new();
 
     /*
      * Add a listening socket
@@ -292,15 +274,24 @@ fn main() {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
     println!("Listening on socket: {}", name);
     env::set_var("WAYLAND_DISPLAY", name);
-    let display = Rc::new(display);
+    let display = Rc::new(RefCell::new(display));
 
     /*
      * Initialize the compositor
      */
-    init_shm_global(&mut event_loop, vec![], log.clone());
+    init_shm_global(
+        &mut display.borrow_mut(),
+        event_loop.token(),
+        vec![],
+        log.clone(),
+    );
 
-    let (compositor_token, _shell_state_token, window_map) =
-        init_shell(&mut event_loop, log.clone(), active_egl_context.clone());
+    let (compositor_token, _shell_state_token, window_map) = init_shell(
+        &mut display.borrow_mut(),
+        event_loop.token(),
+        log.clone(),
+        active_egl_context.clone(),
+    );
 
     /*
      * Initialize session
@@ -321,7 +312,7 @@ fn main() {
 
     let bytes = include_bytes!("resources/cursor2.rgba");
     let mut udev_backend = UdevBackend::new(
-        &mut event_loop,
+        event_loop.token(),
         &context,
         session.clone(),
         UdevHandlerImpl {
@@ -340,17 +331,21 @@ fn main() {
 
     let udev_session_id = notifier.register(&mut udev_backend);
 
-    let (seat_token, _) = Seat::new(&mut event_loop, session.seat().into(), log.clone());
+    let (mut w_seat, _) = Seat::new(
+        &mut display.borrow_mut(),
+        event_loop.token(),
+        session.seat().into(),
+        log.clone(),
+    );
 
-    let pointer = event_loop.state().get_mut(&seat_token).add_pointer();
-    let keyboard = event_loop
-        .state()
-        .get_mut(&seat_token)
+    let pointer = w_seat.add_pointer();
+    let keyboard = w_seat
         .add_keyboard("", "", "", None, 1000, 500)
         .expect("Failed to initialize the keyboard");
 
-    let (output_token, _output_global) = Output::new(
-        &mut event_loop,
+    let (output, _output_global) = Output::new(
+        &mut display.borrow_mut(),
+        event_loop.token(),
         "Drm".into(),
         PhysicalProperties {
             width: 0,
@@ -363,26 +358,20 @@ fn main() {
     );
 
     let (w, h) = (1920, 1080); // Hardcode full-hd res
-    event_loop
-        .state()
-        .get_mut(&output_token)
-        .change_current_state(
-            Some(Mode {
-                width: w as i32,
-                height: h as i32,
-                refresh: 60_000,
-            }),
-            None,
-            None,
-        );
-    event_loop
-        .state()
-        .get_mut(&output_token)
-        .set_preferred(Mode {
+    output.change_current_state(
+        Some(Mode {
             width: w as i32,
             height: h as i32,
             refresh: 60_000,
-        });
+        }),
+        None,
+        None,
+    );
+    output.set_preferred(Mode {
+        width: w as i32,
+        height: h as i32,
+        refresh: 60_000,
+    });
 
     /*
      * Initialize libinput backend
@@ -392,28 +381,25 @@ fn main() {
     let libinput_session_id = notifier.register(&mut libinput_context);
     libinput_context.udev_assign_seat(&seat).unwrap();
     let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
-    libinput_backend.set_handler(
-        &mut event_loop,
-        LibinputInputHandler {
-            log: log.clone(),
-            pointer,
-            keyboard,
-            window_map: window_map.clone(),
-            pointer_location,
-            screen_size: (w, h),
-            serial: 0,
-            session: session,
-            running: running.clone(),
-        },
-    );
-    let libinput_event_source = libinput_bind(libinput_backend, &mut event_loop)
+    libinput_backend.set_handler(LibinputInputHandler {
+        log: log.clone(),
+        pointer,
+        keyboard,
+        window_map: window_map.clone(),
+        pointer_location,
+        screen_size: (w, h),
+        serial: 0,
+        session: session,
+        running: running.clone(),
+    });
+    let libinput_event_source = libinput_bind(libinput_backend, event_loop.token())
         .map_err(|(err, _)| err)
         .unwrap();
 
-    let session_event_source = auto_session_bind(notifier, &mut event_loop)
+    let session_event_source = auto_session_bind(notifier, &event_loop.token())
         .map_err(|(err, _)| err)
         .unwrap();
-    let udev_event_source = udev_backend_bind(&mut event_loop, udev_backend)
+    let udev_event_source = udev_backend_bind(&event_loop.token(), udev_backend)
         .map_err(|(err, _)| err)
         .unwrap();
 
@@ -421,7 +407,7 @@ fn main() {
         if let Err(_) = event_loop.dispatch(Some(16)) {
             running.store(false, Ordering::SeqCst);
         } else {
-            display.flush_clients();
+            display.borrow_mut().flush_clients();
             window_map.borrow_mut().refresh();
         }
     }
@@ -435,14 +421,15 @@ fn main() {
     libinput_event_source.remove();
 
     // destroy the udev backend freeing the drm devices
-    udev_event_source.remove().close(&mut event_loop)
+    udev_backend = *(downcast_impl(udev_event_source.remove()).unwrap_or_else(|_| unreachable!()));
+    udev_backend.close();
 }
 
 struct UdevHandlerImpl {
-    compositor_token: CompositorToken<SurfaceData, Roles, Rc<RefCell<Option<EGLDisplay>>>>,
+    compositor_token: CompositorToken<SurfaceData, Roles>,
     active_egl_context: Rc<RefCell<Option<EGLDisplay>>>,
     backends: HashMap<u64, Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<DrmBackend<SessionFdDrmDevice>>>>>>,
-    display: Rc<Display>,
+    display: Rc<RefCell<Display>>,
     primary_gpu: Option<PathBuf>,
     window_map: Rc<RefCell<MyWindowMap>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
@@ -452,7 +439,8 @@ struct UdevHandlerImpl {
 
 impl UdevHandlerImpl {
     pub fn scan_connectors(
-        &self, device: &mut DrmDevice<SessionFdDrmDevice>
+        &self,
+        device: &mut DrmDevice<SessionFdDrmDevice>,
     ) -> HashMap<crtc::Handle, GliumDrawer<DrmBackend<SessionFdDrmDevice>>> {
         // Get a set of all modesetting resource handles (excluding planes):
         let res_handles = device.resource_handles().unwrap();
@@ -511,12 +499,10 @@ impl UdevHandlerImpl {
 }
 
 impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
-    fn device_added(
-        &mut self, _evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>
-    ) -> Option<DrmHandlerImpl> {
+    fn device_added(&mut self, device: &mut DrmDevice<SessionFdDrmDevice>) -> Option<DrmHandlerImpl> {
         // init hardware acceleration on the primary gpu.
         if device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
-            *self.active_egl_context.borrow_mut() = device.bind_wl_display(&*self.display).ok();
+            *self.active_egl_context.borrow_mut() = device.bind_wl_display(&*self.display.borrow()).ok();
         }
 
         let backends = Rc::new(RefCell::new(self.scan_connectors(device)));
@@ -531,13 +517,13 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
         })
     }
 
-    fn device_changed(&mut self, _evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>) {
+    fn device_changed(&mut self, device: &mut DrmDevice<SessionFdDrmDevice>) {
         //quick and dirt, just re-init all backends
         let backends = self.backends.get(&device.device_id()).unwrap();
         *backends.borrow_mut() = self.scan_connectors(device);
     }
 
-    fn device_removed(&mut self, _evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>) {
+    fn device_removed(&mut self, device: &mut DrmDevice<SessionFdDrmDevice>) {
         // drop the backends on this side
         self.backends.remove(&device.device_id());
 
@@ -547,13 +533,13 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
         }
     }
 
-    fn error(&mut self, _evlh: &mut EventLoopHandle, error: IoError) {
+    fn error(&mut self, error: IoError) {
         error!(self.logger, "{:?}", error);
     }
 }
 
 pub struct DrmHandlerImpl {
-    compositor_token: CompositorToken<SurfaceData, Roles, Rc<RefCell<Option<EGLDisplay>>>>,
+    compositor_token: CompositorToken<SurfaceData, Roles>,
     backends: Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<DrmBackend<SessionFdDrmDevice>>>>>,
     window_map: Rc<RefCell<MyWindowMap>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
@@ -562,8 +548,11 @@ pub struct DrmHandlerImpl {
 
 impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
     fn ready(
-        &mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<SessionFdDrmDevice>,
-        crtc: crtc::Handle, _frame: u32, _duration: Duration,
+        &mut self,
+        _device: &mut DrmDevice<SessionFdDrmDevice>,
+        crtc: crtc::Handle,
+        _frame: u32,
+        _duration: Duration,
     ) {
         if let Some(drawer) = self.backends.borrow().get(&crtc) {
             {
@@ -616,8 +605,8 @@ impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
 
                                         if let Some(ref texture) = attributes.user_data.texture {
                                             if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                                                x += subdata.x;
-                                                y += subdata.y;
+                                                x += subdata.location.0;
+                                                y += subdata.location.1;
                                             }
                                             info!(self.logger, "Render window");
                                             drawer.render_texture(
@@ -655,9 +644,7 @@ impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
         }
     }
 
-    fn error(
-        &mut self, _evlh: &mut EventLoopHandle, _device: &mut DrmDevice<SessionFdDrmDevice>, error: DrmError
-    ) {
+    fn error(&mut self, _device: &mut DrmDevice<SessionFdDrmDevice>, error: DrmError) {
         error!(self.logger, "{:?}", error);
     }
 }

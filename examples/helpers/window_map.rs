@@ -1,27 +1,29 @@
 use smithay::utils::Rectangle;
 use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, SurfaceAttributes, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
-use smithay::wayland::shell::{ShellSurfaceRole, ToplevelSurface};
+use smithay::wayland::shell::xdg::{ShellSurfaceRole, ToplevelSurface};
 use wayland_server::Resource;
 use wayland_server::protocol::wl_surface;
 
-struct Window<U, R, CID, SD> {
+struct Window<U, R, SD> {
     location: (i32, i32),
     surface: Rectangle,
-    toplevel: ToplevelSurface<U, R, CID, SD>,
+    toplevel: ToplevelSurface<U, R, SD>,
 }
 
-impl<U, R, CID, SD> Window<U, R, CID, SD>
+impl<U, R, SD> Window<U, R, SD>
 where
     U: 'static,
     R: Role<SubsurfaceRole> + Role<ShellSurfaceRole> + 'static,
-    CID: 'static,
     SD: 'static,
 {
     // Find the topmost surface under this point if any and the location of this point in the surface
     fn matching<F>(
-        &self, point: (f64, f64), ctoken: CompositorToken<U, R, CID>, get_size: F
-    ) -> Option<(wl_surface::WlSurface, (f64, f64))>
+        &self,
+        point: (f64, f64),
+        ctoken: CompositorToken<U, R>,
+        get_size: F,
+    ) -> Option<(Resource<wl_surface::WlSurface>, (f64, f64))>
     where
         F: Fn(&SurfaceAttributes<U>) -> Option<(i32, i32)>,
     {
@@ -37,8 +39,8 @@ where
                 |wl_surface, attributes, role, &(mut x, mut y)| {
                     if let Some((w, h)) = get_size(attributes) {
                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                            x += subdata.x;
-                            y += subdata.y;
+                            x += subdata.location.0;
+                            y += subdata.location.1;
                         }
                         let my_rect = Rectangle {
                             x,
@@ -47,9 +49,10 @@ where
                             height: h,
                         };
                         if my_rect.contains((point.0 as i32, point.1 as i32)) {
-                            found = wl_surface
-                                .clone()
-                                .map(|s| (s, (point.0 - my_rect.x as f64, point.1 - my_rect.y as f64)));
+                            found = Some((
+                                wl_surface.clone(),
+                                (point.0 - my_rect.x as f64, point.1 - my_rect.y as f64),
+                            ));
                             TraversalAction::Break
                         } else {
                             TraversalAction::DoChildren((x, y))
@@ -63,7 +66,7 @@ where
         found
     }
 
-    fn self_update<F>(&mut self, ctoken: CompositorToken<U, R, CID>, get_size: F)
+    fn self_update<F>(&mut self, ctoken: CompositorToken<U, R>, get_size: F)
     where
         F: Fn(&SurfaceAttributes<U>) -> Option<(i32, i32)>,
     {
@@ -76,8 +79,8 @@ where
                 |_, attributes, role, &(mut x, mut y)| {
                     if let Some((w, h)) = get_size(attributes) {
                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                            x += subdata.x;
-                            y += subdata.y;
+                            x += subdata.location.0;
+                            y += subdata.location.1;
                         }
                         // update the bounding box
                         if x < min_x {
@@ -108,21 +111,20 @@ where
     }
 }
 
-pub struct WindowMap<U, R, CID, SD, F> {
-    ctoken: CompositorToken<U, R, CID>,
-    windows: Vec<Window<U, R, CID, SD>>,
+pub struct WindowMap<U, R, SD, F> {
+    ctoken: CompositorToken<U, R>,
+    windows: Vec<Window<U, R, SD>>,
     get_size: F,
 }
 
-impl<U, R, CID, SD, F> WindowMap<U, R, CID, SD, F>
+impl<U, R, SD, F> WindowMap<U, R, SD, F>
 where
     F: Fn(&SurfaceAttributes<U>) -> Option<(i32, i32)>,
     U: 'static,
     R: Role<SubsurfaceRole> + Role<ShellSurfaceRole> + 'static,
-    CID: 'static,
     SD: 'static,
 {
-    pub fn new(ctoken: CompositorToken<U, R, CID>, get_size: F) -> WindowMap<U, R, CID, SD, F> {
+    pub fn new(ctoken: CompositorToken<U, R>, get_size: F) -> WindowMap<U, R, SD, F> {
         WindowMap {
             ctoken: ctoken,
             windows: Vec::new(),
@@ -130,7 +132,7 @@ where
         }
     }
 
-    pub fn insert(&mut self, toplevel: ToplevelSurface<U, R, CID, SD>, location: (i32, i32)) {
+    pub fn insert(&mut self, toplevel: ToplevelSurface<U, R, SD>, location: (i32, i32)) {
         let mut window = Window {
             location: location,
             surface: Rectangle {
@@ -145,7 +147,10 @@ where
         self.windows.insert(0, window);
     }
 
-    pub fn get_surface_under(&self, point: (f64, f64)) -> Option<(wl_surface::WlSurface, (f64, f64))> {
+    pub fn get_surface_under(
+        &self,
+        point: (f64, f64),
+    ) -> Option<(Resource<wl_surface::WlSurface>, (f64, f64))> {
         for w in &self.windows {
             if let Some(surface) = w.matching(point, self.ctoken, &self.get_size) {
                 return Some(surface);
@@ -155,8 +160,9 @@ where
     }
 
     pub fn get_surface_and_bring_to_top(
-        &mut self, point: (f64, f64)
-    ) -> Option<(wl_surface::WlSurface, (f64, f64))> {
+        &mut self,
+        point: (f64, f64),
+    ) -> Option<(Resource<wl_surface::WlSurface>, (f64, f64))> {
         let mut found = None;
         for (i, w) in self.windows.iter().enumerate() {
             if let Some(surface) = w.matching(point, self.ctoken, &self.get_size) {
@@ -175,7 +181,7 @@ where
 
     pub fn with_windows_from_bottom_to_top<Func>(&self, mut f: Func)
     where
-        Func: FnMut(&ToplevelSurface<U, R, CID, SD>, (i32, i32)),
+        Func: FnMut(&ToplevelSurface<U, R, SD>, (i32, i32)),
     {
         for w in self.windows.iter().rev() {
             f(&w.toplevel, w.location)
