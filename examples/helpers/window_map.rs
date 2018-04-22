@@ -1,7 +1,7 @@
 use smithay::utils::Rectangle;
 use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, SurfaceAttributes, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
-use smithay::wayland::shell::xdg::{ShellSurfaceRole, ToplevelSurface};
+use smithay::wayland::shell::xdg::{ToplevelSurface, XdgSurfaceRole};
 use wayland_server::Resource;
 use wayland_server::protocol::wl_surface;
 
@@ -14,7 +14,7 @@ struct Window<U, R, SD> {
 impl<U, R, SD> Window<U, R, SD>
 where
     U: 'static,
-    R: Role<SubsurfaceRole> + Role<ShellSurfaceRole> + 'static,
+    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     // Find the topmost surface under this point if any and the location of this point in the surface
@@ -121,7 +121,7 @@ impl<U, R, SD, F> WindowMap<U, R, SD, F>
 where
     F: Fn(&SurfaceAttributes<U>) -> Option<(i32, i32)>,
     U: 'static,
-    R: Role<SubsurfaceRole> + Role<ShellSurfaceRole> + 'static,
+    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     pub fn new(ctoken: CompositorToken<U, R>, get_size: F) -> WindowMap<U, R, SD, F> {

@@ -1,6 +1,6 @@
 use super::{make_shell_client_data, PopupConfigure, PopupKind, PopupState, PositionerState, ShellClient,
-            ShellClientData, ShellEvent, ShellImplementation, ShellSurfacePendingState, ShellSurfaceRole,
-            ToplevelConfigure, ToplevelKind, ToplevelState};
+            ShellClientData, ShellImplementation, ToplevelConfigure, ToplevelKind, ToplevelState,
+            XdgRequest, XdgSurfacePendingState, XdgSurfaceRole};
 use std::sync::Mutex;
 use utils::Rectangle;
 use wayland::compositor::CompositorToken;
@@ -16,7 +16,7 @@ pub(crate) fn implement_wm_base<U, R, SD>(
 ) -> Resource<xdg_wm_base::XdgWmBase>
 where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: Default + 'static,
 {
     let shell = shell.implement_nonsend(
@@ -27,7 +27,7 @@ where
     shell.set_user_data(Box::into_raw(Box::new(Mutex::new(make_shell_client_data::<SD>()))) as *mut _);
     let mut user_impl = implem.user_impl.borrow_mut();
     user_impl.receive(
-        ShellEvent::NewClient {
+        XdgRequest::NewClient {
             client: make_shell_client(&shell),
         },
         (),
@@ -60,7 +60,7 @@ impl<U, R, SD> Implementation<Resource<xdg_wm_base::XdgWmBase>, xdg_wm_base::Req
     for ShellImplementation<U, R, SD>
 where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     fn receive(&mut self, request: xdg_wm_base::Request, shell: Resource<xdg_wm_base::XdgWmBase>) {
@@ -72,8 +72,8 @@ where
                 implement_positioner(id, &self.loop_token);
             }
             xdg_wm_base::Request::GetXdgSurface { id, surface } => {
-                let role_data = ShellSurfaceRole {
-                    pending_state: ShellSurfacePendingState::None,
+                let role_data = XdgSurfaceRole {
+                    pending_state: XdgSurfacePendingState::None,
                     window_geometry: None,
                     pending_configures: Vec::new(),
                     configured: false,
@@ -110,7 +110,7 @@ where
                 if valid {
                     let mut user_impl = self.user_impl.borrow_mut();
                     user_impl.receive(
-                        ShellEvent::ClientPong {
+                        XdgRequest::ClientPong {
                             client: make_shell_client(&shell),
                         },
                         (),
@@ -216,7 +216,7 @@ fn destroy_surface<U, R, SD>(
     implem: Box<Implementation<Resource<xdg_surface::XdgSurface>, xdg_surface::Request>>,
 ) where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     let implem: ShellImplementation<U, R, SD> = *downcast_impl(implem).unwrap_or_else(|_| unreachable!());
@@ -232,8 +232,8 @@ fn destroy_surface<U, R, SD>(
     }
     implem
         .compositor_token
-        .with_role_data::<ShellSurfaceRole, _, _>(&data.0, |rdata| {
-            if let ShellSurfacePendingState::None = rdata.pending_state {
+        .with_role_data::<XdgSurfaceRole, _, _>(&data.0, |rdata| {
+            if let XdgSurfacePendingState::None = rdata.pending_state {
                 // all is good
             } else {
                 data.1.post_error(
@@ -249,7 +249,7 @@ impl<U, R, SD> Implementation<Resource<xdg_surface::XdgSurface>, xdg_surface::Re
     for ShellImplementation<U, R, SD>
 where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     fn receive(&mut self, request: xdg_surface::Request, xdg_surface: Resource<xdg_surface::XdgSurface>) {
@@ -261,8 +261,8 @@ where
             }
             xdg_surface::Request::GetToplevel { id } => {
                 self.compositor_token
-                    .with_role_data::<ShellSurfaceRole, _, _>(surface, |data| {
-                        data.pending_state = ShellSurfacePendingState::Toplevel(ToplevelState {
+                    .with_role_data::<XdgSurfaceRole, _, _>(surface, |data| {
+                        data.pending_state = XdgSurfacePendingState::Toplevel(ToplevelState {
                             parent: None,
                             title: String::new(),
                             app_id: String::new(),
@@ -290,7 +290,7 @@ where
 
                 let handle = make_toplevel_handle(self.compositor_token, &toplevel);
                 let mut user_impl = self.user_impl.borrow_mut();
-                user_impl.receive(ShellEvent::NewToplevel { surface: handle }, ());
+                user_impl.receive(XdgRequest::NewToplevel { surface: handle }, ());
             }
             xdg_surface::Request::GetPopup {
                 id,
@@ -305,8 +305,8 @@ where
                     parent_surface.clone()
                 });
                 self.compositor_token
-                    .with_role_data::<ShellSurfaceRole, _, _>(surface, |data| {
-                        data.pending_state = ShellSurfacePendingState::Popup(PopupState {
+                    .with_role_data::<XdgSurfaceRole, _, _>(surface, |data| {
+                        data.pending_state = XdgSurfacePendingState::Popup(PopupState {
                             parent: parent_surface,
                             positioner: positioner_data.clone(),
                         });
@@ -331,7 +331,7 @@ where
 
                 let handle = make_popup_handle(self.compositor_token, &popup);
                 let mut user_impl = self.user_impl.borrow_mut();
-                user_impl.receive(ShellEvent::NewPopup { surface: handle }, ());
+                user_impl.receive(XdgRequest::NewPopup { surface: handle }, ());
             }
             xdg_surface::Request::SetWindowGeometry {
                 x,
@@ -340,7 +340,7 @@ where
                 height,
             } => {
                 self.compositor_token
-                    .with_role_data::<ShellSurfaceRole, _, _>(surface, |data| {
+                    .with_role_data::<XdgSurfaceRole, _, _>(surface, |data| {
                         data.window_geometry = Some(Rectangle {
                             x,
                             y,
@@ -352,7 +352,7 @@ where
             }
             xdg_surface::Request::AckConfigure { serial } => {
                 self.compositor_token
-                    .with_role_data::<ShellSurfaceRole, _, _>(surface, |data| {
+                    .with_role_data::<XdgSurfaceRole, _, _>(surface, |data| {
                         let mut found = false;
                         data.pending_configures.retain(|&s| {
                             if s == serial {
@@ -392,7 +392,7 @@ fn with_surface_toplevel_data<U, R, SD, F>(
     f: F,
 ) where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
     F: FnOnce(&mut ToplevelState),
 {
@@ -400,8 +400,8 @@ fn with_surface_toplevel_data<U, R, SD, F>(
     let &(ref surface, _, _) = unsafe { &*(ptr as *mut ShellSurfaceUserData) };
     implem
         .compositor_token
-        .with_role_data::<ShellSurfaceRole, _, _>(surface, |data| match data.pending_state {
-            ShellSurfacePendingState::Toplevel(ref mut toplevel_data) => f(toplevel_data),
+        .with_role_data::<XdgSurfaceRole, _, _>(surface, |data| match data.pending_state {
+            XdgSurfacePendingState::Toplevel(ref mut toplevel_data) => f(toplevel_data),
             _ => unreachable!(),
         })
         .expect("xdg_toplevel exists but surface has not shell_surface role?!");
@@ -413,7 +413,7 @@ pub fn send_toplevel_configure<U, R>(
     configure: ToplevelConfigure,
 ) where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
 {
     let &(ref surface, _, ref shell_surface) =
         unsafe { &*(resource.get_user_data() as *mut ShellSurfaceUserData) };
@@ -436,7 +436,7 @@ pub fn send_toplevel_configure<U, R>(
     shell_surface.send(xdg_surface::Event::Configure { serial });
     // Add the configure as pending
     token
-        .with_role_data::<ShellSurfaceRole, _, _>(surface, |data| data.pending_configures.push(serial))
+        .with_role_data::<XdgSurfaceRole, _, _>(surface, |data| data.pending_configures.push(serial))
         .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
@@ -458,7 +458,7 @@ impl<U, R, SD> Implementation<Resource<xdg_toplevel::XdgToplevel>, xdg_toplevel:
     for ShellImplementation<U, R, SD>
 where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     fn receive(&mut self, request: xdg_toplevel::Request, toplevel: Resource<xdg_toplevel::XdgToplevel>) {
@@ -490,7 +490,7 @@ where
                 let handle = make_toplevel_handle(self.compositor_token, &toplevel);
                 let mut user_impl = self.user_impl.borrow_mut();
                 user_impl.receive(
-                    ShellEvent::ShowWindowMenu {
+                    XdgRequest::ShowWindowMenu {
                         surface: handle,
                         seat,
                         serial,
@@ -503,7 +503,7 @@ where
                 let handle = make_toplevel_handle(self.compositor_token, &toplevel);
                 let mut user_impl = self.user_impl.borrow_mut();
                 user_impl.receive(
-                    ShellEvent::Move {
+                    XdgRequest::Move {
                         surface: handle,
                         seat,
                         serial,
@@ -521,7 +521,7 @@ where
                 let handle = make_toplevel_handle(self.compositor_token, &toplevel);
                 let mut user_impl = self.user_impl.borrow_mut();
                 user_impl.receive(
-                    ShellEvent::Resize {
+                    XdgRequest::Resize {
                         surface: handle,
                         seat,
                         serial,
@@ -543,18 +543,18 @@ where
             xdg_toplevel::Request::SetMaximized => {
                 let handle = make_toplevel_handle(self.compositor_token, &toplevel);
                 let mut user_impl = self.user_impl.borrow_mut();
-                user_impl.receive(ShellEvent::Maximize { surface: handle }, ());
+                user_impl.receive(XdgRequest::Maximize { surface: handle }, ());
             }
             xdg_toplevel::Request::UnsetMaximized => {
                 let handle = make_toplevel_handle(self.compositor_token, &toplevel);
                 let mut user_impl = self.user_impl.borrow_mut();
-                user_impl.receive(ShellEvent::UnMaximize { surface: handle }, ());
+                user_impl.receive(XdgRequest::UnMaximize { surface: handle }, ());
             }
             xdg_toplevel::Request::SetFullscreen { output } => {
                 let handle = make_toplevel_handle(self.compositor_token, &toplevel);
                 let mut user_impl = self.user_impl.borrow_mut();
                 user_impl.receive(
-                    ShellEvent::Fullscreen {
+                    XdgRequest::Fullscreen {
                         surface: handle,
                         output,
                     },
@@ -564,12 +564,12 @@ where
             xdg_toplevel::Request::UnsetFullscreen => {
                 let handle = make_toplevel_handle(self.compositor_token, &toplevel);
                 let mut user_impl = self.user_impl.borrow_mut();
-                user_impl.receive(ShellEvent::UnFullscreen { surface: handle }, ());
+                user_impl.receive(XdgRequest::UnFullscreen { surface: handle }, ());
             }
             xdg_toplevel::Request::SetMinimized => {
                 let handle = make_toplevel_handle(self.compositor_token, &toplevel);
                 let mut user_impl = self.user_impl.borrow_mut();
-                user_impl.receive(ShellEvent::Minimize { surface: handle }, ());
+                user_impl.receive(XdgRequest::Minimize { surface: handle }, ());
             }
         }
     }
@@ -580,7 +580,7 @@ fn destroy_toplevel<U, R, SD>(
     implem: Box<Implementation<Resource<xdg_toplevel::XdgToplevel>, xdg_toplevel::Request>>,
 ) where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     let implem: ShellImplementation<U, R, SD> = *downcast_impl(implem).unwrap_or_else(|_| unreachable!());
@@ -596,8 +596,8 @@ fn destroy_toplevel<U, R, SD>(
     } else {
         implem
             .compositor_token
-            .with_role_data::<ShellSurfaceRole, _, _>(&data.0, |data| {
-                data.pending_state = ShellSurfacePendingState::None;
+            .with_role_data::<XdgSurfaceRole, _, _>(&data.0, |data| {
+                data.pending_state = XdgSurfacePendingState::None;
                 data.configured = false;
             })
             .expect("xdg_toplevel exists but surface has not shell_surface role?!");
@@ -621,7 +621,7 @@ pub(crate) fn send_popup_configure<U, R>(
     configure: PopupConfigure,
 ) where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
 {
     let &(ref surface, _, ref shell_surface) =
         unsafe { &*(resource.get_user_data() as *mut ShellSurfaceUserData) };
@@ -637,7 +637,7 @@ pub(crate) fn send_popup_configure<U, R>(
     shell_surface.send(xdg_surface::Event::Configure { serial });
     // Add the configure as pending
     token
-        .with_role_data::<ShellSurfaceRole, _, _>(surface, |data| data.pending_configures.push(serial))
+        .with_role_data::<XdgSurfaceRole, _, _>(surface, |data| data.pending_configures.push(serial))
         .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
@@ -659,7 +659,7 @@ impl<U, R, SD> Implementation<Resource<xdg_popup::XdgPopup>, xdg_popup::Request>
     for ShellImplementation<U, R, SD>
 where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     fn receive(&mut self, request: xdg_popup::Request, popup: Resource<xdg_popup::XdgPopup>) {
@@ -671,7 +671,7 @@ where
                 let handle = make_popup_handle(self.compositor_token, &popup);
                 let mut user_impl = self.user_impl.borrow_mut();
                 user_impl.receive(
-                    ShellEvent::Grab {
+                    XdgRequest::Grab {
                         surface: handle,
                         seat,
                         serial,
@@ -688,7 +688,7 @@ fn destroy_popup<U, R, SD>(
     implem: Box<Implementation<Resource<xdg_popup::XdgPopup>, xdg_popup::Request>>,
 ) where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     let implem: ShellImplementation<U, R, SD> = *downcast_impl(implem).unwrap_or_else(|_| unreachable!());
@@ -704,8 +704,8 @@ fn destroy_popup<U, R, SD>(
     } else {
         implem
             .compositor_token
-            .with_role_data::<ShellSurfaceRole, _, _>(&data.0, |data| {
-                data.pending_state = ShellSurfacePendingState::None;
+            .with_role_data::<XdgSurfaceRole, _, _>(&data.0, |data| {
+                data.pending_state = XdgSurfacePendingState::None;
                 data.configured = false;
             })
             .expect("xdg_popup exists but surface has not shell_surface role?!");

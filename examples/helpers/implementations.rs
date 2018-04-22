@@ -4,8 +4,8 @@ use rand;
 use smithay::backend::graphics::egl::wayland::{BufferAccessError, Format};
 use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLImages};
 use smithay::wayland::compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent};
-use smithay::wayland::shell::xdg::{xdg_shell_init, PopupConfigure, ShellEvent, ShellState, ShellSurfaceRole,
-                                   ToplevelConfigure};
+use smithay::wayland::shell::xdg::{xdg_shell_init, PopupConfigure, ShellState, ToplevelConfigure,
+                                   XdgRequest, XdgSurfaceRole};
 use smithay::wayland::shm::with_buffer_contents as shm_buffer_contents;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use wayland_server::{Display, LoopToken, Resource};
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_surface};
 
-define_roles!(Roles => [ ShellSurface, ShellSurfaceRole ] );
+define_roles!(Roles => [ ShellSurface, XdgSurfaceRole ] );
 
 #[derive(Default)]
 pub struct SurfaceData {
@@ -137,7 +137,7 @@ pub fn init_shell(
         looptoken,
         compositor_token.clone(),
         move |shell_event, ()| match shell_event {
-            ShellEvent::NewToplevel { surface } => {
+            XdgRequest::NewToplevel { surface } => {
                 // place the window at a random location in the [0;300]x[0;300] square
                 use rand::distributions::{IndependentSample, Range};
                 let range = Range::new(0, 300);
@@ -151,7 +151,7 @@ pub fn init_shell(
                 });
                 shell_window_map.borrow_mut().insert(surface, (x, y));
             }
-            ShellEvent::NewPopup { surface } => surface.send_configure(PopupConfigure {
+            XdgRequest::NewPopup { surface } => surface.send_configure(PopupConfigure {
                 size: (10, 10),
                 position: (10, 10),
                 serial: 42,

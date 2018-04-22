@@ -32,15 +32,15 @@
 //! #
 //! use smithay::wayland::compositor::roles::*;
 //! use smithay::wayland::compositor::CompositorToken;
-//! use smithay::wayland::shell::xdg::{xdg_shell_init, ShellSurfaceRole, ShellEvent};
+//! use smithay::wayland::shell::xdg::{xdg_shell_init, XdgSurfaceRole, XdgRequest};
 //! use wayland_protocols::unstable::xdg_shell::v6::server::zxdg_shell_v6::ZxdgShellV6;
 //! use wayland_server::{EventLoop, LoopToken};
 //! # use wayland_server::protocol::{wl_seat, wl_output};
 //! # #[derive(Default)] struct MySurfaceData;
 //!
-//! // define the roles type. You need to integrate the ShellSurface role:
+//! // define the roles type. You need to integrate the XdgSurface role:
 //! define_roles!(MyRoles =>
-//!     [ShellSurface, ShellSurfaceRole]
+//!     [XdgSurface, XdgSurfaceRole]
 //! );
 //!
 //! // define the metadata you want associated with the shell clients
@@ -63,8 +63,8 @@
 //!     // token from the compositor implementation
 //!     compositor_token,
 //!     // your implementation, can also be a strucy implementing the
-//!     // appropriate Implementation<(), ShellEvent<_, _, _>> trait
-//!     |event: ShellEvent<_, _, MyShellData>, ()| { /* ... */ },
+//!     // appropriate Implementation<(), XdgRequest<_, _, _>> trait
+//!     |event: XdgRequest<_, _, MyShellData>, ()| { /* ... */ },
 //!     None  // put a logger if you want
 //! );
 //!
@@ -106,13 +106,13 @@ mod xdg_handlers;
 // compatibility handlers for the zxdg_shell_v6 protocol, its earlier version
 mod zxdgv6_handlers;
 
-/// Metadata associated with the `shell_surface` role
-pub struct ShellSurfaceRole {
+/// Metadata associated with the `xdg_surface` role
+pub struct XdgSurfaceRole {
     /// Pending state as requested by the client
     ///
     /// The data in this field are double-buffered, you should
     /// apply them on a surface commit.
-    pub pending_state: ShellSurfacePendingState,
+    pub pending_state: XdgSurfacePendingState,
     /// Geometry of the surface
     ///
     /// Defines, in surface relative coordinates, what should
@@ -175,7 +175,7 @@ impl PositionerState {
 }
 
 /// Contents of the pending state of a shell surface, depending on its role
-pub enum ShellSurfacePendingState {
+pub enum XdgSurfacePendingState {
     /// This a regular, toplevel surface
     ///
     /// This corresponds to the `xdg_toplevel` role
@@ -248,9 +248,9 @@ impl Clone for PopupState {
     }
 }
 
-impl Default for ShellSurfacePendingState {
-    fn default() -> ShellSurfacePendingState {
-        ShellSurfacePendingState::None
+impl Default for XdgSurfacePendingState {
+    fn default() -> XdgSurfacePendingState {
+        XdgSurfacePendingState::None
     }
 }
 
@@ -258,7 +258,7 @@ pub(crate) struct ShellImplementation<U, R, SD> {
     log: ::slog::Logger,
     compositor_token: CompositorToken<U, R>,
     loop_token: LoopToken,
-    user_impl: Rc<RefCell<Implementation<(), ShellEvent<U, R, SD>>>>,
+    user_impl: Rc<RefCell<Implementation<(), XdgRequest<U, R, SD>>>>,
     shell_state: Arc<Mutex<ShellState<U, R, SD>>>,
 }
 
@@ -288,10 +288,10 @@ pub fn xdg_shell_init<U, R, SD, L, Impl>(
 )
 where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: Default + 'static,
     L: Into<Option<::slog::Logger>>,
-    Impl: Implementation<(), ShellEvent<U, R, SD>>,
+    Impl: Implementation<(), XdgRequest<U, R, SD>>,
 {
     let log = ::slog_or_stdlog(logger);
     let shell_state = Arc::new(Mutex::new(ShellState {
@@ -300,7 +300,7 @@ where
     }));
 
     let shell_impl = ShellImplementation {
-        log: log.new(o!("smithay_module" => "shell_handler")),
+        log: log.new(o!("smithay_module" => "xdg_shell_handler")),
         loop_token: ltoken.clone(),
         compositor_token: ctoken,
         user_impl: Rc::new(RefCell::new(implementation)),
@@ -332,15 +332,9 @@ pub struct ShellState<U, R, SD> {
 impl<U, R, SD> ShellState<U, R, SD>
 where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
-    /// Cleans the internal surface storage by removing all dead surfaces
-    pub fn cleanup_surfaces(&mut self) {
-        self.known_toplevels.retain(|s| s.alive());
-        self.known_popups.retain(|s| s.alive());
-    }
-
     /// Access all the shell surfaces known by this handler
     pub fn toplevel_surfaces(&self) -> &[ToplevelSurface<U, R, SD>] {
         &self.known_toplevels[..]
@@ -409,7 +403,7 @@ impl<SD> ShellClient<SD> {
 
     /// Send a ping request to this shell client
     ///
-    /// You'll receive the reply in the `Handler::cient_pong()` method.
+    /// You'll receive the reply as a `XdgRequest::ClientPong` request.
     ///
     /// A typical use is to start a timer at the same time you send this ping
     /// request, and cancel it when you receive the pong. If the timer runs
@@ -486,7 +480,7 @@ pub struct ToplevelSurface<U, R, SD> {
 impl<U, R, SD> ToplevelSurface<U, R, SD>
 where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     /// Is the toplevel surface refered by this handle still alive?
@@ -556,7 +550,7 @@ where
             return false;
         }
         let configured = self.token
-            .with_role_data::<ShellSurfaceRole, _, _>(&self.wl_surface, |data| data.configured)
+            .with_role_data::<XdgSurfaceRole, _, _>(&self.wl_surface, |data| data.configured)
             .expect("A shell surface object exists but the surface does not have the shell_surface role ?!");
         if !configured {
             match self.shell_surface {
@@ -610,8 +604,8 @@ where
             return None;
         }
         self.token
-            .with_role_data::<ShellSurfaceRole, _, _>(&self.wl_surface, |data| match data.pending_state {
-                ShellSurfacePendingState::Toplevel(ref state) => Some(state.clone()),
+            .with_role_data::<XdgSurfaceRole, _, _>(&self.wl_surface, |data| match data.pending_state {
+                XdgSurfacePendingState::Toplevel(ref state) => Some(state.clone()),
                 _ => None,
             })
             .ok()
@@ -638,7 +632,7 @@ pub struct PopupSurface<U, R, SD> {
 impl<U, R, SD> PopupSurface<U, R, SD>
 where
     U: 'static,
-    R: Role<ShellSurfaceRole> + 'static,
+    R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     /// Is the popup surface refered by this handle still alive?
@@ -712,7 +706,7 @@ where
             return false;
         }
         let configured = self.token
-            .with_role_data::<ShellSurfaceRole, _, _>(&self.wl_surface, |data| data.configured)
+            .with_role_data::<XdgSurfaceRole, _, _>(&self.wl_surface, |data| data.configured)
             .expect("A shell surface object exists but the surface does not have the shell_surface role ?!");
         if !configured {
             match self.shell_surface {
@@ -769,8 +763,8 @@ where
             return None;
         }
         self.token
-            .with_role_data::<ShellSurfaceRole, _, _>(&self.wl_surface, |data| match data.pending_state {
-                ShellSurfacePendingState::Popup(ref state) => Some(state.clone()),
+            .with_role_data::<XdgSurfaceRole, _, _>(&self.wl_surface, |data| match data.pending_state {
+                XdgSurfacePendingState::Popup(ref state) => Some(state.clone()),
                 _ => None,
             })
             .ok()
@@ -816,7 +810,7 @@ pub struct PopupConfigure {
 /// for you directly.
 ///
 /// Depending on what you want to do, you might ignore some of them
-pub enum ShellEvent<U, R, SD> {
+pub enum XdgRequest<U, R, SD> {
     /// A new shell client was instanciated
     NewClient {
         /// the client
