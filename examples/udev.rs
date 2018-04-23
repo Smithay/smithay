@@ -286,7 +286,7 @@ fn main() {
         log.clone(),
     );
 
-    let (compositor_token, _shell_state_token, window_map) = init_shell(
+    let (compositor_token, _, _, window_map) = init_shell(
         &mut display.borrow_mut(),
         event_loop.token(),
         log.clone(),

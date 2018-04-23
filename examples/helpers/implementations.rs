@@ -1,19 +1,21 @@
-use super::WindowMap;
+use super::{SurfaceKind, WindowMap};
 use glium::texture::Texture2d;
 use rand;
 use smithay::backend::graphics::egl::wayland::{BufferAccessError, Format};
 use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLImages};
 use smithay::wayland::compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent};
-use smithay::wayland::shell::xdg::{xdg_shell_init, PopupConfigure, ShellState, ToplevelConfigure,
-                                   XdgRequest, XdgSurfaceRole};
+use smithay::wayland::shell::xdg::{xdg_shell_init, PopupConfigure, ShellState as XdgShellState,
+                                   ToplevelConfigure, XdgRequest, XdgSurfaceRole};
+use smithay::wayland::shell::legacy::{wl_shell_init, ShellRequest, ShellState as WlShellState,
+                                      ShellSurfaceKind, ShellSurfaceRole};
 use smithay::wayland::shm::with_buffer_contents as shm_buffer_contents;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use wayland_server::{Display, LoopToken, Resource};
-use wayland_server::protocol::{wl_buffer, wl_callback, wl_surface};
+use wayland_server::protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface};
 
-define_roles!(Roles => [ ShellSurface, XdgSurfaceRole ] );
+define_roles!(Roles => [ XdgSurface, XdgSurfaceRole ] [ ShellSurface, ShellSurfaceRole<()>] );
 
 #[derive(Default)]
 pub struct SurfaceData {
@@ -97,7 +99,7 @@ fn get_size(attrs: &SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)> {
 }
 
 pub type MyWindowMap =
-    WindowMap<SurfaceData, Roles, (), fn(&SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)>>;
+    WindowMap<SurfaceData, Roles, (), (), fn(&SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)>>;
 
 pub fn init_shell(
     display: &mut Display,
@@ -106,7 +108,8 @@ pub fn init_shell(
     egl_display: Rc<RefCell<Option<EGLDisplay>>>,
 ) -> (
     CompositorToken<SurfaceData, Roles>,
-    Arc<Mutex<ShellState<SurfaceData, Roles, ()>>>,
+    Arc<Mutex<XdgShellState<SurfaceData, Roles, ()>>>,
+    Arc<Mutex<WlShellState<SurfaceData, Roles, ()>>>,
     Rc<RefCell<MyWindowMap>>,
 ) {
     // Create the compositor
@@ -125,16 +128,16 @@ pub fn init_shell(
     );
 
     // Init a window map, to track the location of our windows
-    let window_map = Rc::new(RefCell::new(WindowMap::<_, _, (), _>::new(
+    let window_map = Rc::new(RefCell::new(WindowMap::<_, _, (), (), _>::new(
         compositor_token,
         get_size as _,
     )));
 
     // init the xdg_shell
-    let shell_window_map = window_map.clone();
-    let (shell_state, _, _) = xdg_shell_init(
+    let xdg_window_map = window_map.clone();
+    let (xdg_shell_state, _, _) = xdg_shell_init(
         display,
-        looptoken,
+        looptoken.clone(),
         compositor_token.clone(),
         move |shell_event, ()| match shell_event {
             XdgRequest::NewToplevel { surface } => {
@@ -149,7 +152,9 @@ pub fn init_shell(
                     states: vec![],
                     serial: 42,
                 });
-                shell_window_map.borrow_mut().insert(surface, (x, y));
+                xdg_window_map
+                    .borrow_mut()
+                    .insert(SurfaceKind::Xdg(surface), (x, y));
             }
             XdgRequest::NewPopup { surface } => surface.send_configure(PopupConfigure {
                 size: (10, 10),
@@ -161,5 +166,37 @@ pub fn init_shell(
         log.clone(),
     );
 
-    (compositor_token, shell_state, window_map)
+    // init the wl_shell
+    let shell_window_map = window_map.clone();
+    let (wl_shell_state, _) = wl_shell_init(
+        display,
+        looptoken,
+        compositor_token.clone(),
+        move |req: ShellRequest<_, _, ()>, ()| match req {
+            ShellRequest::SetKind {
+                surface,
+                kind: ShellSurfaceKind::Toplevel,
+            } => {
+                // place the window at a random location in the [0;300]x[0;300] square
+                use rand::distributions::{IndependentSample, Range};
+                let range = Range::new(0, 300);
+                let mut rng = rand::thread_rng();
+                let x = range.ind_sample(&mut rng);
+                let y = range.ind_sample(&mut rng);
+                surface.send_configure((0, 0), wl_shell_surface::Resize::None);
+                shell_window_map
+                    .borrow_mut()
+                    .insert(SurfaceKind::Wl(surface), (x, y));
+            }
+            _ => (),
+        },
+        log.clone(),
+    );
+
+    (
+        compositor_token,
+        xdg_shell_state,
+        wl_shell_state,
+        window_map,
+    )
 }

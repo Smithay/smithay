@@ -2,20 +2,48 @@ use smithay::utils::Rectangle;
 use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, SurfaceAttributes, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgSurfaceRole};
+use smithay::wayland::shell::legacy::{ShellSurface, ShellSurfaceRole};
 use wayland_server::Resource;
 use wayland_server::protocol::wl_surface;
 
-struct Window<U, R, SD> {
-    location: (i32, i32),
-    surface: Rectangle,
-    toplevel: ToplevelSurface<U, R, SD>,
+pub enum Kind<U, R, SD, D> {
+    Xdg(ToplevelSurface<U, R, SD>),
+    Wl(ShellSurface<U, R, D>),
 }
 
-impl<U, R, SD> Window<U, R, SD>
+impl<U, R, SD, D> Kind<U, R, SD, D>
 where
     U: 'static,
-    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + 'static,
+    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole<D>> + 'static,
     SD: 'static,
+    D: 'static,
+{
+    pub fn alive(&self) -> bool {
+        match *self {
+            Kind::Xdg(ref t) => t.alive(),
+            Kind::Wl(ref t) => t.alive(),
+        }
+    }
+    pub fn get_surface(&self) -> Option<&Resource<wl_surface::WlSurface>> {
+        match *self {
+            Kind::Xdg(ref t) => t.get_surface(),
+            Kind::Wl(ref t) => t.get_surface(),
+        }
+    }
+}
+
+struct Window<U, R, SD, D> {
+    location: (i32, i32),
+    surface: Rectangle,
+    toplevel: Kind<U, R, SD, D>,
+}
+
+impl<U, R, SD, D> Window<U, R, SD, D>
+where
+    U: 'static,
+    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole<D>> + 'static,
+    SD: 'static,
+    D: 'static,
 {
     // Find the topmost surface under this point if any and the location of this point in the surface
     fn matching<F>(
@@ -111,20 +139,21 @@ where
     }
 }
 
-pub struct WindowMap<U, R, SD, F> {
+pub struct WindowMap<U, R, SD, D, F> {
     ctoken: CompositorToken<U, R>,
-    windows: Vec<Window<U, R, SD>>,
+    windows: Vec<Window<U, R, SD, D>>,
     get_size: F,
 }
 
-impl<U, R, SD, F> WindowMap<U, R, SD, F>
+impl<U, R, SD, D, F> WindowMap<U, R, SD, D, F>
 where
     F: Fn(&SurfaceAttributes<U>) -> Option<(i32, i32)>,
     U: 'static,
-    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + 'static,
+    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole<D>> + 'static,
     SD: 'static,
+    D: 'static,
 {
-    pub fn new(ctoken: CompositorToken<U, R>, get_size: F) -> WindowMap<U, R, SD, F> {
+    pub fn new(ctoken: CompositorToken<U, R>, get_size: F) -> WindowMap<U, R, D, SD, F> {
         WindowMap {
             ctoken: ctoken,
             windows: Vec::new(),
@@ -132,7 +161,7 @@ where
         }
     }
 
-    pub fn insert(&mut self, toplevel: ToplevelSurface<U, R, SD>, location: (i32, i32)) {
+    pub fn insert(&mut self, toplevel: Kind<U, R, SD, D>, location: (i32, i32)) {
         let mut window = Window {
             location: location,
             surface: Rectangle {
@@ -181,7 +210,7 @@ where
 
     pub fn with_windows_from_bottom_to_top<Func>(&self, mut f: Func)
     where
-        Func: FnMut(&ToplevelSurface<U, R, SD>, (i32, i32)),
+        Func: FnMut(&Kind<U, R, SD, D>, (i32, i32)),
     {
         for w in self.windows.iter().rev() {
             f(&w.toplevel, w.location)

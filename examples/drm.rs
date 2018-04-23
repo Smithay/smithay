@@ -125,7 +125,7 @@ fn main() {
 
     init_shm_global(&mut display, event_loop.token(), vec![], log.clone());
 
-    let (compositor_token, _shell_state_token, window_map) =
+    let (compositor_token, _, _, window_map) =
         init_shell(&mut display, event_loop.token(), log.clone(), egl_display);
 
     /*

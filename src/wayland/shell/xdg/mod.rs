@@ -21,9 +21,9 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this handler, simple use the `shell_init` function provided in this
+//! To initialize this handler, simple use the `xdg_shell_init` function provided in this
 //! module. You will need to provide it the `CompositorToken` you retrieved from an
-//! instanciation of the `CompositorHandler` provided by smithay.
+//! instanciation of the compositor global provided by smithay.
 //!
 //! ```no_run
 //! # extern crate wayland_server;
