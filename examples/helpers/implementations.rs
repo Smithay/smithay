@@ -119,10 +119,9 @@ pub fn init_shell(
         looptoken.clone(),
         move |request, (surface, ctoken)| match request {
             SurfaceEvent::Commit => surface_commit(&surface, ctoken, &*c_egl_display),
-            SurfaceEvent::Frame { callback } => {
-                // TODO: uncomment when https://github.com/rust-lang/rust/issues/50153 is fixed
-                // callback.implement(|e, _| match e {}, None::<fn(_,_)>).send(wl_callback::Event::Done { callback_data: 0})
-            }
+            SurfaceEvent::Frame { callback } => callback
+                .implement(|e, _| match e {}, None::<fn(_, _)>)
+                .send(wl_callback::Event::Done { callback_data: 0 }),
         },
         log.clone(),
     );
