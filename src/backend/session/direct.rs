@@ -59,8 +59,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "backend_session_udev")]
 use udev::Context;
-use wayland_server::EventLoopHandle;
-use wayland_server::sources::SignalEventSource;
+use wayland_server::LoopToken;
+use wayland_server::commons::Implementation;
+use wayland_server::sources::{SignalEvent, Source};
 
 #[allow(dead_code)]
 mod tty {
@@ -171,8 +172,11 @@ impl DirectSession {
             .new(o!("smithay_module" => "backend_session", "session_type" => "direct/vt"));
 
         let fd = tty.map(|path| {
-            open(path, fcntl::O_RDWR | fcntl::O_CLOEXEC, Mode::empty())
-                .chain_err(|| ErrorKind::FailedToOpenTTY(String::from(path.to_string_lossy())))
+            open(
+                path,
+                fcntl::OFlag::O_RDWR | fcntl::OFlag::O_CLOEXEC,
+                Mode::empty(),
+            ).chain_err(|| ErrorKind::FailedToOpenTTY(String::from(path.to_string_lossy())))
         }).unwrap_or(dup(0 /*stdin*/).chain_err(|| ErrorKind::FailedToOpenTTY(String::from("<stdin>"))))?;
 
         let active = Arc::new(AtomicBool::new(true));
@@ -345,7 +349,8 @@ impl SessionNotifier for DirectSessionNotifier {
     type Id = Id;
 
     fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(
-        &mut self, signal: &mut A
+        &mut self,
+        signal: &mut A,
     ) -> Self::Id {
         self.signals.push(Some(Box::new(signal.observer())));
         Id(self.signals.len() - 1)
@@ -362,47 +367,48 @@ impl SessionNotifier for DirectSessionNotifier {
     }
 }
 
+impl Implementation<(), SignalEvent> for DirectSessionNotifier {
+    fn receive(&mut self, _signal: SignalEvent, (): ()) {
+        if self.is_active() {
+            info!(self.logger, "Session shall become inactive.");
+            for signal in &mut self.signals {
+                if let &mut Some(ref mut signal) = signal {
+                    signal.pause(None);
+                }
+            }
+            self.active.store(false, Ordering::SeqCst);
+            unsafe {
+                tty::vt_rel_disp(self.tty, 1).expect("Unable to release tty lock");
+            }
+            debug!(self.logger, "Session is now inactive");
+        } else {
+            debug!(self.logger, "Session will become active again");
+            unsafe {
+                tty::vt_rel_disp(self.tty, tty::VT_ACKACQ).expect("Unable to acquire tty lock");
+            }
+            for signal in &mut self.signals {
+                if let &mut Some(ref mut signal) = signal {
+                    signal.activate(None);
+                }
+            }
+            self.active.store(true, Ordering::SeqCst);
+            info!(self.logger, "Session is now active again");
+        }
+    }
+}
+
 /// Bind a `DirectSessionNotifier` to an `EventLoop`.
 ///
 /// Allows the `DirectSessionNotifier` to listen for incoming signals signalling the session state.
 /// If you don't use this function `DirectSessionNotifier` will not correctly tell you the current
 /// session state and call it's `SessionObservers`.
 pub fn direct_session_bind(
-    notifier: DirectSessionNotifier, evlh: &mut EventLoopHandle
-) -> ::std::result::Result<SignalEventSource<DirectSessionNotifier>, (IoError, DirectSessionNotifier)> {
+    notifier: DirectSessionNotifier,
+    token: &LoopToken,
+) -> ::std::result::Result<Source<SignalEvent>, (IoError, DirectSessionNotifier)> {
     let signal = notifier.signal;
 
-    evlh.add_signal_event_source(
-        |evlh, notifier, _| {
-            if notifier.is_active() {
-                info!(notifier.logger, "Session shall become inactive");
-                for signal in &mut notifier.signals {
-                    if let &mut Some(ref mut signal) = signal {
-                        signal.pause(evlh, None);
-                    }
-                }
-                notifier.active.store(false, Ordering::SeqCst);
-                unsafe {
-                    tty::vt_rel_disp(notifier.tty, 1).expect("Unable to release tty lock");
-                }
-                debug!(notifier.logger, "Session is now inactive");
-            } else {
-                debug!(notifier.logger, "Session will become active again");
-                unsafe {
-                    tty::vt_rel_disp(notifier.tty, tty::VT_ACKACQ).expect("Unable to acquire tty lock");
-                }
-                for signal in &mut notifier.signals {
-                    if let &mut Some(ref mut signal) = signal {
-                        signal.activate(evlh, None);
-                    }
-                }
-                notifier.active.store(true, Ordering::SeqCst);
-                info!(notifier.logger, "Session is now active again");
-            }
-        },
-        notifier,
-        signal,
-    )
+    token.add_signal_event_source(signal, notifier)
 }
 
 error_chain! {

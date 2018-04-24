@@ -26,7 +26,7 @@ use smithay::wayland::seat::{KeyboardHandle, PointerHandle, Seat};
 use smithay::wayland::shm::init_shm_global;
 use std::cell::RefCell;
 use std::rc::Rc;
-use wayland_server::EventLoopHandle;
+use wayland_server::Display;
 use wayland_server::protocol::{wl_output, wl_pointer};
 
 struct WinitInputHandler {
@@ -46,30 +46,27 @@ impl WinitInputHandler {
 }
 
 impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
-    fn on_seat_created(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat) {
+    fn on_seat_created(&mut self, _: &input::Seat) {
         /* never happens with winit */
     }
-    fn on_seat_destroyed(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat) {
+    fn on_seat_destroyed(&mut self, _: &input::Seat) {
         /* never happens with winit */
     }
-    fn on_seat_changed(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat) {
+    fn on_seat_changed(&mut self, _: &input::Seat) {
         /* never happens with winit */
     }
-    fn on_keyboard_key(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: winit::WinitKeyboardInputEvent
-    ) {
+    fn on_keyboard_key(&mut self, _: &input::Seat, evt: winit::WinitKeyboardInputEvent) {
         let keycode = evt.key_code();
         let state = evt.state();
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
         let serial = self.next_serial();
-        self.keyboard.input(keycode, state, serial, |_, _| true);
+        self.keyboard
+            .input(keycode, state, serial, evt.time(), |_, _| true);
     }
-    fn on_pointer_move(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: input::UnusedEvent) {
+    fn on_pointer_move(&mut self, _: &input::Seat, _: input::UnusedEvent) {
         /* never happens with winit */
     }
-    fn on_pointer_move_absolute(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: winit::WinitMouseMovedEvent
-    ) {
+    fn on_pointer_move_absolute(&mut self, _: &input::Seat, evt: winit::WinitMouseMovedEvent) {
         // on winit, mouse events are already in pixel coordinates
         let (x, y) = evt.position();
         self.pointer_location = (x, y);
@@ -81,9 +78,7 @@ impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
             evt.time(),
         );
     }
-    fn on_pointer_button(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: winit::WinitMouseInputEvent
-    ) {
+    fn on_pointer_button(&mut self, _: &input::Seat, evt: winit::WinitMouseInputEvent) {
         let serial = self.next_serial();
         let button = match evt.button() {
             input::MouseButton::Left => 0x110,
@@ -105,9 +100,7 @@ impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
         };
         self.pointer.button(button, state, serial, evt.time());
     }
-    fn on_pointer_axis(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, evt: winit::WinitMouseWheelEvent
-    ) {
+    fn on_pointer_axis(&mut self, _: &input::Seat, evt: winit::WinitMouseWheelEvent) {
         let source = match evt.source() {
             input::AxisSource::Continuous => wayland_server::protocol::wl_pointer::AxisSource::Continuous,
             input::AxisSource::Wheel => wayland_server::protocol::wl_pointer::AxisSource::Wheel,
@@ -152,28 +145,22 @@ impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
             event.done();
         }
     }
-    fn on_touch_down(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: winit::WinitTouchStartedEvent
-    ) {
+    fn on_touch_down(&mut self, _: &input::Seat, _: winit::WinitTouchStartedEvent) {
         /* not done in this example */
     }
-    fn on_touch_motion(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: winit::WinitTouchMovedEvent
-    ) {
+    fn on_touch_motion(&mut self, _: &input::Seat, _: winit::WinitTouchMovedEvent) {
         /* not done in this example */
     }
-    fn on_touch_up(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: winit::WinitTouchEndedEvent) {
+    fn on_touch_up(&mut self, _: &input::Seat, _: winit::WinitTouchEndedEvent) {
         /* not done in this example */
     }
-    fn on_touch_cancel(
-        &mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: winit::WinitTouchCancelledEvent
-    ) {
+    fn on_touch_cancel(&mut self, _: &input::Seat, _: winit::WinitTouchCancelledEvent) {
         /* not done in this example */
     }
-    fn on_touch_frame(&mut self, _evlh: &mut EventLoopHandle, _: &input::Seat, _: input::UnusedEvent) {
+    fn on_touch_frame(&mut self, _: &input::Seat, _: input::UnusedEvent) {
         /* never happens with winit */
     }
-    fn on_input_config_changed(&mut self, _evlh: &mut EventLoopHandle, _: &mut ()) {
+    fn on_input_config_changed(&mut self, _: &mut ()) {
         /* never happens with winit */
     }
 }
@@ -188,7 +175,7 @@ fn main() {
     // Initialize a simple backend for testing
     let (renderer, mut input) = winit::init(log.clone()).unwrap();
 
-    let (mut display, mut event_loop) = wayland_server::create_display();
+    let (mut display, mut event_loop) = wayland_server::Display::new();
 
     let egl_display = Rc::new(RefCell::new(
         if let Ok(egl_display) = renderer.bind_wl_display(&display) {
@@ -206,22 +193,25 @@ fn main() {
      * Initialize the globals
      */
 
-    init_shm_global(&mut event_loop, vec![], log.clone());
+    init_shm_global(&mut display, event_loop.token(), vec![], log.clone());
 
-    let (compositor_token, _shell_state_token, window_map) =
-        init_shell(&mut event_loop, log.clone(), egl_display);
+    let (compositor_token, _, _, window_map) =
+        init_shell(&mut display, event_loop.token(), log.clone(), egl_display);
 
-    let (seat_token, _) = Seat::new(&mut event_loop, "winit".into(), log.clone());
+    let (mut seat, _) = Seat::new(
+        &mut display,
+        event_loop.token(),
+        "winit".into(),
+        log.clone(),
+    );
 
-    let pointer = event_loop.state().get_mut(&seat_token).add_pointer();
-    let keyboard = event_loop
-        .state()
-        .get_mut(&seat_token)
-        .add_keyboard("", "fr", "oss", None, 1000, 500)
+    let pointer = seat.add_pointer();
+    let keyboard = seat.add_keyboard("", "fr", "oss", None, 1000, 500)
         .expect("Failed to initialize the keyboard");
 
-    let (output_token, _output_global) = Output::new(
-        &mut event_loop,
+    let (output, _) = Output::new(
+        &mut display,
+        event_loop.token(),
         "Winit".into(),
         PhysicalProperties {
             width: 0,
@@ -233,38 +223,29 @@ fn main() {
         log.clone(),
     );
 
-    event_loop
-        .state()
-        .get_mut(&output_token)
-        .change_current_state(
-            Some(Mode {
-                width: w as i32,
-                height: h as i32,
-                refresh: 60_000,
-            }),
-            None,
-            None,
-        );
-    event_loop
-        .state()
-        .get_mut(&output_token)
-        .set_preferred(Mode {
+    output.change_current_state(
+        Some(Mode {
             width: w as i32,
             height: h as i32,
             refresh: 60_000,
-        });
-
-    input.set_handler(
-        &mut event_loop,
-        WinitInputHandler {
-            log: log.clone(),
-            pointer,
-            keyboard,
-            window_map: window_map.clone(),
-            pointer_location: (0.0, 0.0),
-            serial: 0,
-        },
+        }),
+        None,
+        None,
     );
+    output.set_preferred(Mode {
+        width: w as i32,
+        height: h as i32,
+        refresh: 60_000,
+    });
+
+    input.set_handler(WinitInputHandler {
+        log: log.clone(),
+        pointer,
+        keyboard,
+        window_map: window_map.clone(),
+        pointer_location: (0.0, 0.0),
+        serial: 0,
+    });
 
     /*
      * Add a listening socket:
@@ -273,7 +254,7 @@ fn main() {
     println!("Listening on socket: {}", name);
 
     loop {
-        input.dispatch_new_events(&mut event_loop).unwrap();
+        input.dispatch_new_events().unwrap();
 
         let mut frame = drawer.draw();
         frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
@@ -320,8 +301,8 @@ fn main() {
 
                                     if let Some(ref texture) = attributes.user_data.texture {
                                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                                            x += subdata.x;
-                                            y += subdata.y;
+                                            x += subdata.location.0;
+                                            y += subdata.location.1;
                                         }
                                         drawer.render_texture(
                                             &mut frame,

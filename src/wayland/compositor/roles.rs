@@ -206,7 +206,11 @@ macro_rules! define_roles(
                     }
                 }
 
-                fn data(&self) -> ::std::result::Result<&$role_data, $crate::wayland::compositor::roles::WrongRole> {
+                fn data(&self) -> ::std::result::Result<
+                                    &$role_data,
+                                    $crate::wayland::compositor::roles::WrongRole
+                                  >
+                {
                     if let $enum_name::$role_name(ref data) = *self {
                         Ok(data)
                     } else {
@@ -214,7 +218,11 @@ macro_rules! define_roles(
                     }
                 }
 
-                fn data_mut(&mut self) -> ::std::result::Result<&mut $role_data, $crate::wayland::compositor::roles::WrongRole> {
+                fn data_mut(&mut self) -> ::std::result::Result<
+                                            &mut $role_data,
+                                            $crate::wayland::compositor::roles::WrongRole
+                                          >
+                {
                     if let $enum_name::$role_name(ref mut data) = *self {
                         Ok(data)
                     } else {
@@ -222,7 +230,11 @@ macro_rules! define_roles(
                     }
                 }
 
-                fn unset(&mut self) -> ::std::result::Result<$role_data, $crate::wayland::compositor::roles::WrongRole> {
+                fn unset(&mut self) -> ::std::result::Result<
+                                        $role_data,
+                                        $crate::wayland::compositor::roles::WrongRole
+                                       >
+                {
                     // remove self to make borrow checker happy
                     let temp = ::std::mem::replace(self, $enum_name::NoRole);
                     if let $enum_name::$role_name(data) = temp {

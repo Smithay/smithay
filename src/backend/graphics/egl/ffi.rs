@@ -42,7 +42,8 @@ pub mod egl {
     #[allow(non_snake_case, unused_variables, dead_code)]
     #[inline]
     pub unsafe fn BindWaylandDisplayWL(
-        dpy: types::EGLDisplay, display: *mut __gl_imports::raw::c_void
+        dpy: types::EGLDisplay,
+        display: *mut __gl_imports::raw::c_void,
     ) -> types::EGLBoolean {
         __gl_imports::mem::transmute::<
             _,
@@ -53,7 +54,8 @@ pub mod egl {
     #[allow(non_snake_case, unused_variables, dead_code)]
     #[inline]
     pub unsafe fn UnbindWaylandDisplayWL(
-        dpy: types::EGLDisplay, display: *mut __gl_imports::raw::c_void
+        dpy: types::EGLDisplay,
+        display: *mut __gl_imports::raw::c_void,
     ) -> types::EGLBoolean {
         __gl_imports::mem::transmute::<
             _,
@@ -64,7 +66,9 @@ pub mod egl {
     #[allow(non_snake_case, unused_variables, dead_code)]
     #[inline]
     pub unsafe fn QueryWaylandBufferWL(
-        dpy: types::EGLDisplay, buffer: *mut __gl_imports::raw::c_void, attribute: types::EGLint,
+        dpy: types::EGLDisplay,
+        buffer: *mut __gl_imports::raw::c_void,
+        attribute: types::EGLint,
         value: *mut types::EGLint,
     ) -> types::EGLBoolean {
         __gl_imports::mem::transmute::<

@@ -7,15 +7,15 @@ description = "Smithay is a library for writing wayland compositors."
 repository = "https://github.com/Smithay/smithay"
 
 [dependencies]
-wayland-server = "0.14.0"
-wayland-sys = "0.14.0"
-nix = "0.9.0"
+wayland-server = "0.20.1"
+wayland-sys = "0.20.1"
+nix = "0.10.0"
 xkbcommon = "0.2.1"
 tempfile = "2.1.5"
 slog = { version = "2.1.1" }
 slog-stdlog = "3.0.2"
 libloading = "0.4.0"
-wayland-client = { version = "0.12.5", optional = true }
+wayland-client = { version = "0.20.1", optional = true }
 winit = { version = "0.10.0", optional = true }
 drm = { version = "^0.3.1", optional = true }
 gbm = { version = "^0.4.0", optional = true, default-features = false, features = ["drm-support"] }
@@ -24,7 +24,7 @@ input = { version = "0.4.0", optional = true }
 udev = { version = "0.2.0", optional = true }
 dbus = { version = "0.6.1", optional = true }
 systemd = { version = "^0.2.0", optional = true }
-wayland-protocols = { version = "0.14.0", features = ["unstable_protocols", "server"] }
+wayland-protocols = { version = "0.20.1", features = ["unstable_protocols", "server"] }
 image = "0.17.0"
 error-chain = "0.11.0"
 lazy_static = "1.0.0"
@@ -38,7 +38,7 @@ slog-async = "2.2"
 rand = "0.3"
 
 [features]
-default = ["backend_winit", "backend_drm", "backend_libinput", "backend_udev", "renderer_glium", "backend_session_logind"]
+default = ["backend_winit", "backend_drm", "backend_libinput", "backend_udev", "renderer_glium"]
 backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen"]
 backend_drm = ["drm", "gbm"]
 backend_libinput = ["input"]
@@ -47,3 +47,4 @@ backend_session_udev = ["udev", "backend_session"]
 backend_session_logind = ["dbus", "systemd", "backend_session"]
 backend_udev = ["udev", "backend_drm", "backend_session_udev"]
 renderer_glium = ["glium"]
+

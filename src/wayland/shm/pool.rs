@@ -161,8 +161,8 @@ unsafe fn map(fd: RawFd, size: usize) -> Result<*mut u8, ()> {
     let ret = mman::mmap(
         ptr::null_mut(),
         size,
-        mman::PROT_READ,
-        mman::MAP_SHARED,
+        mman::ProtFlags::PROT_READ,
+        mman::MapFlags::MAP_SHARED,
         fd,
         0,
     );
@@ -179,8 +179,8 @@ unsafe fn nullify_map(ptr: *mut u8, size: usize) -> Result<(), ()> {
     let ret = mman::mmap(
         ptr as *mut _,
         size,
-        mman::PROT_READ,
-        mman::MAP_ANONYMOUS | mman::MAP_PRIVATE | mman::MAP_FIXED,
+        mman::ProtFlags::PROT_READ,
+        mman::MapFlags::MAP_ANONYMOUS | mman::MapFlags::MAP_PRIVATE | mman::MapFlags::MAP_FIXED,
         -1,
         0,
     );
@@ -191,7 +191,7 @@ unsafe fn place_sigbus_handler() {
     // create our sigbus handler
     let action = SigAction::new(
         SigHandler::SigAction(sigbus_handler),
-        signal::SA_NODEFER,
+        signal::SaFlags::SA_NODEFER,
         signal::SigSet::empty(),
     );
     match signal::sigaction(Signal::SIGBUS, &action) {

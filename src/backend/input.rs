@@ -2,7 +2,6 @@
 
 use std::error::Error;
 use std::string::ToString;
-use wayland_server::EventLoopHandle;
 
 /// A seat describes a group of input devices and at least one
 /// graphics device belonging together.
@@ -521,31 +520,31 @@ pub trait InputBackend: Sized {
     type TouchFrameEvent: TouchFrameEvent;
 
     /// Sets a new handler for this `InputBackend`
-    fn set_handler<H: InputHandler<Self> + 'static>(&mut self, evlh: &mut EventLoopHandle, handler: H);
+    fn set_handler<H: InputHandler<Self> + 'static>(&mut self, handler: H);
     /// Get a reference to the currently set handler, if any
     fn get_handler(&mut self) -> Option<&mut InputHandler<Self>>;
     /// Clears the currently handler, if one is set
-    fn clear_handler(&mut self, evlh: &mut EventLoopHandle);
+    fn clear_handler(&mut self);
 
     /// Get current `InputConfig`
     fn input_config(&mut self) -> &mut Self::InputConfig;
 
     /// Processes new events of the underlying backend and drives the `InputHandler`.
-    fn dispatch_new_events(&mut self, evlh: &mut EventLoopHandle) -> Result<(), Self::EventError>;
+    fn dispatch_new_events(&mut self) -> Result<(), Self::EventError>;
 }
 
 /// Implement to receive input events from any `InputBackend`.
 pub trait InputHandler<B: InputBackend> {
     /// Called when a new `Seat` has been created
-    fn on_seat_created(&mut self, evlh: &mut EventLoopHandle, seat: &Seat);
+    fn on_seat_created(&mut self, seat: &Seat);
     /// Called when an existing `Seat` has been destroyed.
-    fn on_seat_destroyed(&mut self, evlh: &mut EventLoopHandle, seat: &Seat);
+    fn on_seat_destroyed(&mut self, seat: &Seat);
     /// Called when a `Seat`'s properties have changed.
     ///
     /// ## Note:
     ///
     /// It is not guaranteed that any change has actually happened.
-    fn on_seat_changed(&mut self, evlh: &mut EventLoopHandle, seat: &Seat);
+    fn on_seat_changed(&mut self, seat: &Seat);
 
     /// Called when a new keyboard event was received.
     ///
@@ -554,7 +553,7 @@ pub trait InputHandler<B: InputBackend> {
     /// - `seat` - The `Seat` the event belongs to
     /// - `event` - The keyboard event
     ///
-    fn on_keyboard_key(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::KeyboardKeyEvent);
+    fn on_keyboard_key(&mut self, seat: &Seat, event: B::KeyboardKeyEvent);
 
     /// Called when a new pointer movement event was received.
     ///
@@ -562,30 +561,28 @@ pub trait InputHandler<B: InputBackend> {
     ///
     /// - `seat` - The `Seat` the event belongs to
     /// - `event` - The pointer movement event
-    fn on_pointer_move(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::PointerMotionEvent);
+    fn on_pointer_move(&mut self, seat: &Seat, event: B::PointerMotionEvent);
     /// Called when a new pointer absolute movement event was received.
     ///
     /// # Arguments
     ///
     /// - `seat` - The `Seat` the event belongs to
     /// - `event` - The pointer absolute movement event
-    fn on_pointer_move_absolute(
-        &mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::PointerMotionAbsoluteEvent
-    );
+    fn on_pointer_move_absolute(&mut self, seat: &Seat, event: B::PointerMotionAbsoluteEvent);
     /// Called when a new pointer button event was received.
     ///
     /// # Arguments
     ///
     /// - `seat` - The `Seat` the event belongs to
     /// - `event` - The pointer button event
-    fn on_pointer_button(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::PointerButtonEvent);
+    fn on_pointer_button(&mut self, seat: &Seat, event: B::PointerButtonEvent);
     /// Called when a new pointer scroll event was received.
     ///
     /// # Arguments
     ///
     /// - `seat` - The `Seat` the event belongs to
     /// - `event` - A upward counting variable useful for event ordering. Makes no gurantees about actual time passed between events.
-    fn on_pointer_axis(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::PointerAxisEvent);
+    fn on_pointer_axis(&mut self, seat: &Seat, event: B::PointerAxisEvent);
 
     /// Called when a new touch down event was received.
     ///
@@ -593,99 +590,97 @@ pub trait InputHandler<B: InputBackend> {
     ///
     /// - `seat` - The `Seat` the event belongs to
     /// - `event` - The touch down event
-    fn on_touch_down(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::TouchDownEvent);
+    fn on_touch_down(&mut self, seat: &Seat, event: B::TouchDownEvent);
     /// Called when a new touch motion event was received.
     ///
     /// # Arguments
     ///
     /// - `seat` - The `Seat` the event belongs to
     /// - `event` - The touch motion event.
-    fn on_touch_motion(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::TouchMotionEvent);
+    fn on_touch_motion(&mut self, seat: &Seat, event: B::TouchMotionEvent);
     /// Called when a new touch up event was received.
     ///
     /// # Arguments
     ///
     /// - `seat` - The `Seat` the event belongs to
     /// - `event` - The touch up event.
-    fn on_touch_up(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::TouchUpEvent);
+    fn on_touch_up(&mut self, seat: &Seat, event: B::TouchUpEvent);
     /// Called when a new touch cancel event was received.
     ///
     /// # Arguments
     ///
     /// - `seat` - The `Seat` the event belongs to
     /// - `event` - The touch cancel event.
-    fn on_touch_cancel(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::TouchCancelEvent);
+    fn on_touch_cancel(&mut self, seat: &Seat, event: B::TouchCancelEvent);
     /// Called when a new touch frame event was received.
     ///
     /// # Arguments
     ///
     /// - `seat` - The `Seat` the event belongs to
     /// - `event` - The touch frame event.
-    fn on_touch_frame(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::TouchFrameEvent);
+    fn on_touch_frame(&mut self, seat: &Seat, event: B::TouchFrameEvent);
 
     /// Called when the `InputConfig` was changed through an external event.
     ///
     /// What kind of events can trigger this call is completely backend dependent.
     /// E.g. an input devices was attached/detached or changed it's own configuration.
-    fn on_input_config_changed(&mut self, evlh: &mut EventLoopHandle, config: &mut B::InputConfig);
+    fn on_input_config_changed(&mut self, config: &mut B::InputConfig);
 }
 
 impl<B: InputBackend> InputHandler<B> for Box<InputHandler<B>> {
-    fn on_seat_created(&mut self, evlh: &mut EventLoopHandle, seat: &Seat) {
-        (**self).on_seat_created(evlh, seat)
+    fn on_seat_created(&mut self, seat: &Seat) {
+        (**self).on_seat_created(seat)
     }
 
-    fn on_seat_destroyed(&mut self, evlh: &mut EventLoopHandle, seat: &Seat) {
-        (**self).on_seat_destroyed(evlh, seat)
+    fn on_seat_destroyed(&mut self, seat: &Seat) {
+        (**self).on_seat_destroyed(seat)
     }
 
-    fn on_seat_changed(&mut self, evlh: &mut EventLoopHandle, seat: &Seat) {
-        (**self).on_seat_changed(evlh, seat)
+    fn on_seat_changed(&mut self, seat: &Seat) {
+        (**self).on_seat_changed(seat)
     }
 
-    fn on_keyboard_key(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::KeyboardKeyEvent) {
-        (**self).on_keyboard_key(evlh, seat, event)
+    fn on_keyboard_key(&mut self, seat: &Seat, event: B::KeyboardKeyEvent) {
+        (**self).on_keyboard_key(seat, event)
     }
 
-    fn on_pointer_move(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::PointerMotionEvent) {
-        (**self).on_pointer_move(evlh, seat, event)
+    fn on_pointer_move(&mut self, seat: &Seat, event: B::PointerMotionEvent) {
+        (**self).on_pointer_move(seat, event)
     }
 
-    fn on_pointer_move_absolute(
-        &mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::PointerMotionAbsoluteEvent
-    ) {
-        (**self).on_pointer_move_absolute(evlh, seat, event)
+    fn on_pointer_move_absolute(&mut self, seat: &Seat, event: B::PointerMotionAbsoluteEvent) {
+        (**self).on_pointer_move_absolute(seat, event)
     }
 
-    fn on_pointer_button(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::PointerButtonEvent) {
-        (**self).on_pointer_button(evlh, seat, event)
+    fn on_pointer_button(&mut self, seat: &Seat, event: B::PointerButtonEvent) {
+        (**self).on_pointer_button(seat, event)
     }
 
-    fn on_pointer_axis(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::PointerAxisEvent) {
-        (**self).on_pointer_axis(evlh, seat, event)
+    fn on_pointer_axis(&mut self, seat: &Seat, event: B::PointerAxisEvent) {
+        (**self).on_pointer_axis(seat, event)
     }
 
-    fn on_touch_down(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::TouchDownEvent) {
-        (**self).on_touch_down(evlh, seat, event)
+    fn on_touch_down(&mut self, seat: &Seat, event: B::TouchDownEvent) {
+        (**self).on_touch_down(seat, event)
     }
 
-    fn on_touch_motion(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::TouchMotionEvent) {
-        (**self).on_touch_motion(evlh, seat, event)
+    fn on_touch_motion(&mut self, seat: &Seat, event: B::TouchMotionEvent) {
+        (**self).on_touch_motion(seat, event)
     }
 
-    fn on_touch_up(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::TouchUpEvent) {
-        (**self).on_touch_up(evlh, seat, event)
+    fn on_touch_up(&mut self, seat: &Seat, event: B::TouchUpEvent) {
+        (**self).on_touch_up(seat, event)
     }
 
-    fn on_touch_cancel(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::TouchCancelEvent) {
-        (**self).on_touch_cancel(evlh, seat, event)
+    fn on_touch_cancel(&mut self, seat: &Seat, event: B::TouchCancelEvent) {
+        (**self).on_touch_cancel(seat, event)
     }
 
-    fn on_touch_frame(&mut self, evlh: &mut EventLoopHandle, seat: &Seat, event: B::TouchFrameEvent) {
-        (**self).on_touch_frame(evlh, seat, event)
+    fn on_touch_frame(&mut self, seat: &Seat, event: B::TouchFrameEvent) {
+        (**self).on_touch_frame(seat, event)
     }
 
-    fn on_input_config_changed(&mut self, evlh: &mut EventLoopHandle, config: &mut B::InputConfig) {
-        (**self).on_input_config_changed(evlh, config)
+    fn on_input_config_changed(&mut self, config: &mut B::InputConfig) {
+        (**self).on_input_config_changed(config)
     }
 }

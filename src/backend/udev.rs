@@ -24,8 +24,9 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 use udev::{Context, Enumerator, Event, EventType, MonitorBuilder, MonitorSocket, Result as UdevResult};
-use wayland_server::EventLoopHandle;
-use wayland_server::sources::{EventSource, FdEventSource, FdEventSourceImpl, FdInterest};
+use wayland_server::LoopToken;
+use wayland_server::commons::Implementation;
+use wayland_server::sources::{FdEvent, FdInterest, Source};
 
 /// Udev's `DrmDevice` type based on the underlying session
 pub struct SessionFdDrmDevice(RawFd);
@@ -48,11 +49,13 @@ pub struct UdevBackend<
     S: Session + 'static,
     T: UdevHandler<H> + 'static,
 > {
-    devices: Rc<RefCell<HashMap<dev_t, FdEventSource<(DrmDevice<SessionFdDrmDevice>, H)>>>>,
+    _handler: ::std::marker::PhantomData<H>,
+    devices: Rc<RefCell<HashMap<dev_t, (Source<FdEvent>, Rc<RefCell<DrmDevice<SessionFdDrmDevice>>>)>>>,
     monitor: MonitorSocket,
     session: S,
     handler: T,
     logger: ::slog::Logger,
+    token: LoopToken,
 }
 
 impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevHandler<H> + 'static>
@@ -67,7 +70,11 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevH
     /// `handler` - User-provided handler to respond to any detected changes
     /// `logger`  - slog Logger to be used by the backend and its `DrmDevices`.
     pub fn new<'a, L>(
-        mut evlh: &mut EventLoopHandle, context: &Context, mut session: S, mut handler: T, logger: L
+        token: LoopToken,
+        context: &Context,
+        mut session: S,
+        mut handler: T,
+        logger: L,
     ) -> Result<UdevBackend<H, S, T>>
     where
         L: Into<Option<::slog::Logger>>,
@@ -81,7 +88,7 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevH
             .flat_map(|path| {
                 match DrmDevice::new(
                     {
-                        match session.open(&path, fcntl::O_RDWR | fcntl::O_CLOEXEC | fcntl::O_NOCTTY | fcntl::O_NONBLOCK) {
+                        match session.open(&path, fcntl::OFlag::O_RDWR | fcntl::OFlag::O_CLOEXEC | fcntl::OFlag::O_NOCTTY | fcntl::OFlag::O_NONBLOCK) {
                             Ok(fd) => SessionFdDrmDevice(fd),
                             Err(err) => {
                                 warn!(logger, "Unable to open drm device {:?}, Error: {:?}. Skipping", path, err);
@@ -94,13 +101,13 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevH
                     Ok(mut device) => {
                         let devnum = device.device_id();
                         let fd = device.as_raw_fd();
-                        match handler.device_added(evlh, &mut device) {
+                        match handler.device_added(&mut device) {
                             Some(drm_handler) => {
-                                match drm_device_bind(&mut evlh, device, drm_handler) {
-                                    Ok(event_source) => Some((devnum, event_source)),
+                                match drm_device_bind(&token, device, drm_handler) {
+                                    Ok((event_source, device)) => Some((devnum, (event_source, device))),
                                     Err((err, (mut device, _))) => {
                                         warn!(logger, "Failed to bind device. Error: {:?}.", err);
-                                        handler.device_removed(evlh, &mut device);
+                                        handler.device_removed(&mut device);
                                         drop(device);
                                         if let Err(err) = session.close(fd) {
                                             warn!(logger, "Failed to close dropped device. Error: {:?}. Ignoring", err);
@@ -124,7 +131,7 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevH
                     }
                 }
             })
-            .collect::<HashMap<dev_t, FdEventSource<(DrmDevice<SessionFdDrmDevice>, H)>>>();
+            .collect::<HashMap<dev_t, _>>();
 
         let mut builder = MonitorBuilder::new(context).chain_err(|| ErrorKind::FailedToInitMonitor)?;
         builder
@@ -135,20 +142,25 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevH
             .chain_err(|| ErrorKind::FailedToInitMonitor)?;
 
         Ok(UdevBackend {
+            _handler: ::std::marker::PhantomData,
             devices: Rc::new(RefCell::new(devices)),
             monitor,
             session,
             handler,
             logger,
+            token,
         })
     }
 
     /// Closes the udev backend and frees all remaining open devices.
-    pub fn close(&mut self, evlh: &mut EventLoopHandle) {
+    pub fn close(&mut self) {
         let mut devices = self.devices.borrow_mut();
-        for (_, event_source) in devices.drain() {
-            let (mut device, _) = event_source.remove();
-            self.handler.device_removed(evlh, &mut device);
+        for (_, (event_source, device)) in devices.drain() {
+            event_source.remove();
+            let mut device = Rc::try_unwrap(device)
+                .unwrap_or_else(|_| unreachable!())
+                .into_inner();
+            self.handler.device_removed(&mut device);
             let fd = device.as_raw_fd();
             drop(device);
             if let Err(err) = self.session.close(fd) {
@@ -163,8 +175,8 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevH
 }
 
 /// `SessionObserver` linked to the `UdevBackend` it was created from.
-pub struct UdevBackendObserver<H: DrmHandler<SessionFdDrmDevice> + 'static> {
-    devices: Weak<RefCell<HashMap<dev_t, FdEventSource<(DrmDevice<SessionFdDrmDevice>, H)>>>>,
+pub struct UdevBackendObserver {
+    devices: Weak<RefCell<HashMap<dev_t, (Source<FdEvent>, Rc<RefCell<DrmDevice<SessionFdDrmDevice>>>)>>>,
     logger: ::slog::Logger,
 }
 
@@ -172,9 +184,9 @@ impl<
     H: DrmHandler<SessionFdDrmDevice> + 'static,
     S: Session + 'static,
     T: UdevHandler<H> + 'static,
-> AsSessionObserver<UdevBackendObserver<H>> for UdevBackend<H, S, T>
+> AsSessionObserver<UdevBackendObserver> for UdevBackend<H, S, T>
 {
-    fn observer(&mut self) -> UdevBackendObserver<H> {
+    fn observer(&mut self) -> UdevBackendObserver {
         UdevBackendObserver {
             devices: Rc::downgrade(&self.devices),
             logger: self.logger.clone(),
@@ -182,25 +194,21 @@ impl<
     }
 }
 
-impl<H: DrmHandler<SessionFdDrmDevice> + 'static> SessionObserver for UdevBackendObserver<H> {
-    fn pause<'a>(&mut self, evlh: &mut EventLoopHandle, devnum: Option<(u32, u32)>) {
+impl SessionObserver for UdevBackendObserver {
+    fn pause<'a>(&mut self, devnum: Option<(u32, u32)>) {
         if let Some(devices) = self.devices.upgrade() {
-            for fd_event_source in devices.borrow_mut().values_mut() {
-                fd_event_source.with_idata(evlh, |&mut (ref mut device, _), evlh| {
-                    info!(self.logger, "changed successful");
-                    device.observer().pause(evlh, devnum);
-                })
+            for &mut (_, ref device) in devices.borrow_mut().values_mut() {
+                info!(self.logger, "changed successful");
+                device.borrow_mut().observer().pause(devnum);
             }
         }
     }
 
-    fn activate<'a>(&mut self, evlh: &mut EventLoopHandle, devnum: Option<(u32, u32, Option<RawFd>)>) {
+    fn activate<'a>(&mut self, devnum: Option<(u32, u32, Option<RawFd>)>) {
         if let Some(devices) = self.devices.upgrade() {
-            for fd_event_source in devices.borrow_mut().values_mut() {
-                fd_event_source.with_idata(evlh, |&mut (ref mut device, _), evlh| {
-                    info!(self.logger, "changed successful");
-                    device.observer().activate(evlh, devnum);
-                })
+            for &mut (_, ref device) in devices.borrow_mut().values_mut() {
+                info!(self.logger, "changed successful");
+                device.borrow_mut().observer().activate(devnum);
             }
         }
     }
@@ -210,143 +218,153 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static> SessionObserver for UdevBacken
 ///
 /// Allows the backend to recieve kernel events and thus to drive the `UdevHandler`.
 /// No runtime functionality can be provided without using this function.
-pub fn udev_backend_bind<S, H, T>(
-    evlh: &mut EventLoopHandle, udev: UdevBackend<H, S, T>
-) -> ::std::result::Result<FdEventSource<UdevBackend<H, S, T>>, (IoError, UdevBackend<H, S, T>)>
+pub fn udev_backend_bind<H, S, T>(
+    token: &LoopToken,
+    udev: UdevBackend<H, S, T>,
+) -> ::std::result::Result<Source<FdEvent>, (IoError, UdevBackend<H, S, T>)>
 where
     H: DrmHandler<SessionFdDrmDevice> + 'static,
     T: UdevHandler<H> + 'static,
     S: Session + 'static,
 {
     let fd = udev.monitor.as_raw_fd();
-    evlh.add_fd_event_source(fd, fd_event_source_implementation(), udev, FdInterest::READ)
+    token.add_fd_event_source(fd, FdInterest::READ, udev)
 }
 
-fn fd_event_source_implementation<S, H, T>() -> FdEventSourceImpl<UdevBackend<H, S, T>>
+impl<H, S, T> Implementation<(), FdEvent> for UdevBackend<H, S, T>
 where
     H: DrmHandler<SessionFdDrmDevice> + 'static,
     T: UdevHandler<H> + 'static,
     S: Session + 'static,
 {
-    FdEventSourceImpl {
-        ready: |mut evlh, udev, _, _| {
-            let events = udev.monitor.clone().collect::<Vec<Event>>();
-            for event in events {
-                match event.event_type() {
-                    // New device
-                    EventType::Add => {
-                        info!(udev.logger, "Device Added");
-                        if let (Some(path), Some(devnum)) = (event.devnode(), event.devnum()) {
-                            let mut device = {
-                                match DrmDevice::new(
-                                    {
-                                        let logger = udev.logger.clone();
-                                        match udev.session.open(
-                                            path,
-                                            fcntl::O_RDWR | fcntl::O_CLOEXEC | fcntl::O_NOCTTY
-                                                | fcntl::O_NONBLOCK,
-                                        ) {
-                                            Ok(fd) => SessionFdDrmDevice(fd),
-                                            Err(err) => {
+    fn receive(&mut self, event: FdEvent, (): ()) {
+        match event {
+            FdEvent::Ready { .. } => {
+                let events = self.monitor.clone().collect::<Vec<Event>>();
+                for event in events {
+                    match event.event_type() {
+                        // New device
+                        EventType::Add => {
+                            info!(self.logger, "Device Added");
+                            if let (Some(path), Some(devnum)) = (event.devnode(), event.devnum()) {
+                                let mut device = {
+                                    match DrmDevice::new(
+                                        {
+                                            let logger = self.logger.clone();
+                                            match self.session.open(
+                                                path,
+                                                fcntl::OFlag::O_RDWR | fcntl::OFlag::O_CLOEXEC
+                                                    | fcntl::OFlag::O_NOCTTY
+                                                    | fcntl::OFlag::O_NONBLOCK,
+                                            ) {
+                                                Ok(fd) => SessionFdDrmDevice(fd),
+                                                Err(err) => {
+                                                    warn!(
+                                                        logger,
+                                                        "Unable to open drm device {:?}, Error: {:?}. Skipping",
+                                                        path,
+                                                        err
+                                                    );
+                                                    continue;
+                                                }
+                                            }
+                                        },
+                                        self.logger.clone(),
+                                    ) {
+                                        Ok(dev) => dev,
+                                        Err(err) => {
+                                            warn!(
+                                                self.logger,
+                                                "Failed to initialize device {:?}. Error: {}. Skipping",
+                                                path,
+                                                err
+                                            );
+                                            continue;
+                                        }
+                                    }
+                                };
+                                let fd = device.as_raw_fd();
+                                match self.handler.device_added(&mut device) {
+                                    Some(drm_handler) => {
+                                        match drm_device_bind(&self.token, device, drm_handler) {
+                                            Ok(fd_event_source) => {
+                                                self.devices.borrow_mut().insert(devnum, fd_event_source);
+                                            }
+                                            Err((err, (mut device, _))) => {
                                                 warn!(
-                                                    logger,
-                                                    "Unable to open drm device {:?}, Error: {:?}. Skipping",
-                                                    path,
-                                                    err
+                                                    self.logger,
+                                                    "Failed to bind device. Error: {:?}.", err
                                                 );
-                                                continue;
+                                                self.handler.device_removed(&mut device);
+                                                drop(device);
+                                                if let Err(err) = self.session.close(fd) {
+                                                    warn!(
+                                                    self.logger,
+                                                    "Failed to close dropped device. Error: {:?}. Ignoring", err
+                                                );
+                                                };
                                             }
                                         }
-                                    },
-                                    udev.logger.clone(),
-                                ) {
-                                    Ok(dev) => dev,
-                                    Err(err) => {
-                                        warn!(
-                                            udev.logger,
-                                            "Failed to initialize device {:?}. Error: {}. Skipping",
-                                            path,
-                                            err
-                                        );
-                                        continue;
                                     }
-                                }
-                            };
-                            let fd = device.as_raw_fd();
-                            match udev.handler.device_added(evlh, &mut device) {
-                                Some(drm_handler) => match drm_device_bind(&mut evlh, device, drm_handler) {
-                                    Ok(fd_event_source) => {
-                                        udev.devices.borrow_mut().insert(devnum, fd_event_source);
-                                    }
-                                    Err((err, (mut device, _))) => {
-                                        warn!(udev.logger, "Failed to bind device. Error: {:?}.", err);
-                                        udev.handler.device_removed(evlh, &mut device);
+                                    None => {
+                                        self.handler.device_removed(&mut device);
                                         drop(device);
-                                        if let Err(err) = udev.session.close(fd) {
+                                        if let Err(err) = self.session.close(fd) {
                                             warn!(
-                                                udev.logger,
-                                                "Failed to close dropped device. Error: {:?}. Ignoring", err
+                                                self.logger,
+                                                "Failed to close unused device. Error: {:?}", err
                                             );
-                                        };
+                                        }
                                     }
-                                },
-                                None => {
-                                    udev.handler.device_removed(evlh, &mut device);
-                                    drop(device);
-                                    if let Err(err) = udev.session.close(fd) {
-                                        warn!(
-                                            udev.logger,
-                                            "Failed to close unused device. Error: {:?}", err
-                                        );
-                                    }
-                                }
-                            };
-                        }
-                    }
-                    // Device removed
-                    EventType::Remove => {
-                        info!(udev.logger, "Device Remove");
-                        if let Some(devnum) = event.devnum() {
-                            if let Some(fd_event_source) = udev.devices.borrow_mut().remove(&devnum) {
-                                let (mut device, _) = fd_event_source.remove();
-                                udev.handler.device_removed(evlh, &mut device);
-                                let fd = device.as_raw_fd();
-                                drop(device);
-                                if let Err(err) = udev.session.close(fd) {
-                                    warn!(
-                                        udev.logger,
-                                        "Failed to close device {:?}. Error: {:?}. Ignoring",
-                                        event.sysname(),
-                                        err
-                                    );
                                 };
                             }
                         }
-                    }
-                    // New connector
-                    EventType::Change => {
-                        info!(udev.logger, "Device Changed");
-                        if let Some(devnum) = event.devnum() {
-                            info!(udev.logger, "Devnum: {:b}", devnum);
-                            if let Some(fd_event_source) = udev.devices.borrow_mut().get_mut(&devnum) {
-                                let handler = &mut udev.handler;
-                                let logger = &udev.logger;
-                                fd_event_source.with_idata(evlh, move |&mut (ref mut device, _), evlh| {
-                                    info!(logger, "changed successful");
-                                    handler.device_changed(evlh, device);
-                                })
-                            } else {
-                                info!(udev.logger, "changed, but device not tracked by backend");
-                            };
-                        } else {
-                            info!(udev.logger, "changed, but no devnum");
+                        // Device removed
+                        EventType::Remove => {
+                            info!(self.logger, "Device Remove");
+                            if let Some(devnum) = event.devnum() {
+                                if let Some((fd_event_source, device)) =
+                                    self.devices.borrow_mut().remove(&devnum)
+                                {
+                                    fd_event_source.remove();
+                                    let mut device = Rc::try_unwrap(device)
+                                        .unwrap_or_else(|_| unreachable!())
+                                        .into_inner();
+                                    self.handler.device_removed(&mut device);
+                                    let fd = device.as_raw_fd();
+                                    drop(device);
+                                    if let Err(err) = self.session.close(fd) {
+                                        warn!(
+                                            self.logger,
+                                            "Failed to close device {:?}. Error: {:?}. Ignoring",
+                                            event.sysname(),
+                                            err
+                                        );
+                                    };
+                                }
+                            }
                         }
+                        // New connector
+                        EventType::Change => {
+                            info!(self.logger, "Device Changed");
+                            if let Some(devnum) = event.devnum() {
+                                info!(self.logger, "Devnum: {:b}", devnum);
+                                if let Some(&(_, ref device)) = self.devices.borrow_mut().get(&devnum) {
+                                    let handler = &mut self.handler;
+                                    handler.device_changed(&mut device.borrow_mut());
+                                } else {
+                                    info!(self.logger, "changed, but device not tracked by backend");
+                                };
+                            } else {
+                                info!(self.logger, "changed, but no devnum");
+                            }
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
-        },
-        error: |evlh, udev, _, err| udev.handler.error(evlh, err),
+            FdEvent::Error { error, .. } => self.handler.error(error),
+        }
     }
 }
 
@@ -358,9 +376,7 @@ pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static> {
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_added(
-        &mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>
-    ) -> Option<H>;
+    fn device_added(&mut self, device: &mut DrmDevice<SessionFdDrmDevice>) -> Option<H>;
     /// Called when an open device is changed.
     ///
     /// This usually indicates that some connectors did become available or were unplugged. The handler
@@ -368,7 +384,7 @@ pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static> {
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_changed(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>);
+    fn device_changed(&mut self, device: &mut DrmDevice<SessionFdDrmDevice>);
     /// Called when a device was removed.
     ///
     /// The device will not accept any operations anymore and its file descriptor will be closed once
@@ -376,12 +392,12 @@ pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static> {
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn device_removed(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<SessionFdDrmDevice>);
+    fn device_removed(&mut self, device: &mut DrmDevice<SessionFdDrmDevice>);
     /// Called when the udev context has encountered and error.
     ///
     /// ## Panics
     /// Panics if you try to borrow the token of the belonging `UdevBackend` using this `StateProxy`.
-    fn error(&mut self, evlh: &mut EventLoopHandle, error: IoError);
+    fn error(&mut self, error: IoError);
 }
 
 /// Returns the path of the primary gpu device if any

@@ -42,8 +42,9 @@ use std::path::Path;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use systemd::login;
-use wayland_server::EventLoopHandle;
-use wayland_server::sources::{EventSource, FdEventSource, FdEventSourceImpl, FdInterest};
+use wayland_server::LoopToken;
+use wayland_server::commons::Implementation;
+use wayland_server::sources::{FdEvent, FdInterest, Source};
 
 struct LogindSessionImpl {
     conn: RefCell<Connection>,
@@ -62,6 +63,7 @@ pub struct LogindSession {
 }
 
 /// `SessionNotifier` via the logind dbus interface
+#[derive(Clone)]
 pub struct LogindSessionNotifier {
     internal: Rc<LogindSessionImpl>,
 }
@@ -186,7 +188,11 @@ impl LogindSessionNotifier {
 
 impl LogindSessionImpl {
     fn blocking_call<'d, 'p, 'i, 'm, D, P, I, M>(
-        conn: &Connection, destination: D, path: P, interface: I, method: M,
+        conn: &Connection,
+        destination: D,
+        path: P,
+        interface: I,
+        method: M,
         arguments: Option<Vec<MessageItem>>,
     ) -> Result<Message>
     where
@@ -230,7 +236,7 @@ impl LogindSessionImpl {
         }
     }
 
-    fn handle_signals(&self, evlh: &mut EventLoopHandle, signals: ConnectionItems) -> Result<()> {
+    fn handle_signals(&self, signals: ConnectionItems) -> Result<()> {
         for item in signals {
             let message = if let ConnectionItem::Signal(ref s) = item {
                 s
@@ -246,7 +252,7 @@ impl LogindSessionImpl {
                 //So lets just put it to sleep.. forever
                 for signal in &mut *self.signals.borrow_mut() {
                     if let &mut Some(ref mut signal) = signal {
-                        signal.pause(evlh, None);
+                        signal.pause(None);
                     }
                 }
                 self.active.store(false, Ordering::SeqCst);
@@ -263,7 +269,7 @@ impl LogindSessionImpl {
                     );
                     for signal in &mut *self.signals.borrow_mut() {
                         if let &mut Some(ref mut signal) = signal {
-                            signal.pause(evlh, Some((major, minor)));
+                            signal.pause(Some((major, minor)));
                         }
                     }
                     // the other possible types are "force" or "gone" (unplugged),
@@ -289,7 +295,7 @@ impl LogindSessionImpl {
                     debug!(self.logger, "Reactivating device ({},{})", major, minor);
                     for signal in &mut *self.signals.borrow_mut() {
                         if let &mut Some(ref mut signal) = signal {
-                            signal.activate(evlh, Some((major, minor, Some(fd))));
+                            signal.activate(Some((major, minor, Some(fd))));
                         }
                     }
                 }
@@ -393,7 +399,8 @@ impl SessionNotifier for LogindSessionNotifier {
     type Id = Id;
 
     fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(
-        &mut self, signal: &mut A
+        &mut self,
+        signal: &mut A,
     ) -> Self::Id {
         self.internal
             .signals
@@ -422,7 +429,7 @@ impl SessionNotifier for LogindSessionNotifier {
 pub struct BoundLogindSession {
     notifier: LogindSessionNotifier,
     _watches: Vec<Watch>,
-    sources: Vec<FdEventSource<Rc<LogindSessionImpl>>>,
+    sources: Vec<Source<FdEvent>>,
 }
 
 /// Bind a `LogindSessionNotifier` to an `EventLoop`.
@@ -431,7 +438,8 @@ pub struct BoundLogindSession {
 /// If you don't use this function `LogindSessionNotifier` will not correctly tell you the logind
 /// session state and call it's `SessionObservers`.
 pub fn logind_session_bind(
-    notifier: LogindSessionNotifier, evlh: &mut EventLoopHandle
+    notifier: LogindSessionNotifier,
+    token: &LoopToken,
 ) -> ::std::result::Result<BoundLogindSession, (IoError, LogindSessionNotifier)> {
     let watches = notifier.internal.conn.borrow().watch_fds();
 
@@ -443,14 +451,9 @@ pub fn logind_session_bind(
             let mut interest = FdInterest::empty();
             interest.set(FdInterest::READ, watch.readable());
             interest.set(FdInterest::WRITE, watch.writable());
-            evlh.add_fd_event_source(
-                watch.fd(),
-                fd_event_source_implementation(),
-                notifier.internal.clone(),
-                interest,
-            )
+            token.add_fd_event_source(watch.fd(), interest, notifier.clone())
         })
-        .collect::<::std::result::Result<Vec<FdEventSource<Rc<LogindSessionImpl>>>, (IoError, _)>>()
+        .collect::<::std::result::Result<Vec<Source<FdEvent>>, (IoError, _)>>()
         .map_err(|(err, _)| {
             (
                 err,
@@ -492,35 +495,40 @@ impl Drop for LogindSessionNotifier {
     }
 }
 
-fn fd_event_source_implementation() -> FdEventSourceImpl<Rc<LogindSessionImpl>> {
-    FdEventSourceImpl {
-        ready: |evlh, session, fd, interest| {
-            let conn = session.conn.borrow();
-            let items = conn.watch_handle(
-                fd,
-                match interest {
-                    x if x.contains(FdInterest::READ) && x.contains(FdInterest::WRITE) => {
-                        WatchEvent::Readable as u32 | WatchEvent::Writable as u32
-                    }
-                    x if x.contains(FdInterest::READ) => WatchEvent::Readable as u32,
-                    x if x.contains(FdInterest::WRITE) => WatchEvent::Writable as u32,
-                    _ => return,
-                },
-            );
-            if let Err(err) = session.handle_signals(evlh, items) {
-                error!(session.logger, "Error handling dbus signals: {}", err);
+impl Implementation<(), FdEvent> for LogindSessionNotifier {
+    fn receive(&mut self, event: FdEvent, (): ()) {
+        match event {
+            FdEvent::Ready { fd, mask } => {
+                let conn = self.internal.conn.borrow();
+                let items = conn.watch_handle(
+                    fd,
+                    match mask {
+                        x if x.contains(FdInterest::READ) && x.contains(FdInterest::WRITE) => {
+                            WatchEvent::Readable as u32 | WatchEvent::Writable as u32
+                        }
+                        x if x.contains(FdInterest::READ) => WatchEvent::Readable as u32,
+                        x if x.contains(FdInterest::WRITE) => WatchEvent::Writable as u32,
+                        _ => return,
+                    },
+                );
+                if let Err(err) = self.internal.handle_signals(items) {
+                    error!(self.internal.logger, "Error handling dbus signals: {}", err);
+                }
             }
-        },
-        error: |evlh, session, fd, error| {
-            warn!(session.logger, "Error on dbus connection: {:?}", error);
-            // handle the remaining messages, they might contain the SessionRemoved event
-            // in case the server did close the connection.
-            let conn = session.conn.borrow();
-            let items = conn.watch_handle(fd, WatchEvent::Error as u32);
-            if let Err(err) = session.handle_signals(evlh, items) {
-                error!(session.logger, "Error handling dbus signals: {}", err);
+            FdEvent::Error { fd, error } => {
+                warn!(
+                    self.internal.logger,
+                    "Error on dbus connection: {:?}", error
+                );
+                // handle the remaining messages, they might contain the SessionRemoved event
+                // in case the server did close the connection.
+                let conn = self.internal.conn.borrow();
+                let items = conn.watch_handle(fd, WatchEvent::Error as u32);
+                if let Err(err) = self.internal.handle_signals(items) {
+                    error!(self.internal.logger, "Error handling dbus signals: {}", err);
+                }
             }
-        },
+        }
     }
 }
 

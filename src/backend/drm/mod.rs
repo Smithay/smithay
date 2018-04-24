@@ -66,8 +66,6 @@
 //! impl ControlDevice for Card {}
 //!
 //! # fn main() {
-//! let (_display, mut event_loop) = wayland_server::create_display();
-//!
 //! // Open the drm device
 //! let mut options = OpenOptions::new();
 //! options.read(true);
@@ -139,7 +137,6 @@
 //! # use std::time::Duration;
 //! use smithay::backend::drm::{DrmDevice, DrmBackend, DrmHandler, drm_device_bind};
 //! use smithay::backend::graphics::egl::EGLGraphicsBackend;
-//! use wayland_server::EventLoopHandle;
 //! #
 //! # #[derive(Debug)]
 //! # pub struct Card(File);
@@ -153,7 +150,7 @@
 //! #
 //! # fn main() {
 //! #
-//! # let (_display, mut event_loop) = wayland_server::create_display();
+//! # let (_display, mut event_loop) = wayland_server::Display::new();
 //! #
 //! # let mut options = OpenOptions::new();
 //! # options.read(true);
@@ -181,7 +178,6 @@
 //! impl DrmHandler<Card> for MyDrmHandler {
 //!     fn ready(
 //!         &mut self,
-//!         _evlh: &mut EventLoopHandle,
 //!         _device: &mut DrmDevice<Card>,
 //!         _crtc: CrtcHandle,
 //!         _frame: u32,
@@ -192,7 +188,6 @@
 //!     }
 //!     fn error(
 //!         &mut self,
-//!         _evlh: &mut EventLoopHandle,
 //!         device: &mut DrmDevice<Card>,
 //!         error: DrmError)
 //!     {
@@ -203,7 +198,11 @@
 //! // render something (like clear_color)
 //! backend.swap_buffers().unwrap();
 //!
-//! let _source = drm_device_bind(&mut event_loop, device, MyDrmHandler(backend)).map_err(|(err, _)| err).unwrap();
+//! let (_source, _device_rc) = drm_device_bind(
+//!     &event_loop.token(),
+//!     device,
+//!     MyDrmHandler(backend)
+//! ).map_err(|(err, _)| err).unwrap();
 //!
 //! event_loop.run().unwrap();
 //! # }
@@ -233,8 +232,9 @@ use std::rc::{Rc, Weak};
 use std::sync::{Arc, Once, ONCE_INIT};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use wayland_server::{Display, EventLoopHandle};
-use wayland_server::sources::{FdEventSource, FdEventSourceImpl, FdInterest};
+use wayland_server::{Display, LoopToken};
+use wayland_server::commons::Implementation;
+use wayland_server::sources::{FdEvent, FdInterest, Source};
 
 mod backend;
 pub mod error;
@@ -378,7 +378,10 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
     /// Errors if initialization fails or the mode is not available on all given
     /// connectors.
     pub fn create_backend<I>(
-        &mut self, crtc: crtc::Handle, mode: Mode, connectors: I
+        &mut self,
+        crtc: crtc::Handle,
+        mode: Mode,
+        connectors: I,
     ) -> Result<DrmBackend<A>>
     where
         I: Into<Vec<connector::Handle>>,
@@ -532,44 +535,66 @@ impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {
 pub trait DrmHandler<A: ControlDevice + 'static> {
     /// The `DrmBackend` of crtc has finished swapping buffers and new frame can now
     /// (and should be immediately) be rendered.
-    fn ready(
-        &mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<A>, crtc: crtc::Handle, frame: u32,
-        duration: Duration,
-    );
+    fn ready(&mut self, device: &mut DrmDevice<A>, crtc: crtc::Handle, frame: u32, duration: Duration);
     /// The `DrmDevice` has thrown an error.
     ///
     /// The related backends are most likely *not* usable anymore and
     /// the whole stack has to be recreated..
-    fn error(&mut self, evlh: &mut EventLoopHandle, device: &mut DrmDevice<A>, error: DrmError);
+    fn error(&mut self, device: &mut DrmDevice<A>, error: DrmError);
 }
 
 /// Bind a `DrmDevice` to an `EventLoop`,
 ///
 /// This will cause it to recieve events and feed them into an `DrmHandler`
 pub fn drm_device_bind<A, H>(
-    evlh: &mut EventLoopHandle, device: DrmDevice<A>, handler: H
-) -> ::std::result::Result<FdEventSource<(DrmDevice<A>, H)>, (IoError, (DrmDevice<A>, H))>
+    token: &LoopToken,
+    device: DrmDevice<A>,
+    handler: H,
+) -> ::std::result::Result<(Source<FdEvent>, Rc<RefCell<DrmDevice<A>>>), (IoError, (DrmDevice<A>, H))>
 where
     A: ControlDevice + 'static,
     H: DrmHandler<A> + 'static,
 {
     let fd = device.as_raw_fd();
-    evlh.add_fd_event_source(
+    let device = Rc::new(RefCell::new(device));
+    match token.add_fd_event_source(
         fd,
-        fd_event_source_implementation(),
-        (device, handler),
         FdInterest::READ,
-    )
+        DrmFdImpl {
+            device: device.clone(),
+            handler,
+        },
+    ) {
+        Ok(source) => Ok((source, device)),
+        Err((
+            ioerror,
+            DrmFdImpl {
+                device: device2,
+                handler,
+            },
+        )) => {
+            // make the Rc unique again
+            ::std::mem::drop(device2);
+            let device = Rc::try_unwrap(device).unwrap_or_else(|_| unreachable!());
+            Err((ioerror, (device.into_inner(), handler)))
+        }
+    }
 }
 
-fn fd_event_source_implementation<A, H>() -> FdEventSourceImpl<(DrmDevice<A>, H)>
+struct DrmFdImpl<A: ControlDevice + 'static, H> {
+    device: Rc<RefCell<DrmDevice<A>>>,
+    handler: H,
+}
+
+impl<A, H> Implementation<(), FdEvent> for DrmFdImpl<A, H>
 where
     A: ControlDevice + 'static,
     H: DrmHandler<A> + 'static,
 {
-    FdEventSourceImpl {
-        ready: |evlh, &mut (ref mut device, ref mut handler), _, _| {
-            match crtc::receive_events(device) {
+    fn receive(&mut self, event: FdEvent, (): ()) {
+        let mut device = self.device.borrow_mut();
+        match event {
+            FdEvent::Ready { .. } => match crtc::receive_events(&mut *device) {
                 Ok(events) => for event in events {
                     if let crtc::Event::PageFlip(event) = event {
                         if device.active.load(Ordering::SeqCst) {
@@ -584,20 +609,21 @@ where
                                 backend.unlock_buffer();
                                 trace!(device.logger, "Handling event for backend {:?}", event.crtc);
                                 // and then call the user to render the next frame
-                                handler.ready(evlh, device, event.crtc, event.frame, event.duration);
+                                self.handler
+                                    .ready(&mut device, event.crtc, event.frame, event.duration);
                             } else {
                                 device.backends.borrow_mut().remove(&event.crtc);
                             }
                         }
                     }
                 },
-                Err(err) => handler.error(evlh, device, err),
-            };
-        },
-        error: |evlh, &mut (ref mut device, ref mut handler), _, error| {
-            warn!(device.logger, "DrmDevice errored: {}", error);
-            handler.error(evlh, device, error.into());
-        },
+                Err(err) => self.handler.error(&mut device, err),
+            },
+            FdEvent::Error { error, .. } => {
+                warn!(device.logger, "DrmDevice errored: {}", error);
+                self.handler.error(&mut device, error.into());
+            }
+        }
     }
 }
 
@@ -629,7 +655,7 @@ impl<A: ControlDevice + 'static> AsSessionObserver<DrmDeviceObserver<A>> for Drm
 
 #[cfg(feature = "backend_session")]
 impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
-    fn pause(&mut self, _evlh: &mut EventLoopHandle, devnum: Option<(u32, u32)>) {
+    fn pause(&mut self, devnum: Option<(u32, u32)>) {
         if let Some((major, minor)) = devnum {
             if major as u64 != stat::major(self.device_id) || minor as u64 != stat::minor(self.device_id) {
                 return;
@@ -665,7 +691,7 @@ impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
         }
     }
 
-    fn activate(&mut self, _evlh: &mut EventLoopHandle, devnum: Option<(u32, u32, Option<RawFd>)>) {
+    fn activate(&mut self, devnum: Option<(u32, u32, Option<RawFd>)>) {
         if let Some((major, minor, fd)) = devnum {
             if major as u64 != stat::major(self.device_id) || minor as u64 != stat::minor(self.device_id) {
                 return;

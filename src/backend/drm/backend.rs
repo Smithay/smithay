@@ -37,8 +37,11 @@ pub(crate) struct DrmBackendInternal<A: Device + 'static> {
 
 impl<A: Device + 'static> DrmBackend<A> {
     pub(crate) fn new(
-        context: Rc<EGLContext<Gbm<framebuffer::Info>, GbmDevice<A>>>, crtc: crtc::Handle, mode: Mode,
-        connectors: Vec<connector::Handle>, log: ::slog::Logger,
+        context: Rc<EGLContext<Gbm<framebuffer::Info>, GbmDevice<A>>>,
+        crtc: crtc::Handle,
+        mode: Mode,
+        connectors: Vec<connector::Handle>,
+        log: ::slog::Logger,
     ) -> Result<Self> {
         // logger already initialized by the DrmDevice
         info!(log, "Initializing DrmBackend");
@@ -351,7 +354,8 @@ impl<A: Device + 'static> DrmBackendInternal<A> {
     }
 
     pub(crate) fn page_flip(
-        &self, fb: Option<&framebuffer::Info>
+        &self,
+        fb: Option<&framebuffer::Info>,
     ) -> ::std::result::Result<(), SwapBuffersError> {
         trace!(self.logger, "Queueing Page flip");
 
@@ -421,7 +425,9 @@ impl<A: Device + 'static> GraphicsBackend for DrmBackend<A> {
     }
 
     fn set_cursor_representation(
-        &self, buffer: &ImageBuffer<Rgba<u8>, Vec<u8>>, hotspot: (u32, u32)
+        &self,
+        buffer: &ImageBuffer<Rgba<u8>, Vec<u8>>,
+        hotspot: (u32, u32),
     ) -> Result<()> {
         let (w, h) = buffer.dimensions();
         debug!(self.backend.logger, "Importing cursor");

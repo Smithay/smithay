@@ -31,7 +31,9 @@ pub trait Backend {
     /// The returned `EGLDisplay` needs to be a valid ptr for egl,
     /// but there is no way to test that.
     unsafe fn get_display<F: Fn(&str) -> bool>(
-        display: ffi::NativeDisplayType, has_dp_extension: F, log: ::slog::Logger
+        display: ffi::NativeDisplayType,
+        has_dp_extension: F,
+        log: ::slog::Logger,
     ) -> ffi::egl::types::EGLDisplay;
 }
 
@@ -43,7 +45,9 @@ impl Backend for Wayland {
     type Surface = wegl::WlEglSurface;
 
     unsafe fn get_display<F>(
-        display: ffi::NativeDisplayType, has_dp_extension: F, log: ::slog::Logger
+        display: ffi::NativeDisplayType,
+        has_dp_extension: F,
+        log: ::slog::Logger,
     ) -> ffi::egl::types::EGLDisplay
     where
         F: Fn(&str) -> bool,
@@ -87,7 +91,9 @@ impl Backend for X11 {
     type Surface = XlibWindow;
 
     unsafe fn get_display<F>(
-        display: ffi::NativeDisplayType, has_dp_extension: F, log: ::slog::Logger
+        display: ffi::NativeDisplayType,
+        has_dp_extension: F,
+        log: ::slog::Logger,
     ) -> ffi::egl::types::EGLDisplay
     where
         F: Fn(&str) -> bool,
@@ -114,7 +120,9 @@ impl<T: 'static> Backend for Gbm<T> {
     type Surface = GbmSurface<T>;
 
     unsafe fn get_display<F>(
-        display: ffi::NativeDisplayType, has_dp_extension: F, log: ::slog::Logger
+        display: ffi::NativeDisplayType,
+        has_dp_extension: F,
+        log: ::slog::Logger,
     ) -> ffi::egl::types::EGLDisplay
     where
         F: Fn(&str) -> bool,

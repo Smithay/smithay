@@ -135,8 +135,13 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
     }
 
     pub fn render_texture(
-        &self, target: &mut glium::Frame, texture: &Texture2d, y_inverted: bool,
-        surface_dimensions: (u32, u32), surface_location: (i32, i32), screen_size: (u32, u32),
+        &self,
+        target: &mut glium::Frame,
+        texture: &Texture2d,
+        y_inverted: bool,
+        surface_dimensions: (u32, u32),
+        surface_location: (i32, i32),
+        screen_size: (u32, u32),
         blending: glium::Blend,
     ) {
         let xscale = 2.0 * (surface_dimensions.0 as f32) / (screen_size.0 as f32);

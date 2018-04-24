@@ -3,8 +3,9 @@ use std::io::{Error as IoError, Write};
 use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
 use tempfile::tempfile;
-use wayland_server::{Liveness, Resource};
-use wayland_server::protocol::{wl_keyboard, wl_surface};
+use wayland_server::{NewResource, Resource};
+use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::protocol::wl_keyboard::{Event, KeyState as WlKeyState, KeymapFormat, Request, WlKeyboard};
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
 
@@ -55,8 +56,8 @@ impl ModifiersState {
 }
 
 struct KbdInternal {
-    known_kbds: Vec<wl_keyboard::WlKeyboard>,
-    focus: Option<wl_surface::WlSurface>,
+    known_kbds: Vec<Resource<WlKeyboard>>,
+    focus: Option<Resource<WlSurface>>,
     pressed_keys: Vec<u32>,
     mods_state: ModifiersState,
     keymap: xkb::Keymap,
@@ -65,9 +66,18 @@ struct KbdInternal {
     repeat_delay: i32,
 }
 
+// This is OK because all parts of `xkb` will remain on the
+// same thread
+unsafe impl Send for KbdInternal {}
+
 impl KbdInternal {
     fn new(
-        rules: &str, model: &str, layout: &str, variant: &str, options: Option<String>, repeat_rate: i32,
+        rules: &str,
+        model: &str,
+        layout: &str,
+        variant: &str,
+        options: Option<String>,
+        repeat_rate: i32,
         repeat_delay: i32,
     ) -> Result<KbdInternal, ()> {
         // we create a new contex for each keyboard because libxkbcommon is actually NOT threadsafe
@@ -147,7 +157,7 @@ impl KbdInternal {
 
     fn with_focused_kbds<F>(&self, mut f: F)
     where
-        F: FnMut(&wl_keyboard::WlKeyboard, &wl_surface::WlSurface),
+        F: FnMut(&Resource<WlKeyboard>, &Resource<WlSurface>),
     {
         if let Some(ref surface) = self.focus {
             for kbd in &self.known_kbds {
@@ -170,8 +180,14 @@ pub enum Error {
 
 /// Create a keyboard handler from a set of RMLVO rules
 pub(crate) fn create_keyboard_handler(
-    rules: &str, model: &str, layout: &str, variant: &str, options: Option<String>, repeat_delay: i32,
-    repeat_rate: i32, logger: &::slog::Logger,
+    rules: &str,
+    model: &str,
+    layout: &str,
+    variant: &str,
+    options: Option<String>,
+    repeat_delay: i32,
+    repeat_rate: i32,
+    logger: &::slog::Logger,
 ) -> Result<KeyboardHandle, Error> {
     let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
     info!(log, "Initializing a xkbcommon handler with keymap query";
@@ -252,7 +268,7 @@ impl KeyboardHandle {
     ///
     /// The module `smithay::keyboard::keysyms` exposes definitions of all possible keysyms
     /// to be compared against. This includes non-characted keysyms, such as XF86 special keys.
-    pub fn input<F>(&self, keycode: u32, state: KeyState, serial: u32, filter: F)
+    pub fn input<F>(&self, keycode: u32, state: KeyState, serial: u32, time: u32, filter: F)
     where
         F: FnOnce(&ModifiersState, Keysym) -> bool,
     {
@@ -282,14 +298,25 @@ impl KeyboardHandle {
             None
         };
         let wl_state = match state {
-            KeyState::Pressed => wl_keyboard::KeyState::Pressed,
-            KeyState::Released => wl_keyboard::KeyState::Released,
+            KeyState::Pressed => WlKeyState::Pressed,
+            KeyState::Released => WlKeyState::Released,
         };
         guard.with_focused_kbds(|kbd, _| {
             if let Some((dep, la, lo, gr)) = modifiers {
-                kbd.modifiers(serial, dep, la, lo, gr);
+                kbd.send(Event::Modifiers {
+                    serial,
+                    mods_depressed: dep,
+                    mods_latched: la,
+                    mods_locked: lo,
+                    group: gr,
+                });
             }
-            kbd.key(serial, 0, keycode, wl_state);
+            kbd.send(Event::Key {
+                serial,
+                time,
+                key: keycode,
+                state: wl_state,
+            });
         });
         if guard.focus.is_some() {
             trace!(self.arc.logger, "Input forwarded to client");
@@ -303,7 +330,7 @@ impl KeyboardHandle {
     /// If the ne focus is different from the previous one, any previous focus
     /// will be sent a `wl_keyboard::leave` event, and if the new focus is not `None`,
     /// a `wl_keyboard::enter` event will be sent.
-    pub fn set_focus(&self, focus: Option<&wl_surface::WlSurface>, serial: u32) {
+    pub fn set_focus(&self, focus: Option<&Resource<WlSurface>>, serial: u32) {
         let mut guard = self.arc.internal.lock().unwrap();
 
         let same = guard
@@ -315,16 +342,29 @@ impl KeyboardHandle {
         if !same {
             // unset old focus
             guard.with_focused_kbds(|kbd, s| {
-                kbd.leave(serial, s);
+                kbd.send(Event::Leave {
+                    serial,
+                    surface: s.clone(),
+                });
             });
 
             // set new focus
-            guard.focus = focus.and_then(|s| s.clone());
+            guard.focus = focus.map(|s| s.clone());
             let (dep, la, lo, gr) = guard.serialize_modifiers();
             let keys = guard.serialize_pressed_keys();
-            guard.with_focused_kbds(|kbd, s| {
-                kbd.modifiers(serial, dep, la, lo, gr);
-                kbd.enter(serial, s, keys.clone());
+            guard.with_focused_kbds(|kbd, surface| {
+                kbd.send(Event::Modifiers {
+                    serial,
+                    mods_depressed: dep,
+                    mods_latched: la,
+                    mods_locked: lo,
+                    group: gr,
+                });
+                kbd.send(Event::Enter {
+                    serial,
+                    surface: surface.clone(),
+                    keys: keys.clone(),
+                });
             });
             if guard.focus.is_some() {
                 trace!(self.arc.logger, "Focus set to new surface");
@@ -341,16 +381,19 @@ impl KeyboardHandle {
     /// The keymap will automatically be sent to it
     ///
     /// This should be done first, before anything else is done with this keyboard.
-    pub(crate) fn new_kbd(&self, kbd: wl_keyboard::WlKeyboard) {
+    pub(crate) fn new_kbd(&self, kbd: Resource<WlKeyboard>) {
         trace!(self.arc.logger, "Sending keymap to client");
-        kbd.keymap(
-            wl_keyboard::KeymapFormat::XkbV1,
-            self.arc.keymap_file.as_raw_fd(),
-            self.arc.keymap_len,
-        );
+        kbd.send(Event::Keymap {
+            format: KeymapFormat::XkbV1,
+            fd: self.arc.keymap_file.as_raw_fd(),
+            size: self.arc.keymap_len,
+        });
         let mut guard = self.arc.internal.lock().unwrap();
         if kbd.version() >= 4 {
-            kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
+            kbd.send(Event::RepeatInfo {
+                rate: guard.repeat_rate,
+                delay: guard.repeat_delay,
+            });
         }
         guard.known_kbds.push(kbd);
     }
@@ -361,17 +404,36 @@ impl KeyboardHandle {
         guard.repeat_delay = delay;
         guard.repeat_rate = rate;
         for kbd in &guard.known_kbds {
-            kbd.repeat_info(rate, delay);
+            kbd.send(Event::RepeatInfo { rate, delay });
         }
     }
+}
 
-    /// Performs an internal cleanup of known kbds
-    ///
-    /// Drops any wl_keyboard that is no longer alive
-    pub(crate) fn cleanup_old_kbds(&self) {
-        let mut guard = self.arc.internal.lock().unwrap();
-        guard
-            .known_kbds
-            .retain(|kbd| kbd.status() != Liveness::Dead);
-    }
+pub(crate) fn implement_keyboard(
+    new_keyboard: NewResource<WlKeyboard>,
+    handle: Option<&KeyboardHandle>,
+) -> Resource<WlKeyboard> {
+    let destructor = match handle {
+        Some(h) => {
+            let arc = h.arc.clone();
+            Some(move |keyboard: Resource<_>, _| {
+                arc.internal
+                    .lock()
+                    .unwrap()
+                    .known_kbds
+                    .retain(|k| !k.equals(&keyboard))
+            })
+        }
+        None => None,
+    };
+    new_keyboard.implement(
+        |request, _keyboard| {
+            match request {
+                Request::Release => {
+                    // Our destructors already handle it
+                }
+            }
+        },
+        destructor,
+    )
 }
