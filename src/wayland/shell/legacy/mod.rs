@@ -3,7 +3,7 @@
 //! This module provides automatic handling of shell surfaces objects, by being registered
 //! as a global handler for `wl_shell`. This protocol is deprecated in favor of `xdg_shell`,
 //! thus this module is provided as a compatibility layer with older clients. As a consequence,
-//! you can as a compositor-writer decide to only support its fonctionnality in a best-effort
+//! you can as a compositor-writer decide to only support its functionality in a best-effort
 //! maneer: as this global is part of the core protocol, you are still required to provide
 //! some support for it.
 //!

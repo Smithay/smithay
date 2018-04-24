@@ -421,6 +421,10 @@ fn main() {
     libinput_event_source.remove();
 
     // destroy the udev backend freeing the drm devices
+    //
+    // udev_event_source.remove() returns a Box<Implementation<..>>, downcast_impl
+    // allows us to cast it back to its original type, storing it back into its original
+    // variable to simplify type inference.
     udev_backend = *(downcast_impl(udev_event_source.remove()).unwrap_or_else(|_| unreachable!()));
     udev_backend.close();
 }
