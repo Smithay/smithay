@@ -52,6 +52,9 @@ pub mod backend;
 pub mod wayland;
 pub mod utils;
 
+#[cfg(feature = "xwayland")]
+pub mod xwayland;
+
 fn slog_or_stdlog<L>(logger: L) -> ::slog::Logger
 where
     L: Into<Option<::slog::Logger>>,
