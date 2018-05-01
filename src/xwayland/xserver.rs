@@ -28,7 +28,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::env;
 use std::ffi::CString;
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{RawFd, AsRawFd, IntoRawFd};
+use std::os::unix::net::UnixStream;
 
 use nix::{Error as NixError, Result as NixResult};
 use nix::errno::Errno;
@@ -38,7 +39,7 @@ use nix::sys::signal;
 use wayland_server::{Client, Display, LoopToken};
 use wayland_server::sources::{SignalEvent, Source};
 
-use super::x11_sockets::{make_pair, cleanup_x11_sockets, prepare_x11_sockets};
+use super::x11_sockets::{cleanup_x11_sockets, prepare_x11_sockets};
 
 /// The XWayland handle
 pub struct XWayland<WM: XWindowManager> {
@@ -57,8 +58,8 @@ pub struct XWayland<WM: XWindowManager> {
 pub trait XWindowManager {
     /// The XWayland server is ready
     ///
-    /// Your previlegied connection to it is this `RawFd`
-    fn xwayland_ready(&mut self, fd: RawFd, client: Client);
+    /// Your previlegied connection to it is this `UnixStream`
+    fn xwayland_ready(&mut self, connection: UnixStream, client: Client);
     /// The XWayland server has exited
     fn xwayland_exited(&mut self);
 }
@@ -87,7 +88,7 @@ struct XWaylandInstance {
     display: u32,
     wayland_client: Client,
     sigusr1_handler: Option<Source<SignalEvent>>,
-    wm_fd: RawFd,
+    wm_fd: Option<UnixStream>,
     started_at: ::std::time::Instant,
     child_pid: Option<Pid>,
 }
@@ -109,32 +110,10 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
         return Ok(());
     }
 
-    let (display, x_fds) = prepare_x11_sockets()?;
+    let (x_wm_x11, x_wm_me) = UnixStream::pair().map_err(|_| ())?;
+    let (wl_x11, wl_me) = UnixStream::pair().map_err(|_| ())?;
 
-    let (x_wm_x11, x_wm_me) = match make_pair() {
-        Ok(v) => v,
-        Err(()) => {
-            // cleanup
-            for &f in &x_fds {
-                let _ = close(f);
-            }
-            cleanup_x11_sockets(display);
-            return Err(());
-        }
-    };
-    let (wl_x11, wl_me) = match make_pair() {
-        Ok(v) => v,
-        Err(()) => {
-            // cleanup
-            for &f in &x_fds {
-                let _ = close(f);
-            }
-            let _ = close(x_wm_x11);
-            let _ = close(x_wm_me);
-            cleanup_x11_sockets(display);
-            return Err(());
-        }
-    };
+    let (display, x_fds) = prepare_x11_sockets()?;
 
     // we have now created all the required sockets
 
@@ -142,7 +121,7 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
     let creation_time = ::std::time::Instant::now();
 
     // create the wayland client for XWayland
-    let client = unsafe { guard.wayland_display.borrow_mut().create_client(wl_me) };
+    let client = unsafe { guard.wayland_display.borrow_mut().create_client(wl_me.into_raw_fd()) };
     client.set_user_data(Rc::into_raw(inner.clone()) as *const () as *mut ());
     client.set_destructor(client_destroy::<WM>);
 
@@ -155,14 +134,6 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
         }) {
         Ok(v) => v,
         Err(_) => {
-            // If that fails (can it even fail ?), cleanup
-            for &f in &x_fds {
-                let _ = close(f);
-            }
-            let _ = close(x_wm_x11);
-            let _ = close(x_wm_me);
-            let _ = close(wl_x11);
-            let _ = close(wl_me);
             cleanup_x11_sockets(display);
             return Err(());
         }
@@ -218,30 +189,16 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
         Err(e) => {
             eprintln!("[smithay] XWayland first fork failed: {:?}", e);
             // fork failed ? cleanup
-            for &f in &x_fds {
-                let _ = close(f);
-            }
-            let _ = close(x_wm_x11);
-            let _ = close(x_wm_me);
-            let _ = close(wl_x11);
-            let _ = close(wl_me);
             cleanup_x11_sockets(display);
             return Err(());
         }
     };
 
-    // now, close the FDs that were given to XWayland
-    for &f in &x_fds {
-        let _ = close(f);
-    }
-    let _ = close(x_wm_x11);
-    let _ = close(wl_x11);
-
     guard.instance = Some(XWaylandInstance {
         display,
         wayland_client: client,
         sigusr1_handler: Some(sigusr1_handler),
-        wm_fd: x_wm_me,
+        wm_fd: Some(x_wm_me),
         started_at: creation_time,
         child_pid: Some(child_pid),
     });
@@ -261,8 +218,10 @@ impl<WM: XWindowManager> Inner<WM> {
             if let Some(s) = instance.sigusr1_handler.take() {
                 s.remove();
             }
-            // close the WM fd
-            let _ = close(instance.wm_fd);
+            // close the WM fd if it is still there
+            if let Some(s) = instance.wm_fd.take() {
+                let _ = s.shutdown(::std::net::Shutdown::Both);
+            }
             // cleanup the X11 sockets
             cleanup_x11_sockets(instance.display);
             ::std::env::remove_var("DISPLAY");
@@ -321,7 +280,10 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
 
     if success {
         // signal the WM
-        wm.xwayland_ready(instance.wm_fd, instance.wayland_client.clone());
+        wm.xwayland_ready(
+            instance.wm_fd.take().unwrap(), // This is a bug if None
+            instance.wayland_client.clone()
+        );
 
         // setup the environemnt
         ::std::env::set_var("DISPLAY", format!(":{}", instance.display));
@@ -340,15 +302,15 @@ enum Void {}
 /// If this returns, that means that something failed
 fn exec_xwayland(
     display: u32,
-    wayland_socket: RawFd,
-    wm_socket: RawFd,
-    listen_sockets: &[RawFd],
+    wayland_socket: UnixStream,
+    wm_socket: UnixStream,
+    listen_sockets: &[UnixStream],
 ) -> NixResult<Void> {
     // uset the CLOEXEC flag from the sockets we need to pass
     // to xwayland
-    unset_cloexec(wayland_socket)?;
-    unset_cloexec(wm_socket)?;
-    for &socket in listen_sockets {
+    unset_cloexec(&wayland_socket)?;
+    unset_cloexec(&wm_socket)?;
+    for socket in listen_sockets {
         unset_cloexec(socket)?;
     }
     // prepare the arguments to Xwayland
@@ -358,11 +320,11 @@ fn exec_xwayland(
         CString::new("-rootless").unwrap(),
         CString::new("-terminate").unwrap(),
         CString::new("-wm").unwrap(),
-        CString::new(format!("{}", wm_socket)).unwrap(),
+        CString::new(format!("{}", wm_socket.as_raw_fd())).unwrap(),
     ];
-    for &socket in listen_sockets {
+    for socket in listen_sockets {
         args.push(CString::new("-listen").unwrap());
-        args.push(CString::new(format!("{}", socket)).unwrap());
+        args.push(CString::new(format!("{}", socket.as_raw_fd())).unwrap());
     }
     // setup the environment: clear everything except PATH and XDG_RUNTIME_DIR
     for (key, _) in env::vars_os() {
@@ -372,7 +334,7 @@ fn exec_xwayland(
         env::remove_var(key);
     }
     // the WAYLAND_SOCKET var tells Xwayland where to connect as a wayland client
-    env::set_var("WAYLAND_SOCKET", format!("{}", wayland_socket));
+    env::set_var("WAYLAND_SOCKET", format!("{}", wayland_socket.as_raw_fd()));
 
     // ignore SIGUSR1, this will make the Xwayland server send us this
     // signal when it is ready apparently
@@ -394,8 +356,8 @@ fn exec_xwayland(
 ///
 /// This means that the Fd will *not* be automatically
 /// closed when we exec() into Xwayland
-fn unset_cloexec(fd: RawFd) -> NixResult<()> {
+fn unset_cloexec<F: AsRawFd>(fd: &F) -> NixResult<()> {
     use nix::fcntl::{fcntl, FcntlArg, FdFlag};
-    fcntl(fd, FcntlArg::F_SETFD(FdFlag::empty()))?;
+    fcntl(fd.as_raw_fd(), FcntlArg::F_SETFD(FdFlag::empty()))?;
     Ok(())
 }

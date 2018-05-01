@@ -1,21 +1,13 @@
 use std::io::{Read, Write};
-use std::os::unix::io::RawFd;
+use std::os::unix::io::FromRawFd;
+use std::os::unix::net::UnixStream;
 
 use nix::{Error as NixError, Result as NixResult};
 use nix::errno::Errno;
 use nix::sys::socket;
 
-pub(crate) fn make_pair() -> Result<(RawFd, RawFd), ()> {
-    socket::socketpair(
-        socket::AddressFamily::Unix,
-        socket::SockType::Stream,
-        None,
-        socket::SockFlag::SOCK_CLOEXEC,
-    ).map_err(|_| ())
-}
-
 /// Find a free X11 display slot and setup
-pub(crate) fn prepare_x11_sockets() -> Result<(u32, [RawFd; 2]), ()> {
+pub(crate) fn prepare_x11_sockets() -> Result<(u32, [UnixStream; 2]), ()> {
     for d in 0..33 {
         // if fails, try the next one
         if let Err(()) = grab_lockfile(d) {
@@ -97,25 +89,18 @@ fn release_lockfile(display: u32) {
 /// Open the two unix sockets an X server listens on
 ///
 /// SHould only be done after the associated lockfile is aquired!
-fn open_x11_sockets_for_display(display: u32) -> NixResult<[RawFd; 2]> {
-    let fs_socket = open_socket(
-        socket::UnixAddr::new(format!("/tmp/.X11-unix/X{}", display).as_bytes()).unwrap(), // We know this path is not to long, this unwrap cannot fail
-    )?;
-    let ret = open_socket(
-        socket::UnixAddr::new_abstract(format!("/tmp/.X11-unix/X{}", display).as_bytes()).unwrap(), // We know this path is not to long, this unwrap cannot fail
-    );
-    match ret {
-        Ok(abstract_socket) => Ok([fs_socket, abstract_socket]),
-        Err(e) => {
-            // close the first socket and return the error
-            let _ = ::nix::unistd::close(fs_socket);
-            Err(e)
-        }
-    }
+fn open_x11_sockets_for_display(display: u32) -> NixResult<[UnixStream; 2]> {
+    let path = format!("/tmp/.X11-unix/X{}", display);
+    // We know this path is not to long, these unwrap cannot fail
+    let fs_addr = socket::UnixAddr::new(path.as_bytes()).unwrap();
+    let abs_addr = socket::UnixAddr::new_abstract(path.as_bytes()).unwrap();
+    let fs_socket = open_socket(fs_addr)?;
+    let abstract_socket = open_socket(abs_addr)?;
+    Ok([fs_socket, abstract_socket])
 }
 
 /// Open an unix socket for listening and bind it to given path
-fn open_socket(addr: socket::UnixAddr) -> NixResult<RawFd> {
+fn open_socket(addr: socket::UnixAddr) -> NixResult<UnixStream> {
     // create an unix stream socket
     let fd = socket::socket(
         socket::AddressFamily::Unix,
@@ -132,5 +117,5 @@ fn open_socket(addr: socket::UnixAddr) -> NixResult<RawFd> {
         let _ = ::nix::unistd::close(fd);
         return Err(e);
     }
-    Ok(fd)
+    Ok(unsafe { FromRawFd::from_raw_fd(fd) })
 }
