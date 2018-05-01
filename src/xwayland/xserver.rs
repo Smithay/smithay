@@ -28,18 +28,18 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::env;
 use std::ffi::CString;
-use std::os::unix::io::{RawFd, AsRawFd, IntoRawFd};
+use std::os::unix::io::{AsRawFd, IntoRawFd};
 use std::os::unix::net::UnixStream;
 
 use nix::{Error as NixError, Result as NixResult};
 use nix::errno::Errno;
-use nix::unistd::{close, fork, ForkResult, Pid};
+use nix::unistd::{fork, ForkResult, Pid};
 use nix::sys::signal;
 
 use wayland_server::{Client, Display, LoopToken};
 use wayland_server::sources::{SignalEvent, Source};
 
-use super::x11_sockets::{cleanup_x11_sockets, prepare_x11_sockets};
+use super::x11_sockets::{X11Lock, prepare_x11_sockets};
 
 /// The XWayland handle
 pub struct XWayland<WM: XWindowManager> {
@@ -85,7 +85,7 @@ impl<WM: XWindowManager> Drop for XWayland<WM> {
 }
 
 struct XWaylandInstance {
-    display: u32,
+    display_lock: X11Lock,
     wayland_client: Client,
     sigusr1_handler: Option<Source<SignalEvent>>,
     wm_fd: Option<UnixStream>,
@@ -113,7 +113,7 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
     let (x_wm_x11, x_wm_me) = UnixStream::pair().map_err(|_| ())?;
     let (wl_x11, wl_me) = UnixStream::pair().map_err(|_| ())?;
 
-    let (display, x_fds) = prepare_x11_sockets()?;
+    let (lock, x_fds) = prepare_x11_sockets()?;
 
     // we have now created all the required sockets
 
@@ -121,23 +121,23 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
     let creation_time = ::std::time::Instant::now();
 
     // create the wayland client for XWayland
-    let client = unsafe { guard.wayland_display.borrow_mut().create_client(wl_me.into_raw_fd()) };
+    let client = unsafe {
+        guard
+            .wayland_display
+            .borrow_mut()
+            .create_client(wl_me.into_raw_fd())
+    };
     client.set_user_data(Rc::into_raw(inner.clone()) as *const () as *mut ());
     client.set_destructor(client_destroy::<WM>);
 
     // setup the SIGUSR1 handler
     let my_inner = inner.clone();
-    let sigusr1_handler = match guard
+    let sigusr1_handler = guard
         .token
         .add_signal_event_source(signal::Signal::SIGUSR1, move |_, ()| {
             xwayland_ready(&my_inner)
-        }) {
-        Ok(v) => v,
-        Err(_) => {
-            cleanup_x11_sockets(display);
-            return Err(());
-        }
-    };
+        })
+        .map_err(|_| ())?;
 
     // all is ready, we can do the fork dance
     let child_pid = match fork() {
@@ -170,7 +170,7 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
                 }
                 Ok(ForkResult::Child) => {
                     // we are the second child, we exec xwayland
-                    match exec_xwayland(display, wl_x11, x_wm_x11, &x_fds) {
+                    match exec_xwayland(lock.display(), wl_x11, x_wm_x11, &x_fds) {
                         Ok(x) => match x {},
                         Err(e) => {
                             // well, what can we do ?
@@ -188,14 +188,12 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
         }
         Err(e) => {
             eprintln!("[smithay] XWayland first fork failed: {:?}", e);
-            // fork failed ? cleanup
-            cleanup_x11_sockets(display);
             return Err(());
         }
     };
 
     guard.instance = Some(XWaylandInstance {
-        display,
+        display_lock: lock,
         wayland_client: client,
         sigusr1_handler: Some(sigusr1_handler),
         wm_fd: Some(x_wm_me),
@@ -218,12 +216,9 @@ impl<WM: XWindowManager> Inner<WM> {
             if let Some(s) = instance.sigusr1_handler.take() {
                 s.remove();
             }
-            // close the WM fd if it is still there
-            if let Some(s) = instance.wm_fd.take() {
-                let _ = s.shutdown(::std::net::Shutdown::Both);
-            }
-            // cleanup the X11 sockets
-            cleanup_x11_sockets(instance.display);
+            // All connexions and lockfiles are cleaned by their destructors
+
+            // Remove DISPLAY from the env
             ::std::env::remove_var("DISPLAY");
             // We do like wlroots:
             // > We do not kill the Xwayland process, it dies to broken pipe
@@ -282,11 +277,11 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
         // signal the WM
         wm.xwayland_ready(
             instance.wm_fd.take().unwrap(), // This is a bug if None
-            instance.wayland_client.clone()
+            instance.wayland_client.clone(),
         );
 
         // setup the environemnt
-        ::std::env::set_var("DISPLAY", format!(":{}", instance.display));
+        ::std::env::set_var("DISPLAY", format!(":{}", instance.display_lock.display()));
     }
 
     // in all cases, cleanup

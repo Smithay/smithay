@@ -7,19 +7,15 @@ use nix::errno::Errno;
 use nix::sys::socket;
 
 /// Find a free X11 display slot and setup
-pub(crate) fn prepare_x11_sockets() -> Result<(u32, [UnixStream; 2]), ()> {
+pub(crate) fn prepare_x11_sockets() -> Result<(X11Lock, [UnixStream; 2]), ()> {
     for d in 0..33 {
         // if fails, try the next one
-        if let Err(()) = grab_lockfile(d) {
-            continue;
+        if let Ok(lock) = X11Lock::grab(d) {
+            // we got a lockfile, try and create the socket
+            if let Ok(sockets) = open_x11_sockets_for_display(d) {
+                return Ok((lock, sockets));
+            }
         }
-        // we got a lockfile, try and create the socket
-        if let Ok(fds) = open_x11_sockets_for_display(d) {
-            return Ok((d, fds));
-        }
-        // creating the sockets failed, for some readon ?
-        // release the lockfile and try with the next
-        release_lockfile(d);
     }
     // If we reach here, all values from 0 to 32 failed
     // we need to stop trying at some point
@@ -27,63 +23,72 @@ pub(crate) fn prepare_x11_sockets() -> Result<(u32, [UnixStream; 2]), ()> {
 }
 
 /// Remove the X11 sockets for a given display number
-pub(crate) fn cleanup_x11_sockets(display: u32) {
-    let _ = ::std::fs::remove_file(format!("/tmp/.X11-unix/X{}", display));
-    let _ = ::std::fs::remove_file(format!("/tmp/.X{}-lock", display));
+pub(crate) fn cleanup_x11_sockets(display: u32) {}
+
+pub(crate) struct X11Lock {
+    display: u32,
 }
 
-/// Try to grab a lockfile for given X display number
-fn grab_lockfile(display: u32) -> Result<(), ()> {
-    let filename = format!("/tmp/.X{}-lock", display);
-    let lockfile = ::std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&filename);
-    match lockfile {
-        Ok(mut file) => {
-            // we got it, write our PID in it and we're good
-            let ret = file.write_fmt(format_args!("{:>10}", ::nix::unistd::Pid::this()));
-            if let Err(_) = ret {
-                // write to the file failed ? we abandon
+impl X11Lock {
+    /// Try to grab a lockfile for given X display number
+    fn grab(display: u32) -> Result<X11Lock, ()> {
+        let filename = format!("/tmp/.X{}-lock", display);
+        let lockfile = ::std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&filename);
+        match lockfile {
+            Ok(mut file) => {
+                // we got it, write our PID in it and we're good
+                let ret = file.write_fmt(format_args!("{:>10}", ::nix::unistd::Pid::this()));
+                if let Err(_) = ret {
+                    // write to the file failed ? we abandon
+                    ::std::mem::drop(file);
+                    let _ = ::std::fs::remove_file(&filename);
+                    return Err(());
+                } else {
+                    // we got the lockfile and wrote our pid to it, all is good
+                    return Ok(X11Lock { display });
+                }
+            }
+            Err(_) => {
+                // we could not open the file, now we try to read it
+                // and if it contains the pid of a process that no longer
+                // exist (so if a previous x server claimed it and did not
+                // exit gracefully and remove it), we claim it
+                // if we can't open it, give up
+                let mut file = ::std::fs::File::open(&filename).map_err(|_| ())?;
+                let mut spid = [0u8; 11];
+                file.read_exact(&mut spid).map_err(|_| ())?;
                 ::std::mem::drop(file);
-                let _ = ::std::fs::remove_file(&filename);
+                let pid = ::nix::unistd::Pid::from_raw(::std::str::from_utf8(&spid)
+                    .map_err(|_| ())?
+                    .trim()
+                    .parse::<i32>()
+                    .map_err(|_| ())?);
+                if let Err(NixError::Sys(Errno::ESRCH)) = ::nix::sys::signal::kill(pid, None) {
+                    // no process whose pid equals the contents of the lockfile exists
+                    // remove the lockfile and try grabbing it again
+                    let _ = ::std::fs::remove_file(filename);
+                    return X11Lock::grab(display);
+                }
+                // if we reach here, this lockfile exists and is probably in use, give up
                 return Err(());
-            } else {
-                // we got the lockfile and wrote our pid to it, all is good
-                return Ok(());
             }
         }
-        Err(_) => {
-            // we could not open the file, now we try to read it
-            // and if it contains the pid of a process that no longer
-            // exist (so if a previous x server claimed it and did not
-            // exit gracefully and remove it), we claim it
-            // if we can't open it, give up
-            let mut file = ::std::fs::File::open(&filename).map_err(|_| ())?;
-            let mut spid = [0u8; 11];
-            file.read_exact(&mut spid).map_err(|_| ())?;
-            ::std::mem::drop(file);
-            let pid = ::nix::unistd::Pid::from_raw(::std::str::from_utf8(&spid)
-                .map_err(|_| ())?
-                .trim()
-                .parse::<i32>()
-                .map_err(|_| ())?);
-            if let Err(NixError::Sys(Errno::ESRCH)) = ::nix::sys::signal::kill(pid, None) {
-                // no process whose pid equals the contents of the lockfile exists
-                // remove the lockfile and try grabbing it again
-                let _ = ::std::fs::remove_file(filename);
-                return grab_lockfile(display);
-            }
-            // if we reach here, this lockfile exists and is probably in use, give up
-            return Err(());
-        }
+    }
+
+    pub(crate) fn display(&self) -> u32 {
+        self.display
     }
 }
 
-/// Release an X11 lockfile
-fn release_lockfile(display: u32) {
-    let filename = format!("/tmp/.X{}-lock", display);
-    let _ = ::std::fs::remove_file(filename);
+impl Drop for X11Lock {
+    fn drop(&mut self) {
+        // Cleanup all the X11 files
+        let _ = ::std::fs::remove_file(format!("/tmp/.X11-unix/X{}", self.display));
+        let _ = ::std::fs::remove_file(format!("/tmp/.X{}-lock", self.display));
+    }
 }
 
 /// Open the two unix sockets an X server listens on
