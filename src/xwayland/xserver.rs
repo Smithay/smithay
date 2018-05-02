@@ -66,12 +66,22 @@ pub trait XWindowManager {
 
 impl<WM: XWindowManager + 'static> XWayland<WM> {
     /// Start the XWayland server
-    pub fn init(wm: WM, token: LoopToken, display: Rc<RefCell<Display>>) -> Result<XWayland<WM>, ()> {
+    pub fn init<L>(
+        wm: WM,
+        token: LoopToken,
+        display: Rc<RefCell<Display>>,
+        logger: L,
+    ) -> Result<XWayland<WM>, ()>
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
+        let log = ::slog_or_stdlog(logger);
         let inner = Rc::new(RefCell::new(Inner {
             wm,
             token,
             wayland_display: display,
             instance: None,
+            log: log.new(o!("smithay_module" => "XWayland")),
         }));
         launch(&inner)?;
         Ok(XWayland { inner })
@@ -99,6 +109,7 @@ struct Inner<WM: XWindowManager> {
     token: LoopToken,
     wayland_display: Rc<RefCell<Display>>,
     instance: Option<XWaylandInstance>,
+    log: ::slog::Logger,
 }
 
 // Launch an XWayland server
@@ -110,10 +121,12 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
         return Ok(());
     }
 
+    info!(guard.log, "Starting XWayland");
+
     let (x_wm_x11, x_wm_me) = UnixStream::pair().map_err(|_| ())?;
     let (wl_x11, wl_me) = UnixStream::pair().map_err(|_| ())?;
 
-    let (lock, x_fds) = prepare_x11_sockets()?;
+    let (lock, x_fds) = prepare_x11_sockets(guard.log.clone())?;
 
     // we have now created all the required sockets
 
@@ -174,20 +187,20 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
                         Ok(x) => match x {},
                         Err(e) => {
                             // well, what can we do ?
-                            eprintln!("[smithay] exec XWayland failed: {:?}", e);
+                            error!(guard.log, "exec XWayland failed"; "err" => format!("{:?}", e));
                             unsafe { ::nix::libc::exit(1) };
                         }
                     }
                 }
                 Err(e) => {
                     // well, what can we do ?
-                    eprintln!("[smithay] XWayland second fork failed: {:?}", e);
+                    error!(guard.log, "XWayland second fork failed"; "err" => format!("{:?}", e));
                     unsafe { ::nix::libc::exit(1) };
                 }
             }
         }
         Err(e) => {
-            eprintln!("[smithay] XWayland first fork failed: {:?}", e);
+            error!(guard.log, "XWayland first fork failed"; "err" => format!("{:?}", e));
             return Err(());
         }
     };
@@ -209,6 +222,7 @@ impl<WM: XWindowManager> Inner<WM> {
     fn shutdown(&mut self) {
         // don't do anything if not running
         if let Some(mut instance) = self.instance.take() {
+            info!(self.log, "Shutting down XWayland.");
             self.wm.xwayland_exited();
             // kill the client
             instance.wayland_client.kill();
@@ -238,7 +252,13 @@ fn client_destroy<WM: XWindowManager + 'static>(data: *mut ()) {
     // restart it, unless we really just started it, if it crashes right
     // at startup there is no point
     if started_at.map(|t| t.elapsed().as_secs()).unwrap_or(10) > 5 {
+        warn!(inner.borrow().log, "XWayland crashed, restarting.");
         let _ = launch(&inner);
+    } else {
+        warn!(
+            inner.borrow().log,
+            "XWayland crashed less than 5 seconds after its startup, not restarting."
+        );
     }
 }
 
@@ -253,7 +273,7 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
     let pid = instance.child_pid.unwrap();
 
     // find out if the launch was a success by waiting on the intermediate child
-    let mut success: bool;
+    let success: bool;
     loop {
         match wait::waitpid(pid, None) {
             Ok(wait::WaitStatus::Exited(_, 0)) => {
@@ -275,6 +295,7 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
 
     if success {
         // signal the WM
+        info!(inner.log, "XWayland is ready, signaling the WM.");
         wm.xwayland_ready(
             instance.wm_fd.take().unwrap(), // This is a bug if None
             instance.wayland_client.clone(),
@@ -282,6 +303,11 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
 
         // setup the environemnt
         ::std::env::set_var("DISPLAY", format!(":{}", instance.display_lock.display()));
+    } else {
+        error!(
+            inner.log,
+            "XWayland crashed at startup, will not try to restart it."
+        );
     }
 
     // in all cases, cleanup

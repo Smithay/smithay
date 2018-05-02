@@ -7,10 +7,10 @@ use nix::errno::Errno;
 use nix::sys::socket;
 
 /// Find a free X11 display slot and setup
-pub(crate) fn prepare_x11_sockets() -> Result<(X11Lock, [UnixStream; 2]), ()> {
+pub(crate) fn prepare_x11_sockets(log: ::slog::Logger) -> Result<(X11Lock, [UnixStream; 2]), ()> {
     for d in 0..33 {
         // if fails, try the next one
-        if let Ok(lock) = X11Lock::grab(d) {
+        if let Ok(lock) = X11Lock::grab(d, log.clone()) {
             // we got a lockfile, try and create the socket
             if let Ok(sockets) = open_x11_sockets_for_display(d) {
                 return Ok((lock, sockets));
@@ -22,16 +22,15 @@ pub(crate) fn prepare_x11_sockets() -> Result<(X11Lock, [UnixStream; 2]), ()> {
     return Err(());
 }
 
-/// Remove the X11 sockets for a given display number
-pub(crate) fn cleanup_x11_sockets(display: u32) {}
-
 pub(crate) struct X11Lock {
     display: u32,
+    log: ::slog::Logger,
 }
 
 impl X11Lock {
     /// Try to grab a lockfile for given X display number
-    fn grab(display: u32) -> Result<X11Lock, ()> {
+    fn grab(display: u32, log: ::slog::Logger) -> Result<X11Lock, ()> {
+        debug!(log, "Attempting to aquire an X11 display lock"; "D" => display);
         let filename = format!("/tmp/.X{}-lock", display);
         let lockfile = ::std::fs::OpenOptions::new()
             .write(true)
@@ -47,11 +46,13 @@ impl X11Lock {
                     let _ = ::std::fs::remove_file(&filename);
                     return Err(());
                 } else {
+                    debug!(log, "X11 lock aquired"; "D" => display);
                     // we got the lockfile and wrote our pid to it, all is good
-                    return Ok(X11Lock { display });
+                    return Ok(X11Lock { display, log });
                 }
             }
             Err(_) => {
+                debug!(log, "Failed to acquire lock"; "D" => display);
                 // we could not open the file, now we try to read it
                 // and if it contains the pid of a process that no longer
                 // exist (so if a previous x server claimed it and did not
@@ -69,8 +70,13 @@ impl X11Lock {
                 if let Err(NixError::Sys(Errno::ESRCH)) = ::nix::sys::signal::kill(pid, None) {
                     // no process whose pid equals the contents of the lockfile exists
                     // remove the lockfile and try grabbing it again
-                    let _ = ::std::fs::remove_file(filename);
-                    return X11Lock::grab(display);
+                    if let Ok(()) = ::std::fs::remove_file(filename) {
+                        debug!(log, "Lock was blocked by a defunct X11 server, trying again"; "D" => display);
+                        return X11Lock::grab(display, log);
+                    } else {
+                        // we could not remove the lockfile, abort
+                        return Err(());
+                    }
                 }
                 // if we reach here, this lockfile exists and is probably in use, give up
                 return Err(());
@@ -85,15 +91,20 @@ impl X11Lock {
 
 impl Drop for X11Lock {
     fn drop(&mut self) {
+        info!(self.log, "Cleaning up X11 lock.");
         // Cleanup all the X11 files
-        let _ = ::std::fs::remove_file(format!("/tmp/.X11-unix/X{}", self.display));
-        let _ = ::std::fs::remove_file(format!("/tmp/.X{}-lock", self.display));
+        if let Err(e) = ::std::fs::remove_file(format!("/tmp/.X11-unix/X{}", self.display)) {
+            warn!(self.log, "Failed to remove X11 socket"; "error" => format!("{:?}", e));
+        }
+        if let Err(e) = ::std::fs::remove_file(format!("/tmp/.X{}-lock", self.display)) {
+            warn!(self.log, "Failed to remove X11 lockfile"; "error" => format!("{:?}", e));
+        }
     }
 }
 
 /// Open the two unix sockets an X server listens on
 ///
-/// SHould only be done after the associated lockfile is aquired!
+/// Should only be done after the associated lockfile is aquired!
 fn open_x11_sockets_for_display(display: u32) -> NixResult<[UnixStream; 2]> {
     let path = format!("/tmp/.X11-unix/X{}", display);
     // We know this path is not to long, these unwrap cannot fail
