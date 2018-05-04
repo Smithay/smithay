@@ -42,6 +42,7 @@ env:
     - FEATURES="backend_session_udev"
     - FEATURES="backend_session_logind"
     - FEATURES="renderer_glium"
+    - FEATURES="xwayland"
       # test default features
     - FEATURES="default"
       # test all features simultaneously
