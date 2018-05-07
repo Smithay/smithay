@@ -47,6 +47,8 @@ env:
     - FEATURES="default"
       # test all features simultaneously
     - FEATURES="all"
+      # test our house compositor
+    - FEATURES="anvil"
 
 matrix:
   include:
@@ -84,6 +86,9 @@ script:
         "cargo-clippy")
             vagga cargo-$TRAVIS_RUST_VERSION install -f clippy &&
             vagga cargo-$TRAVIS_RUST_VERSION clippy --all-features -- -D warnings
+        ;;
+        "anvil")
+            vagga cargo-$TRAVIS_RUST_VERSION test -p anvil --all-features
         ;;
         *)
             vagga cargo-$TRAVIS_RUST_VERSION test --lib --doc --tests --no-default-features --features "$FEATURES" &&
