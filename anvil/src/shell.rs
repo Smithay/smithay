@@ -1,6 +1,11 @@
-use super::{SurfaceKind, WindowMap};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+
 use glium::texture::Texture2d;
+
 use rand;
+
 use smithay::backend::graphics::egl::wayland::{BufferAccessError, Format};
 use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLImages};
 use smithay::wayland::compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent};
@@ -9,94 +14,12 @@ use smithay::wayland::shell::xdg::{xdg_shell_init, PopupConfigure, ShellState as
 use smithay::wayland::shell::legacy::{wl_shell_init, ShellRequest, ShellState as WlShellState,
                                       ShellSurfaceKind, ShellSurfaceRole};
 use smithay::wayland::shm::with_buffer_contents as shm_buffer_contents;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use wayland_server::{Display, LoopToken, Resource};
-use wayland_server::protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface};
+use smithay::wayland_server::{Display, LoopToken, Resource};
+use smithay::wayland_server::protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface};
+
+use window_map::{Kind as SurfaceKind, WindowMap};
 
 define_roles!(Roles => [ XdgSurface, XdgSurfaceRole ] [ ShellSurface, ShellSurfaceRole<()>] );
-
-#[derive(Default)]
-pub struct SurfaceData {
-    pub buffer: Option<Buffer>,
-    pub texture: Option<Texture2d>,
-}
-
-pub enum Buffer {
-    Egl { images: EGLImages },
-    Shm { data: Vec<u8>, size: (u32, u32) },
-}
-
-fn surface_commit(
-    surface: &Resource<wl_surface::WlSurface>,
-    token: CompositorToken<SurfaceData, Roles>,
-    display: &RefCell<Option<EGLDisplay>>,
-) {
-    // we retrieve the contents of the associated buffer and copy it
-    token.with_surface_data(surface, |attributes| {
-        match attributes.buffer.take() {
-            Some(Some((buffer, (_x, _y)))) => {
-                // we ignore hotspot coordinates in this simple example
-                match if let Some(display) = display.borrow().as_ref() {
-                    display.egl_buffer_contents(buffer)
-                } else {
-                    Err(BufferAccessError::NotManaged(buffer))
-                } {
-                    Ok(images) => {
-                        match images.format {
-                            Format::RGB => {}
-                            Format::RGBA => {}
-                            _ => {
-                                // we don't handle the more complex formats here.
-                                attributes.user_data.buffer = None;
-                                attributes.user_data.texture = None;
-                                return;
-                            }
-                        };
-                        attributes.user_data.texture = None;
-                        attributes.user_data.buffer = Some(Buffer::Egl { images });
-                    }
-                    Err(BufferAccessError::NotManaged(buffer)) => {
-                        shm_buffer_contents(&buffer, |slice, data| {
-                            let offset = data.offset as usize;
-                            let stride = data.stride as usize;
-                            let width = data.width as usize;
-                            let height = data.height as usize;
-                            let mut new_vec = Vec::with_capacity(width * height * 4);
-                            for i in 0..height {
-                                new_vec
-                                    .extend(&slice[(offset + i * stride)..(offset + i * stride + width * 4)]);
-                            }
-                            attributes.user_data.texture = None;
-                            attributes.user_data.buffer = Some(Buffer::Shm { data: new_vec, size: (data.width as u32, data.height as u32) });
-                        }).expect("Got EGL buffer with no set EGLDisplay. You need to unbind your EGLContexts before dropping them!");
-                        buffer.send(wl_buffer::Event::Release);
-                    }
-                    Err(err) => panic!("EGL error: {}", err),
-                }
-            }
-            Some(None) => {
-                // erase the contents
-                attributes.user_data.buffer = None;
-                attributes.user_data.texture = None;
-            }
-            None => {}
-        }
-    });
-}
-
-fn get_size(attrs: &SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)> {
-    attrs
-        .user_data
-        .buffer
-        .as_ref()
-        .map(|ref buffer| match **buffer {
-            Buffer::Shm { ref size, .. } => *size,
-            Buffer::Egl { ref images } => (images.width, images.height),
-        })
-        .map(|(x, y)| (x as i32, y as i32))
-}
 
 pub type MyWindowMap =
     WindowMap<SurfaceData, Roles, (), (), fn(&SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)>>;
@@ -198,4 +121,85 @@ pub fn init_shell(
         wl_shell_state,
         window_map,
     )
+}
+
+#[derive(Default)]
+pub struct SurfaceData {
+    pub buffer: Option<Buffer>,
+    pub texture: Option<Texture2d>,
+}
+
+pub enum Buffer {
+    Egl { images: EGLImages },
+    Shm { data: Vec<u8>, size: (u32, u32) },
+}
+
+fn surface_commit(
+    surface: &Resource<wl_surface::WlSurface>,
+    token: CompositorToken<SurfaceData, Roles>,
+    display: &RefCell<Option<EGLDisplay>>,
+) {
+    // we retrieve the contents of the associated buffer and copy it
+    token.with_surface_data(surface, |attributes| {
+        match attributes.buffer.take() {
+            Some(Some((buffer, (_x, _y)))) => {
+                // we ignore hotspot coordinates in this simple example
+                match if let Some(display) = display.borrow().as_ref() {
+                    display.egl_buffer_contents(buffer)
+                } else {
+                    Err(BufferAccessError::NotManaged(buffer))
+                } {
+                    Ok(images) => {
+                        match images.format {
+                            Format::RGB => {}
+                            Format::RGBA => {}
+                            _ => {
+                                // we don't handle the more complex formats here.
+                                attributes.user_data.buffer = None;
+                                attributes.user_data.texture = None;
+                                return;
+                            }
+                        };
+                        attributes.user_data.texture = None;
+                        attributes.user_data.buffer = Some(Buffer::Egl { images });
+                    }
+                    Err(BufferAccessError::NotManaged(buffer)) => {
+                        shm_buffer_contents(&buffer, |slice, data| {
+                            let offset = data.offset as usize;
+                            let stride = data.stride as usize;
+                            let width = data.width as usize;
+                            let height = data.height as usize;
+                            let mut new_vec = Vec::with_capacity(width * height * 4);
+                            for i in 0..height {
+                                new_vec
+                                    .extend(&slice[(offset + i * stride)..(offset + i * stride + width * 4)]);
+                            }
+                            attributes.user_data.texture = None;
+                            attributes.user_data.buffer = Some(Buffer::Shm { data: new_vec, size: (data.width as u32, data.height as u32) });
+                        }).expect("Got EGL buffer with no set EGLDisplay. You need to unbind your EGLContexts before dropping them!");
+                        buffer.send(wl_buffer::Event::Release);
+                    }
+                    Err(err) => panic!("EGL error: {}", err),
+                }
+            }
+            Some(None) => {
+                // erase the contents
+                attributes.user_data.buffer = None;
+                attributes.user_data.texture = None;
+            }
+            None => {}
+        }
+    });
+}
+
+fn get_size(attrs: &SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)> {
+    attrs
+        .user_data
+        .buffer
+        .as_ref()
+        .map(|ref buffer| match **buffer {
+            Buffer::Shm { ref size, .. } => *size,
+            Buffer::Egl { ref images } => (images.width, images.height),
+        })
+        .map(|(x, y)| (x as i32, y as i32))
 }

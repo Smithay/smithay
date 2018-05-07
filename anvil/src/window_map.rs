@@ -3,8 +3,8 @@ use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, SurfaceAttri
 use smithay::wayland::compositor::roles::Role;
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgSurfaceRole};
 use smithay::wayland::shell::legacy::{ShellSurface, ShellSurfaceRole};
-use wayland_server::Resource;
-use wayland_server::protocol::wl_surface;
+use smithay::wayland_server::Resource;
+use smithay::wayland_server::protocol::wl_surface;
 
 pub enum Kind<U, R, SD, D> {
     Xdg(ToplevelSurface<U, R, SD>),

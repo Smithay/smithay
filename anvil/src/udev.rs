@@ -1,33 +1,24 @@
-extern crate drm;
-#[macro_use]
-extern crate glium;
-extern crate image;
-extern crate input as libinput;
-extern crate rand;
-#[macro_use(define_roles)]
-extern crate smithay;
-extern crate udev;
-extern crate wayland_server;
-extern crate xkbcommon;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::io::Error as IoError;
+use std::path::PathBuf;
+use std::process::Command;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
-#[macro_use]
-extern crate slog;
-extern crate slog_async;
-extern crate slog_term;
-
-mod helpers;
-
-use drm::control::{Device as ControlDevice, ResourceInfo};
-use drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
-use drm::control::crtc;
-use drm::control::encoder::Info as EncoderInfo;
-use drm::result::Error as DrmError;
 use glium::{Blend, Surface};
-use helpers::{init_shell, Buffer, GliumDrawer, MyWindowMap, Roles, SurfaceData};
-use image::{ImageBuffer, Rgba};
-use libinput::{event, Device as LibinputDevice, Libinput};
-use libinput::event::keyboard::KeyboardEventTrait;
-use slog::{Drain, Logger};
+
+use smithay::image::{ImageBuffer, Rgba};
+
+use slog::Logger;
+
+use smithay::drm::control::{Device as ControlDevice, ResourceInfo};
+use smithay::drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
+use smithay::drm::control::crtc;
+use smithay::drm::control::encoder::Info as EncoderInfo;
+use smithay::drm::result::Error as DrmError;
 use smithay::backend::drm::{DevPath, DrmBackend, DrmDevice, DrmHandler};
 use smithay::backend::graphics::GraphicsBackend;
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
@@ -41,22 +32,16 @@ use smithay::backend::udev::{primary_gpu, udev_backend_bind, SessionFdDrmDevice,
 use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
 use smithay::wayland::output::{Mode, Output, PhysicalProperties};
-use smithay::wayland::seat::{KeyboardHandle, PointerHandle, Seat};
+use smithay::wayland::seat::{KeyboardHandle, PointerHandle, Seat, keysyms as xkb};
 use smithay::wayland::shm::init_shm_global;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::env;
-use std::io::Error as IoError;
-use std::path::PathBuf;
-use std::process::Command;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use wayland_server::Display;
-use wayland_server::commons::downcast_impl;
-use wayland_server::protocol::{wl_output, wl_pointer};
-use xkbcommon::xkb::keysyms as xkb;
+use smithay::wayland_server::{Display, EventLoop};
+use smithay::wayland_server::commons::downcast_impl;
+use smithay::wayland_server::protocol::{wl_output, wl_pointer};
+use smithay::input::{event, Device as LibinputDevice, Libinput};
+use smithay::input::event::keyboard::KeyboardEventTrait;
+
+use glium_drawer::GliumDrawer;
+use shell::{init_shell, MyWindowMap, Buffer, Roles, SurfaceData};
 
 struct LibinputInputHandler {
     log: Logger,
@@ -101,7 +86,11 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
         let time = Event::time(&evt);
         self.keyboard
             .input(keycode, state, serial, time, move |modifiers, keysym| {
-                debug!(log, "keysym"; "state" => format!("{:?}", state), "mods" => format!("{:?}", modifiers), "keysym" => xkbcommon::xkb::keysym_get_name(keysym));
+                debug!(log, "keysym";
+                    "state" => format!("{:?}", state),
+                    "mods" => format!("{:?}", modifiers),
+                    "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
+                );
                 if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace
                     && state == KeyState::Pressed
                 {
@@ -179,10 +168,10 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
     }
     fn on_pointer_axis(&mut self, _: &input::Seat, evt: event::pointer::PointerAxisEvent) {
         let source = match evt.source() {
-            input::AxisSource::Continuous => wayland_server::protocol::wl_pointer::AxisSource::Continuous,
-            input::AxisSource::Finger => wayland_server::protocol::wl_pointer::AxisSource::Finger,
+            input::AxisSource::Continuous => wl_pointer::AxisSource::Continuous,
+            input::AxisSource::Finger => wl_pointer::AxisSource::Finger,
             input::AxisSource::Wheel | input::AxisSource::WheelTilt => {
-                wayland_server::protocol::wl_pointer::AxisSource::Wheel
+                wl_pointer::AxisSource::Wheel
             }
         };
         let horizontal_amount = evt.amount(&input::Axis::Horizontal)
@@ -197,37 +186,37 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
             event.source(source);
             if horizontal_amount != 0.0 {
                 event.value(
-                    wayland_server::protocol::wl_pointer::Axis::HorizontalScroll,
+                    wl_pointer::Axis::HorizontalScroll,
                     horizontal_amount,
                     evt.time(),
                 );
                 if let Some(discrete) = horizontal_amount_discrete {
                     event.discrete(
-                        wayland_server::protocol::wl_pointer::Axis::HorizontalScroll,
+                        wl_pointer::Axis::HorizontalScroll,
                         discrete as i32,
                     );
                 }
-            } else if source == wayland_server::protocol::wl_pointer::AxisSource::Finger {
+            } else if source == wl_pointer::AxisSource::Finger {
                 event.stop(
-                    wayland_server::protocol::wl_pointer::Axis::HorizontalScroll,
+                    wl_pointer::Axis::HorizontalScroll,
                     evt.time(),
                 );
             }
             if vertical_amount != 0.0 {
                 event.value(
-                    wayland_server::protocol::wl_pointer::Axis::VerticalScroll,
+                    wl_pointer::Axis::VerticalScroll,
                     vertical_amount,
                     evt.time(),
                 );
                 if let Some(discrete) = vertical_amount_discrete {
                     event.discrete(
-                        wayland_server::protocol::wl_pointer::Axis::VerticalScroll,
+                        wl_pointer::Axis::VerticalScroll,
                         discrete as i32,
                     );
                 }
-            } else if source == wayland_server::protocol::wl_pointer::AxisSource::Finger {
+            } else if source == wl_pointer::AxisSource::Finger {
                 event.stop(
-                    wayland_server::protocol::wl_pointer::Axis::VerticalScroll,
+                    wl_pointer::Axis::VerticalScroll,
                     evt.time(),
                 );
             }
@@ -254,26 +243,14 @@ impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
     }
 }
 
-fn main() {
+pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) -> Result<(),()> {
+
+    let name = display.add_socket_auto().unwrap().into_string().unwrap();
+    info!(log, "Listening on wayland socket"; "name" => name.clone());
+    ::std::env::set_var("WAYLAND_DISPLAY", name);
+
     let active_egl_context = Rc::new(RefCell::new(None));
 
-    // A logger facility, here we use the terminal for this example
-    let log = Logger::root(
-        slog_term::FullFormat::new(slog_term::PlainSyncDecorator::new(std::io::stdout()))
-            .build()
-            .fuse(),
-        o!(),
-    );
-
-    // Initialize the wayland server
-    let (mut display, mut event_loop) = wayland_server::Display::new();
-
-    /*
-     * Add a listening socket
-     */
-    let name = display.add_socket_auto().unwrap().into_string().unwrap();
-    println!("Listening on socket: {}", name);
-    env::set_var("WAYLAND_DISPLAY", name);
     let display = Rc::new(RefCell::new(display));
 
     /*
@@ -296,7 +273,7 @@ fn main() {
     /*
      * Initialize session
      */
-    let (session, mut notifier) = AutoSession::new(log.clone()).unwrap();
+    let (session, mut notifier) = AutoSession::new(log.clone()).ok_or(())?;
 
     let running = Arc::new(AtomicBool::new(true));
 
@@ -305,12 +282,12 @@ fn main() {
     /*
      * Initialize the udev backend
      */
-    let context = udev::Context::new().unwrap();
+    let context = ::smithay::udev::Context::new().map_err(|_| ())?;
     let seat = session.seat();
 
     let primary_gpu = primary_gpu(&context, &seat).unwrap_or_default();
 
-    let bytes = include_bytes!("resources/cursor2.rgba");
+    let bytes = include_bytes!("../resources/cursor2.rgba");
     let mut udev_backend = UdevBackend::new(
         event_loop.token(),
         &context,
@@ -327,7 +304,7 @@ fn main() {
             logger: log.clone(),
         },
         log.clone(),
-    ).unwrap();
+    ).map_err(|_| ())?;
 
     let udev_session_id = notifier.register(&mut udev_backend);
 
@@ -412,8 +389,6 @@ fn main() {
         }
     }
 
-    println!("Bye Bye");
-
     let mut notifier = session_event_source.unbind();
     notifier.unregister(udev_session_id);
     notifier.unregister(libinput_session_id);
@@ -427,6 +402,7 @@ fn main() {
     // variable to simplify type inference.
     udev_backend = *(downcast_impl(udev_event_source.remove()).unwrap_or_else(|_| unreachable!()));
     udev_backend.close();
+    Ok(())
 }
 
 struct UdevHandlerImpl {

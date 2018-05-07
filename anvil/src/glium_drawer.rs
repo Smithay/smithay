@@ -6,9 +6,9 @@ use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::egl::error::Result as EGLResult;
 use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLImages, EGLWaylandExtensions, Format};
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
+use smithay::wayland_server::Display;
+
 use std::cell::Ref;
-use std::ops::Deref;
-use wayland_server::Display;
 
 #[derive(Copy, Clone)]
 struct Vertex {

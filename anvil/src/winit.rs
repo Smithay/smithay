@@ -1,33 +1,25 @@
-#[macro_use]
-extern crate glium;
-extern crate rand;
-#[macro_use]
-extern crate slog;
-extern crate slog_async;
-extern crate slog_term;
-#[macro_use(define_roles)]
-extern crate smithay;
-extern crate wayland_server;
+use std::cell::RefCell;
+use std::rc::Rc;
 
-mod helpers;
-
-use glium::Surface;
-use helpers::{init_shell, Buffer, GliumDrawer, MyWindowMap};
-use slog::{Drain, Logger};
-use smithay::backend::graphics::egl::EGLGraphicsBackend;
-use smithay::backend::graphics::egl::wayland::{EGLWaylandExtensions, Format};
-use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerAxisEvent,
-                              PointerButtonEvent, PointerMotionAbsoluteEvent};
-use smithay::backend::winit;
+use smithay::wayland::shm::init_shm_global;
+use smithay::wayland::seat::{KeyboardHandle, PointerHandle, Seat};
 use smithay::wayland::compositor::{SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
 use smithay::wayland::output::{Mode, Output, PhysicalProperties};
-use smithay::wayland::seat::{KeyboardHandle, PointerHandle, Seat};
-use smithay::wayland::shm::init_shm_global;
-use std::cell::RefCell;
-use std::rc::Rc;
-use wayland_server::Display;
-use wayland_server::protocol::{wl_output, wl_pointer};
+use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerAxisEvent,
+                              PointerButtonEvent, PointerMotionAbsoluteEvent};
+use smithay::backend::winit;
+use smithay::backend::graphics::egl::EGLGraphicsBackend;
+use smithay::backend::graphics::egl::wayland::{EGLWaylandExtensions, Format};
+use smithay::wayland_server::{Display, EventLoop};
+use smithay::wayland_server::protocol::{wl_pointer, wl_output};
+
+use glium::Surface;
+
+use slog::Logger;
+
+use glium_drawer::GliumDrawer;
+use shell::{init_shell, MyWindowMap, Buffer};
 
 struct WinitInputHandler {
     log: Logger,
@@ -102,8 +94,8 @@ impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
     }
     fn on_pointer_axis(&mut self, _: &input::Seat, evt: winit::WinitMouseWheelEvent) {
         let source = match evt.source() {
-            input::AxisSource::Continuous => wayland_server::protocol::wl_pointer::AxisSource::Continuous,
-            input::AxisSource::Wheel => wayland_server::protocol::wl_pointer::AxisSource::Wheel,
+            input::AxisSource::Continuous => wl_pointer::AxisSource::Continuous,
+            input::AxisSource::Wheel => wl_pointer::AxisSource::Wheel,
             _ => unreachable!(), //winit does not have more specific sources
         };
         let horizontal_amount = evt.amount(&input::Axis::Horizontal)
@@ -118,26 +110,26 @@ impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
             event.source(source);
             if horizontal_amount != 0.0 {
                 event.value(
-                    wayland_server::protocol::wl_pointer::Axis::HorizontalScroll,
+                    wl_pointer::Axis::HorizontalScroll,
                     horizontal_amount,
                     evt.time(),
                 );
                 if let Some(discrete) = horizontal_amount_discrete {
                     event.discrete(
-                        wayland_server::protocol::wl_pointer::Axis::HorizontalScroll,
+                        wl_pointer::Axis::HorizontalScroll,
                         discrete as i32,
                     );
                 }
             }
             if vertical_amount != 0.0 {
                 event.value(
-                    wayland_server::protocol::wl_pointer::Axis::VerticalScroll,
+                    wl_pointer::Axis::VerticalScroll,
                     vertical_amount,
                     evt.time(),
                 );
                 if let Some(discrete) = vertical_amount_discrete {
                     event.discrete(
-                        wayland_server::protocol::wl_pointer::Axis::VerticalScroll,
+                        wl_pointer::Axis::VerticalScroll,
                         discrete as i32,
                     );
                 }
@@ -165,17 +157,8 @@ impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
     }
 }
 
-fn main() {
-    // A logger facility, here we use the terminal for this example
-    let log = Logger::root(
-        slog_async::Async::default(slog_term::term_full().fuse()).fuse(),
-        o!(),
-    );
-
-    // Initialize a simple backend for testing
-    let (renderer, mut input) = winit::init(log.clone()).unwrap();
-
-    let (mut display, mut event_loop) = wayland_server::Display::new();
+pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop, log: Logger) -> Result<(), ()> {
+    let (renderer, mut input) = winit::init(log.clone()).map_err(|_| ())?;
 
     let egl_display = Rc::new(RefCell::new(
         if let Ok(egl_display) = renderer.bind_wl_display(&display) {
@@ -189,17 +172,21 @@ fn main() {
     let (w, h) = renderer.get_framebuffer_dimensions();
     let drawer = GliumDrawer::from(renderer);
 
+    let name = display.add_socket_auto().unwrap().into_string().unwrap();
+    info!(log, "Listening on wayland socket"; "name" => name.clone());
+    ::std::env::set_var("WAYLAND_DISPLAY", name);
+
     /*
      * Initialize the globals
      */
 
-    init_shm_global(&mut display, event_loop.token(), vec![], log.clone());
+    init_shm_global(display, event_loop.token(), vec![], log.clone());
 
     let (compositor_token, _, _, window_map) =
-        init_shell(&mut display, event_loop.token(), log.clone(), egl_display);
+        init_shell(display, event_loop.token(), log.clone(), egl_display);
 
     let (mut seat, _) = Seat::new(
-        &mut display,
+        display,
         event_loop.token(),
         "winit".into(),
         log.clone(),
@@ -210,7 +197,7 @@ fn main() {
         .expect("Failed to initialize the keyboard");
 
     let (output, _) = Output::new(
-        &mut display,
+        display,
         event_loop.token(),
         "Winit".into(),
         PhysicalProperties {
@@ -247,11 +234,7 @@ fn main() {
         serial: 0,
     });
 
-    /*
-     * Add a listening socket:
-     */
-    let name = display.add_socket_auto().unwrap().into_string().unwrap();
-    println!("Listening on socket: {}", name);
+    info!(log, "Initialization completed, starting the main loop.");
 
     loop {
         input.dispatch_new_events().unwrap();
@@ -317,16 +300,16 @@ fn main() {
                                             },
                                             (x, y),
                                             screen_dimensions,
-                                            glium::Blend {
-                                                color: glium::BlendingFunction::Addition {
-                                                    source: glium::LinearBlendingFactor::One,
+                                            ::glium::Blend {
+                                                color: ::glium::BlendingFunction::Addition {
+                                                    source: ::glium::LinearBlendingFactor::One,
                                                     destination:
-                                                        glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                                        ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
                                                 },
-                                                alpha: glium::BlendingFunction::Addition {
-                                                    source: glium::LinearBlendingFactor::One,
+                                                alpha: ::glium::BlendingFunction::Addition {
+                                                    source: ::glium::LinearBlendingFactor::One,
                                                     destination:
-                                                        glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                                        ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
                                                 },
                                                 ..Default::default()
                                             },

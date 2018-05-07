@@ -6,6 +6,9 @@ license = "MIT"
 description = "Smithay is a library for writing wayland compositors."
 repository = "https://github.com/Smithay/smithay"
 
+[workspace]
+members = [ "anvil" ]
+
 [dependencies]
 wayland-server = "0.20.2"
 wayland-sys = "0.20.2"
