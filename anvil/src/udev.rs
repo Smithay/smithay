@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Error as IoError;
 use std::path::PathBuf;
-use std::process::Command;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,8 +22,7 @@ use smithay::backend::drm::{DevPath, DrmBackend, DrmDevice, DrmHandler};
 use smithay::backend::graphics::GraphicsBackend;
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions, Format};
-use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyState, KeyboardKeyEvent,
-                              PointerAxisEvent, PointerButtonEvent};
+use smithay::backend::input::InputBackend;
 use smithay::backend::libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::session::{Session, SessionNotifier};
 use smithay::backend::session::auto::{auto_session_bind, AutoSession};
@@ -32,219 +30,18 @@ use smithay::backend::udev::{primary_gpu, udev_backend_bind, SessionFdDrmDevice,
 use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
 use smithay::wayland::output::{Mode, Output, PhysicalProperties};
-use smithay::wayland::seat::{KeyboardHandle, PointerHandle, Seat, keysyms as xkb};
+use smithay::wayland::seat::Seat;
 use smithay::wayland::shm::init_shm_global;
 use smithay::wayland_server::{Display, EventLoop};
 use smithay::wayland_server::commons::downcast_impl;
-use smithay::wayland_server::protocol::{wl_output, wl_pointer};
-use smithay::input::{event, Device as LibinputDevice, Libinput};
-use smithay::input::event::keyboard::KeyboardEventTrait;
+use smithay::wayland_server::protocol::wl_output;
+use smithay::input::Libinput;
 
 use glium_drawer::GliumDrawer;
-use shell::{init_shell, MyWindowMap, Buffer, Roles, SurfaceData};
+use shell::{init_shell, Buffer, MyWindowMap, Roles, SurfaceData};
+use input_handler::AnvilInputHandler;
 
-struct LibinputInputHandler {
-    log: Logger,
-    pointer: PointerHandle,
-    keyboard: KeyboardHandle,
-    window_map: Rc<RefCell<MyWindowMap>>,
-    pointer_location: Rc<RefCell<(f64, f64)>>,
-    screen_size: (u32, u32),
-    serial: u32,
-    session: AutoSession,
-    running: Arc<AtomicBool>,
-}
-
-impl LibinputInputHandler {
-    fn next_serial(&mut self) -> u32 {
-        self.serial += 1;
-        self.serial
-    }
-}
-
-impl InputHandler<LibinputInputBackend> for LibinputInputHandler {
-    fn on_seat_created(&mut self, _: &input::Seat) {
-        /* we just create a single static one */
-    }
-    fn on_seat_destroyed(&mut self, _: &input::Seat) {
-        /* we just create a single static one */
-    }
-    fn on_seat_changed(&mut self, _: &input::Seat) {
-        /* we just create a single static one */
-    }
-    fn on_keyboard_key(&mut self, _: &input::Seat, evt: event::keyboard::KeyboardKeyEvent) {
-        let keycode = evt.key();
-        let state = evt.state();
-        debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
-        let serial = self.next_serial();
-
-        // we cannot borrow `self` into the closure, because we need self.keyboard.
-        // but rust does not borrow all fields separately, so we need to do that manually...
-        let running = &self.running;
-        let mut session = &mut self.session;
-        let log = &self.log;
-        let time = Event::time(&evt);
-        self.keyboard
-            .input(keycode, state, serial, time, move |modifiers, keysym| {
-                debug!(log, "keysym";
-                    "state" => format!("{:?}", state),
-                    "mods" => format!("{:?}", modifiers),
-                    "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
-                );
-                if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace
-                    && state == KeyState::Pressed
-                {
-                    info!(log, "Stopping example using Ctrl+Alt+Backspace");
-                    running.store(false, Ordering::SeqCst);
-                    false
-                } else if modifiers.logo && keysym == xkb::KEY_q {
-                    info!(log, "Stopping example using Logo+Q");
-                    running.store(false, Ordering::SeqCst);
-                    false
-                } else if modifiers.ctrl && modifiers.alt && keysym >= xkb::KEY_XF86Switch_VT_1
-                    && keysym <= xkb::KEY_XF86Switch_VT_12
-                    && state == KeyState::Pressed
-                {
-                    let vt = (keysym - xkb::KEY_XF86Switch_VT_1 + 1) as i32;
-                    info!(log, "Trying to switch to vt {}", vt);
-                    if let Err(err) = session.change_vt(vt) {
-                        error!(log, "Error switching to vt {}: {}", vt, err);
-                    }
-                    false
-                } else if modifiers.logo && keysym == xkb::KEY_Return && state == KeyState::Pressed {
-                    info!(log, "Launching terminal");
-                    let _ = Command::new("weston-terminal").spawn();
-                    false
-                } else {
-                    true
-                }
-            });
-    }
-    fn on_pointer_move(&mut self, _: &input::Seat, evt: event::pointer::PointerMotionEvent) {
-        let (x, y) = (evt.dx(), evt.dy());
-        let serial = self.next_serial();
-        let mut location = self.pointer_location.borrow_mut();
-        location.0 += x;
-        location.1 += y;
-        let under = self.window_map
-            .borrow()
-            .get_surface_under((location.0, location.1));
-        self.pointer.motion(
-            under.as_ref().map(|&(ref s, (x, y))| (s, x, y)),
-            serial,
-            evt.time(),
-        );
-    }
-    fn on_pointer_move_absolute(&mut self, _: &input::Seat, evt: event::pointer::PointerMotionAbsoluteEvent) {
-        let (x, y) = (
-            evt.absolute_x_transformed(self.screen_size.0),
-            evt.absolute_y_transformed(self.screen_size.1),
-        );
-        *self.pointer_location.borrow_mut() = (x, y);
-        let serial = self.next_serial();
-        let under = self.window_map.borrow().get_surface_under((x, y));
-        self.pointer.motion(
-            under.as_ref().map(|&(ref s, (x, y))| (s, x, y)),
-            serial,
-            evt.time(),
-        );
-    }
-    fn on_pointer_button(&mut self, _: &input::Seat, evt: event::pointer::PointerButtonEvent) {
-        let serial = self.next_serial();
-        let button = evt.button();
-        let state = match evt.state() {
-            input::MouseButtonState::Pressed => {
-                // change the keyboard focus
-                let under = self.window_map
-                    .borrow_mut()
-                    .get_surface_and_bring_to_top(*self.pointer_location.borrow());
-                self.keyboard
-                    .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
-                wl_pointer::ButtonState::Pressed
-            }
-            input::MouseButtonState::Released => wl_pointer::ButtonState::Released,
-        };
-        self.pointer.button(button, state, serial, evt.time());
-    }
-    fn on_pointer_axis(&mut self, _: &input::Seat, evt: event::pointer::PointerAxisEvent) {
-        let source = match evt.source() {
-            input::AxisSource::Continuous => wl_pointer::AxisSource::Continuous,
-            input::AxisSource::Finger => wl_pointer::AxisSource::Finger,
-            input::AxisSource::Wheel | input::AxisSource::WheelTilt => {
-                wl_pointer::AxisSource::Wheel
-            }
-        };
-        let horizontal_amount = evt.amount(&input::Axis::Horizontal)
-            .unwrap_or_else(|| evt.amount_discrete(&input::Axis::Horizontal).unwrap() * 3.0);
-        let vertical_amount = evt.amount(&input::Axis::Vertical)
-            .unwrap_or_else(|| evt.amount_discrete(&input::Axis::Vertical).unwrap() * 3.0);
-        let horizontal_amount_discrete = evt.amount_discrete(&input::Axis::Horizontal);
-        let vertical_amount_discrete = evt.amount_discrete(&input::Axis::Vertical);
-
-        {
-            let mut event = self.pointer.axis();
-            event.source(source);
-            if horizontal_amount != 0.0 {
-                event.value(
-                    wl_pointer::Axis::HorizontalScroll,
-                    horizontal_amount,
-                    evt.time(),
-                );
-                if let Some(discrete) = horizontal_amount_discrete {
-                    event.discrete(
-                        wl_pointer::Axis::HorizontalScroll,
-                        discrete as i32,
-                    );
-                }
-            } else if source == wl_pointer::AxisSource::Finger {
-                event.stop(
-                    wl_pointer::Axis::HorizontalScroll,
-                    evt.time(),
-                );
-            }
-            if vertical_amount != 0.0 {
-                event.value(
-                    wl_pointer::Axis::VerticalScroll,
-                    vertical_amount,
-                    evt.time(),
-                );
-                if let Some(discrete) = vertical_amount_discrete {
-                    event.discrete(
-                        wl_pointer::Axis::VerticalScroll,
-                        discrete as i32,
-                    );
-                }
-            } else if source == wl_pointer::AxisSource::Finger {
-                event.stop(
-                    wl_pointer::Axis::VerticalScroll,
-                    evt.time(),
-                );
-            }
-            event.done();
-        }
-    }
-    fn on_touch_down(&mut self, _: &input::Seat, _: event::touch::TouchDownEvent) {
-        /* not done in this example */
-    }
-    fn on_touch_motion(&mut self, _: &input::Seat, _: event::touch::TouchMotionEvent) {
-        /* not done in this example */
-    }
-    fn on_touch_up(&mut self, _: &input::Seat, _: event::touch::TouchUpEvent) {
-        /* not done in this example */
-    }
-    fn on_touch_cancel(&mut self, _: &input::Seat, _: event::touch::TouchCancelEvent) {
-        /* not done in this example */
-    }
-    fn on_touch_frame(&mut self, _: &input::Seat, _: event::touch::TouchFrameEvent) {
-        /* not done in this example */
-    }
-    fn on_input_config_changed(&mut self, _: &mut [LibinputDevice]) {
-        /* not done in this example */
-    }
-}
-
-pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) -> Result<(),()> {
-
+pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) -> Result<(), ()> {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
     info!(log, "Listening on wayland socket"; "name" => name.clone());
     ::std::env::set_var("WAYLAND_DISPLAY", name);
@@ -358,17 +155,16 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) ->
     let libinput_session_id = notifier.register(&mut libinput_context);
     libinput_context.udev_assign_seat(&seat).unwrap();
     let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
-    libinput_backend.set_handler(LibinputInputHandler {
-        log: log.clone(),
+    libinput_backend.set_handler(AnvilInputHandler::new_with_session(
+        log.clone(),
         pointer,
         keyboard,
-        window_map: window_map.clone(),
+        window_map.clone(),
+        (w, h),
+        running.clone(),
         pointer_location,
-        screen_size: (w, h),
-        serial: 0,
-        session: session,
-        running: running.clone(),
-    });
+        session,
+    ));
     let libinput_event_source = libinput_bind(libinput_backend, event_loop.token())
         .map_err(|(err, _)| err)
         .unwrap();

@@ -1,161 +1,27 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use smithay::wayland::shm::init_shm_global;
-use smithay::wayland::seat::{KeyboardHandle, PointerHandle, Seat};
+use smithay::wayland::seat::Seat;
 use smithay::wayland::compositor::{SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
 use smithay::wayland::output::{Mode, Output, PhysicalProperties};
-use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyboardKeyEvent, PointerAxisEvent,
-                              PointerButtonEvent, PointerMotionAbsoluteEvent};
+use smithay::backend::input::InputBackend;
 use smithay::backend::winit;
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::egl::wayland::{EGLWaylandExtensions, Format};
 use smithay::wayland_server::{Display, EventLoop};
-use smithay::wayland_server::protocol::{wl_pointer, wl_output};
+use smithay::wayland_server::protocol::wl_output;
 
 use glium::Surface;
 
 use slog::Logger;
 
 use glium_drawer::GliumDrawer;
-use shell::{init_shell, MyWindowMap, Buffer};
-
-struct WinitInputHandler {
-    log: Logger,
-    pointer: PointerHandle,
-    keyboard: KeyboardHandle,
-    window_map: Rc<RefCell<MyWindowMap>>,
-    pointer_location: (f64, f64),
-    serial: u32,
-}
-
-impl WinitInputHandler {
-    fn next_serial(&mut self) -> u32 {
-        self.serial += 1;
-        self.serial
-    }
-}
-
-impl InputHandler<winit::WinitInputBackend> for WinitInputHandler {
-    fn on_seat_created(&mut self, _: &input::Seat) {
-        /* never happens with winit */
-    }
-    fn on_seat_destroyed(&mut self, _: &input::Seat) {
-        /* never happens with winit */
-    }
-    fn on_seat_changed(&mut self, _: &input::Seat) {
-        /* never happens with winit */
-    }
-    fn on_keyboard_key(&mut self, _: &input::Seat, evt: winit::WinitKeyboardInputEvent) {
-        let keycode = evt.key_code();
-        let state = evt.state();
-        debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
-        let serial = self.next_serial();
-        self.keyboard
-            .input(keycode, state, serial, evt.time(), |_, _| true);
-    }
-    fn on_pointer_move(&mut self, _: &input::Seat, _: input::UnusedEvent) {
-        /* never happens with winit */
-    }
-    fn on_pointer_move_absolute(&mut self, _: &input::Seat, evt: winit::WinitMouseMovedEvent) {
-        // on winit, mouse events are already in pixel coordinates
-        let (x, y) = evt.position();
-        self.pointer_location = (x, y);
-        let serial = self.next_serial();
-        let under = self.window_map.borrow().get_surface_under((x, y));
-        self.pointer.motion(
-            under.as_ref().map(|&(ref s, (x, y))| (s, x, y)),
-            serial,
-            evt.time(),
-        );
-    }
-    fn on_pointer_button(&mut self, _: &input::Seat, evt: winit::WinitMouseInputEvent) {
-        let serial = self.next_serial();
-        let button = match evt.button() {
-            input::MouseButton::Left => 0x110,
-            input::MouseButton::Right => 0x111,
-            input::MouseButton::Middle => 0x112,
-            input::MouseButton::Other(b) => b as u32,
-        };
-        let state = match evt.state() {
-            input::MouseButtonState::Pressed => {
-                // change the keyboard focus
-                let under = self.window_map
-                    .borrow_mut()
-                    .get_surface_and_bring_to_top(self.pointer_location);
-                self.keyboard
-                    .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
-                wl_pointer::ButtonState::Pressed
-            }
-            input::MouseButtonState::Released => wl_pointer::ButtonState::Released,
-        };
-        self.pointer.button(button, state, serial, evt.time());
-    }
-    fn on_pointer_axis(&mut self, _: &input::Seat, evt: winit::WinitMouseWheelEvent) {
-        let source = match evt.source() {
-            input::AxisSource::Continuous => wl_pointer::AxisSource::Continuous,
-            input::AxisSource::Wheel => wl_pointer::AxisSource::Wheel,
-            _ => unreachable!(), //winit does not have more specific sources
-        };
-        let horizontal_amount = evt.amount(&input::Axis::Horizontal)
-            .unwrap_or_else(|| evt.amount_discrete(&input::Axis::Horizontal).unwrap() * 3.0);
-        let vertical_amount = evt.amount(&input::Axis::Vertical)
-            .unwrap_or_else(|| evt.amount_discrete(&input::Axis::Vertical).unwrap() * 3.0);
-        let horizontal_amount_discrete = evt.amount_discrete(&input::Axis::Horizontal);
-        let vertical_amount_discrete = evt.amount_discrete(&input::Axis::Vertical);
-
-        {
-            let mut event = self.pointer.axis();
-            event.source(source);
-            if horizontal_amount != 0.0 {
-                event.value(
-                    wl_pointer::Axis::HorizontalScroll,
-                    horizontal_amount,
-                    evt.time(),
-                );
-                if let Some(discrete) = horizontal_amount_discrete {
-                    event.discrete(
-                        wl_pointer::Axis::HorizontalScroll,
-                        discrete as i32,
-                    );
-                }
-            }
-            if vertical_amount != 0.0 {
-                event.value(
-                    wl_pointer::Axis::VerticalScroll,
-                    vertical_amount,
-                    evt.time(),
-                );
-                if let Some(discrete) = vertical_amount_discrete {
-                    event.discrete(
-                        wl_pointer::Axis::VerticalScroll,
-                        discrete as i32,
-                    );
-                }
-            }
-            event.done();
-        }
-    }
-    fn on_touch_down(&mut self, _: &input::Seat, _: winit::WinitTouchStartedEvent) {
-        /* not done in this example */
-    }
-    fn on_touch_motion(&mut self, _: &input::Seat, _: winit::WinitTouchMovedEvent) {
-        /* not done in this example */
-    }
-    fn on_touch_up(&mut self, _: &input::Seat, _: winit::WinitTouchEndedEvent) {
-        /* not done in this example */
-    }
-    fn on_touch_cancel(&mut self, _: &input::Seat, _: winit::WinitTouchCancelledEvent) {
-        /* not done in this example */
-    }
-    fn on_touch_frame(&mut self, _: &input::Seat, _: input::UnusedEvent) {
-        /* never happens with winit */
-    }
-    fn on_input_config_changed(&mut self, _: &mut ()) {
-        /* never happens with winit */
-    }
-}
+use shell::{init_shell, Buffer};
+use input_handler::AnvilInputHandler;
 
 pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop, log: Logger) -> Result<(), ()> {
     let (renderer, mut input) = winit::init(log.clone()).map_err(|_| ())?;
@@ -176,6 +42,8 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop, log: Logger)
     info!(log, "Listening on wayland socket"; "name" => name.clone());
     ::std::env::set_var("WAYLAND_DISPLAY", name);
 
+    let running = Arc::new(AtomicBool::new(true));
+
     /*
      * Initialize the globals
      */
@@ -185,12 +53,7 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop, log: Logger)
     let (compositor_token, _, _, window_map) =
         init_shell(display, event_loop.token(), log.clone(), egl_display);
 
-    let (mut seat, _) = Seat::new(
-        display,
-        event_loop.token(),
-        "winit".into(),
-        log.clone(),
-    );
+    let (mut seat, _) = Seat::new(display, event_loop.token(), "winit".into(), log.clone());
 
     let pointer = seat.add_pointer();
     let keyboard = seat.add_keyboard("", "fr", "oss", None, 1000, 500)
@@ -225,14 +88,15 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop, log: Logger)
         refresh: 60_000,
     });
 
-    input.set_handler(WinitInputHandler {
-        log: log.clone(),
+    input.set_handler(AnvilInputHandler::new(
+        log.clone(),
         pointer,
         keyboard,
-        window_map: window_map.clone(),
-        pointer_location: (0.0, 0.0),
-        serial: 0,
-    });
+        window_map.clone(),
+        (0, 0),
+        running.clone(),
+        Rc::new(RefCell::new((0.0, 0.0))),
+    ));
 
     info!(log, "Initialization completed, starting the main loop.");
 
