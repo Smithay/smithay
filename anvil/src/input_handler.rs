@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use slog::Logger;
 
-#[cfg(feature = "tty_launch")]
+#[cfg(feature = "udev")]
 use smithay::backend::session::auto::AutoSession;
 use smithay::backend::input::{self, Event, InputBackend, InputHandler, KeyState, KeyboardKeyEvent,
                               PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent,
@@ -24,7 +24,7 @@ pub struct AnvilInputHandler {
     pointer_location: Rc<RefCell<(f64, f64)>>,
     screen_size: (u32, u32),
     serial: u32,
-    #[cfg(feature = "tty_launch")]
+    #[cfg(feature = "udev")]
     session: Option<AutoSession>,
     running: Arc<AtomicBool>,
 }
@@ -48,12 +48,12 @@ impl AnvilInputHandler {
             running,
             pointer_location,
             serial: 1,
-            #[cfg(feature = "tty_launch")]
+            #[cfg(feature = "udev")]
             session: None,
         }
     }
 
-    #[cfg(feature = "tty_launch")]
+    #[cfg(feature = "udev")]
     pub fn new_with_session(
         log: Logger,
         pointer: PointerHandle,
@@ -173,7 +173,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
     fn on_pointer_move_absolute(&mut self, _: &input::Seat, evt: B::PointerMotionAbsoluteEvent) {
         // different cases depending on the context:
         let (x, y) = {
-            #[cfg(feature = "tty_launch")]
+            #[cfg(feature = "udev")]
             {
                 if self.session.is_some() {
                     // we are started on a tty
@@ -184,7 +184,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
                     evt.position()
                 }
             }
-            #[cfg(not(feature = "tty_launch"))]
+            #[cfg(not(feature = "udev"))]
             {
                 evt.position()
             }
