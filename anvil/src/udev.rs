@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use glium::{Blend, Surface};
+use glium::Surface;
 
 use smithay::image::{ImageBuffer, Rgba};
 
@@ -20,15 +20,13 @@ use smithay::drm::control::encoder::Info as EncoderInfo;
 use smithay::drm::result::Error as DrmError;
 use smithay::backend::drm::{DevPath, DrmBackend, DrmDevice, DrmHandler};
 use smithay::backend::graphics::GraphicsBackend;
-use smithay::backend::graphics::egl::EGLGraphicsBackend;
-use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions, Format};
+use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
 use smithay::backend::input::InputBackend;
 use smithay::backend::libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::session::{Session, SessionNotifier};
 use smithay::backend::session::auto::{auto_session_bind, AutoSession};
 use smithay::backend::udev::{primary_gpu, udev_backend_bind, SessionFdDrmDevice, UdevBackend, UdevHandler};
-use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, TraversalAction};
-use smithay::wayland::compositor::roles::Role;
+use smithay::wayland::compositor::CompositorToken;
 use smithay::wayland::output::{Mode, Output, PhysicalProperties};
 use smithay::wayland::seat::Seat;
 use smithay::wayland::shm::init_shm_global;
@@ -38,7 +36,7 @@ use smithay::wayland_server::protocol::wl_output;
 use smithay::input::Libinput;
 
 use glium_drawer::GliumDrawer;
-use shell::{init_shell, Buffer, MyWindowMap, Roles, SurfaceData};
+use shell::{init_shell, MyWindowMap, Roles, SurfaceData};
 use input_handler::AnvilInputHandler;
 
 pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) -> Result<(), ()> {
@@ -337,86 +335,12 @@ impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
                     .borrow()
                     .set_cursor_position(x.trunc().abs() as u32, y.trunc().abs() as u32);
             }
-            let mut frame = drawer.draw();
-            frame.clear_color(0.8, 0.8, 0.9, 1.0);
-            // redraw the frame, in a simple but inneficient way
-            {
-                let screen_dimensions = drawer.borrow().get_framebuffer_dimensions();
-                self.window_map.borrow().with_windows_from_bottom_to_top(
-                    |toplevel_surface, initial_place| {
-                        if let Some(wl_surface) = toplevel_surface.get_surface() {
-                            // this surface is a root of a subsurface tree that needs to be drawn
-                            self.compositor_token
-                                .with_surface_tree_upward(
-                                    wl_surface,
-                                    initial_place,
-                                    |_surface, attributes, role, &(mut x, mut y)| {
-                                        // there is actually something to draw !
-                                        if attributes.user_data.texture.is_none() {
-                                            let mut remove = false;
-                                            match attributes.user_data.buffer {
-                                                Some(Buffer::Egl { ref images }) => {
-                                                    match images.format {
-                                                        Format::RGB | Format::RGBA => {
-                                                            attributes.user_data.texture =
-                                                                drawer.texture_from_egl(&images);
-                                                        }
-                                                        _ => {
-                                                            // we don't handle the more complex formats here.
-                                                            attributes.user_data.texture = None;
-                                                            remove = true;
-                                                        }
-                                                    };
-                                                }
-                                                Some(Buffer::Shm { ref data, ref size }) => {
-                                                    attributes.user_data.texture =
-                                                        Some(drawer.texture_from_mem(data, *size));
-                                                }
-                                                _ => {}
-                                            }
-                                            if remove {
-                                                attributes.user_data.buffer = None;
-                                            }
-                                        }
 
-                                        if let Some(ref texture) = attributes.user_data.texture {
-                                            if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                                                x += subdata.location.0;
-                                                y += subdata.location.1;
-                                            }
-                                            info!(self.logger, "Render window");
-                                            drawer.render_texture(
-                                                &mut frame,
-                                                texture,
-                                                match *attributes.user_data.buffer.as_ref().unwrap() {
-                                                    Buffer::Egl { ref images } => images.y_inverted,
-                                                    Buffer::Shm { .. } => false,
-                                                },
-                                                match *attributes.user_data.buffer.as_ref().unwrap() {
-                                                    Buffer::Egl { ref images } => {
-                                                        (images.width, images.height)
-                                                    }
-                                                    Buffer::Shm { ref size, .. } => *size,
-                                                },
-                                                (x, y),
-                                                screen_dimensions,
-                                                Blend::alpha_blending(),
-                                            );
-                                            TraversalAction::DoChildren((x, y))
-                                        } else {
-                                            // we are not display, so our children are neither
-                                            TraversalAction::SkipChildren
-                                        }
-                                    },
-                                )
-                                .unwrap();
-                        }
-                    },
-                );
-            }
-            if let Err(err) = frame.finish() {
-                error!(self.logger, "Error during rendering: {:?}", err);
-            }
+            drawer.draw_windows(
+                &*self.window_map.borrow(),
+                self.compositor_token,
+                &self.logger,
+            );
         }
     }
 

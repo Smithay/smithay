@@ -24,6 +24,8 @@ define_roles!(Roles => [ XdgSurface, XdgSurfaceRole ] [ ShellSurface, ShellSurfa
 pub type MyWindowMap =
     WindowMap<SurfaceData, Roles, (), (), fn(&SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)>>;
 
+pub type MyCompositorToken = CompositorToken<SurfaceData, Roles>;
+
 pub fn init_shell(
     display: &mut Display,
     looptoken: LoopToken,
