@@ -7,27 +7,27 @@
 // `error_chain!` can recurse deeply
 #![recursion_limit = "1024"]
 
-extern crate image;
+pub extern crate image;
 #[cfg_attr(feature = "backend_session", macro_use)]
 extern crate nix;
 extern crate tempfile;
-extern crate wayland_protocols;
-extern crate wayland_server;
+pub extern crate wayland_protocols;
+pub extern crate wayland_server;
 extern crate wayland_sys;
 extern crate xkbcommon;
 
 #[cfg(feature = "dbus")]
-extern crate dbus;
+pub extern crate dbus;
 #[cfg(feature = "backend_drm")]
-extern crate drm;
+pub extern crate drm;
 #[cfg(feature = "backend_drm")]
-extern crate gbm;
+pub extern crate gbm;
 #[cfg(feature = "backend_libinput")]
-extern crate input;
+pub extern crate input;
 #[cfg(feature = "backend_session_logind")]
-extern crate systemd;
+pub extern crate systemd;
 #[cfg(feature = "udev")]
-extern crate udev;
+pub extern crate udev;
 #[cfg(feature = "backend_winit")]
 extern crate wayland_client;
 #[cfg(feature = "backend_winit")]

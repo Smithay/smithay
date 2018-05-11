@@ -59,7 +59,7 @@ use std::sync::{Arc, Mutex};
 mod keyboard;
 mod pointer;
 
-pub use self::keyboard::{Error as KeyboardError, KeyboardHandle, ModifiersState};
+pub use self::keyboard::{keysyms, Error as KeyboardError, KeyboardHandle, Keysym, ModifiersState};
 pub use self::pointer::{PointerAxisHandle, PointerHandle};
 use wayland_server::{Display, Global, LoopToken, NewResource, Resource};
 use wayland_server::protocol::wl_seat;

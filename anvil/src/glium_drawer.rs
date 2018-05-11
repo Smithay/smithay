@@ -6,9 +6,15 @@ use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::egl::error::Result as EGLResult;
 use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLImages, EGLWaylandExtensions, Format};
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
+use smithay::wayland::compositor::{SubsurfaceRole, TraversalAction};
+use smithay::wayland::compositor::roles::Role;
+use smithay::wayland_server::Display;
+
 use std::cell::Ref;
-use std::ops::Deref;
-use wayland_server::Display;
+
+use slog::Logger;
+
+use shell::{Buffer, MyCompositorToken, MyWindowMap};
 
 #[derive(Copy, Clone)]
 struct Vertex {
@@ -188,5 +194,97 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
 impl<G: EGLWaylandExtensions + EGLGraphicsBackend + 'static> EGLWaylandExtensions for GliumDrawer<G> {
     fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
         self.display.bind_wl_display(display)
+    }
+}
+
+impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
+    pub fn draw_windows(&self, window_map: &MyWindowMap, compositor_token: MyCompositorToken, log: &Logger) {
+        let mut frame = self.draw();
+        frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
+        // redraw the frame, in a simple but inneficient way
+        {
+            let screen_dimensions = self.borrow().get_framebuffer_dimensions();
+            window_map.with_windows_from_bottom_to_top(|toplevel_surface, initial_place| {
+                if let Some(wl_surface) = toplevel_surface.get_surface() {
+                    // this surface is a root of a subsurface tree that needs to be drawn
+                    compositor_token
+                        .with_surface_tree_upward(
+                            wl_surface,
+                            initial_place,
+                            |_surface, attributes, role, &(mut x, mut y)| {
+                                // there is actually something to draw !
+                                if attributes.user_data.texture.is_none() {
+                                    let mut remove = false;
+                                    match attributes.user_data.buffer {
+                                        Some(Buffer::Egl { ref images }) => {
+                                            match images.format {
+                                                Format::RGB | Format::RGBA => {
+                                                    attributes.user_data.texture =
+                                                        self.texture_from_egl(&images);
+                                                }
+                                                _ => {
+                                                    // we don't handle the more complex formats here.
+                                                    attributes.user_data.texture = None;
+                                                    remove = true;
+                                                }
+                                            };
+                                        }
+                                        Some(Buffer::Shm { ref data, ref size }) => {
+                                            attributes.user_data.texture =
+                                                Some(self.texture_from_mem(data, *size));
+                                        }
+                                        _ => {}
+                                    }
+                                    if remove {
+                                        attributes.user_data.buffer = None;
+                                    }
+                                }
+
+                                if let Some(ref texture) = attributes.user_data.texture {
+                                    if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                                        x += subdata.location.0;
+                                        y += subdata.location.1;
+                                    }
+                                    self.render_texture(
+                                        &mut frame,
+                                        texture,
+                                        match *attributes.user_data.buffer.as_ref().unwrap() {
+                                            Buffer::Egl { ref images } => images.y_inverted,
+                                            Buffer::Shm { .. } => false,
+                                        },
+                                        match *attributes.user_data.buffer.as_ref().unwrap() {
+                                            Buffer::Egl { ref images } => (images.width, images.height),
+                                            Buffer::Shm { ref size, .. } => *size,
+                                        },
+                                        (x, y),
+                                        screen_dimensions,
+                                        ::glium::Blend {
+                                            color: ::glium::BlendingFunction::Addition {
+                                                source: ::glium::LinearBlendingFactor::One,
+                                                destination:
+                                                    ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                            },
+                                            alpha: ::glium::BlendingFunction::Addition {
+                                                source: ::glium::LinearBlendingFactor::One,
+                                                destination:
+                                                    ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                            },
+                                            ..Default::default()
+                                        },
+                                    );
+                                    TraversalAction::DoChildren((x, y))
+                                } else {
+                                    // we are not display, so our children are neither
+                                    TraversalAction::SkipChildren
+                                }
+                            },
+                        )
+                        .unwrap();
+                }
+            });
+        }
+        if let Err(err) = frame.finish() {
+            error!(log, "Error during rendering: {:?}", err);
+        }
     }
 }

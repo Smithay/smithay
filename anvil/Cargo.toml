@@ -1,0 +1,31 @@
+[package]
+name = "anvil"
+version = "0.0.1"
+authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victor Brekenfeld)"]
+license = "MIT"
+publish = false
+
+[dependencies]
+slog = { version = "2.1.1" }
+slog-term = "2.3"
+slog-async = "2.2"
+rand = "0.3"
+glium = { version = "0.19.0", default-features = false }
+wayland-server = "0.20"
+xkbcommon = "0.2.1"
+
+[dependencies.smithay]
+path = ".."
+default-features = false
+features = [ "renderer_glium" ]
+
+[build-dependencies]
+gl_generator = "0.9"
+
+[features]
+default = [ "winit", "tty_launch", "udev" ]
+winit = [ "smithay/backend_winit" ]
+tty_launch = [ "smithay/backend_libinput", "smithay/backend_drm" ]
+udev = [ "tty_launch", "smithay/backend_udev" ]
+logind = [ "smithay/backend_session_logind" ]
+
