@@ -862,7 +862,7 @@ impl InputBackend for WinitInputBackend {
                             trace!(logger, "Calling on_touch_cancel");
                             handler.on_touch_cancel(seat, WinitTouchCancelledEvent { time, id: id })
                         }
-                        (WindowEvent::Closed, _, _) => {
+                        (WindowEvent::CloseRequested, _, _) | (WindowEvent::Destroyed, _, _) => {
                             warn!(logger, "Window closed");
                             *closed_ptr = true;
                         }
