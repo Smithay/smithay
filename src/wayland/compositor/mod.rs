@@ -248,6 +248,9 @@ impl<U, R> Clone for CompositorToken<U, R> {
     }
 }
 
+unsafe impl<U, R> Send for CompositorToken<U, R> {}
+unsafe impl<U, R> Sync for CompositorToken<U, R> {}
+
 impl<U, R> CompositorToken<U, R> {
     pub(crate) fn make() -> CompositorToken<U, R> {
         CompositorToken {
