@@ -70,32 +70,32 @@ impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> From<T> fo
 
         // compiling shaders and linking them together
         let program = program!(&display,
-			100 => {
-				vertex: "
-					#version 100
-					uniform lowp mat4 matrix;
-					attribute lowp vec2 position;
-					attribute lowp vec2 tex_coords;
-					varying lowp vec2 v_tex_coords;
-					void main() {
-						gl_Position = matrix * vec4(position, 0.0, 1.0);
-						v_tex_coords = tex_coords;
-					}
-				",
+            100 => {
+                vertex: "
+                    #version 100
+                    uniform lowp mat4 matrix;
+                    attribute lowp vec2 position;
+                    attribute lowp vec2 tex_coords;
+                    varying lowp vec2 v_tex_coords;
+                    void main() {
+                        gl_Position = matrix * vec4(position, 0.0, 1.0);
+                        v_tex_coords = tex_coords;
+                    }
+                ",
 
-				fragment: "
-					#version 100
-					uniform lowp sampler2D tex;
-					varying lowp vec2 v_tex_coords;
-					void main() {
-	                    lowp vec4 color = texture2D(tex, v_tex_coords);
-						gl_FragColor.r = color.z;
+                fragment: "
+                    #version 100
+                    uniform lowp sampler2D tex;
+                    varying lowp vec2 v_tex_coords;
+                    void main() {
+                        lowp vec4 color = texture2D(tex, v_tex_coords);
+                        gl_FragColor.r = color.x;
                         gl_FragColor.g = color.y;
-                        gl_FragColor.b = color.x;
+                        gl_FragColor.b = color.z;
                         gl_FragColor.a = color.w;
-					}
-				",
-			},
+                    }
+                ",
+            },
         ).unwrap();
 
         GliumDrawer {

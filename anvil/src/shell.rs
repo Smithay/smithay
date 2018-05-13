@@ -39,11 +39,12 @@ pub fn init_shell(
 ) {
     // Create the compositor
     let c_egl_display = egl_display.clone();
+    let log2 = log.clone();
     let (compositor_token, _, _) = compositor_init(
         display,
         looptoken.clone(),
         move |request, (surface, ctoken)| match request {
-            SurfaceEvent::Commit => surface_commit(&surface, ctoken, &*c_egl_display),
+            SurfaceEvent::Commit => surface_commit(&surface, ctoken, &*c_egl_display, &log2),
             SurfaceEvent::Frame { callback } => callback
                 .implement(|e, _| match e {}, None::<fn(_, _)>)
                 .send(wl_callback::Event::Done { callback_data: 0 }),
@@ -140,6 +141,7 @@ fn surface_commit(
     surface: &Resource<wl_surface::WlSurface>,
     token: CompositorToken<SurfaceData, Roles>,
     display: &RefCell<Option<EGLDisplay>>,
+    log: &::slog::Logger,
 ) {
     // we retrieve the contents of the associated buffer and copy it
     token.with_surface_data(surface, |attributes| {
@@ -167,17 +169,8 @@ fn surface_commit(
                     }
                     Err(BufferAccessError::NotManaged(buffer)) => {
                         shm_buffer_contents(&buffer, |slice, data| {
-                            let offset = data.offset as usize;
-                            let stride = data.stride as usize;
-                            let width = data.width as usize;
-                            let height = data.height as usize;
-                            let mut new_vec = Vec::with_capacity(width * height * 4);
-                            for i in 0..height {
-                                new_vec
-                                    .extend(&slice[(offset + i * stride)..(offset + i * stride + width * 4)]);
-                            }
                             attributes.user_data.texture = None;
-                            attributes.user_data.buffer = Some(Buffer::Shm { data: new_vec, size: (data.width as u32, data.height as u32) });
+                            attributes.user_data.buffer = Some(::shm_load::load_shm_buffer(data, slice, log));
                         }).expect("Got EGL buffer with no set EGLDisplay. You need to unbind your EGLContexts before dropping them!");
                         buffer.send(wl_buffer::Event::Release);
                     }
