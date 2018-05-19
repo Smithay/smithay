@@ -75,11 +75,18 @@ pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop, log: Logger)
     let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
 
     // Initialize the hardware backend
-    let renderer = GliumDrawer::from(
-        device
-            .create_backend(crtc, mode, vec![connector_info.handle()])
-            .unwrap(),
-    );
+    let backend = device
+        .create_backend(crtc, mode, vec![connector_info.handle()])
+        .unwrap();
+    let egl_display = Rc::new(RefCell::new(
+        if let Ok(egl_display) = backend.bind_wl_display(&display) {
+            info!(log, "EGL hardware-acceleration enabled");
+            Some(egl_display)
+        } else {
+            None
+        },
+    ));
+    let renderer = GliumDrawer::init(backend, egl_display, log.clone());
     {
         /*
          * Initialize glium
@@ -89,23 +96,13 @@ pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop, log: Logger)
         frame.finish().unwrap();
     }
 
-    let egl_display = Rc::new(RefCell::new(
-        if let Ok(egl_display) = renderer.bind_wl_display(&display) {
-            info!(log, "EGL hardware-acceleration enabled");
-            Some(egl_display)
-        } else {
-            None
-        },
-    ));
-
     /*
      * Initialize the globals
      */
 
     init_shm_global(&mut display, event_loop.token(), vec![], log.clone());
 
-    let (compositor_token, _, _, window_map) =
-        init_shell(&mut display, event_loop.token(), log.clone(), egl_display);
+    let (compositor_token, _, _, window_map) = init_shell(&mut display, event_loop.token(), log.clone());
 
     /*
      * Add a listening socket:

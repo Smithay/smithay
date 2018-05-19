@@ -12,6 +12,8 @@ extern crate xkbcommon;
 use slog::Drain;
 use smithay::wayland_server::Display;
 
+#[macro_use]
+mod shaders;
 mod glium_drawer;
 mod input_handler;
 #[cfg(feature = "tty_launch")]

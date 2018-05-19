@@ -32,7 +32,7 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop, log: Logger)
     ));
 
     let (w, h) = renderer.get_framebuffer_dimensions();
-    let drawer = GliumDrawer::from(renderer);
+    let drawer = GliumDrawer::init(renderer, egl_display, log.clone());
 
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
     info!(log, "Listening on wayland socket"; "name" => name.clone());
@@ -46,8 +46,7 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop, log: Logger)
 
     init_shm_global(display, event_loop.token(), vec![], log.clone());
 
-    let (compositor_token, _, _, window_map) =
-        init_shell(display, event_loop.token(), log.clone(), egl_display);
+    let (compositor_token, _, _, window_map) = init_shell(display, event_loop.token(), log.clone());
 
     let (mut seat, _) = Seat::new(display, event_loop.token(), "winit".into(), log.clone());
 
