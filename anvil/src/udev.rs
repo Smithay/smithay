@@ -62,7 +62,6 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) ->
         &mut display.borrow_mut(),
         event_loop.token(),
         log.clone(),
-        active_egl_context.clone(),
     );
 
     /*
@@ -215,6 +214,7 @@ impl UdevHandlerImpl {
     pub fn scan_connectors(
         &self,
         device: &mut DrmDevice<SessionFdDrmDevice>,
+        egl_display: Rc<RefCell<Option<EGLDisplay>>>,
     ) -> HashMap<crtc::Handle, GliumDrawer<DrmBackend<SessionFdDrmDevice>>> {
         // Get a set of all modesetting resource handles (excluding planes):
         let res_handles = device.resource_handles().unwrap();
@@ -242,10 +242,12 @@ impl UdevHandlerImpl {
                     if !backends.contains_key(&crtc) {
                         let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
                                                               // create a backend
-                        let renderer = GliumDrawer::from(
+                        let renderer = GliumDrawer::init(
                             device
                                 .create_backend(crtc, mode, vec![connector_info.handle()])
                                 .unwrap(),
+                            egl_display.clone(),
+                            self.logger.clone(),
                         );
 
                         // create cursor
@@ -279,7 +281,10 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
             *self.active_egl_context.borrow_mut() = device.bind_wl_display(&*self.display.borrow()).ok();
         }
 
-        let backends = Rc::new(RefCell::new(self.scan_connectors(device)));
+        let backends = Rc::new(RefCell::new(self.scan_connectors(
+            device,
+            self.active_egl_context.clone(),
+        )));
         self.backends.insert(device.device_id(), backends.clone());
 
         Some(DrmHandlerImpl {
@@ -294,7 +299,7 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
     fn device_changed(&mut self, device: &mut DrmDevice<SessionFdDrmDevice>) {
         //quick and dirt, just re-init all backends
         let backends = self.backends.get(&device.device_id()).unwrap();
-        *backends.borrow_mut() = self.scan_connectors(device);
+        *backends.borrow_mut() = self.scan_connectors(device, self.active_egl_context.clone());
     }
 
     fn device_removed(&mut self, device: &mut DrmDevice<SessionFdDrmDevice>) {

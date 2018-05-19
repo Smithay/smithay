@@ -46,7 +46,7 @@ impl Pool {
         })
     }
 
-    pub fn with_data_slice<F: FnOnce(&[u8])>(&self, f: F) -> Result<(), ()> {
+    pub fn with_data_slice<T, F: FnOnce(&[u8]) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {
             place_sigbus_handler();
@@ -67,7 +67,7 @@ impl Pool {
         });
 
         let slice = pool_guard.get_slice();
-        f(slice);
+        let t = f(slice);
 
         // Cleanup Post-access
         SIGBUS_GUARD.with(|guard| {
@@ -77,7 +77,7 @@ impl Pool {
                 debug!(self.log, "SIGBUS caught on access on shm pool"; "fd" => self.fd);
                 Err(())
             } else {
-                Ok(())
+                Ok(t)
             }
         })
     }

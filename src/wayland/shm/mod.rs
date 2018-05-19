@@ -145,24 +145,26 @@ pub enum BufferAccessError {
 ///
 /// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
 /// and this method will return `Err(())` (this will be the case for an EGL buffer for example).
-pub fn with_buffer_contents<F>(buffer: &Resource<wl_buffer::WlBuffer>, f: F) -> Result<(), BufferAccessError>
+pub fn with_buffer_contents<F, T>(
+    buffer: &Resource<wl_buffer::WlBuffer>,
+    f: F,
+) -> Result<T, BufferAccessError>
 where
-    F: FnOnce(&[u8], BufferData),
+    F: FnOnce(&[u8], BufferData) -> T,
 {
     if !buffer.is_implemented_with::<ShmGlobalData>() {
         return Err(BufferAccessError::NotManaged);
     }
     let data = unsafe { &*(buffer.get_user_data() as *mut InternalBufferData) };
 
-    if data.pool
-        .with_data_slice(|slice| f(slice, data.data))
-        .is_err()
-    {
-        // SIGBUS error occured
-        buffer.post_error(wl_shm::Error::InvalidFd as u32, "Bad pool size.".into());
-        return Err(BufferAccessError::BadMap);
+    match data.pool.with_data_slice(|slice| f(slice, data.data)) {
+        Ok(t) => Ok(t),
+        Err(()) => {
+            // SIGBUS error occured
+            buffer.post_error(wl_shm::Error::InvalidFd as u32, "Bad pool size.".into());
+            Err(BufferAccessError::BadMap)
+        }
     }
-    Ok(())
 }
 
 impl Implementation<Resource<wl_shm::WlShm>, wl_shm::Request> for ShmGlobalData {

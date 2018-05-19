@@ -12,16 +12,19 @@ extern crate xkbcommon;
 use slog::Drain;
 use smithay::wayland_server::Display;
 
+#[macro_use]
+mod shaders;
 mod glium_drawer;
+mod input_handler;
+#[cfg(feature = "tty_launch")]
+mod raw_drm;
 mod shell;
+mod shm_load;
 #[cfg(feature = "udev")]
 mod udev;
 mod window_map;
 #[cfg(feature = "winit")]
 mod winit;
-mod input_handler;
-#[cfg(feature = "tty_launch")]
-mod raw_drm;
 
 static POSSIBLE_BACKENDS: &'static [&'static str] = &[
     #[cfg(feature = "winit")]

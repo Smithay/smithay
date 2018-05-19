@@ -1,20 +1,25 @@
 use glium;
-use glium::{Frame, GlObject, Surface};
 use glium::index::PrimitiveType;
 use glium::texture::{MipmapsOption, Texture2d, UncompressedFloatFormat};
+use glium::{Frame, GlObject, Surface};
 use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::egl::error::Result as EGLResult;
-use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLImages, EGLWaylandExtensions, Format};
+use smithay::backend::graphics::egl::wayland::{BufferAccessError, EGLDisplay, EGLImages,
+                                               EGLWaylandExtensions, Format};
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
-use smithay::wayland::compositor::{SubsurfaceRole, TraversalAction};
 use smithay::wayland::compositor::roles::Role;
-use smithay::wayland_server::Display;
+use smithay::wayland::compositor::{SubsurfaceRole, TraversalAction};
+use smithay::wayland::shm::with_buffer_contents as shm_buffer_contents;
+use smithay::wayland_server::protocol::wl_buffer;
+use smithay::wayland_server::{Display, Resource};
 
-use std::cell::Ref;
+use std::cell::{Ref, RefCell};
+use std::rc::Rc;
 
 use slog::Logger;
 
-use shell::{Buffer, MyCompositorToken, MyWindowMap};
+use shaders;
+use shell::{MyCompositorToken, MyWindowMap};
 
 #[derive(Copy, Clone)]
 struct Vertex {
@@ -28,7 +33,9 @@ pub struct GliumDrawer<F: EGLGraphicsBackend + 'static> {
     display: GliumGraphicsBackend<F>,
     vertex_buffer: glium::VertexBuffer<Vertex>,
     index_buffer: glium::IndexBuffer<u16>,
-    program: glium::Program,
+    programs: [glium::Program; shaders::FRAGMENT_COUNT],
+    egl_display: Rc<RefCell<Option<EGLDisplay>>>,
+    log: Logger,
 }
 
 impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
@@ -37,8 +44,8 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
     }
 }
 
-impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> From<T> for GliumDrawer<T> {
-    fn from(backend: T) -> GliumDrawer<T> {
+impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> GliumDrawer<T> {
+    pub fn init(backend: T, egl_display: Rc<RefCell<Option<EGLDisplay>>>, log: Logger) -> GliumDrawer<T> {
         let display = backend.into();
 
         // building the vertex buffer, which contains all the vertices that we will draw
@@ -68,82 +75,93 @@ impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> From<T> fo
         let index_buffer =
             glium::IndexBuffer::new(&display, PrimitiveType::TriangleStrip, &[1 as u16, 2, 0, 3]).unwrap();
 
-        // compiling shaders and linking them together
-        let program = program!(&display,
-			100 => {
-				vertex: "
-					#version 100
-					uniform lowp mat4 matrix;
-					attribute lowp vec2 position;
-					attribute lowp vec2 tex_coords;
-					varying lowp vec2 v_tex_coords;
-					void main() {
-						gl_Position = matrix * vec4(position, 0.0, 1.0);
-						v_tex_coords = tex_coords;
-					}
-				",
-
-				fragment: "
-					#version 100
-					uniform lowp sampler2D tex;
-					varying lowp vec2 v_tex_coords;
-					void main() {
-	                    lowp vec4 color = texture2D(tex, v_tex_coords);
-						gl_FragColor.r = color.z;
-                        gl_FragColor.g = color.y;
-                        gl_FragColor.b = color.x;
-                        gl_FragColor.a = color.w;
-					}
-				",
-			},
-        ).unwrap();
+        let programs = opengl_programs!(&display);
 
         GliumDrawer {
             display,
             vertex_buffer,
             index_buffer,
-            program,
+            programs,
+            egl_display,
+            log,
         }
     }
 }
 
 impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
-    pub fn texture_from_mem(&self, contents: &[u8], surface_dimensions: (u32, u32)) -> Texture2d {
-        let image = glium::texture::RawImage2d {
-            data: contents.into(),
-            width: surface_dimensions.0,
-            height: surface_dimensions.1,
-            format: glium::texture::ClientFormat::U8U8U8U8,
+    pub fn texture_from_buffer(&self, buffer: Resource<wl_buffer::WlBuffer>) -> Result<TextureMetadata, ()> {
+        // try to retrieve the egl contents of this buffer
+        let images = if let Some(display) = &self.egl_display.borrow().as_ref() {
+            display.egl_buffer_contents(buffer)
+        } else {
+            Err(BufferAccessError::NotManaged(buffer))
         };
-        Texture2d::new(&self.display, image).unwrap()
-    }
-
-    pub fn texture_from_egl(&self, images: &EGLImages) -> Option<Texture2d> {
-        let format = match images.format {
-            Format::RGB => UncompressedFloatFormat::U8U8U8,
-            Format::RGBA => UncompressedFloatFormat::U8U8U8U8,
-            _ => return None,
-        };
-
-        let opengl_texture = Texture2d::empty_with_format(
-            &self.display,
-            format,
-            MipmapsOption::NoMipmap,
-            images.width,
-            images.height,
-        ).unwrap();
-        unsafe {
-            images
-                .bind_to_texture(0, opengl_texture.get_id())
-                .expect("Failed to bind to texture");
+        match images {
+            Ok(images) => {
+                // we have an EGL buffer
+                let format = match images.format {
+                    Format::RGB => UncompressedFloatFormat::U8U8U8,
+                    Format::RGBA => UncompressedFloatFormat::U8U8U8U8,
+                    _ => {
+                        warn!(self.log, "Unsupported EGL buffer format"; "format" => format!("{:?}", images.format));
+                        return Err(());
+                    }
+                };
+                let opengl_texture = Texture2d::empty_with_format(
+                    &self.display,
+                    format,
+                    MipmapsOption::NoMipmap,
+                    images.width,
+                    images.height,
+                ).unwrap();
+                unsafe {
+                    images
+                        .bind_to_texture(0, opengl_texture.get_id())
+                        .expect("Failed to bind to texture");
+                }
+                Ok(TextureMetadata {
+                    texture: opengl_texture,
+                    fragment: ::shaders::BUFFER_RGBA,
+                    y_inverted: images.y_inverted,
+                    dimensions: (images.width, images.height),
+                    images: Some(images), // I guess we need to keep this alive ?
+                })
+            }
+            Err(BufferAccessError::NotManaged(buffer)) => {
+                // this is not an EGL buffer, try SHM
+                match shm_buffer_contents(&buffer, |slice, data| {
+                    ::shm_load::load_shm_buffer(data, slice)
+                        .map(|(image, kind)| (Texture2d::new(&self.display, image).unwrap(), kind, data))
+                }) {
+                    Ok(Ok((texture, kind, data))) => Ok(TextureMetadata {
+                        texture,
+                        fragment: kind,
+                        y_inverted: false,
+                        dimensions: (data.width as u32, data.height as u32),
+                        images: None,
+                    }),
+                    Ok(Err(format)) => {
+                        warn!(self.log, "Unsupported SHM buffer format"; "format" => format!("{:?}", format));
+                        Err(())
+                    }
+                    Err(err) => {
+                        warn!(self.log, "Unable to load buffer contents"; "err" => format!("{:?}", err));
+                        Err(())
+                    }
+                }
+            }
+            Err(err) => {
+                error!(self.log, "EGL error"; "err" => format!("{:?}", err));
+                Err(())
+            }
         }
-        Some(opengl_texture)
     }
 
     pub fn render_texture(
         &self,
         target: &mut glium::Frame,
         texture: &Texture2d,
+        texture_kind: usize,
         y_inverted: bool,
         surface_dimensions: (u32, u32),
         surface_location: (i32, i32),
@@ -175,7 +193,7 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
             .draw(
                 &self.vertex_buffer,
                 &self.index_buffer,
-                &self.program,
+                &self.programs[texture_kind],
                 &uniforms,
                 &glium::DrawParameters {
                     blend: blending,
@@ -197,6 +215,14 @@ impl<G: EGLWaylandExtensions + EGLGraphicsBackend + 'static> EGLWaylandExtension
     }
 }
 
+pub struct TextureMetadata {
+    pub texture: Texture2d,
+    pub fragment: usize,
+    pub y_inverted: bool,
+    pub dimensions: (u32, u32),
+    images: Option<EGLImages>,
+}
+
 impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
     pub fn draw_windows(&self, window_map: &MyWindowMap, compositor_token: MyCompositorToken, log: &Logger) {
         let mut frame = self.draw();
@@ -214,48 +240,26 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                             |_surface, attributes, role, &(mut x, mut y)| {
                                 // there is actually something to draw !
                                 if attributes.user_data.texture.is_none() {
-                                    let mut remove = false;
-                                    match attributes.user_data.buffer {
-                                        Some(Buffer::Egl { ref images }) => {
-                                            match images.format {
-                                                Format::RGB | Format::RGBA => {
-                                                    attributes.user_data.texture =
-                                                        self.texture_from_egl(&images);
-                                                }
-                                                _ => {
-                                                    // we don't handle the more complex formats here.
-                                                    attributes.user_data.texture = None;
-                                                    remove = true;
-                                                }
-                                            };
+                                    if let Some(buffer) = attributes.user_data.buffer.take() {
+                                        if let Ok(m) = self.texture_from_buffer(buffer.clone()) {
+                                            attributes.user_data.texture = Some(m);
                                         }
-                                        Some(Buffer::Shm { ref data, ref size }) => {
-                                            attributes.user_data.texture =
-                                                Some(self.texture_from_mem(data, *size));
-                                        }
-                                        _ => {}
-                                    }
-                                    if remove {
-                                        attributes.user_data.buffer = None;
+                                        // notify the client that we have finished reading the
+                                        // buffer
+                                        buffer.send(wl_buffer::Event::Release);
                                     }
                                 }
-
-                                if let Some(ref texture) = attributes.user_data.texture {
+                                if let Some(ref metadata) = attributes.user_data.texture {
                                     if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                                         x += subdata.location.0;
                                         y += subdata.location.1;
                                     }
                                     self.render_texture(
                                         &mut frame,
-                                        texture,
-                                        match *attributes.user_data.buffer.as_ref().unwrap() {
-                                            Buffer::Egl { ref images } => images.y_inverted,
-                                            Buffer::Shm { .. } => false,
-                                        },
-                                        match *attributes.user_data.buffer.as_ref().unwrap() {
-                                            Buffer::Egl { ref images } => (images.width, images.height),
-                                            Buffer::Shm { ref size, .. } => *size,
-                                        },
+                                        &metadata.texture,
+                                        metadata.fragment,
+                                        metadata.y_inverted,
+                                        metadata.dimensions,
                                         (x, y),
                                         screen_dimensions,
                                         ::glium::Blend {
