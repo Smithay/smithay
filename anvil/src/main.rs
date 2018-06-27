@@ -44,7 +44,7 @@ fn main() {
 
     let (mut display, mut event_loop) = Display::new();
 
-    let arg = ::std::env::args().skip(1).next();
+    let arg = ::std::env::args().nth(1);
     match arg.as_ref().map(|s| &s[..]) {
         #[cfg(feature = "winit")]
         Some("--winit") => {
@@ -69,7 +69,7 @@ fn main() {
         }
         _ => {
             println!("USAGE: anvil --backend");
-            println!("");
+            println!();
             println!("Possible backends are:");
             for b in POSSIBLE_BACKENDS {
                 println!("\t{}", b);

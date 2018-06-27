@@ -105,7 +105,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) ->
     let (mut w_seat, _) = Seat::new(
         &mut display.borrow_mut(),
         event_loop.token(),
-        session.seat().into(),
+        session.seat(),
         log.clone(),
     );
 
@@ -174,7 +174,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) ->
         .unwrap();
 
     while running.load(Ordering::SeqCst) {
-        if let Err(_) = event_loop.dispatch(Some(16)) {
+        if event_loop.dispatch(Some(16)).is_err() {
             running.store(false, Ordering::SeqCst);
         } else {
             display.borrow_mut().flush_clients();
@@ -288,7 +288,7 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
         self.backends.insert(device.device_id(), backends.clone());
 
         Some(DrmHandlerImpl {
-            compositor_token: self.compositor_token.clone(),
+            compositor_token: self.compositor_token,
             backends,
             window_map: self.window_map.clone(),
             pointer_location: self.pointer_location.clone(),
@@ -298,7 +298,7 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
 
     fn device_changed(&mut self, device: &mut DrmDevice<SessionFdDrmDevice>) {
         //quick and dirt, just re-init all backends
-        let backends = self.backends.get(&device.device_id()).unwrap();
+        let backends = &self.backends[&device.device_id()];
         *backends.borrow_mut() = self.scan_connectors(device, self.active_egl_context.clone());
     }
 
