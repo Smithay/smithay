@@ -249,11 +249,11 @@ impl Implementation<Resource<wl_shm_pool::WlShmPool>, wl_shm_pool::Request> for 
                 let data = Box::into_raw(Box::new(InternalBufferData {
                     pool: arc_pool.clone(),
                     data: BufferData {
-                        offset: offset,
-                        width: width,
-                        height: height,
-                        stride: stride,
-                        format: format,
+                        offset,
+                        width,
+                        height,
+                        stride,
+                        format,
                     },
                 }));
                 let buffer = buffer.implement_nonsend(

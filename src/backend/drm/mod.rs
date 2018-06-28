@@ -328,7 +328,7 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
         info!(log, "DrmDevice initializing");
 
         // we want to mode-set, so we better be the master, if we run via a tty session
-        if let Err(_) = drm.set_master() {
+        if drm.set_master().is_err() {
             warn!(
                 log,
                 "Unable to become drm master, assuming unpriviledged mode"
@@ -594,7 +594,7 @@ where
     fn receive(&mut self, event: FdEvent, (): ()) {
         let mut device = self.device.borrow_mut();
         match event {
-            FdEvent::Ready { .. } => match crtc::receive_events(&mut *device) {
+            FdEvent::Ready { .. } => match crtc::receive_events(&*device) {
                 Ok(events) => for event in events {
                     if let crtc::Event::PageFlip(event) = event {
                         if device.active.load(Ordering::SeqCst) {
@@ -643,7 +643,7 @@ impl<A: ControlDevice + 'static> AsSessionObserver<DrmDeviceObserver<A>> for Drm
     fn observer(&mut self) -> DrmDeviceObserver<A> {
         DrmDeviceObserver {
             context: Rc::downgrade(&self.context),
-            device_id: self.device_id.clone(),
+            device_id: self.device_id,
             backends: self.backends.clone(),
             old_state: self.old_state.clone(),
             active: self.active.clone(),
@@ -662,7 +662,7 @@ impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
             }
         }
         if let Some(device) = self.context.upgrade() {
-            for (handle, &(ref info, ref connectors)) in self.old_state.iter() {
+            for (handle, &(ref info, ref connectors)) in &self.old_state {
                 if let Err(err) = crtc::set(
                     &*device,
                     *handle,

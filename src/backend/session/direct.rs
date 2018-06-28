@@ -372,7 +372,7 @@ impl Implementation<(), SignalEvent> for DirectSessionNotifier {
         if self.is_active() {
             info!(self.logger, "Session shall become inactive.");
             for signal in &mut self.signals {
-                if let &mut Some(ref mut signal) = signal {
+                if let Some(ref mut signal) = *signal {
                     signal.pause(None);
                 }
             }
@@ -387,7 +387,7 @@ impl Implementation<(), SignalEvent> for DirectSessionNotifier {
                 tty::vt_rel_disp(self.tty, tty::VT_ACKACQ).expect("Unable to acquire tty lock");
             }
             for signal in &mut self.signals {
-                if let &mut Some(ref mut signal) = signal {
+                if let Some(ref mut signal) = *signal {
                     signal.activate(None);
                 }
             }

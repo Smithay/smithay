@@ -57,8 +57,8 @@ impl<U, R> SurfaceImplem<U, R> {
             + 'static,
     {
         SurfaceImplem {
-            log: log,
-            implem: implem,
+            log,
+            implem,
         }
     }
 }

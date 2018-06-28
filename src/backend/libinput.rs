@@ -43,7 +43,7 @@ impl LibinputInputBackend {
         let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_libinput"));
         info!(log, "Initializing a libinput backend");
         LibinputInputBackend {
-            context: context,
+            context,
             devices: Vec::new(),
             seats: HashMap::new(),
             handler: None,
@@ -404,7 +404,7 @@ impl backend::InputBackend for LibinputInputBackend {
                     use input::event::touch::*;
                     if let Some(ref mut handler) = self.handler {
                         let device_seat = touch_event.device().seat();
-                        if let &Some(ref seat) = &self.seats.get(&device_seat) {
+                        if let Some(ref seat) = self.seats.get(&device_seat) {
                             match touch_event {
                                 TouchEvent::Down(down_event) => {
                                     trace!(self.logger, "Calling on_touch_down with {:?}", down_event);
@@ -446,7 +446,7 @@ impl backend::InputBackend for LibinputInputBackend {
                     match keyboard_event {
                         KeyboardEvent::Key(key_event) => if let Some(ref mut handler) = self.handler {
                             let device_seat = key_event.device().seat();
-                            if let &Some(ref seat) = &self.seats.get(&device_seat) {
+                            if let Some(ref seat) = self.seats.get(&device_seat) {
                                 trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
                                 handler.on_keyboard_key(seat, key_event);
                             } else {
@@ -460,7 +460,7 @@ impl backend::InputBackend for LibinputInputBackend {
                     use input::event::pointer::*;
                     if let Some(ref mut handler) = self.handler {
                         let device_seat = pointer_event.device().seat();
-                        if let &Some(ref seat) = &self.seats.get(&device_seat) {
+                        if let Some(ref seat) = self.seats.get(&device_seat) {
                             match pointer_event {
                                 PointerEvent::Motion(motion_event) => {
                                     trace!(

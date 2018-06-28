@@ -221,7 +221,7 @@ pub struct ToplevelState {
 impl Clone for ToplevelState {
     fn clone(&self) -> ToplevelState {
         ToplevelState {
-            parent: self.parent.as_ref().map(|p| p.clone()),
+            parent: self.parent.as_ref().cloned(),
             title: self.title.clone(),
             app_id: self.app_id.clone(),
             min_size: self.min_size,
@@ -242,7 +242,7 @@ pub struct PopupState {
 impl Clone for PopupState {
     fn clone(&self) -> PopupState {
         PopupState {
-            parent: self.parent.as_ref().map(|p| p.clone()),
+            parent: self.parent.as_ref().cloned(),
             positioner: self.positioner.clone(),
         }
     }
@@ -266,7 +266,7 @@ impl<U, R, SD> Clone for ShellImplementation<U, R, SD> {
     fn clone(&self) -> Self {
         ShellImplementation {
             log: self.log.clone(),
-            compositor_token: self.compositor_token.clone(),
+            compositor_token: self.compositor_token,
             loop_token: self.loop_token.clone(),
             user_impl: self.user_impl.clone(),
             shell_state: self.shell_state.clone(),
