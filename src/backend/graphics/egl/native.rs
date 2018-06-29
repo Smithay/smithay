@@ -179,7 +179,7 @@ unsafe impl NativeDisplay<X11> for WinitWindow {
 
     fn create_surface(&self, _args: ()) -> Result<XlibWindow> {
         self.get_xlib_window()
-            .map(|ptr| XlibWindow(ptr))
+            .map(XlibWindow)
             .ok_or(ErrorKind::NonMatchingBackend("X11").into())
     }
 }

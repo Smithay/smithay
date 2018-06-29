@@ -19,7 +19,7 @@ pub(crate) fn prepare_x11_sockets(log: ::slog::Logger) -> Result<(X11Lock, [Unix
     }
     // If we reach here, all values from 0 to 32 failed
     // we need to stop trying at some point
-    return Err(());
+    Err(())
 }
 
 pub(crate) struct X11Lock {
@@ -44,11 +44,11 @@ impl X11Lock {
                     // write to the file failed ? we abandon
                     ::std::mem::drop(file);
                     let _ = ::std::fs::remove_file(&filename);
-                    return Err(());
+                    Err(())
                 } else {
                     debug!(log, "X11 lock aquired"; "D" => display);
                     // we got the lockfile and wrote our pid to it, all is good
-                    return Ok(X11Lock { display, log });
+                    Ok(X11Lock { display, log })
                 }
             }
             Err(_) => {
@@ -79,7 +79,7 @@ impl X11Lock {
                     }
                 }
                 // if we reach here, this lockfile exists and is probably in use, give up
-                return Err(());
+                Err(())
             }
         }
     }

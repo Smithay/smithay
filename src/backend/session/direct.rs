@@ -177,7 +177,7 @@ impl DirectSession {
                 fcntl::OFlag::O_RDWR | fcntl::OFlag::O_CLOEXEC,
                 Mode::empty(),
             ).chain_err(|| ErrorKind::FailedToOpenTTY(String::from(path.to_string_lossy())))
-        }).unwrap_or(dup(0 /*stdin*/).chain_err(|| ErrorKind::FailedToOpenTTY(String::from("<stdin>"))))?;
+        }).unwrap_or_else(|| dup(0 /*stdin*/).chain_err(|| ErrorKind::FailedToOpenTTY(String::from("<stdin>"))))?;
 
         let active = Arc::new(AtomicBool::new(true));
 
