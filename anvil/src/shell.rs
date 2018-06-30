@@ -55,7 +55,7 @@ pub fn init_shell(
     let (xdg_shell_state, _, _) = xdg_shell_init(
         display,
         looptoken.clone(),
-        compositor_token.clone(),
+        compositor_token,
         move |shell_event, ()| match shell_event {
             XdgRequest::NewToplevel { surface } => {
                 // place the window at a random location in the [0;300]x[0;300] square
@@ -88,12 +88,12 @@ pub fn init_shell(
     let (wl_shell_state, _) = wl_shell_init(
         display,
         looptoken,
-        compositor_token.clone(),
-        move |req: ShellRequest<_, _, ()>, ()| match req {
-            ShellRequest::SetKind {
+        compositor_token,
+        move |req: ShellRequest<_, _, ()>, ()|
+            if let ShellRequest::SetKind {
                 surface,
                 kind: ShellSurfaceKind::Toplevel,
-            } => {
+            } = req {
                 // place the window at a random location in the [0;300]x[0;300] square
                 use rand::distributions::{IndependentSample, Range};
                 let range = Range::new(0, 300);
@@ -104,9 +104,7 @@ pub fn init_shell(
                 shell_window_map
                     .borrow_mut()
                     .insert(SurfaceKind::Wl(surface), (x, y));
-            }
-            _ => (),
-        },
+            },
         log.clone(),
     );
 

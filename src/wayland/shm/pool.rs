@@ -28,8 +28,8 @@ impl Pool {
         trace!(log, "Creating new shm pool"; "fd" => fd as i32, "size" => size);
         Ok(Pool {
             map: RwLock::new(memmap),
-            fd: fd,
-            log: log,
+            fd,
+            log,
         })
     }
 
@@ -100,8 +100,8 @@ impl MemMap {
     fn new(fd: RawFd, size: usize) -> Result<MemMap, ()> {
         Ok(MemMap {
             ptr: unsafe { map(fd, size) }?,
-            fd: fd,
-            size: size,
+            fd,
+            size,
         })
     }
 

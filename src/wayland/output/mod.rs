@@ -127,7 +127,7 @@ impl Inner {
                 flags |= WMode::Preferred;
             }
             output.send(Event::Mode {
-                flags: flags,
+                flags,
                 width: mode.width,
                 height: mode.height,
                 refresh: mode.refresh,
@@ -198,10 +198,10 @@ impl Output {
         info!(log, "Creating new wl_output"; "name" => &name);
 
         let inner = Arc::new(Mutex::new(Inner {
-            name: name,
-            log: log,
+            name,
+            log,
             instances: Vec::new(),
-            physical: physical,
+            physical,
             location: (0, 0),
             transform: Transform::Normal,
             scale: 1,
@@ -306,7 +306,7 @@ impl Output {
         for output in &inner.instances {
             if let Some(mode) = new_mode {
                 output.send(Event::Mode {
-                    flags: flags,
+                    flags,
                     width: mode.width,
                     height: mode.height,
                     refresh: mode.refresh,

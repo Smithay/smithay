@@ -5,7 +5,7 @@ use smithay::wayland_server::protocol::wl_shm::Format;
 
 use glium::texture::{ClientFormat, RawImage2d};
 
-pub fn load_shm_buffer<'a>(data: BufferData, pool: &'a [u8]) -> Result<(RawImage2d<'a, u8>, usize), Format> {
+pub fn load_shm_buffer(data: BufferData, pool: &[u8]) -> Result<(RawImage2d<u8>, usize), Format> {
     let offset = data.offset as usize;
     let width = data.width as usize;
     let height = data.height as usize;

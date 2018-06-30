@@ -45,17 +45,17 @@ pub(crate) fn implement_shell<U, R, D, Impl>(
                 surface,
                 implementation.clone(),
                 ltoken.clone(),
-                ctoken.clone(),
+                ctoken,
                 state.clone(),
             );
             state
                 .lock()
                 .unwrap()
                 .known_surfaces
-                .push(make_handle(&shell_surface, ctoken.clone()));
+                .push(make_handle(&shell_surface, ctoken));
             implementation.borrow_mut().receive(
                 ShellRequest::NewShellSurface {
-                    surface: make_handle(&shell_surface, ctoken.clone()),
+                    surface: make_handle(&shell_surface, ctoken),
                 },
                 (),
             );
@@ -117,7 +117,7 @@ where
                     if valid {
                         user_impl.receive(
                             ShellRequest::Pong {
-                                surface: make_handle(&shell_surface, ctoken.clone()),
+                                surface: make_handle(&shell_surface, ctoken),
                             },
                             (),
                         );
@@ -125,7 +125,7 @@ where
                 }
                 Request::Move { seat, serial } => user_impl.receive(
                     ShellRequest::Move {
-                        surface: make_handle(&shell_surface, ctoken.clone()),
+                        surface: make_handle(&shell_surface, ctoken),
                         serial,
                         seat,
                     },
@@ -137,7 +137,7 @@ where
                     edges,
                 } => user_impl.receive(
                     ShellRequest::Resize {
-                        surface: make_handle(&shell_surface, ctoken.clone()),
+                        surface: make_handle(&shell_surface, ctoken),
                         serial,
                         seat,
                         edges,
@@ -146,7 +146,7 @@ where
                 ),
                 Request::SetToplevel => user_impl.receive(
                     ShellRequest::SetKind {
-                        surface: make_handle(&shell_surface, ctoken.clone()),
+                        surface: make_handle(&shell_surface, ctoken),
                         kind: ShellSurfaceKind::Toplevel,
                     },
                     (),
@@ -158,7 +158,7 @@ where
                     flags,
                 } => user_impl.receive(
                     ShellRequest::SetKind {
-                        surface: make_handle(&shell_surface, ctoken.clone()),
+                        surface: make_handle(&shell_surface, ctoken),
                         kind: ShellSurfaceKind::Transient {
                             parent,
                             location: (x, y),
@@ -173,7 +173,7 @@ where
                     output,
                 } => user_impl.receive(
                     ShellRequest::SetKind {
-                        surface: make_handle(&shell_surface, ctoken.clone()),
+                        surface: make_handle(&shell_surface, ctoken),
                         kind: ShellSurfaceKind::Fullscreen {
                             method,
                             framerate,
@@ -191,7 +191,7 @@ where
                     flags,
                 } => user_impl.receive(
                     ShellRequest::SetKind {
-                        surface: make_handle(&shell_surface, ctoken.clone()),
+                        surface: make_handle(&shell_surface, ctoken),
                         kind: ShellSurfaceKind::Popup {
                             parent,
                             serial,
@@ -204,7 +204,7 @@ where
                 ),
                 Request::SetMaximized { output } => user_impl.receive(
                     ShellRequest::SetKind {
-                        surface: make_handle(&shell_surface, ctoken.clone()),
+                        surface: make_handle(&shell_surface, ctoken),
                         kind: ShellSurfaceKind::Maximized { output },
                     },
                     (),

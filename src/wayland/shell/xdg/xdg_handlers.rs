@@ -449,7 +449,7 @@ fn make_toplevel_handle<U, R, SD>(
     super::ToplevelSurface {
         wl_surface: wl_surface.clone(),
         shell_surface: ToplevelKind::Xdg(resource.clone()),
-        token: token,
+        token,
         _shell_data: ::std::marker::PhantomData,
     }
 }
@@ -650,7 +650,7 @@ fn make_popup_handle<U, R, SD>(
     super::PopupSurface {
         wl_surface: wl_surface.clone(),
         shell_surface: PopupKind::Xdg(resource.clone()),
-        token: token,
+        token,
         _shell_data: ::std::marker::PhantomData,
     }
 }

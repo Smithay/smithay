@@ -171,11 +171,11 @@ impl<A: Device + 'static> DrmBackend<A> {
             if !encoders
                 .iter()
                 .map(|encoder| encoder.possible_crtcs())
-                .all(|crtc_list| {
+                .all(|crtc_list|
                     resource_handles
                         .filter_crtcs(crtc_list)
                         .contains(&self.backend.crtc)
-                }) {
+                ) {
                 bail!(ErrorKind::NoSuitableEncoder(info, self.backend.crtc));
             }
 
@@ -473,12 +473,13 @@ impl<A: Device + 'static> GraphicsBackend for DrmBackend<A> {
 
 impl<A: Device + 'static> EGLGraphicsBackend for DrmBackend<A> {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        if {
+        let res = {
             let nb = self.backend.next_buffer.take();
             let res = nb.is_some();
             self.backend.next_buffer.set(nb);
             res
-        } {
+        };
+        if res {
             // We cannot call lock_front_buffer anymore without releasing the previous buffer, which will happen when the page flip is done
             warn!(
                 self.backend.logger,

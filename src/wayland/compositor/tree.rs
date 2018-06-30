@@ -229,14 +229,14 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
     pub unsafe fn get_parent(child: &Resource<WlSurface>) -> Option<Resource<WlSurface>> {
         let child_mutex = Self::get_data(child);
         let child_guard = child_mutex.lock().unwrap();
-        child_guard.parent.as_ref().map(|p| p.clone())
+        child_guard.parent.as_ref().cloned()
     }
 
     /// Retrieve the parent surface (if any) of this surface
     pub unsafe fn get_children(child: &Resource<WlSurface>) -> Vec<Resource<WlSurface>> {
         let child_mutex = Self::get_data(child);
         let child_guard = child_mutex.lock().unwrap();
-        child_guard.children.iter().map(|p| p.clone()).collect()
+        child_guard.children.to_vec()
     }
 
     /// Reorders a surface relative to one of its sibling
@@ -250,7 +250,7 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
         let parent = {
             let data_mutex = Self::get_data(surface);
             let data_guard = data_mutex.lock().unwrap();
-            data_guard.parent.as_ref().map(|p| p.clone()).unwrap()
+            data_guard.parent.as_ref().cloned().unwrap()
         };
         if parent.equals(relative_to) {
             // TODO: handle positioning relative to parent

@@ -303,12 +303,11 @@ enum KeyAction {
 }
 
 fn process_keyboard_shortcut(modifiers: &ModifiersState, keysym: Keysym) -> KeyAction {
-    if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace {
-        // ctrl+alt+backspace = quit
-        KeyAction::Quit
-    } else if modifiers.logo && keysym == xkb::KEY_q {
-        // logo + q = quit
-        KeyAction::Quit
+    if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace
+        || modifiers.logo && keysym == xkb::KEY_q {
+            // ctrl+alt+backspace = quit
+            // logo + q = quit
+            KeyAction::Quit
     } else if keysym >= xkb::KEY_XF86Switch_VT_1 && keysym <= xkb::KEY_XF86Switch_VT_12 {
         // VTSwicth
         KeyAction::VtSwitch((keysym - xkb::KEY_XF86Switch_VT_1 + 1) as i32)

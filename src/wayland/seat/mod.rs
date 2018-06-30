@@ -125,7 +125,7 @@ impl Seat {
         let log = ::slog_or_stdlog(logger);
         let inner = Arc::new(Mutex::new(Inner {
             log: log.new(o!("smithay_module" => "seat_handler", "seat_name" => name.clone())),
-            name: name,
+            name,
             pointer: None,
             keyboard: None,
             known_seats: Vec::new(),

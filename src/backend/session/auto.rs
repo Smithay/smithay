@@ -170,40 +170,40 @@ impl Session for AutoSession {
     type Error = Error;
 
     fn open(&mut self, path: &Path, flags: OFlag) -> Result<RawFd> {
-        match self {
+        match *self {
             #[cfg(feature = "backend_session_logind")]
-            &mut AutoSession::Logind(ref mut logind) => logind.open(path, flags).map_err(|e| e.into()),
-            &mut AutoSession::Direct(ref mut direct) => direct.open(path, flags).map_err(|e| e.into()),
+            AutoSession::Logind(ref mut logind) => logind.open(path, flags).map_err(|e| e.into()),
+            AutoSession::Direct(ref mut direct) => direct.open(path, flags).map_err(|e| e.into()),
         }
     }
     fn close(&mut self, fd: RawFd) -> Result<()> {
-        match self {
+        match *self {
             #[cfg(feature = "backend_session_logind")]
-            &mut AutoSession::Logind(ref mut logind) => logind.close(fd).map_err(|e| e.into()),
-            &mut AutoSession::Direct(ref mut direct) => direct.close(fd).map_err(|e| e.into()),
+            AutoSession::Logind(ref mut logind) => logind.close(fd).map_err(|e| e.into()),
+            AutoSession::Direct(ref mut direct) => direct.close(fd).map_err(|e| e.into()),
         }
     }
 
     fn change_vt(&mut self, vt: i32) -> Result<()> {
-        match self {
+        match *self {
             #[cfg(feature = "backend_session_logind")]
-            &mut AutoSession::Logind(ref mut logind) => logind.change_vt(vt).map_err(|e| e.into()),
-            &mut AutoSession::Direct(ref mut direct) => direct.change_vt(vt).map_err(|e| e.into()),
+            AutoSession::Logind(ref mut logind) => logind.change_vt(vt).map_err(|e| e.into()),
+            AutoSession::Direct(ref mut direct) => direct.change_vt(vt).map_err(|e| e.into()),
         }
     }
 
     fn is_active(&self) -> bool {
-        match self {
+        match *self {
             #[cfg(feature = "backend_session_logind")]
-            &AutoSession::Logind(ref logind) => logind.is_active(),
-            &AutoSession::Direct(ref direct) => direct.is_active(),
+            AutoSession::Logind(ref logind) => logind.is_active(),
+            AutoSession::Direct(ref direct) => direct.is_active(),
         }
     }
     fn seat(&self) -> String {
-        match self {
+        match *self {
             #[cfg(feature = "backend_session_logind")]
-            &AutoSession::Logind(ref logind) => logind.seat(),
-            &AutoSession::Direct(ref direct) => direct.seat(),
+            AutoSession::Logind(ref logind) => logind.seat(),
+            AutoSession::Direct(ref direct) => direct.seat(),
         }
     }
 }
@@ -215,12 +215,12 @@ impl SessionNotifier for AutoSessionNotifier {
         &mut self,
         signal: &mut A,
     ) -> Self::Id {
-        match self {
+        match *self {
             #[cfg(feature = "backend_session_logind")]
-            &mut AutoSessionNotifier::Logind(ref mut logind) => {
+            AutoSessionNotifier::Logind(ref mut logind) => {
                 AutoId(AutoIdInternal::Logind(logind.register(signal)))
             }
-            &mut AutoSessionNotifier::Direct(ref mut direct) => {
+            AutoSessionNotifier::Direct(ref mut direct) => {
                 AutoId(AutoIdInternal::Direct(direct.register(signal)))
             }
         }
@@ -239,17 +239,17 @@ impl SessionNotifier for AutoSessionNotifier {
     }
 
     fn is_active(&self) -> bool {
-        match self {
+        match *self {
             #[cfg(feature = "backend_session_logind")]
-            &AutoSessionNotifier::Logind(ref logind) => logind.is_active(),
-            &AutoSessionNotifier::Direct(ref direct) => direct.is_active(),
+            AutoSessionNotifier::Logind(ref logind) => logind.is_active(),
+            AutoSessionNotifier::Direct(ref direct) => direct.is_active(),
         }
     }
     fn seat(&self) -> &str {
-        match self {
+        match *self {
             #[cfg(feature = "backend_session_logind")]
-            &AutoSessionNotifier::Logind(ref logind) => logind.seat(),
-            &AutoSessionNotifier::Direct(ref direct) => direct.seat(),
+            AutoSessionNotifier::Logind(ref logind) => logind.seat(),
+            AutoSessionNotifier::Direct(ref direct) => direct.seat(),
         }
     }
 }

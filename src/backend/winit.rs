@@ -53,9 +53,9 @@ enum Window {
 
 impl Window {
     fn window(&self) -> &WinitWindow {
-        match self {
-            &Window::Wayland { ref context, .. } => &**context,
-            &Window::X11 { ref context, .. } => &**context,
+        match *self {
+            Window::Wayland { ref context, .. } => &**context,
+            Window::X11 { ref context, .. } => &**context,
         }
     }
 }
@@ -697,12 +697,9 @@ impl InputBackend for WinitInputBackend {
                         (WindowEvent::Resized(w, h), _, events_handler) => {
                             trace!(logger, "Resizing window to {:?}", (w, h));
                             window.window().set_inner_size(w, h);
-                            match **window {
-                                Window::Wayland { ref surface, .. } => {
-                                    surface.resize(w as i32, h as i32, 0, 0)
-                                }
-                                _ => {}
-                            };
+                            if let Window::Wayland { ref surface, .. } = **window {
+                                surface.resize(w as i32, h as i32, 0, 0);
+                            }
                             if let Some(events_handler) = events_handler {
                                 events_handler.resized(w, h);
                             }
@@ -743,7 +740,7 @@ impl InputBackend for WinitInputBackend {
                                     time,
                                     key: scancode,
                                     count: *key_counter,
-                                    state: state,
+                                    state,
                                 },
                             )
                         }
@@ -760,8 +757,8 @@ impl InputBackend for WinitInputBackend {
                                 WinitMouseMovedEvent {
                                     window: window.clone(),
                                     time,
-                                    x: x,
-                                    y: y,
+                                    x,
+                                    y,
                                 },
                             )
                         }
@@ -780,8 +777,8 @@ impl InputBackend for WinitInputBackend {
                                 seat,
                                 WinitMouseInputEvent {
                                     time,
-                                    button: button,
-                                    state: state,
+                                    button,
+                                    state,
                                 },
                             )
                         }
@@ -802,7 +799,7 @@ impl InputBackend for WinitInputBackend {
                                     window: window.clone(),
                                     time,
                                     location: (x, y),
-                                    id: id,
+                                    id,
                                 },
                             )
                         }
@@ -823,7 +820,7 @@ impl InputBackend for WinitInputBackend {
                                     window: window.clone(),
                                     time,
                                     location: (x, y),
-                                    id: id,
+                                    id,
                                 },
                             )
                         }
@@ -844,11 +841,11 @@ impl InputBackend for WinitInputBackend {
                                     window: window.clone(),
                                     time,
                                     location: (x, y),
-                                    id: id,
+                                    id,
                                 },
                             );
                             trace!(logger, "Calling on_touch_up");
-                            handler.on_touch_up(seat, WinitTouchEndedEvent { time, id: id });
+                            handler.on_touch_up(seat, WinitTouchEndedEvent { time, id });
                         }
                         (
                             WindowEvent::Touch(Touch {
@@ -860,7 +857,7 @@ impl InputBackend for WinitInputBackend {
                             _,
                         ) => {
                             trace!(logger, "Calling on_touch_cancel");
-                            handler.on_touch_cancel(seat, WinitTouchCancelledEvent { time, id: id })
+                            handler.on_touch_cancel(seat, WinitTouchCancelledEvent { time, id })
                         }
                         (WindowEvent::CloseRequested, _, _) | (WindowEvent::Destroyed, _, _) => {
                             warn!(logger, "Window closed");

@@ -24,9 +24,9 @@ pub struct Seat {
 impl Seat {
     pub(crate) fn new<S: ToString>(id: u64, name: S, capabilities: SeatCapabilities) -> Seat {
         Seat {
-            id: id,
+            id,
             name: name.to_string(),
-            capabilities: capabilities,
+            capabilities,
         }
     }
 
@@ -331,7 +331,7 @@ pub struct TouchSlot {
 
 impl TouchSlot {
     pub(crate) fn new(id: u64) -> Self {
-        TouchSlot { id: id }
+        TouchSlot { id }
     }
 }
 

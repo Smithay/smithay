@@ -69,7 +69,7 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevH
     /// `session` - A session used to open and close devices as they become available
     /// `handler` - User-provided handler to respond to any detected changes
     /// `logger`  - slog Logger to be used by the backend and its `DrmDevices`.
-    pub fn new<'a, L>(
+    pub fn new<L>(
         token: LoopToken,
         context: &Context,
         mut session: S,
@@ -195,7 +195,7 @@ impl<
 }
 
 impl SessionObserver for UdevBackendObserver {
-    fn pause<'a>(&mut self, devnum: Option<(u32, u32)>) {
+    fn pause(&mut self, devnum: Option<(u32, u32)>) {
         if let Some(devices) = self.devices.upgrade() {
             for &mut (_, ref device) in devices.borrow_mut().values_mut() {
                 info!(self.logger, "changed successful");
@@ -204,7 +204,7 @@ impl SessionObserver for UdevBackendObserver {
         }
     }
 
-    fn activate<'a>(&mut self, devnum: Option<(u32, u32, Option<RawFd>)>) {
+    fn activate(&mut self, devnum: Option<(u32, u32, Option<RawFd>)>) {
         if let Some(devices) = self.devices.upgrade() {
             for &mut (_, ref device) in devices.borrow_mut().values_mut() {
                 info!(self.logger, "changed successful");

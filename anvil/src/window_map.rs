@@ -155,22 +155,22 @@ where
 {
     pub fn new(ctoken: CompositorToken<U, R>, get_size: F) -> WindowMap<U, R, D, SD, F> {
         WindowMap {
-            ctoken: ctoken,
+            ctoken,
             windows: Vec::new(),
-            get_size: get_size,
+            get_size,
         }
     }
 
     pub fn insert(&mut self, toplevel: Kind<U, R, SD, D>, location: (i32, i32)) {
         let mut window = Window {
-            location: location,
+            location,
             surface: Rectangle {
                 x: 0,
                 y: 0,
                 width: 0,
                 height: 0,
             },
-            toplevel: toplevel,
+            toplevel,
         };
         window.self_update(self.ctoken, &self.get_size);
         self.windows.insert(0, window);
@@ -219,7 +219,7 @@ where
 
     pub fn refresh(&mut self) {
         self.windows.retain(|w| w.toplevel.alive());
-        for w in self.windows.iter_mut() {
+        for w in &mut self.windows {
             w.self_update(self.ctoken, &self.get_size);
         }
     }

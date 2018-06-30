@@ -138,7 +138,7 @@ impl PointerHandle {
     ///
     /// A single frame will group multiple scroll events as if they happended in the same instance.
     /// Dropping the returned `PointerAxisHandle` will group the events together.
-    pub fn axis<'a>(&'a self) -> PointerAxisHandle<'a> {
+    pub fn axis(& self) -> PointerAxisHandle {
         PointerAxisHandle {
             inner: self.inner.lock().unwrap(),
         }

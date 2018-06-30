@@ -102,10 +102,10 @@ impl KbdInternal {
             focus: None,
             pressed_keys: Vec::new(),
             mods_state: ModifiersState::new(),
-            keymap: keymap,
-            state: state,
-            repeat_rate: repeat_rate,
-            repeat_delay: repeat_delay,
+            keymap,
+            state,
+            repeat_rate,
+            repeat_delay,
         })
     }
 
@@ -224,7 +224,7 @@ pub(crate) fn create_keyboard_handler(
     Ok(KeyboardHandle {
         arc: Arc::new(KbdArc {
             internal: Mutex::new(internal),
-            keymap_file: keymap_file,
+            keymap_file,
             keymap_len: keymap_data.as_bytes().len() as u32,
             logger: log,
         }),
@@ -349,7 +349,7 @@ impl KeyboardHandle {
             });
 
             // set new focus
-            guard.focus = focus.map(|s| s.clone());
+            guard.focus = focus.cloned();
             let (dep, la, lo, gr) = guard.serialize_modifiers();
             let keys = guard.serialize_pressed_keys();
             guard.with_focused_kbds(|kbd, surface| {

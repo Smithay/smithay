@@ -345,7 +345,7 @@ where
         self::wl_handlers::implement_shell(
             shell,
             ltoken.clone(),
-            ctoken.clone(),
+            ctoken,
             implementation.clone(),
             state2.clone(),
         );
