@@ -265,7 +265,7 @@ pub struct DrmDevice<A: ControlDevice + 'static> {
     device_id: dev_t,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<DrmBackendInternal<A>>>>>,
     active: Arc<AtomicBool>,
-    priviledged: bool,
+    privileged: bool,
     logger: ::slog::Logger,
 }
 
@@ -336,7 +336,7 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
             device_id,
             old_state: HashMap::new(),
             active: Arc::new(AtomicBool::new(true)),
-            priviledged: true,
+            privileged: true,
             logger: log.clone(),
         };
 
@@ -508,7 +508,7 @@ impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {
                 error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
             }
         }
-        if self.priviledged {
+        if self.privileged {
             if let Err(err) = self.drop_master() {
                 error!(self.logger, "Failed to drop drm master state. Error: {}", err);
             }
@@ -596,7 +596,7 @@ pub struct DrmDeviceObserver<A: ControlDevice + 'static> {
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<DrmBackendInternal<A>>>>>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     active: Arc<AtomicBool>,
-    priviledged: bool,
+    privileged: bool,
     logger: ::slog::Logger,
 }
 
@@ -609,7 +609,7 @@ impl<A: ControlDevice + 'static> AsSessionObserver<DrmDeviceObserver<A>> for Drm
             backends: self.backends.clone(),
             old_state: self.old_state.clone(),
             active: self.active.clone(),
-            priviledged: self.priviledged,
+            privileged: self.privileged,
             logger: self.logger.clone(),
         }
     }
@@ -638,7 +638,7 @@ impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
             }
         }
         self.active.store(false, Ordering::SeqCst);
-        if self.priviledged {
+        if self.privileged {
             if let Some(device) = self.context.upgrade() {
                 if let Err(err) = device.drop_master() {
                     error!(self.logger, "Failed to drop drm master state. Error: {}", err);
@@ -660,7 +660,7 @@ impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
             }
         }
         self.active.store(true, Ordering::SeqCst);
-        if self.priviledged {
+        if self.privileged {
             if let Some(device) = self.context.upgrade() {
                 if let Err(err) = device.set_master() {
                     crit!(self.logger, "Failed to acquire drm master again. Error: {}", err);
