@@ -78,7 +78,7 @@
 //!
 //! - The trait `RoleType`, which defines it as a type handling roles
 //! - For each of your roles, the trait `Role<Token>` (where `Token` is your
-//!   token type), marking its hability to handle this given role.
+//!   token type), marking its ability to handle this given role.
 //!
 //! All handlers that handle a specific role will require you to provide
 //! them with a `CompositorToken<U, R, H>` where `R: Role<TheToken>`.

@@ -24,7 +24,7 @@ error_chain! {
             display("The expected backend '{:?}' does not match the runtime.", expected),
         }
 
-        #[doc = "EGL was unable to optain a valid EGL Display"]
+        #[doc = "EGL was unable to obtain a valid EGL Display"]
         DisplayNotSupported {
             description("EGL was unable to optain a valid EGL Display")
         }

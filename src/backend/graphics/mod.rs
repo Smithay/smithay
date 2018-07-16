@@ -3,7 +3,7 @@
 //! Note: Not every api may be supported by every backend
 
 /// General functions any graphics backend should support independently from it's rendering
-/// techique.
+/// technique.
 pub trait GraphicsBackend {
     /// Format representing the image drawn for the cursor.
     type CursorFormat;
@@ -15,12 +15,12 @@ pub trait GraphicsBackend {
     /// Useful as well for e.g. pointer wrapping.
     ///
     /// Not guaranteed to be supported on every backend. The result usually
-    /// depends on the backend, the cursor might be "owned" by another more priviledged
+    /// depends on the backend, the cursor might be "owned" by another more privileged
     /// compositor (running nested).
     ///
     /// In these cases setting the position is actually not required, as movement is done
     /// by the higher compositor and not by the backend. It is still good practice to update
-    /// the position after every recieved event, but don't rely on pointer wrapping working.
+    /// the position after every received event, but don't rely on pointer wrapping working.
     ///
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Self::Error>;
 

@@ -16,7 +16,7 @@
 //! access their associated metadata and underlying `wl_surface`s.
 //!
 //! This handler only handles the protocol exchanges with the client to present you the
-//! information in a coherent and relatively easy to use maneer. All the actual drawing
+//! information in a coherent and relatively easy to use manner. All the actual drawing
 //! and positioning logic of windows is out of its scope.
 //!
 //! ## How to use it
@@ -25,7 +25,7 @@
 //!
 //! To initialize this handler, simple use the `wl_shell_init` function provided in this
 //! module. You will need to provide it the `CompositorToken` you retrieved from an
-//! instanciation of the compositor handler provided by smithay.
+//! instantiation of the compositor handler provided by smithay.
 //!
 //! ```no_run
 //! # extern crate wayland_server;
@@ -110,7 +110,7 @@ where
     R: Role<ShellSurfaceRole<D>> + 'static,
     D: 'static,
 {
-    /// Is the shell surface refered by this handle still alive?
+    /// Is the shell surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
         self.shell_surface.is_alive() && self.wl_surface.is_alive()
     }
@@ -212,7 +212,7 @@ pub enum ShellSurfaceKind {
     },
     /// A popup surface
     ///
-    /// Short-lived surface, typically refrered as "tooltips" in many
+    /// Short-lived surface, typically referred as "tooltips" in many
     /// contexts.
     Popup {
         /// The parent surface of this popup

@@ -5,7 +5,7 @@
 //! mechanisms to switch between and handle device access and permissions for every running
 //! instance.
 //!
-//! They are crutial to allow unpriviledged processes to use graphical or input devices.
+//! They are crucial to allow unprivileged processes to use graphical or input devices.
 //!
 //! The following mechanisms are currently provided:
 //!     - direct - legacy tty / virtual terminal kernel api

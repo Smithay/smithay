@@ -1,6 +1,6 @@
 //! Utilities for handling surfaces, subsurfaces and regions
 //!
-//! This module provides automatic handling of sufaces, subsurfaces
+//! This module provides automatic handling of surfaces, subsurfaces
 //! and region wayland objects, by registering an implementation for
 //! for the `wl_compositor` and `wl_subcompositor` globals.
 //!
@@ -16,7 +16,7 @@
 //!
 //! This implementation will not do anything more than present you the metadata specified by the
 //! client in a coherent and practical way. All the logic regarding to drawing itself, and
-//! the positionning of windows (surface trees) one relative to another is out of its scope.
+//! the positioning of windows (surface trees) one relative to another is out of its scope.
 //!
 //! ## How to use it
 //!
@@ -114,7 +114,7 @@ struct Marker<U, R> {
     _r: ::std::marker::PhantomData<R>,
 }
 
-/// Data associated with a surface, aggreged by the handlers
+/// Data associated with a surface, aggregated by the handlers
 ///
 /// Most of the fields of this struct represent a double-buffered state, which
 /// should only be applied once a `commit` request is received from the surface.
@@ -186,7 +186,7 @@ pub struct SubsurfaceRole {
     /// Sync status of this sub-surface
     ///
     /// If `true`, this surface should be repainted synchronously with its parent
-    /// if `false`, it should be considered independant of its parent regarding
+    /// if `false`, it should be considered independent of its parent regarding
     /// repaint timings.
     pub sync: bool,
 }
@@ -215,7 +215,7 @@ pub enum RectangleKind {
 /// A region is defined as an union and difference of rectangle.
 ///
 /// This struct contains an ordered Vec containing the rectangles defining
-/// a region. They should be added or substracted in this order to compute the
+/// a region. They should be added or subtracted in this order to compute the
 /// actual contents of the region.
 #[derive(Clone, Debug)]
 pub struct RegionAttributes {
@@ -291,7 +291,7 @@ where
     /// - The surface object itself
     /// - a mutable reference to its surface attribute data
     /// - a mutable reference to its role data,
-    /// - a custom value that is passed in a fold-like maneer, but only from the output of a parent
+    /// - a custom value that is passed in a fold-like manner, but only from the output of a parent
     ///   to its children. See `TraversalAction` for details.
     ///
     /// If the surface not managed by the CompositorGlobal that provided this token, this
@@ -349,7 +349,7 @@ where
 }
 
 impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
-    /// Check wether this surface as a role or not
+    /// Check whether this surface as a role or not
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
@@ -357,7 +357,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
         SurfaceData::<U, R>::has_a_role(surface)
     }
 
-    /// Check wether this surface as a specific role
+    /// Check whether this surface as a specific role
     ///
     /// If the surface is not managed by the CompositorGlobal that provided this token, this
     /// will panic (having more than one compositor is not supported).
@@ -444,7 +444,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
 /// returns a `CompositorToken` which you'll need access the data associated to
 /// the `wl_surface`s.
 ///
-/// It also returns the two global handles, in case you whish to remove these
+/// It also returns the two global handles, in case you wish to remove these
 /// globals from the event loop in the future.
 pub fn compositor_init<U, R, Impl, L>(
     display: &mut Display,

@@ -23,7 +23,7 @@
 //! switching the tty via `AutoSession::change_vt`) and to automatically enable it again,
 //! when the session becomes active again.
 //!
-//! It is crutial to avoid errors during that state. Examples for object that might be registered
+//! It is crucial to avoid errors during that state. Examples for object that might be registered
 //! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
@@ -51,7 +51,7 @@ pub enum AutoSession {
 
 /// `SessionNotifier` using the best available inteface
 pub enum AutoSessionNotifier {
-    /// Logind session nofifier
+    /// Logind session notifier
     #[cfg(feature = "backend_session_logind")]
     Logind(LogindSessionNotifier),
     /// Direct / tty session notifier

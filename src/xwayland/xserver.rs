@@ -7,15 +7,15 @@
  * - a pair for smithay to connect to Xwayland as a WM, we give our end to the
  *   WM and it deals with it
  * - 2 listening sockets on which the Xwayland server will listen. We need to
- *   bind them ouserlves so we know what value put in the $DISPLAY env variable.
+ *   bind them ourselves so we know what value put in the $DISPLAY env variable.
  *   This involves some dance with a lockfile to ensure there is no collision with
  *   an other starting xserver
- *   if we listen on display $D, their paths are respectly:
+ *   if we listen on display $D, their paths are respectively:
  *   - /tmp/.X11-unix/X$D
  *   - @/tmp/.X11-unix/X$D (abstract socket)
  *
  * The XWayland server is spawned via fork+exec.
- * -> wlroot does a double-fork while weston a single one, why ??
+ * -> wlroots does a double-fork while weston a single one, why ??
  *    -> https://stackoverflow.com/questions/881388/
  * -> once it is started, it sends us a SIGUSR1, we need to setup a listener
  *    for it and when we receive it we can launch the WM
@@ -69,7 +69,7 @@ pub struct XWayland<WM: XWindowManager> {
 pub trait XWindowManager {
     /// The XWayland server is ready
     ///
-    /// Your previlegied connection to it is this `UnixStream`
+    /// Your privileged connection to it is this `UnixStream`
     fn xwayland_ready(&mut self, connection: UnixStream, client: Client);
     /// The XWayland server has exited
     fn xwayland_exited(&mut self);

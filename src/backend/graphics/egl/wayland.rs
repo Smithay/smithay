@@ -5,9 +5,9 @@
 //!
 //! To use it bind any backend implementing the `EGLWaylandExtensions` trait, that shall do the
 //! rendering (so pick a fast one), to the `wayland_server::Display` of your compositor.
-//! Note only one backend may be bould to any `Display` at any time.
+//! Note only one backend may be bound to any `Display` at any time.
 //!
-//! You may then use the resulting `EGLDisplay` to recieve `EGLImages` of an egl-based `WlBuffer`
+//! You may then use the resulting `EGLDisplay` to receive `EGLImages` of an egl-based `WlBuffer`
 //! for rendering.
 
 use backend::graphics::egl::{
@@ -255,7 +255,7 @@ pub trait EGLWaylandExtensions {
     fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay>;
 }
 
-/// Type to recieve `EGLImages` for egl-based `WlBuffer`s.
+/// Type to receive `EGLImages` for egl-based `WlBuffer`s.
 ///
 /// Can be created by using `EGLWaylandExtensions::bind_wl_display`.
 pub struct EGLDisplay(Weak<ffi::egl::types::EGLDisplay>, *mut wl_display);
@@ -268,7 +268,7 @@ impl EGLDisplay {
         EGLDisplay(Rc::downgrade(&context.display), display)
     }
 
-    /// Try to recieve `EGLImages` from a given `WlBuffer`.
+    /// Try to receive `EGLImages` from a given `WlBuffer`.
     ///
     /// In case the buffer is not managed by egl (but e.g. the wayland::shm module)
     /// a `BufferAccessError::NotManaged(WlBuffer)` is returned with the original buffer

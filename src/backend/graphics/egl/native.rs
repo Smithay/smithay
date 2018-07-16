@@ -138,7 +138,7 @@ pub unsafe trait NativeDisplay<B: Backend> {
     type Arguments;
     /// Error type thrown by the surface creation in case of failure.
     type Error: ::std::error::Error + Send + 'static;
-    /// Because one typ might implement multiple `Backend` this function must be called to check
+    /// Because one type might implement multiple `Backend`s this function must be called to check
     /// if the expected `Backend` is used at runtime.
     fn is_backend(&self) -> bool;
     /// Return a raw pointer egl will accept for context creation.

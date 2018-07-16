@@ -263,7 +263,7 @@ struct KbdArc {
 ///
 /// - set the current focus for this keyboard: designing the surface that will receive the key inputs
 ///   using the `KeyboardHandle::set_focus` method.
-/// - process key inputs from the input backend, allowing them to be catched at the compositor-level
+/// - process key inputs from the input backend, allowing them to be caught at the compositor-level
 ///   or forwarded to the client. See the documentation of the `KeyboardHandle::input` method for
 ///   details.
 #[derive(Clone)]
@@ -283,7 +283,7 @@ impl KeyboardHandle {
     /// implement compositor-level key bindings for example.
     ///
     /// The module `smithay::keyboard::keysyms` exposes definitions of all possible keysyms
-    /// to be compared against. This includes non-characted keysyms, such as XF86 special keys.
+    /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
     pub fn input<F>(&self, keycode: u32, state: KeyState, serial: u32, time: u32, filter: F)
     where
         F: FnOnce(&ModifiersState, Keysym) -> bool,
@@ -343,7 +343,7 @@ impl KeyboardHandle {
 
     /// Set the current focus of this keyboard
     ///
-    /// If the ne focus is different from the previous one, any previous focus
+    /// If the new focus is different from the previous one, any previous focus
     /// will be sent a `wl_keyboard::leave` event, and if the new focus is not `None`,
     /// a `wl_keyboard::enter` event will be sent.
     pub fn set_focus(&self, focus: Option<&Resource<WlSurface>>, serial: u32) {

@@ -8,7 +8,7 @@ use wayland_server::{protocol::wl_surface::WlSurface, Resource};
 /// This type is internal to Smithay, and should not appear in the
 /// public API
 ///
-/// It is a bidirectionnal tree, meaning we can move along it in both
+/// It is a bidirectional tree, meaning we can move along it in both
 /// direction (top-bottom or bottom-up). We are taking advantage of the
 /// fact that lifetime of objects are decided by wayland-server to ensure
 /// the cleanup will be done properly, and we won't leak anything.
@@ -288,7 +288,7 @@ impl<U: 'static, R: 'static> SurfaceData<U, R> {
     /// Note that an internal lock is taken during access of this data,
     /// so the tree cannot be manipulated at the same time.
     ///
-    /// The callback returns wether the traversal should continue or not. Returning
+    /// The callback returns whether the traversal should continue or not. Returning
     /// false will cause an early-stopping.
     pub fn map_tree<F, T>(root: &Resource<WlSurface>, initial: T, mut f: F, reverse: bool)
     where

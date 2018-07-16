@@ -1,6 +1,6 @@
 //! Drm/Kms types and backend implementations
 //!
-//! This module provide a `DrmDevice` which acts as a reprensentation for any drm
+//! This module provide a `DrmDevice` which acts as a representation for any drm
 //! device and can be used to create the second provided structure a `DrmBackend`.
 //!
 //! Initialization happens through the types provided by [`drm-rs`](https://docs.rs/drm/).
@@ -9,7 +9,7 @@
 //!
 //! "Crtc"s represent scanout engines of the device pointer to one framebuffer. There responsibility
 //! is to read the data of the framebuffer and export it into an "Encoder". The number of crtc's
-//! represent the number of independant output devices the hardware may handle.
+//! represent the number of independent output devices the hardware may handle.
 //!
 //! An "Encoder" encodes the data of connected crtcs into a video signal for a fixed set
 //! of connectors. E.g. you might have an analog encoder based on a DAG for VGA ports, but another
@@ -116,8 +116,8 @@
 //!
 //! You can monitor the page flips by registering the `DrmDevice` as and
 //! `FdEventSourceHandler` and setting a `DrmHandler` on it. You will be notified
-//! whenever a page flip has happend, so you can render the next frame immediately
-//! and get a tear-free reprensentation on the display.
+//! whenever a page flip has happened, so you can render the next frame immediately
+//! and get a tear-free representation on the display.
 //!
 //! You need to render at least once to successfully trigger the first event.
 //!
@@ -475,7 +475,7 @@ impl<A: ControlDevice + 'static> Hash for DrmDevice<A> {
     }
 }
 
-// for users convinience and FdEventSource registering
+// for users convenience and FdEventSource registering
 impl<A: ControlDevice + 'static> AsRawFd for DrmDevice<A> {
     fn as_raw_fd(&self) -> RawFd {
         self.context.as_raw_fd()

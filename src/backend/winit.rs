@@ -207,7 +207,7 @@ where
     ))
 }
 
-/// Handler trait to recieve window-related events to provide a better *nested* experience.
+/// Handler trait to receive window-related events to provide a better *nested* experience.
 pub trait WinitEventsHandler {
     /// The window was resized, can be used to adjust the associated `wayland::output::Output`s mode.
     ///
@@ -661,7 +661,7 @@ impl InputBackend for WinitInputBackend {
     ///
     /// Returns an error if the `Window` the window has been closed. Calling
     /// `dispatch_new_events` again after the `Window` has been closed is considered an
-    /// application error and unspecified baviour may occur.
+    /// application error and unspecified behaviour may occur.
     ///
     /// The linked `WinitGraphicsBackend` will error with a lost Context and should
     /// not be used anymore as well.

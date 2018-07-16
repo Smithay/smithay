@@ -253,7 +253,7 @@ impl SessionObserver for UdevBackendObserver {
 
 /// Binds a `UdevBackend` to a given `EventLoop`.
 ///
-/// Allows the backend to recieve kernel events and thus to drive the `UdevHandler`.
+/// Allows the backend to receive kernel events and thus to drive the `UdevHandler`.
 /// No runtime functionality can be provided without using this function.
 pub fn udev_backend_bind<H, S, T, Data>(
     mut udev: UdevBackend<H, S, T, Data>,

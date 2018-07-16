@@ -546,7 +546,7 @@ pub enum GlProfile {
 /// Describes how the backend should choose a pixel format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PixelFormatRequirements {
-    /// If `true`, only hardware-accelerated formats will be conisdered. If `false`, only software renderers.
+    /// If `true`, only hardware-accelerated formats will be considered. If `false`, only software renderers.
     /// `None` means "don't care". Default is `None`.
     pub hardware_accelerated: Option<bool>,
     /// Minimum number of bits for the color buffer, excluding alpha. None means "don't care". The default is `None``.
