@@ -49,8 +49,8 @@ extern crate error_chain;
 extern crate lazy_static;
 
 pub mod backend;
-pub mod wayland;
 pub mod utils;
+pub mod wayland;
 
 #[cfg(feature = "xwayland")]
 pub mod xwayland;

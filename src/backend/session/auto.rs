@@ -28,10 +28,10 @@
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
 
-use super::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
-use super::direct::{self, direct_session_bind, DirectSession, DirectSessionNotifier, BoundDirectSession};
+use super::direct::{self, direct_session_bind, BoundDirectSession, DirectSession, DirectSessionNotifier};
 #[cfg(feature = "backend_session_logind")]
 use super::logind::{self, logind_session_bind, BoundLogindSession, LogindSession, LogindSessionNotifier};
+use super::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
 use nix::fcntl::OFlag;
 use std::cell::RefCell;
 use std::io::Error as IoError;
@@ -109,10 +109,7 @@ impl AutoSession {
                     )),
                     Err(err) => {
                         warn!(logger, "Failed to create direct session: {}", err);
-                        error!(
-                            logger,
-                            "Could not create any session, possibilities exhausted"
-                        );
+                        error!(logger, "Could not create any session, possibilities exhausted");
                         None
                     }
                 }
@@ -136,10 +133,7 @@ impl AutoSession {
             )),
             Err(err) => {
                 warn!(logger, "Failed to create direct session: {}", err);
-                error!(
-                    logger,
-                    "Could not create any session, possibilities exhausted"
-                );
+                error!(logger, "Could not create any session, possibilities exhausted");
                 None
             }
         }
@@ -255,7 +249,7 @@ impl BoundAutoSession {
         match self {
             #[cfg(feature = "backend_session_logind")]
             BoundAutoSession::Logind(logind) => AutoSessionNotifier::Logind(logind.unbind()),
-            BoundAutoSession::Direct(direct) => AutoSessionNotifier::Direct(direct.unbind())
+            BoundAutoSession::Direct(direct) => AutoSessionNotifier::Direct(direct.unbind()),
         }
     }
 }

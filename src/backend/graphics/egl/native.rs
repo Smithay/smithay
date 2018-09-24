@@ -15,9 +15,9 @@ use std::ptr;
 #[cfg(feature = "backend_winit")]
 use wayland_client::egl as wegl;
 #[cfg(feature = "backend_winit")]
-use winit::Window as WinitWindow;
-#[cfg(feature = "backend_winit")]
 use winit::os::unix::WindowExt;
+#[cfg(feature = "backend_winit")]
+use winit::Window as WinitWindow;
 
 /// Trait for typed backend variants (X11/Wayland/GBM)
 pub trait Backend {
@@ -53,26 +53,12 @@ impl Backend for Wayland {
         F: Fn(&str) -> bool,
     {
         if has_dp_extension("EGL_KHR_platform_wayland") && ffi::egl::GetPlatformDisplay::is_loaded() {
-            trace!(
-                log,
-                "EGL Display Initialization via EGL_KHR_platform_wayland"
-            );
-            ffi::egl::GetPlatformDisplay(
-                ffi::egl::PLATFORM_WAYLAND_KHR,
-                display as *mut _,
-                ptr::null(),
-            )
+            trace!(log, "EGL Display Initialization via EGL_KHR_platform_wayland");
+            ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_WAYLAND_KHR, display as *mut _, ptr::null())
         } else if has_dp_extension("EGL_EXT_platform_wayland") && ffi::egl::GetPlatformDisplayEXT::is_loaded()
         {
-            trace!(
-                log,
-                "EGL Display Initialization via EGL_EXT_platform_wayland"
-            );
-            ffi::egl::GetPlatformDisplayEXT(
-                ffi::egl::PLATFORM_WAYLAND_EXT,
-                display as *mut _,
-                ptr::null(),
-            )
+            trace!(log, "EGL Display Initialization via EGL_EXT_platform_wayland");
+            ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_WAYLAND_EXT, display as *mut _, ptr::null())
         } else {
             trace!(log, "Default EGL Display Initialization via GetDisplay");
             ffi::egl::GetDisplay(display as *mut _)

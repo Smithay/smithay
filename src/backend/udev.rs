@@ -11,8 +11,8 @@
 
 use backend::drm::{drm_device_bind, DrmDevice, DrmHandler};
 use backend::session::{AsSessionObserver, Session, SessionObserver};
-use drm::Device as BasicDevice;
 use drm::control::Device as ControlDevice;
+use drm::Device as BasicDevice;
 use nix::fcntl;
 use nix::sys::stat::dev_t;
 use std::cell::RefCell;
@@ -25,8 +25,8 @@ use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 use udev::{Context, Enumerator, Event, EventType, MonitorBuilder, MonitorSocket, Result as UdevResult};
 
-use wayland_server::calloop::{LoopHandle, Source, Ready};
-use wayland_server::calloop::generic::{Generic, EventedRawFd};
+use wayland_server::calloop::generic::{EventedRawFd, Generic};
+use wayland_server::calloop::{LoopHandle, Ready, Source};
 
 /// Udev's `DrmDevice` type based on the underlying session
 pub struct SessionFdDrmDevice(RawFd);
@@ -48,10 +48,20 @@ pub struct UdevBackend<
     H: DrmHandler<SessionFdDrmDevice> + 'static,
     S: Session + 'static,
     T: UdevHandler<H> + 'static,
-    Data: 'static
+    Data: 'static,
 > {
     _handler: ::std::marker::PhantomData<H>,
-    devices: Rc<RefCell<HashMap<dev_t, (Source<Generic<EventedRawFd>>, Rc<RefCell<DrmDevice<SessionFdDrmDevice>>>)>>>,
+    devices: Rc<
+        RefCell<
+            HashMap<
+                dev_t,
+                (
+                    Source<Generic<EventedRawFd>>,
+                    Rc<RefCell<DrmDevice<SessionFdDrmDevice>>>,
+                ),
+            >,
+        >,
+    >,
     monitor: MonitorSocket,
     session: S,
     handler: T,
@@ -59,8 +69,12 @@ pub struct UdevBackend<
     handle: LoopHandle<Data>,
 }
 
-impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevHandler<H> + 'static, Data: 'static>
-    UdevBackend<H, S, T, Data>
+impl<
+        H: DrmHandler<SessionFdDrmDevice> + 'static,
+        S: Session + 'static,
+        T: UdevHandler<H> + 'static,
+        Data: 'static,
+    > UdevBackend<H, S, T, Data>
 {
     /// Creates a new `UdevBackend` and adds it to the given `EventLoop`'s state.
     ///
@@ -138,9 +152,7 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevH
         builder
             .match_subsystem("drm")
             .chain_err(|| ErrorKind::FailedToInitMonitor)?;
-        let monitor = builder
-            .listen()
-            .chain_err(|| ErrorKind::FailedToInitMonitor)?;
+        let monitor = builder.listen().chain_err(|| ErrorKind::FailedToInitMonitor)?;
 
         Ok(UdevBackend {
             _handler: ::std::marker::PhantomData,
@@ -165,10 +177,7 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevH
             let fd = device.as_raw_fd();
             drop(device);
             if let Err(err) = self.session.close(fd) {
-                warn!(
-                    self.logger,
-                    "Failed to close device. Error: {:?}. Ignoring", err
-                );
+                warn!(self.logger, "Failed to close device. Error: {:?}. Ignoring", err);
             };
         }
         info!(self.logger, "All devices closed");
@@ -176,11 +185,12 @@ impl<H: DrmHandler<SessionFdDrmDevice> + 'static, S: Session + 'static, T: UdevH
 }
 
 impl<
-    H: DrmHandler<SessionFdDrmDevice> + 'static,
-    S: Session + 'static,
-    T: UdevHandler<H> + 'static,
-    Data: 'static,
-> Drop for UdevBackend<H, S, T, Data> {
+        H: DrmHandler<SessionFdDrmDevice> + 'static,
+        S: Session + 'static,
+        T: UdevHandler<H> + 'static,
+        Data: 'static,
+    > Drop for UdevBackend<H, S, T, Data>
+{
     fn drop(&mut self) {
         self.close();
     }
@@ -188,16 +198,26 @@ impl<
 
 /// `SessionObserver` linked to the `UdevBackend` it was created from.
 pub struct UdevBackendObserver {
-    devices: Weak<RefCell<HashMap<dev_t, (Source<Generic<EventedRawFd>>, Rc<RefCell<DrmDevice<SessionFdDrmDevice>>>)>>>,
+    devices: Weak<
+        RefCell<
+            HashMap<
+                dev_t,
+                (
+                    Source<Generic<EventedRawFd>>,
+                    Rc<RefCell<DrmDevice<SessionFdDrmDevice>>>,
+                ),
+            >,
+        >,
+    >,
     logger: ::slog::Logger,
 }
 
 impl<
-    H: DrmHandler<SessionFdDrmDevice> + 'static,
-    S: Session + 'static,
-    T: UdevHandler<H> + 'static,
-    Data: 'static,
-> AsSessionObserver<UdevBackendObserver> for UdevBackend<H, S, T, Data>
+        H: DrmHandler<SessionFdDrmDevice> + 'static,
+        S: Session + 'static,
+        T: UdevHandler<H> + 'static,
+        Data: 'static,
+    > AsSessionObserver<UdevBackendObserver> for UdevBackend<H, S, T, Data>
 {
     fn observer(&mut self) -> UdevBackendObserver {
         UdevBackendObserver {
@@ -243,12 +263,9 @@ where
     let handle = udev.handle.clone();
     let mut source = Generic::from_raw_fd(fd);
     source.set_interest(Ready::readable());
-    handle.insert_source(
-        source,
-        move |_, _| {
-            udev.process_events();
-        }
-    )
+    handle.insert_source(source, move |_, _| {
+        udev.process_events();
+    })
 }
 
 impl<H, S, T, Data> UdevBackend<H, S, T, Data>
@@ -256,7 +273,7 @@ where
     H: DrmHandler<SessionFdDrmDevice> + 'static,
     T: UdevHandler<H> + 'static,
     S: Session + 'static,
-    Data: 'static
+    Data: 'static,
 {
     fn process_events(&mut self) {
         let events = self.monitor.clone().collect::<Vec<Event>>();
@@ -272,7 +289,8 @@ where
                                     let logger = self.logger.clone();
                                     match self.session.open(
                                         path,
-                                        fcntl::OFlag::O_RDWR | fcntl::OFlag::O_CLOEXEC
+                                        fcntl::OFlag::O_RDWR
+                                            | fcntl::OFlag::O_CLOEXEC
                                             | fcntl::OFlag::O_NOCTTY
                                             | fcntl::OFlag::O_NONBLOCK,
                                     ) {
@@ -294,9 +312,7 @@ where
                                 Err(err) => {
                                     warn!(
                                         self.logger,
-                                        "Failed to initialize device {:?}. Error: {}. Skipping",
-                                        path,
-                                        err
+                                        "Failed to initialize device {:?}. Error: {}. Skipping", path, err
                                     );
                                     continue;
                                 }
@@ -304,35 +320,27 @@ where
                         };
                         let fd = device.as_raw_fd();
                         match self.handler.device_added(&mut device) {
-                            Some(drm_handler) => {
-                                match drm_device_bind(&self.handle, device, drm_handler) {
-                                    Ok(fd_event_source) => {
-                                        self.devices.borrow_mut().insert(devnum, fd_event_source);
-                                    }
-                                    Err((err, mut device)) => {
+                            Some(drm_handler) => match drm_device_bind(&self.handle, device, drm_handler) {
+                                Ok(fd_event_source) => {
+                                    self.devices.borrow_mut().insert(devnum, fd_event_source);
+                                }
+                                Err((err, mut device)) => {
+                                    warn!(self.logger, "Failed to bind device. Error: {:?}.", err);
+                                    self.handler.device_removed(&mut device);
+                                    drop(device);
+                                    if let Err(err) = self.session.close(fd) {
                                         warn!(
-                                            self.logger,
-                                            "Failed to bind device. Error: {:?}.", err
-                                        );
-                                        self.handler.device_removed(&mut device);
-                                        drop(device);
-                                        if let Err(err) = self.session.close(fd) {
-                                            warn!(
                                             self.logger,
                                             "Failed to close dropped device. Error: {:?}. Ignoring", err
                                         );
-                                        };
-                                    }
+                                    };
                                 }
-                            }
+                            },
                             None => {
                                 self.handler.device_removed(&mut device);
                                 drop(device);
                                 if let Err(err) = self.session.close(fd) {
-                                    warn!(
-                                        self.logger,
-                                        "Failed to close unused device. Error: {:?}", err
-                                    );
+                                    warn!(self.logger, "Failed to close unused device. Error: {:?}", err);
                                 }
                             }
                         };
@@ -342,9 +350,7 @@ where
                 EventType::Remove => {
                     info!(self.logger, "Device Remove");
                     if let Some(devnum) = event.devnum() {
-                        if let Some((fd_event_source, device)) =
-                            self.devices.borrow_mut().remove(&devnum)
-                        {
+                        if let Some((fd_event_source, device)) = self.devices.borrow_mut().remove(&devnum) {
                             fd_event_source.remove();
                             let mut device = Rc::try_unwrap(device)
                                 .unwrap_or_else(|_| unreachable!())
@@ -429,7 +435,8 @@ pub fn primary_gpu<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Opti
         if device
             .property_value("ID_SEAT")
             .map(|x| x.to_os_string())
-            .unwrap_or(OsString::from("seat0")) == *seat.as_ref()
+            .unwrap_or(OsString::from("seat0"))
+            == *seat.as_ref()
         {
             if let Some(pci) = device.parent_with_subsystem(Path::new("pci"))? {
                 if let Some(id) = pci.attribute_value("boot_vga") {
@@ -458,9 +465,9 @@ pub fn all_gpus<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Vec<Pat
             device
                 .property_value("ID_SEAT")
                 .map(|x| x.to_os_string())
-                .unwrap_or(OsString::from("seat0")) == *seat.as_ref()
-        })
-        .flat_map(|device| device.devnode().map(PathBuf::from))
+                .unwrap_or(OsString::from("seat0"))
+                == *seat.as_ref()
+        }).flat_map(|device| device.devnode().map(PathBuf::from))
         .collect())
 }
 

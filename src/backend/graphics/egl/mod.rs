@@ -13,7 +13,12 @@ use std::fmt;
 pub mod context;
 pub use self::context::EGLContext;
 pub mod error;
-#[allow(non_camel_case_types, dead_code, unused_mut, non_upper_case_globals)]
+#[allow(
+    non_camel_case_types,
+    dead_code,
+    unused_mut,
+    non_upper_case_globals
+)]
 pub mod ffi;
 pub mod native;
 pub mod surface;

@@ -32,7 +32,7 @@ fn main() {
             "EGL_KHR_image_base",
         ],
     ).write_bindings(gl_generator::GlobalGenerator, &mut file)
-        .unwrap();
+    .unwrap();
 
     let mut file = File::create(&dest.join("gl_bindings.rs")).unwrap();
     Registry::new(
@@ -42,5 +42,5 @@ fn main() {
         Fallbacks::None,
         ["GL_OES_EGL_image"],
     ).write_bindings(gl_generator::GlobalGenerator, &mut file)
-        .unwrap();
+    .unwrap();
 }

@@ -1,12 +1,12 @@
 //! Glium compatibility module
 
-use backend::graphics::egl::{EGLGraphicsBackend, SwapBuffersError};
 use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
-use glium::Frame;
-use glium::SwapBuffersError as GliumSwapBuffersError;
+use backend::graphics::egl::{EGLGraphicsBackend, SwapBuffersError};
 use glium::backend::{Backend, Context, Facade};
 use glium::debug::DebugCallbackBehavior;
+use glium::Frame;
+use glium::SwapBuffersError as GliumSwapBuffersError;
 use std::cell::{Ref, RefCell, RefMut};
 use std::os::raw::c_void;
 use std::rc::Rc;
@@ -51,10 +51,7 @@ impl<T: EGLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
     /// Note that destroying a `Frame` is immediate, even if vsync is enabled.
     #[inline]
     pub fn draw(&self) -> Frame {
-        Frame::new(
-            self.context.clone(),
-            self.backend.get_framebuffer_dimensions(),
-        )
+        Frame::new(self.context.clone(), self.backend.get_framebuffer_dimensions())
     }
 
     /// Borrow the underlying backend.

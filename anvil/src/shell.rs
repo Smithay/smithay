@@ -5,10 +5,13 @@ use std::sync::{Arc, Mutex};
 use rand;
 
 use smithay::wayland::compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent};
-use smithay::wayland::shell::legacy::{wl_shell_init, ShellRequest, ShellState as WlShellState,
-                                      ShellSurfaceKind, ShellSurfaceRole};
-use smithay::wayland::shell::xdg::{xdg_shell_init, PopupConfigure, ShellState as XdgShellState,
-                                   ToplevelConfigure, XdgRequest, XdgSurfaceRole};
+use smithay::wayland::shell::legacy::{
+    wl_shell_init, ShellRequest, ShellState as WlShellState, ShellSurfaceKind, ShellSurfaceRole,
+};
+use smithay::wayland::shell::xdg::{
+    xdg_shell_init, PopupConfigure, ShellState as XdgShellState, ToplevelConfigure, XdgRequest,
+    XdgSurfaceRole,
+};
 use smithay::wayland_server::protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface};
 use smithay::wayland_server::{Display, Resource};
 
@@ -85,11 +88,12 @@ pub fn init_shell(
     let (wl_shell_state, _) = wl_shell_init(
         display,
         compositor_token,
-        move |req: ShellRequest<_, _, ()>|
+        move |req: ShellRequest<_, _, ()>| {
             if let ShellRequest::SetKind {
                 surface,
                 kind: ShellSurfaceKind::Toplevel,
-            } = req {
+            } = req
+            {
                 // place the window at a random location in the [0;300]x[0;300] square
                 use rand::distributions::{IndependentSample, Range};
                 let range = Range::new(0, 300);
@@ -100,7 +104,8 @@ pub fn init_shell(
                 shell_window_map
                     .borrow_mut()
                     .insert(SurfaceKind::Wl(surface), (x, y));
-            },
+            }
+        },
         log.clone(),
     );
 

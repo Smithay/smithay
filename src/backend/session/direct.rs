@@ -46,23 +46,23 @@
 //! automatically by the `UdevBackend`, if not done manually).
 
 use super::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
-use nix::{Error as NixError, Result as NixResult};
 use nix::fcntl::{self, open, OFlag};
 use nix::libc::c_int;
 use nix::sys::signal::{self, Signal};
 use nix::sys::stat::{dev_t, fstat, major, minor, Mode};
 use nix::unistd::{close, dup};
+use nix::{Error as NixError, Result as NixResult};
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
-use std::sync::Arc;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 #[cfg(feature = "backend_session_udev")]
 use udev::Context;
-use wayland_server::calloop::{LoopHandle, Source};
 use wayland_server::calloop::signals::Signals;
+use wayland_server::calloop::{LoopHandle, Source};
 
 #[allow(dead_code)]
 mod tty {
@@ -172,13 +172,16 @@ impl DirectSession {
         let logger = ::slog_or_stdlog(logger)
             .new(o!("smithay_module" => "backend_session", "session_type" => "direct/vt"));
 
-        let fd = tty.map(|path| {
-            open(
-                path,
-                fcntl::OFlag::O_RDWR | fcntl::OFlag::O_CLOEXEC,
-                Mode::empty(),
-            ).chain_err(|| ErrorKind::FailedToOpenTTY(String::from(path.to_string_lossy())))
-        }).unwrap_or_else(|| dup(0 /*stdin*/).chain_err(|| ErrorKind::FailedToOpenTTY(String::from("<stdin>"))))?;
+        let fd = tty
+            .map(|path| {
+                open(
+                    path,
+                    fcntl::OFlag::O_RDWR | fcntl::OFlag::O_CLOEXEC,
+                    Mode::empty(),
+                ).chain_err(|| ErrorKind::FailedToOpenTTY(String::from(path.to_string_lossy())))
+            }).unwrap_or_else(|| {
+                dup(0 /*stdin*/).chain_err(|| ErrorKind::FailedToOpenTTY(String::from("<stdin>")))
+            })?;
 
         let active = Arc::new(AtomicBool::new(true));
 
@@ -311,16 +314,10 @@ impl Drop for DirectSession {
         info!(self.logger, "Deallocating tty {}", self.tty);
 
         if let Err(err) = unsafe { tty::kd_set_kb_mode(self.tty, self.old_keyboard_mode) } {
-            warn!(
-                self.logger,
-                "Unable to restore vt keyboard mode. Error: {}", err
-            );
+            warn!(self.logger, "Unable to restore vt keyboard mode. Error: {}", err);
         }
         if let Err(err) = unsafe { tty::kd_set_mode(self.tty, tty::KD_TEXT as i32) } {
-            warn!(
-                self.logger,
-                "Unable to restore vt text mode. Error: {}", err
-            );
+            warn!(self.logger, "Unable to restore vt text mode. Error: {}", err);
         }
         if let Err(err) = unsafe {
             tty::vt_set_mode(
@@ -334,10 +331,7 @@ impl Drop for DirectSession {
             error!(self.logger, "Failed to reset vt handling. Error: {}", err);
         }
         if let Err(err) = close(self.tty) {
-            error!(
-                self.logger,
-                "Failed to close tty file descriptor. Error: {}", err
-            );
+            error!(self.logger, "Failed to close tty file descriptor. Error: {}", err);
         }
     }
 }
@@ -403,7 +397,7 @@ impl DirectSessionNotifier {
 /// See `direct_session_bind` for details.
 pub struct BoundDirectSession {
     source: Source<Signals>,
-    notifier: Rc<RefCell<DirectSessionNotifier>>
+    notifier: Rc<RefCell<DirectSessionNotifier>>,
 }
 
 impl BoundDirectSession {
@@ -413,7 +407,7 @@ impl BoundDirectSession {
         source.remove();
         match Rc::try_unwrap(notifier) {
             Ok(notifier) => notifier.into_inner(),
-            Err(_) => panic!("Notifier should have been freed from the event loop!")
+            Err(_) => panic!("Notifier should have been freed from the event loop!"),
         }
     }
 }
@@ -429,16 +423,11 @@ pub fn direct_session_bind<Data: 'static>(
 ) -> ::std::result::Result<BoundDirectSession, IoError> {
     let signal = notifier.signal;
     let notifier = Rc::new(RefCell::new(notifier));
-    let source = handle.insert_source(
-        Signals::new(&[signal])?,
-        {
-            let notifier = notifier.clone();
-            move |_, _| notifier.borrow_mut().signal_received()
-        }
-    )?;
-    Ok(BoundDirectSession {
-        source, notifier
-    })
+    let source = handle.insert_source(Signals::new(&[signal])?, {
+        let notifier = notifier.clone();
+        move |_, _| notifier.borrow_mut().signal_received()
+    })?;
+    Ok(BoundDirectSession { source, notifier })
 }
 
 error_chain! {

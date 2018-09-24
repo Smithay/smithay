@@ -12,8 +12,8 @@ use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
 
-use wayland_server::calloop::{LoopHandle, Source, Ready};
-use wayland_server::calloop::generic::{Generic, EventedRawFd};
+use wayland_server::calloop::generic::{EventedRawFd, Generic};
+use wayland_server::calloop::{LoopHandle, Ready, Source};
 
 // No idea if this is the same across unix platforms
 // Lets make this linux exclusive for now, once someone tries to build it for
@@ -355,15 +355,18 @@ impl backend::InputBackend for LibinputInputBackend {
                             // update capabilities, so they appear correctly on `on_seat_changed` and `on_seat_destroyed`.
                             if let Some(seat) = self.seats.get_mut(&device_seat) {
                                 let caps = seat.capabilities_mut();
-                                caps.pointer = self.devices
+                                caps.pointer = self
+                                    .devices
                                     .iter()
                                     .filter(|x| x.seat() == device_seat)
                                     .any(|x| x.has_capability(libinput::DeviceCapability::Pointer));
-                                caps.keyboard = self.devices
+                                caps.keyboard = self
+                                    .devices
                                     .iter()
                                     .filter(|x| x.seat() == device_seat)
                                     .any(|x| x.has_capability(libinput::DeviceCapability::Keyboard));
-                                caps.touch = self.devices
+                                caps.touch = self
+                                    .devices
                                     .iter()
                                     .filter(|x| x.seat() == device_seat)
                                     .any(|x| x.has_capability(libinput::DeviceCapability::Touch));
@@ -411,11 +414,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                     handler.on_touch_down(seat, down_event)
                                 }
                                 TouchEvent::Motion(motion_event) => {
-                                    trace!(
-                                        self.logger,
-                                        "Calling on_touch_motion with {:?}",
-                                        motion_event
-                                    );
+                                    trace!(self.logger, "Calling on_touch_motion with {:?}", motion_event);
                                     handler.on_touch_motion(seat, motion_event)
                                 }
                                 TouchEvent::Up(up_event) => {
@@ -423,11 +422,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                     handler.on_touch_up(seat, up_event)
                                 }
                                 TouchEvent::Cancel(cancel_event) => {
-                                    trace!(
-                                        self.logger,
-                                        "Calling on_touch_cancel with {:?}",
-                                        cancel_event
-                                    );
+                                    trace!(self.logger, "Calling on_touch_cancel with {:?}", cancel_event);
                                     handler.on_touch_cancel(seat, cancel_event)
                                 }
                                 TouchEvent::Frame(frame_event) => {
@@ -463,11 +458,7 @@ impl backend::InputBackend for LibinputInputBackend {
                         if let Some(ref seat) = self.seats.get(&device_seat) {
                             match pointer_event {
                                 PointerEvent::Motion(motion_event) => {
-                                    trace!(
-                                        self.logger,
-                                        "Calling on_pointer_move with {:?}",
-                                        motion_event
-                                    );
+                                    trace!(self.logger, "Calling on_pointer_move with {:?}", motion_event);
                                     handler.on_pointer_move(seat, motion_event);
                                 }
                                 PointerEvent::MotionAbsolute(motion_abs_event) => {
@@ -483,11 +474,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                     handler.on_pointer_axis(seat, axis_event);
                                 }
                                 PointerEvent::Button(button_event) => {
-                                    trace!(
-                                        self.logger,
-                                        "Calling on_pointer_button with {:?}",
-                                        button_event
-                                    );
+                                    trace!(self.logger, "Calling on_pointer_button with {:?}", button_event);
                                     handler.on_pointer_button(seat, button_event);
                                 }
                             }
@@ -606,13 +593,10 @@ pub fn libinput_bind<Data: 'static>(
 ) -> ::std::result::Result<Source<Generic<EventedRawFd>>, IoError> {
     let mut source = Generic::from_raw_fd(unsafe { backend.context.fd() });
     source.set_interest(Ready::readable());
-    handle.insert_source(
-        source,
-        move |_, _| {
-            use backend::input::InputBackend;
-            if let Err(error) = backend.dispatch_new_events() {
-                warn!(backend.logger, "Libinput errored: {}", error);
-            }
+    handle.insert_source(source, move |_, _| {
+        use backend::input::InputBackend;
+        if let Err(error) = backend.dispatch_new_events() {
+            warn!(backend.logger, "Libinput errored: {}", error);
         }
-    )
+    })
 }

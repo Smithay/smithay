@@ -215,11 +215,11 @@ use backend::graphics::egl::native::Gbm;
 use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
 #[cfg(feature = "backend_session")]
 use backend::session::{AsSessionObserver, SessionObserver};
-use drm::Device as BasicDevice;
-use drm::control::{connector, crtc, encoder, Mode, ResourceInfo};
-use drm::control::Device as ControlDevice;
 use drm::control::framebuffer;
+use drm::control::Device as ControlDevice;
+use drm::control::{connector, crtc, encoder, Mode, ResourceInfo};
 use drm::result::Error as DrmError;
+use drm::Device as BasicDevice;
 use gbm::{BufferObject, Device as GbmDevice};
 use nix;
 use nix::sys::stat::{self, dev_t, fstat};
@@ -230,13 +230,13 @@ use std::io::Error as IoError;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
-use std::sync::{Arc, Once, ONCE_INIT};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Once, ONCE_INIT};
 use std::time::Duration;
 
+use wayland_server::calloop::generic::{EventedRawFd, Generic};
+use wayland_server::calloop::{LoopHandle, Ready, Source};
 use wayland_server::Display;
-use wayland_server::calloop::{LoopHandle, Source, Ready};
-use wayland_server::calloop::generic::{Generic, EventedRawFd};
 
 mod backend;
 pub mod error;
@@ -308,17 +308,19 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
 
         let mut drm = DrmDevice {
             // Open the gbm device from the drm device and create a context based on that
-            context: Rc::new(EGLContext::new(
-                {
-                    debug!(log, "Creating gbm device");
-                    let gbm = GbmDevice::new(dev).chain_err(|| ErrorKind::GbmInitFailed)?;
-                    debug!(log, "Creating egl context from gbm device");
-                    gbm
-                },
-                attributes,
-                Default::default(),
-                log.clone(),
-            ).map_err(Error::from)?),
+            context: Rc::new(
+                EGLContext::new(
+                    {
+                        debug!(log, "Creating gbm device");
+                        let gbm = GbmDevice::new(dev).chain_err(|| ErrorKind::GbmInitFailed)?;
+                        debug!(log, "Creating egl context from gbm device");
+                        gbm
+                    },
+                    attributes,
+                    Default::default(),
+                    log.clone(),
+                ).map_err(Error::from)?,
+            ),
             backends: Rc::new(RefCell::new(HashMap::new())),
             device_id,
             old_state: HashMap::new(),
@@ -331,32 +333,20 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
 
         // we want to mode-set, so we better be the master, if we run via a tty session
         if drm.set_master().is_err() {
-            warn!(
-                log,
-                "Unable to become drm master, assuming unpriviledged mode"
-            );
+            warn!(log, "Unable to become drm master, assuming unpriviledged mode");
             drm.priviledged = false;
         };
 
         let res_handles = drm.resource_handles().chain_err(|| {
-            ErrorKind::DrmDev(format!(
-                "Error loading drm resources on {:?}",
-                drm.dev_path()
-            ))
+            ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", drm.dev_path()))
         })?;
         for &con in res_handles.connectors() {
             let con_info = connector::Info::load_from_device(&drm, con).chain_err(|| {
-                ErrorKind::DrmDev(format!(
-                    "Error loading connector info on {:?}",
-                    drm.dev_path()
-                ))
+                ErrorKind::DrmDev(format!("Error loading connector info on {:?}", drm.dev_path()))
             })?;
             if let Some(enc) = con_info.current_encoder() {
                 let enc_info = encoder::Info::load_from_device(&drm, enc).chain_err(|| {
-                    ErrorKind::DrmDev(format!(
-                        "Error loading encoder info on {:?}",
-                        drm.dev_path()
-                    ))
+                    ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", drm.dev_path()))
                 })?;
                 if let Some(crtc) = enc_info.current_crtc() {
                     let info = crtc::Info::load_from_device(&drm, crtc).chain_err(|| {
@@ -402,10 +392,7 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
         // check if we have an encoder for every connector and the mode mode
         for connector in &connectors {
             let con_info = connector::Info::load_from_device(self, *connector).chain_err(|| {
-                ErrorKind::DrmDev(format!(
-                    "Error loading connector info on {:?}",
-                    self.dev_path()
-                ))
+                ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
             })?;
 
             // check the mode
@@ -419,20 +406,13 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
                 .iter()
                 .map(|encoder| {
                     encoder::Info::load_from_device(self, *encoder).chain_err(|| {
-                        ErrorKind::DrmDev(format!(
-                            "Error loading encoder info on {:?}",
-                            self.dev_path()
-                        ))
+                        ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", self.dev_path()))
                     })
-                })
-                .collect::<Result<Vec<encoder::Info>>>()?;
+                }).collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
             let resource_handles = self.resource_handles().chain_err(|| {
-                ErrorKind::DrmDev(format!(
-                    "Error loading drm resources on {:?}",
-                    self.dev_path()
-                ))
+                ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", self.dev_path()))
             })?;
             if !encoders
                 .iter()
@@ -514,18 +494,12 @@ impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {
                 info.position(),
                 info.mode(),
             ) {
-                error!(
-                    self.logger,
-                    "Failed to reset crtc ({:?}). Error: {}", handle, err
-                );
+                error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
             }
         }
         if self.priviledged {
             if let Err(err) = self.drop_master() {
-                error!(
-                    self.logger,
-                    "Failed to drop drm master state. Error: {}", err
-                );
+                error!(self.logger, "Failed to drop drm master state. Error: {}", err);
             }
         }
     }
@@ -563,17 +537,13 @@ where
     let mut source = Generic::from_raw_fd(fd);
     source.set_interest(Ready::readable());
 
-    match handle.insert_source(
-        source,
-        {
-            let device = device.clone();
-            move |_evt, _| {
-                let mut device = device.borrow_mut();
-                process_events(&mut *device, &mut handler);
-            }
-
+    match handle.insert_source(source, {
+        let device = device.clone();
+        move |_evt, _| {
+            let mut device = device.borrow_mut();
+            process_events(&mut *device, &mut handler);
         }
-    ) {
+    }) {
         Ok(source) => Ok((source, device)),
         Err(e) => {
             let device = Rc::try_unwrap(device).unwrap_or_else(|_| unreachable!());
@@ -583,7 +553,7 @@ where
 }
 
 fn process_events<A, H>(device: &mut DrmDevice<A>, handler: &mut H)
-where 
+where
     A: ControlDevice + 'static,
     H: DrmHandler<A> + 'static,
 {
@@ -592,18 +562,12 @@ where
             if let crtc::Event::PageFlip(event) = event {
                 if device.active.load(Ordering::SeqCst) {
                     let backends = device.backends.borrow().clone();
-                    if let Some(backend) = backends
-                        .get(&event.crtc)
-                        .iter()
-                        .flat_map(|x| x.upgrade())
-                        .next()
-                    {
+                    if let Some(backend) = backends.get(&event.crtc).iter().flat_map(|x| x.upgrade()).next() {
                         // we can now unlock the buffer
                         backend.unlock_buffer();
                         trace!(device.logger, "Handling event for backend {:?}", event.crtc);
                         // and then call the user to render the next frame
-                        handler
-                            .ready(device, event.crtc, event.frame, event.duration);
+                        handler.ready(device, event.crtc, event.frame, event.duration);
                     } else {
                         device.backends.borrow_mut().remove(&event.crtc);
                     }
@@ -658,10 +622,7 @@ impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
                     info.position(),
                     info.mode(),
                 ) {
-                    error!(
-                        self.logger,
-                        "Failed to reset crtc ({:?}). Error: {}", handle, err
-                    );
+                    error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
                 }
             }
         }
@@ -669,10 +630,7 @@ impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
         if self.priviledged {
             if let Some(device) = self.context.upgrade() {
                 if let Err(err) = device.drop_master() {
-                    error!(
-                        self.logger,
-                        "Failed to drop drm master state. Error: {}", err
-                    );
+                    error!(self.logger, "Failed to drop drm master state. Error: {}", err);
                 }
             }
         }
@@ -694,11 +652,7 @@ impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
         if self.priviledged {
             if let Some(device) = self.context.upgrade() {
                 if let Err(err) = device.set_master() {
-                    crit!(
-                        self.logger,
-                        "Failed to acquire drm master again. Error: {}",
-                        err
-                    );
+                    crit!(self.logger, "Failed to acquire drm master again. Error: {}", err);
                 }
             }
         }

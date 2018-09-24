@@ -1,9 +1,9 @@
 //! EGL surface related structs
 
-use super::{EGLContext, SwapBuffersError};
 use super::error::*;
 use super::ffi;
 use super::native;
+use super::{EGLContext, SwapBuffersError};
 use std::ops::{Deref, DerefMut};
 use std::rc::{Rc, Weak};
 

@@ -31,8 +31,10 @@
 //! ```
 
 use backend::session::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
-use dbus::{BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interface, Member, Message,
-           MessageItem, OwnedFd, Path as DbusPath, Watch, WatchEvent};
+use dbus::{
+    BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interface, Member, Message, MessageItem,
+    OwnedFd, Path as DbusPath, Watch, WatchEvent,
+};
 use nix::fcntl::OFlag;
 use nix::sys::stat::{fstat, major, minor, stat};
 use std::cell::RefCell;
@@ -43,8 +45,8 @@ use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use systemd::login;
 
-use wayland_server::calloop::{Loophandle, Source, Ready};
-use wayland_server::calloop::generic::{Generic, EventedRawFd, Event};
+use wayland_server::calloop::generic::{Event, EventedRawFd, Generic};
+use wayland_server::calloop::{Loophandle, Ready, Source};
 
 struct LogindSessionImpl {
     conn: RefCell<Connection>,
@@ -93,7 +95,7 @@ impl LogindSession {
             "GetSession",
             Some(vec![session_id.clone().into()]),
         )?.get1::<DbusPath<'static>>()
-            .chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
+        .chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
 
         // Match all signals that we want to receive and handle
         let match1 = String::from(
@@ -212,15 +214,14 @@ impl LogindSessionImpl {
             message.append_items(&arguments)
         };
 
-        let mut message = conn.send_with_reply_and_block(message, 1000)
-            .chain_err(|| {
-                ErrorKind::FailedToSendDbusCall(
-                    destination.clone(),
-                    path.clone(),
-                    interface.clone(),
-                    method.clone(),
-                )
-            })?;
+        let mut message = conn.send_with_reply_and_block(message, 1000).chain_err(|| {
+            ErrorKind::FailedToSendDbusCall(
+                destination.clone(),
+                path.clone(),
+                interface.clone(),
+                method.clone(),
+            )
+        })?;
 
         match message.as_result() {
             Ok(_) => Ok(message),
@@ -290,8 +291,7 @@ impl LogindSessionImpl {
                     let (major, minor, fd) = message.get3::<u32, u32, OwnedFd>();
                     let major = major.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
                     let minor = minor.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
-                    let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?
-                        .into_fd();
+                    let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?.into_fd();
                     debug!(self.logger, "Reactivating device ({},{})", major, minor);
                     for signal in &mut *self.signals.borrow_mut() {
                         if let &mut Some(ref mut signal) = signal {
@@ -336,8 +336,7 @@ impl Session for LogindSession {
                     (minor(stat.st_rdev) as u32).into(),
                 ]),
             )?.get2::<OwnedFd, bool>();
-            let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?
-                .into_fd();
+            let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?.into_fd();
             Ok(fd)
         } else {
             bail!(ErrorKind::SessionLost)
@@ -510,8 +509,8 @@ impl LogindSessionNotifier {
             } else if readiness.writable() {
                 WatchEvent::Writable as u32
             } else {
-                return
-            }
+                return;
+            },
         );
         if let Err(err) = self.internal.handle_signals(items) {
             error!(self.internal.logger, "Error handling dbus signals: {}", err);

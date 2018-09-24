@@ -1,24 +1,24 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
-use smithay::wayland::shm::init_shm_global;
-use smithay::wayland::seat::Seat;
-use smithay::wayland::output::{Mode, Output, PhysicalProperties};
+use smithay::backend::graphics::egl::wayland::EGLWaylandExtensions;
+use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::input::InputBackend;
 use smithay::backend::winit;
-use smithay::backend::graphics::egl::EGLGraphicsBackend;
-use smithay::backend::graphics::egl::wayland::EGLWaylandExtensions;
-use smithay::wayland_server::Display;
+use smithay::wayland::output::{Mode, Output, PhysicalProperties};
+use smithay::wayland::seat::Seat;
+use smithay::wayland::shm::init_shm_global;
 use smithay::wayland_server::calloop::EventLoop;
 use smithay::wayland_server::protocol::wl_output;
+use smithay::wayland_server::Display;
 
 use slog::Logger;
 
 use glium_drawer::GliumDrawer;
-use shell::init_shell;
 use input_handler::AnvilInputHandler;
+use shell::init_shell;
 
 pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Logger) -> Result<(), ()> {
     let (renderer, mut input) = winit::init(log.clone()).map_err(|_| ())?;
@@ -52,7 +52,8 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
     let (mut seat, _) = Seat::new(display, "winit".into(), log.clone());
 
     let pointer = seat.add_pointer();
-    let keyboard = seat.add_keyboard("", "fr", "oss", None, 1000, 500)
+    let keyboard = seat
+        .add_keyboard("", "fr", "oss", None, 1000, 500)
         .expect("Failed to initialize the keyboard");
 
     let (output, _) = Output::new(
@@ -100,10 +101,9 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
 
         drawer.draw_windows(&*window_map.borrow(), compositor_token, &log);
 
-        event_loop.dispatch(
-            Some(::std::time::Duration::from_millis(16)),
-            &mut ()
-        ).unwrap();
+        event_loop
+            .dispatch(Some(::std::time::Duration::from_millis(16)), &mut ())
+            .unwrap();
         display.flush_clients();
 
         window_map.borrow_mut().refresh();

@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::io::Error as IoError;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use glium::Surface;
@@ -13,31 +13,31 @@ use smithay::image::{ImageBuffer, Rgba};
 
 use slog::Logger;
 
-use smithay::drm::control::{Device as ControlDevice, ResourceInfo};
+use smithay::backend::drm::{DevPath, DrmBackend, DrmDevice, DrmHandler};
+use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
+use smithay::backend::graphics::GraphicsBackend;
+use smithay::backend::input::InputBackend;
+use smithay::backend::libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface};
+use smithay::backend::session::auto::{auto_session_bind, AutoSession};
+use smithay::backend::session::{Session, SessionNotifier};
+use smithay::backend::udev::{primary_gpu, udev_backend_bind, SessionFdDrmDevice, UdevBackend, UdevHandler};
 use smithay::drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
 use smithay::drm::control::crtc;
 use smithay::drm::control::encoder::Info as EncoderInfo;
+use smithay::drm::control::{Device as ControlDevice, ResourceInfo};
 use smithay::drm::result::Error as DrmError;
-use smithay::backend::drm::{DevPath, DrmBackend, DrmDevice, DrmHandler};
-use smithay::backend::graphics::GraphicsBackend;
-use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
-use smithay::backend::input::InputBackend;
-use smithay::backend::libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface};
-use smithay::backend::session::{Session, SessionNotifier};
-use smithay::backend::session::auto::{auto_session_bind, AutoSession};
-use smithay::backend::udev::{primary_gpu, udev_backend_bind, SessionFdDrmDevice, UdevBackend, UdevHandler};
+use smithay::input::Libinput;
 use smithay::wayland::compositor::CompositorToken;
 use smithay::wayland::output::{Mode, Output, PhysicalProperties};
 use smithay::wayland::seat::Seat;
 use smithay::wayland::shm::init_shm_global;
-use smithay::wayland_server::Display;
 use smithay::wayland_server::calloop::EventLoop;
 use smithay::wayland_server::protocol::wl_output;
-use smithay::input::Libinput;
+use smithay::wayland_server::Display;
 
 use glium_drawer::GliumDrawer;
-use shell::{init_shell, MyWindowMap, Roles, SurfaceData};
 use input_handler::AnvilInputHandler;
+use shell::{init_shell, MyWindowMap, Roles, SurfaceData};
 
 pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger) -> Result<(), ()> {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
@@ -51,16 +51,9 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     /*
      * Initialize the compositor
      */
-    init_shm_global(
-        &mut display.borrow_mut(),
-        vec![],
-        log.clone(),
-    );
+    init_shm_global(&mut display.borrow_mut(), vec![], log.clone());
 
-    let (compositor_token, _, _, window_map) = init_shell(
-        &mut display.borrow_mut(),
-        log.clone(),
-    );
+    let (compositor_token, _, _, window_map) = init_shell(&mut display.borrow_mut(), log.clone());
 
     /*
      * Initialize session
@@ -100,11 +93,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
 
     let udev_session_id = notifier.register(&mut udev_backend);
 
-    let (mut w_seat, _) = Seat::new(
-        &mut display.borrow_mut(),
-        session.seat(),
-        log.clone(),
-    );
+    let (mut w_seat, _) = Seat::new(&mut display.borrow_mut(), session.seat(), log.clone());
 
     let pointer = w_seat.add_pointer();
     let keyboard = w_seat
@@ -158,16 +147,16 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         pointer_location,
         session,
     ));
-    let libinput_event_source = libinput_bind(libinput_backend, event_loop.handle())
-        .unwrap();
+    let libinput_event_source = libinput_bind(libinput_backend, event_loop.handle()).unwrap();
 
-    let session_event_source = auto_session_bind(notifier, &event_loop.handle())
-        .unwrap();
-    let udev_event_source = udev_backend_bind(udev_backend)
-        .unwrap();
+    let session_event_source = auto_session_bind(notifier, &event_loop.handle()).unwrap();
+    let udev_event_source = udev_backend_bind(udev_backend).unwrap();
 
     while running.load(Ordering::SeqCst) {
-        if event_loop.dispatch(Some(::std::time::Duration::from_millis(16)), &mut ()).is_err() {
+        if event_loop
+            .dispatch(Some(::std::time::Duration::from_millis(16)), &mut ())
+            .is_err()
+        {
             running.store(false, Ordering::SeqCst);
         } else {
             display.borrow_mut().flush_clients();
@@ -268,10 +257,9 @@ impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
             *self.active_egl_context.borrow_mut() = device.bind_wl_display(&*self.display.borrow()).ok();
         }
 
-        let backends = Rc::new(RefCell::new(self.scan_connectors(
-            device,
-            self.active_egl_context.clone(),
-        )));
+        let backends = Rc::new(RefCell::new(
+            self.scan_connectors(device, self.active_egl_context.clone()),
+        ));
         self.backends.insert(device.device_id(), backends.clone());
 
         Some(DrmHandlerImpl {
@@ -328,11 +316,7 @@ impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
                     .set_cursor_position(x.trunc().abs() as u32, y.trunc().abs() as u32);
             }
 
-            drawer.draw_windows(
-                &*self.window_map.borrow(),
-                self.compositor_token,
-                &self.logger,
-            );
+            drawer.draw_windows(&*self.window_map.borrow(), self.compositor_token, &self.logger);
         }
     }
 
