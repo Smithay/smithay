@@ -150,7 +150,8 @@
 //! #
 //! # fn main() {
 //! #
-//! # let (_display, mut event_loop) = wayland_server::Display::new();
+//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
+//! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! #
 //! # let mut options = OpenOptions::new();
 //! # options.read(true);
@@ -199,12 +200,12 @@
 //! backend.swap_buffers().unwrap();
 //!
 //! let (_source, _device_rc) = drm_device_bind(
-//!     &event_loop.token(),
+//!     &event_loop.handle(),
 //!     device,
 //!     MyDrmHandler(backend)
 //! ).map_err(|(err, _)| err).unwrap();
 //!
-//! event_loop.run().unwrap();
+//! /* And then run the event loop once all your setup is done */
 //! # }
 //! ```
 
@@ -232,9 +233,10 @@ use std::rc::{Rc, Weak};
 use std::sync::{Arc, Once, ONCE_INIT};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use wayland_server::{Display, LoopToken};
-use wayland_server::commons::Implementation;
-use wayland_server::sources::{FdEvent, FdInterest, Source};
+
+use wayland_server::Display;
+use wayland_server::calloop::{LoopHandle, Source, Ready};
+use wayland_server::calloop::generic::{Generic, EventedRawFd};
 
 mod backend;
 pub mod error;
@@ -546,84 +548,69 @@ pub trait DrmHandler<A: ControlDevice + 'static> {
 /// Bind a `DrmDevice` to an `EventLoop`,
 ///
 /// This will cause it to recieve events and feed them into an `DrmHandler`
-pub fn drm_device_bind<A, H>(
-    token: &LoopToken,
+pub fn drm_device_bind<A, H, Data: 'static>(
+    handle: &LoopHandle<Data>,
     device: DrmDevice<A>,
-    handler: H,
-) -> ::std::result::Result<(Source<FdEvent>, Rc<RefCell<DrmDevice<A>>>), (IoError, (DrmDevice<A>, H))>
+    mut handler: H,
+) -> ::std::result::Result<(Source<Generic<EventedRawFd>>, Rc<RefCell<DrmDevice<A>>>), (IoError, DrmDevice<A>)>
 where
     A: ControlDevice + 'static,
     H: DrmHandler<A> + 'static,
 {
     let fd = device.as_raw_fd();
     let device = Rc::new(RefCell::new(device));
-    match token.add_fd_event_source(
-        fd,
-        FdInterest::READ,
-        DrmFdImpl {
-            device: device.clone(),
-            handler,
-        },
+
+    let mut source = Generic::from_raw_fd(fd);
+    source.set_interest(Ready::readable());
+
+    match handle.insert_source(
+        source,
+        {
+            let device = device.clone();
+            move |_evt, _| {
+                let mut device = device.borrow_mut();
+                process_events(&mut *device, &mut handler);
+            }
+
+        }
     ) {
         Ok(source) => Ok((source, device)),
-        Err((
-            ioerror,
-            DrmFdImpl {
-                device: device2,
-                handler,
-            },
-        )) => {
-            // make the Rc unique again
-            ::std::mem::drop(device2);
+        Err(e) => {
             let device = Rc::try_unwrap(device).unwrap_or_else(|_| unreachable!());
-            Err((ioerror, (device.into_inner(), handler)))
+            Err((e, device.into_inner()))
         }
     }
 }
 
-struct DrmFdImpl<A: ControlDevice + 'static, H> {
-    device: Rc<RefCell<DrmDevice<A>>>,
-    handler: H,
-}
-
-impl<A, H> Implementation<(), FdEvent> for DrmFdImpl<A, H>
-where
+fn process_events<A, H>(device: &mut DrmDevice<A>, handler: &mut H)
+where 
     A: ControlDevice + 'static,
     H: DrmHandler<A> + 'static,
 {
-    fn receive(&mut self, event: FdEvent, (): ()) {
-        let mut device = self.device.borrow_mut();
-        match event {
-            FdEvent::Ready { .. } => match crtc::receive_events(&*device) {
-                Ok(events) => for event in events {
-                    if let crtc::Event::PageFlip(event) = event {
-                        if device.active.load(Ordering::SeqCst) {
-                            let backends = device.backends.borrow().clone();
-                            if let Some(backend) = backends
-                                .get(&event.crtc)
-                                .iter()
-                                .flat_map(|x| x.upgrade())
-                                .next()
-                            {
-                                // we can now unlock the buffer
-                                backend.unlock_buffer();
-                                trace!(device.logger, "Handling event for backend {:?}", event.crtc);
-                                // and then call the user to render the next frame
-                                self.handler
-                                    .ready(&mut device, event.crtc, event.frame, event.duration);
-                            } else {
-                                device.backends.borrow_mut().remove(&event.crtc);
-                            }
-                        }
+    match crtc::receive_events(&*device) {
+        Ok(events) => for event in events {
+            if let crtc::Event::PageFlip(event) = event {
+                if device.active.load(Ordering::SeqCst) {
+                    let backends = device.backends.borrow().clone();
+                    if let Some(backend) = backends
+                        .get(&event.crtc)
+                        .iter()
+                        .flat_map(|x| x.upgrade())
+                        .next()
+                    {
+                        // we can now unlock the buffer
+                        backend.unlock_buffer();
+                        trace!(device.logger, "Handling event for backend {:?}", event.crtc);
+                        // and then call the user to render the next frame
+                        handler
+                            .ready(device, event.crtc, event.frame, event.duration);
+                    } else {
+                        device.backends.borrow_mut().remove(&event.crtc);
                     }
-                },
-                Err(err) => self.handler.error(&mut device, err),
-            },
-            FdEvent::Error { error, .. } => {
-                warn!(device.logger, "DrmDevice errored: {}", error);
-                self.handler.error(&mut device, error.into());
+                }
             }
-        }
+        },
+        Err(err) => handler.error(device, err),
     }
 }
 

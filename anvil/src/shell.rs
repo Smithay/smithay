@@ -10,7 +10,7 @@ use smithay::wayland::shell::legacy::{wl_shell_init, ShellRequest, ShellState as
 use smithay::wayland::shell::xdg::{xdg_shell_init, PopupConfigure, ShellState as XdgShellState,
                                    ToplevelConfigure, XdgRequest, XdgSurfaceRole};
 use smithay::wayland_server::protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface};
-use smithay::wayland_server::{Display, LoopToken, Resource};
+use smithay::wayland_server::{Display, Resource};
 
 use window_map::{Kind as SurfaceKind, WindowMap};
 
@@ -23,7 +23,6 @@ pub type MyCompositorToken = CompositorToken<SurfaceData, Roles>;
 
 pub fn init_shell(
     display: &mut Display,
-    looptoken: LoopToken,
     log: ::slog::Logger,
 ) -> (
     CompositorToken<SurfaceData, Roles>,
@@ -34,11 +33,10 @@ pub fn init_shell(
     // Create the compositor
     let (compositor_token, _, _) = compositor_init(
         display,
-        looptoken.clone(),
-        move |request, (surface, ctoken)| match request {
+        move |request, surface, ctoken| match request {
             SurfaceEvent::Commit => surface_commit(&surface, ctoken),
             SurfaceEvent::Frame { callback } => callback
-                .implement(|e, _| match e {}, None::<fn(_, _)>)
+                .implement(|e, _| match e {}, None::<fn(_)>, ())
                 .send(wl_callback::Event::Done { callback_data: 0 }),
         },
         log.clone(),
@@ -54,9 +52,8 @@ pub fn init_shell(
     let xdg_window_map = window_map.clone();
     let (xdg_shell_state, _, _) = xdg_shell_init(
         display,
-        looptoken.clone(),
         compositor_token,
-        move |shell_event, ()| match shell_event {
+        move |shell_event| match shell_event {
             XdgRequest::NewToplevel { surface } => {
                 // place the window at a random location in the [0;300]x[0;300] square
                 use rand::distributions::{IndependentSample, Range};
@@ -87,9 +84,8 @@ pub fn init_shell(
     let shell_window_map = window_map.clone();
     let (wl_shell_state, _) = wl_shell_init(
         display,
-        looptoken,
         compositor_token,
-        move |req: ShellRequest<_, _, ()>, ()|
+        move |req: ShellRequest<_, _, ()>|
             if let ShellRequest::SetKind {
                 surface,
                 kind: ShellSurfaceKind::Toplevel,

@@ -11,9 +11,9 @@ use std::hash::{Hash, Hasher};
 use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
-use wayland_server::LoopToken;
-use wayland_server::commons::Implementation;
-use wayland_server::sources::{FdEvent, FdInterest, Source};
+
+use wayland_server::calloop::{LoopHandle, Source, Ready};
+use wayland_server::calloop::generic::{Generic, EventedRawFd};
 
 // No idea if this is the same across unix platforms
 // Lets make this linux exclusive for now, once someone tries to build it for
@@ -600,26 +600,19 @@ impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
 ///
 /// Automatically feeds the backend with incoming events without any manual calls to
 /// `dispatch_new_events`. Should be used to achieve the smallest possible latency.
-pub fn libinput_bind(
-    backend: LibinputInputBackend,
-    token: LoopToken,
-) -> ::std::result::Result<Source<FdEvent>, (IoError, LibinputInputBackend)> {
-    let fd = unsafe { backend.context.fd() };
-    token.add_fd_event_source(fd, FdInterest::READ, backend)
-}
-
-impl Implementation<(), FdEvent> for LibinputInputBackend {
-    fn receive(&mut self, event: FdEvent, (): ()) {
-        match event {
-            FdEvent::Ready { .. } => {
-                use backend::input::InputBackend;
-                if let Err(error) = self.dispatch_new_events() {
-                    warn!(self.logger, "Libinput errored: {}", error);
-                }
-            }
-            FdEvent::Error { error, .. } => {
-                warn!(self.logger, "Libinput fd errored: {}", error);
+pub fn libinput_bind<Data: 'static>(
+    mut backend: LibinputInputBackend,
+    handle: LoopHandle<Data>,
+) -> ::std::result::Result<Source<Generic<EventedRawFd>>, IoError> {
+    let mut source = Generic::from_raw_fd(unsafe { backend.context.fd() });
+    source.set_interest(Ready::readable());
+    handle.insert_source(
+        source,
+        move |_, _| {
+            use backend::input::InputBackend;
+            if let Err(error) = backend.dispatch_new_events() {
+                warn!(backend.logger, "Libinput errored: {}", error);
             }
         }
-    }
+    )
 }

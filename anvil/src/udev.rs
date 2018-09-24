@@ -30,8 +30,8 @@ use smithay::wayland::compositor::CompositorToken;
 use smithay::wayland::output::{Mode, Output, PhysicalProperties};
 use smithay::wayland::seat::Seat;
 use smithay::wayland::shm::init_shm_global;
-use smithay::wayland_server::{Display, EventLoop};
-use smithay::wayland_server::commons::downcast_impl;
+use smithay::wayland_server::Display;
+use smithay::wayland_server::calloop::EventLoop;
 use smithay::wayland_server::protocol::wl_output;
 use smithay::input::Libinput;
 
@@ -39,7 +39,7 @@ use glium_drawer::GliumDrawer;
 use shell::{init_shell, MyWindowMap, Roles, SurfaceData};
 use input_handler::AnvilInputHandler;
 
-pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) -> Result<(), ()> {
+pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger) -> Result<(), ()> {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
     info!(log, "Listening on wayland socket"; "name" => name.clone());
     ::std::env::set_var("WAYLAND_DISPLAY", name);
@@ -53,14 +53,12 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) ->
      */
     init_shm_global(
         &mut display.borrow_mut(),
-        event_loop.token(),
         vec![],
         log.clone(),
     );
 
     let (compositor_token, _, _, window_map) = init_shell(
         &mut display.borrow_mut(),
-        event_loop.token(),
         log.clone(),
     );
 
@@ -83,7 +81,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) ->
 
     let bytes = include_bytes!("../resources/cursor2.rgba");
     let mut udev_backend = UdevBackend::new(
-        event_loop.token(),
+        event_loop.handle(),
         &context,
         session.clone(),
         UdevHandlerImpl {
@@ -104,7 +102,6 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) ->
 
     let (mut w_seat, _) = Seat::new(
         &mut display.borrow_mut(),
-        event_loop.token(),
         session.seat(),
         log.clone(),
     );
@@ -116,13 +113,12 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) ->
 
     let (output, _output_global) = Output::new(
         &mut display.borrow_mut(),
-        event_loop.token(),
         "Drm".into(),
         PhysicalProperties {
             width: 0,
             height: 0,
             subpixel: wl_output::Subpixel::Unknown,
-            maker: "Smithay".into(),
+            make: "Smithay".into(),
             model: "Generic DRM".into(),
         },
         log.clone(),
@@ -162,19 +158,16 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) ->
         pointer_location,
         session,
     ));
-    let libinput_event_source = libinput_bind(libinput_backend, event_loop.token())
-        .map_err(|(err, _)| err)
+    let libinput_event_source = libinput_bind(libinput_backend, event_loop.handle())
         .unwrap();
 
-    let session_event_source = auto_session_bind(notifier, &event_loop.token())
-        .map_err(|(err, _)| err)
+    let session_event_source = auto_session_bind(notifier, &event_loop.handle())
         .unwrap();
-    let udev_event_source = udev_backend_bind(&event_loop.token(), udev_backend)
-        .map_err(|(err, _)| err)
+    let udev_event_source = udev_backend_bind(udev_backend)
         .unwrap();
 
     while running.load(Ordering::SeqCst) {
-        if event_loop.dispatch(Some(16)).is_err() {
+        if event_loop.dispatch(Some(::std::time::Duration::from_millis(16)), &mut ()).is_err() {
             running.store(false, Ordering::SeqCst);
         } else {
             display.borrow_mut().flush_clients();
@@ -187,14 +180,8 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop, log: Logger) ->
     notifier.unregister(libinput_session_id);
 
     libinput_event_source.remove();
+    udev_event_source.remove();
 
-    // destroy the udev backend freeing the drm devices
-    //
-    // udev_event_source.remove() returns a Box<Implementation<..>>, downcast_impl
-    // allows us to cast it back to its original type, storing it back into its original
-    // variable to simplify type inference.
-    udev_backend = *(downcast_impl(udev_event_source.remove()).unwrap_or_else(|_| unreachable!()));
-    udev_backend.close();
     Ok(())
 }
 

@@ -15,7 +15,8 @@ use smithay::backend::drm::{drm_device_bind, DrmBackend, DrmDevice, DrmHandler};
 use smithay::backend::graphics::egl::wayland::EGLWaylandExtensions;
 use smithay::wayland::compositor::CompositorToken;
 use smithay::wayland::shm::init_shm_global;
-use smithay::wayland_server::{Display, EventLoop};
+use smithay::wayland_server::Display;
+use smithay::wayland_server::calloop::EventLoop;
 
 use glium::Surface;
 use slog::Logger;
@@ -35,7 +36,7 @@ impl AsRawFd for Card {
 impl BasicDevice for Card {}
 impl ControlDevice for Card {}
 
-pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop, log: Logger) -> Result<(), ()> {
+pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop<()>, log: Logger) -> Result<(), ()> {
     /*
      * Initialize the drm backend
      */
@@ -100,9 +101,9 @@ pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop, log: Logger)
      * Initialize the globals
      */
 
-    init_shm_global(&mut display, event_loop.token(), vec![], log.clone());
+    init_shm_global(&mut display, vec![], log.clone());
 
-    let (compositor_token, _, _, window_map) = init_shell(&mut display, event_loop.token(), log.clone());
+    let (compositor_token, _, _, window_map) = init_shell(&mut display, log.clone());
 
     /*
      * Add a listening socket:
@@ -114,7 +115,7 @@ pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop, log: Logger)
      * Register the DrmDevice on the EventLoop
      */
     let _source = drm_device_bind(
-        &event_loop.token(),
+        &event_loop.handle(),
         device,
         DrmHandlerImpl {
             compositor_token,
@@ -126,7 +127,7 @@ pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop, log: Logger)
         .unwrap();
 
     loop {
-        event_loop.dispatch(Some(16)).unwrap();
+        event_loop.dispatch(Some(::std::time::Duration::from_millis(16)), &mut ()).unwrap();
         display.flush_clients();
 
         window_map.borrow_mut().refresh();

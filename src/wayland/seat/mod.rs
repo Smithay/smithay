@@ -13,13 +13,13 @@
 //! use smithay::wayland::seat::Seat;
 //!
 //! # fn main(){
-//! # let (mut display, event_loop) = wayland_server::Display::new();
+//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
+//! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! // insert the seat:
 //! let (seat, seat_global) = Seat::new(
-//!     &mut display, // the display
-//!     event_loop.token(), // a LoopToken
-//!     "seat-0".into(), // the name of the seat, will be advertize to clients
-//!     None /* insert a logger here*/
+//!     &mut display,    // the display
+//!     "seat-0".into(), // the name of the seat, will be advertized to clients
+//!     None             // insert a logger here
 //! );
 //! # }
 //! ```
@@ -40,12 +40,12 @@
 //! # use smithay::wayland::seat::Seat;
 //! #
 //! # fn main(){
-//! # let (mut display, event_loop) = wayland_server::Display::new();
+//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
+//! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! # let (mut seat, seat_global) = Seat::new(
 //! #     &mut display,
-//! #     event_loop.token(),
-//! #     "seat-0".into(), // the name of the seat, will be advertize to clients
-//! #     None /* insert a logger here*/
+//! #     "seat-0".into(),
+//! #     None
 //! # );
 //! let pointer_handle = seat.add_pointer();
 //! # }
@@ -61,8 +61,8 @@ mod pointer;
 
 pub use self::keyboard::{keysyms, Error as KeyboardError, KeyboardHandle, Keysym, ModifiersState};
 pub use self::pointer::{PointerAxisHandle, PointerHandle};
-use wayland_server::{Display, Global, LoopToken, NewResource, Resource};
 use wayland_server::protocol::wl_seat;
+use wayland_server::{Display, Global, NewResource, Resource};
 
 struct Inner {
     log: ::slog::Logger,
@@ -113,12 +113,7 @@ impl Seat {
     /// You are provided with the state token to retrieve it (allowing
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
-    pub fn new<L>(
-        display: &mut Display,
-        token: LoopToken,
-        name: String,
-        logger: L,
-    ) -> (Seat, Global<wl_seat::WlSeat>)
+    pub fn new<L>(display: &mut Display, name: String, logger: L) -> (Seat, Global<wl_seat::WlSeat>)
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -130,10 +125,8 @@ impl Seat {
             keyboard: None,
             known_seats: Vec::new(),
         }));
-        let seat = Seat {
-            inner: inner.clone(),
-        };
-        let global = display.create_global(&token, 5, move |_version, new_seat| {
+        let seat = Seat { inner: inner.clone() };
+        let global = display.create_global(5, move |new_seat, _version| {
             let seat = implement_seat(new_seat, inner.clone());
             let mut inner = inner.lock().unwrap();
             if seat.version() >= 2 {
@@ -277,12 +270,13 @@ fn implement_seat(
                 }
             }
         },
-        Some(move |seat, _| {
+        Some(move |seat| {
             dest_inner
                 .lock()
                 .unwrap()
                 .known_seats
                 .retain(|s| !s.equals(&seat));
         }),
+        (),
     )
 }

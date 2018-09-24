@@ -52,6 +52,8 @@ use nix::libc::c_int;
 use nix::sys::signal::{self, Signal};
 use nix::sys::stat::{dev_t, fstat, major, minor, Mode};
 use nix::unistd::{close, dup};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
@@ -59,29 +61,28 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "backend_session_udev")]
 use udev::Context;
-use wayland_server::LoopToken;
-use wayland_server::commons::Implementation;
-use wayland_server::sources::{SignalEvent, Source};
+use wayland_server::calloop::{LoopHandle, Source};
+use wayland_server::calloop::signals::Signals;
 
 #[allow(dead_code)]
 mod tty {
-    ioctl!(bad read kd_get_mode with 0x4B3B; i16);
-    ioctl!(bad write_int kd_set_mode with 0x4B3A);
+    ioctl_read_bad!(kd_get_mode, 0x4B3B, i16);
+    ioctl_write_int_bad!(kd_set_mode, 0x4B3A);
     pub const KD_TEXT: i16 = 0x00;
     pub const KD_GRAPHICS: i16 = 0x00;
 
-    ioctl!(bad read kd_get_kb_mode with 0x4B44; i32);
-    ioctl!(bad write_int kd_set_kb_mode with 0x4B45);
+    ioctl_read_bad!(kd_get_kb_mode, 0x4B44, i32);
+    ioctl_write_int_bad!(kd_set_kb_mode, 0x4B45);
     pub const K_RAW: i32 = 0x00;
     pub const K_XLATE: i32 = 0x01;
     pub const K_MEDIUMRAW: i32 = 0x02;
     pub const K_UNICODE: i32 = 0x03;
     pub const K_OFF: i32 = 0x04;
 
-    ioctl!(bad write_int vt_activate with 0x5606);
-    ioctl!(bad write_int vt_wait_active with 0x5607);
-    ioctl!(bad write_ptr vt_set_mode with 0x5602; VtMode);
-    ioctl!(bad write_int vt_rel_disp with 0x5605);
+    ioctl_write_int_bad!(vt_activate, 0x5606);
+    ioctl_write_int_bad!(vt_wait_active, 0x5607);
+    ioctl_write_ptr_bad!(vt_set_mode, 0x5602, VtMode);
+    ioctl_write_int_bad!(vt_rel_disp, 0x5605);
     #[repr(C)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub struct VtMode {
@@ -367,8 +368,8 @@ impl SessionNotifier for DirectSessionNotifier {
     }
 }
 
-impl Implementation<(), SignalEvent> for DirectSessionNotifier {
-    fn receive(&mut self, _signal: SignalEvent, (): ()) {
+impl DirectSessionNotifier {
+    fn signal_received(&mut self) {
         if self.is_active() {
             info!(self.logger, "Session shall become inactive.");
             for signal in &mut self.signals {
@@ -397,18 +398,47 @@ impl Implementation<(), SignalEvent> for DirectSessionNotifier {
     }
 }
 
+/// Bound logind session that is driven by the `wayland_server::EventLoop`.
+///
+/// See `direct_session_bind` for details.
+pub struct BoundDirectSession {
+    source: Source<Signals>,
+    notifier: Rc<RefCell<DirectSessionNotifier>>
+}
+
+impl BoundDirectSession {
+    /// Unbind the logind session from the `EventLoop`
+    pub fn unbind(self) -> DirectSessionNotifier {
+        let BoundDirectSession { source, notifier } = self;
+        source.remove();
+        match Rc::try_unwrap(notifier) {
+            Ok(notifier) => notifier.into_inner(),
+            Err(_) => panic!("Notifier should have been freed from the event loop!")
+        }
+    }
+}
+
 /// Bind a `DirectSessionNotifier` to an `EventLoop`.
 ///
 /// Allows the `DirectSessionNotifier` to listen for incoming signals signalling the session state.
 /// If you don't use this function `DirectSessionNotifier` will not correctly tell you the current
 /// session state and call it's `SessionObservers`.
-pub fn direct_session_bind(
+pub fn direct_session_bind<Data: 'static>(
     notifier: DirectSessionNotifier,
-    token: &LoopToken,
-) -> ::std::result::Result<Source<SignalEvent>, (IoError, DirectSessionNotifier)> {
+    handle: &LoopHandle<Data>,
+) -> ::std::result::Result<BoundDirectSession, IoError> {
     let signal = notifier.signal;
-
-    token.add_signal_event_source(signal, notifier)
+    let notifier = Rc::new(RefCell::new(notifier));
+    let source = handle.insert_source(
+        Signals::new(&[signal])?,
+        {
+            let notifier = notifier.clone();
+            move |_, _| notifier.borrow_mut().signal_received()
+        }
+    )?;
+    Ok(BoundDirectSession {
+        source, notifier
+    })
 }
 
 error_chain! {
