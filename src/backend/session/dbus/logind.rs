@@ -46,7 +46,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use systemd::login;
 
 use wayland_server::calloop::generic::{Event, EventedRawFd, Generic};
-use wayland_server::calloop::{Loophandle, Ready, Source};
+use wayland_server::calloop::{LoopHandle, Ready, Source};
 
 struct LogindSessionImpl {
     conn: RefCell<Connection>,
@@ -453,7 +453,7 @@ pub fn logind_session_bind<Data: 'static>(
                 let notifier = notifier.clone();
                 move |evt, _| notifier.event(evt)
             })
-        }).collect::<::std::result::Result<Vec<Source<FdEvent>>, IoError>>()
+        }).collect::<::std::result::Result<Vec<Source<Generic<EventedRawFd>>>, IoError>>()
         .map_err(|err| {
             (
                 err,
@@ -496,7 +496,7 @@ impl Drop for LogindSessionNotifier {
 }
 
 impl LogindSessionNotifier {
-    fn event(&mut self, event: Event) {
+    fn event(&mut self, event: Event<EventedRawFd>) {
         let fd = event.source.borrow().0;
         let readiness = event.readiness;
         let conn = self.internal.conn.borrow();

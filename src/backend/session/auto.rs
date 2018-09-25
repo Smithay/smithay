@@ -151,7 +151,7 @@ pub fn auto_session_bind<Data: 'static>(
 ) -> ::std::result::Result<BoundAutoSession, IoError> {
     Ok(match notifier {
         #[cfg(feature = "backend_session_logind")]
-        AutoSessionNotifier::Logind(logind) => BoundAutoSession::Logind(logind_session_bind(logind, handle)?),
+        AutoSessionNotifier::Logind(logind) => BoundAutoSession::Logind(logind_session_bind(logind, handle).map_err(|(e, _)| e)?),
         AutoSessionNotifier::Direct(direct) => BoundAutoSession::Direct(direct_session_bind(direct, handle)?),
     })
 }
