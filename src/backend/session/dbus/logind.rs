@@ -447,10 +447,10 @@ pub fn logind_session_bind<Data: 'static>(
         .clone()
         .into_iter()
         .map(|watch| {
-            let source = Generic::from_raw_fd(watch.fd());
+            let mut source = Generic::from_raw_fd(watch.fd());
             source.set_interest(Ready::readable() | Ready::writable());
             handle.insert_source(source, {
-                let notifier = notifier.clone();
+                let mut notifier = notifier.clone();
                 move |evt, _| notifier.event(evt)
             })
         }).collect::<::std::result::Result<Vec<Source<Generic<EventedRawFd>>>, IoError>>()
