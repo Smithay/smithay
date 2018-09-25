@@ -401,7 +401,7 @@ pub struct BoundDirectSession {
 }
 
 impl BoundDirectSession {
-    /// Unbind the logind session from the `EventLoop`
+    /// Unbind the direct session from the `EventLoop`
     pub fn unbind(self) -> DirectSessionNotifier {
         let BoundDirectSession { source, notifier } = self;
         source.remove();
