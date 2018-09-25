@@ -215,7 +215,9 @@ impl SessionNotifier for AutoSessionNotifier {
             }
         }
     }
+
     fn unregister(&mut self, signal: Self::Id) {
+        #[allow(unreachable_patterns)]
         match (self, signal) {
             #[cfg(feature = "backend_session_logind")]
             (&mut AutoSessionNotifier::Logind(ref mut logind), AutoId(AutoIdInternal::Logind(signal))) => {
@@ -224,6 +226,8 @@ impl SessionNotifier for AutoSessionNotifier {
             (&mut AutoSessionNotifier::Direct(ref mut direct), AutoId(AutoIdInternal::Direct(signal))) => {
                 direct.unregister(signal)
             }
+            // this pattern is needed when the logind backend is activated
+            _ => unreachable!()
         }
     }
 
