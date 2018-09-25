@@ -502,11 +502,11 @@ impl LogindSessionNotifier {
         let conn = self.internal.conn.borrow();
         let items = conn.watch_handle(
             fd,
-            if readiness.readable() && readiness.writable() {
+            if readiness.is_readable() && readiness.is_writable() {
                 WatchEvent::Readable as u32 | WatchEvent::Writable as u32
-            } else if readiness.readable() {
+            } else if readiness.is_readable() {
                 WatchEvent::Readable as u32
-            } else if readiness.writable() {
+            } else if readiness.is_writable() {
                 WatchEvent::Writable as u32
             } else {
                 return;
