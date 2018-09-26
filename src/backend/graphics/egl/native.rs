@@ -187,8 +187,10 @@ unsafe impl NativeDisplay<Wayland> for WinitWindow {
 
     fn create_surface(&self, _args: ()) -> Result<wegl::WlEglSurface> {
         if let Some(surface) = self.get_wayland_surface() {
-            let (w, h) = self.get_inner_size().unwrap();
-            Ok(unsafe { wegl::WlEglSurface::new_from_raw(surface as *mut _, w as i32, h as i32) })
+            let size = self.get_inner_size().unwrap();
+            Ok(unsafe {
+                wegl::WlEglSurface::new_from_raw(surface as *mut _, size.width as i32, size.height as i32)
+            })
         } else {
             bail!(ErrorKind::NonMatchingBackend("Wayland"))
         }
