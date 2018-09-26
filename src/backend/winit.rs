@@ -85,6 +85,7 @@ pub struct WinitInputBackend {
     input_config: (),
     handler: Option<Box<InputHandler<WinitInputBackend> + 'static>>,
     logger: ::slog::Logger,
+    dpi: f64,
 }
 
 /// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
@@ -184,6 +185,7 @@ where
             input_config: (),
             handler: None,
             logger: log.new(o!("smithay_winit_component" => "input")),
+            dpi: 1.0,
         },
     ))
 }
@@ -191,7 +193,7 @@ where
 /// Handler trait to recieve window-related events to provide a better *nested* experience.
 pub trait WinitEventsHandler {
     /// The window was resized, can be used to adjust the associated `wayland::output::Output`s mode.
-    fn resized(&mut self, width: u32, height: u32);
+    fn resized(&mut self, size: LogicalSize);
     /// The window was moved
     fn moved(&mut self, x: i32, h: i32);
     /// The window gained or lost focus
@@ -692,6 +694,7 @@ impl InputBackend for WinitInputBackend {
             let mut handler = self.handler.as_mut();
             let mut events_handler = self.events_handler.as_mut();
             let logger = &self.logger;
+            let dpi = &mut self.dpi;
 
             self.events_loop.poll_events(move |event| {
                 if let Event::WindowEvent { event, .. } = event {
@@ -703,10 +706,11 @@ impl InputBackend for WinitInputBackend {
                             trace!(logger, "Resizing window to {:?}", size);
                             window.window().set_inner_size(size);
                             if let Window::Wayland { ref surface, .. } = **window {
-                                surface.resize(size.width as i32, size.height as i32, 0, 0);
+                                let physical_size = size.to_physical(*dpi);
+                                surface.resize(physical_size.width as i32, physical_size.height as i32, 0, 0);
                             }
                             if let Some(events_handler) = events_handler {
-                                events_handler.resized(size.width as u32, size.height as u32);
+                                events_handler.resized(size);
                             }
                         }
                         (WindowEvent::Moved(position), _, Some(events_handler)) => {
@@ -717,6 +721,7 @@ impl InputBackend for WinitInputBackend {
                         }
                         (WindowEvent::Refresh, _, Some(events_handler)) => events_handler.refresh(),
                         (WindowEvent::HiDpiFactorChanged(factor), _, Some(events_handler)) => {
+                            *dpi = factor;
                             events_handler.hidpi_changed(factor as f32)
                         }
                         (
