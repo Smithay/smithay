@@ -195,7 +195,7 @@ pub trait WinitEventsHandler {
     /// The window was resized, can be used to adjust the associated `wayland::output::Output`s mode.
     fn resized(&mut self, size: LogicalSize);
     /// The window was moved
-    fn moved(&mut self, x: i32, h: i32);
+    fn moved(&mut self, position: LogicalPosition);
     /// The window gained or lost focus
     fn focus_changed(&mut self, focused: bool);
     /// The window needs to be redrawn
@@ -714,7 +714,7 @@ impl InputBackend for WinitInputBackend {
                             }
                         }
                         (WindowEvent::Moved(position), _, Some(events_handler)) => {
-                            events_handler.moved(position.x as i32, position.y as i32)
+                            events_handler.moved(position)
                         }
                         (WindowEvent::Focused(focus), _, Some(events_handler)) => {
                             events_handler.focus_changed(focus)
