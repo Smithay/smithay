@@ -53,7 +53,7 @@ env:
 matrix:
   include:
       # special features for lint & fmt
-    - rust: nightly
+    - rust: stable
       env: FEATURES="cargo-fmt"
     - rust: nightly
       env: FEATURES="cargo-clippy"
@@ -81,10 +81,9 @@ script:
             vagga cargo-$TRAVIS_RUST_VERSION doc --no-deps
         ;;
         "cargo-fmt")
-            vagga cargo-$TRAVIS_RUST_VERSION fmt -- --write-mode=diff
+            vagga cargo-$TRAVIS_RUST_VERSION fmt -- --check
         ;;
         "cargo-clippy")
-            vagga cargo-$TRAVIS_RUST_VERSION install -f clippy &&
             vagga cargo-$TRAVIS_RUST_VERSION clippy --all-features -- -D warnings
         ;;
         "anvil")

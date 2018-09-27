@@ -19,6 +19,9 @@ containers:
             - !Container base
             - !Env HOME: /work/.vagga/stable-home
             - !Sh curl https://sh.rustup.rs -sSf | sh -s -- -y --default-host x86_64-unknown-linux-gnu --default-toolchain stable --no-modify-path
+            - !Env PATH: /bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:/work/.vagga/stable-home/.cargo/bin:/work/.vagga/stable-home/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/
+            - !Sh rustup self update
+            - !Sh rustup component add rustfmt-preview
 
     beta:
         auto-clean: true
@@ -45,7 +48,7 @@ containers:
             - !Sh curl https://sh.rustup.rs -sSf | sh -s -- -y --default-host x86_64-unknown-linux-gnu --default-toolchain nightly --no-modify-path
             - !Env PATH: /bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:/work/.vagga/nightly-home/.cargo/bin:/work/.vagga/nightly-home/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/
             - !Sh rustup self update
-            - !Sh rustup component add rustfmt-preview
+            - !Sh rustup component add clippy-preview
 
 commands:
     update-stable: !Command
