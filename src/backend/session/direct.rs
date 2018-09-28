@@ -420,13 +420,25 @@ impl BoundDirectSession {
 pub fn direct_session_bind<Data: 'static>(
     notifier: DirectSessionNotifier,
     handle: &LoopHandle<Data>,
-) -> ::std::result::Result<BoundDirectSession, IoError> {
+) -> ::std::result::Result<BoundDirectSession, (IoError, DirectSessionNotifier)> {
     let signal = notifier.signal;
+    let source = match Signals::new(&[signal]) {
+        Ok(s) => s,
+        Err(e) => return Err((e, notifier)),
+    };
     let notifier = Rc::new(RefCell::new(notifier));
-    let source = handle.insert_source(Signals::new(&[signal])?, {
-        let notifier = notifier.clone();
-        move |_, _| notifier.borrow_mut().signal_received()
-    })?;
+    let fail_notifier = notifier.clone();
+    let source = handle
+        .insert_source(source, {
+            let notifier = notifier.clone();
+            move |_, _| notifier.borrow_mut().signal_received()
+        }).map_err(move |e| {
+            // the backend in the closure should already have been dropped
+            let notifier = Rc::try_unwrap(fail_notifier)
+                .unwrap_or_else(|_| unreachable!())
+                .into_inner();
+            (e, notifier)
+        })?;
     Ok(BoundDirectSession { source, notifier })
 }
 

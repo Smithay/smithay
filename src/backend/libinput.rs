@@ -6,11 +6,14 @@ use backend::input::Axis;
 use backend::session::{AsErrno, Session, SessionObserver};
 use input as libinput;
 use input::event;
+
+use std::cell::RefCell;
 use std::collections::hash_map::{DefaultHasher, Entry, HashMap};
 use std::hash::{Hash, Hasher};
 use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
+use std::rc::Rc;
 
 use wayland_server::calloop::generic::{EventedRawFd, Generic};
 use wayland_server::calloop::{LoopHandle, Ready, Source};
@@ -588,15 +591,24 @@ impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
 /// Automatically feeds the backend with incoming events without any manual calls to
 /// `dispatch_new_events`. Should be used to achieve the smallest possible latency.
 pub fn libinput_bind<Data: 'static>(
-    mut backend: LibinputInputBackend,
+    backend: LibinputInputBackend,
     handle: LoopHandle<Data>,
-) -> ::std::result::Result<Source<Generic<EventedRawFd>>, IoError> {
+) -> ::std::result::Result<Source<Generic<EventedRawFd>>, (IoError, LibinputInputBackend)> {
     let mut source = Generic::from_raw_fd(unsafe { backend.context.fd() });
     source.set_interest(Ready::readable());
-    handle.insert_source(source, move |_, _| {
-        use backend::input::InputBackend;
-        if let Err(error) = backend.dispatch_new_events() {
-            warn!(backend.logger, "Libinput errored: {}", error);
-        }
-    })
+    let backend = Rc::new(RefCell::new(backend));
+    let fail_backend = backend.clone();
+    handle
+        .insert_source(source, move |_, _| {
+            use backend::input::InputBackend;
+            if let Err(error) = backend.borrow_mut().dispatch_new_events() {
+                warn!(backend.borrow().logger, "Libinput errored: {}", error);
+            }
+        }).map_err(move |e| {
+            // the backend in the closure should already have been dropped
+            let backend = Rc::try_unwrap(fail_backend)
+                .unwrap_or_else(|_| unreachable!())
+                .into_inner();
+            (e, backend)
+        })
 }

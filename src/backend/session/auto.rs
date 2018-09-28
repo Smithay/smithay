@@ -148,13 +148,15 @@ impl AutoSession {
 pub fn auto_session_bind<Data: 'static>(
     notifier: AutoSessionNotifier,
     handle: &LoopHandle<Data>,
-) -> ::std::result::Result<BoundAutoSession, IoError> {
+) -> ::std::result::Result<BoundAutoSession, (IoError, AutoSessionNotifier)> {
     Ok(match notifier {
         #[cfg(feature = "backend_session_logind")]
-        AutoSessionNotifier::Logind(logind) => {
-            BoundAutoSession::Logind(logind_session_bind(logind, handle).map_err(|(e, _)| e)?)
-        }
-        AutoSessionNotifier::Direct(direct) => BoundAutoSession::Direct(direct_session_bind(direct, handle)?),
+        AutoSessionNotifier::Logind(logind) => BoundAutoSession::Logind(
+            logind_session_bind(logind, handle).map_err(|(e, n)| (e, AutoSessionNotifier::Logind(n)))?,
+        ),
+        AutoSessionNotifier::Direct(direct) => BoundAutoSession::Direct(
+            direct_session_bind(direct, handle).map_err(|(e, n)| (e, AutoSessionNotifier::Direct(n)))?,
+        ),
     })
 }
 
