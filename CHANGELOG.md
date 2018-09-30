@@ -1,8 +1,18 @@
-# Samithay Changelog
+# Smithay Changelog
 
 ## Unreleased
 
+### General
+
+- **[Breaking]** Upgrade to wayland-rs 0.21
+
+### Backends
+
 - **[Breaking]** WinitBackend: Upgrade to winit 0.17
+
+### Clients & Protocol
+
+- Basic XWayland support
 
 ## version 0.1.0 (2017-10-01)
 
