@@ -90,7 +90,7 @@ script:
             vagga cargo-$TRAVIS_RUST_VERSION test -p anvil --all-features
         ;;
         *)
-            vagga cargo-$TRAVIS_RUST_VERSION test --no-default-features --features "$FEATURES" &&
+            vagga cargo-$TRAVIS_RUST_VERSION check --tests --no-default-features --features "$FEATURES" &&
             vagga cargo-$TRAVIS_RUST_VERSION doc --no-deps --no-default-features --features "$FEATURES"
       esac
 
