@@ -147,9 +147,13 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         pointer_location,
         session,
     ));
-    let libinput_event_source = libinput_bind(libinput_backend, event_loop.handle()).unwrap();
+    let libinput_event_source = libinput_bind(libinput_backend, event_loop.handle())
+        .map_err(|(e, _)| e)
+        .unwrap();
 
-    let session_event_source = auto_session_bind(notifier, &event_loop.handle()).unwrap();
+    let session_event_source = auto_session_bind(notifier, &event_loop.handle())
+        .map_err(|(e, _)| e)
+        .unwrap();
     let udev_event_source = udev_backend_bind(udev_backend).unwrap();
 
     while running.load(Ordering::SeqCst) {
