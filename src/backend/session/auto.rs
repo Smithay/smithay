@@ -1,4 +1,3 @@
-//!
 //! Implementation of the `Session` trait through various implementations
 //! automatically choosing the best available interface.
 //!
@@ -29,19 +28,18 @@
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
 
-use super::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
-use super::direct::{self, direct_session_bind, DirectSession, DirectSessionNotifier};
+use super::direct::{self, direct_session_bind, BoundDirectSession, DirectSession, DirectSessionNotifier};
 #[cfg(feature = "backend_session_logind")]
 use super::logind::{self, logind_session_bind, BoundLogindSession, LogindSession, LogindSessionNotifier};
+use super::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
 use nix::fcntl::OFlag;
 use std::cell::RefCell;
 use std::io::Error as IoError;
 use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::rc::Rc;
-use wayland_server::LoopToken;
-use wayland_server::commons::downcast_impl;
-use wayland_server::sources::{SignalEvent, Source};
+
+use wayland_server::calloop::LoopHandle;
 
 /// `Session` using the best available inteface
 #[derive(Clone)]
@@ -62,7 +60,7 @@ pub enum AutoSessionNotifier {
     Direct(DirectSessionNotifier),
 }
 
-/// Bound session that is driven by the `wayland_server::EventLoop`.
+/// Bound session that is driven by the `calloop::EventLoop`.
 ///
 /// See `auto_session_bind` for details.
 ///
@@ -72,7 +70,7 @@ pub enum BoundAutoSession {
     #[cfg(feature = "backend_session_logind")]
     Logind(BoundLogindSession),
     /// Bound direct / tty session
-    Direct(Source<SignalEvent>),
+    Direct(BoundDirectSession),
 }
 
 /// Id's used by the `AutoSessionNotifier` internally.
@@ -111,10 +109,7 @@ impl AutoSession {
                     )),
                     Err(err) => {
                         warn!(logger, "Failed to create direct session: {}", err);
-                        error!(
-                            logger,
-                            "Could not create any session, possibilities exhausted"
-                        );
+                        error!(logger, "Could not create any session, possibilities exhausted");
                         None
                     }
                 }
@@ -138,10 +133,7 @@ impl AutoSession {
             )),
             Err(err) => {
                 warn!(logger, "Failed to create direct session: {}", err);
-                error!(
-                    logger,
-                    "Could not create any session, possibilities exhausted"
-                );
+                error!(logger, "Could not create any session, possibilities exhausted");
                 None
             }
         }
@@ -153,16 +145,18 @@ impl AutoSession {
 /// Allows the `AutoSessionNotifier` to listen for incoming signals signalling the session state.
 /// If you don't use this function `AutoSessionNotifier` will not correctly tell you the
 /// session state and call it's `SessionObservers`.
-pub fn auto_session_bind(
+pub fn auto_session_bind<Data: 'static>(
     notifier: AutoSessionNotifier,
-    token: &LoopToken,
+    handle: &LoopHandle<Data>,
 ) -> ::std::result::Result<BoundAutoSession, (IoError, AutoSessionNotifier)> {
     Ok(match notifier {
         #[cfg(feature = "backend_session_logind")]
-        AutoSessionNotifier::Logind(logind) => BoundAutoSession::Logind(logind_session_bind(logind, token)
-            .map_err(|(error, notifier)| (error, AutoSessionNotifier::Logind(notifier)))?),
-        AutoSessionNotifier::Direct(direct) => BoundAutoSession::Direct(direct_session_bind(direct, token)
-            .map_err(|(error, notifier)| (error, AutoSessionNotifier::Direct(notifier)))?),
+        AutoSessionNotifier::Logind(logind) => BoundAutoSession::Logind(
+            logind_session_bind(logind, handle).map_err(|(e, n)| (e, AutoSessionNotifier::Logind(n)))?,
+        ),
+        AutoSessionNotifier::Direct(direct) => BoundAutoSession::Direct(
+            direct_session_bind(direct, handle).map_err(|(e, n)| (e, AutoSessionNotifier::Direct(n)))?,
+        ),
     })
 }
 
@@ -225,7 +219,9 @@ impl SessionNotifier for AutoSessionNotifier {
             }
         }
     }
+
     fn unregister(&mut self, signal: Self::Id) {
+        #[allow(unreachable_patterns)]
         match (self, signal) {
             #[cfg(feature = "backend_session_logind")]
             (&mut AutoSessionNotifier::Logind(ref mut logind), AutoId(AutoIdInternal::Logind(signal))) => {
@@ -234,6 +230,7 @@ impl SessionNotifier for AutoSessionNotifier {
             (&mut AutoSessionNotifier::Direct(ref mut direct), AutoId(AutoIdInternal::Direct(signal))) => {
                 direct.unregister(signal)
             }
+            // this pattern is needed when the logind backend is activated
             _ => unreachable!(),
         }
     }
@@ -260,9 +257,7 @@ impl BoundAutoSession {
         match self {
             #[cfg(feature = "backend_session_logind")]
             BoundAutoSession::Logind(logind) => AutoSessionNotifier::Logind(logind.unbind()),
-            BoundAutoSession::Direct(source) => {
-                AutoSessionNotifier::Direct(*downcast_impl(source.remove()).unwrap_or_else(|_| unreachable!()))
-            }
+            BoundAutoSession::Direct(direct) => AutoSessionNotifier::Direct(direct.unbind()),
         }
     }
 }

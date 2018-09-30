@@ -23,21 +23,21 @@
 //! use wayland_server::protocol::wl_shm::Format;
 //!
 //! # fn main() {
-//! # let (mut display, mut event_loop) = wayland_server::Display::new();
+//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
+//! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! // Insert the ShmGlobal into your event loop
 //! // Here, we specify that Yuyv and C8 format are supported
 //! // additionnaly to the standart Argb8888 and Xrgb8888.
 //! let shm_global = init_shm_global(
 //!     &mut display,
-//!     event_loop.token(),
 //!     vec![Format::Yuyv, Format::C8],
 //!     None // we don't provide a logger here
 //! );
 //! # }
 //! ```
 //!
-//! Then, when you have a `WlBuffer` and need to retrieve its contents, use the token method to
-//! do it:
+//! Then, when you have a `WlBuffer` and need to retrieve its contents, use the
+//! `with_buffer_contents` function to do it:
 //!
 //! ```
 //! # extern crate wayland_server;
@@ -45,13 +45,27 @@
 //! # use wayland_server::protocol::wl_buffer::WlBuffer;
 //! # use wayland_server::Resource;
 //! # fn wrap(buffer: &Resource<WlBuffer>) {
-//! use smithay::wayland::shm::{with_buffer_contents, BufferData};
+//! use smithay::wayland::shm::{with_buffer_contents, BufferData, BufferAccessError};
 //!
-//! with_buffer_contents(&buffer,
+//! let content = with_buffer_contents(&buffer,
 //!     |slice: &[u8], buffer_metadata: BufferData| {
-//!         // do something to draw it on the screen
+//!         // do something to extract the contents of the buffer
 //!     }
 //! );
+//!
+//! match content {
+//!     Ok(something) =>  {
+//!         /* `something` is the content you returned from the closure */
+//!     },
+//!     Err(BufferAccessError::NotManaged) => {
+//!         /* This buffer is not managed by the SHM global, but by something else */
+//!     },
+//!     Err(BufferAccessError::BadMap) => {
+//!         /* The client supplied invalid content specification for this buffer,
+//!            and was killed.
+//!          */
+//!     }
+//! }
 //! # }
 //! # fn main() {}
 //! ```
@@ -66,9 +80,8 @@
 use self::pool::{Pool, ResizeError};
 use std::rc::Rc;
 use std::sync::Arc;
-use wayland_server::{Display, Global, LoopToken, NewResource, Resource};
-use wayland_server::commons::Implementation;
 use wayland_server::protocol::{wl_buffer, wl_shm, wl_shm_pool};
+use wayland_server::{Display, DisplayToken, Global, NewResource, Resource};
 
 mod pool;
 
@@ -80,7 +93,7 @@ mod pool;
 pub struct ShmGlobalData {
     formats: Rc<Vec<wl_shm::Format>>,
     log: ::slog::Logger,
-    token: LoopToken,
+    token: DisplayToken,
 }
 
 /// Create a new SHM global advertizing given supported formats.
@@ -94,7 +107,6 @@ pub struct ShmGlobalData {
 /// the future.
 pub fn init_shm_global<L>(
     display: &mut Display,
-    token: LoopToken,
     mut formats: Vec<wl_shm::Format>,
     logger: L,
 ) -> Global<wl_shm::WlShm>
@@ -109,11 +121,19 @@ where
     let data = ShmGlobalData {
         formats: Rc::new(formats),
         log: log.new(o!("smithay_module" => "shm_handler")),
-        token: token.clone(),
+        token: display.get_token(),
     };
 
-    display.create_global::<wl_shm::WlShm, _>(&token, 1, move |_version, shm_new: NewResource<_>| {
-        let shm = shm_new.implement_nonsend(data.clone(), None::<fn(_, _)>, &data.token);
+    display.create_global::<wl_shm::WlShm, _>(1, move |shm_new: NewResource<_>, _version| {
+        let shm = shm_new.implement_nonsend(
+            {
+                let mut data = data.clone();
+                move |req, shm| data.receive_shm_message(req, shm)
+            },
+            None::<fn(_)>,
+            (),
+            &data.token,
+        );
         // send the formats
         for f in &data.formats[..] {
             shm.send(wl_shm::Event::Format { format: *f });
@@ -152,10 +172,10 @@ pub fn with_buffer_contents<F, T>(
 where
     F: FnOnce(&[u8], BufferData) -> T,
 {
-    if !buffer.is_implemented_with::<ShmGlobalData>() {
-        return Err(BufferAccessError::NotManaged);
-    }
-    let data = unsafe { &*(buffer.get_user_data() as *mut InternalBufferData) };
+    let data = match buffer.user_data::<InternalBufferData>() {
+        Some(d) => d,
+        None => return Err(BufferAccessError::NotManaged),
+    };
 
     match data.pool.with_data_slice(|slice| f(slice, data.data)) {
         Ok(t) => Ok(t),
@@ -167,40 +187,38 @@ where
     }
 }
 
-impl Implementation<Resource<wl_shm::WlShm>, wl_shm::Request> for ShmGlobalData {
-    fn receive(&mut self, request: wl_shm::Request, shm: Resource<wl_shm::WlShm>) {
+impl ShmGlobalData {
+    fn receive_shm_message(&mut self, request: wl_shm::Request, shm: Resource<wl_shm::WlShm>) {
         use self::wl_shm::{Error, Request};
 
-        match request {
-            Request::CreatePool { id: pool, fd, size } => {
-                if size <= 0 {
-                    shm.post_error(
-                        Error::InvalidFd as u32,
-                        "Invalid size for a new wl_shm_pool.".into(),
-                    );
-                    return;
-                }
-                let mmap_pool = match Pool::new(fd, size as usize, self.log.clone()) {
-                    Ok(p) => p,
-                    Err(()) => {
-                        shm.post_error(
-                            wl_shm::Error::InvalidFd as u32,
-                            format!("Failed mmap of fd {}.", fd),
-                        );
-                        return;
-                    }
-                };
-                let arc_pool = Box::new(Arc::new(mmap_pool));
-                let pool = pool.implement_nonsend(
-                    self.clone(),
-                    Some(|pool: Resource<_>, _| {
-                        drop(unsafe { Box::from_raw(pool.get_user_data() as *mut Arc<Pool>) })
-                    }),
-                    &self.token,
-                );
-                pool.set_user_data(Box::into_raw(arc_pool) as *mut ());
-            }
+        let Request::CreatePool { id: pool, fd, size } = request;
+        if size <= 0 {
+            shm.post_error(
+                Error::InvalidFd as u32,
+                "Invalid size for a new wl_shm_pool.".into(),
+            );
+            return;
         }
+        let mmap_pool = match Pool::new(fd, size as usize, self.log.clone()) {
+            Ok(p) => p,
+            Err(()) => {
+                shm.post_error(
+                    wl_shm::Error::InvalidFd as u32,
+                    format!("Failed mmap of fd {}.", fd),
+                );
+                return;
+            }
+        };
+        let arc_pool = Arc::new(mmap_pool);
+        pool.implement_nonsend(
+            {
+                let mut data = self.clone();
+                move |req, pool| data.receive_pool_message(req, pool)
+            },
+            None::<fn(_)>,
+            arc_pool,
+            &self.token,
+        );
     }
 }
 
@@ -224,11 +242,15 @@ struct InternalBufferData {
     data: BufferData,
 }
 
-impl Implementation<Resource<wl_shm_pool::WlShmPool>, wl_shm_pool::Request> for ShmGlobalData {
-    fn receive(&mut self, request: wl_shm_pool::Request, pool: Resource<wl_shm_pool::WlShmPool>) {
+impl ShmGlobalData {
+    fn receive_pool_message(
+        &mut self,
+        request: wl_shm_pool::Request,
+        pool: Resource<wl_shm_pool::WlShmPool>,
+    ) {
         use self::wl_shm_pool::Request;
 
-        let arc_pool = unsafe { &*(pool.get_user_data() as *mut Arc<Pool>) };
+        let arc_pool = pool.user_data::<Arc<Pool>>().unwrap();
 
         match request {
             Request::CreateBuffer {
@@ -246,7 +268,7 @@ impl Implementation<Resource<wl_shm_pool::WlShmPool>, wl_shm_pool::Request> for 
                     );
                     return;
                 }
-                let data = Box::into_raw(Box::new(InternalBufferData {
+                let data = InternalBufferData {
                     pool: arc_pool.clone(),
                     data: BufferData {
                         offset,
@@ -255,15 +277,16 @@ impl Implementation<Resource<wl_shm_pool::WlShmPool>, wl_shm_pool::Request> for 
                         stride,
                         format,
                     },
-                }));
-                let buffer = buffer.implement_nonsend(
-                    self.clone(),
-                    Some(|buffer: Resource<_>, _| {
-                        drop(unsafe { Box::from_raw(buffer.get_user_data() as *mut InternalBufferData) })
-                    }),
+                };
+                buffer.implement_nonsend(
+                    |req, _| {
+                        // this will break if a variant is added to wl_buffer::Request
+                        let wl_buffer::Request::Destroy = req;
+                    },
+                    None::<fn(_)>,
+                    data,
                     &self.token,
                 );
-                buffer.set_user_data(data as *mut ());
             }
             Request::Resize { size } => match arc_pool.resize(size) {
                 Ok(()) => {}
@@ -279,12 +302,5 @@ impl Implementation<Resource<wl_shm_pool::WlShmPool>, wl_shm_pool::Request> for 
             },
             Request::Destroy => {}
         }
-    }
-}
-
-impl Implementation<Resource<wl_buffer::WlBuffer>, wl_buffer::Request> for ShmGlobalData {
-    fn receive(&mut self, request: wl_buffer::Request, _pool: Resource<wl_buffer::WlBuffer>) {
-        // this will break if new requests are added to buffer =)
-        let wl_buffer::Request::Destroy = request;
     }
 }

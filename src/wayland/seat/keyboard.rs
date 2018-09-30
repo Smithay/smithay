@@ -3,9 +3,11 @@ use std::io::{Error as IoError, Write};
 use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
 use tempfile::tempfile;
-use wayland_server::{NewResource, Resource};
+use wayland_server::protocol::wl_keyboard::{
+    Event, KeyState as WlKeyState, KeymapFormat, Request, WlKeyboard,
+};
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::protocol::wl_keyboard::{Event, KeyState as WlKeyState, KeymapFormat, Request, WlKeyboard};
+use wayland_server::{NewResource, Resource};
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
 
@@ -194,18 +196,11 @@ pub(crate) fn create_keyboard_handler(
         "rules" => rules, "model" => model, "layout" => layout, "variant" => variant,
         "options" => &options
     );
-    let internal = KbdInternal::new(
-        rules,
-        model,
-        layout,
-        variant,
-        options,
-        repeat_rate,
-        repeat_delay,
-    ).map_err(|_| {
-        debug!(log, "Loading keymap failed");
-        Error::BadKeymap
-    })?;
+    let internal = KbdInternal::new(rules, model, layout, variant, options, repeat_rate, repeat_delay)
+        .map_err(|_| {
+            debug!(log, "Loading keymap failed");
+            Error::BadKeymap
+        })?;
 
     info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
 
@@ -416,7 +411,7 @@ pub(crate) fn implement_keyboard(
     let destructor = match handle {
         Some(h) => {
             let arc = h.arc.clone();
-            Some(move |keyboard: Resource<_>, _| {
+            Some(move |keyboard: Resource<_>| {
                 arc.internal
                     .lock()
                     .unwrap()
@@ -435,5 +430,6 @@ pub(crate) fn implement_keyboard(
             }
         },
         destructor,
+        (),
     )
 }

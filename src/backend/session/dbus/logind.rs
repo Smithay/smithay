@@ -31,8 +31,10 @@
 //! ```
 
 use backend::session::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
-use dbus::{BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interface, Member, Message,
-           MessageItem, OwnedFd, Path as DbusPath, Watch, WatchEvent};
+use dbus::{
+    BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interface, Member, Message, MessageItem,
+    OwnedFd, Path as DbusPath, Watch, WatchEvent,
+};
 use nix::fcntl::OFlag;
 use nix::sys::stat::{fstat, major, minor, stat};
 use std::cell::RefCell;
@@ -42,9 +44,9 @@ use std::path::Path;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use systemd::login;
-use wayland_server::LoopToken;
-use wayland_server::commons::Implementation;
-use wayland_server::sources::{FdEvent, FdInterest, Source};
+
+use wayland_server::calloop::generic::{Event, EventedRawFd, Generic};
+use wayland_server::calloop::{LoopHandle, Ready, Source};
 
 struct LogindSessionImpl {
     conn: RefCell<Connection>,
@@ -93,7 +95,7 @@ impl LogindSession {
             "GetSession",
             Some(vec![session_id.clone().into()]),
         )?.get1::<DbusPath<'static>>()
-            .chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
+        .chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
 
         // Match all signals that we want to receive and handle
         let match1 = String::from(
@@ -212,15 +214,14 @@ impl LogindSessionImpl {
             message.append_items(&arguments)
         };
 
-        let mut message = conn.send_with_reply_and_block(message, 1000)
-            .chain_err(|| {
-                ErrorKind::FailedToSendDbusCall(
-                    destination.clone(),
-                    path.clone(),
-                    interface.clone(),
-                    method.clone(),
-                )
-            })?;
+        let mut message = conn.send_with_reply_and_block(message, 1000).chain_err(|| {
+            ErrorKind::FailedToSendDbusCall(
+                destination.clone(),
+                path.clone(),
+                interface.clone(),
+                method.clone(),
+            )
+        })?;
 
         match message.as_result() {
             Ok(_) => Ok(message),
@@ -290,8 +291,7 @@ impl LogindSessionImpl {
                     let (major, minor, fd) = message.get3::<u32, u32, OwnedFd>();
                     let major = major.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
                     let minor = minor.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
-                    let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?
-                        .into_fd();
+                    let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?.into_fd();
                     debug!(self.logger, "Reactivating device ({},{})", major, minor);
                     for signal in &mut *self.signals.borrow_mut() {
                         if let &mut Some(ref mut signal) = signal {
@@ -336,8 +336,7 @@ impl Session for LogindSession {
                     (minor(stat.st_rdev) as u32).into(),
                 ]),
             )?.get2::<OwnedFd, bool>();
-            let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?
-                .into_fd();
+            let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?.into_fd();
             Ok(fd)
         } else {
             bail!(ErrorKind::SessionLost)
@@ -429,7 +428,7 @@ impl SessionNotifier for LogindSessionNotifier {
 pub struct BoundLogindSession {
     notifier: LogindSessionNotifier,
     _watches: Vec<Watch>,
-    sources: Vec<Source<FdEvent>>,
+    sources: Vec<Source<Generic<EventedRawFd>>>,
 }
 
 /// Bind a `LogindSessionNotifier` to an `EventLoop`.
@@ -437,9 +436,9 @@ pub struct BoundLogindSession {
 /// Allows the `LogindSessionNotifier` to listen for incoming signals signalling the session state.
 /// If you don't use this function `LogindSessionNotifier` will not correctly tell you the logind
 /// session state and call it's `SessionObservers`.
-pub fn logind_session_bind(
+pub fn logind_session_bind<Data: 'static>(
     notifier: LogindSessionNotifier,
-    token: &LoopToken,
+    handle: &LoopHandle<Data>,
 ) -> ::std::result::Result<BoundLogindSession, (IoError, LogindSessionNotifier)> {
     let watches = notifier.internal.conn.borrow().watch_fds();
 
@@ -448,13 +447,14 @@ pub fn logind_session_bind(
         .clone()
         .into_iter()
         .map(|watch| {
-            let mut interest = FdInterest::empty();
-            interest.set(FdInterest::READ, watch.readable());
-            interest.set(FdInterest::WRITE, watch.writable());
-            token.add_fd_event_source(watch.fd(), interest, notifier.clone())
-        })
-        .collect::<::std::result::Result<Vec<Source<FdEvent>>, (IoError, _)>>()
-        .map_err(|(err, _)| {
+            let mut source = Generic::from_raw_fd(watch.fd());
+            source.set_interest(Ready::readable() | Ready::writable());
+            handle.insert_source(source, {
+                let mut notifier = notifier.clone();
+                move |evt, _| notifier.event(evt)
+            })
+        }).collect::<::std::result::Result<Vec<Source<Generic<EventedRawFd>>>, IoError>>()
+        .map_err(|err| {
             (
                 err,
                 LogindSessionNotifier {
@@ -495,39 +495,25 @@ impl Drop for LogindSessionNotifier {
     }
 }
 
-impl Implementation<(), FdEvent> for LogindSessionNotifier {
-    fn receive(&mut self, event: FdEvent, (): ()) {
-        match event {
-            FdEvent::Ready { fd, mask } => {
-                let conn = self.internal.conn.borrow();
-                let items = conn.watch_handle(
-                    fd,
-                    match mask {
-                        x if x.contains(FdInterest::READ) && x.contains(FdInterest::WRITE) => {
-                            WatchEvent::Readable as u32 | WatchEvent::Writable as u32
-                        }
-                        x if x.contains(FdInterest::READ) => WatchEvent::Readable as u32,
-                        x if x.contains(FdInterest::WRITE) => WatchEvent::Writable as u32,
-                        _ => return,
-                    },
-                );
-                if let Err(err) = self.internal.handle_signals(items) {
-                    error!(self.internal.logger, "Error handling dbus signals: {}", err);
-                }
-            }
-            FdEvent::Error { fd, error } => {
-                warn!(
-                    self.internal.logger,
-                    "Error on dbus connection: {:?}", error
-                );
-                // handle the remaining messages, they might contain the SessionRemoved event
-                // in case the server did close the connection.
-                let conn = self.internal.conn.borrow();
-                let items = conn.watch_handle(fd, WatchEvent::Error as u32);
-                if let Err(err) = self.internal.handle_signals(items) {
-                    error!(self.internal.logger, "Error handling dbus signals: {}", err);
-                }
-            }
+impl LogindSessionNotifier {
+    fn event(&mut self, event: Event<EventedRawFd>) {
+        let fd = event.source.borrow().0;
+        let readiness = event.readiness;
+        let conn = self.internal.conn.borrow();
+        let items = conn.watch_handle(
+            fd,
+            if readiness.is_readable() && readiness.is_writable() {
+                WatchEvent::Readable as u32 | WatchEvent::Writable as u32
+            } else if readiness.is_readable() {
+                WatchEvent::Readable as u32
+            } else if readiness.is_writable() {
+                WatchEvent::Writable as u32
+            } else {
+                return;
+            },
+        );
+        if let Err(err) = self.internal.handle_signals(items) {
+            error!(self.internal.logger, "Error handling dbus signals: {}", err);
         }
     }
 }

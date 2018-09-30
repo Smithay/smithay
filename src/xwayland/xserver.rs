@@ -25,21 +25,22 @@
  *
  */
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::env;
 use std::ffi::CString;
 use std::os::unix::io::{AsRawFd, IntoRawFd};
 use std::os::unix::net::UnixStream;
+use std::rc::Rc;
 
-use nix::{Error as NixError, Result as NixResult};
 use nix::errno::Errno;
-use nix::unistd::{fork, ForkResult, Pid};
 use nix::sys::signal;
+use nix::unistd::{fork, ForkResult, Pid};
+use nix::{Error as NixError, Result as NixResult};
 
-use wayland_server::{Client, Display, LoopToken};
-use wayland_server::sources::{SignalEvent, Source};
+use wayland_server::calloop::signals::{Signal, Signals};
+use wayland_server::calloop::{LoopHandle, Source};
+use wayland_server::{Client, Display};
 
-use super::x11_sockets::{X11Lock, prepare_x11_sockets};
+use super::x11_sockets::{prepare_x11_sockets, X11Lock};
 
 /// The XWayland handle
 pub struct XWayland<WM: XWindowManager> {
@@ -66,9 +67,9 @@ pub trait XWindowManager {
 
 impl<WM: XWindowManager + 'static> XWayland<WM> {
     /// Start the XWayland server
-    pub fn init<L>(
+    pub fn init<L, Data: 'static>(
         wm: WM,
-        token: LoopToken,
+        handle: LoopHandle<Data>,
         display: Rc<RefCell<Display>>,
         logger: L,
     ) -> Result<XWayland<WM>, ()>
@@ -78,7 +79,16 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
         let log = ::slog_or_stdlog(logger);
         let inner = Rc::new(RefCell::new(Inner {
             wm,
-            token,
+            source_maker: Box::new(move |inner| {
+                handle
+                    .insert_source(
+                        Signals::new(&[Signal::SIGUSR1]).map_err(|_| ())?,
+                        move |evt, _| {
+                            debug_assert!(evt.signal() == Signal::SIGUSR1);
+                            xwayland_ready(&inner);
+                        },
+                    ).map_err(|_| ())
+            }),
             wayland_display: display,
             instance: None,
             log: log.new(o!("smithay_module" => "XWayland")),
@@ -97,7 +107,7 @@ impl<WM: XWindowManager> Drop for XWayland<WM> {
 struct XWaylandInstance {
     display_lock: X11Lock,
     wayland_client: Client,
-    sigusr1_handler: Option<Source<SignalEvent>>,
+    sigusr1_handler: Option<Source<Signals>>,
     wm_fd: Option<UnixStream>,
     started_at: ::std::time::Instant,
     child_pid: Option<Pid>,
@@ -106,7 +116,7 @@ struct XWaylandInstance {
 // Inner implementation of the XWayland manager
 struct Inner<WM: XWindowManager> {
     wm: WM,
-    token: LoopToken,
+    source_maker: Box<FnMut(Rc<RefCell<Inner<WM>>>) -> Result<Source<Signals>, ()>>,
     wayland_display: Rc<RefCell<Display>>,
     instance: Option<XWaylandInstance>,
     log: ::slog::Logger,
@@ -140,17 +150,11 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
             .borrow_mut()
             .create_client(wl_me.into_raw_fd())
     };
-    client.set_user_data(Rc::into_raw(inner.clone()) as *const () as *mut ());
-    client.set_destructor(client_destroy::<WM>);
+    client.data_map().insert_if_missing(|| inner.clone());
+    client.add_destructor(client_destroy::<WM>);
 
     // setup the SIGUSR1 handler
-    let my_inner = inner.clone();
-    let sigusr1_handler = guard
-        .token
-        .add_signal_event_source(signal::Signal::SIGUSR1, move |_, ()| {
-            xwayland_ready(&my_inner)
-        })
-        .map_err(|_| ())?;
+    let sigusr1_handler = (&mut *guard.source_maker)(inner.clone())?;
 
     // all is ready, we can do the fork dance
     let child_pid = match fork() {
@@ -242,8 +246,8 @@ impl<WM: XWindowManager> Inner<WM> {
     }
 }
 
-fn client_destroy<WM: XWindowManager + 'static>(data: *mut ()) {
-    let inner = unsafe { Rc::from_raw(data as *const () as *const RefCell<Inner<WM>>) };
+fn client_destroy<WM: XWindowManager + 'static>(map: &::wayland_server::UserDataMap) {
+    let inner = map.get::<Rc<RefCell<Inner<WM>>>>().unwrap();
 
     // shutdown the server
     let started_at = inner.borrow().instance.as_ref().map(|i| i.started_at);

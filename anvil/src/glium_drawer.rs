@@ -2,10 +2,11 @@ use glium;
 use glium::index::PrimitiveType;
 use glium::texture::{MipmapsOption, Texture2d, UncompressedFloatFormat};
 use glium::{Frame, GlObject, Surface};
-use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::egl::error::Result as EGLResult;
-use smithay::backend::graphics::egl::wayland::{BufferAccessError, EGLDisplay, EGLImages,
-                                               EGLWaylandExtensions, Format};
+use smithay::backend::graphics::egl::wayland::{
+    BufferAccessError, EGLDisplay, EGLImages, EGLWaylandExtensions, Format,
+};
+use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::graphics::glium::GliumGraphicsBackend;
 use smithay::wayland::compositor::roles::Role;
 use smithay::wayland::compositor::{SubsurfaceRole, TraversalAction};
@@ -199,8 +200,7 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                     blend: blending,
                     ..Default::default()
                 },
-            )
-            .unwrap();
+            ).unwrap();
     }
 
     #[inline]
@@ -282,8 +282,7 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                                     TraversalAction::SkipChildren
                                 }
                             },
-                        )
-                        .unwrap();
+                        ).unwrap();
                 }
             });
         }

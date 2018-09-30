@@ -1,16 +1,18 @@
 //! Implementation of backend traits for types provided by `winit`
 
-use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{EGLContext, EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError};
 use backend::graphics::egl::context::GlAttributes;
 use backend::graphics::egl::error as egl_error;
 use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::native;
 use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
-use backend::input::{Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState,
-                     KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
-                     PointerMotionAbsoluteEvent, Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent,
-                     TouchMotionEvent, TouchSlot, TouchUpEvent, UnusedEvent};
+use backend::graphics::egl::{EGLContext, EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError};
+use backend::graphics::GraphicsBackend;
+use backend::input::{
+    Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState, KeyboardKeyEvent,
+    MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent, Seat,
+    SeatCapabilities, TouchCancelEvent, TouchDownEvent, TouchMotionEvent, TouchSlot, TouchUpEvent,
+    UnusedEvent,
+};
 use nix::libc::c_void;
 use std::cmp;
 use std::error;
@@ -19,8 +21,10 @@ use std::rc::Rc;
 use std::time::Instant;
 use wayland_client::egl as wegl;
 use wayland_server::Display;
-use winit::{ElementState, Event, EventsLoop, KeyboardInput, MouseButton as WinitMouseButton, MouseCursor,
-            MouseScrollDelta, Touch, TouchPhase, Window as WinitWindow, WindowBuilder, WindowEvent};
+use winit::{
+    ElementState, Event, EventsLoop, KeyboardInput, MouseButton as WinitMouseButton, MouseCursor,
+    MouseScrollDelta, Touch, TouchPhase, Window as WinitWindow, WindowBuilder, WindowEvent,
+};
 
 error_chain! {
     errors {
@@ -136,9 +140,7 @@ where
     info!(log, "Initializing a winit backend");
 
     let events_loop = EventsLoop::new();
-    let winit_window = builder
-        .build(&events_loop)
-        .chain_err(|| ErrorKind::InitFailed)?;
+    let winit_window = builder.build(&events_loop).chain_err(|| ErrorKind::InitFailed)?;
     debug!(log, "Window created");
 
     let reqs = Default::default();
@@ -367,24 +369,16 @@ impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
 
     fn x_transformed(&self, width: u32) -> u32 {
         cmp::max(
-            (self.x * width as f64
-                / self.window
-                    .window()
-                    .get_inner_size()
-                    .unwrap_or((width, 0))
-                    .0 as f64) as i32,
+            (self.x * width as f64 / self.window.window().get_inner_size().unwrap_or((width, 0)).0 as f64)
+                as i32,
             0,
         ) as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
         cmp::max(
-            (self.y * height as f64
-                / self.window
-                    .window()
-                    .get_inner_size()
-                    .unwrap_or((0, height))
-                    .1 as f64) as i32,
+            (self.y * height as f64 / self.window.window().get_inner_size().unwrap_or((0, height)).1 as f64)
+                as i32,
             0,
         ) as u32
     }
@@ -483,11 +477,7 @@ impl TouchDownEvent for WinitTouchStartedEvent {
     fn x_transformed(&self, width: u32) -> u32 {
         cmp::min(
             self.location.0 as i32 * width as i32
-                / self.window
-                    .window()
-                    .get_inner_size()
-                    .unwrap_or((width, 0))
-                    .0 as i32,
+                / self.window.window().get_inner_size().unwrap_or((width, 0)).0 as i32,
             0,
         ) as u32
     }
@@ -495,11 +485,7 @@ impl TouchDownEvent for WinitTouchStartedEvent {
     fn y_transformed(&self, height: u32) -> u32 {
         cmp::min(
             self.location.1 as i32 * height as i32
-                / self.window
-                    .window()
-                    .get_inner_size()
-                    .unwrap_or((0, height))
-                    .1 as i32,
+                / self.window.window().get_inner_size().unwrap_or((0, height)).1 as i32,
             0,
         ) as u32
     }
@@ -534,21 +520,11 @@ impl TouchMotionEvent for WinitTouchMovedEvent {
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        self.location.0 as u32 * width
-            / self.window
-                .window()
-                .get_inner_size()
-                .unwrap_or((width, 0))
-                .0
+        self.location.0 as u32 * width / self.window.window().get_inner_size().unwrap_or((width, 0)).0
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        self.location.1 as u32 * height
-            / self.window
-                .window()
-                .get_inner_size()
-                .unwrap_or((0, height))
-                .1
+        self.location.1 as u32 * height / self.window.window().get_inner_size().unwrap_or((0, height)).1
     }
 }
 
@@ -644,11 +620,7 @@ impl InputBackend for WinitInputBackend {
 
     fn clear_handler(&mut self) {
         if let Some(mut handler) = self.handler.take() {
-            trace!(
-                self.logger,
-                "Calling on_seat_destroyed with {:?}",
-                self.seat
-            );
+            trace!(self.logger, "Calling on_seat_destroyed with {:?}", self.seat);
             handler.on_seat_destroyed(&self.seat);
         }
         info!(self.logger, "Removing input handler");
@@ -714,10 +686,7 @@ impl InputBackend for WinitInputBackend {
                         }
                         (
                             WindowEvent::KeyboardInput {
-                                input:
-                                    KeyboardInput {
-                                        scancode, state, ..
-                                    },
+                                input: KeyboardInput { scancode, state, .. },
                                 ..
                             },
                             Some(handler),
@@ -729,11 +698,7 @@ impl InputBackend for WinitInputBackend {
                                     *key_counter = key_counter.checked_sub(1).unwrap_or(0)
                                 }
                             };
-                            trace!(
-                                logger,
-                                "Calling on_keyboard_key with {:?}",
-                                (scancode, state)
-                            );
+                            trace!(logger, "Calling on_keyboard_key with {:?}", (scancode, state));
                             handler.on_keyboard_key(
                                 seat,
                                 WinitKeyboardInputEvent {
@@ -744,13 +709,7 @@ impl InputBackend for WinitInputBackend {
                                 },
                             )
                         }
-                        (
-                            WindowEvent::CursorMoved {
-                                position: (x, y), ..
-                            },
-                            Some(handler),
-                            _,
-                        ) => {
+                        (WindowEvent::CursorMoved { position: (x, y), .. }, Some(handler), _) => {
                             trace!(logger, "Calling on_pointer_move_absolute with {:?}", (x, y));
                             handler.on_pointer_move_absolute(
                                 seat,
@@ -768,19 +727,8 @@ impl InputBackend for WinitInputBackend {
                             handler.on_pointer_axis(seat, event);
                         }
                         (WindowEvent::MouseInput { state, button, .. }, Some(handler), _) => {
-                            trace!(
-                                logger,
-                                "Calling on_pointer_button with {:?}",
-                                (button, state)
-                            );
-                            handler.on_pointer_button(
-                                seat,
-                                WinitMouseInputEvent {
-                                    time,
-                                    button,
-                                    state,
-                                },
-                            )
+                            trace!(logger, "Calling on_pointer_button with {:?}", (button, state));
+                            handler.on_pointer_button(seat, WinitMouseInputEvent { time, button, state })
                         }
                         (
                             WindowEvent::Touch(Touch {

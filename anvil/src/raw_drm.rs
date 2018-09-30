@@ -5,17 +5,18 @@ use std::os::unix::io::RawFd;
 use std::rc::Rc;
 use std::time::Duration;
 
-use smithay::drm::Device as BasicDevice;
-use smithay::drm::control::{Device as ControlDevice, ResourceInfo};
+use smithay::backend::drm::{drm_device_bind, DrmBackend, DrmDevice, DrmHandler};
+use smithay::backend::graphics::egl::wayland::EGLWaylandExtensions;
 use smithay::drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
 use smithay::drm::control::crtc;
 use smithay::drm::control::encoder::Info as EncoderInfo;
+use smithay::drm::control::{Device as ControlDevice, ResourceInfo};
 use smithay::drm::result::Error as DrmError;
-use smithay::backend::drm::{drm_device_bind, DrmBackend, DrmDevice, DrmHandler};
-use smithay::backend::graphics::egl::wayland::EGLWaylandExtensions;
+use smithay::drm::Device as BasicDevice;
 use smithay::wayland::compositor::CompositorToken;
 use smithay::wayland::shm::init_shm_global;
-use smithay::wayland_server::{Display, EventLoop};
+use smithay::wayland_server::calloop::EventLoop;
+use smithay::wayland_server::Display;
 
 use glium::Surface;
 use slog::Logger;
@@ -35,7 +36,7 @@ impl AsRawFd for Card {
 impl BasicDevice for Card {}
 impl ControlDevice for Card {}
 
-pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop, log: Logger) -> Result<(), ()> {
+pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop<()>, log: Logger) -> Result<(), ()> {
     /*
      * Initialize the drm backend
      */
@@ -43,10 +44,8 @@ pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop, log: Logger)
     let mut options = OpenOptions::new();
     options.read(true);
     options.write(true);
-    let mut device = DrmDevice::new(
-        Card(options.clone().open("/dev/dri/card0").unwrap()),
-        log.clone(),
-    ).unwrap();
+    let mut device =
+        DrmDevice::new(Card(options.clone().open("/dev/dri/card0").unwrap()), log.clone()).unwrap();
 
     // Get a set of all modesetting resource handles (excluding planes):
     let res_handles = device.resource_handles().unwrap();
@@ -100,9 +99,9 @@ pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop, log: Logger)
      * Initialize the globals
      */
 
-    init_shm_global(&mut display, event_loop.token(), vec![], log.clone());
+    init_shm_global(&mut display, vec![], log.clone());
 
-    let (compositor_token, _, _, window_map) = init_shell(&mut display, event_loop.token(), log.clone());
+    let (compositor_token, _, _, window_map) = init_shell(&mut display, log.clone());
 
     /*
      * Add a listening socket:
@@ -114,7 +113,7 @@ pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop, log: Logger)
      * Register the DrmDevice on the EventLoop
      */
     let _source = drm_device_bind(
-        &event_loop.token(),
+        &event_loop.handle(),
         device,
         DrmHandlerImpl {
             compositor_token,
@@ -123,10 +122,12 @@ pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop, log: Logger)
             logger: log,
         },
     ).map_err(|(err, _)| err)
-        .unwrap();
+    .unwrap();
 
     loop {
-        event_loop.dispatch(Some(16)).unwrap();
+        event_loop
+            .dispatch(Some(::std::time::Duration::from_millis(16)), &mut ())
+            .unwrap();
         display.flush_clients();
 
         window_map.borrow_mut().refresh();
@@ -148,11 +149,8 @@ impl DrmHandler<Card> for DrmHandlerImpl {
         _frame: u32,
         _duration: Duration,
     ) {
-        self.drawer.draw_windows(
-            &*self.window_map.borrow(),
-            self.compositor_token,
-            &self.logger,
-        );
+        self.drawer
+            .draw_windows(&*self.window_map.borrow(), self.compositor_token, &self.logger);
     }
 
     fn error(&mut self, _device: &mut DrmDevice<Card>, error: DrmError) {

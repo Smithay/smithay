@@ -10,6 +10,7 @@ extern crate smithay;
 extern crate xkbcommon;
 
 use slog::Drain;
+use smithay::wayland_server::calloop::EventLoop;
 use smithay::wayland_server::Display;
 
 #[macro_use]
@@ -42,7 +43,8 @@ fn main() {
         o!(),
     );
 
-    let (mut display, mut event_loop) = Display::new();
+    let mut event_loop = EventLoop::<()>::new().unwrap();
+    let mut display = Display::new(event_loop.handle());
 
     let arg = ::std::env::args().nth(1);
     match arg.as_ref().map(|s| &s[..]) {

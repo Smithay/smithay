@@ -10,14 +10,14 @@
 //! You may then use the resulting `EGLDisplay` to recieve `EGLImages` of an egl-based `WlBuffer`
 //! for rendering.
 
-use backend::graphics::egl::{ffi, native, EGLContext, EglExtensionNotSupportedError};
 use backend::graphics::egl::error::*;
 use backend::graphics::egl::ffi::egl::types::EGLImage;
+use backend::graphics::egl::{ffi, native, EGLContext, EglExtensionNotSupportedError};
 use nix::libc::c_uint;
 use std::fmt;
 use std::rc::{Rc, Weak};
-use wayland_server::{Display, Resource};
 use wayland_server::protocol::wl_buffer::{self, WlBuffer};
+use wayland_server::{Display, Resource};
 use wayland_sys::server::wl_display;
 
 /// Error that can occur when accessing an EGL buffer
@@ -110,12 +110,9 @@ impl fmt::Display for TextureCreationError {
         match *self {
             TextureCreationError::ContextLost => write!(formatter, "{}", self.description()),
             TextureCreationError::PlaneIndexOutOfBounds => write!(formatter, "{}", self.description()),
-            TextureCreationError::TextureBindingFailed(code) => write!(
-                formatter,
-                "{}. Gl error code: {:?}",
-                self.description(),
-                code
-            ),
+            TextureCreationError::TextureBindingFailed(code) => {
+                write!(formatter, "{}. Gl error code: {:?}", self.description(), code)
+            }
         }
     }
 }
@@ -203,7 +200,8 @@ impl EGLImages {
             ffi::gl::BindTexture(ffi::gl::TEXTURE_2D, tex_id);
             ffi::gl::EGLImageTargetTexture2DOES(
                 ffi::gl::TEXTURE_2D,
-                *self.images
+                *self
+                    .images
                     .get(plane)
                     .ok_or(TextureCreationError::PlaneIndexOutOfBounds)?,
             );

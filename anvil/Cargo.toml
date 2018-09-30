@@ -11,7 +11,7 @@ slog-term = "2.3"
 slog-async = "2.2"
 rand = "0.3"
 glium = { version = "0.19.0", default-features = false }
-wayland-server = "0.20"
+wayland-server = "0.21"
 xkbcommon = "0.2.1"
 
 [dependencies.smithay]
@@ -28,4 +28,3 @@ winit = [ "smithay/backend_winit" ]
 tty_launch = [ "smithay/backend_libinput", "smithay/backend_drm" ]
 udev = [ "tty_launch", "smithay/backend_udev" ]
 logind = [ "smithay/backend_session_logind" ]
-

@@ -1,12 +1,12 @@
 //! EGL context related structs
 
-use super::{ffi, EGLSurface, PixelFormat};
 use super::error::*;
 use super::native;
-#[cfg(feature = "backend_drm")]
-use drm::Device as BasicDevice;
+use super::{ffi, EGLSurface, PixelFormat};
 #[cfg(feature = "backend_drm")]
 use drm::control::Device as ControlDevice;
+#[cfg(feature = "backend_drm")]
+use drm::Device as BasicDevice;
 #[cfg(feature = "backend_drm")]
 use gbm::Device as GbmDevice;
 use nix::libc::{c_int, c_void};
@@ -89,17 +89,15 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         mut attributes: GlAttributes,
         reqs: PixelFormatRequirements,
         log: ::slog::Logger,
-    ) -> Result<
-        (
-            Rc<ffi::egl::types::EGLContext>,
-            Rc<ffi::egl::types::EGLDisplay>,
-            ffi::egl::types::EGLConfig,
-            Vec<c_int>,
-            PixelFormat,
-            bool,
-            bool,
-        ),
-    > {
+    ) -> Result<(
+        Rc<ffi::egl::types::EGLContext>,
+        Rc<ffi::egl::types::EGLDisplay>,
+        ffi::egl::types::EGLConfig,
+        Vec<c_int>,
+        PixelFormat,
+        bool,
+        bool,
+    )> {
         // If no version is given, try OpenGLES 3.0, if available,
         // fallback to 2.0 otherwise
         let version = match attributes.version {
@@ -119,10 +117,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
                 }
             }
             Some((1, x)) => {
-                error!(
-                    log,
-                    "OpenGLES 1.* is not supported by the EGL renderer backend"
-                );
+                error!(log, "OpenGLES 1.* is not supported by the EGL renderer backend");
                 bail!(ErrorKind::OpenGlVersionNotSupported((1, x)));
             }
             Some(version) => {
@@ -178,11 +173,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
 
         debug!(log, "EGL No-Display Extensions: {:?}", dp_extensions);
 
-        let display = B::get_display(
-            ptr,
-            |e: &str| dp_extensions.iter().any(|s| s == e),
-            log.clone(),
-        );
+        let display = B::get_display(ptr, |e: &str| dp_extensions.iter().any(|s| s == e), log.clone());
         if display == ffi::egl::NO_DISPLAY {
             error!(log, "EGL Display is not valid");
             bail!(ErrorKind::DisplayNotSupported);
@@ -215,10 +206,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         info!(log, "EGL Extensions: {:?}", extensions);
 
         if egl_version >= (1, 2) && ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) == 0 {
-            error!(
-                log,
-                "OpenGLES not supported by the underlying EGL implementation"
-            );
+            error!(log, "OpenGLES not supported by the underlying EGL implementation");
             bail!(ErrorKind::OpenGlesNotSupported);
         }
 
@@ -339,14 +327,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         // calling `eglChooseConfig`
         let mut config_id = mem::uninitialized();
         let mut num_configs = mem::uninitialized();
-        if ffi::egl::ChooseConfig(
-            display,
-            descriptor.as_ptr(),
-            &mut config_id,
-            1,
-            &mut num_configs,
-        ) == 0
-        {
+        if ffi::egl::ChooseConfig(display, descriptor.as_ptr(), &mut config_id, 1, &mut num_configs) == 0 {
             bail!(ErrorKind::ConfigFailed);
         }
         if num_configs == 0 {
@@ -356,17 +337,14 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
 
         // analyzing each config
         macro_rules! attrib {
-            ($display:expr, $config:expr, $attr:expr) => (
-                {
-                    let mut value = mem::uninitialized();
-                    let res = ffi::egl::GetConfigAttrib($display, $config,
-                                                   $attr as ffi::egl::types::EGLint, &mut value);
-                    if res == 0 {
-                        bail!(ErrorKind::ConfigFailed);
-                    }
-                    value
+            ($display:expr, $config:expr, $attr:expr) => {{
+                let mut value = mem::uninitialized();
+                let res = ffi::egl::GetConfigAttrib($display, $config, $attr as ffi::egl::types::EGLint, &mut value);
+                if res == 0 {
+                    bail!(ErrorKind::ConfigFailed);
                 }
-            )
+                value
+            }};
         };
 
         let desc = PixelFormat {
@@ -450,12 +428,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         info!(log, "EGL context created");
 
         // make current and get list of gl extensions
-        ffi::egl::MakeCurrent(
-            display as *const _,
-            ptr::null(),
-            ptr::null(),
-            context as *const _,
-        );
+        ffi::egl::MakeCurrent(display as *const _, ptr::null(), ptr::null(), context as *const _);
 
         // the list of gl extensions supported by the context
         let gl_extensions = {
@@ -474,9 +447,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             config_id,
             surface_attributes,
             desc,
-            extensions
-                .iter()
-                .any(|s| *s == "EGL_WL_bind_wayland_display"),
+            extensions.iter().any(|s| *s == "EGL_WL_bind_wayland_display"),
             gl_extensions
                 .iter()
                 .any(|s| *s == "GL_OES_EGL_image" || *s == "GL_OES_EGL_image_base"),

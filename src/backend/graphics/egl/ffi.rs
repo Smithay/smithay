@@ -25,9 +25,7 @@ pub mod egl {
     use std::sync::{Once, ONCE_INIT};
 
     lazy_static! {
-        pub static ref LIB: Library = {
-            Library::new("libEGL.so.1").expect("Failed to load LibEGL")
-        };
+        pub static ref LIB: Library = { Library::new("libEGL.so.1").expect("Failed to load LibEGL") };
     }
 
     pub static LOAD: Once = ONCE_INIT;
@@ -101,9 +99,9 @@ pub mod egl {
 
     #[allow(non_snake_case)]
     pub mod BindWaylandDisplayWL {
-        use super::{metaloadfn, wayland_storage};
         use super::FnPtr;
         use super::__gl_imports::raw;
+        use super::{metaloadfn, wayland_storage};
 
         #[inline]
         #[allow(dead_code)]
@@ -125,9 +123,9 @@ pub mod egl {
 
     #[allow(non_snake_case)]
     pub mod UnbindWaylandDisplayWL {
-        use super::{metaloadfn, wayland_storage};
         use super::FnPtr;
         use super::__gl_imports::raw;
+        use super::{metaloadfn, wayland_storage};
 
         #[inline]
         #[allow(dead_code)]
@@ -149,9 +147,9 @@ pub mod egl {
 
     #[allow(non_snake_case)]
     pub mod QueryWaylandBufferWL {
-        use super::{metaloadfn, wayland_storage};
         use super::FnPtr;
         use super::__gl_imports::raw;
+        use super::{metaloadfn, wayland_storage};
 
         #[inline]
         #[allow(dead_code)]

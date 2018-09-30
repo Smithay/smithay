@@ -1,15 +1,17 @@
-use super::DevPath;
 use super::error::*;
-use backend::graphics::GraphicsBackend;
-use backend::graphics::egl::{EGLContext, EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError};
+use super::DevPath;
 use backend::graphics::egl::error::Result as EGLResult;
 use backend::graphics::egl::native::{Gbm, GbmSurfaceArguments};
 use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
-use drm::Device as BasicDevice;
-use drm::control::{Device, ResourceInfo};
+use backend::graphics::egl::{EGLContext, EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError};
+use backend::graphics::GraphicsBackend;
 use drm::control::{connector, crtc, encoder, framebuffer, Mode};
-use gbm::{BufferObject, BufferObjectFlags, Device as GbmDevice, Format as GbmFormat, Surface as GbmSurface,
-          SurfaceBufferHandle};
+use drm::control::{Device, ResourceInfo};
+use drm::Device as BasicDevice;
+use gbm::{
+    BufferObject, BufferObjectFlags, Device as GbmDevice, Format as GbmFormat, Surface as GbmSurface,
+    SurfaceBufferHandle,
+};
 use image::{ImageBuffer, Rgba};
 use nix::libc::c_void;
 use std::cell::Cell;
@@ -54,19 +56,12 @@ impl<A: Device + 'static> DrmBackend<A> {
                 size: (w as u32, h as u32),
                 format: GbmFormat::XRGB8888,
                 flags: BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
-            })
-            .chain_err(|| ErrorKind::GbmInitFailed)?;
+            }).chain_err(|| ErrorKind::GbmInitFailed)?;
 
         // make it active for the first `crtc::set`
         // (which is needed before the first page_flip)
-        unsafe {
-            surface
-                .make_current()
-                .chain_err(|| ErrorKind::FailedToSwap)?
-        };
-        surface
-            .swap_buffers()
-            .chain_err(|| ErrorKind::FailedToSwap)?;
+        unsafe { surface.make_current().chain_err(|| ErrorKind::FailedToSwap)? };
+        surface.swap_buffers().chain_err(|| ErrorKind::FailedToSwap)?;
 
         // init the first screen
         // (must be done before calling page_flip for the first time)
@@ -78,21 +73,11 @@ impl<A: Device + 'static> DrmBackend<A> {
 
         // we need a framebuffer for the front buffer
         let fb = framebuffer::create(&*context, &*front_bo).chain_err(|| {
-            ErrorKind::DrmDev(format!(
-                "Error creating framebuffer on {:?}",
-                context.dev_path()
-            ))
+            ErrorKind::DrmDev(format!("Error creating framebuffer on {:?}", context.dev_path()))
         })?;
 
         debug!(log, "Initialize screen");
-        crtc::set(
-            &*context,
-            crtc,
-            fb.handle(),
-            &connectors,
-            (0, 0),
-            Some(mode),
-        ).chain_err(|| {
+        crtc::set(&*context, crtc, fb.handle(), &connectors, (0, 0), Some(mode)).chain_err(|| {
             ErrorKind::DrmDev(format!(
                 "Error setting crtc {:?} on {:?}",
                 crtc,
@@ -108,8 +93,7 @@ impl<A: Device + 'static> DrmBackend<A> {
                     1,
                     GbmFormat::ARGB8888,
                     BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
-                )
-                .chain_err(|| ErrorKind::GbmInitFailed)?,
+                ).chain_err(|| ErrorKind::GbmInitFailed)?,
             (0, 0),
         ));
 
@@ -149,7 +133,8 @@ impl<A: Device + 'static> DrmBackend<A> {
         // check if the connector can handle the current mode
         if info.modes().contains(&self.mode) {
             // check if there is a valid encoder
-            let encoders = info.encoders()
+            let encoders = info
+                .encoders()
                 .iter()
                 .map(|encoder| {
                     encoder::Info::load_from_device(&*self.backend.context, *encoder).chain_err(|| {
@@ -158,8 +143,7 @@ impl<A: Device + 'static> DrmBackend<A> {
                             self.backend.context.dev_path()
                         ))
                     })
-                })
-                .collect::<Result<Vec<encoder::Info>>>()?;
+                }).collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
             let resource_handles = self.backend.context.resource_handles().chain_err(|| {
@@ -171,11 +155,11 @@ impl<A: Device + 'static> DrmBackend<A> {
             if !encoders
                 .iter()
                 .map(|encoder| encoder.possible_crtcs())
-                .all(|crtc_list|
+                .all(|crtc_list| {
                     resource_handles
                         .filter_crtcs(crtc_list)
                         .contains(&self.backend.crtc)
-                ) {
+                }) {
                 bail!(ErrorKind::NoSuitableEncoder(info, self.backend.crtc));
             }
 
@@ -232,8 +216,7 @@ impl<A: Device + 'static> DrmBackend<A> {
                         "Error loading connector info on {:?}",
                         self.backend.context.dev_path()
                     ))
-                })?
-                .modes()
+                })?.modes()
                 .contains(&mode)
             {
                 bail!(ErrorKind::ModeNotSuitable(mode));
@@ -249,25 +232,19 @@ impl<A: Device + 'static> DrmBackend<A> {
             self.backend.logger,
             "Reinitializing surface for new mode: {}:{}", w, h
         );
-        let surface = self.backend
+        let surface = self
+            .backend
             .context
             .create_surface(GbmSurfaceArguments {
                 size: (w as u32, h as u32),
                 format: GbmFormat::XRGB8888,
                 flags: BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
-            })
-            .chain_err(|| ErrorKind::GbmInitFailed)?;
+            }).chain_err(|| ErrorKind::GbmInitFailed)?;
 
         // make it active for the first `crtc::set`
         // (which is needed before the first page_flip)
-        unsafe {
-            surface
-                .make_current()
-                .chain_err(|| ErrorKind::FailedToSwap)?
-        };
-        surface
-            .swap_buffers()
-            .chain_err(|| ErrorKind::FailedToSwap)?;
+        unsafe { surface.make_current().chain_err(|| ErrorKind::FailedToSwap)? };
+        surface.swap_buffers().chain_err(|| ErrorKind::FailedToSwap)?;
 
         // Clean up next_buffer
         {
@@ -412,11 +389,7 @@ impl<A: Device + 'static> GraphicsBackend for DrmBackend<A> {
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
         trace!(self.backend.logger, "Move the cursor to {},{}", x, y);
-        crtc::move_cursor(
-            &*self.backend.context,
-            self.backend.crtc,
-            (x as i32, y as i32),
-        ).chain_err(|| {
+        crtc::move_cursor(&*self.backend.context, self.backend.crtc, (x as i32, y as i32)).chain_err(|| {
             ErrorKind::DrmDev(format!(
                 "Error moving cursor on {:?}",
                 self.backend.context.dev_path()
@@ -433,15 +406,15 @@ impl<A: Device + 'static> GraphicsBackend for DrmBackend<A> {
         debug!(self.backend.logger, "Importing cursor");
 
         // import the cursor into a buffer we can render
-        let mut cursor = self.backend
+        let mut cursor = self
+            .backend
             .context
             .create_buffer_object(
                 w,
                 h,
                 GbmFormat::ARGB8888,
                 BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
-            )
-            .chain_err(|| ErrorKind::GbmInitFailed)?;
+            ).chain_err(|| ErrorKind::GbmInitFailed)?;
         cursor
             .write(&**buffer)
             .chain_err(|| ErrorKind::GbmInitFailed)?
@@ -495,7 +468,8 @@ impl<A: Device + 'static> EGLGraphicsBackend for DrmBackend<A> {
         // would most likely result in a lot of flickering.
         // neither weston, wlc or wlroots bother with that as well.
         // so we just assume we got at least two buffers to do flipping.
-        let mut next_bo = self.surface
+        let mut next_bo = self
+            .surface
             .lock_front_buffer()
             .expect("Surface only has one front buffer. Not supported by smithay");
 

@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
-use wayland_server::{NewResource, Resource};
-use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::protocol::wl_pointer::{Axis, AxisSource, ButtonState, Event, Request, WlPointer};
+use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::{NewResource, Resource};
 
 // TODO: handle pointer surface role
 
@@ -138,7 +138,7 @@ impl PointerHandle {
     ///
     /// A single frame will group multiple scroll events as if they happended in the same instance.
     /// Dropping the returned `PointerAxisHandle` will group the events together.
-    pub fn axis(& self) -> PointerAxisHandle {
+    pub fn axis(&self) -> PointerAxisHandle {
         PointerAxisHandle {
             inner: self.inner.lock().unwrap(),
         }
@@ -171,9 +171,7 @@ impl<'a> PointerAxisHandle<'a> {
     pub fn source(&mut self, source: AxisSource) -> &mut Self {
         self.inner.with_focused_pointers(|pointer, _| {
             if pointer.version() >= 5 {
-                pointer.send(Event::AxisSource {
-                    axis_source: source,
-                });
+                pointer.send(Event::AxisSource { axis_source: source });
             }
         });
         self
@@ -245,7 +243,7 @@ pub(crate) fn implement_pointer(
     let destructor = match handle {
         Some(h) => {
             let inner = h.inner.clone();
-            Some(move |pointer: Resource<_>, _| {
+            Some(move |pointer: Resource<_>| {
                 inner
                     .lock()
                     .unwrap()
@@ -267,5 +265,6 @@ pub(crate) fn implement_pointer(
             }
         },
         destructor,
+        (),
     )
 }

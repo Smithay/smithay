@@ -35,7 +35,6 @@
 //! use smithay::wayland::compositor::roles::*;
 //! use smithay::wayland::compositor::CompositorToken;
 //! use smithay::wayland::shell::legacy::{wl_shell_init, ShellSurfaceRole, ShellRequest};
-//! use wayland_server::{EventLoop, LoopToken};
 //! # use wayland_server::protocol::{wl_seat, wl_output};
 //! # #[derive(Default)] struct MySurfaceData;
 //!
@@ -51,21 +50,19 @@
 //! );
 //!
 //! # fn main() {
-//! # let (mut display, event_loop) = wayland_server::Display::new();
+//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
+//! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! # let (compositor_token, _, _) = smithay::wayland::compositor::compositor_init::<(), MyRoles, _, _>(
 //! #     &mut display,
-//! #     event_loop.token(),
-//! #     |_, _| {},
+//! #     |_, _, _| {},
 //! #     None
 //! # );
 //! let (shell_state, _) = wl_shell_init(
 //!     &mut display,
-//!     event_loop.token(),
 //!     // token from the compositor implementation
 //!     compositor_token,
-//!     // your implementation, can also be a strucy implementing the
-//!     // appropriate Implementation<(), ShellRequest<_, _, _>> trait
-//!     |event: ShellRequest<_, _, MyShellSurfaceData>, ()| { /* ... */ },
+//!     // your implementation
+//!     |event: ShellRequest<_, _, MyShellSurfaceData>| { /* ... */ },
 //!     None  // put a logger if you want
 //! );
 //!
@@ -73,16 +70,15 @@
 //! # }
 //! ```
 
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use wayland::compositor::CompositorToken;
 use wayland::compositor::roles::Role;
+use wayland::compositor::CompositorToken;
 
-use wayland_server::{Display, Global, LoopToken, Resource};
-use wayland_server::commons::Implementation;
 use wayland_server::protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface};
+use wayland_server::{Display, Global, Resource};
 
 mod wl_handlers;
 
@@ -154,8 +150,7 @@ where
             }
         });
         if let Ok(true) = ret {
-            self.shell_surface
-                .send(wl_shell_surface::Event::Ping { serial });
+            self.shell_surface.send(wl_shell_surface::Event::Ping { serial });
             Ok(())
         } else {
             Err(())
@@ -318,7 +313,6 @@ where
 /// Create a new `wl_shell` global
 pub fn wl_shell_init<U, R, D, L, Impl>(
     display: &mut Display,
-    ltoken: LoopToken,
     ctoken: CompositorToken<U, R>,
     implementation: Impl,
     logger: L,
@@ -328,23 +322,23 @@ where
     D: Default + 'static,
     R: Role<ShellSurfaceRole<D>> + 'static,
     L: Into<Option<::slog::Logger>>,
-    Impl: Implementation<(), ShellRequest<U, R, D>>,
+    Impl: FnMut(ShellRequest<U, R, D>) + 'static,
 {
     let _log = ::slog_or_stdlog(logger);
 
     let implementation = Rc::new(RefCell::new(implementation));
 
-    let ltoken2 = ltoken.clone();
+    let dtoken = display.get_token();
 
     let state = Arc::new(Mutex::new(ShellState {
         known_surfaces: Vec::new(),
     }));
     let state2 = state.clone();
 
-    let global = display.create_global(&ltoken2, 1, move |_version, shell| {
+    let global = display.create_global(1, move |shell, _version| {
         self::wl_handlers::implement_shell(
             shell,
-            ltoken.clone(),
+            dtoken.clone(),
             ctoken,
             implementation.clone(),
             state2.clone(),

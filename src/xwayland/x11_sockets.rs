@@ -2,9 +2,9 @@ use std::io::{Read, Write};
 use std::os::unix::io::FromRawFd;
 use std::os::unix::net::UnixStream;
 
-use nix::{Error as NixError, Result as NixResult};
 use nix::errno::Errno;
 use nix::sys::socket;
+use nix::{Error as NixError, Result as NixResult};
 
 /// Find a free X11 display slot and setup
 pub(crate) fn prepare_x11_sockets(log: ::slog::Logger) -> Result<(X11Lock, [UnixStream; 2]), ()> {
@@ -62,11 +62,13 @@ impl X11Lock {
                 let mut spid = [0u8; 11];
                 file.read_exact(&mut spid).map_err(|_| ())?;
                 ::std::mem::drop(file);
-                let pid = ::nix::unistd::Pid::from_raw(::std::str::from_utf8(&spid)
-                    .map_err(|_| ())?
-                    .trim()
-                    .parse::<i32>()
-                    .map_err(|_| ())?);
+                let pid = ::nix::unistd::Pid::from_raw(
+                    ::std::str::from_utf8(&spid)
+                        .map_err(|_| ())?
+                        .trim()
+                        .parse::<i32>()
+                        .map_err(|_| ())?,
+                );
                 if let Err(NixError::Sys(Errno::ESRCH)) = ::nix::sys::signal::kill(pid, None) {
                     // no process whose pid equals the contents of the lockfile exists
                     // remove the lockfile and try grabbing it again

@@ -22,18 +22,18 @@
 //! use wayland_server::protocol::wl_output;
 //!
 //! # fn main() {
-//! # let (mut display, event_loop) = wayland_server::Display::new();
+//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
+//! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! // Create the Output with given name and physical properties
 //! let (output, _output_global) = Output::new(
-//!     &mut display, // the display
-//!     event_loop.token(), // the LoopToken
+//!     &mut display,      // the display
 //!     "output-0".into(), // the name of this output,
 //!     PhysicalProperties {
-//!         width: 200, // width in mm
-//!         height: 150, // height in mm,
-//!         subpixel: wl_output::Subpixel::HorizontalRgb, // subpixel information
-//!         maker: "Screens Inc".into(), // manufacturer of the monitor
-//!         model: "Monitor Ultra".into(), // model of the monitor
+//!         width: 200,                     // width in mm
+//!         height: 150,                    // height in mm,
+//!         subpixel: wl_output::Subpixel::HorizontalRgb,  // subpixel information
+//!         make: "Screens Inc".into(),     // make of the monitor
+//!         model: "Monitor Ultra".into(),  // model of the monitor
 //!     },
 //!     None // insert a logger here
 //! );
@@ -53,10 +53,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use wayland_server::{Display, Global, LoopToken, NewResource, Resource};
-use wayland_server::commons::{downcast_impl, Implementation};
 use wayland_server::protocol::wl_output::{Event, Mode as WMode, Request, WlOutput};
 pub use wayland_server::protocol::wl_output::{Subpixel, Transform};
+use wayland_server::{Display, Global, NewResource, Resource};
 
 /// An output mode
 ///
@@ -84,8 +83,8 @@ pub struct PhysicalProperties {
     pub height: i32,
     /// The subpixel geometry
     pub subpixel: Subpixel,
-    /// Textual representation of the manufacturer
-    pub maker: String,
+    /// Textual representation of the make
+    pub make: String,
     /// Textual representation of the model
     pub model: String,
 }
@@ -148,24 +147,10 @@ impl Inner {
             physical_width: self.physical.width,
             physical_height: self.physical.height,
             subpixel: self.physical.subpixel,
-            make: self.physical.maker.clone(),
+            make: self.physical.make.clone(),
             model: self.physical.model.clone(),
             transform: self.transform,
         });
-    }
-}
-
-struct InnerWrapper {
-    inner: Arc<Mutex<Inner>>,
-}
-
-// This implementation does nothing, we just use it as a stable type to downcast the
-// implementation in the destructor of wl_output, in order to retrieve the Arc to the
-// inner and remove this output from the list
-impl Implementation<Resource<WlOutput>, Request> for InnerWrapper {
-    fn receive(&mut self, req: Request, _res: Resource<WlOutput>) {
-        // this will break if new variants are added :)
-        let Request::Release = req;
     }
 }
 
@@ -185,7 +170,6 @@ impl Output {
     /// in case you whish to remove this global in  the future.
     pub fn new<L>(
         display: &mut Display,
-        token: LoopToken,
         name: String,
         physical: PhysicalProperties,
         logger: L,
@@ -210,25 +194,19 @@ impl Output {
             preferred_mode: None,
         }));
 
-        let output = Output {
-            inner: inner.clone(),
-        };
+        let output = Output { inner: inner.clone() };
 
-        let global = display.create_global(&token, 3, move |_version, new_output: NewResource<_>| {
+        let global = display.create_global(3, move |new_output: NewResource<_>, _version| {
             let output = new_output.implement(
-                InnerWrapper {
-                    inner: inner.clone(),
+                |req, _| {
+                    // this will break if new variants are added :)
+                    let Request::Release = req;
                 },
-                Some(|output, boxed_impl| {
-                    let wrapper: Box<InnerWrapper> =
-                        downcast_impl(boxed_impl).unwrap_or_else(|_| unreachable!());
-                    wrapper
-                        .inner
-                        .lock()
-                        .unwrap()
-                        .instances
-                        .retain(|o| !o.equals(&output));
+                Some(|output: Resource<WlOutput>| {
+                    let inner = output.user_data::<Arc<Mutex<Inner>>>().unwrap();
+                    inner.lock().unwrap().instances.retain(|o| !o.equals(&output));
                 }),
+                inner.clone(),
             );
             inner.lock().unwrap().new_global(output);
         });

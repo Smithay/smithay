@@ -1,6 +1,6 @@
-use nix::{libc, unistd};
 use nix::sys::mman;
 use nix::sys::signal::{self, SigAction, SigHandler, Signal};
+use nix::{libc, unistd};
 use std::cell::Cell;
 use std::os::unix::io::RawFd;
 use std::ptr;
