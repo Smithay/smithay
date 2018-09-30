@@ -81,7 +81,7 @@ script:
             vagga cargo-$TRAVIS_RUST_VERSION doc --no-deps
         ;;
         "cargo-fmt")
-            vagga cargo-$TRAVIS_RUST_VERSION fmt -- --check
+            vagga cargo-$TRAVIS_RUST_VERSION fmt --all -- --check
         ;;
         "cargo-clippy")
             vagga cargo-$TRAVIS_RUST_VERSION clippy --all-features -- -D warnings
