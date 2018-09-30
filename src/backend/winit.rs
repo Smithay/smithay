@@ -21,6 +21,7 @@ use std::rc::Rc;
 use std::time::Instant;
 use wayland_client::egl as wegl;
 use wayland_server::Display;
+use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::{
     ElementState, Event, EventsLoop, KeyboardInput, MouseButton as WinitMouseButton, MouseCursor,
     MouseScrollDelta, Touch, TouchPhase, Window as WinitWindow, WindowBuilder, WindowEvent,
@@ -84,6 +85,7 @@ pub struct WinitInputBackend {
     input_config: (),
     handler: Option<Box<InputHandler<WinitInputBackend> + 'static>>,
     logger: ::slog::Logger,
+    dpi: f64,
 }
 
 /// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
@@ -95,7 +97,7 @@ where
 {
     init_from_builder(
         WindowBuilder::new()
-            .with_dimensions(1280, 800)
+            .with_dimensions(LogicalSize::new(1280.0, 800.0))
             .with_title("Smithay")
             .with_visibility(true),
         logger,
@@ -183,6 +185,7 @@ where
             input_config: (),
             handler: None,
             logger: log.new(o!("smithay_winit_component" => "input")),
+            dpi: 1.0,
         },
     ))
 }
@@ -190,9 +193,9 @@ where
 /// Handler trait to recieve window-related events to provide a better *nested* experience.
 pub trait WinitEventsHandler {
     /// The window was resized, can be used to adjust the associated `wayland::output::Output`s mode.
-    fn resized(&mut self, width: u32, height: u32);
+    fn resized(&mut self, size: LogicalSize);
     /// The window was moved
-    fn moved(&mut self, x: i32, h: i32);
+    fn moved(&mut self, position: LogicalPosition);
     /// The window gained or lost focus
     fn focus_changed(&mut self, focused: bool);
     /// The window needs to be redrawn
@@ -214,7 +217,12 @@ impl GraphicsBackend for WinitGraphicsBackend {
 
     fn set_cursor_position(&self, x: u32, y: u32) -> ::std::result::Result<(), ()> {
         debug!(self.logger, "Setting cursor position to {:?}", (x, y));
-        self.window.window().set_cursor_position(x as i32, y as i32)
+        self.window
+            .window()
+            .set_cursor_position(LogicalPosition::new(x as f64, y as f64))
+            .map_err(|err| {
+                debug!(self.logger, "{}", err);
+            })
     }
 
     fn set_cursor_representation(
@@ -251,6 +259,7 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
             .window()
             .get_inner_size()
             .expect("Window does not exist anymore")
+            .into()
     }
 
     fn is_current(&self) -> bool {
@@ -369,16 +378,24 @@ impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
 
     fn x_transformed(&self, width: u32) -> u32 {
         cmp::max(
-            (self.x * width as f64 / self.window.window().get_inner_size().unwrap_or((width, 0)).0 as f64)
-                as i32,
+            (self.x * width as f64 / self
+                .window
+                .window()
+                .get_inner_size()
+                .unwrap_or(LogicalSize::new(width.into(), 0.0))
+                .width) as i32,
             0,
         ) as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
         cmp::max(
-            (self.y * height as f64 / self.window.window().get_inner_size().unwrap_or((0, height)).1 as f64)
-                as i32,
+            (self.y * height as f64 / self
+                .window
+                .window()
+                .get_inner_size()
+                .unwrap_or(LogicalSize::new(0.0, height.into()))
+                .height) as i32,
             0,
         ) as u32
     }
@@ -401,14 +418,14 @@ impl PointerAxisEvent for WinitMouseWheelEvent {
     fn source(&self) -> AxisSource {
         match self.delta {
             MouseScrollDelta::LineDelta(_, _) => AxisSource::Wheel,
-            MouseScrollDelta::PixelDelta(_, _) => AxisSource::Continuous,
+            MouseScrollDelta::PixelDelta(_) => AxisSource::Continuous,
         }
     }
 
     fn amount(&self, axis: &Axis) -> Option<f64> {
         match (axis, self.delta) {
-            (&Axis::Horizontal, MouseScrollDelta::PixelDelta(x, _)) => Some(x as f64),
-            (&Axis::Vertical, MouseScrollDelta::PixelDelta(_, y)) => Some(y as f64),
+            (&Axis::Horizontal, MouseScrollDelta::PixelDelta(delta)) => Some(delta.x),
+            (&Axis::Vertical, MouseScrollDelta::PixelDelta(delta)) => Some(delta.y),
             (_, MouseScrollDelta::LineDelta(_, _)) => None,
         }
     }
@@ -417,7 +434,7 @@ impl PointerAxisEvent for WinitMouseWheelEvent {
         match (axis, self.delta) {
             (&Axis::Horizontal, MouseScrollDelta::LineDelta(x, _)) => Some(x as f64),
             (&Axis::Vertical, MouseScrollDelta::LineDelta(_, y)) => Some(y as f64),
-            (_, MouseScrollDelta::PixelDelta(_, _)) => None,
+            (_, MouseScrollDelta::PixelDelta(_)) => None,
         }
     }
 }
@@ -476,16 +493,24 @@ impl TouchDownEvent for WinitTouchStartedEvent {
 
     fn x_transformed(&self, width: u32) -> u32 {
         cmp::min(
-            self.location.0 as i32 * width as i32
-                / self.window.window().get_inner_size().unwrap_or((width, 0)).0 as i32,
+            self.location.0 as i32 * width as i32 / self
+                .window
+                .window()
+                .get_inner_size()
+                .unwrap_or(LogicalSize::new(width.into(), 0.0))
+                .width as i32,
             0,
         ) as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
         cmp::min(
-            self.location.1 as i32 * height as i32
-                / self.window.window().get_inner_size().unwrap_or((0, height)).1 as i32,
+            self.location.1 as i32 * height as i32 / self
+                .window
+                .window()
+                .get_inner_size()
+                .unwrap_or(LogicalSize::new(0.0, height.into()))
+                .height as i32,
             0,
         ) as u32
     }
@@ -520,11 +545,21 @@ impl TouchMotionEvent for WinitTouchMovedEvent {
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
-        self.location.0 as u32 * width / self.window.window().get_inner_size().unwrap_or((width, 0)).0
+        self.location.0 as u32 * width / self
+            .window
+            .window()
+            .get_inner_size()
+            .unwrap_or(LogicalSize::new(width.into(), 0.0))
+            .width as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
-        self.location.1 as u32 * height / self.window.window().get_inner_size().unwrap_or((0, height)).1
+        self.location.1 as u32 * height / self
+            .window
+            .window()
+            .get_inner_size()
+            .unwrap_or(LogicalSize::new(0.0, height.into()))
+            .height as u32
     }
 }
 
@@ -659,6 +694,7 @@ impl InputBackend for WinitInputBackend {
             let mut handler = self.handler.as_mut();
             let mut events_handler = self.events_handler.as_mut();
             let logger = &self.logger;
+            let dpi = &mut self.dpi;
 
             self.events_loop.poll_events(move |event| {
                 if let Event::WindowEvent { event, .. } = event {
@@ -666,23 +702,27 @@ impl InputBackend for WinitInputBackend {
                     let nanos = duration.subsec_nanos() as u64;
                     let time = ((1000 * duration.as_secs()) + (nanos / 1_000_000)) as u32;
                     match (event, handler.as_mut(), events_handler.as_mut()) {
-                        (WindowEvent::Resized(w, h), _, events_handler) => {
-                            trace!(logger, "Resizing window to {:?}", (w, h));
-                            window.window().set_inner_size(w, h);
+                        (WindowEvent::Resized(size), _, events_handler) => {
+                            trace!(logger, "Resizing window to {:?}", size);
+                            window.window().set_inner_size(size);
                             if let Window::Wayland { ref surface, .. } = **window {
-                                surface.resize(w as i32, h as i32, 0, 0);
+                                let physical_size = size.to_physical(*dpi);
+                                surface.resize(physical_size.width as i32, physical_size.height as i32, 0, 0);
                             }
                             if let Some(events_handler) = events_handler {
-                                events_handler.resized(w, h);
+                                events_handler.resized(size);
                             }
                         }
-                        (WindowEvent::Moved(x, y), _, Some(events_handler)) => events_handler.moved(x, y),
+                        (WindowEvent::Moved(position), _, Some(events_handler)) => {
+                            events_handler.moved(position)
+                        }
                         (WindowEvent::Focused(focus), _, Some(events_handler)) => {
                             events_handler.focus_changed(focus)
                         }
                         (WindowEvent::Refresh, _, Some(events_handler)) => events_handler.refresh(),
-                        (WindowEvent::HiDPIFactorChanged(factor), _, Some(events_handler)) => {
-                            events_handler.hidpi_changed(factor)
+                        (WindowEvent::HiDpiFactorChanged(factor), _, Some(events_handler)) => {
+                            *dpi = factor;
+                            events_handler.hidpi_changed(factor as f32)
                         }
                         (
                             WindowEvent::KeyboardInput {
@@ -709,15 +749,15 @@ impl InputBackend for WinitInputBackend {
                                 },
                             )
                         }
-                        (WindowEvent::CursorMoved { position: (x, y), .. }, Some(handler), _) => {
-                            trace!(logger, "Calling on_pointer_move_absolute with {:?}", (x, y));
+                        (WindowEvent::CursorMoved { position, .. }, Some(handler), _) => {
+                            trace!(logger, "Calling on_pointer_move_absolute with {:?}", position);
                             handler.on_pointer_move_absolute(
                                 seat,
                                 WinitMouseMovedEvent {
                                     window: window.clone(),
                                     time,
-                                    x,
-                                    y,
+                                    x: position.x,
+                                    y: position.y,
                                 },
                             )
                         }
@@ -733,20 +773,20 @@ impl InputBackend for WinitInputBackend {
                         (
                             WindowEvent::Touch(Touch {
                                 phase: TouchPhase::Started,
-                                location: (x, y),
+                                location,
                                 id,
                                 ..
                             }),
                             Some(handler),
                             _,
                         ) => {
-                            trace!(logger, "Calling on_touch_down at {:?}", (x, y));
+                            trace!(logger, "Calling on_touch_down at {:?}", location);
                             handler.on_touch_down(
                                 seat,
                                 WinitTouchStartedEvent {
                                     window: window.clone(),
                                     time,
-                                    location: (x, y),
+                                    location: location.into(),
                                     id,
                                 },
                             )
@@ -754,20 +794,20 @@ impl InputBackend for WinitInputBackend {
                         (
                             WindowEvent::Touch(Touch {
                                 phase: TouchPhase::Moved,
-                                location: (x, y),
+                                location,
                                 id,
                                 ..
                             }),
                             Some(handler),
                             _,
                         ) => {
-                            trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
+                            trace!(logger, "Calling on_touch_motion at {:?}", location);
                             handler.on_touch_motion(
                                 seat,
                                 WinitTouchMovedEvent {
                                     window: window.clone(),
                                     time,
-                                    location: (x, y),
+                                    location: location.into(),
                                     id,
                                 },
                             )
@@ -775,20 +815,20 @@ impl InputBackend for WinitInputBackend {
                         (
                             WindowEvent::Touch(Touch {
                                 phase: TouchPhase::Ended,
-                                location: (x, y),
+                                location,
                                 id,
                                 ..
                             }),
                             Some(handler),
                             _,
                         ) => {
-                            trace!(logger, "Calling on_touch_motion at {:?}", (x, y));
+                            trace!(logger, "Calling on_touch_motion at {:?}", location);
                             handler.on_touch_motion(
                                 seat,
                                 WinitTouchMovedEvent {
                                     window: window.clone(),
                                     time,
-                                    location: (x, y),
+                                    location: location.into(),
                                     id,
                                 },
                             );

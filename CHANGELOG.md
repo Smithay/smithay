@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **[Breaking]** WinitBackend: Upgrade to winit 0.17
+
 ## version 0.1.0 (2017-10-01)
 
 ### Protocol handling
