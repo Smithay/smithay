@@ -8,7 +8,7 @@ use smithay::backend::graphics::egl::EGLGraphicsBackend;
 use smithay::backend::input::InputBackend;
 use smithay::backend::winit;
 use smithay::wayland::output::{Mode, Output, PhysicalProperties};
-use smithay::wayland::seat::Seat;
+use smithay::wayland::seat::{Seat, XkbConfig};
 use smithay::wayland::shm::init_shm_global;
 use smithay::wayland_server::calloop::EventLoop;
 use smithay::wayland_server::protocol::wl_output;
@@ -53,7 +53,7 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
 
     let pointer = seat.add_pointer();
     let keyboard = seat
-        .add_keyboard("", "fr", "oss", None, 1000, 500)
+        .add_keyboard(XkbConfig::default(), 1000, 500)
         .expect("Failed to initialize the keyboard");
 
     let (output, _) = Output::new(
