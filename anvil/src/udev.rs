@@ -29,7 +29,7 @@ use smithay::drm::result::Error as DrmError;
 use smithay::input::Libinput;
 use smithay::wayland::compositor::CompositorToken;
 use smithay::wayland::output::{Mode, Output, PhysicalProperties};
-use smithay::wayland::seat::Seat;
+use smithay::wayland::seat::{Seat, XkbConfig};
 use smithay::wayland::shm::init_shm_global;
 use smithay::wayland_server::calloop::EventLoop;
 use smithay::wayland_server::protocol::wl_output;
@@ -97,7 +97,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
 
     let pointer = w_seat.add_pointer();
     let keyboard = w_seat
-        .add_keyboard("", "", "", None, 1000, 500)
+        .add_keyboard(XkbConfig::default(), 1000, 500)
         .expect("Failed to initialize the keyboard");
 
     let (output, _output_global) = Output::new(

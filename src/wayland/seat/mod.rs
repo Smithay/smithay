@@ -59,7 +59,9 @@ use std::sync::{Arc, Mutex};
 mod keyboard;
 mod pointer;
 
-pub use self::keyboard::{keysyms, Error as KeyboardError, KeyboardHandle, Keysym, ModifiersState};
+pub use self::keyboard::{
+    keysyms, Error as KeyboardError, KeyboardHandle, Keysym, ModifiersState, XkbConfig,
+};
 pub use self::pointer::{PointerAxisHandle, PointerHandle};
 use wayland_server::protocol::wl_seat;
 use wayland_server::{Display, Global, NewResource, Resource};
@@ -187,26 +189,34 @@ impl Seat {
     /// Calling this method on a seat that already has a keyboard capability
     /// will overwrite it, and will be seen by the clients as if the
     /// keyboard was unplugged and a new one was plugged.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # extern crate smithay;
+    /// # use smithay::wayland::seat::{Seat, XkbConfig};
+    /// # let mut seat: Seat = unimplemented!();
+    /// let keyboard = seat
+    ///     .add_keyboard(
+    ///         XkbConfig {
+    ///             layout: "de",
+    ///             variant: "nodeadkeys",
+    ///             ..XkbConfig::default()
+    ///         },
+    ///         1000,
+    ///         500,
+    ///     )
+    ///     .expect("Failed to initialize the keyboard");
+    /// ```
     pub fn add_keyboard(
         &mut self,
-        model: &str,
-        layout: &str,
-        variant: &str,
-        options: Option<String>,
+        xkb_config: keyboard::XkbConfig,
         repeat_delay: i32,
         repeat_rate: i32,
     ) -> Result<KeyboardHandle, KeyboardError> {
         let mut inner = self.inner.lock().unwrap();
-        let keyboard = self::keyboard::create_keyboard_handler(
-            "evdev", // we need this one
-            model,
-            layout,
-            variant,
-            options,
-            repeat_delay,
-            repeat_rate,
-            &inner.log,
-        )?;
+        let keyboard =
+            self::keyboard::create_keyboard_handler(xkb_config, repeat_delay, repeat_rate, &inner.log)?;
         if inner.keyboard.is_some() {
             // there is already a keyboard, remove it and notify the clients
             // of the change
