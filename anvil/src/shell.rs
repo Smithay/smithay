@@ -1,19 +1,29 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
 use rand;
 
-use smithay::wayland::compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent};
-use smithay::wayland::shell::legacy::{
-    wl_shell_init, ShellRequest, ShellState as WlShellState, ShellSurfaceKind, ShellSurfaceRole,
+use smithay::{
+    wayland::{
+        compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent},
+        shell::{
+            legacy::{
+                wl_shell_init, ShellRequest, ShellState as WlShellState, ShellSurfaceKind, ShellSurfaceRole,
+            },
+            xdg::{
+                xdg_shell_init, PopupConfigure, ShellState as XdgShellState, ToplevelConfigure, XdgRequest,
+                XdgSurfaceRole,
+            },
+        },
+    },
+    wayland_server::{
+        protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface},
+        Display, Resource,
+    },
 };
-use smithay::wayland::shell::xdg::{
-    xdg_shell_init, PopupConfigure, ShellState as XdgShellState, ToplevelConfigure, XdgRequest,
-    XdgSurfaceRole,
-};
-use smithay::wayland_server::protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface};
-use smithay::wayland_server::{Display, Resource};
 
 use window_map::{Kind as SurfaceKind, WindowMap};
 

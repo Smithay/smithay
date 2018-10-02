@@ -10,8 +10,7 @@ extern crate smithay;
 extern crate xkbcommon;
 
 use slog::Drain;
-use smithay::wayland_server::calloop::EventLoop;
-use smithay::wayland_server::Display;
+use smithay::wayland_server::{calloop::EventLoop, Display};
 
 #[macro_use]
 mod shaders;

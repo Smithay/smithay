@@ -1,10 +1,14 @@
-use smithay::utils::Rectangle;
-use smithay::wayland::compositor::roles::Role;
-use smithay::wayland::compositor::{CompositorToken, SubsurfaceRole, SurfaceAttributes, TraversalAction};
-use smithay::wayland::shell::legacy::{ShellSurface, ShellSurfaceRole};
-use smithay::wayland::shell::xdg::{ToplevelSurface, XdgSurfaceRole};
-use smithay::wayland_server::protocol::wl_surface;
-use smithay::wayland_server::Resource;
+use smithay::{
+    utils::Rectangle,
+    wayland::{
+        compositor::{roles::Role, CompositorToken, SubsurfaceRole, SurfaceAttributes, TraversalAction},
+        shell::{
+            legacy::{ShellSurface, ShellSurfaceRole},
+            xdg::{ToplevelSurface, XdgSurfaceRole},
+        },
+    },
+    wayland_server::{protocol::wl_surface, Resource},
+};
 
 pub enum Kind<U, R, SD, D> {
     Xdg(ToplevelSurface<U, R, SD>),

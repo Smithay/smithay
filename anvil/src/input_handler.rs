@@ -1,19 +1,25 @@
-use std::cell::RefCell;
-use std::process::Command;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::{
+    cell::RefCell,
+    process::Command,
+    rc::Rc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use slog::Logger;
 
-use smithay::backend::input::{
-    self, Event, InputBackend, InputHandler, KeyState, KeyboardKeyEvent, PointerAxisEvent,
-    PointerButtonEvent, PointerMotionAbsoluteEvent, PointerMotionEvent,
-};
 #[cfg(feature = "udev")]
 use smithay::backend::session::auto::AutoSession;
-use smithay::wayland::seat::{keysyms as xkb, KeyboardHandle, Keysym, ModifiersState, PointerHandle};
-use smithay::wayland_server::protocol::wl_pointer;
+use smithay::{
+    backend::input::{
+        self, Event, InputBackend, InputHandler, KeyState, KeyboardKeyEvent, PointerAxisEvent,
+        PointerButtonEvent, PointerMotionAbsoluteEvent, PointerMotionEvent,
+    },
+    wayland::seat::{keysyms as xkb, KeyboardHandle, Keysym, ModifiersState, PointerHandle},
+    wayland_server::protocol::wl_pointer,
+};
 
 use shell::MyWindowMap;
 
