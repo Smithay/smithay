@@ -1,22 +1,29 @@
-use std::cell::RefCell;
-use std::fs::{File, OpenOptions};
-use std::os::unix::io::AsRawFd;
-use std::os::unix::io::RawFd;
-use std::rc::Rc;
-use std::time::Duration;
+use std::{
+    cell::RefCell,
+    fs::{File, OpenOptions},
+    os::unix::io::{AsRawFd, RawFd},
+    rc::Rc,
+    time::Duration,
+};
 
-use smithay::backend::drm::{drm_device_bind, DrmBackend, DrmDevice, DrmHandler};
-use smithay::backend::graphics::egl::wayland::EGLWaylandExtensions;
-use smithay::drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
-use smithay::drm::control::crtc;
-use smithay::drm::control::encoder::Info as EncoderInfo;
-use smithay::drm::control::{Device as ControlDevice, ResourceInfo};
-use smithay::drm::result::Error as DrmError;
-use smithay::drm::Device as BasicDevice;
-use smithay::wayland::compositor::CompositorToken;
-use smithay::wayland::shm::init_shm_global;
-use smithay::wayland_server::calloop::EventLoop;
-use smithay::wayland_server::Display;
+use smithay::{
+    backend::{
+        drm::{drm_device_bind, DrmBackend, DrmDevice, DrmHandler},
+        graphics::egl::wayland::EGLWaylandExtensions,
+    },
+    drm::{
+        control::{
+            connector::{Info as ConnectorInfo, State as ConnectorState},
+            crtc,
+            encoder::Info as EncoderInfo,
+            Device as ControlDevice, ResourceInfo,
+        },
+        result::Error as DrmError,
+        Device as BasicDevice,
+    },
+    wayland::{compositor::CompositorToken, shm::init_shm_global},
+    wayland_server::{calloop::EventLoop, Display},
+};
 
 use glium::Surface;
 use slog::Logger;
@@ -62,13 +69,16 @@ pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop<()>, log: Log
     let encoder_info = EncoderInfo::load_from_device(&device, connector_info.encoders()[0]).unwrap();
 
     // use the connected crtc if any
-    let crtc = encoder_info.current_crtc()
+    let crtc = encoder_info
+        .current_crtc()
         // or use the first one that is compatible with the encoder
-        .unwrap_or_else(||
-            *res_handles.filter_crtcs(encoder_info.possible_crtcs())
-            .iter()
-            .next()
-            .unwrap());
+        .unwrap_or_else(|| {
+            *res_handles
+                .filter_crtcs(encoder_info.possible_crtcs())
+                .iter()
+                .next()
+                .unwrap()
+        });
 
     // Assuming we found a good connector and loaded the info into `connector_info`
     let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)

@@ -1,23 +1,31 @@
-use glium;
-use glium::index::PrimitiveType;
-use glium::texture::{MipmapsOption, Texture2d, UncompressedFloatFormat};
-use glium::{Frame, GlObject, Surface};
-use smithay::backend::graphics::egl::error::Result as EGLResult;
-use smithay::backend::graphics::egl::wayland::{
-    BufferAccessError, EGLDisplay, EGLImages, EGLWaylandExtensions, Format,
+use std::{
+    cell::{Ref, RefCell},
+    rc::Rc,
 };
-use smithay::backend::graphics::egl::EGLGraphicsBackend;
-use smithay::backend::graphics::glium::GliumGraphicsBackend;
-use smithay::wayland::compositor::roles::Role;
-use smithay::wayland::compositor::{SubsurfaceRole, TraversalAction};
-use smithay::wayland::shm::with_buffer_contents as shm_buffer_contents;
-use smithay::wayland_server::protocol::wl_buffer;
-use smithay::wayland_server::{Display, Resource};
 
-use std::cell::{Ref, RefCell};
-use std::rc::Rc;
-
+use glium::{
+    self,
+    index::PrimitiveType,
+    texture::{MipmapsOption, Texture2d, UncompressedFloatFormat},
+    Frame, GlObject, Surface,
+};
 use slog::Logger;
+
+use smithay::{
+    backend::graphics::{
+        egl::{
+            error::Result as EGLResult,
+            wayland::{BufferAccessError, EGLDisplay, EGLImages, EGLWaylandExtensions, Format},
+            EGLGraphicsBackend,
+        },
+        glium::GliumGraphicsBackend,
+    },
+    wayland::{
+        compositor::{roles::Role, SubsurfaceRole, TraversalAction},
+        shm::with_buffer_contents as shm_buffer_contents,
+    },
+    wayland_server::{protocol::wl_buffer, Display, Resource},
+};
 
 use shaders;
 use shell::{MyCompositorToken, MyWindowMap};

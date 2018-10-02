@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
-use smithay::wayland::shm::BufferData;
-use smithay::wayland_server::protocol::wl_shm::Format;
+use smithay::{wayland::shm::BufferData, wayland_server::protocol::wl_shm::Format};
 
 use glium::texture::{ClientFormat, RawImage2d};
 

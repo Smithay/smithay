@@ -1,39 +1,53 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::io::Error as IoError;
-use std::path::PathBuf;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    io::Error as IoError,
+    path::PathBuf,
+    rc::Rc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use glium::Surface;
-
-use smithay::image::{ImageBuffer, Rgba};
-
 use slog::Logger;
 
-use smithay::backend::drm::{DevPath, DrmBackend, DrmDevice, DrmHandler};
-use smithay::backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
-use smithay::backend::graphics::GraphicsBackend;
-use smithay::backend::input::InputBackend;
-use smithay::backend::libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface};
-use smithay::backend::session::auto::{auto_session_bind, AutoSession};
-use smithay::backend::session::{Session, SessionNotifier};
-use smithay::backend::udev::{primary_gpu, udev_backend_bind, SessionFdDrmDevice, UdevBackend, UdevHandler};
-use smithay::drm::control::connector::{Info as ConnectorInfo, State as ConnectorState};
-use smithay::drm::control::crtc;
-use smithay::drm::control::encoder::Info as EncoderInfo;
-use smithay::drm::control::{Device as ControlDevice, ResourceInfo};
-use smithay::drm::result::Error as DrmError;
-use smithay::input::Libinput;
-use smithay::wayland::compositor::CompositorToken;
-use smithay::wayland::output::{Mode, Output, PhysicalProperties};
-use smithay::wayland::seat::{Seat, XkbConfig};
-use smithay::wayland::shm::init_shm_global;
-use smithay::wayland_server::calloop::EventLoop;
-use smithay::wayland_server::protocol::wl_output;
-use smithay::wayland_server::Display;
+use smithay::{
+    backend::{
+        drm::{DevPath, DrmBackend, DrmDevice, DrmHandler},
+        graphics::{
+            egl::wayland::{EGLDisplay, EGLWaylandExtensions},
+            GraphicsBackend,
+        },
+        input::InputBackend,
+        libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface},
+        session::{
+            auto::{auto_session_bind, AutoSession},
+            Session, SessionNotifier,
+        },
+        udev::{primary_gpu, udev_backend_bind, SessionFdDrmDevice, UdevBackend, UdevHandler},
+    },
+    drm::{
+        control::{
+            connector::{Info as ConnectorInfo, State as ConnectorState},
+            crtc,
+            encoder::Info as EncoderInfo,
+            Device as ControlDevice, ResourceInfo,
+        },
+        result::Error as DrmError,
+    },
+    image::{ImageBuffer, Rgba},
+    input::Libinput,
+    wayland::{
+        compositor::CompositorToken,
+        output::{Mode, Output, PhysicalProperties},
+        seat::{Seat, XkbConfig},
+        shm::init_shm_global,
+    },
+    wayland_server::{calloop::EventLoop, protocol::wl_output, Display},
+};
 
 use glium_drawer::GliumDrawer;
 use input_handler::AnvilInputHandler;

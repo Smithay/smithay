@@ -1,18 +1,22 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{atomic::AtomicBool, Arc},
+};
 
-use smithay::backend::graphics::egl::wayland::EGLWaylandExtensions;
-use smithay::backend::graphics::egl::EGLGraphicsBackend;
-use smithay::backend::input::InputBackend;
-use smithay::backend::winit;
-use smithay::wayland::output::{Mode, Output, PhysicalProperties};
-use smithay::wayland::seat::{Seat, XkbConfig};
-use smithay::wayland::shm::init_shm_global;
-use smithay::wayland_server::calloop::EventLoop;
-use smithay::wayland_server::protocol::wl_output;
-use smithay::wayland_server::Display;
+use smithay::{
+    backend::{
+        graphics::egl::{wayland::EGLWaylandExtensions, EGLGraphicsBackend},
+        input::InputBackend,
+        winit,
+    },
+    wayland::{
+        output::{Mode, Output, PhysicalProperties},
+        seat::{Seat, XkbConfig},
+        shm::init_shm_global,
+    },
+    wayland_server::{calloop::EventLoop, protocol::wl_output, Display},
+};
 
 use slog::Logger;
 
