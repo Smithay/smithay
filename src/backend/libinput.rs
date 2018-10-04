@@ -1,22 +1,25 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
-use backend::input as backend;
-use backend::input::Axis;
 #[cfg(feature = "backend_session")]
 use backend::session::{AsErrno, Session, SessionObserver};
+use backend::{input as backend, input::Axis};
 use input as libinput;
 use input::event;
 
-use std::cell::RefCell;
-use std::collections::hash_map::{DefaultHasher, Entry, HashMap};
-use std::hash::{Hash, Hasher};
-use std::io::Error as IoError;
-use std::os::unix::io::RawFd;
-use std::path::Path;
-use std::rc::Rc;
+use std::{
+    cell::RefCell,
+    collections::hash_map::{DefaultHasher, Entry, HashMap},
+    hash::{Hash, Hasher},
+    io::Error as IoError,
+    os::unix::io::RawFd,
+    path::Path,
+    rc::Rc,
+};
 
-use wayland_server::calloop::generic::{EventedRawFd, Generic};
-use wayland_server::calloop::{LoopHandle, Ready, Source};
+use wayland_server::calloop::{
+    generic::{EventedRawFd, Generic},
+    LoopHandle, Ready, Source,
+};
 
 // No idea if this is the same across unix platforms
 // Lets make this linux exclusive for now, once someone tries to build it for

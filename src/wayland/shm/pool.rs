@@ -1,10 +1,17 @@
-use nix::sys::mman;
-use nix::sys::signal::{self, SigAction, SigHandler, Signal};
-use nix::{libc, unistd};
-use std::cell::Cell;
-use std::os::unix::io::RawFd;
-use std::ptr;
-use std::sync::{Once, RwLock, ONCE_INIT};
+use nix::{
+    libc,
+    sys::{
+        mman,
+        signal::{self, SigAction, SigHandler, Signal},
+    },
+    unistd,
+};
+use std::{
+    cell::Cell,
+    os::unix::io::RawFd,
+    ptr,
+    sync::{Once, RwLock, ONCE_INIT},
+};
 
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr::null_mut(), false)));
 

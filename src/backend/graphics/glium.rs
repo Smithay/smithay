@@ -1,15 +1,20 @@
 //! Glium compatibility module
 
-use backend::graphics::egl::error::Result as EGLResult;
-use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
-use backend::graphics::egl::{EGLGraphicsBackend, SwapBuffersError};
-use glium::backend::{Backend, Context, Facade};
-use glium::debug::DebugCallbackBehavior;
-use glium::Frame;
-use glium::SwapBuffersError as GliumSwapBuffersError;
-use std::cell::{Ref, RefCell, RefMut};
-use std::os::raw::c_void;
-use std::rc::Rc;
+use backend::graphics::egl::{
+    error::Result as EGLResult,
+    wayland::{EGLDisplay, EGLWaylandExtensions},
+    EGLGraphicsBackend, SwapBuffersError,
+};
+use glium::{
+    backend::{Backend, Context, Facade},
+    debug::DebugCallbackBehavior,
+    Frame, SwapBuffersError as GliumSwapBuffersError,
+};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    os::raw::c_void,
+    rc::Rc,
+};
 use wayland_server::Display;
 
 impl From<SwapBuffersError> for GliumSwapBuffersError {

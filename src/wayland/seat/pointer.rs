@@ -1,7 +1,11 @@
 use std::sync::{Arc, Mutex, MutexGuard};
-use wayland_server::protocol::wl_pointer::{Axis, AxisSource, ButtonState, Event, Request, WlPointer};
-use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{NewResource, Resource};
+use wayland_server::{
+    protocol::{
+        wl_pointer::{Axis, AxisSource, ButtonState, Event, Request, WlPointer},
+        wl_surface::WlSurface,
+    },
+    NewResource, Resource,
+};
 
 // TODO: handle pointer surface role
 

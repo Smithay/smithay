@@ -1,14 +1,18 @@
 use backend::input::KeyState;
-use std::default::Default;
-use std::io::{Error as IoError, Write};
-use std::os::unix::io::AsRawFd;
-use std::sync::{Arc, Mutex};
-use tempfile::tempfile;
-use wayland_server::protocol::wl_keyboard::{
-    Event, KeyState as WlKeyState, KeymapFormat, Request, WlKeyboard,
+use std::{
+    default::Default,
+    io::{Error as IoError, Write},
+    os::unix::io::AsRawFd,
+    sync::{Arc, Mutex},
 };
-use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{NewResource, Resource};
+use tempfile::tempfile;
+use wayland_server::{
+    protocol::{
+        wl_keyboard::{Event, KeyState as WlKeyState, KeymapFormat, Request, WlKeyboard},
+        wl_surface::WlSurface,
+    },
+    NewResource, Resource,
+};
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
 

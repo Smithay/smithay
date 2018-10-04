@@ -9,24 +9,28 @@
 //! See also `examples/udev.rs` for pure hardware backed example of a compositor utilizing this
 //! backend.
 
-use backend::drm::{drm_device_bind, DrmDevice, DrmHandler};
-use backend::session::{AsSessionObserver, Session, SessionObserver};
-use drm::control::Device as ControlDevice;
-use drm::Device as BasicDevice;
-use nix::fcntl;
-use nix::sys::stat::dev_t;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::ffi::OsString;
-use std::io::Error as IoError;
-use std::mem::drop;
-use std::os::unix::io::{AsRawFd, RawFd};
-use std::path::{Path, PathBuf};
-use std::rc::{Rc, Weak};
+use backend::{
+    drm::{drm_device_bind, DrmDevice, DrmHandler},
+    session::{AsSessionObserver, Session, SessionObserver},
+};
+use drm::{control::Device as ControlDevice, Device as BasicDevice};
+use nix::{fcntl, sys::stat::dev_t};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    ffi::OsString,
+    io::Error as IoError,
+    mem::drop,
+    os::unix::io::{AsRawFd, RawFd},
+    path::{Path, PathBuf},
+    rc::{Rc, Weak},
+};
 use udev::{Context, Enumerator, Event, EventType, MonitorBuilder, MonitorSocket, Result as UdevResult};
 
-use wayland_server::calloop::generic::{EventedRawFd, Generic};
-use wayland_server::calloop::{LoopHandle, Ready, Source};
+use wayland_server::calloop::{
+    generic::{EventedRawFd, Generic},
+    LoopHandle, Ready, Source,
+};
 
 /// Udev's `DrmDevice` type based on the underlying session
 pub struct SessionFdDrmDevice(RawFd);

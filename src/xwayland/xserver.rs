@@ -24,21 +24,31 @@
  * cf https://github.com/swaywm/wlroots/blob/master/xwayland/xwayland.c
  *
  */
-use std::cell::RefCell;
-use std::env;
-use std::ffi::CString;
-use std::os::unix::io::{AsRawFd, IntoRawFd};
-use std::os::unix::net::UnixStream;
-use std::rc::Rc;
+use std::{
+    cell::RefCell,
+    env,
+    ffi::CString,
+    os::unix::{
+        io::{AsRawFd, IntoRawFd},
+        net::UnixStream,
+    },
+    rc::Rc,
+};
 
-use nix::errno::Errno;
-use nix::sys::signal;
-use nix::unistd::{fork, ForkResult, Pid};
-use nix::{Error as NixError, Result as NixResult};
+use nix::{
+    errno::Errno,
+    sys::signal,
+    unistd::{fork, ForkResult, Pid},
+    Error as NixError, Result as NixResult,
+};
 
-use wayland_server::calloop::signals::{Signal, Signals};
-use wayland_server::calloop::{LoopHandle, Source};
-use wayland_server::{Client, Display};
+use wayland_server::{
+    calloop::{
+        signals::{Signal, Signals},
+        LoopHandle, Source,
+    },
+    Client, Display,
+};
 
 use super::x11_sockets::{prepare_x11_sockets, X11Lock};
 

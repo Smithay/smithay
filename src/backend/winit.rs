@@ -1,28 +1,30 @@
 //! Implementation of backend traits for types provided by `winit`
 
-use backend::graphics::egl::context::GlAttributes;
-use backend::graphics::egl::error as egl_error;
-use backend::graphics::egl::error::Result as EGLResult;
-use backend::graphics::egl::native;
-use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
-use backend::graphics::egl::{EGLContext, EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError};
-use backend::graphics::GraphicsBackend;
-use backend::input::{
-    Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState, KeyboardKeyEvent,
-    MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent, Seat,
-    SeatCapabilities, TouchCancelEvent, TouchDownEvent, TouchMotionEvent, TouchSlot, TouchUpEvent,
-    UnusedEvent,
+use backend::{
+    graphics::{
+        egl::{
+            context::GlAttributes,
+            error as egl_error,
+            error::Result as EGLResult,
+            native,
+            wayland::{EGLDisplay, EGLWaylandExtensions},
+            EGLContext, EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError,
+        },
+        GraphicsBackend,
+    },
+    input::{
+        Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState, KeyboardKeyEvent,
+        MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent,
+        Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent, TouchMotionEvent, TouchSlot, TouchUpEvent,
+        UnusedEvent,
+    },
 };
 use nix::libc::c_void;
-use std::cmp;
-use std::error;
-use std::fmt;
-use std::rc::Rc;
-use std::time::Instant;
+use std::{cmp, error, fmt, rc::Rc, time::Instant};
 use wayland_client::egl as wegl;
 use wayland_server::Display;
-use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::{
+    dpi::{LogicalPosition, LogicalSize},
     ElementState, Event, EventsLoop, KeyboardInput, MouseButton as WinitMouseButton, MouseCursor,
     MouseScrollDelta, Touch, TouchPhase, Window as WinitWindow, WindowBuilder, WindowEvent,
 };

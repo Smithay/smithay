@@ -1,14 +1,13 @@
-use std::cell::RefCell;
-use std::sync::Mutex;
+use std::{cell::RefCell, sync::Mutex};
 
-use wayland::compositor::roles::*;
-use wayland::compositor::CompositorToken;
-use wayland_protocols::unstable::xdg_shell::v6::server::{
-    zxdg_popup_v6, zxdg_positioner_v6, zxdg_shell_v6, zxdg_surface_v6, zxdg_toplevel_v6,
+use wayland::compositor::{roles::*, CompositorToken};
+use wayland_protocols::{
+    unstable::xdg_shell::v6::server::{
+        zxdg_popup_v6, zxdg_positioner_v6, zxdg_shell_v6, zxdg_surface_v6, zxdg_toplevel_v6,
+    },
+    xdg_shell::server::{xdg_positioner, xdg_toplevel},
 };
-use wayland_protocols::xdg_shell::server::{xdg_positioner, xdg_toplevel};
-use wayland_server::protocol::wl_surface;
-use wayland_server::{DisplayToken, NewResource, Resource};
+use wayland_server::{protocol::wl_surface, DisplayToken, NewResource, Resource};
 
 use utils::Rectangle;
 

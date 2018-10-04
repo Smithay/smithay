@@ -209,41 +209,52 @@
 //! # }
 //! ```
 
-use backend::graphics::egl::context::{EGLContext, GlAttributes};
-use backend::graphics::egl::error::Result as EGLResult;
-use backend::graphics::egl::native::Gbm;
-use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
+use backend::graphics::egl::{
+    context::{EGLContext, GlAttributes},
+    error::Result as EGLResult,
+    native::Gbm,
+    wayland::{EGLDisplay, EGLWaylandExtensions},
+};
 #[cfg(feature = "backend_session")]
 use backend::session::{AsSessionObserver, SessionObserver};
-use drm::control::framebuffer;
-use drm::control::Device as ControlDevice;
-use drm::control::{connector, crtc, encoder, Mode, ResourceInfo};
-use drm::result::Error as DrmError;
-use drm::Device as BasicDevice;
+use drm::{
+    control::{connector, crtc, encoder, framebuffer, Device as ControlDevice, Mode, ResourceInfo},
+    result::Error as DrmError,
+    Device as BasicDevice,
+};
 use gbm::{BufferObject, Device as GbmDevice};
-use nix;
-use nix::sys::stat::{self, dev_t, fstat};
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::io::Error as IoError;
-use std::os::unix::io::{AsRawFd, RawFd};
-use std::path::PathBuf;
-use std::rc::{Rc, Weak};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Once, ONCE_INIT};
-use std::time::Duration;
+use nix::{
+    self,
+    sys::stat::{self, dev_t, fstat},
+};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    io::Error as IoError,
+    os::unix::io::{AsRawFd, RawFd},
+    path::PathBuf,
+    rc::{Rc, Weak},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Once, ONCE_INIT,
+    },
+    time::Duration,
+};
 
-use wayland_server::calloop::generic::{EventedRawFd, Generic};
-use wayland_server::calloop::{LoopHandle, Ready, Source};
-use wayland_server::Display;
+use wayland_server::{
+    calloop::{
+        generic::{EventedRawFd, Generic},
+        LoopHandle, Ready, Source,
+    },
+    Display,
+};
 
 mod backend;
 pub mod error;
 
 pub use self::backend::DrmBackend;
-use self::backend::DrmBackendInternal;
-use self::error::*;
+use self::{backend::DrmBackendInternal, error::*};
 
 static LOAD: Once = ONCE_INIT;
 

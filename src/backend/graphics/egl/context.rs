@@ -1,8 +1,6 @@
 //! EGL context related structs
 
-use super::error::*;
-use super::native;
-use super::{ffi, EGLSurface, PixelFormat};
+use super::{error::*, ffi, native, EGLSurface, PixelFormat};
 #[cfg(feature = "backend_drm")]
 use drm::control::Device as ControlDevice;
 #[cfg(feature = "backend_drm")]
@@ -11,14 +9,16 @@ use drm::Device as BasicDevice;
 use gbm::Device as GbmDevice;
 use nix::libc::{c_int, c_void};
 use slog;
-use std::ffi::{CStr, CString};
-use std::marker::PhantomData;
-use std::mem;
-use std::ops::{Deref, DerefMut};
 #[cfg(feature = "backend_drm")]
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::ptr;
-use std::rc::Rc;
+use std::{
+    ffi::{CStr, CString},
+    marker::PhantomData,
+    mem,
+    ops::{Deref, DerefMut},
+    ptr,
+    rc::Rc,
+};
 
 /// EGL context for rendering
 pub struct EGLContext<B: native::Backend, N: native::NativeDisplay<B>> {

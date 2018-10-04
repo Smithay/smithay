@@ -1,11 +1,10 @@
 //! EGL surface related structs
 
-use super::error::*;
-use super::ffi;
-use super::native;
-use super::{EGLContext, SwapBuffersError};
-use std::ops::{Deref, DerefMut};
-use std::rc::{Rc, Weak};
+use super::{error::*, ffi, native, EGLContext, SwapBuffersError};
+use std::{
+    ops::{Deref, DerefMut},
+    rc::{Rc, Weak},
+};
 
 /// EGL surface of a given egl context for rendering
 pub struct EGLSurface<N: native::NativeSurface> {

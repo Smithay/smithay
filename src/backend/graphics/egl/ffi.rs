@@ -81,8 +81,7 @@ pub mod egl {
     }
 
     mod wayland_storage {
-        use super::FnPtr;
-        use super::__gl_imports::raw;
+        use super::{FnPtr, __gl_imports::raw};
         pub static mut BindWaylandDisplayWL: FnPtr = FnPtr {
             f: super::missing_fn_panic as *const raw::c_void,
             is_loaded: false,
@@ -99,9 +98,7 @@ pub mod egl {
 
     #[allow(non_snake_case)]
     pub mod BindWaylandDisplayWL {
-        use super::FnPtr;
-        use super::__gl_imports::raw;
-        use super::{metaloadfn, wayland_storage};
+        use super::{FnPtr, __gl_imports::raw, metaloadfn, wayland_storage};
 
         #[inline]
         #[allow(dead_code)]
@@ -123,9 +120,7 @@ pub mod egl {
 
     #[allow(non_snake_case)]
     pub mod UnbindWaylandDisplayWL {
-        use super::FnPtr;
-        use super::__gl_imports::raw;
-        use super::{metaloadfn, wayland_storage};
+        use super::{FnPtr, __gl_imports::raw, metaloadfn, wayland_storage};
 
         #[inline]
         #[allow(dead_code)]
@@ -147,9 +142,7 @@ pub mod egl {
 
     #[allow(non_snake_case)]
     pub mod QueryWaylandBufferWL {
-        use super::FnPtr;
-        use super::__gl_imports::raw;
-        use super::{metaloadfn, wayland_storage};
+        use super::{FnPtr, __gl_imports::raw, metaloadfn, wayland_storage};
 
         #[inline]
         #[allow(dead_code)]

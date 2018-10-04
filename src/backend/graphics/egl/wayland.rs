@@ -10,14 +10,20 @@
 //! You may then use the resulting `EGLDisplay` to recieve `EGLImages` of an egl-based `WlBuffer`
 //! for rendering.
 
-use backend::graphics::egl::error::*;
-use backend::graphics::egl::ffi::egl::types::EGLImage;
-use backend::graphics::egl::{ffi, native, EGLContext, EglExtensionNotSupportedError};
+use backend::graphics::egl::{
+    error::*,
+    ffi::{self, egl::types::EGLImage},
+    native, EGLContext, EglExtensionNotSupportedError,
+};
 use nix::libc::c_uint;
-use std::fmt;
-use std::rc::{Rc, Weak};
-use wayland_server::protocol::wl_buffer::{self, WlBuffer};
-use wayland_server::{Display, Resource};
+use std::{
+    fmt,
+    rc::{Rc, Weak},
+};
+use wayland_server::{
+    protocol::wl_buffer::{self, WlBuffer},
+    Display, Resource,
+};
 use wayland_sys::server::wl_display;
 
 /// Error that can occur when accessing an EGL buffer

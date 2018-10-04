@@ -1,22 +1,28 @@
-use super::error::*;
-use super::DevPath;
-use backend::graphics::egl::error::Result as EGLResult;
-use backend::graphics::egl::native::{Gbm, GbmSurfaceArguments};
-use backend::graphics::egl::wayland::{EGLDisplay, EGLWaylandExtensions};
-use backend::graphics::egl::{EGLContext, EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError};
-use backend::graphics::GraphicsBackend;
-use drm::control::{connector, crtc, encoder, framebuffer, Mode};
-use drm::control::{Device, ResourceInfo};
-use drm::Device as BasicDevice;
+use super::{error::*, DevPath};
+use backend::graphics::{
+    egl::{
+        error::Result as EGLResult,
+        native::{Gbm, GbmSurfaceArguments},
+        wayland::{EGLDisplay, EGLWaylandExtensions},
+        EGLContext, EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError,
+    },
+    GraphicsBackend,
+};
+use drm::{
+    control::{connector, crtc, encoder, framebuffer, Device, Mode, ResourceInfo},
+    Device as BasicDevice,
+};
 use gbm::{
     BufferObject, BufferObjectFlags, Device as GbmDevice, Format as GbmFormat, Surface as GbmSurface,
     SurfaceBufferHandle,
 };
 use image::{ImageBuffer, Rgba};
 use nix::libc::c_void;
-use std::cell::Cell;
-use std::os::unix::io::{AsRawFd, RawFd};
-use std::rc::{Rc, Weak};
+use std::{
+    cell::Cell,
+    os::unix::io::{AsRawFd, RawFd},
+    rc::{Rc, Weak},
+};
 use wayland_server::Display;
 
 /// Backend based on a `DrmDevice` and a given crtc

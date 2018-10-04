@@ -46,23 +46,30 @@
 //! automatically by the `UdevBackend`, if not done manually).
 
 use super::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
-use nix::fcntl::{self, open, OFlag};
-use nix::libc::c_int;
-use nix::sys::signal::{self, Signal};
-use nix::sys::stat::{dev_t, fstat, major, minor, Mode};
-use nix::unistd::{close, dup};
-use nix::{Error as NixError, Result as NixResult};
-use std::cell::RefCell;
-use std::io::Error as IoError;
-use std::os::unix::io::RawFd;
-use std::path::Path;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use nix::{
+    fcntl::{self, open, OFlag},
+    libc::c_int,
+    sys::{
+        signal::{self, Signal},
+        stat::{dev_t, fstat, major, minor, Mode},
+    },
+    unistd::{close, dup},
+    Error as NixError, Result as NixResult,
+};
+use std::{
+    cell::RefCell,
+    io::Error as IoError,
+    os::unix::io::RawFd,
+    path::Path,
+    rc::Rc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 #[cfg(feature = "backend_session_udev")]
 use udev::Context;
-use wayland_server::calloop::signals::Signals;
-use wayland_server::calloop::{LoopHandle, Source};
+use wayland_server::calloop::{signals::Signals, LoopHandle, Source};
 
 #[allow(dead_code)]
 mod tty {

@@ -11,11 +11,13 @@
 //!     - direct - legacy tty / virtual terminal kernel api
 //!
 use nix::fcntl::OFlag;
-use std::cell::RefCell;
-use std::os::unix::io::RawFd;
-use std::path::Path;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::RefCell,
+    os::unix::io::RawFd,
+    path::Path,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
 /// General session interface.
 ///

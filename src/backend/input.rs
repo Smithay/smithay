@@ -1,7 +1,6 @@
 //! Common traits for input backends to receive input from.
 
-use std::error::Error;
-use std::string::ToString;
+use std::{error::Error, string::ToString};
 
 /// A seat describes a group of input devices and at least one
 /// graphics device belonging together.
