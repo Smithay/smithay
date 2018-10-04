@@ -61,8 +61,9 @@ mod pointer;
 
 pub use self::{
     keyboard::{keysyms, Error as KeyboardError, KeyboardHandle, Keysym, ModifiersState, XkbConfig},
-    pointer::{PointerAxisHandle, PointerHandle},
+    pointer::{AxisFrame, PointerGrab, PointerHandle, PointerInnerHandle},
 };
+
 use wayland_server::{protocol::wl_seat, Display, Global, NewResource, Resource};
 
 struct Inner {

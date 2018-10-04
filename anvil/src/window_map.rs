@@ -49,7 +49,7 @@ where
     SD: 'static,
     D: 'static,
 {
-    // Find the topmost surface under this point if any and the location of this point in the surface
+    // Find the topmost surface under this point if any and the location of this surface
     fn matching<F>(
         &self,
         point: (f64, f64),
@@ -81,10 +81,7 @@ where
                             height: h,
                         };
                         if my_rect.contains((point.0 as i32, point.1 as i32)) {
-                            found = Some((
-                                wl_surface.clone(),
-                                (point.0 - my_rect.x as f64, point.1 - my_rect.y as f64),
-                            ));
+                            found = Some((wl_surface.clone(), (my_rect.x as f64, my_rect.y as f64)));
                             TraversalAction::Break
                         } else {
                             TraversalAction::DoChildren((x, y))
