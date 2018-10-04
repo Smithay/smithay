@@ -17,7 +17,7 @@ use smithay::{
         self, Event, InputBackend, InputHandler, KeyState, KeyboardKeyEvent, PointerAxisEvent,
         PointerButtonEvent, PointerMotionAbsoluteEvent, PointerMotionEvent,
     },
-    wayland::seat::{keysyms as xkb, KeyboardHandle, Keysym, ModifiersState, PointerHandle},
+    wayland::seat::{keysyms as xkb, AxisFrame, KeyboardHandle, Keysym, ModifiersState, PointerHandle},
     wayland_server::protocol::wl_pointer,
 };
 
@@ -171,11 +171,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
             .window_map
             .borrow()
             .get_surface_under((location.0, location.1));
-        self.pointer.motion(
-            under.as_ref().map(|&(ref s, (x, y))| (s, x, y)),
-            serial,
-            evt.time(),
-        );
+        self.pointer.motion(*location, under, serial, evt.time());
     }
 
     fn on_pointer_move_absolute(&mut self, _: &input::Seat, evt: B::PointerMotionAbsoluteEvent) {
@@ -200,11 +196,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
         *self.pointer_location.borrow_mut() = (x, y);
         let serial = self.next_serial();
         let under = self.window_map.borrow().get_surface_under((x as f64, y as f64));
-        self.pointer.motion(
-            under.as_ref().map(|&(ref s, (x, y))| (s, x, y)),
-            serial,
-            evt.time(),
-        );
+        self.pointer.motion((x, y), under, serial, evt.time());
     }
 
     fn on_pointer_button(&mut self, _: &input::Seat, evt: B::PointerButtonEvent) {
@@ -217,13 +209,15 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
         };
         let state = match evt.state() {
             input::MouseButtonState::Pressed => {
-                // change the keyboard focus
-                let under = self
-                    .window_map
-                    .borrow_mut()
-                    .get_surface_and_bring_to_top(*self.pointer_location.borrow());
-                self.keyboard
-                    .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
+                // change the keyboard focus unless the pointer is grabbed
+                if !self.pointer.is_grabbed() {
+                    let under = self
+                        .window_map
+                        .borrow_mut()
+                        .get_surface_and_bring_to_top(*self.pointer_location.borrow());
+                    self.keyboard
+                        .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
+                }
                 wl_pointer::ButtonState::Pressed
             }
             input::MouseButtonState::Released => wl_pointer::ButtonState::Released,
@@ -247,25 +241,24 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
         let vertical_amount_discrete = evt.amount_discrete(&input::Axis::Vertical);
 
         {
-            let mut event = self.pointer.axis();
-            event.source(source);
+            let mut frame = AxisFrame::new(evt.time()).source(source);
             if horizontal_amount != 0.0 {
-                event.value(wl_pointer::Axis::HorizontalScroll, horizontal_amount, evt.time());
+                frame = frame.value(wl_pointer::Axis::HorizontalScroll, horizontal_amount);
                 if let Some(discrete) = horizontal_amount_discrete {
-                    event.discrete(wl_pointer::Axis::HorizontalScroll, discrete as i32);
+                    frame = frame.discrete(wl_pointer::Axis::HorizontalScroll, discrete as i32);
                 }
             } else if source == wl_pointer::AxisSource::Finger {
-                event.stop(wl_pointer::Axis::HorizontalScroll, evt.time());
+                frame = frame.stop(wl_pointer::Axis::HorizontalScroll);
             }
             if vertical_amount != 0.0 {
-                event.value(wl_pointer::Axis::VerticalScroll, vertical_amount, evt.time());
+                frame = frame.value(wl_pointer::Axis::VerticalScroll, vertical_amount);
                 if let Some(discrete) = vertical_amount_discrete {
-                    event.discrete(wl_pointer::Axis::VerticalScroll, discrete as i32);
+                    frame = frame.discrete(wl_pointer::Axis::VerticalScroll, discrete as i32);
                 }
             } else if source == wl_pointer::AxisSource::Finger {
-                event.stop(wl_pointer::Axis::VerticalScroll, evt.time());
+                frame = frame.stop(wl_pointer::Axis::VerticalScroll);
             }
-            event.done();
+            self.pointer.axis(frame);
         }
     }
 
