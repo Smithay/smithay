@@ -1,7 +1,6 @@
 //! Type safe native types for safe context/surface creation
 
-use super::error::*;
-use super::ffi;
+use super::{error::*, ffi};
 #[cfg(feature = "backend_drm")]
 use backend::drm::error::{Error as DrmError, ErrorKind as DrmErrorKind, Result as DrmResult};
 #[cfg(feature = "backend_drm")]

@@ -28,16 +28,14 @@
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
 
-use super::direct::{self, direct_session_bind, BoundDirectSession, DirectSession, DirectSessionNotifier};
 #[cfg(feature = "backend_session_logind")]
 use super::logind::{self, logind_session_bind, BoundLogindSession, LogindSession, LogindSessionNotifier};
-use super::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
+use super::{
+    direct::{self, direct_session_bind, BoundDirectSession, DirectSession, DirectSessionNotifier},
+    AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver,
+};
 use nix::fcntl::OFlag;
-use std::cell::RefCell;
-use std::io::Error as IoError;
-use std::os::unix::io::RawFd;
-use std::path::Path;
-use std::rc::Rc;
+use std::{cell::RefCell, io::Error as IoError, os::unix::io::RawFd, path::Path, rc::Rc};
 
 use wayland_server::calloop::LoopHandle;
 

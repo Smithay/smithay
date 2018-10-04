@@ -70,15 +70,18 @@
 //! # }
 //! ```
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
-use wayland::compositor::roles::Role;
-use wayland::compositor::CompositorToken;
+use wayland::compositor::{roles::Role, CompositorToken};
 
-use wayland_server::protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface};
-use wayland_server::{Display, Global, Resource};
+use wayland_server::{
+    protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface},
+    Display, Global, Resource,
+};
 
 mod wl_handlers;
 

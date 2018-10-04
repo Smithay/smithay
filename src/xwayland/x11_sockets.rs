@@ -1,10 +1,9 @@
-use std::io::{Read, Write};
-use std::os::unix::io::FromRawFd;
-use std::os::unix::net::UnixStream;
+use std::{
+    io::{Read, Write},
+    os::unix::{io::FromRawFd, net::UnixStream},
+};
 
-use nix::errno::Errno;
-use nix::sys::socket;
-use nix::{Error as NixError, Result as NixResult};
+use nix::{errno::Errno, sys::socket, Error as NixError, Result as NixResult};
 
 /// Find a free X11 display slot and setup
 pub(crate) fn prepare_x11_sockets(log: ::slog::Logger) -> Result<(X11Lock, [UnixStream; 2]), ()> {

@@ -59,12 +59,11 @@ use std::sync::{Arc, Mutex};
 mod keyboard;
 mod pointer;
 
-pub use self::keyboard::{
-    keysyms, Error as KeyboardError, KeyboardHandle, Keysym, ModifiersState, XkbConfig,
+pub use self::{
+    keyboard::{keysyms, Error as KeyboardError, KeyboardHandle, Keysym, ModifiersState, XkbConfig},
+    pointer::{PointerAxisHandle, PointerHandle},
 };
-pub use self::pointer::{PointerAxisHandle, PointerHandle};
-use wayland_server::protocol::wl_seat;
-use wayland_server::{Display, Global, NewResource, Resource};
+use wayland_server::{protocol::wl_seat, Display, Global, NewResource, Resource};
 
 struct Inner {
     log: ::slog::Logger,

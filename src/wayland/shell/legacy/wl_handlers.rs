@@ -1,12 +1,15 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
-use wayland_server::protocol::{wl_shell, wl_shell_surface, wl_surface};
-use wayland_server::{DisplayToken, NewResource, Resource};
+use wayland_server::{
+    protocol::{wl_shell, wl_shell_surface, wl_surface},
+    DisplayToken, NewResource, Resource,
+};
 
-use wayland::compositor::roles::Role;
-use wayland::compositor::CompositorToken;
+use wayland::compositor::{roles::Role, CompositorToken};
 
 use super::{ShellRequest, ShellState, ShellSurface, ShellSurfaceKind, ShellSurfaceRole};
 

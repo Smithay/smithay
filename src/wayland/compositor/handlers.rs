@@ -1,12 +1,12 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Mutex;
+use std::{cell::RefCell, rc::Rc, sync::Mutex};
 
-use wayland_server::protocol::{wl_compositor, wl_region, wl_subcompositor, wl_subsurface, wl_surface};
-use wayland_server::{DisplayToken, NewResource, Resource};
+use wayland_server::{
+    protocol::{wl_compositor, wl_region, wl_subcompositor, wl_subsurface, wl_surface},
+    DisplayToken, NewResource, Resource,
+};
 
-use super::tree::{Location, SurfaceData};
 use super::{
+    tree::{Location, SurfaceData},
     CompositorToken, Damage, Rectangle, RectangleKind, RegionAttributes, Role, RoleType, SubsurfaceRole,
     SurfaceEvent,
 };

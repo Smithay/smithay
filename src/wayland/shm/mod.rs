@@ -78,10 +78,11 @@
 //! If you are already using an handler for this signal, you probably don't want to use this handler.
 
 use self::pool::{Pool, ResizeError};
-use std::rc::Rc;
-use std::sync::Arc;
-use wayland_server::protocol::{wl_buffer, wl_shm, wl_shm_pool};
-use wayland_server::{Display, DisplayToken, Global, NewResource, Resource};
+use std::{rc::Rc, sync::Arc};
+use wayland_server::{
+    protocol::{wl_buffer, wl_shm, wl_shm_pool},
+    Display, DisplayToken, Global, NewResource, Resource,
+};
 
 mod pool;
 

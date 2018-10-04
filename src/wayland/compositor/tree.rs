@@ -1,8 +1,6 @@
-use super::roles::*;
-use super::{SubsurfaceRole, SurfaceAttributes};
+use super::{roles::*, SubsurfaceRole, SurfaceAttributes};
 use std::sync::Mutex;
-use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::Resource;
+use wayland_server::{protocol::wl_surface::WlSurface, Resource};
 
 /// Node of a subsurface tree, holding some user specified data type U
 /// at each node

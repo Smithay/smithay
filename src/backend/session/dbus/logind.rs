@@ -35,18 +35,24 @@ use dbus::{
     BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interface, Member, Message, MessageItem,
     OwnedFd, Path as DbusPath, Watch, WatchEvent,
 };
-use nix::fcntl::OFlag;
-use nix::sys::stat::{fstat, major, minor, stat};
-use std::cell::RefCell;
-use std::io::Error as IoError;
-use std::os::unix::io::RawFd;
-use std::path::Path;
-use std::rc::{Rc, Weak};
-use std::sync::atomic::{AtomicBool, Ordering};
+use nix::{
+    fcntl::OFlag,
+    sys::stat::{fstat, major, minor, stat},
+};
+use std::{
+    cell::RefCell,
+    io::Error as IoError,
+    os::unix::io::RawFd,
+    path::Path,
+    rc::{Rc, Weak},
+    sync::atomic::{AtomicBool, Ordering},
+};
 use systemd::login;
 
-use wayland_server::calloop::generic::{Event, EventedRawFd, Generic};
-use wayland_server::calloop::{LoopHandle, Ready, Source};
+use wayland_server::calloop::{
+    generic::{Event, EventedRawFd, Generic},
+    LoopHandle, Ready, Source,
+};
 
 struct LogindSessionImpl {
     conn: RefCell<Connection>,

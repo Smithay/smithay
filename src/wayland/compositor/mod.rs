@@ -76,23 +76,24 @@
 //! This `CompositorToken` also provides access to the metadata associated with the role of the
 //! surfaces. See the documentation of the `roles` submodule for a detailed explanation.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Mutex;
+use std::{cell::RefCell, rc::Rc, sync::Mutex};
 
 mod handlers;
 pub mod roles;
 mod tree;
 
-use self::roles::{Role, RoleType, WrongRole};
-use self::tree::SurfaceData;
 pub use self::tree::TraversalAction;
-use utils::Rectangle;
-use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::protocol::{
-    wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor,
+use self::{
+    roles::{Role, RoleType, WrongRole},
+    tree::SurfaceData,
 };
-use wayland_server::{Display, Global, NewResource, Resource};
+use utils::Rectangle;
+use wayland_server::{
+    protocol::{
+        wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor, wl_surface::WlSurface,
+    },
+    Display, Global, NewResource, Resource,
+};
 
 /// Description of which part of a surface
 /// should be considered damaged and needs to be redrawn
