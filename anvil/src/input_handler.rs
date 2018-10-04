@@ -17,7 +17,10 @@ use smithay::{
         self, Event, InputBackend, InputHandler, KeyState, KeyboardKeyEvent, PointerAxisEvent,
         PointerButtonEvent, PointerMotionAbsoluteEvent, PointerMotionEvent,
     },
-    wayland::seat::{keysyms as xkb, AxisFrame, KeyboardHandle, Keysym, ModifiersState, PointerHandle},
+    wayland::{
+        seat::{keysyms as xkb, AxisFrame, KeyboardHandle, Keysym, ModifiersState, PointerHandle},
+        SERIAL_COUNTER as SCOUNTER,
+    },
     wayland_server::protocol::wl_pointer,
 };
 
@@ -30,7 +33,6 @@ pub struct AnvilInputHandler {
     window_map: Rc<RefCell<MyWindowMap>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
     screen_size: (u32, u32),
-    serial: u32,
     #[cfg(feature = "udev")]
     session: Option<AutoSession>,
     running: Arc<AtomicBool>,
@@ -54,7 +56,6 @@ impl AnvilInputHandler {
             screen_size,
             running,
             pointer_location,
-            serial: 1,
             #[cfg(feature = "udev")]
             session: None,
         }
@@ -79,14 +80,8 @@ impl AnvilInputHandler {
             screen_size,
             running,
             pointer_location,
-            serial: 1,
             session: Some(session),
         }
-    }
-
-    fn next_serial(&mut self) -> u32 {
-        self.serial += 1;
-        self.serial
     }
 }
 
@@ -107,7 +102,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
         let keycode = evt.key_code();
         let state = evt.state();
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
-        let serial = self.next_serial();
+        let serial = SCOUNTER.next_serial();
         let log = &self.log;
         let time = Event::time(&evt);
         let mut action = KeyAction::None;
@@ -159,7 +154,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
 
     fn on_pointer_move(&mut self, _: &input::Seat, evt: B::PointerMotionEvent) {
         let (x, y) = (evt.delta_x(), evt.delta_y());
-        let serial = self.next_serial();
+        let serial = SCOUNTER.next_serial();
         let mut location = self.pointer_location.borrow_mut();
         location.0 += x as f64;
         location.1 += y as f64;
@@ -194,13 +189,13 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
             }
         };
         *self.pointer_location.borrow_mut() = (x, y);
-        let serial = self.next_serial();
+        let serial = SCOUNTER.next_serial();
         let under = self.window_map.borrow().get_surface_under((x as f64, y as f64));
         self.pointer.motion((x, y), under, serial, evt.time());
     }
 
     fn on_pointer_button(&mut self, _: &input::Seat, evt: B::PointerButtonEvent) {
-        let serial = self.next_serial();
+        let serial = SCOUNTER.next_serial();
         let button = match evt.button() {
             input::MouseButton::Left => 0x110,
             input::MouseButton::Right => 0x111,
