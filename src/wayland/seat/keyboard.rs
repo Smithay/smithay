@@ -237,23 +237,12 @@ pub(crate) fn create_keyboard_handler(
 
     info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
 
-    // prepare a tempfile with the keymap, to send it to clients
-    let mut keymap_file = tempfile().map_err(Error::IoError)?;
-    let keymap_data = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-    keymap_file
-        .write_all(keymap_data.as_bytes())
-        .map_err(Error::IoError)?;
-    keymap_file.flush().map_err(Error::IoError)?;
-
-    trace!(log, "Keymap loaded and copied to tempfile.";
-        "fd" => keymap_file.as_raw_fd(), "len" => keymap_data.as_bytes().len()
-    );
+    let keymap = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
 
     Ok(KeyboardHandle {
         arc: Arc::new(KbdArc {
             internal: Mutex::new(internal),
-            keymap_file,
-            keymap_len: keymap_data.as_bytes().len() as u32,
+            keymap,
             logger: log,
         }),
     })
@@ -261,8 +250,7 @@ pub(crate) fn create_keyboard_handler(
 
 struct KbdArc {
     internal: Mutex<KbdInternal>,
-    keymap_file: ::std::fs::File,
-    keymap_len: u32,
+    keymap: String,
     logger: ::slog::Logger,
 }
 
@@ -411,11 +399,27 @@ impl KeyboardHandle {
     /// This should be done first, before anything else is done with this keyboard.
     pub(crate) fn new_kbd(&self, kbd: Resource<WlKeyboard>) {
         trace!(self.arc.logger, "Sending keymap to client");
-        kbd.send(Event::Keymap {
-            format: KeymapFormat::XkbV1,
-            fd: self.arc.keymap_file.as_raw_fd(),
-            size: self.arc.keymap_len,
+
+        // prepare a tempfile with the keymap, to send it to the client
+        let ret = tempfile().and_then(|mut f| {
+            f.write_all(self.arc.keymap.as_bytes())?;
+            f.flush()?;
+            kbd.send(Event::Keymap {
+                format: KeymapFormat::XkbV1,
+                fd: f.as_raw_fd(),
+                size: self.arc.keymap.as_bytes().len() as u32,
+            });
+            Ok(())
         });
+
+        if let Err(e) = ret {
+            warn!(self.arc.logger,
+                "Failed write keymap to client in a tempfile";
+                "err" => format!("{:?}", e)
+            );
+            return;
+        };
+
         let mut guard = self.arc.internal.lock().unwrap();
         if kbd.version() >= 4 {
             kbd.send(Event::RepeatInfo {
