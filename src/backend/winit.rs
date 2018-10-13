@@ -213,8 +213,6 @@ pub trait WinitEventsHandler {
     ///
     /// Here are provided the new size (in physical pixels) and the new scale factor provided by winit.
     fn resized(&mut self, size: (f64, f64), scale: f64);
-    /// The window was moved
-    fn moved(&mut self, position: LogicalPosition);
     /// The window gained or lost focus
     fn focus_changed(&mut self, focused: bool);
     /// The window needs to be redrawn
@@ -704,9 +702,6 @@ impl InputBackend for WinitInputBackend {
                             if let Some(events_handler) = events_handler {
                                 events_handler.resized(physical_size.into(), wsize.dpi_factor);
                             }
-                        }
-                        (WindowEvent::Moved(position), _, Some(events_handler)) => {
-                            events_handler.moved(position)
                         }
                         (WindowEvent::Focused(focus), _, Some(events_handler)) => {
                             events_handler.focus_changed(focus)
