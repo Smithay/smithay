@@ -3,7 +3,7 @@
 //! This module contains several handlers to manage the wayland protocol
 //! and the clients.
 //!
-//! Most utilities provided in this module work in the wame way:
+//! Most utilities provided in this module work in the same way:
 //!
 //! - An init function or method will take the event loop as argument and
 //!   insert one or more globals into it.
