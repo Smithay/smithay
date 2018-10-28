@@ -298,7 +298,7 @@ impl Session for DirectSession {
     }
 
     fn seat(&self) -> String {
-        // The VT api can only be used on seat0
+        // The VT API can only be used on seat0
         String::from("seat0")
     }
 

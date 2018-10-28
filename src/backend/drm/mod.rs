@@ -1,6 +1,6 @@
 //! Drm/Kms types and backend implementations
 //!
-//! This module provide a `DrmDevice` which acts as a representation for any drm
+//! This module provide a `DrmDevice` which acts as a representation for any DRM
 //! device and can be used to create the second provided structure a `DrmBackend`.
 //!
 //! Initialization happens through the types provided by [`drm-rs`](https://docs.rs/drm/).
@@ -33,7 +33,7 @@
 //! ### Initialization
 //!
 //! To initialize the `DrmDevice` you need either a `RawFd` or a `File` of
-//! your drm node. The `File` is recommended as it represents the save api.
+//! your DRM node. The `File` is recommended as it represents the save API.
 //!
 //! Once you got your `DrmDevice` you can then use it to create `DrmBackend`s.
 //! You will need to use the `drm` crate to provide the required types to create
@@ -258,7 +258,7 @@ use self::{backend::DrmBackendInternal, error::*};
 
 static LOAD: Once = ONCE_INIT;
 
-/// Representation of an open drm device node to create rendering backends
+/// Representation of an open DRM device node to create rendering backends
 pub struct DrmDevice<A: ControlDevice + 'static> {
     context: Rc<EGLContext<Gbm<framebuffer::Info>, GbmDevice<A>>>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
@@ -270,9 +270,9 @@ pub struct DrmDevice<A: ControlDevice + 'static> {
 }
 
 impl<A: ControlDevice + 'static> DrmDevice<A> {
-    /// Create a new `DrmDevice` from an open drm node
+    /// Create a new `DrmDevice` from an open DRM node
     ///
-    /// Returns an error if the file is no valid drm node or context creation was not
+    /// Returns an error if the file is no valid DRM node or context creation was not
     /// successful.
     pub fn new<L>(dev: A, logger: L) -> Result<Self>
     where
@@ -290,9 +290,9 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
         )
     }
 
-    /// Create a new `DrmDevice` from an open drm node and given `GlAttributes`
+    /// Create a new `DrmDevice` from an open DRM node and given `GlAttributes`
     ///
-    /// Returns an error if the file is no valid drm node or context creation was not
+    /// Returns an error if the file is no valid DRM node or context creation was not
     /// successful.
     pub fn new_with_gl_attr<L>(dev: A, attributes: GlAttributes, logger: L) -> Result<Self>
     where
@@ -318,7 +318,7 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
             .st_rdev;
 
         let mut drm = DrmDevice {
-            // Open the gbm device from the drm device and create a context based on that
+            // Open the gbm device from the DRM device and create a context based on that
             context: Rc::new(
                 EGLContext::new(
                     {
@@ -516,7 +516,7 @@ impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {
     }
 }
 
-/// Handler for drm node events
+/// Handler for DRM node events
 ///
 /// See module-level documentation for its use
 pub trait DrmHandler<A: ControlDevice + 'static> {
