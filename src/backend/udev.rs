@@ -107,32 +107,43 @@ impl<
             .flat_map(|path| {
                 match DrmDevice::new(
                     {
-                        match session.open(&path, fcntl::OFlag::O_RDWR | fcntl::OFlag::O_CLOEXEC | fcntl::OFlag::O_NOCTTY | fcntl::OFlag::O_NONBLOCK) {
+                        match session.open(
+                            &path,
+                            fcntl::OFlag::O_RDWR
+                                | fcntl::OFlag::O_CLOEXEC
+                                | fcntl::OFlag::O_NOCTTY
+                                | fcntl::OFlag::O_NONBLOCK,
+                        ) {
                             Ok(fd) => SessionFdDrmDevice(fd),
                             Err(err) => {
-                                warn!(logger, "Unable to open drm device {:?}, Error: {:?}. Skipping", path, err);
+                                warn!(
+                                    logger,
+                                    "Unable to open drm device {:?}, Error: {:?}. Skipping", path, err
+                                );
                                 return None;
                             }
                         }
-                    }, logger.clone()
+                    },
+                    logger.clone(),
                 ) {
                     // Call the handler, which might add it to the runloop
                     Ok(mut device) => {
                         let devnum = device.device_id();
                         let fd = device.as_raw_fd();
                         match handler.device_added(&mut device) {
-                            Some(drm_handler) => {
-                                match drm_device_bind(&handle, device, drm_handler) {
-                                    Ok((event_source, device)) => Some((devnum, (event_source, device))),
-                                    Err((err, mut device)) => {
-                                        warn!(logger, "Failed to bind device. Error: {:?}.", err);
-                                        handler.device_removed(&mut device);
-                                        drop(device);
-                                        if let Err(err) = session.close(fd) {
-                                            warn!(logger, "Failed to close dropped device. Error: {:?}. Ignoring", err);
-                                        };
-                                        None
-                                    }
+                            Some(drm_handler) => match drm_device_bind(&handle, device, drm_handler) {
+                                Ok((event_source, device)) => Some((devnum, (event_source, device))),
+                                Err((err, mut device)) => {
+                                    warn!(logger, "Failed to bind device. Error: {:?}.", err);
+                                    handler.device_removed(&mut device);
+                                    drop(device);
+                                    if let Err(err) = session.close(fd) {
+                                        warn!(
+                                            logger,
+                                            "Failed to close dropped device. Error: {:?}. Ignoring", err
+                                        );
+                                    };
+                                    None
                                 }
                             },
                             None => {
@@ -143,14 +154,16 @@ impl<
                                 None
                             }
                         }
-                    },
+                    }
                     Err(err) => {
-                        warn!(logger, "Failed to initialize device {:?}. Error: {:?}. Skipping", path, err);
+                        warn!(
+                            logger,
+                            "Failed to initialize device {:?}. Error: {:?}. Skipping", path, err
+                        );
                         None
                     }
                 }
-            })
-            .collect::<HashMap<dev_t, _>>();
+            }).collect::<HashMap<dev_t, _>>();
 
         let mut builder = MonitorBuilder::new(context).chain_err(|| ErrorKind::FailedToInitMonitor)?;
         builder

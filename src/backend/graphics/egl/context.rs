@@ -339,7 +339,12 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         macro_rules! attrib {
             ($display:expr, $config:expr, $attr:expr) => {{
                 let mut value = mem::uninitialized();
-                let res = ffi::egl::GetConfigAttrib($display, $config, $attr as ffi::egl::types::EGLint, &mut value);
+                let res = ffi::egl::GetConfigAttrib(
+                    $display,
+                    $config,
+                    $attr as ffi::egl::types::EGLint,
+                    &mut value,
+                );
                 if res == 0 {
                     bail!(ErrorKind::ConfigFailed);
                 }
