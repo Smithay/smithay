@@ -98,7 +98,7 @@ pub fn run_raw_drm(mut display: Display, mut event_loop: EventLoop<()>, log: Log
     let renderer = GliumDrawer::init(backend, egl_display, log.clone());
     {
         /*
-         * Initialize glium
+         * Initialize Glium
          */
         let mut frame = renderer.draw();
         frame.clear_color(0.8, 0.8, 0.9, 1.0);
