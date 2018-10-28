@@ -529,7 +529,7 @@ pub struct GlAttributes {
     ///
     /// Debug contexts are usually slower but give better error reporting.
     pub debug: bool,
-    /// Whether to use vsync. If vsync is enabled, calling swap_buffers will block until the screen refreshes.
+    /// Whether to use vsync. If vsync is enabled, calling `swap_buffers` will block until the screen refreshes.
     /// This is typically used to prevent screen tearing.
     pub vsync: bool,
 }
@@ -549,7 +549,7 @@ pub struct PixelFormatRequirements {
     /// If `true`, only hardware-accelerated formats will be considered. If `false`, only software renderers.
     /// `None` means "don't care". Default is `None`.
     pub hardware_accelerated: Option<bool>,
-    /// Minimum number of bits for the color buffer, excluding alpha. None means "don't care". The default is `None``.
+    /// Minimum number of bits for the color buffer, excluding alpha. `None` means "don't care". The default is `None`.
     pub color_bits: Option<u8>,
     /// If `true`, the color buffer must be in a floating point format. Default is `false`.
     ///

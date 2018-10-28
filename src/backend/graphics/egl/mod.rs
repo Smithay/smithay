@@ -139,7 +139,7 @@ pub trait EGLGraphicsBackend: GraphicsBackend {
     /// For drawing directly onto hardware this unit will be equal to actual pixels.
     fn get_framebuffer_dimensions(&self) -> (u32, u32);
 
-    /// Returns true if the OpenGL context is the current one in the thread.
+    /// Returns `true` if the OpenGL context is the current one in the thread.
     fn is_current(&self) -> bool;
 
     /// Makes the OpenGL context the current context in the current thread.

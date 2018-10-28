@@ -32,7 +32,7 @@ pub enum BufferAccessError {
     ContextLost,
     /// This buffer is not managed by the EGL buffer
     NotManaged(Resource<WlBuffer>),
-    /// Failed to create EGLImages from the buffer
+    /// Failed to create `EGLImages` from the buffer
     EGLImageCreationFailed,
     /// The required EGL extension is not supported by the underlying EGL implementation
     EglExtensionNotSupported(EglExtensionNotSupportedError),
@@ -104,7 +104,7 @@ pub enum TextureCreationError {
     /// application on sleep and wakes it up later. However any OpenGL implementation
     /// can theoretically lose the context at any time.
     ContextLost,
-    /// Failed to bind the EGLImage to the given texture
+    /// Failed to bind the `EGLImage` to the given texture
     ///
     /// The given argument is the gl error code
     TextureBindingFailed(u32),

@@ -106,7 +106,7 @@ pub enum KeyState {
 
 /// Trait for keyboard event
 pub trait KeyboardKeyEvent: Event {
-    /// Code of the pressed key. See linux/input-event-codes.h
+    /// Code of the pressed key. See `linux/input-event-codes.h`
     fn key_code(&self) -> u32;
     /// State of the key
     fn state(&self) -> KeyState;

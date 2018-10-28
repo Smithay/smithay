@@ -65,7 +65,7 @@
 //! ### Use the surface metadata
 //!
 //! As you can see in the previous example, in the end we are retrieving a token from
-//! the init function. This token is necessary to retrieve the metadata associated with
+//! the `init` function. This token is necessary to retrieve the metadata associated with
 //! a surface. It can be cloned. See `CompositorToken` for the details of what it enables you.
 //!
 //! The surface metadata is held in the `SurfaceAttributes` struct. In contains double-buffered
@@ -131,7 +131,7 @@ pub struct SurfaceAttributes<U> {
     /// surface to be unmapped.
     ///
     /// You are free to set this field to `None` to avoid processing it several
-    /// times. It'll be set to `Some(...)` if the user attaches a buffer (or NULL) to
+    /// times. It'll be set to `Some(...)` if the user attaches a buffer (or `NULL`) to
     /// the surface.
     pub buffer: Option<Option<(Resource<wl_buffer::WlBuffer>, (i32, i32))>>,
     /// Scale of the contents of the buffer, for higher-resolution contents.
@@ -214,7 +214,7 @@ pub enum RectangleKind {
 ///
 /// A region is defined as an union and difference of rectangle.
 ///
-/// This struct contains an ordered Vec containing the rectangles defining
+/// This struct contains an ordered `Vec` containing the rectangles defining
 /// a region. They should be added or subtracted in this order to compute the
 /// actual contents of the region.
 #[derive(Clone, Debug)]
@@ -265,7 +265,7 @@ impl<U: 'static, R: 'static> CompositorToken<U, R> {
     ///
     /// The closure will be called with the contents of the data associated with this surface.
     ///
-    /// If the surface is not managed by the CompositorGlobal that provided this token, this
+    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn with_surface_data<F, T>(&self, surface: &Resource<WlSurface>, f: F) -> T
     where
@@ -294,7 +294,7 @@ where
     /// - a custom value that is passed in a fold-like manner, but only from the output of a parent
     ///   to its children. See `TraversalAction` for details.
     ///
-    /// If the surface not managed by the CompositorGlobal that provided this token, this
+    /// If the surface not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn with_surface_tree_upward<F, T>(
         &self,
@@ -333,7 +333,7 @@ where
     ///
     /// Returns `None` is this surface is a root surface
     ///
-    /// If the surface is not managed by the CompositorGlobal that provided this token, this
+    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn get_parent(&self, surface: &Resource<WlSurface>) -> Option<Resource<WlSurface>> {
         SurfaceData::<U, R>::get_parent(surface)
@@ -341,7 +341,7 @@ where
 
     /// Retrieve the children of this surface
     ///
-    /// If the surface is not managed by the CompositorGlobal that provided this token, this
+    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn get_children(&self, surface: &Resource<WlSurface>) -> Vec<Resource<WlSurface>> {
         SurfaceData::<U, R>::get_children(surface)
@@ -351,7 +351,7 @@ where
 impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     /// Check whether this surface as a role or not
     ///
-    /// If the surface is not managed by the CompositorGlobal that provided this token, this
+    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn has_a_role(&self, surface: &Resource<WlSurface>) -> bool {
         SurfaceData::<U, R>::has_a_role(surface)
@@ -359,7 +359,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
 
     /// Check whether this surface as a specific role
     ///
-    /// If the surface is not managed by the CompositorGlobal that provided this token, this
+    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn has_role<RoleData>(&self, surface: &Resource<WlSurface>) -> bool
     where
@@ -372,7 +372,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     ///
     /// Fails if the surface already has a role.
     ///
-    /// If the surface is not managed by the CompositorGlobal that provided this token, this
+    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn give_role<RoleData>(&self, surface: &Resource<WlSurface>) -> Result<(), ()>
     where
@@ -386,7 +386,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     ///
     /// Fails if the surface already has a role and returns the data.
     ///
-    /// If the surface is not managed by the CompositorGlobal that provided this token, this
+    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn give_role_with<RoleData>(
         &self,
@@ -403,7 +403,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     ///
     /// Fails and don't call the closure if the surface doesn't have this role
     ///
-    /// If the surface is not managed by the CompositorGlobal that provided this token, this
+    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn with_role_data<RoleData, F, T>(&self, surface: &Resource<WlSurface>, f: F) -> Result<T, WrongRole>
     where
@@ -417,7 +417,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     ///
     /// Fails if the surface didn't already have this role.
     ///
-    /// If the surface is not managed by the CompositorGlobal that provided this token, this
+    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn remove_role<RoleData>(&self, surface: &Resource<WlSurface>) -> Result<RoleData, WrongRole>
     where
@@ -426,9 +426,9 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
         SurfaceData::<U, R>::remove_role::<RoleData>(surface)
     }
 
-    /// Retrieve the metadata associated with a wl_region
+    /// Retrieve the metadata associated with a `wl_region`
     ///
-    /// If the region is not managed by the CompositorGlobal that provided this token, this
+    /// If the region is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn get_region_attributes(&self, region: &Resource<wl_region::WlRegion>) -> RegionAttributes {
         match region.user_data::<Mutex<RegionAttributes>>() {

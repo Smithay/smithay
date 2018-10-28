@@ -93,7 +93,7 @@ pub trait SessionObserver {
     /// Session/Device got active again
     ///
     /// If only a specific device shall be activated again a device number in the form of
-    /// (major, major, Option<RawFd>) is provided. Optionally the session may decide to replace
+    /// `(major, major, Option<RawFd>)` is provided. Optionally the session may decide to replace
     /// the currently open file descriptor of the device with a new one. In that case the old one
     /// should not be used anymore and be closed. All observers not using the specified device should
     /// ignore the signal in that case.

@@ -83,7 +83,7 @@
 //!
 //! You'll obtain these objects though two means: either via the callback methods of
 //! the subhandler you provided, or via methods on the `ShellState` that you are given
-//! (in an `Arc<Mutex<_>>`) as return value of the init function.
+//! (in an `Arc<Mutex<_>>`) as return value of the `init` function.
 
 use std::{
     cell::RefCell,
@@ -125,13 +125,13 @@ pub struct XdgSurfaceRole {
     /// List of non-acked configures pending
     ///
     /// Whenever a configure is acked by the client, all configure
-    /// older than it are discarded as well. As such, this vec contains
+    /// older than it are discarded as well. As such, this `Vec` contains
     /// the serials of all the configure send to this surface that are
     /// newer than the last ack received.
     pub pending_configures: Vec<u32>,
     /// Has this surface acked at least one configure?
     ///
-    /// xdg_shell defines it as illegal to commit on a surface that has
+    /// `xdg_shell` defines it as illegal to commit on a surface that has
     /// not yet acked a configure.
     pub configured: bool,
 }
@@ -555,7 +555,7 @@ where
     /// a protocol error to the associated client. Also returns `false`
     /// if the surface is already destroyed.
     ///
-    /// xdg_shell mandates that a client acks a configure before committing
+    /// `xdg_shell` mandates that a client acks a configure before committing
     /// anything.
     pub fn ensure_configured(&self) -> bool {
         if !self.alive() {
@@ -749,7 +749,7 @@ where
         configured
     }
 
-    /// Send a 'popup_done' event to the popup surface
+    /// Send a `popup_done` event to the popup surface
     ///
     /// It means that the use has dismissed the popup surface, or that
     /// the pointer has left the area of popup grab if there was a grab.
@@ -833,7 +833,7 @@ pub enum XdgRequest<U, R, SD> {
     },
     /// The pong for a pending ping of this shell client was received
     ///
-    /// The ShellHandler already checked for you that the serial matches the one
+    /// The `ShellHandler` already checked for you that the serial matches the one
     /// from the pending ping.
     ClientPong {
         /// the client

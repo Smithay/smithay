@@ -56,7 +56,7 @@ where
     U: 'static,
     R: 'static,
 {
-    /// Cleans the user_data of that surface, must be called when it is destroyed
+    /// Cleans the `user_data` of that surface, must be called when it is destroyed
     pub fn cleanup(surface: &Resource<WlSurface>) {
         let my_data_mutex = surface.user_data::<Mutex<SurfaceData<U, R>>>().unwrap();
         let mut my_data = my_data_mutex.lock().unwrap();

@@ -29,7 +29,7 @@ error_chain! {
             description("EGL was unable to obtain a valid EGL Display")
         }
 
-        #[doc = "eglInitialize returned an error"]
+        #[doc = "`eglInitialize` returned an error"]
         InitFailed {
             description("Failed to initialize EGL")
         }
@@ -44,7 +44,7 @@ error_chain! {
             description("Context creation failed as one or more requirements could not be met. Try removing some gl attributes or pixel format requirements")
         }
 
-        #[doc = "eglCreateWindowSurface failed"]
+        #[doc = "`eglCreateWindowSurface` failed"]
         SurfaceCreationFailed {
             description("Failed to create a new EGLSurface")
         }
@@ -56,22 +56,22 @@ error_chain! {
                      at least one is required: {:?}", extensions)
         }
 
-        #[doc = "Only one EGLDisplay may be bound to a given WlDisplay at any time"]
+        #[doc = "Only one EGLDisplay may be bound to a given `WlDisplay` at any time"]
         OtherEGLDisplayAlreadyBound {
             description("Only one EGLDisplay may be bound to a given WlDisplay at any time")
         }
 
-        #[doc = "No EGLDisplay is currently bound to this WlDisplay"]
+        #[doc = "No EGLDisplay is currently bound to this `WlDisplay`"]
         NoEGLDisplayBound {
             description("No EGLDisplay is currently bound to this WlDisplay")
         }
 
-        #[doc = "Index of plane is out of bounds for EGLImages"]
+        #[doc = "Index of plane is out of bounds for `EGLImages`"]
         PlaneIndexOutOfBounds {
             description("Index of plane is out of bounds for EGLImages")
         }
 
-        #[doc = "Failed to create EGLImages from the buffer"]
+        #[doc = "Failed to create `EGLImages` from the buffer"]
         EGLImageCreationFailed {
             description("Failed to create EGLImages from the buffer")
         }

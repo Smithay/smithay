@@ -387,10 +387,10 @@ fn exec_xwayland(
     match ret {}
 }
 
-/// Remove the O_CLOEXEC flag from this Fd
+/// Remove the `O_CLOEXEC` flag from this `Fd`
 ///
-/// This means that the Fd will *not* be automatically
-/// closed when we exec() into Xwayland
+/// This means that the `Fd` will *not* be automatically
+/// closed when we `exec()` into Xwayland
 fn unset_cloexec<F: AsRawFd>(fd: &F) -> NixResult<()> {
     use nix::fcntl::{fcntl, FcntlArg, FdFlag};
     fcntl(fd.as_raw_fd(), FcntlArg::F_SETFD(FdFlag::empty()))?;

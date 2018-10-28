@@ -306,7 +306,7 @@ impl Output {
         }
     }
 
-    /// Check is given wl_output instance is managed by this `Output`.
+    /// Check is given `wl_output` instance is managed by this `Output`.
     pub fn owns(&self, output: &Resource<WlOutput>) -> bool {
         self.inner
             .lock()

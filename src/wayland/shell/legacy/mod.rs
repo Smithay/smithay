@@ -238,7 +238,7 @@ pub enum ShellSurfaceKind {
     },
 }
 
-/// A request triggered by a wl_shell_surface
+/// A request triggered by a `wl_shell_surface`
 pub enum ShellRequest<U, R, D> {
     /// A new shell surface was created
     ///
