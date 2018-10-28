@@ -27,7 +27,7 @@ pub trait Backend {
     ///
     /// # Unsafety
     ///
-    /// The returned `EGLDisplay` needs to be a valid ptr for egl,
+    /// The returned `EGLDisplay` needs to be a valid pointer for EGL,
     /// but there is no way to test that.
     unsafe fn get_display<F: Fn(&str) -> bool>(
         display: ffi::NativeDisplayType,
@@ -132,7 +132,7 @@ impl<T: 'static> Backend for Gbm<T> {
 ///
 /// ## Unsafety
 ///
-/// The returned `NativeDisplayType` must be valid for egl and there is no way to test that.
+/// The returned `NativeDisplayType` must be valid for EGL and there is no way to test that.
 pub unsafe trait NativeDisplay<B: Backend> {
     /// Arguments used to surface creation.
     type Arguments;
@@ -141,7 +141,7 @@ pub unsafe trait NativeDisplay<B: Backend> {
     /// Because one type might implement multiple `Backend`s this function must be called to check
     /// if the expected `Backend` is used at runtime.
     fn is_backend(&self) -> bool;
-    /// Return a raw pointer egl will accept for context creation.
+    /// Return a raw pointer EGL will accept for context creation.
     fn ptr(&self) -> Result<ffi::NativeDisplayType>;
     /// Create a surface
     fn create_surface(&self, args: Self::Arguments) -> ::std::result::Result<B::Surface, Self::Error>;
@@ -230,11 +230,11 @@ unsafe impl<A: AsRawFd + 'static, T: 'static> NativeDisplay<Gbm<T>> for GbmDevic
     }
 }
 
-/// Trait for types returning valid surface pointers for initializing egl
+/// Trait for types returning valid surface pointers for initializing EGL
 ///
 /// ## Unsafety
 ///
-/// The returned `NativeWindowType` must be valid for egl and there is no way to test that.
+/// The returned `NativeWindowType` must be valid for EGL and there is no way to test that.
 pub unsafe trait NativeSurface {
     /// Return a raw pointer egl will accept for surface creation.
     fn ptr(&self) -> ffi::NativeWindowType;

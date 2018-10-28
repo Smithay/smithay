@@ -1,6 +1,6 @@
 //! Common traits for various ways to renderer on a given graphics backend.
 //!
-//! Note: Not every api may be supported by every backend
+//! Note: Not every API may be supported by every backend
 
 /// General functions any graphics backend should support independently from it's rendering
 /// technique.
@@ -21,7 +21,6 @@ pub trait GraphicsBackend {
     /// In these cases setting the position is actually not required, as movement is done
     /// by the higher compositor and not by the backend. It is still good practice to update
     /// the position after every received event, but don't rely on pointer wrapping working.
-    ///
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Self::Error>;
 
     /// Set the cursor drawn on the `GraphicsBackend`.

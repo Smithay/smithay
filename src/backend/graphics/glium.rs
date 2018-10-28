@@ -27,7 +27,7 @@ impl From<SwapBuffersError> for GliumSwapBuffersError {
     }
 }
 
-/// Wrapper to expose `glium` compatibility
+/// Wrapper to expose `Glium` compatibility
 pub struct GliumGraphicsBackend<T: EGLGraphicsBackend> {
     context: Rc<Context>,
     backend: Rc<InternalBackend<T>>,
@@ -72,7 +72,7 @@ impl<T: EGLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
     ///
     /// This follows the same semantics as `std::cell:RefCell`.
     /// Holding any other borrow while trying to borrow the backend
-    /// mutably will panic. Note that glium will borrow the backend
+    /// mutably will panic. Note that Glium will borrow the backend
     /// (not mutably) during rendering.
     pub fn borrow_mut(&self) -> RefMut<T> {
         self.backend.0.borrow_mut()

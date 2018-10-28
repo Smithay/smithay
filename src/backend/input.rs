@@ -70,7 +70,7 @@ pub struct SeatCapabilities {
     pub touch: bool,
 }
 
-/// Trait for generic functions every input event does provide/
+/// Trait for generic functions every input event does provide
 pub trait Event {
     /// Returns an upward counting variable useful for event ordering.
     ///

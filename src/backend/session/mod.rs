@@ -1,5 +1,5 @@
 //!
-//! Abstraction of different session apis.
+//! Abstraction of different session APIs.
 //!
 //! Sessions provide a way for multiple graphical systems to run in parallel by providing
 //! mechanisms to switch between and handle device access and permissions for every running
@@ -8,7 +8,7 @@
 //! They are crucial to allow unprivileged processes to use graphical or input devices.
 //!
 //! The following mechanisms are currently provided:
-//!     - direct - legacy tty / virtual terminal kernel api
+//!     - direct - legacy tty / virtual terminal kernel API
 //!
 use nix::fcntl::OFlag;
 use std::{
@@ -44,7 +44,7 @@ pub trait Session {
 
 /// Interface for registering for notifications for a given session.
 ///
-/// Part of the session api which allows to get notified, when the given session
+/// Part of the session API which allows to get notified, when the given session
 /// gets paused or becomes active again. Any object implementing the `SessionObserver` trait
 /// may be registered.
 pub trait SessionNotifier {

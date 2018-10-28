@@ -1,6 +1,6 @@
 //! Tools for handling surface roles
 //!
-//! In the wayland protocol, surfaces can have several different roles, which
+//! In the Wayland protocol, surfaces can have several different roles, which
 //! define how they are to be used. The core protocol defines 3 of these roles:
 //!
 //! - `shell_surface`: This surface is to be considered as what is most often

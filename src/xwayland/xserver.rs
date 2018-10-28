@@ -332,7 +332,7 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
 
 enum Void {}
 
-/// Exec xwayland with given sockets on given display
+/// Exec XWayland with given sockets on given display
 ///
 /// If this returns, that means that something failed
 fn exec_xwayland(

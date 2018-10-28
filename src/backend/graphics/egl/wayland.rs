@@ -7,7 +7,7 @@
 //! rendering (so pick a fast one), to the `wayland_server::Display` of your compositor.
 //! Note only one backend may be bound to any `Display` at any time.
 //!
-//! You may then use the resulting `EGLDisplay` to receive `EGLImages` of an egl-based `WlBuffer`
+//! You may then use the resulting `EGLDisplay` to receive `EGLImages` of an EGL-based `WlBuffer`
 //! for rendering.
 
 use backend::graphics::egl::{
@@ -87,7 +87,7 @@ impl From<EglExtensionNotSupportedError> for BufferAccessError {
     }
 }
 
-/// Error that might happen when binding an `EGLImage` to a gl texture
+/// Error that might happen when binding an `EGLImage` to a GL texture
 #[derive(Debug, Clone, PartialEq)]
 pub enum TextureCreationError {
     /// The given plane index is out of bounds
@@ -106,7 +106,7 @@ pub enum TextureCreationError {
     ContextLost,
     /// Failed to bind the `EGLImage` to the given texture
     ///
-    /// The given argument is the gl error code
+    /// The given argument is the GL error code
     TextureBindingFailed(u32),
 }
 
@@ -167,7 +167,7 @@ impl Format {
     }
 }
 
-/// Images of the egl-based `WlBuffer`.
+/// Images of the EGL-based `WlBuffer`.
 pub struct EGLImages {
     display: Weak<ffi::egl::types::EGLDisplay>,
     /// Width in pixels
@@ -237,12 +237,12 @@ impl Drop for EGLImages {
 }
 
 /// Trait any backend type may implement that allows binding a `wayland_server::Display`
-/// to create an `EGLDisplay` for egl-based `WlBuffer`s.
+/// to create an `EGLDisplay` for EGL-based `WlBuffer`s.
 pub trait EGLWaylandExtensions {
     /// Binds this EGL context to the given Wayland display.
     ///
     /// This will allow clients to utilize EGL to create hardware-accelerated
-    /// surfaces. The server will need to be able to handle egl-wl_buffers.
+    /// surfaces. The server will need to be able to handle EGL-`wl_buffers`.
     /// See the `wayland::drm` module.
     ///
     /// ## Errors
@@ -255,7 +255,7 @@ pub trait EGLWaylandExtensions {
     fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay>;
 }
 
-/// Type to receive `EGLImages` for egl-based `WlBuffer`s.
+/// Type to receive `EGLImages` for EGL-based `WlBuffer`s.
 ///
 /// Can be created by using `EGLWaylandExtensions::bind_wl_display`.
 pub struct EGLDisplay(Weak<ffi::egl::types::EGLDisplay>, *mut wl_display);
@@ -270,7 +270,7 @@ impl EGLDisplay {
 
     /// Try to receive `EGLImages` from a given `WlBuffer`.
     ///
-    /// In case the buffer is not managed by egl (but e.g. the wayland::shm module)
+    /// In case the buffer is not managed by EGL (but e.g. the `wayland::shm` module)
     /// a `BufferAccessError::NotManaged(WlBuffer)` is returned with the original buffer
     /// to render it another way.
     pub fn egl_buffer_contents(

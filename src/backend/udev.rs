@@ -1,7 +1,7 @@
 //!
 //! Provides `udev` related functionality for automated device scanning.
 //!
-//! This module mainly provides the `UdevBackend`, which constantly monitors available drm devices
+//! This module mainly provides the `UdevBackend`, which constantly monitors available DRM devices
 //! and notifies a user supplied `UdevHandler` of any changes.
 //!
 //! Additionally this contains some utility functions related to scanning.
@@ -43,10 +43,10 @@ impl AsRawFd for SessionFdDrmDevice {
 impl BasicDevice for SessionFdDrmDevice {}
 impl ControlDevice for SessionFdDrmDevice {}
 
-/// Graphical backend that monitors available drm devices.
+/// Graphical backend that monitors available DRM devices.
 ///
-/// Provides a way to automatically initialize a `DrmDevice` for available gpus and notifies the
-/// given handler of any changes. Can be used to provide hot-plug functionality for gpus and
+/// Provides a way to automatically initialize a `DrmDevice` for available GPUs and notifies the
+/// given handler of any changes. Can be used to provide hot-plug functionality for GPUs and
 /// attached monitors.
 pub struct UdevBackend<
     H: DrmHandler<SessionFdDrmDevice> + 'static,
@@ -394,7 +394,7 @@ where
     }
 }
 
-/// Handler for the `UdevBackend`, allows to open, close and update drm devices as they change during runtime.
+/// Handler for the `UdevBackend`, allows to open, close and update DRM devices as they change during runtime.
 pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static> {
     /// Called on initialization for every known device and when a new device is detected.
     ///
@@ -426,7 +426,7 @@ pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static> {
     fn error(&mut self, error: IoError);
 }
 
-/// Returns the path of the primary gpu device if any
+/// Returns the path of the primary GPU device if any
 ///
 /// Might be used for filtering in `UdevHandler::device_added` or for manual `DrmDevice` initialization
 pub fn primary_gpu<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Option<PathBuf>> {
@@ -456,7 +456,7 @@ pub fn primary_gpu<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Opti
     Ok(result.and_then(|device| device.devnode().map(PathBuf::from)))
 }
 
-/// Returns the paths of all available gpu devices
+/// Returns the paths of all available GPU devices
 ///
 /// Might be used for manual `DrmDevice` initialization
 pub fn all_gpus<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Vec<PathBuf>> {

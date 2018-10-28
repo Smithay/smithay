@@ -13,6 +13,6 @@ pub trait CpuGraphicsBackend<E: Error>: GraphicsBackend {
     /// for the given size or if the position and size is out of scope of the framebuffer.
     fn render(&mut self, buffer: &[u8], format: Format, at: (u32, u32), size: (u32, u32)) -> Result<(), E>;
 
-    /// Returns the dimensions of the Framebuffer
+    /// Returns the dimensions of the framebuffer
     fn get_framebuffer_dimensions(&self) -> (u32, u32);
 }

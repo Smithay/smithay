@@ -1,6 +1,6 @@
 //! Protocol-related utilities
 //!
-//! This module contains several handlers to manage the wayland protocol
+//! This module contains several handlers to manage the Wayland protocol
 //! and the clients.
 //!
 //! Most utilities provided in this module work in the same way:

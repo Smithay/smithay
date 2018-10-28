@@ -153,7 +153,7 @@ impl PointerHandle {
 
     /// Start an axis frame
     ///
-    /// A single frame will group multiple scroll events as if they happended in the same instance.
+    /// A single frame will group multiple scroll events as if they happened in the same instance.
     /// Dropping the returned `PointerAxisHandle` will group the events together.
     pub fn axis(&self, details: AxisFrame) {
         self.inner.lock().unwrap().with_grab(|mut handle, grab| {
@@ -165,11 +165,11 @@ impl PointerHandle {
 /// A trait to implement a pointer grab
 ///
 /// In some context, it is necessary to temporarily change the behavior of the pointer. This is
-/// typically known as a pointer grab. A typicall example would be, during a drag'n'drop operation,
+/// typically known as a pointer grab. A typical example would be, during a drag'n'drop operation,
 /// the underlying surfaces will no longer receive classic pointer event, but rather special events.
 ///
 /// This trait is the interface to intercept regular pointer events and change them as needed, its
-/// interface mimicks the `PointerHandle` interface.
+/// interface mimics the `PointerHandle` interface.
 ///
 /// If your logic decides that the grab should end, both `PointerInnerHandle` and `PointerHandle` have
 /// a method to change it.
@@ -214,7 +214,7 @@ impl<'a> PointerInnerHandle<'a> {
         self.inner.grab = GrabStatus::Active(serial, Box::new(grab));
     }
 
-    /// Remove any current grab on this pointer, reseting it to the default behavior
+    /// Remove any current grab on this pointer, resetting it to the default behavior
     pub fn unset_grab(&mut self) {
         self.inner.grab = GrabStatus::None;
     }

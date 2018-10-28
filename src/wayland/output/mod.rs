@@ -158,7 +158,7 @@ impl Inner {
 
 /// An output as seen by the clients
 ///
-/// This handle is stored in the events loop, and allows you to notify clients
+/// This handle is stored in the event loop, and allows you to notify clients
 /// about any change in the properties of this output.
 pub struct Output {
     inner: Arc<Mutex<Inner>>,
@@ -167,9 +167,9 @@ pub struct Output {
 impl Output {
     /// Create a new output global with given name and physical properties
     ///
-    /// The global is directly registered into the eventloop, and this function
+    /// The global is directly registered into the event loop, and this function
     /// returns the state token allowing you to access it, as well as the global handle,
-    /// in case you wish to remove this global in  the future.
+    /// in case you wish to remove this global in the future.
     pub fn new<L>(
         display: &mut Display,
         name: String,

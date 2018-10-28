@@ -1,7 +1,7 @@
 //! Seat global utilities
 //!
 //! This module provides you with utilities for handling the seat globals
-//! and the associated input wayland objects.
+//! and the associated input Wayland objects.
 //!
 //! ## How to use it
 //!

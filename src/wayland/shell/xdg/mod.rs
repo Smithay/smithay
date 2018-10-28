@@ -149,7 +149,7 @@ pub struct PositionerState {
     /// Gravity direction for positioning the child surface
     /// relative to its anchor point
     pub gravity: xdg_positioner::Gravity,
-    /// Adjustments to do if previous criterias constraint the
+    /// Adjustments to do if previous criteria constrain the
     /// surface
     pub constraint_adjustment: xdg_positioner::ConstraintAdjustment,
     /// Offset placement relative to the anchor point
@@ -372,7 +372,7 @@ fn make_shell_client_data<SD: Default>() -> ShellClientData<SD> {
 /// global (be it `wl_shell` or `xdg_shell`).
 ///
 /// Most of the time, you can consider that a
-/// wayland client will be a single shell client.
+/// Wayland client will be a single shell client.
 ///
 /// You can use this handle to access a storage for any
 /// client-specific data you wish to associate with it.

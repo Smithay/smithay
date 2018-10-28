@@ -26,7 +26,6 @@
 //! It is crucial to avoid errors during that state. Examples for object that might be registered
 //! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
 //! automatically by the `UdevBackend`, if not done manually).
-//! ```
 
 #[cfg(feature = "backend_session_logind")]
 use super::logind::{self, logind_session_bind, BoundLogindSession, LogindSession, LogindSessionNotifier};
@@ -39,7 +38,7 @@ use std::{cell::RefCell, io::Error as IoError, os::unix::io::RawFd, path::Path, 
 
 use wayland_server::calloop::LoopHandle;
 
-/// `Session` using the best available inteface
+/// `Session` using the best available interface
 #[derive(Clone)]
 pub enum AutoSession {
     /// Logind session
@@ -49,7 +48,7 @@ pub enum AutoSession {
     Direct(Rc<RefCell<DirectSession>>),
 }
 
-/// `SessionNotifier` using the best available inteface
+/// `SessionNotifier` using the best available interface
 pub enum AutoSessionNotifier {
     /// Logind session notifier
     #[cfg(feature = "backend_session_logind")]
@@ -142,7 +141,7 @@ impl AutoSession {
 ///
 /// Allows the `AutoSessionNotifier` to listen for incoming signals signalling the session state.
 /// If you don't use this function `AutoSessionNotifier` will not correctly tell you the
-/// session state and call it's `SessionObservers`.
+/// session state and call its `SessionObservers`.
 pub fn auto_session_bind<Data: 'static>(
     notifier: AutoSessionNotifier,
     handle: &LoopHandle<Data>,

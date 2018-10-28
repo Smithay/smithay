@@ -1,7 +1,7 @@
 //! Utilities for handling surfaces, subsurfaces and regions
 //!
 //! This module provides automatic handling of surfaces, subsurfaces
-//! and region wayland objects, by registering an implementation for
+//! and region Wayland objects, by registering an implementation for
 //! for the `wl_compositor` and `wl_subcompositor` globals.
 //!
 //! ## Why use this implementation
@@ -440,7 +440,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
 
 /// Create new `wl_compositor` and `wl_subcompositor` globals.
 ///
-/// The globals are directly registered into the eventloop, and this function
+/// The globals are directly registered into the event loop, and this function
 /// returns a `CompositorToken` which you'll need access the data associated to
 /// the `wl_surface`s.
 ///
