@@ -344,8 +344,8 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
 
         // we want to mode-set, so we better be the master, if we run via a tty session
         if drm.set_master().is_err() {
-            warn!(log, "Unable to become drm master, assuming unpriviledged mode");
-            drm.priviledged = false;
+            warn!(log, "Unable to become drm master, assuming unprivileged mode");
+            drm.privileged = false;
         };
 
         let res_handles = drm.resource_handles().chain_err(|| {
