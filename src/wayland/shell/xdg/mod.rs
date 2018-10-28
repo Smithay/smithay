@@ -732,7 +732,7 @@ where
                         .unwrap();
                     data.xdg_surface.post_error(
                         xdg_surface::Error::NotConstructed as u32,
-                        "Surface has not been confgured yet.".into(),
+                        "Surface has not been configured yet.".into(),
                     );
                 }
                 PopupKind::ZxdgV6(ref s) => {
@@ -741,7 +741,7 @@ where
                         .unwrap();
                     data.xdg_surface.post_error(
                         zxdg_surface_v6::Error::NotConstructed as u32,
-                        "Surface has not been confgured yet.".into(),
+                        "Surface has not been configured yet.".into(),
                     );
                 }
             }

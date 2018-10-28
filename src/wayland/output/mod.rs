@@ -106,7 +106,7 @@ struct Inner {
 
 impl Inner {
     fn new_global(&mut self, output: Resource<WlOutput>) {
-        trace!(self.log, "New global instanciated.");
+        trace!(self.log, "New global instantiated.");
 
         if self.modes.is_empty() {
             warn!(self.log, "Output is used with no modes set"; "name" => &self.name);

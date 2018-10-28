@@ -26,7 +26,7 @@ error_chain! {
 
         #[doc = "EGL was unable to obtain a valid EGL Display"]
         DisplayNotSupported {
-            description("EGL was unable to optain a valid EGL Display")
+            description("EGL was unable to obtain a valid EGL Display")
         }
 
         #[doc = "eglInitialize returned an error"]

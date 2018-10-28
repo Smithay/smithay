@@ -67,7 +67,7 @@ impl ::std::error::Error for BufferAccessError {
     fn description(&self) -> &str {
         match *self {
             BufferAccessError::ContextLost => "The corresponding context was lost",
-            BufferAccessError::NotManaged(_) => "This buffer is not mananged by EGL",
+            BufferAccessError::NotManaged(_) => "This buffer is not managed by EGL",
             BufferAccessError::EGLImageCreationFailed => "Failed to create EGLImages from the buffer",
             BufferAccessError::EglExtensionNotSupported(ref err) => err.description(),
         }
@@ -127,7 +127,7 @@ impl ::std::error::Error for TextureCreationError {
     fn description(&self) -> &str {
         match *self {
             TextureCreationError::ContextLost => "The context has been lost, it needs to be recreated",
-            TextureCreationError::PlaneIndexOutOfBounds => "This buffer is not mananged by EGL",
+            TextureCreationError::PlaneIndexOutOfBounds => "This buffer is not managed by EGL",
             TextureCreationError::TextureBindingFailed(_) => "Failed to create EGLImages from the buffer",
         }
     }
