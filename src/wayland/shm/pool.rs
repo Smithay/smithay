@@ -226,12 +226,12 @@ extern "C" fn sigbus_handler(_signum: libc::c_int, info: *mut libc::siginfo_t, _
                 guard.set((memmap, true));
                 // nullify the pool
                 if m.nullify().is_err() {
-                    // something terrible occured !
+                    // something terrible occurred !
                     unsafe { reraise_sigbus() }
                 }
             }
             _ => {
-                // something else occured, let's die honorably
+                // something else occurred, let's die honorably
                 unsafe { reraise_sigbus() }
             }
         }

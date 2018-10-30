@@ -1,7 +1,7 @@
 //! Seat global utilities
 //!
 //! This module provides you with utilities for handling the seat globals
-//! and the associated input wayland objects.
+//! and the associated input Wayland objects.
 //!
 //! ## How to use it
 //!
@@ -51,7 +51,7 @@
 //! # }
 //! ```
 //!
-//! These handles can be cloned and sent accross thread, so you can keep one around
+//! These handles can be cloned and sent across thread, so you can keep one around
 //! in your event-handling code to forward inputs to your clients.
 
 use std::sync::{Arc, Mutex};
@@ -147,7 +147,7 @@ impl Seat {
     /// Adds the pointer capability to this seat
     ///
     /// You are provided a `PointerHandle`, which allows you to send input events
-    /// to this keyboard. This handle can be cloned and sent accross threads.
+    /// to this keyboard. This handle can be cloned and sent across threads.
     ///
     /// Calling this method on a seat that already has a pointer capability
     /// will overwrite it, and will be seen by the clients as if the
@@ -180,7 +180,7 @@ impl Seat {
     /// Adds the keyboard capability to this seat
     ///
     /// You are provided a `KbdHandle`, which allows you to send input events
-    /// to this keyboard. This handle can be cloned and sent accross threads.
+    /// to this keyboard. This handle can be cloned and sent across threads.
     ///
     /// You also provide a Model/Layout/Variant/Options specification of the
     /// keymap to be used for this keyboard, as well as any repeat-info that
@@ -239,7 +239,7 @@ impl Seat {
         }
     }
 
-    /// Checks wether a given `WlSeat` is associated with this `Seat`
+    /// Checks whether a given `WlSeat` is associated with this `Seat`
     pub fn owns(&self, seat: &Resource<wl_seat::WlSeat>) -> bool {
         let inner = self.inner.lock().unwrap();
         inner.known_seats.iter().any(|s| s.equals(seat))

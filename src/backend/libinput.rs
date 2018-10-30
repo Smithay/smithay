@@ -437,7 +437,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                 }
                             }
                         } else {
-                            warn!(self.logger, "Recieved touch event of non existing Seat");
+                            warn!(self.logger, "Received touch event of non existing Seat");
                             continue;
                         }
                     }
@@ -451,7 +451,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                 trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
                                 handler.on_keyboard_key(seat, key_event);
                             } else {
-                                warn!(self.logger, "Recieved key event of non existing Seat");
+                                warn!(self.logger, "Received key event of non existing Seat");
                                 continue;
                             }
                         },
@@ -485,7 +485,7 @@ impl backend::InputBackend for LibinputInputBackend {
                                 }
                             }
                         } else {
-                            warn!(self.logger, "Recieved pointer event of non existing Seat");
+                            warn!(self.logger, "Received pointer event of non existing Seat");
                             continue;
                         }
                     }

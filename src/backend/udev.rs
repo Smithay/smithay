@@ -1,7 +1,7 @@
 //!
 //! Provides `udev` related functionality for automated device scanning.
 //!
-//! This module mainly provides the `UdevBackend`, which constantly monitors available drm devices
+//! This module mainly provides the `UdevBackend`, which constantly monitors available DRM devices
 //! and notifies a user supplied `UdevHandler` of any changes.
 //!
 //! Additionally this contains some utility functions related to scanning.
@@ -43,10 +43,10 @@ impl AsRawFd for SessionFdDrmDevice {
 impl BasicDevice for SessionFdDrmDevice {}
 impl ControlDevice for SessionFdDrmDevice {}
 
-/// Graphical backend that monitors available drm devices.
+/// Graphical backend that monitors available DRM devices.
 ///
-/// Provides a way to automatically initialize a `DrmDevice` for available gpus and notifies the
-/// given handler of any changes. Can be used to provide hot-plug functionality for gpus and
+/// Provides a way to automatically initialize a `DrmDevice` for available GPUs and notifies the
+/// given handler of any changes. Can be used to provide hot-plug functionality for GPUs and
 /// attached monitors.
 pub struct UdevBackend<
     H: DrmHandler<SessionFdDrmDevice> + 'static,
@@ -107,32 +107,43 @@ impl<
             .flat_map(|path| {
                 match DrmDevice::new(
                     {
-                        match session.open(&path, fcntl::OFlag::O_RDWR | fcntl::OFlag::O_CLOEXEC | fcntl::OFlag::O_NOCTTY | fcntl::OFlag::O_NONBLOCK) {
+                        match session.open(
+                            &path,
+                            fcntl::OFlag::O_RDWR
+                                | fcntl::OFlag::O_CLOEXEC
+                                | fcntl::OFlag::O_NOCTTY
+                                | fcntl::OFlag::O_NONBLOCK,
+                        ) {
                             Ok(fd) => SessionFdDrmDevice(fd),
                             Err(err) => {
-                                warn!(logger, "Unable to open drm device {:?}, Error: {:?}. Skipping", path, err);
+                                warn!(
+                                    logger,
+                                    "Unable to open drm device {:?}, Error: {:?}. Skipping", path, err
+                                );
                                 return None;
                             }
                         }
-                    }, logger.clone()
+                    },
+                    logger.clone(),
                 ) {
                     // Call the handler, which might add it to the runloop
                     Ok(mut device) => {
                         let devnum = device.device_id();
                         let fd = device.as_raw_fd();
                         match handler.device_added(&mut device) {
-                            Some(drm_handler) => {
-                                match drm_device_bind(&handle, device, drm_handler) {
-                                    Ok((event_source, device)) => Some((devnum, (event_source, device))),
-                                    Err((err, mut device)) => {
-                                        warn!(logger, "Failed to bind device. Error: {:?}.", err);
-                                        handler.device_removed(&mut device);
-                                        drop(device);
-                                        if let Err(err) = session.close(fd) {
-                                            warn!(logger, "Failed to close dropped device. Error: {:?}. Ignoring", err);
-                                        };
-                                        None
-                                    }
+                            Some(drm_handler) => match drm_device_bind(&handle, device, drm_handler) {
+                                Ok((event_source, device)) => Some((devnum, (event_source, device))),
+                                Err((err, mut device)) => {
+                                    warn!(logger, "Failed to bind device. Error: {:?}.", err);
+                                    handler.device_removed(&mut device);
+                                    drop(device);
+                                    if let Err(err) = session.close(fd) {
+                                        warn!(
+                                            logger,
+                                            "Failed to close dropped device. Error: {:?}. Ignoring", err
+                                        );
+                                    };
+                                    None
                                 }
                             },
                             None => {
@@ -143,14 +154,16 @@ impl<
                                 None
                             }
                         }
-                    },
+                    }
                     Err(err) => {
-                        warn!(logger, "Failed to initialize device {:?}. Error: {:?}. Skipping", path, err);
+                        warn!(
+                            logger,
+                            "Failed to initialize device {:?}. Error: {:?}. Skipping", path, err
+                        );
                         None
                     }
                 }
-            })
-            .collect::<HashMap<dev_t, _>>();
+            }).collect::<HashMap<dev_t, _>>();
 
         let mut builder = MonitorBuilder::new(context).chain_err(|| ErrorKind::FailedToInitMonitor)?;
         builder
@@ -253,7 +266,7 @@ impl SessionObserver for UdevBackendObserver {
 
 /// Binds a `UdevBackend` to a given `EventLoop`.
 ///
-/// Allows the backend to recieve kernel events and thus to drive the `UdevHandler`.
+/// Allows the backend to receive kernel events and thus to drive the `UdevHandler`.
 /// No runtime functionality can be provided without using this function.
 pub fn udev_backend_bind<H, S, T, Data>(
     mut udev: UdevBackend<H, S, T, Data>,
@@ -394,7 +407,7 @@ where
     }
 }
 
-/// Handler for the `UdevBackend`, allows to open, close and update drm devices as they change during runtime.
+/// Handler for the `UdevBackend`, allows to open, close and update DRM devices as they change during runtime.
 pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static> {
     /// Called on initialization for every known device and when a new device is detected.
     ///
@@ -426,7 +439,7 @@ pub trait UdevHandler<H: DrmHandler<SessionFdDrmDevice> + 'static> {
     fn error(&mut self, error: IoError);
 }
 
-/// Returns the path of the primary gpu device if any
+/// Returns the path of the primary GPU device if any
 ///
 /// Might be used for filtering in `UdevHandler::device_added` or for manual `DrmDevice` initialization
 pub fn primary_gpu<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Option<PathBuf>> {
@@ -456,7 +469,7 @@ pub fn primary_gpu<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Opti
     Ok(result.and_then(|device| device.devnode().map(PathBuf::from)))
 }
 
-/// Returns the paths of all available gpu devices
+/// Returns the paths of all available GPU devices
 ///
 /// Might be used for manual `DrmDevice` initialization
 pub fn all_gpus<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Vec<PathBuf>> {

@@ -8,14 +8,14 @@ use wayland_server::{protocol::wl_surface::WlSurface, Resource};
 /// This type is internal to Smithay, and should not appear in the
 /// public API
 ///
-/// It is a bidirectionnal tree, meaning we can move along it in both
+/// It is a bidirectional tree, meaning we can move along it in both
 /// direction (top-bottom or bottom-up). We are taking advantage of the
-/// fact that lifetime of objects are decided by wayland-server to ensure
+/// fact that lifetime of objects are decided by Wayland-server to ensure
 /// the cleanup will be done properly, and we won't leak anything.
 ///
 /// This implementation is not strictly a tree, but rather a directed graph
 /// with the constraint that node can have at most one incoming edge. Aka like
-/// a tree, but with loops allowed. This is because the wayland protocol does not
+/// a tree, but with loops allowed. This is because the Wayland protocol does not
 /// have a failure case to forbid this. Note that if any node in such a graph does not
 /// have a parent, then the graph is a tree and this node is its root.
 pub struct SurfaceData<U, R> {
@@ -56,7 +56,7 @@ where
     U: 'static,
     R: 'static,
 {
-    /// Cleans the user_data of that surface, must be called when it is destroyed
+    /// Cleans the `user_data` of that surface, must be called when it is destroyed
     pub fn cleanup(surface: &Resource<WlSurface>) {
         let my_data_mutex = surface.user_data::<Mutex<SurfaceData<U, R>>>().unwrap();
         let mut my_data = my_data_mutex.lock().unwrap();
@@ -89,7 +89,7 @@ impl<U: 'static, R: RoleType + 'static> SurfaceData<U, R> {
         <R as RoleType>::has_role(&data_guard.role)
     }
 
-    /// Check wether a surface has a given role
+    /// Check whether a surface has a given role
     pub fn has_role<RoleData>(surface: &Resource<WlSurface>) -> bool
     where
         R: Role<RoleData>,
@@ -288,7 +288,7 @@ impl<U: 'static, R: 'static> SurfaceData<U, R> {
     /// Note that an internal lock is taken during access of this data,
     /// so the tree cannot be manipulated at the same time.
     ///
-    /// The callback returns wether the traversal should continue or not. Returning
+    /// The callback returns whether the traversal should continue or not. Returning
     /// false will cause an early-stopping.
     pub fn map_tree<F, T>(root: &Resource<WlSurface>, initial: T, mut f: F, reverse: bool)
     where

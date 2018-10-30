@@ -3,7 +3,7 @@
 //!
 //! This requires write permissions for the given tty device and any devices opened through this
 //! interface. This means it will almost certainly require root permissions and not allow to run
-//! the compositor as an unpriviledged user. Use this session type *only* as a fallback or for testing,
+//! the compositor as an unprivileged user. Use this session type *only* as a fallback or for testing,
 //! if anything better is available.
 //!
 //! ## How to use it
@@ -41,7 +41,7 @@
 //! switching the tty via `DirectSession::change_vt`) and to automatically enable it again,
 //! when the session becomes active again.
 //!
-//! It is crutial to avoid errors during that state. Examples for object that might be registered
+//! It is crucial to avoid errors during that state. Examples for object that might be registered
 //! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
 //! automatically by the `UdevBackend`, if not done manually).
 
@@ -298,7 +298,7 @@ impl Session for DirectSession {
     }
 
     fn seat(&self) -> String {
-        // The VT api can only be used on seat0
+        // The VT API can only be used on seat0
         String::from("seat0")
     }
 

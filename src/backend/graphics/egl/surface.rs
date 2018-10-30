@@ -6,7 +6,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
-/// EGL surface of a given egl context for rendering
+/// EGL surface of a given EGL context for rendering
 pub struct EGLSurface<N: native::NativeSurface> {
     context: Weak<ffi::egl::types::EGLContext>,
     display: Weak<ffi::egl::types::EGLDisplay>,

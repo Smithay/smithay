@@ -207,11 +207,11 @@ where
     ))
 }
 
-/// Handler trait to recieve window-related events to provide a better *nested* experience.
+/// Handler trait to receive window-related events to provide a better *nested* experience.
 pub trait WinitEventsHandler {
     /// The window was resized, can be used to adjust the associated `wayland::output::Output`s mode.
     ///
-    /// Here are provided the new size (in physical pixels) and the new scale factor provided by winit.
+    /// Here are provided the new size (in physical pixels) and the new scale factor provided by `winit`.
     fn resized(&mut self, size: (f64, f64), scale: f64);
     /// The window gained or lost focus
     fn focus_changed(&mut self, focused: bool);
@@ -336,7 +336,7 @@ impl fmt::Display for WinitInputError {
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Winit-Backend internal event wrapping winit's types into a `KeyboardKeyEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a `KeyboardKeyEvent`
 pub struct WinitKeyboardInputEvent {
     time: u32,
     key: u32,
@@ -365,7 +365,7 @@ impl KeyboardKeyEvent for WinitKeyboardInputEvent {
 }
 
 #[derive(Clone)]
-/// Winit-Backend internal event wrapping winit's types into a `PointerMotionAbsoluteEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a `PointerMotionAbsoluteEvent`
 pub struct WinitMouseMovedEvent {
     size: Rc<RefCell<WindowSize>>,
     time: u32,
@@ -402,7 +402,7 @@ impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Winit-Backend internal event wrapping winit's types into a `PointerAxisEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a `PointerAxisEvent`
 pub struct WinitMouseWheelEvent {
     time: u32,
     delta: MouseScrollDelta,
@@ -440,7 +440,7 @@ impl PointerAxisEvent for WinitMouseWheelEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Winit-Backend internal event wrapping winit's types into a `PointerButtonEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a `PointerButtonEvent`
 pub struct WinitMouseInputEvent {
     time: u32,
     button: WinitMouseButton,
@@ -464,7 +464,7 @@ impl PointerButtonEvent for WinitMouseInputEvent {
 }
 
 #[derive(Clone)]
-/// Winit-Backend internal event wrapping winit's types into a `TouchDownEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a `TouchDownEvent`
 pub struct WinitTouchStartedEvent {
     size: Rc<RefCell<WindowSize>>,
     time: u32,
@@ -511,7 +511,7 @@ impl TouchDownEvent for WinitTouchStartedEvent {
 }
 
 #[derive(Clone)]
-/// Winit-Backend internal event wrapping winit's types into a `TouchMotionEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a `TouchMotionEvent`
 pub struct WinitTouchMovedEvent {
     size: Rc<RefCell<WindowSize>>,
     time: u32,
@@ -552,7 +552,7 @@ impl TouchMotionEvent for WinitTouchMovedEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Winit-Backend internal event wrapping winit's types into a `TouchUpEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a `TouchUpEvent`
 pub struct WinitTouchEndedEvent {
     time: u32,
     id: u64,
@@ -571,7 +571,7 @@ impl TouchUpEvent for WinitTouchEndedEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Winit-Backend internal event wrapping winit's types into a `TouchCancelEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a `TouchCancelEvent`
 pub struct WinitTouchCancelledEvent {
     time: u32,
     id: u64,
@@ -661,9 +661,9 @@ impl InputBackend for WinitInputBackend {
     ///
     /// Returns an error if the `Window` the window has been closed. Calling
     /// `dispatch_new_events` again after the `Window` has been closed is considered an
-    /// application error and unspecified baviour may occur.
+    /// application error and unspecified behaviour may occur.
     ///
-    /// The linked `WinitGraphicsBackend` will error with a lost Context and should
+    /// The linked `WinitGraphicsBackend` will error with a lost `Context` and should
     /// not be used anymore as well.
     fn dispatch_new_events(&mut self) -> ::std::result::Result<(), WinitInputError> {
         let mut closed = false;

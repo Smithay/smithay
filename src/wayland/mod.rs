@@ -1,11 +1,11 @@
 //! Protocol-related utilities
 //!
-//! This module contains several handlers to manage the wayland protocol
+//! This module contains several handlers to manage the Wayland protocol
 //! and the clients.
 //!
 //! Most utilities provided in this module work in the same way:
 //!
-//! - An init function or method will take the event loop as argument and
+//! - An `init` function or method will take the event loop as argument and
 //!   insert one or more globals into it.
 //! - If you want to remove a previously inserted global, just call the
 //!   `destroy()` method on the associated `Global`. If you don't plan to
@@ -20,7 +20,7 @@ pub mod seat;
 pub mod shell;
 pub mod shm;
 
-/// A global SerialCounter for use in your compositor.
+/// A global `SerialCounter` for use in your compositor.
 ///
 /// Is is also used internally by some parts of Smithay.
 pub static SERIAL_COUNTER: SerialCounter = SerialCounter {

@@ -1,4 +1,4 @@
-//! Common traits and types for egl rendering
+//! Common traits and types for EGL rendering
 
 // Large parts of this module are taken from
 // https://github.com/tomaka/glutin/tree/044e651edf67a2029eecc650dd42546af1501414/src/api/egl/
@@ -38,7 +38,7 @@ pub enum SwapBuffersError {
     /// from OpenGL will return uninitialized data instead.
     ///
     /// A context loss usually happens on mobile devices when the user puts the
-    /// application on sleep and wakes it up later. However any OpenGL implementation
+    /// application to sleep and wakes it up later. However any OpenGL implementation
     /// can theoretically lose the context at any time.
     ContextLost,
     /// The buffers have already been swapped.
@@ -139,7 +139,7 @@ pub trait EGLGraphicsBackend: GraphicsBackend {
     /// For drawing directly onto hardware this unit will be equal to actual pixels.
     fn get_framebuffer_dimensions(&self) -> (u32, u32);
 
-    /// Returns true if the OpenGL context is the current one in the thread.
+    /// Returns `true` if the OpenGL context is the current one in the thread.
     fn is_current(&self) -> bool;
 
     /// Makes the OpenGL context the current context in the current thread.

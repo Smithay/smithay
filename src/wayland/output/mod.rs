@@ -1,14 +1,14 @@
-//! Output advertizing capabilities
+//! Output advertising capabilities
 //!
-//! This module provides a type helping you to handle the advertizing
+//! This module provides a type helping you to handle the advertising
 //! of your compositor's output and their capabilities to your client,
 //! as well as mapping your clients output request to your physical
 //! outputs.
 //!
 //! # How to use it
 //!
-//! You need to instanciate an `Output` for each output global you want
-//! to advertize to clients.
+//! You need to instantiate an `Output` for each output global you want
+//! to advertise to clients.
 //!
 //! Just add it to your Display using the `Output::new(..)` method.
 //! You can use the returned `Output` to change the properties of your
@@ -43,7 +43,7 @@
 //!     Some(wl_output::Transform::Normal), // global screen transformation
 //!     Some(1), // global screen scaling factor
 //! );
-//! // set the prefered mode
+//! // set the preferred mode
 //! output.set_preferred(Mode { width: 1920, height: 1080, refresh: 60000 });
 //! // add other supported modes
 //! output.add_mode(Mode { width: 800, height: 600, refresh: 60000 });
@@ -71,7 +71,7 @@ pub struct Mode {
     pub width: i32,
     /// The height in pixels
     pub height: i32,
-    /// The refresh rate in mili-Hertz
+    /// The refresh rate in millihertz
     ///
     /// `1000` is one fps (frame per second), `2000` is 2 fps, etc...
     pub refresh: i32,
@@ -79,9 +79,9 @@ pub struct Mode {
 
 /// The physical properties of an output
 pub struct PhysicalProperties {
-    /// The width in milimeters
+    /// The width in millimeters
     pub width: i32,
-    /// The height in milimeters
+    /// The height in millimeters
     pub height: i32,
     /// The subpixel geometry
     pub subpixel: Subpixel,
@@ -106,7 +106,7 @@ struct Inner {
 
 impl Inner {
     fn new_global(&mut self, output: Resource<WlOutput>) {
-        trace!(self.log, "New global instanciated.");
+        trace!(self.log, "New global instantiated.");
 
         if self.modes.is_empty() {
             warn!(self.log, "Output is used with no modes set"; "name" => &self.name);
@@ -158,7 +158,7 @@ impl Inner {
 
 /// An output as seen by the clients
 ///
-/// This handle is stored in the events loop, and allows you to notify clients
+/// This handle is stored in the event loop, and allows you to notify clients
 /// about any change in the properties of this output.
 pub struct Output {
     inner: Arc<Mutex<Inner>>,
@@ -167,9 +167,9 @@ pub struct Output {
 impl Output {
     /// Create a new output global with given name and physical properties
     ///
-    /// The global is directly registered into the eventloop, and this function
+    /// The global is directly registered into the event loop, and this function
     /// returns the state token allowing you to access it, as well as the global handle,
-    /// in case you whish to remove this global in  the future.
+    /// in case you wish to remove this global in the future.
     pub fn new<L>(
         display: &mut Display,
         name: String,
@@ -238,8 +238,8 @@ impl Output {
 
     /// Removes a mode from the list of known modes
     ///
-    /// It will not de-advertize it from existing clients (the protocol does not
-    /// allow it), but it won't be advertized to now clients from now on.
+    /// It will not de-advertise it from existing clients (the protocol does not
+    /// allow it), but it won't be advertised to now clients from now on.
     pub fn delete_mode(&self, mode: Mode) {
         let mut inner = self.inner.lock().unwrap();
         inner.modes.retain(|&m| m != mode);
@@ -306,7 +306,7 @@ impl Output {
         }
     }
 
-    /// Chech is given wl_output instance is managed by this `Output`.
+    /// Check is given `wl_output` instance is managed by this `Output`.
     pub fn owns(&self, output: &Resource<WlOutput>) -> bool {
         self.inner
             .lock()

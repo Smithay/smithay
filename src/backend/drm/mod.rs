@@ -1,6 +1,6 @@
 //! Drm/Kms types and backend implementations
 //!
-//! This module provide a `DrmDevice` which acts as a reprensentation for any drm
+//! This module provide a `DrmDevice` which acts as a representation for any DRM
 //! device and can be used to create the second provided structure a `DrmBackend`.
 //!
 //! Initialization happens through the types provided by [`drm-rs`](https://docs.rs/drm/).
@@ -9,7 +9,7 @@
 //!
 //! "Crtc"s represent scanout engines of the device pointer to one framebuffer. There responsibility
 //! is to read the data of the framebuffer and export it into an "Encoder". The number of crtc's
-//! represent the number of independant output devices the hardware may handle.
+//! represent the number of independent output devices the hardware may handle.
 //!
 //! An "Encoder" encodes the data of connected crtcs into a video signal for a fixed set
 //! of connectors. E.g. you might have an analog encoder based on a DAG for VGA ports, but another
@@ -33,7 +33,7 @@
 //! ### Initialization
 //!
 //! To initialize the `DrmDevice` you need either a `RawFd` or a `File` of
-//! your drm node. The `File` is recommended as it represents the save api.
+//! your DRM node. The `File` is recommended as it represents the save API.
 //!
 //! Once you got your `DrmDevice` you can then use it to create `DrmBackend`s.
 //! You will need to use the `drm` crate to provide the required types to create
@@ -116,8 +116,8 @@
 //!
 //! You can monitor the page flips by registering the `DrmDevice` as and
 //! `FdEventSourceHandler` and setting a `DrmHandler` on it. You will be notified
-//! whenever a page flip has happend, so you can render the next frame immediately
-//! and get a tear-free reprensentation on the display.
+//! whenever a page flip has happened, so you can render the next frame immediately
+//! and get a tear-free representation on the display.
 //!
 //! You need to render at least once to successfully trigger the first event.
 //!
@@ -258,21 +258,21 @@ use self::{backend::DrmBackendInternal, error::*};
 
 static LOAD: Once = ONCE_INIT;
 
-/// Representation of an open drm device node to create rendering backends
+/// Representation of an open DRM device node to create rendering backends
 pub struct DrmDevice<A: ControlDevice + 'static> {
     context: Rc<EGLContext<Gbm<framebuffer::Info>, GbmDevice<A>>>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     device_id: dev_t,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<DrmBackendInternal<A>>>>>,
     active: Arc<AtomicBool>,
-    priviledged: bool,
+    privileged: bool,
     logger: ::slog::Logger,
 }
 
 impl<A: ControlDevice + 'static> DrmDevice<A> {
-    /// Create a new `DrmDevice` from an open drm node
+    /// Create a new `DrmDevice` from an open DRM node
     ///
-    /// Returns an error if the file is no valid drm node or context creation was not
+    /// Returns an error if the file is no valid DRM node or context creation was not
     /// successful.
     pub fn new<L>(dev: A, logger: L) -> Result<Self>
     where
@@ -290,9 +290,9 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
         )
     }
 
-    /// Create a new `DrmDevice` from an open drm node and given `GlAttributes`
+    /// Create a new `DrmDevice` from an open DRM node and given `GlAttributes`
     ///
-    /// Returns an error if the file is no valid drm node or context creation was not
+    /// Returns an error if the file is no valid DRM node or context creation was not
     /// successful.
     pub fn new_with_gl_attr<L>(dev: A, attributes: GlAttributes, logger: L) -> Result<Self>
     where
@@ -318,7 +318,7 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
             .st_rdev;
 
         let mut drm = DrmDevice {
-            // Open the gbm device from the drm device and create a context based on that
+            // Open the gbm device from the DRM device and create a context based on that
             context: Rc::new(
                 EGLContext::new(
                     {
@@ -336,7 +336,7 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
             device_id,
             old_state: HashMap::new(),
             active: Arc::new(AtomicBool::new(true)),
-            priviledged: true,
+            privileged: true,
             logger: log.clone(),
         };
 
@@ -344,8 +344,8 @@ impl<A: ControlDevice + 'static> DrmDevice<A> {
 
         // we want to mode-set, so we better be the master, if we run via a tty session
         if drm.set_master().is_err() {
-            warn!(log, "Unable to become drm master, assuming unpriviledged mode");
-            drm.priviledged = false;
+            warn!(log, "Unable to become drm master, assuming unprivileged mode");
+            drm.privileged = false;
         };
 
         let res_handles = drm.resource_handles().chain_err(|| {
@@ -475,7 +475,7 @@ impl<A: ControlDevice + 'static> Hash for DrmDevice<A> {
     }
 }
 
-// for users convinience and FdEventSource registering
+// for users convenience and FdEventSource registering
 impl<A: ControlDevice + 'static> AsRawFd for DrmDevice<A> {
     fn as_raw_fd(&self) -> RawFd {
         self.context.as_raw_fd()
@@ -508,7 +508,7 @@ impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {
                 error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
             }
         }
-        if self.priviledged {
+        if self.privileged {
             if let Err(err) = self.drop_master() {
                 error!(self.logger, "Failed to drop drm master state. Error: {}", err);
             }
@@ -516,7 +516,7 @@ impl<A: ControlDevice + 'static> Drop for DrmDevice<A> {
     }
 }
 
-/// Handler for drm node events
+/// Handler for DRM node events
 ///
 /// See module-level documentation for its use
 pub trait DrmHandler<A: ControlDevice + 'static> {
@@ -596,7 +596,7 @@ pub struct DrmDeviceObserver<A: ControlDevice + 'static> {
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<DrmBackendInternal<A>>>>>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     active: Arc<AtomicBool>,
-    priviledged: bool,
+    privileged: bool,
     logger: ::slog::Logger,
 }
 
@@ -609,7 +609,7 @@ impl<A: ControlDevice + 'static> AsSessionObserver<DrmDeviceObserver<A>> for Drm
             backends: self.backends.clone(),
             old_state: self.old_state.clone(),
             active: self.active.clone(),
-            priviledged: self.priviledged,
+            privileged: self.privileged,
             logger: self.logger.clone(),
         }
     }
@@ -638,7 +638,7 @@ impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
             }
         }
         self.active.store(false, Ordering::SeqCst);
-        if self.priviledged {
+        if self.privileged {
             if let Some(device) = self.context.upgrade() {
                 if let Err(err) = device.drop_master() {
                     error!(self.logger, "Failed to drop drm master state. Error: {}", err);
@@ -660,7 +660,7 @@ impl<A: ControlDevice + 'static> SessionObserver for DrmDeviceObserver<A> {
             }
         }
         self.active.store(true, Ordering::SeqCst);
-        if self.priviledged {
+        if self.privileged {
             if let Some(device) = self.context.upgrade() {
                 if let Err(err) = device.set_master() {
                     crit!(self.logger, "Failed to acquire drm master again. Error: {}", err);

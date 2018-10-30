@@ -22,7 +22,7 @@ pub fn load_shm_buffer(data: BufferData, pool: &[u8]) -> Result<(RawImage2d<u8>,
         Cow::Borrowed(&pool[offset..(offset + height * width * pixelsize)])
     } else {
         // the buffer is discontinuous or lines overlap
-        // we need to make a copy as unfortunately glium does not
+        // we need to make a copy as unfortunately Glium does not
         // expose the OpenGL APIs we would need to load this buffer :/
         let mut data = Vec::with_capacity(height * width * pixelsize);
         for i in 0..height {

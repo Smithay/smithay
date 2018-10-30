@@ -1,6 +1,6 @@
 //! Tools for handling surface roles
 //!
-//! In the wayland protocol, surfaces can have several different roles, which
+//! In the Wayland protocol, surfaces can have several different roles, which
 //! define how they are to be used. The core protocol defines 3 of these roles:
 //!
 //! - `shell_surface`: This surface is to be considered as what is most often
@@ -78,7 +78,7 @@
 //!
 //! - The trait `RoleType`, which defines it as a type handling roles
 //! - For each of your roles, the trait `Role<Token>` (where `Token` is your
-//!   token type), marking its hability to handle this given role.
+//!   token type), marking its ability to handle this given role.
 //!
 //! All handlers that handle a specific role will require you to provide
 //! them with a `CompositorToken<U, R, H>` where `R: Role<TheToken>`.

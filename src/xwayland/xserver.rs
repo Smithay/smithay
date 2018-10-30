@@ -1,25 +1,25 @@
 /*
- * Steps of Xwayland server creation
+ * Steps of XWayland server creation
  *
  * Sockets to create:
- * - a pair for Xwayland to connect to smithay as a wayland client, we use our
- *   end to insert the Xwayland client in the display
- * - a pair for smithay to connect to Xwayland as a WM, we give our end to the
+ * - a pair for XWayland to connect to smithay as a wayland client, we use our
+ *   end to insert the XWayland client in the display
+ * - a pair for smithay to connect to XWayland as a WM, we give our end to the
  *   WM and it deals with it
- * - 2 listening sockets on which the Xwayland server will listen. We need to
- *   bind them ouserlves so we know what value put in the $DISPLAY env variable.
+ * - 2 listening sockets on which the XWayland server will listen. We need to
+ *   bind them ourselves so we know what value put in the $DISPLAY env variable.
  *   This involves some dance with a lockfile to ensure there is no collision with
  *   an other starting xserver
- *   if we listen on display $D, their paths are respectly:
+ *   if we listen on display $D, their paths are respectively:
  *   - /tmp/.X11-unix/X$D
  *   - @/tmp/.X11-unix/X$D (abstract socket)
  *
  * The XWayland server is spawned via fork+exec.
- * -> wlroot does a double-fork while weston a single one, why ??
+ * -> wlroots does a double-fork while weston a single one, why ??
  *    -> https://stackoverflow.com/questions/881388/
  * -> once it is started, it sends us a SIGUSR1, we need to setup a listener
  *    for it and when we receive it we can launch the WM
- * -> we need to track if the Xwayland crashes, to restart it
+ * -> we need to track if the XWayland crashes, to restart it
  *
  * cf https://github.com/swaywm/wlroots/blob/master/xwayland/xwayland.c
  *
@@ -57,7 +57,7 @@ pub struct XWayland<WM: XWindowManager> {
     inner: Rc<RefCell<Inner<WM>>>,
 }
 
-/// Trait to be implemented by you WM for Xwayland
+/// Trait to be implemented by you WM for XWayland
 ///
 /// This is a very low-level trait, only notifying you
 /// when the connection with XWayland is up, or when
@@ -69,7 +69,7 @@ pub struct XWayland<WM: XWindowManager> {
 pub trait XWindowManager {
     /// The XWayland server is ready
     ///
-    /// Your previlegied connection to it is this `UnixStream`
+    /// Your privileged connection to it is this `UnixStream`
     fn xwayland_ready(&mut self, connection: UnixStream, client: Client);
     /// The XWayland server has exited
     fn xwayland_exited(&mut self);
@@ -189,7 +189,7 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
                     // Parent will wait for us and know from out
                     // exit status if XWayland launch was a success or not =)
                     if let Ok(signal::Signal::SIGCHLD) = sig {
-                        // Xwayland has exited before being ready
+                        // XWayland has exited before being ready
                         let _ = ::nix::sys::wait::waitpid(child, None);
                         unsafe { ::nix::libc::exit(1) };
                     }
@@ -249,9 +249,9 @@ impl<WM: XWindowManager> Inner<WM> {
             // Remove DISPLAY from the env
             ::std::env::remove_var("DISPLAY");
             // We do like wlroots:
-            // > We do not kill the Xwayland process, it dies to broken pipe
+            // > We do not kill the XWayland process, it dies to broken pipe
             // > after we close our side of the wm/wl fds. This is more reliable
-            // > than trying to kill something that might no longer be Xwayland.
+            // > than trying to kill something that might no longer be XWayland.
         }
     }
 }
@@ -332,7 +332,7 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
 
 enum Void {}
 
-/// Exec xwayland with given sockets on given display
+/// Exec XWayland with given sockets on given display
 ///
 /// If this returns, that means that something failed
 fn exec_xwayland(
@@ -348,7 +348,7 @@ fn exec_xwayland(
     for socket in listen_sockets {
         unset_cloexec(socket)?;
     }
-    // prepare the arguments to Xwayland
+    // prepare the arguments to XWayland
     let mut args = vec![
         CString::new("Xwayland").unwrap(),
         CString::new(format!(":{}", display)).unwrap(),
@@ -368,10 +368,10 @@ fn exec_xwayland(
         }
         env::remove_var(key);
     }
-    // the WAYLAND_SOCKET var tells Xwayland where to connect as a wayland client
+    // the WAYLAND_SOCKET var tells XWayland where to connect as a wayland client
     env::set_var("WAYLAND_SOCKET", format!("{}", wayland_socket.as_raw_fd()));
 
-    // ignore SIGUSR1, this will make the Xwayland server send us this
+    // ignore SIGUSR1, this will make the XWayland server send us this
     // signal when it is ready apparently
     unsafe {
         use nix::sys::signal::*;
@@ -387,10 +387,10 @@ fn exec_xwayland(
     match ret {}
 }
 
-/// Remove the O_CLOEXEC flag from this Fd
+/// Remove the `O_CLOEXEC` flag from this `Fd`
 ///
-/// This means that the Fd will *not* be automatically
-/// closed when we exec() into Xwayland
+/// This means that the `Fd` will *not* be automatically
+/// closed when we `exec()` into XWayland
 fn unset_cloexec<F: AsRawFd>(fd: &F) -> NixResult<()> {
     use nix::fcntl::{fcntl, FcntlArg, FdFlag};
     fcntl(fd.as_raw_fd(), FcntlArg::F_SETFD(FdFlag::empty()))?;

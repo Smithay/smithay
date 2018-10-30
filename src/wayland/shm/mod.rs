@@ -27,7 +27,7 @@
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! // Insert the ShmGlobal into your event loop
 //! // Here, we specify that Yuyv and C8 format are supported
-//! // additionnaly to the standart Argb8888 and Xrgb8888.
+//! // additionally to the standard Argb8888 and Xrgb8888.
 //! let shm_global = init_shm_global(
 //!     &mut display,
 //!     vec![Format::Yuyv, Format::C8],
@@ -72,7 +72,7 @@
 //!
 //! **Note**
 //!
-//! This handler makes itself safe regading the client providing a wrong size for the memory pool
+//! This handler makes itself safe regarding the client providing a wrong size for the memory pool
 //! by using a SIGBUS handler.
 //!
 //! If you are already using an handler for this signal, you probably don't want to use this handler.
@@ -101,10 +101,10 @@ pub struct ShmGlobalData {
 ///
 /// This global will always advertize `ARGB8888` and `XRGB8888` format
 /// as they are required by the protocol. Formats given as argument
-/// as additionnaly advertized.
+/// as additionally advertized.
 ///
 /// The global is directly created on the provided `Display`, and this function
-/// returns the global handle, in case you whish to remove this global in
+/// returns the global handle, in case you wish to remove this global in
 /// the future.
 pub fn init_shm_global<L>(
     display: &mut Display,
@@ -147,7 +147,7 @@ where
 pub enum BufferAccessError {
     /// This buffer is not managed by the SHM handler
     NotManaged,
-    /// An error occured while accessing the memory map
+    /// An error occurred while accessing the memory map
     ///
     /// This can happen if the client advertized a wrong size
     /// for the memory map.
@@ -181,7 +181,7 @@ where
     match data.pool.with_data_slice(|slice| f(slice, data.data)) {
         Ok(t) => Ok(t),
         Err(()) => {
-            // SIGBUS error occured
+            // SIGBUS error occurred
             buffer.post_error(wl_shm::Error::InvalidFd as u32, "Bad pool size.".into());
             Err(BufferAccessError::BadMap)
         }

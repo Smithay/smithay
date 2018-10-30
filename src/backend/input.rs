@@ -11,7 +11,7 @@ use std::{error::Error, string::ToString};
 ///
 /// Seats referring to the same internal id will always be equal and result in the same
 /// hash, but capabilities of cloned and copied `Seat`s will not be updated by smithay.
-/// Always referr to the `Seat` given by a callback for up-to-date information. You may
+/// Always refer to the `Seat` given by a callback for up-to-date information. You may
 /// use this to calculate the differences since the last callback.
 #[derive(Debug, Clone, Eq)]
 pub struct Seat {
@@ -70,11 +70,11 @@ pub struct SeatCapabilities {
     pub touch: bool,
 }
 
-/// Trait for generic functions every input event does provide/
+/// Trait for generic functions every input event does provide
 pub trait Event {
     /// Returns an upward counting variable useful for event ordering.
     ///
-    /// Makes no gurantees about actual time passed between events.
+    /// Makes no guarantees about actual time passed between events.
     // # TODO:
     // - check if events can even arrive out of order.
     // - Make stronger time guarantees, if possible
@@ -85,7 +85,7 @@ pub trait Event {
 ///
 /// Implements all event types and can be used in place for any `Event` type,
 /// that is not used by an `InputBackend` implementation. Initialization is not
-/// possible, making accidential use impossible and enabling a lot of possible
+/// possible, making accidental use impossible and enabling a lot of possible
 /// compiler optimizations.
 pub enum UnusedEvent {}
 
@@ -106,7 +106,7 @@ pub enum KeyState {
 
 /// Trait for keyboard event
 pub trait KeyboardKeyEvent: Event {
-    /// Code of the pressed key. See linux/input-event-codes.h
+    /// Code of the pressed key. See `linux/input-event-codes.h`
     fn key_code(&self) -> u32;
     /// State of the key
     fn state(&self) -> KeyState;
@@ -173,7 +173,7 @@ impl PointerButtonEvent for UnusedEvent {
 pub enum Axis {
     /// Vertical axis
     Vertical,
-    /// Horizonal axis
+    /// Horizontal axis
     Horizontal,
 }
 
@@ -190,7 +190,7 @@ pub enum AxisSource {
     /// cursor movement, i.e. a scroll value of 1 represents the equivalent relative
     /// motion of 1.
     Finger,
-    /// Continous scrolling device. Almost identical to `Finger`
+    /// Continuous scrolling device. Almost identical to `Finger`
     ///
     /// No terminating event is guaranteed (though it may happen).
     ///
@@ -214,12 +214,12 @@ pub enum AxisSource {
 pub trait PointerAxisEvent: Event {
     /// Amount of scrolling in pixels on the given `Axis`.
     ///
-    /// Garanteed to be `Some` when source returns either `AxisSource::Finger` or `AxisSource::Continuous`.
+    /// Guaranteed to be `Some` when source returns either `AxisSource::Finger` or `AxisSource::Continuous`.
     fn amount(&self, axis: &Axis) -> Option<f64>;
 
     /// Amount of scrolling in discrete steps on the given `Axis`.
     ///
-    /// Garanteed to be `Some` when source returns either `AxisSource::Wheel` or `AxisSource::WheelTilt`.
+    /// Guaranteed to be `Some` when source returns either `AxisSource::Wheel` or `AxisSource::WheelTilt`.
     fn amount_discrete(&self, axis: &Axis) -> Option<f64>;
 
     /// Source of the scroll event.
@@ -320,7 +320,7 @@ impl PointerMotionAbsoluteEvent for UnusedEvent {
 
 /// Slot of a different touch event.
 ///
-/// Touch events are groubed by slots, usually to identify different
+/// Touch events are grouped by slots, usually to identify different
 /// fingers on a multi-touch enabled input device. Events should only
 /// be interpreted in the context of other events on the same slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -488,7 +488,7 @@ pub trait TouchFrameEvent: Event {}
 impl TouchFrameEvent for UnusedEvent {}
 
 /// Trait that describes objects providing a source of input events. All input backends
-/// need to implemenent this and provide the same base gurantees about the presicion of
+/// need to implement this and provide the same base guarantees about the precision of
 /// given events.
 pub trait InputBackend: Sized {
     /// Type of input device associated with the backend
@@ -580,7 +580,7 @@ pub trait InputHandler<B: InputBackend> {
     /// # Arguments
     ///
     /// - `seat` - The `Seat` the event belongs to
-    /// - `event` - A upward counting variable useful for event ordering. Makes no gurantees about actual time passed between events.
+    /// - `event` - A upward counting variable useful for event ordering. Makes no guarantees about actual time passed between events.
     fn on_pointer_axis(&mut self, seat: &Seat, event: B::PointerAxisEvent);
 
     /// Called when a new touch down event was received.

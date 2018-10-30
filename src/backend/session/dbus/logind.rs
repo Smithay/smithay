@@ -25,7 +25,7 @@
 //! switching the tty via `LogindSession::change_vt`) and to automatically enable it again,
 //! when the session becomes active again.
 //!
-//! It is crutial to avoid errors during that state. Examples for object that might be registered
+//! It is crucial to avoid errors during that state. Examples for object that might be registered
 //! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
@@ -185,7 +185,7 @@ impl LogindSession {
 }
 
 impl LogindSessionNotifier {
-    /// Creates a new session object beloging to this notifier.
+    /// Creates a new session object belonging to this notifier.
     pub fn session(&self) -> LogindSession {
         LogindSession {
             internal: Rc::downgrade(&self.internal),
@@ -280,7 +280,7 @@ impl LogindSessionImpl {
                         }
                     }
                     // the other possible types are "force" or "gone" (unplugged),
-                    // both expect no acknoledgement (note even this is not *really* necessary,
+                    // both expect no acknowledgement (note even this is not *really* necessary,
                     // logind would just timeout and send a "force" event. There is no way to
                     // keep the device.)
                     if &*pause_type == "pause" {

@@ -1,14 +1,14 @@
 //!
-//! Abstraction of different session apis.
+//! Abstraction of different session APIs.
 //!
 //! Sessions provide a way for multiple graphical systems to run in parallel by providing
 //! mechanisms to switch between and handle device access and permissions for every running
 //! instance.
 //!
-//! They are crutial to allow unpriviledged processes to use graphical or input devices.
+//! They are crucial to allow unprivileged processes to use graphical or input devices.
 //!
 //! The following mechanisms are currently provided:
-//!     - direct - legacy tty / virtual terminal kernel api
+//!     - direct - legacy tty / virtual terminal kernel API
 //!
 use nix::fcntl::OFlag;
 use std::{
@@ -44,7 +44,7 @@ pub trait Session {
 
 /// Interface for registering for notifications for a given session.
 ///
-/// Part of the session api which allows to get notified, when the given session
+/// Part of the session API which allows to get notified, when the given session
 /// gets paused or becomes active again. Any object implementing the `SessionObserver` trait
 /// may be registered.
 pub trait SessionNotifier {
@@ -93,7 +93,7 @@ pub trait SessionObserver {
     /// Session/Device got active again
     ///
     /// If only a specific device shall be activated again a device number in the form of
-    /// (major, major, Option<RawFd>) is provided. Optionally the session may decide to replace
+    /// `(major, major, Option<RawFd>)` is provided. Optionally the session may decide to replace
     /// the currently open file descriptor of the device with a new one. In that case the old one
     /// should not be used anymore and be closed. All observers not using the specified device should
     /// ignore the signal in that case.

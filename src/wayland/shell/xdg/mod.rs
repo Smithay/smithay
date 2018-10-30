@@ -14,7 +14,7 @@
 //! access their associated metadata and underlying `wl_surface`s.
 //!
 //! This handler only handles the protocol exchanges with the client to present you the
-//! information in a coherent and relatively easy to use maneer. All the actual drawing
+//! information in a coherent and relatively easy to use manner. All the actual drawing
 //! and positioning logic of windows is out of its scope.
 //!
 //! ## How to use it
@@ -23,7 +23,7 @@
 //!
 //! To initialize this handler, simple use the `xdg_shell_init` function provided in this
 //! module. You will need to provide it the `CompositorToken` you retrieved from an
-//! instanciation of the compositor global provided by smithay.
+//! instantiation of the compositor global provided by smithay.
 //!
 //! ```no_run
 //! # extern crate wayland_server;
@@ -73,17 +73,17 @@
 //!
 //! There are mainly 3 kind of objects that you'll manipulate from this implementation:
 //!
-//! - `ShellClient`: This is a handle representing an isntanciation of a shell global
+//! - `ShellClient`: This is a handle representing an instantiation of a shell global
 //!   you can associate client-wise metadata to it (this is the `MyShellData` type in
 //!   the example above).
 //! - `ToplevelSurface`: This is a handle representing a toplevel surface, you can
-//!   retrive a list of all currently alive toplevel surface from the `ShellState`.
+//!   retrieve a list of all currently alive toplevel surface from the `ShellState`.
 //! - `PopupSurface`: This is a handle representing a popup/tooltip surface. Similarly,
 //!   you can get a list of all currently alive popup surface from the `ShellState`.
 //!
 //! You'll obtain these objects though two means: either via the callback methods of
 //! the subhandler you provided, or via methods on the `ShellState` that you are given
-//! (in an `Arc<Mutex<_>>`) as return value of the init function.
+//! (in an `Arc<Mutex<_>>`) as return value of the `init` function.
 
 use std::{
     cell::RefCell,
@@ -125,13 +125,13 @@ pub struct XdgSurfaceRole {
     /// List of non-acked configures pending
     ///
     /// Whenever a configure is acked by the client, all configure
-    /// older than it are discarded as well. As such, this vec contains
+    /// older than it are discarded as well. As such, this `Vec` contains
     /// the serials of all the configure send to this surface that are
     /// newer than the last ack received.
     pub pending_configures: Vec<u32>,
     /// Has this surface acked at least one configure?
     ///
-    /// xdg_shell defines it as illegal to commit on a surface that has
+    /// `xdg_shell` defines it as illegal to commit on a surface that has
     /// not yet acked a configure.
     pub configured: bool,
 }
@@ -149,7 +149,7 @@ pub struct PositionerState {
     /// Gravity direction for positioning the child surface
     /// relative to its anchor point
     pub gravity: xdg_positioner::Gravity,
-    /// Adjustments to do if previous criterias constraint the
+    /// Adjustments to do if previous criteria constrain the
     /// surface
     pub constraint_adjustment: xdg_positioner::ConstraintAdjustment,
     /// Offset placement relative to the anchor point
@@ -180,7 +180,7 @@ pub enum XdgSurfacePendingState {
     ///
     /// This corresponds to the `xdg_toplevel` role
     ///
-    /// This is what you'll generaly interpret as "a window".
+    /// This is what you'll generally interpret as "a window".
     Toplevel(ToplevelState),
     /// This is a popup surface
     ///
@@ -368,11 +368,11 @@ fn make_shell_client_data<SD: Default>() -> ShellClientData<SD> {
 
 /// A shell client
 ///
-/// This represents an instanciation of a shell
+/// This represents an instantiation of a shell
 /// global (be it `wl_shell` or `xdg_shell`).
 ///
 /// Most of the time, you can consider that a
-/// wayland client will be a single shell client.
+/// Wayland client will be a single shell client.
 ///
 /// You can use this handle to access a storage for any
 /// client-specific data you wish to associate with it.
@@ -492,7 +492,7 @@ where
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
-    /// Is the toplevel surface refered by this handle still alive?
+    /// Is the toplevel surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
         let shell_alive = match self.shell_surface {
             ToplevelKind::Xdg(ref s) => s.is_alive(),
@@ -555,7 +555,7 @@ where
     /// a protocol error to the associated client. Also returns `false`
     /// if the surface is already destroyed.
     ///
-    /// xdg_shell mandates that a client acks a configure before commiting
+    /// `xdg_shell` mandates that a client acks a configure before committing
     /// anything.
     pub fn ensure_configured(&self) -> bool {
         if !self.alive() {
@@ -647,7 +647,7 @@ where
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
-    /// Is the popup surface refered by this handle still alive?
+    /// Is the popup surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
         let shell_alive = match self.shell_surface {
             PopupKind::Xdg(ref p) => p.is_alive(),
@@ -714,7 +714,7 @@ where
     /// a protocol error to the associated client. Also returns `false`
     /// if the surface is already destroyed.
     ///
-    /// xdg_shell mandates that a client acks a configure before commiting
+    /// xdg_shell mandates that a client acks a configure before committing
     /// anything.
     pub fn ensure_configured(&self) -> bool {
         if !self.alive() {
@@ -732,7 +732,7 @@ where
                         .unwrap();
                     data.xdg_surface.post_error(
                         xdg_surface::Error::NotConstructed as u32,
-                        "Surface has not been confgured yet.".into(),
+                        "Surface has not been configured yet.".into(),
                     );
                 }
                 PopupKind::ZxdgV6(ref s) => {
@@ -741,7 +741,7 @@ where
                         .unwrap();
                     data.xdg_surface.post_error(
                         zxdg_surface_v6::Error::NotConstructed as u32,
-                        "Surface has not been confgured yet.".into(),
+                        "Surface has not been configured yet.".into(),
                     );
                 }
             }
@@ -749,7 +749,7 @@ where
         configured
     }
 
-    /// Send a 'popup_done' event to the popup surface
+    /// Send a `popup_done` event to the popup surface
     ///
     /// It means that the use has dismissed the popup surface, or that
     /// the pointer has left the area of popup grab if there was a grab.
@@ -826,14 +826,14 @@ pub struct PopupConfigure {
 ///
 /// Depending on what you want to do, you might ignore some of them
 pub enum XdgRequest<U, R, SD> {
-    /// A new shell client was instanciated
+    /// A new shell client was instantiated
     NewClient {
         /// the client
         client: ShellClient<U, R, SD>,
     },
     /// The pong for a pending ping of this shell client was received
     ///
-    /// The ShellHandler already checked for you that the serial matches the one
+    /// The `ShellHandler` already checked for you that the serial matches the one
     /// from the pending ping.
     ClientPong {
         /// the client
