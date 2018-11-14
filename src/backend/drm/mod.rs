@@ -231,7 +231,6 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     hash::{Hash, Hasher},
-    io::Error as IoError,
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
     rc::{Rc, Weak},
@@ -245,7 +244,8 @@ use std::{
 use wayland_server::{
     calloop::{
         generic::{EventedRawFd, Generic},
-        LoopHandle, Ready, Source,
+        mio::Ready,
+        InsertError, LoopHandle, Source,
     },
     Display,
 };
@@ -537,7 +537,7 @@ pub fn drm_device_bind<A, H, Data: 'static>(
     handle: &LoopHandle<Data>,
     device: DrmDevice<A>,
     mut handler: H,
-) -> ::std::result::Result<(Source<Generic<EventedRawFd>>, Rc<RefCell<DrmDevice<A>>>), (IoError, DrmDevice<A>)>
+) -> ::std::result::Result<(Source<Generic<EventedRawFd>>, Rc<RefCell<DrmDevice<A>>>), (InsertError<Generic<EventedRawFd>>, DrmDevice<A>)>
 where
     A: ControlDevice + 'static,
     H: DrmHandler<A> + 'static,

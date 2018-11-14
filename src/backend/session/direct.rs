@@ -444,7 +444,7 @@ pub fn direct_session_bind<Data: 'static>(
             let notifier = Rc::try_unwrap(fail_notifier)
                 .unwrap_or_else(|_| unreachable!())
                 .into_inner();
-            (e, notifier)
+            (e.into(), notifier)
         })?;
     Ok(BoundDirectSession { source, notifier })
 }

@@ -18,7 +18,8 @@ use std::{
 
 use wayland_server::calloop::{
     generic::{EventedRawFd, Generic},
-    LoopHandle, Ready, Source,
+    mio::Ready,
+    InsertError, LoopHandle, Source,
 };
 
 // No idea if this is the same across unix platforms
@@ -596,7 +597,7 @@ impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
 pub fn libinput_bind<Data: 'static>(
     backend: LibinputInputBackend,
     handle: LoopHandle<Data>,
-) -> ::std::result::Result<Source<Generic<EventedRawFd>>, (IoError, LibinputInputBackend)> {
+) -> ::std::result::Result<Source<Generic<EventedRawFd>>, (InsertError<Generic<EventedRawFd>>, LibinputInputBackend)> {
     let mut source = Generic::from_raw_fd(unsafe { backend.context.fd() });
     source.set_interest(Ready::readable());
     let backend = Rc::new(RefCell::new(backend));
