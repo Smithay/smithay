@@ -8,7 +8,7 @@
 
 ### Backends
 
-- **[Breaking]** WinitBackend: Upgrade to winit 0.17
+- **[Breaking]** WinitBackend: Upgrade to winit 0.18
 
 ### Clients & Protocol
 
