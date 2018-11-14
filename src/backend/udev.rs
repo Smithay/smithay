@@ -30,7 +30,7 @@ use udev::{Context, Enumerator, Event, EventType, MonitorBuilder, MonitorSocket,
 use wayland_server::calloop::{
     generic::{EventedRawFd, Generic},
     mio::Ready,
-    InsertError, LoopHandle, Source,
+    LoopHandle, Source,
 };
 
 /// Udev's `DrmDevice` type based on the underlying session
@@ -271,7 +271,7 @@ impl SessionObserver for UdevBackendObserver {
 /// No runtime functionality can be provided without using this function.
 pub fn udev_backend_bind<H, S, T, Data>(
     mut udev: UdevBackend<H, S, T, Data>,
-) -> ::std::result::Result<Source<Generic<EventedRawFd>>, InsertError<Generic<EventedRawFd>>>
+) -> ::std::result::Result<Source<Generic<EventedRawFd>>, IoError>
 where
     H: DrmHandler<SessionFdDrmDevice> + 'static,
     T: UdevHandler<H> + 'static,
@@ -283,7 +283,7 @@ where
     source.set_interest(Ready::readable());
     handle.insert_source(source, move |_, _| {
         udev.process_events();
-    })
+    }).map_err(Into::into)
 }
 
 impl<H, S, T, Data> UdevBackend<H, S, T, Data>
