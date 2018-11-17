@@ -144,6 +144,13 @@ impl Seat {
         (seat, global)
     }
 
+    /// Attempt to retrieve a `Seat` from an existing resource
+    pub fn from_resource(seat: &Resource<wl_seat::WlSeat>) -> Option<Seat> {
+        seat.user_data::<Arc<Mutex<Inner>>>()
+            .cloned()
+            .map(|inner| Seat { inner })
+    }
+
     /// Adds the pointer capability to this seat
     ///
     /// You are provided a `PointerHandle`, which allows you to send input events
@@ -164,6 +171,11 @@ impl Seat {
         inner.pointer = Some(pointer.clone());
         inner.send_all_caps();
         pointer
+    }
+
+    /// Access the pointer of this seat if any
+    pub fn get_pointer(&self) -> Option<PointerHandle> {
+        self.inner.lock().unwrap().pointer.clone()
     }
 
     /// Remove the pointer capability from this seat
@@ -228,6 +240,11 @@ impl Seat {
         Ok(keyboard)
     }
 
+    /// Access the keyboard of this seat if any
+    pub fn get_keyboard(&self) -> Option<KeyboardHandle> {
+        self.inner.lock().unwrap().keyboard.clone()
+    }
+
     /// Remove the keyboard capability from this seat
     ///
     /// Clients will be appropriately notified.
@@ -252,8 +269,8 @@ fn implement_seat(
 ) -> Resource<wl_seat::WlSeat> {
     let dest_inner = inner.clone();
     new_seat.implement(
-        move |request, _seat| {
-            let inner = inner.lock().unwrap();
+        move |request, seat| {
+            let inner = seat.user_data::<Arc<Mutex<Inner>>>().unwrap().lock().unwrap();
             match request {
                 wl_seat::Request::GetPointer { id } => {
                     let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref());
@@ -287,6 +304,6 @@ fn implement_seat(
                 .known_seats
                 .retain(|s| !s.equals(&seat));
         }),
-        (),
+        inner,
     )
 }
