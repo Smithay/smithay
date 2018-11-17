@@ -18,7 +18,8 @@ use std::{
 
 use wayland_server::calloop::{
     generic::{EventedRawFd, Generic},
-    LoopHandle, Ready, Source,
+    mio::Ready,
+    LoopHandle, Source,
 };
 
 // No idea if this is the same across unix platforms
@@ -612,6 +613,6 @@ pub fn libinput_bind<Data: 'static>(
             let backend = Rc::try_unwrap(fail_backend)
                 .unwrap_or_else(|_| unreachable!())
                 .into_inner();
-            (e, backend)
+            (e.into(), backend)
         })
 }

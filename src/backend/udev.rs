@@ -29,7 +29,8 @@ use udev::{Context, Enumerator, Event, EventType, MonitorBuilder, MonitorSocket,
 
 use wayland_server::calloop::{
     generic::{EventedRawFd, Generic},
-    LoopHandle, Ready, Source,
+    mio::Ready,
+    LoopHandle, Source,
 };
 
 /// Udev's `DrmDevice` type based on the underlying session
@@ -280,9 +281,10 @@ where
     let handle = udev.handle.clone();
     let mut source = Generic::from_raw_fd(fd);
     source.set_interest(Ready::readable());
-    handle.insert_source(source, move |_, _| {
-        udev.process_events();
-    })
+    handle
+        .insert_source(source, move |_, _| {
+            udev.process_events();
+        }).map_err(Into::into)
 }
 
 impl<H, S, T, Data> UdevBackend<H, S, T, Data>

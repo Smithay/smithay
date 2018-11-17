@@ -51,7 +51,8 @@ use systemd::login;
 
 use wayland_server::calloop::{
     generic::{Event, EventedRawFd, Generic},
-    LoopHandle, Ready, Source,
+    mio::Ready,
+    InsertError, LoopHandle, Source,
 };
 
 struct LogindSessionImpl {
@@ -459,10 +460,10 @@ pub fn logind_session_bind<Data: 'static>(
                 let mut notifier = notifier.clone();
                 move |evt, _| notifier.event(evt)
             })
-        }).collect::<::std::result::Result<Vec<Source<Generic<EventedRawFd>>>, IoError>>()
+        }).collect::<::std::result::Result<Vec<Source<Generic<EventedRawFd>>>, InsertError<Generic<EventedRawFd>>>>()
         .map_err(|err| {
             (
-                err,
+                err.into(),
                 LogindSessionNotifier {
                     internal: internal_for_error,
                 },

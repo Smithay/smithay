@@ -245,7 +245,8 @@ use std::{
 use wayland_server::{
     calloop::{
         generic::{EventedRawFd, Generic},
-        LoopHandle, Ready, Source,
+        mio::Ready,
+        LoopHandle, Source,
     },
     Display,
 };
@@ -558,7 +559,7 @@ where
         Ok(source) => Ok((source, device)),
         Err(e) => {
             let device = Rc::try_unwrap(device).unwrap_or_else(|_| unreachable!());
-            Err((e, device.into_inner()))
+            Err((e.into(), device.into_inner()))
         }
     }
 }
