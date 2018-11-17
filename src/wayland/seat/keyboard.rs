@@ -11,7 +11,7 @@ use wayland_server::{
         wl_keyboard::{Event, KeyState as WlKeyState, KeymapFormat, Request, WlKeyboard},
         wl_surface::WlSurface,
     },
-    NewResource, Resource,
+    Client, NewResource, Resource,
 };
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
@@ -390,6 +390,19 @@ impl KeyboardHandle {
         } else {
             trace!(self.arc.logger, "Focus unchanged");
         }
+    }
+
+    /// Check if given client currently has keyboard focus
+    pub fn has_focus(&self, client: &Client) -> bool {
+        self.arc
+            .internal
+            .lock()
+            .unwrap()
+            .focus
+            .as_ref()
+            .and_then(|f| f.client())
+            .map(|c| c.equals(client))
+            .unwrap_or(false)
     }
 
     /// Register a new keyboard to this handler
