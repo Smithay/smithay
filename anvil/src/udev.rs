@@ -111,7 +111,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
 
     let pointer = w_seat.add_pointer();
     let keyboard = w_seat
-        .add_keyboard(XkbConfig::default(), 1000, 500)
+        .add_keyboard(XkbConfig::default(), 1000, 500, |_, _| {})
         .expect("Failed to initialize the keyboard");
 
     let (output, _output_global) = Output::new(

@@ -64,7 +64,10 @@ pub use self::{
     pointer::{AxisFrame, PointerGrab, PointerHandle, PointerInnerHandle},
 };
 
-use wayland_server::{protocol::wl_seat, Display, Global, NewResource, Resource};
+use wayland_server::{
+    protocol::{wl_seat, wl_surface},
+    Display, Global, NewResource, Resource,
+};
 
 struct Inner {
     log: ::slog::Logger,
@@ -101,7 +104,11 @@ impl Inner {
 ///
 /// It is directly inserted in the event loop by its `new` method.
 ///
+/// This is an handle to the inner logic, it can be cloned and shared accross
+/// threads.
+///
 /// See module-level documentation for details of use.
+#[derive(Clone)]
 pub struct Seat {
     inner: Arc<Mutex<Inner>>,
 }
@@ -217,18 +224,32 @@ impl Seat {
     ///         },
     ///         1000,
     ///         500,
+    ///         |seat, focus| {
+    ///             /* This closure is called whenever the keyboard focus
+    ///              * changes, with the new focus as argument */
+    ///         }
     ///     )
     ///     .expect("Failed to initialize the keyboard");
     /// ```
-    pub fn add_keyboard(
+    pub fn add_keyboard<F>(
         &mut self,
         xkb_config: keyboard::XkbConfig,
         repeat_delay: i32,
         repeat_rate: i32,
-    ) -> Result<KeyboardHandle, KeyboardError> {
+        mut focus_hook: F,
+    ) -> Result<KeyboardHandle, KeyboardError>
+    where
+        F: FnMut(&Seat, Option<&Resource<wl_surface::WlSurface>>) + 'static,
+    {
+        let me = self.clone();
         let mut inner = self.inner.lock().unwrap();
-        let keyboard =
-            self::keyboard::create_keyboard_handler(xkb_config, repeat_delay, repeat_rate, &inner.log)?;
+        let keyboard = self::keyboard::create_keyboard_handler(
+            xkb_config,
+            repeat_delay,
+            repeat_rate,
+            &inner.log,
+            move |focus| focus_hook(&me, focus),
+        )?;
         if inner.keyboard.is_some() {
             // there is already a keyboard, remove it and notify the clients
             // of the change
