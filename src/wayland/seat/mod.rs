@@ -77,10 +77,10 @@ struct Inner {
     known_seats: Vec<Resource<wl_seat::WlSeat>>,
 }
 
-struct SeatArc {
+pub(crate) struct SeatArc {
     inner: Mutex<Inner>,
     user_data: UserDataMap,
-    log: ::slog::Logger,
+    pub(crate) log: ::slog::Logger,
     name: String,
 }
 
@@ -117,7 +117,7 @@ impl Inner {
 /// See module-level documentation for details of use.
 #[derive(Clone)]
 pub struct Seat {
-    arc: Arc<SeatArc>,
+    pub(crate) arc: Arc<SeatArc>,
 }
 
 impl Seat {

@@ -11,6 +11,7 @@ use smithay::{
         winit,
     },
     wayland::{
+        data_device::{init_data_device, set_data_device_focus},
         output::{Mode, Output, PhysicalProperties},
         seat::{Seat, XkbConfig},
         shm::init_shm_global,
@@ -53,12 +54,16 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
 
     let (compositor_token, _, _, window_map) = init_shell(display, log.clone());
 
+    init_data_device(display, log.clone());
+
     let (mut seat, _) = Seat::new(display, "winit".into(), log.clone());
 
     let pointer = seat.add_pointer();
+
     let keyboard = seat
-        .add_keyboard(XkbConfig::default(), 1000, 500, |_, _| {})
-        .expect("Failed to initialize the keyboard");
+        .add_keyboard(XkbConfig::default(), 1000, 500, |seat, focus| {
+            set_data_device_focus(seat, focus.and_then(|s| s.client()))
+        }).expect("Failed to initialize the keyboard");
 
     let (output, _) = Output::new(
         display,

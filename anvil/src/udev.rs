@@ -42,6 +42,7 @@ use smithay::{
     input::Libinput,
     wayland::{
         compositor::CompositorToken,
+        data_device::{init_data_device, set_data_device_focus},
         output::{Mode, Output, PhysicalProperties},
         seat::{Seat, XkbConfig},
         shm::init_shm_global,
@@ -107,12 +108,15 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
 
     let udev_session_id = notifier.register(&mut udev_backend);
 
+    init_data_device(&mut display.borrow_mut(), log.clone());
+
     let (mut w_seat, _) = Seat::new(&mut display.borrow_mut(), session.seat(), log.clone());
 
     let pointer = w_seat.add_pointer();
     let keyboard = w_seat
-        .add_keyboard(XkbConfig::default(), 1000, 500, |_, _| {})
-        .expect("Failed to initialize the keyboard");
+        .add_keyboard(XkbConfig::default(), 1000, 500, |seat, focus| {
+            set_data_device_focus(seat, focus.and_then(|s| s.client()))
+        }).expect("Failed to initialize the keyboard");
 
     let (output, _output_global) = Output::new(
         &mut display.borrow_mut(),
