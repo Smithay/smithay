@@ -12,6 +12,7 @@ members = [ "anvil" ]
 [dependencies]
 wayland-server = "0.21.1"
 wayland-sys = "0.21.1"
+wayland-commons = "0.21.1"
 nix = "0.11"
 xkbcommon = "0.2.1"
 tempfile = "2.1.5"

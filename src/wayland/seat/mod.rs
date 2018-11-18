@@ -64,17 +64,24 @@ pub use self::{
     pointer::{AxisFrame, PointerGrab, PointerHandle, PointerInnerHandle},
 };
 
+use wayland_commons::utils::UserDataMap;
+
 use wayland_server::{
     protocol::{wl_seat, wl_surface},
     Display, Global, NewResource, Resource,
 };
 
 struct Inner {
-    log: ::slog::Logger,
-    name: String,
     pointer: Option<PointerHandle>,
     keyboard: Option<KeyboardHandle>,
     known_seats: Vec<Resource<wl_seat::WlSeat>>,
+}
+
+struct SeatArc {
+    inner: Mutex<Inner>,
+    user_data: UserDataMap,
+    log: ::slog::Logger,
+    name: String,
 }
 
 impl Inner {
@@ -110,7 +117,7 @@ impl Inner {
 /// See module-level documentation for details of use.
 #[derive(Clone)]
 pub struct Seat {
-    inner: Arc<Mutex<Inner>>,
+    arc: Arc<SeatArc>,
 }
 
 impl Seat {
@@ -127,20 +134,23 @@ impl Seat {
         L: Into<Option<::slog::Logger>>,
     {
         let log = ::slog_or_stdlog(logger);
-        let inner = Arc::new(Mutex::new(Inner {
+        let arc = Arc::new(SeatArc {
+            inner: Mutex::new(Inner {
+                pointer: None,
+                keyboard: None,
+                known_seats: Vec::new(),
+            }),
             log: log.new(o!("smithay_module" => "seat_handler", "seat_name" => name.clone())),
             name,
-            pointer: None,
-            keyboard: None,
-            known_seats: Vec::new(),
-        }));
-        let seat = Seat { inner: inner.clone() };
+            user_data: UserDataMap::new(),
+        });
+        let seat = Seat { arc: arc.clone() };
         let global = display.create_global(5, move |new_seat, _version| {
-            let seat = implement_seat(new_seat, inner.clone());
-            let mut inner = inner.lock().unwrap();
+            let seat = implement_seat(new_seat, arc.clone());
+            let mut inner = arc.inner.lock().unwrap();
             if seat.version() >= 2 {
                 seat.send(wl_seat::Event::Name {
-                    name: inner.name.clone(),
+                    name: arc.name.clone(),
                 });
             }
             seat.send(wl_seat::Event::Capabilities {
@@ -153,9 +163,12 @@ impl Seat {
 
     /// Attempt to retrieve a `Seat` from an existing resource
     pub fn from_resource(seat: &Resource<wl_seat::WlSeat>) -> Option<Seat> {
-        seat.user_data::<Arc<Mutex<Inner>>>()
-            .cloned()
-            .map(|inner| Seat { inner })
+        seat.user_data::<Arc<SeatArc>>().cloned().map(|arc| Seat { arc })
+    }
+
+    /// Acces the `UserDataMap` associated with this `Seat`
+    pub fn user_data(&self) -> &UserDataMap {
+        &self.arc.user_data
     }
 
     /// Adds the pointer capability to this seat
@@ -167,7 +180,7 @@ impl Seat {
     /// will overwrite it, and will be seen by the clients as if the
     /// mouse was unplugged and a new one was plugged.
     pub fn add_pointer(&mut self) -> PointerHandle {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.arc.inner.lock().unwrap();
         let pointer = self::pointer::create_pointer_handler();
         if inner.pointer.is_some() {
             // there is already a pointer, remove it and notify the clients
@@ -182,14 +195,14 @@ impl Seat {
 
     /// Access the pointer of this seat if any
     pub fn get_pointer(&self) -> Option<PointerHandle> {
-        self.inner.lock().unwrap().pointer.clone()
+        self.arc.inner.lock().unwrap().pointer.clone()
     }
 
     /// Remove the pointer capability from this seat
     ///
     /// Clients will be appropriately notified.
     pub fn remove_pointer(&mut self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.arc.inner.lock().unwrap();
         if inner.pointer.is_some() {
             inner.pointer = None;
             inner.send_all_caps();
@@ -242,12 +255,12 @@ impl Seat {
         F: FnMut(&Seat, Option<&Resource<wl_surface::WlSurface>>) + 'static,
     {
         let me = self.clone();
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.arc.inner.lock().unwrap();
         let keyboard = self::keyboard::create_keyboard_handler(
             xkb_config,
             repeat_delay,
             repeat_rate,
-            &inner.log,
+            &self.arc.log,
             move |focus| focus_hook(&me, focus),
         )?;
         if inner.keyboard.is_some() {
@@ -263,14 +276,14 @@ impl Seat {
 
     /// Access the keyboard of this seat if any
     pub fn get_keyboard(&self) -> Option<KeyboardHandle> {
-        self.inner.lock().unwrap().keyboard.clone()
+        self.arc.inner.lock().unwrap().keyboard.clone()
     }
 
     /// Remove the keyboard capability from this seat
     ///
     /// Clients will be appropriately notified.
     pub fn remove_keyboard(&mut self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.arc.inner.lock().unwrap();
         if inner.keyboard.is_some() {
             inner.keyboard = None;
             inner.send_all_caps();
@@ -279,19 +292,23 @@ impl Seat {
 
     /// Checks whether a given `WlSeat` is associated with this `Seat`
     pub fn owns(&self, seat: &Resource<wl_seat::WlSeat>) -> bool {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.arc.inner.lock().unwrap();
         inner.known_seats.iter().any(|s| s.equals(seat))
     }
 }
 
-fn implement_seat(
-    new_seat: NewResource<wl_seat::WlSeat>,
-    inner: Arc<Mutex<Inner>>,
-) -> Resource<wl_seat::WlSeat> {
-    let dest_inner = inner.clone();
+impl ::std::cmp::PartialEq for Seat {
+    fn eq(&self, other: &Seat) -> bool {
+        Arc::ptr_eq(&self.arc, &other.arc)
+    }
+}
+
+fn implement_seat(new_seat: NewResource<wl_seat::WlSeat>, arc: Arc<SeatArc>) -> Resource<wl_seat::WlSeat> {
+    let dest_arc = arc.clone();
     new_seat.implement(
         move |request, seat| {
-            let inner = seat.user_data::<Arc<Mutex<Inner>>>().unwrap().lock().unwrap();
+            let arc = seat.user_data::<Arc<SeatArc>>().unwrap();
+            let inner = arc.inner.lock().unwrap();
             match request {
                 wl_seat::Request::GetPointer { id } => {
                     let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref());
@@ -319,12 +336,13 @@ fn implement_seat(
             }
         },
         Some(move |seat| {
-            dest_inner
+            dest_arc
+                .inner
                 .lock()
                 .unwrap()
                 .known_seats
                 .retain(|s| !s.equals(&seat));
         }),
-        inner,
+        arc,
     )
 }

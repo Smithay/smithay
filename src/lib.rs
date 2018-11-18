@@ -11,6 +11,7 @@ pub extern crate image;
 #[cfg_attr(feature = "backend_session", macro_use)]
 extern crate nix;
 extern crate tempfile;
+pub extern crate wayland_commons;
 pub extern crate wayland_protocols;
 pub extern crate wayland_server;
 extern crate wayland_sys;
