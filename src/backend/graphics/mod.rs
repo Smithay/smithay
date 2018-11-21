@@ -35,7 +35,8 @@ pub trait GraphicsBackend {
     ) -> Result<(), Self::Error>;
 }
 
-pub mod egl;
+#[cfg(feature = "renderer_gl")]
+pub mod gl;
 #[cfg(feature = "renderer_glium")]
 pub mod glium;
 pub mod software;
