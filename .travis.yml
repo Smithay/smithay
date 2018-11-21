@@ -39,7 +39,6 @@ env:
     - FEATURES="backend_libinput"
     - FEATURES="backend_udev"
     - FEATURES="backend_session"
-    - FEATURES="backend_session_udev"
     - FEATURES="backend_session_logind"
     - FEATURES="renderer_glium"
     - FEATURES="xwayland"
