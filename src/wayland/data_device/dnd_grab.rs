@@ -10,25 +10,23 @@ use wayland_server::{
 
 use wayland::seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat};
 
-use super::{with_source_metadata, SeatData};
+use super::{with_source_metadata, DataDeviceData, SeatData};
 
-pub(crate) struct DnDGrab<F: 'static> {
+pub(crate) struct DnDGrab {
     data_source: Option<Resource<wl_data_source::WlDataSource>>,
     current_focus: Option<Resource<wl_surface::WlSurface>>,
     pending_offers: Vec<Resource<wl_data_offer::WlDataOffer>>,
     offer_data: Option<Arc<Mutex<OfferData>>>,
     origin: Resource<wl_surface::WlSurface>,
     seat: Seat,
-    action_choice: Arc<Mutex<F>>,
 }
 
-impl<F: 'static> DnDGrab<F> {
+impl DnDGrab {
     pub(crate) fn new(
         source: Option<Resource<wl_data_source::WlDataSource>>,
         origin: Resource<wl_surface::WlSurface>,
         seat: Seat,
-        action_choice: Arc<Mutex<F>>,
-    ) -> DnDGrab<F> {
+    ) -> DnDGrab {
         DnDGrab {
             data_source: source,
             current_focus: None,
@@ -36,15 +34,11 @@ impl<F: 'static> DnDGrab<F> {
             offer_data: None,
             origin,
             seat,
-            action_choice,
         }
     }
 }
 
-impl<F> PointerGrab for DnDGrab<F>
-where
-    F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
-{
+impl PointerGrab for DnDGrab {
     fn motion(
         &mut self,
         _handle: &mut PointerInnerHandle,
@@ -99,6 +93,11 @@ where
                         .iter()
                         .filter(|d| d.same_client_as(&surface))
                     {
+                        let action_choice = device
+                            .user_data::<DataDeviceData>()
+                            .unwrap()
+                            .action_choice
+                            .clone();
                         // create a data offer
                         let offer = client
                             .create_resource::<wl_data_offer::WlDataOffer>(device.version())
@@ -107,7 +106,7 @@ where
                                     offer,
                                     source.clone(),
                                     offer_data.clone(),
-                                    self.action_choice.clone(),
+                                    action_choice,
                                 )
                             }).unwrap();
                         // advertize the offer to the client
@@ -233,15 +232,12 @@ struct OfferData {
     chosen_action: DndAction,
 }
 
-fn implement_dnd_data_offer<F>(
+fn implement_dnd_data_offer(
     offer: NewResource<wl_data_offer::WlDataOffer>,
     source: Resource<wl_data_source::WlDataSource>,
     offer_data: Arc<Mutex<OfferData>>,
-    action_choice: Arc<Mutex<F>>,
-) -> Resource<wl_data_offer::WlDataOffer>
-where
-    F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
-{
+    action_choice: Arc<Mutex<FnMut(DndAction, DndAction) -> DndAction + Send + 'static>>,
+) -> Resource<wl_data_offer::WlDataOffer> {
     use self::wl_data_offer::Request;
     offer.implement(
         move |req, offer| {
