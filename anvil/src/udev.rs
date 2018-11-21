@@ -108,7 +108,12 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
 
     let udev_session_id = notifier.register(&mut udev_backend);
 
-    init_data_device(&mut display.borrow_mut(), ::misc::dnd_action_chooser, log.clone());
+    init_data_device(
+        &mut display.borrow_mut(),
+        |_| {},
+        ::misc::dnd_action_chooser,
+        log.clone(),
+    );
 
     let (mut w_seat, _) = Seat::new(&mut display.borrow_mut(), session.seat(), log.clone());
 
