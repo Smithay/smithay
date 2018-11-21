@@ -18,6 +18,7 @@ enum GrabStatus {
 struct PointerInternal {
     known_pointers: Vec<Resource<WlPointer>>,
     focus: Option<(Resource<WlSurface>, (f64, f64))>,
+    pending_focus: Option<(Resource<WlSurface>, (f64, f64))>,
     location: (f64, f64),
     grab: GrabStatus,
     pressed_buttons: Vec<u32>,
@@ -28,6 +29,7 @@ impl PointerInternal {
         PointerInternal {
             known_pointers: Vec::new(),
             focus: None,
+            pending_focus: None,
             location: (0.0, 0.0),
             grab: GrabStatus::None,
             pressed_buttons: Vec::new(),
@@ -138,7 +140,9 @@ impl PointerHandle {
         serial: u32,
         time: u32,
     ) {
-        self.inner.lock().unwrap().with_grab(move |mut handle, grab| {
+        let mut inner = self.inner.lock().unwrap();
+        inner.pending_focus = focus.clone();
+        inner.with_grab(move |mut handle, grab| {
             grab.motion(&mut handle, location, focus, serial, time);
         });
     }
@@ -226,8 +230,14 @@ impl<'a> PointerInnerHandle<'a> {
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
-    pub fn unset_grab(&mut self) {
+    ///
+    /// This will also restore the focus of the underlying pointer
+    pub fn unset_grab(&mut self, serial: u32, time: u32) {
         self.inner.grab = GrabStatus::None;
+        // restore the focus
+        let location = self.current_location();
+        let focus = self.inner.pending_focus.take();
+        self.motion(location, focus, serial, time);
     }
 
     /// Access the current focus of this pointer
@@ -605,10 +615,7 @@ impl PointerGrab for ClickGrab {
         handle.button(button, state, serial, time);
         if handle.current_pressed().len() == 0 {
             // no more buttons are pressed, release the grab
-            handle.unset_grab();
-            // restore the focus
-            let location = handle.current_location();
-            handle.motion(location, self.pending_focus.clone(), serial, time);
+            handle.unset_grab(serial, time);
         }
     }
     fn axis(&mut self, handle: &mut PointerInnerHandle, details: AxisFrame) {

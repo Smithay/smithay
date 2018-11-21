@@ -1,15 +1,14 @@
 use std::sync::Mutex;
 
 use wayland_server::{
-    protocol::{
-        wl_data_device, wl_data_device_manager, wl_data_offer, wl_data_source, wl_pointer, wl_surface,
-    },
+    protocol::{wl_data_device, wl_data_device_manager, wl_data_offer, wl_data_source},
     Client, Display, Global, NewResource, Resource,
 };
 
-use wayland::seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat};
+use wayland::seat::Seat;
 
 mod data_source;
+mod dnd_grab;
 
 pub use self::data_source::{with_source_metadata, SourceMetadata};
 
@@ -201,14 +200,7 @@ fn implement_data_device(
                 if let Some(pointer) = seat.get_pointer() {
                     if pointer.has_grab(serial) {
                         // The StartDrag is in response to a pointer implicit grab, all is good
-                        pointer.set_grab(
-                            DnDGrab {
-                                data_source: source,
-                                origin,
-                                seat: seat.clone(),
-                            },
-                            serial,
-                        );
+                        pointer.set_grab(dnd_grab::DnDGrab::new(source, origin, seat.clone()), serial);
                         return;
                     }
                 }
@@ -247,36 +239,4 @@ fn implement_data_device(
         None::<fn(_)>,
         (),
     )
-}
-
-struct DnDGrab {
-    data_source: Option<Resource<wl_data_source::WlDataSource>>,
-    origin: Resource<wl_surface::WlSurface>,
-    seat: Seat,
-}
-
-impl PointerGrab for DnDGrab {
-    fn motion(
-        &mut self,
-        handle: &mut PointerInnerHandle,
-        location: (f64, f64),
-        focus: Option<(Resource<wl_surface::WlSurface>, (f64, f64))>,
-        serial: u32,
-        time: u32,
-    ) {
-
-    }
-
-    fn button(
-        &mut self,
-        handle: &mut PointerInnerHandle,
-        button: u32,
-        state: wl_pointer::ButtonState,
-        serial: u32,
-        time: u32,
-    ) {
-
-    }
-
-    fn axis(&mut self, handle: &mut PointerInnerHandle, details: AxisFrame) {}
 }
