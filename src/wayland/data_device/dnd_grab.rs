@@ -12,21 +12,23 @@ use wayland::seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat};
 
 use super::{with_source_metadata, SeatData};
 
-pub(crate) struct DnDGrab {
+pub(crate) struct DnDGrab<F: 'static> {
     data_source: Option<Resource<wl_data_source::WlDataSource>>,
     current_focus: Option<Resource<wl_surface::WlSurface>>,
     pending_offers: Vec<Resource<wl_data_offer::WlDataOffer>>,
     offer_data: Option<Arc<Mutex<OfferData>>>,
     origin: Resource<wl_surface::WlSurface>,
     seat: Seat,
+    action_choice: Arc<Mutex<F>>,
 }
 
-impl DnDGrab {
+impl<F: 'static> DnDGrab<F> {
     pub(crate) fn new(
         source: Option<Resource<wl_data_source::WlDataSource>>,
         origin: Resource<wl_surface::WlSurface>,
         seat: Seat,
-    ) -> DnDGrab {
+        action_choice: Arc<Mutex<F>>,
+    ) -> DnDGrab<F> {
         DnDGrab {
             data_source: source,
             current_focus: None,
@@ -34,11 +36,15 @@ impl DnDGrab {
             offer_data: None,
             origin,
             seat,
+            action_choice,
         }
     }
 }
 
-impl PointerGrab for DnDGrab {
+impl<F> PointerGrab for DnDGrab<F>
+where
+    F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
+{
     fn motion(
         &mut self,
         _handle: &mut PointerInnerHandle,
@@ -96,8 +102,14 @@ impl PointerGrab for DnDGrab {
                         // create a data offer
                         let offer = client
                             .create_resource::<wl_data_offer::WlDataOffer>(device.version())
-                            .map(|offer| implement_dnd_data_offer(offer, source.clone(), offer_data.clone()))
-                            .unwrap();
+                            .map(|offer| {
+                                implement_dnd_data_offer(
+                                    offer,
+                                    source.clone(),
+                                    offer_data.clone(),
+                                    self.action_choice.clone(),
+                                )
+                            }).unwrap();
                         // advertize the offer to the client
                         device.send(wl_data_device::Event::DataOffer { id: offer.clone() });
                         with_source_metadata(source, |meta| {
@@ -221,11 +233,15 @@ struct OfferData {
     chosen_action: DndAction,
 }
 
-fn implement_dnd_data_offer(
+fn implement_dnd_data_offer<F>(
     offer: NewResource<wl_data_offer::WlDataOffer>,
     source: Resource<wl_data_source::WlDataSource>,
     offer_data: Arc<Mutex<OfferData>>,
-) -> Resource<wl_data_offer::WlDataOffer> {
+    action_choice: Arc<Mutex<F>>,
+) -> Resource<wl_data_offer::WlDataOffer>
+where
+    F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
+{
     use self::wl_data_offer::Request;
     offer.implement(
         move |req, offer| {
@@ -296,20 +312,12 @@ fn implement_dnd_data_offer(
                     let source_actions =
                         with_source_metadata(&source, |meta| meta.dnd_action).unwrap_or(DndAction::empty());
                     let possible_actions = source_actions & DndAction::from_bits_truncate(dnd_actions);
-                    if possible_actions.contains(preferred_action) {
-                        // chose this one
-                        data.chosen_action = preferred_action;
-                    } else {
-                        if possible_actions.contains(DndAction::Ask) {
-                            data.chosen_action = DndAction::Ask;
-                        } else if possible_actions.contains(DndAction::Copy) {
-                            data.chosen_action = DndAction::Copy;
-                        } else if possible_actions.contains(DndAction::Move) {
-                            data.chosen_action = DndAction::Move;
-                        } else {
-                            data.chosen_action = DndAction::None;
-                        }
-                    }
+                    data.chosen_action =
+                        (&mut *action_choice.lock().unwrap())(possible_actions, preferred_action);
+                    // check that the user provided callback respects that one precise action should be chosen
+                    debug_assert!(
+                        [DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&data.chosen_action)
+                    );
                     offer.send(wl_data_offer::Event::Action {
                         dnd_action: data.chosen_action.to_raw(),
                     });

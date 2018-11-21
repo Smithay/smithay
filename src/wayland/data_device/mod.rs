@@ -1,7 +1,11 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use wayland_server::{
-    protocol::{wl_data_device, wl_data_device_manager, wl_data_offer, wl_data_source},
+    protocol::{
+        wl_data_device,
+        wl_data_device_manager::{self, DndAction},
+        wl_data_offer, wl_data_source,
+    },
     Client, Display, Global, NewResource, Resource,
 };
 
@@ -121,17 +125,25 @@ impl SeatData {
 }
 
 /// Initialize the data device global
-pub fn init_data_device<L>(
+///
+/// You need to provide a `(DndAction, DndAction) -> DndAction` closure that will arbitrate
+/// the choice of action resulting from a drag'n'drop session. Its first argument is the set of
+/// available actions (which is the intersection of the actions supported by the source and targets)
+/// and the second argument is the preferred action reported by the target. If no action should be
+/// chosen (and thus the drag'n'drop should abort on drop), return `DndAction::empty()`.
+pub fn init_data_device<F, L>(
     display: &mut Display,
+    action_choice: F,
     logger: L,
 ) -> Global<wl_data_device_manager::WlDataDeviceManager>
 where
+    F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
     L: Into<Option<::slog::Logger>>,
 {
     let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "data_device_mgr"));
-
+    let action_choice = Arc::new(Mutex::new(action_choice));
     let global = display.create_global(3, move |new_ddm, _version| {
-        implement_ddm(new_ddm, log.clone());
+        implement_ddm(new_ddm, action_choice.clone(), log.clone());
     });
 
     global
@@ -153,10 +165,14 @@ pub fn set_data_device_focus(seat: &Seat, client: Option<Client>) {
     seat_data.lock().unwrap().set_focus(client);
 }
 
-fn implement_ddm(
+fn implement_ddm<F>(
     new_ddm: NewResource<wl_data_device_manager::WlDataDeviceManager>,
+    action_choice: Arc<Mutex<F>>,
     log: ::slog::Logger,
-) -> Resource<wl_data_device_manager::WlDataDeviceManager> {
+) -> Resource<wl_data_device_manager::WlDataDeviceManager>
+where
+    F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
+{
     use self::wl_data_device_manager::Request;
     new_ddm.implement(
         move |req, _ddm| match req {
@@ -169,7 +185,8 @@ fn implement_ddm(
                     seat.user_data()
                         .insert_if_missing(|| Mutex::new(SeatData::new(log.clone())));
                     let seat_data = seat.user_data().get::<Mutex<SeatData>>().unwrap();
-                    let data_device = implement_data_device(id, seat.clone(), log.clone());
+                    let data_device =
+                        implement_data_device(id, seat.clone(), action_choice.clone(), log.clone());
                     seat_data.lock().unwrap().known_devices.push(data_device);
                 }
                 None => {
@@ -182,11 +199,15 @@ fn implement_ddm(
     )
 }
 
-fn implement_data_device(
+fn implement_data_device<F>(
     new_dd: NewResource<wl_data_device::WlDataDevice>,
     seat: Seat,
+    action_choice: Arc<Mutex<F>>,
     log: ::slog::Logger,
-) -> Resource<wl_data_device::WlDataDevice> {
+) -> Resource<wl_data_device::WlDataDevice>
+where
+    F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
+{
     use self::wl_data_device::Request;
     new_dd.implement(
         move |req, dd| match req {
@@ -200,7 +221,10 @@ fn implement_data_device(
                 if let Some(pointer) = seat.get_pointer() {
                     if pointer.has_grab(serial) {
                         // The StartDrag is in response to a pointer implicit grab, all is good
-                        pointer.set_grab(dnd_grab::DnDGrab::new(source, origin, seat.clone()), serial);
+                        pointer.set_grab(
+                            dnd_grab::DnDGrab::new(source, origin, seat.clone(), action_choice.clone()),
+                            serial,
+                        );
                         return;
                     }
                 }

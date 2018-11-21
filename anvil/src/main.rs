@@ -16,6 +16,7 @@ use smithay::wayland_server::{calloop::EventLoop, Display};
 mod shaders;
 mod glium_drawer;
 mod input_handler;
+mod misc;
 #[cfg(feature = "tty_launch")]
 mod raw_drm;
 mod shell;
