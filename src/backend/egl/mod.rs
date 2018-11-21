@@ -181,7 +181,9 @@ impl ::std::error::Error for TextureCreationError {
         match *self {
             TextureCreationError::ContextLost => "The context has been lost, it needs to be recreated",
             TextureCreationError::PlaneIndexOutOfBounds => "This buffer is not managed by EGL",
-            TextureCreationError::GLExtensionNotSupported(_) => "Required OpenGL Extension for texture creation is missing",
+            TextureCreationError::GLExtensionNotSupported(_) => {
+                "Required OpenGL Extension for texture creation is missing"
+            }
             TextureCreationError::TextureBindingFailed(_) => "Failed to create EGLImages from the buffer",
         }
     }
@@ -263,7 +265,7 @@ impl EGLImages {
             if !self.egl_to_texture_support {
                 return Err(TextureCreationError::GLExtensionNotSupported("GL_OES_EGL_image"));
             }
-        
+
             let mut old_tex_id: i32 = 0;
             self.gl.GetIntegerv(gl_ffi::TEXTURE_BINDING_2D, &mut old_tex_id);
             self.gl.BindTexture(gl_ffi::TEXTURE_2D, tex_id);
@@ -343,11 +345,12 @@ impl EGLDisplay {
             #[cfg(feature = "renderer_gl")]
             egl_to_texture_support: {
                 // the list of gl extensions supported by the context
-                let data = unsafe { CStr::from_ptr(gl.GetString(gl_ffi::EXTENSIONS) as *const _ )}
+                let data = unsafe { CStr::from_ptr(gl.GetString(gl_ffi::EXTENSIONS) as *const _) }
                     .to_bytes()
                     .to_vec();
                 let list = String::from_utf8(data).unwrap();
-                list.split(' ').any(|s| s == "GL_OES_EGL_image" || s == "GL_OES_EGL_image_base")
+                list.split(' ')
+                    .any(|s| s == "GL_OES_EGL_image" || s == "GL_OES_EGL_image_base")
             },
             #[cfg(feature = "renderer_gl")]
             gl,

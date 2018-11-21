@@ -52,14 +52,8 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     {
         let log = ::slog_or_stdlog(logger.into()).new(o!("smithay_module" => "renderer_egl"));
         let ptr = native.ptr()?;
-        let (
-            context,
-            display,
-            config_id,
-            surface_attributes,
-            pixel_format,
-            wl_drm_support,
-        ) = unsafe { EGLContext::<B, N>::new_internal(ptr, attributes, reqs, log.clone()) }?;
+        let (context, display, config_id, surface_attributes, pixel_format, wl_drm_support) =
+            unsafe { EGLContext::<B, N>::new_internal(ptr, attributes, reqs, log.clone()) }?;
 
         Ok(EGLContext {
             native,
@@ -117,15 +111,15 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
                 bail!(ErrorKind::OpenGlVersionNotSupported(version));
             }
         };
-        
-        fn constrain<F>(f: F) -> F
-        where
-            F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
-        {
-            f
-        };
-            
+
         ffi::egl::LOAD.call_once(|| {
+            fn constrain<F>(f: F) -> F
+            where
+                F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
+            {
+                f
+            };
+
             ffi::egl::load_with(|sym| {
                 let name = CString::new(sym).unwrap();
                 let symbol = ffi::egl::LIB.get::<*mut c_void>(name.as_bytes());
@@ -144,7 +138,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             ffi::egl::UnbindWaylandDisplayWL::load_with(&proc_address);
             ffi::egl::QueryWaylandBufferWL::load_with(&proc_address);
         });
-        
+
         // the first step is to query the list of extensions without any display, if supported
         let dp_extensions = {
             let p = ffi::egl::QueryString(ffi::egl::NO_DISPLAY, ffi::egl::EXTENSIONS as i32);
@@ -437,13 +431,11 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     /// Creates a surface for rendering
     pub fn create_surface(&mut self, args: N::Arguments) -> Result<EGLSurface<B::Surface>> {
         trace!(self.logger, "Creating EGL window surface.");
-        let surface = self.native
-                .create_surface(args)
-                .chain_err(|| ErrorKind::SurfaceCreationFailed)?;
-        EGLSurface::new(
-            self,
-            surface,
-        ).map(|x| {
+        let surface = self
+            .native
+            .create_surface(args)
+            .chain_err(|| ErrorKind::SurfaceCreationFailed)?;
+        EGLSurface::new(self, surface).map(|x| {
             debug!(self.logger, "EGL surface successfully created");
             x
         })

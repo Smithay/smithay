@@ -1,16 +1,16 @@
-use super::{Device, RawDevice, Surface, DeviceHandler, DevPath};
+use super::{DevPath, Device, DeviceHandler, RawDevice, Surface};
 
+use drm::control::{connector, crtc, encoder, Device as ControlDevice, Mode, ResourceInfo};
 use drm::Device as BasicDevice;
-use drm::control::{crtc, connector, encoder, Device as ControlDevice, Mode, ResourceInfo};
 use nix::libc::dev_t;
 use nix::sys::stat::fstat;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::rc::{Rc, Weak};
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::sync::{Arc, RwLock};
+use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
 
 mod surface;
 pub use self::surface::LegacyDrmSurface;
@@ -29,7 +29,7 @@ pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
     active: Arc<AtomicBool>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<LegacyDrmSurface<A>>>>>,
-    handler: Option<RefCell<Box<DeviceHandler<Device=LegacyDrmDevice<A>>>>>,
+    handler: Option<RefCell<Box<DeviceHandler<Device = LegacyDrmDevice<A>>>>>,
     logger: ::slog::Logger,
 }
 
@@ -122,10 +122,10 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
     type Surface = LegacyDrmSurface<A>;
     type Return = Rc<LegacyDrmSurface<A>>;
 
-    fn set_handler(&mut self, handler: impl DeviceHandler<Device=Self> + 'static) {
+    fn set_handler(&mut self, handler: impl DeviceHandler<Device = Self> + 'static) {
         self.handler = Some(RefCell::new(Box::new(handler)));
     }
-    
+
     fn clear_handler(&mut self) {
         let _ = self.handler.take();
     }
@@ -134,7 +134,7 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
         &mut self,
         crtc: crtc::Handle,
         mode: Mode,
-        connectors: impl Into<<Self::Surface as Surface>::Connectors>
+        connectors: impl Into<<Self::Surface as Surface>::Connectors>,
     ) -> Result<Rc<LegacyDrmSurface<A>>> {
         if self.backends.borrow().contains_key(&crtc) {
             bail!(ErrorKind::CrtcAlreadyInUse(crtc));
@@ -181,11 +181,8 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
 
         // configuration is valid, the kernel will figure out the rest
         let logger = self.logger.new(o!("crtc" => format!("{:?}", crtc)));
-        
-        let state = State {
-            mode,
-            connectors,
-        };
+
+        let state = State { mode, connectors };
 
         let backend = Rc::new(LegacyDrmSurface {
             dev: self.dev.clone(),
@@ -194,17 +191,24 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
             pending: RwLock::new(state),
             logger,
         });
-        
+
         self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));
         Ok(backend)
     }
-    
+
     fn process_events(&mut self) {
         match crtc::receive_events(self) {
             Ok(events) => for event in events {
                 if let crtc::Event::PageFlip(event) = event {
                     if self.active.load(Ordering::SeqCst) {
-                        if let Some(backend) = self.backends.borrow().get(&event.crtc).iter().flat_map(|x| x.upgrade()).next() {
+                        if let Some(backend) = self
+                            .backends
+                            .borrow()
+                            .get(&event.crtc)
+                            .iter()
+                            .flat_map(|x| x.upgrade())
+                            .next()
+                        {
                             trace!(self.logger, "Handling event for backend {:?}", event.crtc);
                             if let Some(handler) = self.handler.as_ref() {
                                 handler.borrow_mut().vblank(&backend);
@@ -216,10 +220,12 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
                 }
             },
             Err(err) => if let Some(handler) = self.handler.as_ref() {
-                handler.borrow_mut().error(ResultExt::<()>::chain_err(Err(err), || 
-                    ErrorKind::DrmDev(format!("Error processing drm events on {:?}", self.dev_path()))
-                ).unwrap_err());
-            }
+                handler.borrow_mut().error(
+                    ResultExt::<()>::chain_err(Err(err), || {
+                        ErrorKind::DrmDev(format!("Error processing drm events on {:?}", self.dev_path()))
+                    }).unwrap_err(),
+                );
+            },
         }
     }
 }

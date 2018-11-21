@@ -16,13 +16,16 @@ use std::{
 use wayland_server::calloop::{
     generic::{EventedFd, Generic},
     mio::Ready,
-    LoopHandle, Source, InsertError,
+    InsertError, LoopHandle, Source,
 };
 
 // No idea if this is the same across unix platforms
 // Lets make this linux exclusive for now, once someone tries to build it for
 // any BSD-like system, they can verify if this is right and make a PR to change this.
-#[cfg(all(any(target_os = "linux", target_os = "android"), feature = "backend_session"))]
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
+    feature = "backend_session"
+))]
 const INPUT_MAJOR: u32 = 13;
 
 /// Libinput based `InputBackend`.
@@ -600,13 +603,16 @@ impl AsRawFd for LibinputInputBackend {
 pub fn libinput_bind<Data: 'static>(
     backend: LibinputInputBackend,
     handle: LoopHandle<Data>,
-) -> ::std::result::Result<Source<Generic<EventedFd<LibinputInputBackend>>>, InsertError<Generic<EventedFd<LibinputInputBackend>>>> {
+) -> ::std::result::Result<
+    Source<Generic<EventedFd<LibinputInputBackend>>>,
+    InsertError<Generic<EventedFd<LibinputInputBackend>>>,
+> {
     let mut source = Generic::from_fd_source(backend);
     source.set_interest(Ready::readable());
 
     handle.insert_source(source, move |evt, _| {
         use backend::input::InputBackend;
-        
+
         let mut backend = evt.source.borrow_mut();
         if let Err(error) = backend.0.dispatch_new_events() {
             warn!(backend.0.logger, "Libinput errored: {}", error);

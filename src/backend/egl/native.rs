@@ -169,9 +169,10 @@ pub unsafe trait NativeSurface {
     fn ptr(&self) -> ffi::NativeWindowType;
     /// Adds additional semantics when calling EGLSurface::swap_buffers
     ///
-    /// Only implement if required by the backend, flip must be called during this call. 
+    /// Only implement if required by the backend, flip must be called during this call.
     fn swap_buffers<F>(&self, flip: F) -> ::std::result::Result<(), SwapBuffersError>
-        where F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>
+    where
+        F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>,
     {
         flip()
     }

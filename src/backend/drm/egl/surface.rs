@@ -3,22 +3,27 @@ use nix::libc::c_void;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use backend::drm::{Device, Surface};
-use backend::egl::{EGLContext, EGLSurface};
-use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
-use backend::graphics::{CursorBackend, SwapBuffersError};
-use backend::graphics::gl::{GLGraphicsBackend, PixelFormat};
 use super::error::*;
+use backend::drm::{Device, Surface};
+use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
+use backend::egl::{EGLContext, EGLSurface};
+use backend::graphics::gl::{GLGraphicsBackend, PixelFormat};
+use backend::graphics::{CursorBackend, SwapBuffersError};
 
-pub struct EglSurface<B: Backend<Surface=<D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
-    where <D as Device>::Surface: NativeSurface
+pub struct EglSurface<
+    B: Backend<Surface = <D as Device>::Surface> + 'static,
+    D: Device + NativeDisplay<B> + 'static,
+> where
+    <D as Device>::Surface: NativeSurface,
 {
-    pub(in super) dev: Rc<RefCell<EGLContext<B, D>>>,
-    pub(in super) surface: EGLSurface<B::Surface>,
+    pub(super) dev: Rc<RefCell<EGLContext<B, D>>>,
+    pub(super) surface: EGLSurface<B::Surface>,
 }
 
-impl<B: Backend<Surface=<D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static> Surface for EglSurface<B, D>
-    where <D as Device>::Surface: NativeSurface
+impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static> Surface
+    for EglSurface<B, D>
+where
+    <D as Device>::Surface: NativeSurface,
 {
     type Error = Error;
     type Connectors = <<D as Device>::Surface as Surface>::Connectors;
@@ -30,36 +35,43 @@ impl<B: Backend<Surface=<D as Device>::Surface> + 'static, D: Device + NativeDis
     fn current_connectors(&self) -> Self::Connectors {
         self.surface.current_connectors()
     }
-    
+
     fn pending_connectors(&self) -> Self::Connectors {
         self.surface.pending_connectors()
     }
 
     fn add_connector(&self, connector: connector::Handle) -> Result<()> {
-        self.surface.add_connector(connector).chain_err(|| ErrorKind::UnderlyingBackendError)
+        self.surface
+            .add_connector(connector)
+            .chain_err(|| ErrorKind::UnderlyingBackendError)
     }
 
     fn remove_connector(&self, connector: connector::Handle) -> Result<()> {
-        self.surface.remove_connector(connector).chain_err(|| ErrorKind::UnderlyingBackendError)
+        self.surface
+            .remove_connector(connector)
+            .chain_err(|| ErrorKind::UnderlyingBackendError)
     }
-    
+
     fn current_mode(&self) -> Mode {
         self.surface.current_mode()
     }
-    
+
     fn pending_mode(&self) -> Mode {
         self.surface.pending_mode()
     }
 
     fn use_mode(&self, mode: Mode) -> Result<()> {
-        self.surface.use_mode(mode).chain_err(|| ErrorKind::UnderlyingBackendError)
+        self.surface
+            .use_mode(mode)
+            .chain_err(|| ErrorKind::UnderlyingBackendError)
     }
 }
 
-impl<'a, B: Backend<Surface=<D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static> CursorBackend<'a> for EglSurface<B, D>
-    where
-        D: CursorBackend<'a>,
-        <D as Device>::Surface: NativeSurface
+impl<'a, B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
+    CursorBackend<'a> for EglSurface<B, D>
+where
+    D: CursorBackend<'a>,
+    <D as Device>::Surface: NativeSurface,
 {
     type CursorFormat = <D as CursorBackend<'a>>::CursorFormat;
     type Error = <D as CursorBackend<'a>>::Error;
@@ -73,15 +85,18 @@ impl<'a, B: Backend<Surface=<D as Device>::Surface> + 'static, D: Device + Nativ
         buffer: Self::CursorFormat,
         hotspot: (u32, u32),
     ) -> ::std::result::Result<(), Self::Error>
-        where 'a: 'b
+    where
+        'a: 'b,
     {
         let dev = self.dev.borrow();
         dev.set_cursor_representation(buffer, hotspot)
     }
 }
 
-impl<B: Backend<Surface=<D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static> GLGraphicsBackend for EglSurface<B, D>
-    where <D as Device>::Surface: NativeSurface
+impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
+    GLGraphicsBackend for EglSurface<B, D>
+where
+    <D as Device>::Surface: NativeSurface,
 {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         self.surface.swap_buffers()

@@ -29,5 +29,6 @@ pub trait CursorBackend<'a> {
         cursor: Self::CursorFormat,
         hotspot: (u32, u32),
     ) -> Result<(), Self::Error>
-    where 'a: 'b;
+    where
+        'a: 'b;
 }

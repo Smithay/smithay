@@ -66,7 +66,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
                         err => Err(SwapBuffersError::Unknown(err)),
                     }
                 } else {
-                Ok(())
+                    Ok(())
                 }
             } else {
                 Err(SwapBuffersError::ContextLost)

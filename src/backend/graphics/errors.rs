@@ -1,5 +1,5 @@
-use std::fmt;
 use std::error::Error;
+use std::fmt;
 
 /// Error that can happen when swapping buffers.
 #[derive(Debug, Clone, PartialEq)]
@@ -43,4 +43,3 @@ impl Error for SwapBuffersError {
         None
     }
 }
-

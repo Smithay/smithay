@@ -1,17 +1,13 @@
 //! Implementation of backend traits for types provided by `winit`
 
 use backend::{
+    egl::{
+        context::GlAttributes, error as egl_error, error::Result as EGLResult, native, EGLContext,
+        EGLDisplay, EGLGraphicsBackend, EGLSurface,
+    },
     graphics::{
         gl::{GLGraphicsBackend, PixelFormat},
-        CursorBackend,
-        SwapBuffersError,
-    },
-    egl::{
-        context::GlAttributes,
-        error as egl_error,
-        error::Result as EGLResult,
-        native,
-        EGLDisplay, EGLContext, EGLGraphicsBackend, EGLSurface,
+        CursorBackend, SwapBuffersError,
     },
     input::{
         Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState, KeyboardKeyEvent,
@@ -246,7 +242,8 @@ impl<'a> CursorBackend<'a> for WinitGraphicsBackend {
         cursor: Self::CursorFormat,
         _hotspot: (u32, u32),
     ) -> ::std::result::Result<(), ()>
-        where 'a: 'b
+    where
+        'a: 'b,
     {
         // Cannot log this one, as `CursorFormat` is not `Debug` and should not be
         debug!(self.logger, "Changing cursor representation");

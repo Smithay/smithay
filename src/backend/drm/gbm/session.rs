@@ -2,32 +2,29 @@ use drm::control::{crtc, Device as ControlDevice, ResourceInfo};
 use gbm::BufferObject;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::{Rc, Weak};
 use std::os::unix::io::RawFd;
+use std::rc::{Rc, Weak};
 
-use backend::session::{AsSessionObserver, SessionObserver};
-use backend::drm::{Device, RawDevice, RawSurface};
 use super::{GbmDevice, GbmSurface};
+use backend::drm::{Device, RawDevice, RawSurface};
+use backend::session::{AsSessionObserver, SessionObserver};
 
 /// `SessionObserver` linked to the `DrmDevice` it was created from.
 pub struct GbmDeviceObserver<
     S: SessionObserver + 'static,
     D: RawDevice + ControlDevice + AsSessionObserver<S> + 'static,
->
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+> where
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     observer: S,
     backends: Weak<RefCell<HashMap<crtc::Handle, Weak<GbmSurface<D>>>>>,
     logger: ::slog::Logger,
 }
 
-impl<
-    S: SessionObserver + 'static,
-    D: RawDevice + ControlDevice + AsSessionObserver<S> + 'static,
-> AsSessionObserver<GbmDeviceObserver<S, D>> for GbmDevice<D>
+impl<S: SessionObserver + 'static, D: RawDevice + ControlDevice + AsSessionObserver<S> + 'static>
+    AsSessionObserver<GbmDeviceObserver<S, D>> for GbmDevice<D>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     fn observer(&mut self) -> GbmDeviceObserver<S, D> {
         GbmDeviceObserver {
@@ -38,12 +35,10 @@ where
     }
 }
 
-impl<
-    S: SessionObserver + 'static,
-    D: RawDevice + ControlDevice + AsSessionObserver<S> + 'static,
-> SessionObserver for GbmDeviceObserver<S, D>
+impl<S: SessionObserver + 'static, D: RawDevice + ControlDevice + AsSessionObserver<S> + 'static>
+    SessionObserver for GbmDeviceObserver<S, D>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     fn pause(&mut self, devnum: Option<(u32, u32)>) {
         self.observer.pause(devnum);
@@ -56,15 +51,17 @@ where
             for (crtc, backend) in backends.borrow().iter() {
                 if let Some(backend) = backend.upgrade() {
                     // restart rendering loop
-                    if let Err(err) = 
-                        ::std::borrow::Borrow::borrow(&backend.crtc).page_flip(backend.current_frame_buffer.get().handle())
+                    if let Err(err) = ::std::borrow::Borrow::borrow(&backend.crtc)
+                        .page_flip(backend.current_frame_buffer.get().handle())
                     {
                         warn!(self.logger, "Failed to restart rendering loop. Error: {}", err);
                     }
                     // reset cursor
                     {
-                        let &(ref cursor, ref hotspot): &(BufferObject<()>, (u32, u32)) =
-                            unsafe { &*backend.cursor.as_ptr() };
+                        let &(ref cursor, ref hotspot): &(
+                            BufferObject<()>,
+                            (u32, u32),
+                        ) = unsafe { &*backend.cursor.as_ptr() };
                         if crtc::set_cursor2(
                             &*backend.dev.borrow(),
                             *crtc,

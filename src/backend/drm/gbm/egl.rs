@@ -1,29 +1,29 @@
-use backend::drm::{RawDevice, Device, RawSurface, Surface};
-use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
-use backend::egl::error::{Result as EglResult};
+use backend::drm::{Device, RawDevice, RawSurface, Surface};
+use backend::egl::error::Result as EglResult;
 use backend::egl::ffi;
+use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use backend::graphics::SwapBuffersError;
 
-use super::{GbmDevice, GbmSurface};
 use super::error::{Error, Result};
+use super::{GbmDevice, GbmSurface};
 
 use drm::control::{crtc, Device as ControlDevice, Mode};
 use gbm::AsRaw;
 use std::marker::PhantomData;
-use std::rc::Rc;
 use std::ptr;
+use std::rc::Rc;
 
 /// Gbm backend type
 pub struct Gbm<D: RawDevice + 'static>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     _userdata: PhantomData<D>,
 }
 
 impl<D: RawDevice + 'static> Backend for Gbm<D>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     type Surface = Rc<GbmSurface<D>>;
 
@@ -54,7 +54,7 @@ where
 /// Arguments necessary to construct a `GbmSurface`
 pub struct SurfaceArguments<D: RawDevice + 'static>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     /// Crtc
     pub crtc: crtc::Handle,
@@ -64,9 +64,10 @@ where
     pub connectors: <GbmSurface<D> as Surface>::Connectors,
 }
 
-impl<D: RawDevice + 'static> From<(crtc::Handle, Mode, <GbmSurface<D> as Surface>::Connectors)> for SurfaceArguments<D>
+impl<D: RawDevice + 'static> From<(crtc::Handle, Mode, <GbmSurface<D> as Surface>::Connectors)>
+    for SurfaceArguments<D>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     fn from((crtc, mode, connectors): (crtc::Handle, Mode, <GbmSurface<D> as Surface>::Connectors)) -> Self {
         SurfaceArguments {
@@ -79,7 +80,7 @@ where
 
 unsafe impl<D: RawDevice + ControlDevice + 'static> NativeDisplay<Gbm<D>> for GbmDevice<D>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     type Arguments = SurfaceArguments<D>;
     type Error = Error;
@@ -99,7 +100,7 @@ where
 
 unsafe impl<D: RawDevice + 'static> NativeSurface for Rc<GbmSurface<D>>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     fn ptr(&self) -> ffi::NativeWindowType {
         self.surface.borrow().as_raw() as *const _
@@ -107,7 +108,7 @@ where
 
     fn swap_buffers<F>(&self, flip: F) -> ::std::result::Result<(), SwapBuffersError>
     where
-        F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>
+        F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>,
     {
         if ::std::borrow::Borrow::borrow(&self.crtc).commit_pending() {
             self.recreate(flip).map_err(|_| SwapBuffersError::ContextLost)

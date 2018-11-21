@@ -1,16 +1,16 @@
+use drm::control::{connector, crtc, Device as ControlDevice};
 use drm::Device as BasicDevice;
-use drm::control::{crtc, connector, Device as ControlDevice};
 use nix::libc::dev_t;
 use nix::sys::stat;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::{Rc, Weak};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::rc::{Rc, Weak};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
+use super::{Dev, LegacyDrmDevice, LegacyDrmSurface};
 use backend::session::{AsSessionObserver, SessionObserver};
-use super::{LegacyDrmDevice, LegacyDrmSurface, Dev};
 
 /// `SessionObserver` linked to the `DrmDevice` it was created from.
 pub struct LegacyDrmDeviceObserver<A: AsRawFd + 'static> {

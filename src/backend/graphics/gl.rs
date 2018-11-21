@@ -67,7 +67,7 @@ pub trait GLGraphicsBackend {
 }
 
 /// Loads a Raw GLES Interface for a given `GLGraphicsBackend`
-/// 
+///
 /// This remains valid as long as the underlying `GLGraphicsBackend` is alive
 /// and may only be used in combination with the backend. Using this with any
 /// other gl context may cause undefined behavior.

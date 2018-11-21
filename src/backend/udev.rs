@@ -21,7 +21,7 @@ use udev::{Context, Enumerator, EventType, MonitorBuilder, MonitorSocket, Result
 use wayland_server::calloop::{
     generic::{EventedFd, Generic},
     mio::Ready,
-    LoopHandle, Source, InsertError,
+    InsertError, LoopHandle, Source,
 };
 
 /// Backend to monitor available drm devices.
@@ -48,7 +48,7 @@ impl<T: UdevHandler + 'static> UdevBackend<T> {
     /// ## Arguments
     /// `context` - An initialized udev context
     /// `handler` - User-provided handler to respond to any detected changes
-    /// `seat`    - 
+    /// `seat`    -
     /// `logger`  - slog Logger to be used by the backend and its `DrmDevices`.
     pub fn new<L, S: AsRef<str>>(
         context: &Context,
@@ -66,15 +66,14 @@ impl<T: UdevHandler + 'static> UdevBackend<T> {
             // Create devices
             .flat_map(|path| match stat(&path) {
                 Ok(stat) => {
-                    handler.device_added(stat.st_rdev, path);  
+                    handler.device_added(stat.st_rdev, path);
                     Some(stat.st_rdev)
-                },
+                }
                 Err(err) => {
                     warn!(log, "Unable to get id of {:?}, Error: {:?}. Skipping", path, err);
                     None
                 }
-            })
-            .collect();
+            }).collect();
 
         let mut builder = MonitorBuilder::new(context)?;
         builder.match_subsystem("drm")?;
@@ -89,8 +88,7 @@ impl<T: UdevHandler + 'static> UdevBackend<T> {
     }
 }
 
-impl<T: UdevHandler + 'static> Drop for UdevBackend<T>
-{
+impl<T: UdevHandler + 'static> Drop for UdevBackend<T> {
     fn drop(&mut self) {
         for device in &self.devices {
             self.handler.device_removed(*device);
@@ -105,8 +103,7 @@ impl<T: UdevHandler + 'static> Drop for UdevBackend<T>
 pub fn udev_backend_bind<T: UdevHandler + 'static, Data: 'static>(
     handle: &LoopHandle<Data>,
     udev: UdevBackend<T>,
-) -> Result<Source<Generic<EventedFd<UdevBackend<T>>>>, InsertError<Generic<EventedFd<UdevBackend<T>>>>>
-{
+) -> Result<Source<Generic<EventedFd<UdevBackend<T>>>>, InsertError<Generic<EventedFd<UdevBackend<T>>>>> {
     let mut source = Generic::from_fd_source(udev);
     source.set_interest(Ready::readable());
 

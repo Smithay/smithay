@@ -9,19 +9,19 @@ error_chain! {
             description("Creation of gbm device failed"),
             display("Creation of gbm device failed"),
         }
-        
+
         #[doc = "Creation of gbm surface failed"]
         SurfaceCreationFailed {
             description("Creation of gbm surface failed"),
             display("Creation of gbm surface failed"),
         }
-        
+
         #[doc = "Creation of gbm buffer object failed"]
         BufferCreationFailed {
             description("Creation of gbm buffer object failed"),
             display("Creation of gbm buffer object failed"),
         }
-        
+
         #[doc = "Writing to gbm buffer failed"]
         BufferWriteFailed {
             description("Writing to gbm buffer failed"),

@@ -1,13 +1,13 @@
-use super::{Device, RawDevice, Surface, DeviceHandler};
+use super::{Device, DeviceHandler, RawDevice, Surface};
 
 use drm::control::{crtc, framebuffer, Device as ControlDevice, Mode};
-use gbm::{self, Format as GbmFormat, BufferObjectFlags};
+use gbm::{self, BufferObjectFlags, Format as GbmFormat};
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use std::sync::{Once, ONCE_INIT};
-use std::os::unix::io::{AsRawFd, RawFd};
 
 pub mod error;
 use self::error::*;
@@ -25,16 +25,16 @@ static LOAD: Once = ONCE_INIT;
 /// Representation of an open gbm device to create rendering backends
 pub struct GbmDevice<D: RawDevice + ControlDevice + 'static>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
-    pub(in self) dev: Rc<RefCell<gbm::Device<D>>>,
+    pub(self) dev: Rc<RefCell<gbm::Device<D>>>,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<GbmSurface<D>>>>>,
     logger: ::slog::Logger,
 }
 
 impl<D: RawDevice + ControlDevice + 'static> GbmDevice<D>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     /// Create a new `GbmDevice` from an open drm node
     ///
@@ -56,7 +56,7 @@ where
                 nix::libc::RTLD_LAZY | nix::libc::RTLD_GLOBAL,
             );
         });
-        
+
         let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_gbm"));
 
         dev.clear_handler();
@@ -64,7 +64,9 @@ where
         debug!(log, "Creating gbm device");
         Ok(GbmDevice {
             // Open the gbm device from the drm device
-            dev: Rc::new(RefCell::new(gbm::Device::new(dev).chain_err(|| ErrorKind::InitFailed)?)),
+            dev: Rc::new(RefCell::new(
+                gbm::Device::new(dev).chain_err(|| ErrorKind::InitFailed)?,
+            )),
             backends: Rc::new(RefCell::new(HashMap::new())),
             logger: log,
         })
@@ -73,16 +75,16 @@ where
 
 struct InternalDeviceHandler<D: RawDevice + ControlDevice + 'static>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
-    handler: Box<DeviceHandler<Device=GbmDevice<D>> + 'static>,
+    handler: Box<DeviceHandler<Device = GbmDevice<D>> + 'static>,
     backends: Weak<RefCell<HashMap<crtc::Handle, Weak<GbmSurface<D>>>>>,
     logger: ::slog::Logger,
 }
 
 impl<D: RawDevice + ControlDevice + 'static> DeviceHandler for InternalDeviceHandler<D>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     type Device = D;
 
@@ -94,30 +96,35 @@ where
                     self.handler.vblank(&*surface);
                 }
             } else {
-                warn!(self.logger, "Surface ({:?}) not managed by gbm, event not handled.", surface.crtc());
+                warn!(
+                    self.logger,
+                    "Surface ({:?}) not managed by gbm, event not handled.",
+                    surface.crtc()
+                );
             }
         }
     }
     fn error(&mut self, error: <<D as Device>::Surface as Surface>::Error) {
-        self.handler.error(ResultExt::<()>::chain_err(Err(error), || ErrorKind::UnderlyingBackendError).unwrap_err())
+        self.handler
+            .error(ResultExt::<()>::chain_err(Err(error), || ErrorKind::UnderlyingBackendError).unwrap_err())
     }
 }
 
 impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     type Surface = GbmSurface<D>;
     type Return = Rc<GbmSurface<D>>;
 
-    fn set_handler(&mut self, handler: impl DeviceHandler<Device=Self> + 'static) {
+    fn set_handler(&mut self, handler: impl DeviceHandler<Device = Self> + 'static) {
         self.dev.borrow_mut().set_handler(InternalDeviceHandler {
             handler: Box::new(handler),
             backends: Rc::downgrade(&self.backends),
             logger: self.logger.clone(),
         });
     }
-    
+
     fn clear_handler(&mut self) {
         self.dev.borrow_mut().clear_handler();
     }
@@ -126,17 +133,20 @@ where
         &mut self,
         crtc: crtc::Handle,
         mode: Mode,
-        connectors: impl Into<<Self::Surface as Surface>::Connectors>
+        connectors: impl Into<<Self::Surface as Surface>::Connectors>,
     ) -> Result<Rc<GbmSurface<D>>> {
         info!(self.logger, "Initializing GbmSurface");
 
         let (w, h) = mode.size();
-        let surface = self.dev.borrow().create_surface(
-            w as u32,
-            h as u32,
-            GbmFormat::XRGB8888,
-            BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
-        ).chain_err(|| ErrorKind::SurfaceCreationFailed)?;
+        let surface = self
+            .dev
+            .borrow()
+            .create_surface(
+                w as u32,
+                h as u32,
+                GbmFormat::XRGB8888,
+                BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
+            ).chain_err(|| ErrorKind::SurfaceCreationFailed)?;
 
         // init the first screen
         // (must be done before calling page_flip for the first time)
@@ -147,11 +157,13 @@ where
         debug!(self.logger, "FrontBuffer color format: {:?}", front_bo.format());
 
         // we need a framebuffer for the front buffer
-        let fb = framebuffer::create(&*self.dev.borrow(), &*front_bo).chain_err(|| ErrorKind::UnderlyingBackendError)?;
+        let fb = framebuffer::create(&*self.dev.borrow(), &*front_bo)
+            .chain_err(|| ErrorKind::UnderlyingBackendError)?;
         front_bo.set_userdata(fb).unwrap();
 
         let cursor = Cell::new((
-            self.dev.borrow()
+            self.dev
+                .borrow()
                 .create_buffer_object(
                     1,
                     1,
@@ -177,13 +189,13 @@ where
     }
 
     fn process_events(&mut self) {
-        self.dev.borrow_mut().process_events()        
+        self.dev.borrow_mut().process_events()
     }
 }
 
 impl<D: RawDevice + ControlDevice + 'static> AsRawFd for GbmDevice<D>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>
+    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     fn as_raw_fd(&self) -> RawFd {
         self.dev.borrow().as_raw_fd()
