@@ -1,6 +1,7 @@
 //! EGL surface related structs
 
-use super::{error::*, ffi, native, EGLContext, SwapBuffersError};
+use super::{error::*, ffi, native, EGLContext};
+use backend::graphics::SwapBuffersError;
 use std::{
     ops::{Deref, DerefMut},
     rc::{Rc, Weak},
@@ -55,20 +56,22 @@ impl<N: native::NativeSurface> EGLSurface<N> {
 
     /// Swaps buffers at the end of a frame.
     pub fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        if let Some(display) = self.display.upgrade() {
-            let ret = unsafe { ffi::egl::SwapBuffers((*display) as *const _, self.surface as *const _) };
+        self.native.swap_buffers(|| {
+            if let Some(display) = self.display.upgrade() {
+                let ret = unsafe { ffi::egl::SwapBuffers((*display) as *const _, self.surface as *const _) };
 
-            if ret == 0 {
-                match unsafe { ffi::egl::GetError() } as u32 {
-                    ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
-                    err => Err(SwapBuffersError::Unknown(err)),
+                if ret == 0 {
+                    match unsafe { ffi::egl::GetError() } as u32 {
+                        ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
+                        err => Err(SwapBuffersError::Unknown(err)),
+                    }
+                } else {
+                Ok(())
                 }
             } else {
-                Ok(())
+                Err(SwapBuffersError::ContextLost)
             }
-        } else {
-            Err(SwapBuffersError::ContextLost)
-        }
+        })
     }
 
     /// Makes the OpenGL context the current context in the current thread.

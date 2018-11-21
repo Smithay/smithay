@@ -1,16 +1,9 @@
 //! EGL context related structs
 
-use super::{error::*, ffi, native, EGLSurface, PixelFormat};
-#[cfg(feature = "backend_drm")]
-use drm::control::Device as ControlDevice;
-#[cfg(feature = "backend_drm")]
-use drm::Device as BasicDevice;
-#[cfg(feature = "backend_drm")]
-use gbm::Device as GbmDevice;
+use super::{error::*, ffi, native, EGLSurface};
+use backend::graphics::gl::PixelFormat;
 use nix::libc::{c_int, c_void};
 use slog;
-#[cfg(feature = "backend_drm")]
-use std::os::unix::io::{AsRawFd, RawFd};
 use std::{
     ffi::{CStr, CString},
     marker::PhantomData,
@@ -29,7 +22,6 @@ pub struct EGLContext<B: native::Backend, N: native::NativeDisplay<B>> {
     pub(crate) surface_attributes: Vec<c_int>,
     pixel_format: PixelFormat,
     pub(crate) wl_drm_support: bool,
-    pub(crate) egl_to_texture_support: bool,
     logger: slog::Logger,
     _backend: PhantomData<B>,
 }
@@ -67,7 +59,6 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             surface_attributes,
             pixel_format,
             wl_drm_support,
-            egl_to_texture_support,
         ) = unsafe { EGLContext::<B, N>::new_internal(ptr, attributes, reqs, log.clone()) }?;
 
         Ok(EGLContext {
@@ -78,7 +69,6 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             surface_attributes,
             pixel_format,
             wl_drm_support,
-            egl_to_texture_support,
             logger: log,
             _backend: PhantomData,
         })
@@ -95,7 +85,6 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         ffi::egl::types::EGLConfig,
         Vec<c_int>,
         PixelFormat,
-        bool,
         bool,
     )> {
         // If no version is given, try OpenGLES 3.0, if available,
@@ -128,14 +117,15 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
                 bail!(ErrorKind::OpenGlVersionNotSupported(version));
             }
         };
-
+        
+        fn constrain<F>(f: F) -> F
+        where
+            F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
+        {
+            f
+        };
+            
         ffi::egl::LOAD.call_once(|| {
-            fn constrain<F>(f: F) -> F
-            where
-                F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
-            {
-                f
-            };
             ffi::egl::load_with(|sym| {
                 let name = CString::new(sym).unwrap();
                 let symbol = ffi::egl::LIB.get::<*mut c_void>(name.as_bytes());
@@ -153,9 +143,8 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             ffi::egl::BindWaylandDisplayWL::load_with(&proc_address);
             ffi::egl::UnbindWaylandDisplayWL::load_with(&proc_address);
             ffi::egl::QueryWaylandBufferWL::load_with(&proc_address);
-            ffi::gl::load_with(&proc_address);
         });
-
+        
         // the first step is to query the list of extensions without any display, if supported
         let dp_extensions = {
             let p = ffi::egl::QueryString(ffi::egl::NO_DISPLAY, ffi::egl::EXTENSIONS as i32);
@@ -435,17 +424,6 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         // make current and get list of gl extensions
         ffi::egl::MakeCurrent(display as *const _, ptr::null(), ptr::null(), context as *const _);
 
-        // the list of gl extensions supported by the context
-        let gl_extensions = {
-            let data = CStr::from_ptr(ffi::gl::GetString(ffi::gl::EXTENSIONS) as *const _)
-                .to_bytes()
-                .to_vec();
-            let list = String::from_utf8(data).unwrap();
-            list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
-        };
-
-        info!(log, "GL Extensions: {:?}", gl_extensions);
-
         Ok((
             Rc::new(context as *const _),
             Rc::new(display as *const _),
@@ -453,25 +431,22 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             surface_attributes,
             desc,
             extensions.iter().any(|s| *s == "EGL_WL_bind_wayland_display"),
-            gl_extensions
-                .iter()
-                .any(|s| *s == "GL_OES_EGL_image" || *s == "GL_OES_EGL_image_base"),
         ))
     }
 
     /// Creates a surface for rendering
-    pub fn create_surface(&self, args: N::Arguments) -> Result<EGLSurface<B::Surface>> {
+    pub fn create_surface(&mut self, args: N::Arguments) -> Result<EGLSurface<B::Surface>> {
         trace!(self.logger, "Creating EGL window surface.");
-        let res = EGLSurface::new(
-            self,
-            self.native
+        let surface = self.native
                 .create_surface(args)
-                .chain_err(|| ErrorKind::SurfaceCreationFailed)?,
-        );
-        if res.is_ok() {
+                .chain_err(|| ErrorKind::SurfaceCreationFailed)?;
+        EGLSurface::new(
+            self,
+            surface,
+        ).map(|x| {
             debug!(self.logger, "EGL surface successfully created");
-        }
-        res
+            x
+        })
     }
 
     /// Returns the address of an OpenGL function.
@@ -507,18 +482,6 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> Drop for EGLContext<B, N> 
         }
     }
 }
-
-#[cfg(feature = "backend_drm")]
-impl<T: 'static, A: AsRawFd + 'static> AsRawFd for EGLContext<native::Gbm<T>, GbmDevice<A>> {
-    fn as_raw_fd(&self) -> RawFd {
-        self.native.as_raw_fd()
-    }
-}
-
-#[cfg(feature = "backend_drm")]
-impl<T: 'static, A: BasicDevice + 'static> BasicDevice for EGLContext<native::Gbm<T>, GbmDevice<A>> {}
-#[cfg(feature = "backend_drm")]
-impl<T: 'static, A: ControlDevice + 'static> ControlDevice for EGLContext<native::Gbm<T>, GbmDevice<A>> {}
 
 /// Attributes to use when creating an OpenGL context.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
