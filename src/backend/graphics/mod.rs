@@ -12,4 +12,5 @@ pub use self::cursor::*;
 pub mod gl;
 #[cfg(feature = "renderer_glium")]
 pub mod glium;
+#[cfg(feature = "renderer_software")]
 pub mod software;
