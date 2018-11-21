@@ -2,15 +2,16 @@
 
 use backend::{
     graphics::{
-        egl::{
-            context::GlAttributes,
-            error as egl_error,
-            error::Result as EGLResult,
-            native,
-            wayland::{EGLDisplay, EGLWaylandExtensions},
-            EGLContext, EGLGraphicsBackend, EGLSurface, PixelFormat, SwapBuffersError,
-        },
-        GraphicsBackend,
+        gl::{GLGraphicsBackend, PixelFormat},
+        CursorBackend,
+        SwapBuffersError,
+    },
+    egl::{
+        context::GlAttributes,
+        error as egl_error,
+        error::Result as EGLResult,
+        native,
+        EGLDisplay, EGLContext, EGLGraphicsBackend, EGLSurface,
     },
     input::{
         Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState, KeyboardKeyEvent,
@@ -156,12 +157,12 @@ where
     let reqs = Default::default();
     let window = Rc::new(
         if native::NativeDisplay::<native::Wayland>::is_backend(&winit_window) {
-            let context =
+            let mut context =
                 EGLContext::<native::Wayland, WinitWindow>::new(winit_window, attributes, reqs, log.clone())?;
             let surface = context.create_surface(())?;
             Window::Wayland { context, surface }
         } else if native::NativeDisplay::<native::X11>::is_backend(&winit_window) {
-            let context =
+            let mut context =
                 EGLContext::<native::X11, WinitWindow>::new(winit_window, attributes, reqs, log.clone())?;
             let surface = context.create_surface(())?;
             Window::X11 { context, surface }
@@ -226,8 +227,8 @@ impl WinitGraphicsBackend {
     }
 }
 
-impl GraphicsBackend for WinitGraphicsBackend {
-    type CursorFormat = MouseCursor;
+impl<'a> CursorBackend<'a> for WinitGraphicsBackend {
+    type CursorFormat = &'a MouseCursor;
     type Error = ();
 
     fn set_cursor_position(&self, x: u32, y: u32) -> ::std::result::Result<(), ()> {
@@ -240,11 +241,13 @@ impl GraphicsBackend for WinitGraphicsBackend {
             })
     }
 
-    fn set_cursor_representation(
-        &self,
-        cursor: &Self::CursorFormat,
+    fn set_cursor_representation<'b>(
+        &'b self,
+        cursor: Self::CursorFormat,
         _hotspot: (u32, u32),
-    ) -> ::std::result::Result<(), ()> {
+    ) -> ::std::result::Result<(), ()>
+        where 'a: 'b
+    {
         // Cannot log this one, as `CursorFormat` is not `Debug` and should not be
         debug!(self.logger, "Changing cursor representation");
         self.window.window().set_cursor(*cursor);
@@ -252,7 +255,7 @@ impl GraphicsBackend for WinitGraphicsBackend {
     }
 }
 
-impl EGLGraphicsBackend for WinitGraphicsBackend {
+impl GLGraphicsBackend for WinitGraphicsBackend {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         trace!(self.logger, "Swapping buffers");
         match *self.window {
@@ -303,7 +306,7 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
     }
 }
 
-impl EGLWaylandExtensions for WinitGraphicsBackend {
+impl EGLGraphicsBackend for WinitGraphicsBackend {
     fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
         match *self.window {
             Window::Wayland { ref context, .. } => context.bind_wl_display(display),
