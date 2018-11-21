@@ -34,16 +34,18 @@ error-chain = "0.11.0"
 lazy_static = "1.0.0"
 
 [build-dependencies]
-gl_generator = "0.9"
+gl_generator = { version = "0.9", optional = true }
 
 [features]
 default = ["backend_winit", "backend_drm", "backend_libinput", "backend_udev", "renderer_glium", "xwayland"]
-backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen"]
-backend_drm = ["drm", "gbm"]
+backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen", "backend_egl"]
+backend_drm = ["drm", "backend_egl"]
+backend_egl = ["gl_generator"]
 backend_libinput = ["input"]
 backend_session = []
 backend_session_udev = ["udev", "backend_session"]
 backend_session_logind = ["dbus", "systemd", "backend_session"]
 backend_udev = ["udev", "backend_drm", "backend_session_udev"]
-renderer_glium = ["glium"]
+renderer_gl = ["gl_generator"]
+renderer_glium = ["renderer_gl", "glium"]
 xwayland = []
