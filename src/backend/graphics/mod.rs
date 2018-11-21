@@ -2,6 +2,8 @@
 //!
 //! Note: Not every API may be supported by every backend
 
+mod errors;
+pub use self::errors::*;
 
 mod cursor;
 pub use self::cursor::*;
