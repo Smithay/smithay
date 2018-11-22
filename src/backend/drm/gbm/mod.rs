@@ -128,7 +128,7 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
         info!(self.logger, "Initializing GbmSurface");
 
         let drm_surface = Device::create_surface(&mut **self.dev.borrow_mut(), crtc, mode, connectors)
-                .chain_err(|| ErrorKind::UnderlyingBackendError)?;
+            .chain_err(|| ErrorKind::UnderlyingBackendError)?;
 
         let (w, h) = mode.size();
         let surface = self
@@ -161,6 +161,7 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
             current_frame_buffer: Cell::new(None),
             front_buffer: Cell::new(None),
             next_buffer: Cell::new(None),
+            recreated: Cell::new(true),
             logger: self.logger.new(o!("crtc" => format!("{:?}", crtc))),
         });
         self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));

@@ -87,19 +87,20 @@ unsafe impl<D: RawDevice + 'static> NativeSurface for GbmSurface<D> {
         self.0.surface.borrow().as_raw() as *const _
     }
 
-    fn swap_buffers<F>(&self, flip: F) -> ::std::result::Result<(), SwapBuffersError>
-    where
-        F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>,
-    {
-        if self.0.crtc.commit_pending() || {
-            let fb = self.0.front_buffer.take();
-            let res = fb.is_none();
-            self.0.front_buffer.set(fb);
-            res
-        } {
-            self.recreate(flip).map_err(|_| SwapBuffersError::ContextLost)
+    fn needs_recreation(&self) -> bool {
+        self.0.crtc.commit_pending()
+    }
+
+    fn recreate(&self) -> bool {
+        if let Err(err) = GbmSurface::recreate(self) {
+            error!(self.0.logger, "Failure recreating internal resources: {:?}", err);
+            false
         } else {
-            self.page_flip(flip)
+            true
         }
+    }
+
+    fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
+        self.page_flip()
     }
 }

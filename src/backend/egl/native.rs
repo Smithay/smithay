@@ -167,14 +167,31 @@ unsafe impl NativeDisplay<Wayland> for WinitWindow {
 pub unsafe trait NativeSurface {
     /// Return a raw pointer egl will accept for surface creation.
     fn ptr(&self) -> ffi::NativeWindowType;
+
+    /// Will be called to check if any internal resources will need
+    /// to be recreated. Old resources must be used until `recreate`
+    /// was called.
+    ///
+    /// Only needs to be recreated, if this shall sometimes return true.
+    /// The default implementation always returns false.
+    fn needs_recreation(&self) -> bool {
+        false
+    }
+
+    /// Instructs the surface to recreate internal resources
+    ///
+    /// Must only be implemented if `needs_recreation` can return `true`.
+    /// Returns true on success.
+    /// If this call was successful `ptr()` *should* return something different.
+    fn recreate(&self) -> bool {
+        true
+    }
+
     /// Adds additional semantics when calling EGLSurface::swap_buffers
     ///
-    /// Only implement if required by the backend, flip must be called during this call.
-    fn swap_buffers<F>(&self, flip: F) -> ::std::result::Result<(), SwapBuffersError>
-    where
-        F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>,
-    {
-        flip()
+    /// Only implement if required by the backend.
+    fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
+        Ok(())
     }
 }
 

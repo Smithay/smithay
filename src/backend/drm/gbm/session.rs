@@ -45,11 +45,11 @@ impl<S: SessionObserver + 'static, D: RawDevice + ControlDevice + AsSessionObser
             for (crtc, backend) in backends.borrow().iter() {
                 if let Some(backend) = backend.upgrade() {
                     // restart rendering loop, if it was previously running
-                    if let Some(Err(err)) = backend.current_frame_buffer.get().map(|fb|
-                        backend
-                            .crtc
-                            .page_flip(fb.handle())
-                    ) {
+                    if let Some(Err(err)) = backend
+                        .current_frame_buffer
+                        .get()
+                        .map(|fb| backend.crtc.page_flip(fb.handle()))
+                    {
                         warn!(self.logger, "Failed to restart rendering loop. Error: {}", err);
                     }
                     // reset cursor

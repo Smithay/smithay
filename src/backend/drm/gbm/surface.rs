@@ -22,6 +22,7 @@ pub(super) struct GbmSurfaceInternal<D: RawDevice + 'static> {
     pub(super) current_frame_buffer: Cell<Option<framebuffer::Info>>,
     pub(super) front_buffer: Cell<Option<SurfaceBufferHandle<framebuffer::Info>>>,
     pub(super) next_buffer: Cell<Option<SurfaceBufferHandle<framebuffer::Info>>>,
+    pub(super) recreated: Cell<bool>,
     pub(super) logger: ::slog::Logger,
 }
 
@@ -29,17 +30,12 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
     pub(super) fn unlock_buffer(&self) {
         // after the page swap is finished we need to release the rendered buffer.
         // this is called from the PageFlipHandler
-        if let Some(next_buffer) = self.next_buffer.replace(None) {
-            trace!(self.logger, "Releasing old front buffer");
-            self.front_buffer.set(Some(next_buffer));
-            // drop and release the old buffer
-        }
+        trace!(self.logger, "Releasing old front buffer");
+        self.front_buffer.set(self.next_buffer.replace(None));
+        // drop and release the old buffer
     }
 
-    pub fn page_flip<F>(&self, flip: F) -> ::std::result::Result<(), SwapBuffersError>
-    where
-        F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>,
-    {
+    pub fn page_flip(&self) -> ::std::result::Result<(), SwapBuffersError> {
         let res = {
             let nb = self.next_buffer.take();
             let res = nb.is_some();
@@ -51,9 +47,6 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
             warn!(self.logger, "Tried to swap with an already queued flip");
             return Err(SwapBuffersError::AlreadySwapped);
         }
-
-        // flip normally
-        flip()?;
 
         // supporting only one buffer would cause a lot of inconvinience and
         // would most likely result in a lot of flickering.
@@ -81,17 +74,21 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         self.next_buffer.set(Some(next_bo));
 
         trace!(self.logger, "Queueing Page flip");
-        self.crtc.page_flip(fb.handle())?;
+        if self.recreated.get() {
+            self.crtc
+                .commit(fb.handle())
+                .map_err(|_| SwapBuffersError::ContextLost)?;
+            self.recreated.set(false);
+        } else {
+            self.crtc.page_flip(fb.handle())?;
+        }
 
         self.current_frame_buffer.set(Some(fb));
 
         Ok(())
     }
 
-    pub fn recreate<F>(&self, flip: F) -> Result<()>
-    where
-        F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>,
-    {
+    pub fn recreate(&self) -> Result<()> {
         let (w, h) = self.pending_mode().size();
 
         // Recreate the surface and the related resources to match the new
@@ -107,44 +104,17 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
                 BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
             ).chain_err(|| ErrorKind::SurfaceCreationFailed)?;
 
-        // Clean up next_buffer
-        {
-            if let Some(mut old_bo) = self.next_buffer.take() {
-                if let Ok(Some(fb)) = old_bo.take_userdata() {
-                    if let Err(err) = framebuffer::destroy(&self.crtc, fb.handle()) {
-                        warn!(
-                            self.logger,
-                            "Error releasing old back_buffer framebuffer: {:?}", err
-                        );
-                    }
-                }
+        // Clean up buffers
+        if let Some(Ok(Some(fb))) = self.next_buffer.take().map(|mut bo| bo.take_userdata()) {
+            if let Err(err) = framebuffer::destroy(&self.crtc, fb.handle()) {
+                warn!(
+                    self.logger,
+                    "Error releasing old back_buffer framebuffer: {:?}", err
+                );
             }
         }
 
-        flip()?;
-        
-        // Cleanup front_buffer and init the first screen on the new front_buffer
-        // (must be done before calling page_flip for the first time)
-        let old_front_bo = self.front_buffer.replace({
-            let mut front_bo = surface
-                .lock_front_buffer()
-                .chain_err(|| ErrorKind::FrontBufferLockFailed)?;
-
-            debug!(self.logger, "FrontBuffer color format: {:?}", front_bo.format());
-
-            // we also need a new framebuffer for the front buffer
-            let fb = framebuffer::create(&self.crtc, &*front_bo)
-                .chain_err(|| ErrorKind::UnderlyingBackendError)?;
-
-            self.crtc
-                .commit(fb.handle())
-                .chain_err(|| ErrorKind::UnderlyingBackendError)?;
-
-            self.current_frame_buffer.set(Some(fb));
-            front_bo.set_userdata(fb).unwrap();
-            Some(front_bo)
-        });
-        if let Some(Ok(Some(fb))) = old_front_bo.map(|mut bo| bo.take_userdata()) {
+        if let Some(Ok(Some(fb))) = self.front_buffer.take().map(|mut bo| bo.take_userdata()) {
             if let Err(err) = framebuffer::destroy(&self.crtc, fb.handle()) {
                 warn!(
                     self.logger,
@@ -155,6 +125,8 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
 
         // Drop the old surface after cleanup
         *self.surface.borrow_mut() = surface;
+
+        self.recreated.set(true);
 
         Ok(())
     }
@@ -308,18 +280,12 @@ impl<D: RawDevice + 'static> Drop for GbmSurfaceInternal<D> {
 pub struct GbmSurface<D: RawDevice + 'static>(pub(super) Rc<GbmSurfaceInternal<D>>);
 
 impl<D: RawDevice + 'static> GbmSurface<D> {
-    pub fn page_flip<F>(&self, flip: F) -> ::std::result::Result<(), SwapBuffersError>
-    where
-        F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>,
-    {
-        self.0.page_flip(flip)
+    pub fn page_flip(&self) -> ::std::result::Result<(), SwapBuffersError> {
+        self.0.page_flip()
     }
 
-    pub fn recreate<F>(&self, flip: F) -> Result<()>
-    where
-        F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>,
-    {
-        self.0.recreate(flip)
+    pub fn recreate(&self) -> Result<()> {
+        self.0.recreate()
     }
 }
 
