@@ -1,8 +1,11 @@
+#[cfg(any(feature = "backend_egl", feature = "backend_gl"))]
 extern crate gl_generator;
 
+#[cfg(any(feature = "backend_egl", feature = "backend_gl"))]
 use gl_generator::{Api, Fallbacks, Profile, Registry};
 use std::{env, fs::File, path::PathBuf};
 
+#[cfg(any(feature = "backend_egl", feature = "backend_gl"))]
 fn main() {
     let dest = PathBuf::from(&env::var("OUT_DIR").unwrap());
 
@@ -46,3 +49,6 @@ fn main() {
         .unwrap();
     }
 }
+
+#[cfg(not(any(feature = "backend_egl", feature = "backend_gl")))]
+fn main() {}
