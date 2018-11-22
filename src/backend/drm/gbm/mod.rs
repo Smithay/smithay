@@ -17,6 +17,7 @@ mod surface;
 pub use self::surface::GbmSurface;
 use self::surface::GbmSurfaceInternal;
 
+#[cfg(feature = "backend_egl")]
 pub mod egl;
 
 #[cfg(feature = "backend_session")]
