@@ -5,7 +5,7 @@ extern crate gl_generator;
 use gl_generator::{Api, Fallbacks, Profile, Registry};
 use std::{env, fs::File, path::PathBuf};
 
-#[cfg(any(feature = "backend_egl", feature = "backend_gl"))]
+#[cfg(any(feature = "backend_egl", feature = "renderer_gl"))]
 fn main() {
     let dest = PathBuf::from(&env::var("OUT_DIR").unwrap());
 
