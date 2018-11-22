@@ -146,9 +146,14 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     /*
      * Initialize wayland input object
      */
-    let (mut w_seat, _) = Seat::new(&mut display.borrow_mut(), session.seat(), log.clone());
+    let (mut w_seat, _) = Seat::new(
+        &mut display.borrow_mut(),
+        session.seat(),
+        compositor_token.clone(),
+        log.clone(),
+    );
 
-    let pointer = w_seat.add_pointer();
+    let pointer = w_seat.add_pointer(compositor_token.clone(), |_| {});
     let keyboard = w_seat
         .add_keyboard(XkbConfig::default(), 1000, 500, |seat, focus| {
             set_data_device_focus(seat, focus.and_then(|s| s.client()))

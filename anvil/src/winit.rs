@@ -52,9 +52,9 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
 
     init_data_device(display, |_| {}, default_action_chooser, log.clone());
 
-    let (mut seat, _) = Seat::new(display, "winit".into(), log.clone());
+    let (mut seat, _) = Seat::new(display, "winit".into(), compositor_token.clone(), log.clone());
 
-    let pointer = seat.add_pointer();
+    let pointer = seat.add_pointer(compositor_token.clone(), |_| {});
 
     let keyboard = seat
         .add_keyboard(XkbConfig::default(), 1000, 500, |seat, focus| {

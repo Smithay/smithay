@@ -9,6 +9,7 @@ use rand;
 use smithay::{
     wayland::{
         compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent},
+        seat::CursorImageRole,
         shell::{
             legacy::{
                 wl_shell_init, ShellRequest, ShellState as WlShellState, ShellSurfaceKind, ShellSurfaceRole,
@@ -27,7 +28,11 @@ use smithay::{
 
 use window_map::{Kind as SurfaceKind, WindowMap};
 
-define_roles!(Roles => [ XdgSurface, XdgSurfaceRole ] [ ShellSurface, ShellSurfaceRole<()>] );
+define_roles!(Roles =>
+    [ XdgSurface, XdgSurfaceRole ]
+    [ ShellSurface, ShellSurfaceRole<()>]
+    [ CursorImage, CursorImageRole ]
+);
 
 pub type MyWindowMap =
     WindowMap<SurfaceData, Roles, (), (), fn(&SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)>>;
