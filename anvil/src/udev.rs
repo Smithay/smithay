@@ -140,6 +140,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         &mut display.borrow_mut(),
         |_| {},
         default_action_chooser,
+        compositor_token.clone(),
         log.clone(),
     );
 

@@ -50,7 +50,13 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
 
     let (compositor_token, _, _, window_map) = init_shell(display, log.clone());
 
-    init_data_device(display, |_| {}, default_action_chooser, log.clone());
+    init_data_device(
+        display,
+        |_| {},
+        default_action_chooser,
+        compositor_token.clone(),
+        log.clone(),
+    );
 
     let (mut seat, _) = Seat::new(display, "winit".into(), compositor_token.clone(), log.clone());
 

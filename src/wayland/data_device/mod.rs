@@ -24,23 +24,33 @@
 //! - the freestanding function `start_dnd` allows you to initiate a drag'n'drop event from the compositor
 //!   itself and receive interactions of clients with it via an other dedicated callback.
 //!
+//! The module also defines the `DnDIconRole` that you need to insert into your compositor roles enum, to
+//! represent surfaces that are used as a DnD icon.
+//!
 //! ## Initialization
 //!
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
-//! use smithay::wayland::data_device::{init_data_device, default_action_chooser};
+//! use smithay::wayland::data_device::{init_data_device, default_action_chooser, DnDIconRole};
+//! # use smithay::wayland::compositor::compositor_init;
+//!
+//! // You need to insert the `DndIconRole` into your roles, to handle requests from clients
+//! // to set a surface as a dnd icon
+//! define_roles!(Roles => [DnDIcon, DnDIconRole]);
 //!
 //! # fn main(){
 //! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
+//! # let (compositor_token, _, _) = compositor_init::<(), Roles, _, _>(&mut display, |_, _, _| {}, None);
 //! // init the data device:
 //! init_data_device(
-//!     &mut display,           // the display
+//!     &mut display,            // the display
 //!     |dnd_event| { /* a callback to react to client DnD/selection actions */ },
-//!     default_action_chooser, // a closure to choose the DnD action depending on clients
-//!                             // negociation
-//!     None                    // insert a logger here
+//!     default_action_chooser,  // a closure to choose the DnD action depending on clients
+//!                              // negociation
+//!     compositor_token.clone(), // a compositor token
+//!     None                     // insert a logger here
 //! );
 //! # }
 //! ```
@@ -52,12 +62,15 @@ use wayland_server::{
     protocol::{
         wl_data_device,
         wl_data_device_manager::{self, DndAction},
-        wl_data_offer, wl_data_source,
+        wl_data_offer, wl_data_source, wl_surface,
     },
     Client, Display, Global, NewResource, Resource,
 };
 
-use wayland::seat::Seat;
+use wayland::{
+    compositor::{roles::Role, CompositorToken},
+    seat::Seat,
+};
 
 mod data_source;
 mod dnd_grab;
@@ -71,7 +84,22 @@ pub enum DataDeviceEvent {
     /// A client has set the selection
     NewSelection(Option<Resource<wl_data_source::WlDataSource>>),
     /// A client started a drag'n'drop as response to a user pointer action
-    DnDStarted(Option<Resource<wl_data_source::WlDataSource>>),
+    DnDStarted {
+        /// The data source provided by the client
+        ///
+        /// If it is `None`, this means the DnD is restricted to surfaces of the
+        /// same client and the client will manage data transfert by itself.
+        source: Option<Resource<wl_data_source::WlDataSource>>,
+        /// The icon the client requested to be used to be associated with the cursor icon
+        /// during the drag'n'drop.
+        icon: Option<Resource<wl_surface::WlSurface>>,
+    },
+    /// The drag'n'drop action was finished by the user releasing the buttons
+    ///
+    /// At this point, any pointer icon should be removed.
+    ///
+    /// Note that this event will only be genrated for client-initiated drag'n'drop session.
+    DnDDropped,
     /// A client requested to read the server-set selection
     SendSelection {
         /// the requested mime type
@@ -80,6 +108,10 @@ pub enum DataDeviceEvent {
         fd: RawFd,
     },
 }
+
+/// The role applied to surfaces used as DnD icons
+#[derive(Default)]
+pub struct DnDIconRole;
 
 enum Selection {
     Empty,
@@ -246,22 +278,31 @@ impl SeatData {
 /// available actions (which is the intersection of the actions supported by the source and targets)
 /// and the second argument is the preferred action reported by the target. If no action should be
 /// chosen (and thus the drag'n'drop should abort on drop), return `DndAction::empty()`.
-pub fn init_data_device<F, C, L>(
+pub fn init_data_device<F, C, U, R, L>(
     display: &mut Display,
     callback: C,
     action_choice: F,
+    token: CompositorToken<U, R>,
     logger: L,
 ) -> Global<wl_data_device_manager::WlDataDeviceManager>
 where
     F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
     C: FnMut(DataDeviceEvent) + Send + 'static,
+    R: Role<DnDIconRole> + 'static,
+    U: 'static,
     L: Into<Option<::slog::Logger>>,
 {
     let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "data_device_mgr"));
     let action_choice = Arc::new(Mutex::new(action_choice));
     let callback = Arc::new(Mutex::new(callback));
     let global = display.create_global(3, move |new_ddm, _version| {
-        implement_ddm(new_ddm, callback.clone(), action_choice.clone(), log.clone());
+        implement_ddm(
+            new_ddm,
+            callback.clone(),
+            action_choice.clone(),
+            token,
+            log.clone(),
+        );
     });
 
     global
@@ -330,15 +371,18 @@ where
     }
 }
 
-fn implement_ddm<F, C>(
+fn implement_ddm<F, C, U, R>(
     new_ddm: NewResource<wl_data_device_manager::WlDataDeviceManager>,
     callback: Arc<Mutex<C>>,
     action_choice: Arc<Mutex<F>>,
+    token: CompositorToken<U, R>,
     log: ::slog::Logger,
 ) -> Resource<wl_data_device_manager::WlDataDeviceManager>
 where
     F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
     C: FnMut(DataDeviceEvent) + Send + 'static,
+    R: Role<DnDIconRole> + 'static,
+    U: 'static,
 {
     use self::wl_data_device_manager::Request;
     new_ddm.implement(
@@ -357,6 +401,7 @@ where
                         seat.clone(),
                         callback.clone(),
                         action_choice.clone(),
+                        token.clone(),
                         log.clone(),
                     );
                     seat_data.lock().unwrap().known_devices.push(data_device);
@@ -376,16 +421,19 @@ struct DataDeviceData {
     action_choice: Arc<Mutex<FnMut(DndAction, DndAction) -> DndAction + Send + 'static>>,
 }
 
-fn implement_data_device<F, C>(
+fn implement_data_device<F, C, U, R>(
     new_dd: NewResource<wl_data_device::WlDataDevice>,
     seat: Seat,
     callback: Arc<Mutex<C>>,
     action_choice: Arc<Mutex<F>>,
+    token: CompositorToken<U, R>,
     log: ::slog::Logger,
 ) -> Resource<wl_data_device::WlDataDevice>
 where
     F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
     C: FnMut(DataDeviceEvent) + Send + 'static,
+    R: Role<DnDIconRole> + 'static,
+    U: 'static,
 {
     use self::wl_data_device::Request;
     let dd_data = DataDeviceData {
@@ -397,15 +445,37 @@ where
             Request::StartDrag {
                 source,
                 origin,
-                icon: _,
+                icon,
                 serial,
             } => {
                 /* TODO: handle the icon */
                 if let Some(pointer) = seat.get_pointer() {
                     if pointer.has_grab(serial) {
+                        if let Some(ref icon) = icon {
+                            if token.give_role::<DnDIconRole>(icon).is_err() {
+                                dd.post_error(
+                                    wl_data_device::Error::Role as u32,
+                                    "Given surface already has an other role".into(),
+                                );
+                                return;
+                            }
+                        }
                         // The StartDrag is in response to a pointer implicit grab, all is good
-                        (&mut *callback.lock().unwrap())(DataDeviceEvent::DnDStarted(source.clone()));
-                        pointer.set_grab(dnd_grab::DnDGrab::new(source, origin, seat.clone()), serial);
+                        (&mut *callback.lock().unwrap())(DataDeviceEvent::DnDStarted {
+                            source: source.clone(),
+                            icon: icon.clone(),
+                        });
+                        pointer.set_grab(
+                            dnd_grab::DnDGrab::new(
+                                source,
+                                origin,
+                                seat.clone(),
+                                icon.clone(),
+                                token.clone(),
+                                callback.clone(),
+                            ),
+                            serial,
+                        );
                         return;
                     }
                 }
