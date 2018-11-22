@@ -101,8 +101,8 @@ impl<T: UdevHandler + 'static> Drop for UdevBackend<T> {
 /// Allows the backend to receive kernel events and thus to drive the `UdevHandler`.
 /// No runtime functionality can be provided without using this function.
 pub fn udev_backend_bind<T: UdevHandler + 'static, Data: 'static>(
-    handle: &LoopHandle<Data>,
     udev: UdevBackend<T>,
+    handle: &LoopHandle<Data>,
 ) -> Result<Source<Generic<EventedFd<UdevBackend<T>>>>, InsertError<Generic<EventedFd<UdevBackend<T>>>>> {
     let mut source = Generic::from_fd_source(udev);
     source.set_interest(Ready::readable());
