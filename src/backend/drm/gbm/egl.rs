@@ -91,7 +91,12 @@ unsafe impl<D: RawDevice + 'static> NativeSurface for GbmSurface<D> {
     where
         F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>,
     {
-        if self.0.crtc.commit_pending() {
+        if self.0.crtc.commit_pending() || {
+            let fb = self.0.front_buffer.take();
+            let res = fb.is_none();
+            self.0.front_buffer.set(fb);
+            res
+        } {
             self.recreate(flip).map_err(|_| SwapBuffersError::ContextLost)
         } else {
             self.page_flip(flip)

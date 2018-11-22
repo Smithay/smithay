@@ -19,8 +19,8 @@ pub(super) struct GbmSurfaceInternal<D: RawDevice + 'static> {
     pub(super) surface: RefCell<gbm::Surface<framebuffer::Info>>,
     pub(super) crtc: <D as Device>::Surface,
     pub(super) cursor: Cell<(BufferObject<()>, (u32, u32))>,
-    pub(super) current_frame_buffer: Cell<framebuffer::Info>,
-    pub(super) front_buffer: Cell<SurfaceBufferHandle<framebuffer::Info>>,
+    pub(super) current_frame_buffer: Cell<Option<framebuffer::Info>>,
+    pub(super) front_buffer: Cell<Option<SurfaceBufferHandle<framebuffer::Info>>>,
     pub(super) next_buffer: Cell<Option<SurfaceBufferHandle<framebuffer::Info>>>,
     pub(super) logger: ::slog::Logger,
 }
@@ -31,7 +31,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         // this is called from the PageFlipHandler
         if let Some(next_buffer) = self.next_buffer.replace(None) {
             trace!(self.logger, "Releasing old front buffer");
-            self.front_buffer.set(next_buffer);
+            self.front_buffer.set(Some(next_buffer));
             // drop and release the old buffer
         }
     }
@@ -83,7 +83,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         trace!(self.logger, "Queueing Page flip");
         self.crtc.page_flip(fb.handle())?;
 
-        self.current_frame_buffer.set(fb);
+        self.current_frame_buffer.set(Some(fb));
 
         Ok(())
     }
@@ -96,7 +96,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
 
         // Recreate the surface and the related resources to match the new
         // resolution.
-        debug!(self.logger, "Reinitializing surface for new mode: {}:{}", w, h);
+        debug!(self.logger, "(Re-)Initializing surface for mode: {}:{}", w, h);
         let surface = self
             .dev
             .borrow_mut()
@@ -106,8 +106,6 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
                 GbmFormat::XRGB8888,
                 BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
             ).chain_err(|| ErrorKind::SurfaceCreationFailed)?;
-
-        flip()?;
 
         // Clean up next_buffer
         {
@@ -123,9 +121,11 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
             }
         }
 
+        flip()?;
+        
         // Cleanup front_buffer and init the first screen on the new front_buffer
         // (must be done before calling page_flip for the first time)
-        let mut old_front_bo = self.front_buffer.replace({
+        let old_front_bo = self.front_buffer.replace({
             let mut front_bo = surface
                 .lock_front_buffer()
                 .chain_err(|| ErrorKind::FrontBufferLockFailed)?;
@@ -140,10 +140,11 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
                 .commit(fb.handle())
                 .chain_err(|| ErrorKind::UnderlyingBackendError)?;
 
+            self.current_frame_buffer.set(Some(fb));
             front_bo.set_userdata(fb).unwrap();
-            front_bo
+            Some(front_bo)
         });
-        if let Ok(Some(fb)) = old_front_bo.take_userdata() {
+        if let Some(Ok(Some(fb))) = old_front_bo.map(|mut bo| bo.take_userdata()) {
             if let Err(err) = framebuffer::destroy(&self.crtc, fb.handle()) {
                 warn!(
                     self.logger,
@@ -283,8 +284,6 @@ impl<D: RawDevice + 'static> Drop for GbmSurfaceInternal<D> {
         if let Ok(Some(fb)) = {
             if let Some(mut next) = self.next_buffer.take() {
                 next.take_userdata()
-            } else if let Ok(mut next) = self.surface.borrow().lock_front_buffer() {
-                next.take_userdata()
             } else {
                 Ok(None)
             }
@@ -293,7 +292,13 @@ impl<D: RawDevice + 'static> Drop for GbmSurfaceInternal<D> {
             let _ = framebuffer::destroy(&self.crtc, fb.handle());
         }
 
-        if let Ok(Some(fb)) = self.front_buffer.get_mut().take_userdata() {
+        if let Ok(Some(fb)) = {
+            if let Some(mut next) = self.front_buffer.take() {
+                next.take_userdata()
+            } else {
+                Ok(None)
+            }
+        } {
             // ignore failure at this point
             let _ = framebuffer::destroy(&self.crtc, fb.handle());
         }

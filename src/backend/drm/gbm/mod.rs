@@ -1,6 +1,6 @@
 use super::{Device, DeviceHandler, RawDevice, ResourceHandles, ResourceInfo, Surface};
 
-use drm::control::{connector, crtc, framebuffer, Device as ControlDevice, Mode};
+use drm::control::{connector, crtc, Device as ControlDevice, Mode};
 use gbm::{self, BufferObjectFlags, Format as GbmFormat};
 use nix::libc::dev_t;
 
@@ -127,6 +127,9 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
     ) -> Result<GbmSurface<D>> {
         info!(self.logger, "Initializing GbmSurface");
 
+        let drm_surface = Device::create_surface(&mut **self.dev.borrow_mut(), crtc, mode, connectors)
+                .chain_err(|| ErrorKind::UnderlyingBackendError)?;
+
         let (w, h) = mode.size();
         let surface = self
             .dev
@@ -137,19 +140,6 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
                 GbmFormat::XRGB8888,
                 BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
             ).chain_err(|| ErrorKind::SurfaceCreationFailed)?;
-
-        // init the first screen
-        // (must be done before calling page_flip for the first time)
-        let mut front_bo = surface
-            .lock_front_buffer()
-            .chain_err(|| ErrorKind::FrontBufferLockFailed)?;
-
-        debug!(self.logger, "FrontBuffer color format: {:?}", front_bo.format());
-
-        // we need a framebuffer for the front buffer
-        let fb = framebuffer::create(&*self.dev.borrow(), &*front_bo)
-            .chain_err(|| ErrorKind::UnderlyingBackendError)?;
-        front_bo.set_userdata(fb).unwrap();
 
         let cursor = Cell::new((
             self.dev
@@ -166,11 +156,10 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
         let backend = Rc::new(GbmSurfaceInternal {
             dev: self.dev.clone(),
             surface: RefCell::new(surface),
-            crtc: Device::create_surface(&mut **self.dev.borrow_mut(), crtc, mode, connectors)
-                .chain_err(|| ErrorKind::UnderlyingBackendError)?,
+            crtc: drm_surface,
             cursor,
-            current_frame_buffer: Cell::new(fb),
-            front_buffer: Cell::new(front_bo),
+            current_frame_buffer: Cell::new(None),
+            front_buffer: Cell::new(None),
             next_buffer: Cell::new(None),
             logger: self.logger.new(o!("crtc" => format!("{:?}", crtc))),
         });
