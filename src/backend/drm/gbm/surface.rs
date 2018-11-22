@@ -9,6 +9,7 @@ use std::cell::{Cell, RefCell};
 use std::os::unix::io::AsRawFd;
 use std::rc::Rc;
 
+#[cfg(feature = "backend_drm_legacy")]
 use backend::drm::legacy::LegacyDrmDevice;
 use backend::graphics::CursorBackend;
 use backend::graphics::SwapBuffersError;
@@ -225,6 +226,7 @@ where
 */
 // But for now got to do this:
 
+#[cfg(feature = "backend_drm_legacy")]
 impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurfaceInternal<LegacyDrmDevice<A>> {
     type CursorFormat = &'a ImageBuffer<Rgba<u8>, Vec<u8>>;
     type Error = Error;
@@ -353,6 +355,7 @@ impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
     }
 }
 
+#[cfg(feature = "backend_drm_legacy")]
 impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurface<LegacyDrmDevice<A>> {
     type CursorFormat = &'a ImageBuffer<Rgba<u8>, Vec<u8>>;
     type Error = Error;
