@@ -6,6 +6,8 @@ use backend::{input as backend, input::Axis};
 use input as libinput;
 use input::event;
 
+#[cfg(feature = "backend_session")]
+use std::path::Path;
 use std::{
     collections::hash_map::{DefaultHasher, Entry, HashMap},
     hash::{Hash, Hasher},
