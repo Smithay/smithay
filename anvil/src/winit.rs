@@ -11,7 +11,7 @@ use smithay::{
         winit,
     },
     wayland::{
-        data_device::{init_data_device, set_data_device_focus},
+        data_device::{default_action_chooser, init_data_device, set_data_device_focus},
         output::{Mode, Output, PhysicalProperties},
         seat::{Seat, XkbConfig},
         shm::init_shm_global,
@@ -54,7 +54,7 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
 
     let (compositor_token, _, _, window_map) = init_shell(display, log.clone());
 
-    init_data_device(display, |_| {}, ::misc::dnd_action_chooser, log.clone());
+    init_data_device(display, |_| {}, default_action_chooser, log.clone());
 
     let (mut seat, _) = Seat::new(display, "winit".into(), log.clone());
 

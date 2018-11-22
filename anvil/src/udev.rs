@@ -42,7 +42,7 @@ use smithay::{
     input::Libinput,
     wayland::{
         compositor::CompositorToken,
-        data_device::{init_data_device, set_data_device_focus},
+        data_device::{default_action_chooser, init_data_device, set_data_device_focus},
         output::{Mode, Output, PhysicalProperties},
         seat::{Seat, XkbConfig},
         shm::init_shm_global,
@@ -111,7 +111,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     init_data_device(
         &mut display.borrow_mut(),
         |_| {},
-        ::misc::dnd_action_chooser,
+        default_action_chooser,
         log.clone(),
     );
 

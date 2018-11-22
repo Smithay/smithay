@@ -23,6 +23,27 @@
 //!   for your clients
 //! - the freestanding function `start_dnd` allows you to initiate a drag'n'drop event from the compositor
 //!   itself and receive interactions of clients with it via an other dedicated callback.
+//!
+//! ## Initialization
+//!
+//! ```
+//! # extern crate wayland_server;
+//! # #[macro_use] extern crate smithay;
+//! use smithay::wayland::data_device::{init_data_device, default_action_chooser};
+//!
+//! # fn main(){
+//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
+//! # let mut display = wayland_server::Display::new(event_loop.handle());
+//! // init the data device:
+//! init_data_device(
+//!     &mut display,           // the display
+//!     |dnd_event| { /* a callback to react to client DnD/selection actions */ },
+//!     default_action_chooser, // a closure to choose the DnD action depending on clients
+//!                             // negociation
+//!     None                    // insert a logger here
+//! );
+//! # }
+//! ```
 
 use std::os::unix::io::RawFd;
 use std::sync::{Arc, Mutex};
@@ -422,4 +443,26 @@ where
         None::<fn(_)>,
         dd_data,
     )
+}
+
+/// A simple action chooser for DnD negociation
+///
+/// If the preferred action is available, it'll pick it. Otherwise, it'll pick the first
+/// available in the following order: Ask, Copy, Move.
+pub fn default_action_chooser(available: DndAction, preferred: DndAction) -> DndAction {
+    // if the preferred action is valid (a single action) and in the available actions, use it
+    // otherwise, follow a fallback stategy
+    if [DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&preferred)
+        && available.contains(preferred)
+    {
+        preferred
+    } else if available.contains(DndAction::Ask) {
+        DndAction::Ask
+    } else if available.contains(DndAction::Copy) {
+        DndAction::Copy
+    } else if available.contains(DndAction::Move) {
+        DndAction::Move
+    } else {
+        DndAction::empty()
+    }
 }
