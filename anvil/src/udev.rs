@@ -2,41 +2,42 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     io::Error as IoError,
+    os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
     rc::Rc,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::Duration,
 };
 
-use glium::Surface;
+use glium::Surface as GliumSurface;
 use slog::Logger;
 
 use smithay::{
     backend::{
-        drm::{DevPath, DrmBackend, DrmDevice, DrmHandler},
-        graphics::{
-            egl::wayland::{EGLDisplay, EGLWaylandExtensions},
-            GraphicsBackend,
+        drm::{
+            dev_t,
+            egl::{EglDevice, EglSurface},
+            gbm::{egl::Gbm as EglGbmBackend, GbmDevice},
+            legacy::LegacyDrmDevice,
+            DevPath, Device, DeviceHandler, Surface,
         },
+        egl::{EGLDisplay, EGLGraphicsBackend},
+        graphics::CursorBackend,
         input::InputBackend,
         libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface},
         session::{
             auto::{auto_session_bind, AutoSession},
-            Session, SessionNotifier,
+            OFlag, Session, SessionNotifier,
         },
-        udev::{primary_gpu, udev_backend_bind, SessionFdDrmDevice, UdevBackend, UdevHandler},
+        udev::{primary_gpu, udev_backend_bind, UdevBackend, UdevHandler},
     },
-    drm::{
-        control::{
-            connector::{Info as ConnectorInfo, State as ConnectorState},
-            crtc,
-            encoder::Info as EncoderInfo,
-            Device as ControlDevice, ResourceInfo,
-        },
-        result::Error as DrmError,
+    drm::control::{
+        connector::{Info as ConnectorInfo, State as ConnectorState},
+        crtc,
+        encoder::Info as EncoderInfo,
+        ResourceInfo,
     },
     image::{ImageBuffer, Rgba},
     input::Libinput,
@@ -53,6 +54,18 @@ use smithay::{
 use glium_drawer::GliumDrawer;
 use input_handler::AnvilInputHandler;
 use shell::{init_shell, MyWindowMap, Roles, SurfaceData};
+
+pub struct SessionFd(RawFd);
+impl AsRawFd for SessionFd {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0
+    }
+}
+
+type RenderDevice =
+    EglDevice<EglGbmBackend<LegacyDrmDevice<SessionFd>>, GbmDevice<LegacyDrmDevice<SessionFd>>>;
+type RenderSurface =
+    EglSurface<EglGbmBackend<LegacyDrmDevice<SessionFd>>, GbmDevice<LegacyDrmDevice<SessionFd>>>;
 
 pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger) -> Result<(), ()> {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
@@ -88,13 +101,12 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     let primary_gpu = primary_gpu(&context, &seat).unwrap_or_default();
 
     let bytes = include_bytes!("../resources/cursor2.rgba");
-    let mut udev_backend = UdevBackend::new(
-        event_loop.handle(),
+    let udev_backend = UdevBackend::new(
         &context,
-        session.clone(),
         UdevHandlerImpl {
             compositor_token,
             active_egl_context,
+            session: session.clone(),
             backends: HashMap::new(),
             display: display.clone(),
             primary_gpu,
@@ -103,10 +115,9 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
             pointer_image: ImageBuffer::from_raw(64, 64, bytes.to_vec()).unwrap(),
             logger: log.clone(),
         },
+        seat.clone(),
         log.clone(),
     ).map_err(|_| ())?;
-
-    let udev_session_id = notifier.register(&mut udev_backend);
 
     init_data_device(
         &mut display.borrow_mut(),
@@ -171,13 +182,14 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         session,
     ));
     let libinput_event_source = libinput_bind(libinput_backend, event_loop.handle())
-        .map_err(|(e, _)| e)
+        .map_err(|e| -> IoError { e.into() })
         .unwrap();
-
     let session_event_source = auto_session_bind(notifier, &event_loop.handle())
         .map_err(|(e, _)| e)
         .unwrap();
-    let udev_event_source = udev_backend_bind(udev_backend).unwrap();
+    let udev_event_source = udev_backend_bind(udev_backend, &event_loop.handle())
+        .map_err(|e| -> IoError { e.into() })
+        .unwrap();
 
     while running.load(Ordering::SeqCst) {
         if event_loop
@@ -192,7 +204,6 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     }
 
     let mut notifier = session_event_source.unbind();
-    notifier.unregister(udev_session_id);
     notifier.unregister(libinput_session_id);
 
     libinput_event_source.remove();
@@ -204,7 +215,14 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
 struct UdevHandlerImpl {
     compositor_token: CompositorToken<SurfaceData, Roles>,
     active_egl_context: Rc<RefCell<Option<EGLDisplay>>>,
-    backends: HashMap<u64, Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<DrmBackend<SessionFdDrmDevice>>>>>>,
+    session: AutoSession,
+    backends: HashMap<
+        dev_t,
+        (
+            RenderDevice,
+            Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<RenderSurface>>>>,
+        ),
+    >,
     display: Rc<RefCell<Display>>,
     primary_gpu: Option<PathBuf>,
     window_map: Rc<RefCell<MyWindowMap>>,
@@ -215,10 +233,11 @@ struct UdevHandlerImpl {
 
 impl UdevHandlerImpl {
     pub fn scan_connectors(
-        &self,
-        device: &mut DrmDevice<SessionFdDrmDevice>,
+        device: &mut RenderDevice,
         egl_display: Rc<RefCell<Option<EGLDisplay>>>,
-    ) -> HashMap<crtc::Handle, GliumDrawer<DrmBackend<SessionFdDrmDevice>>> {
+        pointer_image: &ImageBuffer<Rgba<u8>, Vec<u8>>,
+        logger: &::slog::Logger,
+    ) -> HashMap<crtc::Handle, GliumDrawer<RenderSurface>> {
         // Get a set of all modesetting resource handles (excluding planes):
         let res_handles = device.resource_handles().unwrap();
 
@@ -226,9 +245,9 @@ impl UdevHandlerImpl {
         let connector_infos: Vec<ConnectorInfo> = res_handles
             .connectors()
             .iter()
-            .map(|conn| ConnectorInfo::load_from_device(device, *conn).unwrap())
+            .map(|conn| device.resource_info::<ConnectorInfo>(*conn).unwrap())
             .filter(|conn| conn.connection_state() == ConnectorState::Connected)
-            .inspect(|conn| info!(self.logger, "Connected: {:?}", conn.connector_type()))
+            .inspect(|conn| info!(logger, "Connected: {:?}", conn.connector_type()))
             .collect();
 
         let mut backends = HashMap::new();
@@ -238,7 +257,7 @@ impl UdevHandlerImpl {
             let encoder_infos = connector_info
                 .encoders()
                 .iter()
-                .flat_map(|encoder_handle| EncoderInfo::load_from_device(device, *encoder_handle))
+                .flat_map(|encoder_handle| device.resource_info::<EncoderInfo>(*encoder_handle))
                 .collect::<Vec<EncoderInfo>>();
             for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
@@ -247,16 +266,16 @@ impl UdevHandlerImpl {
                                                               // create a backend
                         let renderer = GliumDrawer::init(
                             device
-                                .create_backend(crtc, mode, vec![connector_info.handle()])
+                                .create_surface(crtc, mode, vec![connector_info.handle()].into_iter())
                                 .unwrap(),
                             egl_display.clone(),
-                            self.logger.clone(),
+                            logger.clone(),
                         );
 
                         // create cursor
                         renderer
                             .borrow()
-                            .set_cursor_representation(&self.pointer_image, (2, 2))
+                            .set_cursor_representation(pointer_image, (2, 2))
                             .unwrap();
 
                         // render first frame
@@ -277,64 +296,77 @@ impl UdevHandlerImpl {
     }
 }
 
-impl UdevHandler<DrmHandlerImpl> for UdevHandlerImpl {
-    fn device_added(&mut self, device: &mut DrmDevice<SessionFdDrmDevice>) -> Option<DrmHandlerImpl> {
-        // init hardware acceleration on the primary gpu.
-        if device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
-            *self.active_egl_context.borrow_mut() = device.bind_wl_display(&*self.display.borrow()).ok();
+impl UdevHandler for UdevHandlerImpl {
+    fn device_added(&mut self, _device: dev_t, path: PathBuf) {
+        if let Some(mut device) = self
+            .session
+            .open(
+                &path,
+                OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK,
+            ).ok()
+            .and_then(|fd| LegacyDrmDevice::new(SessionFd(fd), self.logger.clone()).ok())
+            .and_then(|drm| GbmDevice::new(drm, self.logger.clone()).ok())
+            .and_then(|gbm| EglDevice::new(gbm, self.logger.clone()).ok())
+        {
+            // init hardware acceleration on the primary gpu.
+            if path.canonicalize().ok() == self.primary_gpu {
+                *self.active_egl_context.borrow_mut() = device.bind_wl_display(&*self.display.borrow()).ok();
+            }
+
+            let backends = Rc::new(RefCell::new(UdevHandlerImpl::scan_connectors(
+                &mut device,
+                self.active_egl_context.clone(),
+                &self.pointer_image,
+                &self.logger,
+            )));
+
+            device.set_handler(DrmHandlerImpl {
+                compositor_token: self.compositor_token,
+                backends: backends.clone(),
+                window_map: self.window_map.clone(),
+                pointer_location: self.pointer_location.clone(),
+                logger: self.logger.clone(),
+            });
+
+            self.backends.insert(device.device_id(), (device, backends));
         }
-
-        let backends = Rc::new(RefCell::new(
-            self.scan_connectors(device, self.active_egl_context.clone()),
-        ));
-        self.backends.insert(device.device_id(), backends.clone());
-
-        Some(DrmHandlerImpl {
-            compositor_token: self.compositor_token,
-            backends,
-            window_map: self.window_map.clone(),
-            pointer_location: self.pointer_location.clone(),
-            logger: self.logger.clone(),
-        })
     }
 
-    fn device_changed(&mut self, device: &mut DrmDevice<SessionFdDrmDevice>) {
-        //quick and dirt, just re-init all backends
-        let backends = &self.backends[&device.device_id()];
-        *backends.borrow_mut() = self.scan_connectors(device, self.active_egl_context.clone());
+    fn device_changed(&mut self, device: dev_t) {
+        //quick and dirty, just re-init all backends
+        if let Some((ref mut device, ref backends)) = self.backends.get_mut(&device) {
+            *backends.borrow_mut() = UdevHandlerImpl::scan_connectors(
+                device,
+                self.active_egl_context.clone(),
+                &self.pointer_image,
+                &self.logger,
+            );
+        }
     }
 
-    fn device_removed(&mut self, device: &mut DrmDevice<SessionFdDrmDevice>) {
+    fn device_removed(&mut self, device: dev_t) {
         // drop the backends on this side
-        self.backends.remove(&device.device_id());
-
-        // don't use hardware acceleration anymore, if this was the primary gpu
-        if device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
-            *self.active_egl_context.borrow_mut() = None;
+        if let Some((dev, _)) = self.backends.remove(&device) {
+            // don't use hardware acceleration anymore, if this was the primary gpu
+            if dev.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
+                *self.active_egl_context.borrow_mut() = None;
+            }
         }
-    }
-
-    fn error(&mut self, error: IoError) {
-        error!(self.logger, "{:?}", error);
     }
 }
 
 pub struct DrmHandlerImpl {
     compositor_token: CompositorToken<SurfaceData, Roles>,
-    backends: Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<DrmBackend<SessionFdDrmDevice>>>>>,
+    backends: Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<RenderSurface>>>>,
     window_map: Rc<RefCell<MyWindowMap>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
     logger: ::slog::Logger,
 }
 
-impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
-    fn ready(
-        &mut self,
-        _device: &mut DrmDevice<SessionFdDrmDevice>,
-        crtc: crtc::Handle,
-        _frame: u32,
-        _duration: Duration,
-    ) {
+impl DeviceHandler for DrmHandlerImpl {
+    type Device = RenderDevice;
+
+    fn vblank(&mut self, crtc: crtc::Handle) {
         if let Some(drawer) = self.backends.borrow().get(&crtc) {
             {
                 let (x, y) = *self.pointer_location.borrow();
@@ -347,7 +379,7 @@ impl DrmHandler<SessionFdDrmDevice> for DrmHandlerImpl {
         }
     }
 
-    fn error(&mut self, _device: &mut DrmDevice<SessionFdDrmDevice>, error: DrmError) {
+    fn error(&mut self, error: <RenderSurface as Surface>::Error) {
         error!(self.logger, "{:?}", error);
     }
 }

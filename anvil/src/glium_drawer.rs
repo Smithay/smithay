@@ -12,19 +12,15 @@ use glium::{
 use slog::Logger;
 
 use smithay::{
-    backend::graphics::{
-        egl::{
-            error::Result as EGLResult,
-            wayland::{BufferAccessError, EGLDisplay, EGLImages, EGLWaylandExtensions, Format},
-            EGLGraphicsBackend,
-        },
-        glium::GliumGraphicsBackend,
+    backend::{
+        egl::{BufferAccessError, EGLDisplay, EGLImages, Format},
+        graphics::{gl::GLGraphicsBackend, glium::GliumGraphicsBackend},
     },
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
         shm::with_buffer_contents as shm_buffer_contents,
     },
-    wayland_server::{protocol::wl_buffer, Display, Resource},
+    wayland_server::{protocol::wl_buffer, Resource},
 };
 
 use shaders;
@@ -38,7 +34,7 @@ struct Vertex {
 
 implement_vertex!(Vertex, position, tex_coords);
 
-pub struct GliumDrawer<F: EGLGraphicsBackend + 'static> {
+pub struct GliumDrawer<F: GLGraphicsBackend + 'static> {
     display: GliumGraphicsBackend<F>,
     vertex_buffer: glium::VertexBuffer<Vertex>,
     index_buffer: glium::IndexBuffer<u16>,
@@ -47,13 +43,13 @@ pub struct GliumDrawer<F: EGLGraphicsBackend + 'static> {
     log: Logger,
 }
 
-impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
+impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     pub fn borrow(&self) -> Ref<F> {
         self.display.borrow()
     }
 }
 
-impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> GliumDrawer<T> {
+impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer<T> {
     pub fn init(backend: T, egl_display: Rc<RefCell<Option<EGLDisplay>>>, log: Logger) -> GliumDrawer<T> {
         let display = backend.into();
 
@@ -97,7 +93,7 @@ impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> GliumDrawe
     }
 }
 
-impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
+impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     pub fn texture_from_buffer(&self, buffer: Resource<wl_buffer::WlBuffer>) -> Result<TextureMetadata, ()> {
         // try to retrieve the egl contents of this buffer
         let images = if let Some(display) = &self.egl_display.borrow().as_ref() {
@@ -217,12 +213,6 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
     }
 }
 
-impl<G: EGLWaylandExtensions + EGLGraphicsBackend + 'static> EGLWaylandExtensions for GliumDrawer<G> {
-    fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
-        self.display.bind_wl_display(display)
-    }
-}
-
 pub struct TextureMetadata {
     pub texture: Texture2d,
     pub fragment: usize,
@@ -231,7 +221,7 @@ pub struct TextureMetadata {
     images: Option<EGLImages>,
 }
 
-impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
+impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     pub fn draw_windows(&self, window_map: &MyWindowMap, compositor_token: MyCompositorToken, log: &Logger) {
         let mut frame = self.draw();
         frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
