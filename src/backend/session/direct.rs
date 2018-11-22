@@ -67,7 +67,7 @@ use std::{
         Arc,
     },
 };
-#[cfg(feature = "backend_session_udev")]
+#[cfg(feature = "backend_udev")]
 use udev::Context;
 use wayland_server::calloop::{signals::Signals, LoopHandle, Source};
 
@@ -120,12 +120,12 @@ const TTY_MAJOR: u64 = 4;
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 const TTY_MAJOR: u64 = 0;
 
-#[cfg(not(feature = "backend_session_udev"))]
+#[cfg(not(feature = "backend_udev"))]
 fn is_tty_device(dev: dev_t, _path: Option<&Path>) -> bool {
     major(dev) == TTY_MAJOR
 }
 
-#[cfg(feature = "backend_session_udev")]
+#[cfg(feature = "backend_udev")]
 fn is_tty_device(dev: dev_t, path: Option<&Path>) -> bool {
     match path {
         Some(path) => {
