@@ -37,7 +37,7 @@ lazy_static = "1.0.0"
 gl_generator = { version = "0.9", optional = true }
 
 [features]
-default = ["backend_winit", "backend_drm_legacy", "backend_drm_gbm", "backend_drm_egl", "backend_libinput", "backend_udev", "renderer_glium", "xwayland"]
+default = ["backend_winit", "backend_drm_legacy", "backend_drm_gbm", "backend_drm_egl", "backend_libinput", "backend_udev", "backend_session", "renderer_glium", "xwayland"]
 backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen", "backend_egl"]
 backend_drm = ["drm"]
 backend_drm_legacy = ["backend_drm"]
