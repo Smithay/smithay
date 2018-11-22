@@ -1,6 +1,6 @@
 use super::{DevPath, Device, DeviceHandler, RawDevice, Surface};
 
-use drm::control::{connector, crtc, encoder, Device as ControlDevice, Mode, ResourceInfo};
+use drm::control::{connector, crtc, encoder, Device as ControlDevice, Mode, ResourceHandles, ResourceInfo};
 use drm::Device as BasicDevice;
 use nix::libc::dev_t;
 use nix::sys::stat::fstat;
@@ -78,7 +78,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
             drm.priviledged = false;
         };
 
-        let res_handles = drm.resource_handles().chain_err(|| {
+        let res_handles = ControlDevice::resource_handles(&drm).chain_err(|| {
             ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", drm.dev_path()))
         })?;
         for &con in res_handles.connectors() {
@@ -104,10 +104,6 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
 
         Ok(drm)
     }
-
-    pub fn dev_id(&self) -> dev_t {
-        self.dev_id
-    }
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmDevice<A> {
@@ -121,6 +117,10 @@ impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmDevice<A> {}
 
 impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
     type Surface = LegacyDrmSurface<A>;
+
+    fn device_id(&self) -> dev_t {
+        self.dev_id
+    }
 
     fn set_handler(&mut self, handler: impl DeviceHandler<Device = Self> + 'static) {
         self.handler = Some(RefCell::new(Box::new(handler)));
@@ -167,7 +167,7 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
                 }).collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
-            let resource_handles = self.resource_handles().chain_err(|| {
+            let resource_handles = ControlDevice::resource_handles(self).chain_err(|| {
                 ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", self.dev_path()))
             })?;
             if !encoders
@@ -228,6 +228,16 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
                 );
             },
         }
+    }
+
+    fn resource_info<T: ResourceInfo>(&self, handle: T::Handle) -> Result<T> {
+        T::load_from_device(self, handle)
+            .chain_err(|| ErrorKind::DrmDev(format!("Error loading resource info on {:?}", self.dev_path())))
+    }
+
+    fn resource_handles(&self) -> Result<ResourceHandles> {
+        ControlDevice::resource_handles(self)
+            .chain_err(|| ErrorKind::DrmDev(format!("Error loading resource info on {:?}", self.dev_path())))
     }
 }
 

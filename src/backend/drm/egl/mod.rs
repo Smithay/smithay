@@ -1,4 +1,5 @@
-use drm::control::{crtc, Mode};
+use drm::control::{connector, crtc, Mode, ResourceHandles, ResourceInfo};
+use nix::libc::dev_t;
 use std::cell::RefCell;
 use std::iter::FromIterator;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -123,6 +124,10 @@ where
 {
     type Surface = EglSurface<B, D>;
 
+    fn device_id(&self) -> dev_t {
+        self.dev.borrow().device_id()
+    }
+
     fn set_handler(&mut self, handler: impl DeviceHandler<Device = Self> + 'static) {
         self.dev.borrow_mut().set_handler(InternalDeviceHandler {
             handler: Box::new(handler),
@@ -154,6 +159,20 @@ where
 
     fn process_events(&mut self) {
         self.dev.borrow_mut().process_events()
+    }
+
+    fn resource_info<T: ResourceInfo>(&self, handle: T::Handle) -> Result<T> {
+        self.dev
+            .borrow()
+            .resource_info(handle)
+            .chain_err(|| ErrorKind::UnderlyingBackendError)
+    }
+
+    fn resource_handles(&self) -> Result<ResourceHandles> {
+        self.dev
+            .borrow()
+            .resource_handles()
+            .chain_err(|| ErrorKind::UnderlyingBackendError)
     }
 }
 

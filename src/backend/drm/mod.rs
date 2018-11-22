@@ -1,11 +1,9 @@
-pub use drm::control::connector;
-pub use drm::control::crtc;
-pub use drm::control::framebuffer;
-use drm::control::Device as ControlDevice;
-pub use drm::control::Mode;
-use drm::Device as BasicDevice;
+pub use drm::{
+    control::{connector, crtc, framebuffer, Device as ControlDevice, Mode, ResourceHandles, ResourceInfo},
+    Device as BasicDevice,
+};
+pub use nix::libc::dev_t;
 
-use std::borrow::Borrow;
 use std::error::Error;
 use std::iter::IntoIterator;
 use std::os::unix::io::AsRawFd;
@@ -34,6 +32,7 @@ pub trait DeviceHandler {
 pub trait Device: AsRawFd + DevPath {
     type Surface: Surface;
 
+    fn device_id(&self) -> dev_t;
     fn set_handler(&mut self, handler: impl DeviceHandler<Device = Self> + 'static);
     fn clear_handler(&mut self);
     fn create_surface(
@@ -43,6 +42,11 @@ pub trait Device: AsRawFd + DevPath {
         connectors: impl IntoIterator<Item = connector::Handle>,
     ) -> Result<Self::Surface, <Self::Surface as Surface>::Error>;
     fn process_events(&mut self);
+    fn resource_info<T: ResourceInfo>(
+        &self,
+        handle: T::Handle,
+    ) -> Result<T, <Self::Surface as Surface>::Error>;
+    fn resource_handles(&self) -> Result<ResourceHandles, <Self::Surface as Surface>::Error>;
 }
 
 pub trait RawDevice: Device<Surface = <Self as RawDevice>::Surface> {
