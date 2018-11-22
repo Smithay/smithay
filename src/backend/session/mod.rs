@@ -10,7 +10,7 @@
 //! The following mechanisms are currently provided:
 //!     - direct - legacy tty / virtual terminal kernel API
 //!
-use nix::fcntl::OFlag;
+pub use nix::fcntl::OFlag;
 use std::{
     cell::RefCell,
     os::unix::io::RawFd,
