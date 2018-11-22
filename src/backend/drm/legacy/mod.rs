@@ -7,6 +7,7 @@ use nix::sys::stat::fstat;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::iter::FromIterator;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,7 +15,7 @@ use std::sync::{Arc, RwLock};
 
 mod surface;
 pub use self::surface::LegacyDrmSurface;
-use self::surface::State;
+use self::surface::{LegacyDrmSurfaceInternal, State};
 
 pub mod error;
 use self::error::*;
@@ -28,7 +29,7 @@ pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
     priviledged: bool,
     active: Arc<AtomicBool>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
-    backends: Rc<RefCell<HashMap<crtc::Handle, Weak<LegacyDrmSurface<A>>>>>,
+    backends: Rc<RefCell<HashMap<crtc::Handle, Weak<LegacyDrmSurfaceInternal<A>>>>>,
     handler: Option<RefCell<Box<DeviceHandler<Device = LegacyDrmDevice<A>>>>>,
     logger: ::slog::Logger,
 }
@@ -120,7 +121,6 @@ impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmDevice<A> {}
 
 impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
     type Surface = LegacyDrmSurface<A>;
-    type Return = Rc<LegacyDrmSurface<A>>;
 
     fn set_handler(&mut self, handler: impl DeviceHandler<Device = Self> + 'static) {
         self.handler = Some(RefCell::new(Box::new(handler)));
@@ -134,8 +134,8 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
         &mut self,
         crtc: crtc::Handle,
         mode: Mode,
-        connectors: impl Into<<Self::Surface as Surface>::Connectors>,
-    ) -> Result<Rc<LegacyDrmSurface<A>>> {
+        connectors: impl IntoIterator<Item = connector::Handle>,
+    ) -> Result<LegacyDrmSurface<A>> {
         if self.backends.borrow().contains_key(&crtc) {
             bail!(ErrorKind::CrtcAlreadyInUse(crtc));
         }
@@ -144,7 +144,7 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
             bail!(ErrorKind::DeviceInactive);
         }
 
-        let connectors: HashSet<_> = connectors.into();
+        let connectors = HashSet::from_iter(connectors);
         // check if we have an encoder for every connector and the mode mode
         for connector in &connectors {
             let con_info = connector::Info::load_from_device(self, *connector).chain_err(|| {
@@ -184,7 +184,7 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
 
         let state = State { mode, connectors };
 
-        let backend = Rc::new(LegacyDrmSurface {
+        let backend = Rc::new(LegacyDrmSurfaceInternal {
             dev: self.dev.clone(),
             crtc,
             state: RwLock::new(state.clone()),
@@ -193,7 +193,7 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
         });
 
         self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));
-        Ok(backend)
+        Ok(LegacyDrmSurface(backend))
     }
 
     fn process_events(&mut self) {
@@ -201,17 +201,18 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
             Ok(events) => for event in events {
                 if let crtc::Event::PageFlip(event) = event {
                     if self.active.load(Ordering::SeqCst) {
-                        if let Some(backend) = self
+                        if self
                             .backends
                             .borrow()
                             .get(&event.crtc)
                             .iter()
                             .flat_map(|x| x.upgrade())
                             .next()
+                            .is_some()
                         {
                             trace!(self.logger, "Handling event for backend {:?}", event.crtc);
                             if let Some(handler) = self.handler.as_ref() {
-                                handler.borrow_mut().vblank(&backend);
+                                handler.borrow_mut().vblank(event.crtc);
                             }
                         } else {
                             self.backends.borrow_mut().remove(&event.crtc);

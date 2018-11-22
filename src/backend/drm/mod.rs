@@ -7,6 +7,7 @@ use drm::Device as BasicDevice;
 
 use std::borrow::Borrow;
 use std::error::Error;
+use std::iter::IntoIterator;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 
@@ -26,13 +27,12 @@ pub mod legacy;
 
 pub trait DeviceHandler {
     type Device: Device + ?Sized;
-    fn vblank(&mut self, surface: &<<Self as DeviceHandler>::Device as Device>::Surface);
+    fn vblank(&mut self, crtc: crtc::Handle);
     fn error(&mut self, error: <<<Self as DeviceHandler>::Device as Device>::Surface as Surface>::Error);
 }
 
 pub trait Device: AsRawFd + DevPath {
     type Surface: Surface;
-    type Return: Borrow<Self::Surface>;
 
     fn set_handler(&mut self, handler: impl DeviceHandler<Device = Self> + 'static);
     fn clear_handler(&mut self);
@@ -40,15 +40,12 @@ pub trait Device: AsRawFd + DevPath {
         &mut self,
         ctrc: crtc::Handle,
         mode: Mode,
-        connectors: impl Into<<Self::Surface as Surface>::Connectors>,
-    ) -> Result<Self::Return, <Self::Surface as Surface>::Error>;
+        connectors: impl IntoIterator<Item = connector::Handle>,
+    ) -> Result<Self::Surface, <Self::Surface as Surface>::Error>;
     fn process_events(&mut self);
 }
 
-pub trait RawDevice: Device<Surface = <Self as RawDevice>::Surface>
-where
-    <Self as Device>::Return: Borrow<<Self as RawDevice>::Surface>,
-{
+pub trait RawDevice: Device<Surface = <Self as RawDevice>::Surface> {
     type Surface: RawSurface;
 }
 

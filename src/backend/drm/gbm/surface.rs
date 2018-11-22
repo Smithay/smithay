@@ -1,7 +1,7 @@
 use super::super::{Device, RawDevice, RawSurface, Surface};
 use super::error::*;
 
-use drm::control::{connector, crtc, framebuffer, Mode, ResourceInfo};
+use drm::control::{connector, crtc, framebuffer, Mode, ResourceHandles, ResourceInfo};
 use gbm::{self, BufferObject, BufferObjectFlags, Format as GbmFormat, SurfaceBufferHandle};
 use image::{ImageBuffer, Rgba};
 
@@ -9,17 +9,14 @@ use std::cell::{Cell, RefCell};
 use std::os::unix::io::AsRawFd;
 use std::rc::Rc;
 
-use backend::drm::legacy::{LegacyDrmDevice, LegacyDrmSurface};
+use backend::drm::legacy::LegacyDrmDevice;
 use backend::graphics::CursorBackend;
 use backend::graphics::SwapBuffersError;
 
-pub struct GbmSurface<D: RawDevice + 'static>
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
-{
+pub(super) struct GbmSurfaceInternal<D: RawDevice + 'static> {
     pub(super) dev: Rc<RefCell<gbm::Device<D>>>,
     pub(super) surface: RefCell<gbm::Surface<framebuffer::Info>>,
-    pub(super) crtc: <D as Device>::Return,
+    pub(super) crtc: <D as Device>::Surface,
     pub(super) cursor: Cell<(BufferObject<()>, (u32, u32))>,
     pub(super) current_frame_buffer: Cell<framebuffer::Info>,
     pub(super) front_buffer: Cell<SurfaceBufferHandle<framebuffer::Info>>,
@@ -27,10 +24,7 @@ where
     pub(super) logger: ::slog::Logger,
 }
 
-impl<D: RawDevice + 'static> GbmSurface<D>
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
-{
+impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
     pub(super) fn unlock_buffer(&self) {
         // after the page swap is finished we need to release the rendered buffer.
         // this is called from the PageFlipHandler
@@ -79,15 +73,14 @@ where
         let fb = if let Some(info) = maybe_fb {
             info
         } else {
-            let fb = framebuffer::create(::std::borrow::Borrow::borrow(&self.crtc), &*next_bo)
-                .map_err(|_| SwapBuffersError::ContextLost)?;
+            let fb = framebuffer::create(&self.crtc, &*next_bo).map_err(|_| SwapBuffersError::ContextLost)?;
             next_bo.set_userdata(fb).unwrap();
             fb
         };
         self.next_buffer.set(Some(next_bo));
 
         trace!(self.logger, "Queueing Page flip");
-        ::std::borrow::Borrow::borrow(&self.crtc).page_flip(fb.handle())?;
+        self.crtc.page_flip(fb.handle())?;
 
         self.current_frame_buffer.set(fb);
 
@@ -119,9 +112,7 @@ where
         {
             if let Some(mut old_bo) = self.next_buffer.take() {
                 if let Ok(Some(fb)) = old_bo.take_userdata() {
-                    if let Err(err) =
-                        framebuffer::destroy(::std::borrow::Borrow::borrow(&self.crtc), fb.handle())
-                    {
+                    if let Err(err) = framebuffer::destroy(&self.crtc, fb.handle()) {
                         warn!(
                             self.logger,
                             "Error releasing old back_buffer framebuffer: {:?}", err
@@ -141,10 +132,10 @@ where
             debug!(self.logger, "FrontBuffer color format: {:?}", front_bo.format());
 
             // we also need a new framebuffer for the front buffer
-            let fb = framebuffer::create(::std::borrow::Borrow::borrow(&self.crtc), &*front_bo)
+            let fb = framebuffer::create(&self.crtc, &*front_bo)
                 .chain_err(|| ErrorKind::UnderlyingBackendError)?;
 
-            ::std::borrow::Borrow::borrow(&self.crtc)
+            self.crtc
                 .commit(fb.handle())
                 .chain_err(|| ErrorKind::UnderlyingBackendError)?;
 
@@ -152,7 +143,7 @@ where
             front_bo
         });
         if let Ok(Some(fb)) = old_front_bo.take_userdata() {
-            if let Err(err) = framebuffer::destroy(::std::borrow::Borrow::borrow(&self.crtc), fb.handle()) {
+            if let Err(err) = framebuffer::destroy(&self.crtc, fb.handle()) {
                 warn!(
                     self.logger,
                     "Error releasing old front_buffer framebuffer: {:?}", err
@@ -167,47 +158,44 @@ where
     }
 }
 
-impl<D: RawDevice + 'static> Surface for GbmSurface<D>
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
-{
+impl<D: RawDevice + 'static> Surface for GbmSurfaceInternal<D> {
     type Connectors = <<D as Device>::Surface as Surface>::Connectors;
     type Error = Error;
 
     fn crtc(&self) -> crtc::Handle {
-        ::std::borrow::Borrow::borrow(&self.crtc).crtc()
+        self.crtc.crtc()
     }
 
     fn current_connectors(&self) -> Self::Connectors {
-        ::std::borrow::Borrow::borrow(&self.crtc).current_connectors()
+        self.crtc.current_connectors()
     }
 
     fn pending_connectors(&self) -> Self::Connectors {
-        ::std::borrow::Borrow::borrow(&self.crtc).pending_connectors()
+        self.crtc.pending_connectors()
     }
 
     fn add_connector(&self, connector: connector::Handle) -> Result<()> {
-        ::std::borrow::Borrow::borrow(&self.crtc)
+        self.crtc
             .add_connector(connector)
             .chain_err(|| ErrorKind::UnderlyingBackendError)
     }
 
     fn remove_connector(&self, connector: connector::Handle) -> Result<()> {
-        ::std::borrow::Borrow::borrow(&self.crtc)
+        self.crtc
             .remove_connector(connector)
             .chain_err(|| ErrorKind::UnderlyingBackendError)
     }
 
     fn current_mode(&self) -> Mode {
-        ::std::borrow::Borrow::borrow(&self.crtc).current_mode()
+        self.crtc.current_mode()
     }
 
     fn pending_mode(&self) -> Mode {
-        ::std::borrow::Borrow::borrow(&self.crtc).pending_mode()
+        self.crtc.pending_mode()
     }
 
     fn use_mode(&self, mode: Mode) -> Result<()> {
-        ::std::borrow::Borrow::borrow(&self.crtc)
+        self.crtc
             .use_mode(mode)
             .chain_err(|| ErrorKind::UnderlyingBackendError)
     }
@@ -218,9 +206,8 @@ where
 // Option 1: When there is GAT support, impl `GraphicsBackend` for `LegacyDrmBackend`
 //           using a new generic `B: Buffer` and use this:
 /*
-impl<'a, D: RawDevice + 'static> CursorBackend<'a> for GbmSurface<D>
+impl<'a, D: RawDevice + 'static> CursorBackend<'a> for GbmSurfaceInternal<D>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
     <D as RawDevice>::Surface: CursorBackend<'a>,
     <<D as RawDevice>::Surface as CursorBackend<'a>>::CursorFormat: Buffer,
     <<D as RawDevice>::Surface as CursorBackend<'a>>::Error: ::std::error::Error + Send 
@@ -229,9 +216,8 @@ where
 //
 // Option 2: When equality checks in where clauses are supported, we could at least do this:
 /*
-impl<'a, D: RawDevice + 'static> GraphicsBackend<'a> for GbmSurface<D>
+impl<'a, D: RawDevice + 'static> GraphicsBackend<'a> for GbmSurfaceInternal<D>
 where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
     <D as RawDevice>::Surface: CursorBackend<'a>,
     <<D as RawDevice>::Surface as CursorBackend<'a>>::CursorFormat=&'a Buffer,
     <<D as RawDevice>::Surface as CursorBackend<'a>>::Error: ::std::error::Error + Send 
@@ -239,15 +225,14 @@ where
 */
 // But for now got to do this:
 
-impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurface<LegacyDrmDevice<A>> {
+impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurfaceInternal<LegacyDrmDevice<A>> {
     type CursorFormat = &'a ImageBuffer<Rgba<u8>, Vec<u8>>;
     type Error = Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
-        ResultExt::chain_err(
-            ::std::borrow::Borrow::<Rc<LegacyDrmSurface<A>>>::borrow(&self.crtc).set_cursor_position(x, y),
-            || ErrorKind::UnderlyingBackendError,
-        )
+        ResultExt::chain_err(self.crtc.set_cursor_position(x, y), || {
+            ErrorKind::UnderlyingBackendError
+        })
     }
 
     fn set_cursor_representation<'b>(
@@ -279,11 +264,9 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurface<LegacyDrmDevice<
 
         trace!(self.logger, "Setting the new imported cursor");
 
-        ResultExt::chain_err(
-            ::std::borrow::Borrow::<Rc<LegacyDrmSurface<A>>>::borrow(&self.crtc)
-                .set_cursor_representation(&cursor, hotspot),
-            || ErrorKind::UnderlyingBackendError,
-        )?;
+        ResultExt::chain_err(self.crtc.set_cursor_representation(&cursor, hotspot), || {
+            ErrorKind::UnderlyingBackendError
+        })?;
 
         // and store it
         self.cursor.set((cursor, hotspot));
@@ -291,10 +274,7 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurface<LegacyDrmDevice<
     }
 }
 
-impl<D: RawDevice + 'static> Drop for GbmSurface<D>
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
-{
+impl<D: RawDevice + 'static> Drop for GbmSurfaceInternal<D> {
     fn drop(&mut self) {
         // Drop framebuffers attached to the userdata of the gbm surface buffers.
         // (They don't implement drop, as they need the device)
@@ -308,12 +288,87 @@ where
             }
         } {
             // ignore failure at this point
-            let _ = framebuffer::destroy(::std::borrow::Borrow::borrow(&self.crtc), fb.handle());
+            let _ = framebuffer::destroy(&self.crtc, fb.handle());
         }
 
         if let Ok(Some(fb)) = self.front_buffer.get_mut().take_userdata() {
             // ignore failure at this point
-            let _ = framebuffer::destroy(::std::borrow::Borrow::borrow(&self.crtc), fb.handle());
+            let _ = framebuffer::destroy(&self.crtc, fb.handle());
         }
+    }
+}
+
+pub struct GbmSurface<D: RawDevice + 'static>(pub(super) Rc<GbmSurfaceInternal<D>>);
+
+impl<D: RawDevice + 'static> GbmSurface<D> {
+    pub fn page_flip<F>(&self, flip: F) -> ::std::result::Result<(), SwapBuffersError>
+    where
+        F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>,
+    {
+        self.0.page_flip(flip)
+    }
+
+    pub fn recreate<F>(&self, flip: F) -> Result<()>
+    where
+        F: FnOnce() -> ::std::result::Result<(), SwapBuffersError>,
+    {
+        self.0.recreate(flip)
+    }
+}
+
+impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
+    type Connectors = <<D as Device>::Surface as Surface>::Connectors;
+    type Error = Error;
+
+    fn crtc(&self) -> crtc::Handle {
+        self.0.crtc()
+    }
+
+    fn current_connectors(&self) -> Self::Connectors {
+        self.0.current_connectors()
+    }
+
+    fn pending_connectors(&self) -> Self::Connectors {
+        self.0.pending_connectors()
+    }
+
+    fn add_connector(&self, connector: connector::Handle) -> Result<()> {
+        self.0.add_connector(connector)
+    }
+
+    fn remove_connector(&self, connector: connector::Handle) -> Result<()> {
+        self.0.remove_connector(connector)
+    }
+
+    fn current_mode(&self) -> Mode {
+        self.0.current_mode()
+    }
+
+    fn pending_mode(&self) -> Mode {
+        self.0.pending_mode()
+    }
+
+    fn use_mode(&self, mode: Mode) -> Result<()> {
+        self.0.use_mode(mode)
+    }
+}
+
+impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurface<LegacyDrmDevice<A>> {
+    type CursorFormat = &'a ImageBuffer<Rgba<u8>, Vec<u8>>;
+    type Error = Error;
+
+    fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
+        self.0.set_cursor_position(x, y)
+    }
+
+    fn set_cursor_representation<'b>(
+        &'b self,
+        buffer: &ImageBuffer<Rgba<u8>, Vec<u8>>,
+        hotspot: (u32, u32),
+    ) -> Result<()>
+    where
+        'a: 'b,
+    {
+        self.0.set_cursor_representation(buffer, hotspot)
     }
 }

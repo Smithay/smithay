@@ -9,7 +9,7 @@ use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use super::{Dev, LegacyDrmDevice, LegacyDrmSurface};
+use super::{Dev, LegacyDrmDevice, LegacyDrmSurfaceInternal};
 use backend::session::{AsSessionObserver, SessionObserver};
 
 /// `SessionObserver` linked to the `DrmDevice` it was created from.
@@ -19,7 +19,7 @@ pub struct LegacyDrmDeviceObserver<A: AsRawFd + 'static> {
     priviledged: bool,
     active: Arc<AtomicBool>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
-    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<LegacyDrmSurface<A>>>>>,
+    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<LegacyDrmSurfaceInternal<A>>>>>,
     logger: ::slog::Logger,
 }
 

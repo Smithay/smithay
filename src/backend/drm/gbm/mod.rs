@@ -1,6 +1,6 @@
 use super::{Device, DeviceHandler, RawDevice, Surface};
 
-use drm::control::{crtc, framebuffer, Device as ControlDevice, Mode};
+use drm::control::{connector, crtc, framebuffer, Device as ControlDevice, Mode};
 use gbm::{self, BufferObjectFlags, Format as GbmFormat};
 
 use std::cell::{Cell, RefCell};
@@ -14,6 +14,7 @@ use self::error::*;
 
 mod surface;
 pub use self::surface::GbmSurface;
+use self::surface::GbmSurfaceInternal;
 
 pub mod egl;
 
@@ -23,19 +24,13 @@ pub mod session;
 static LOAD: Once = ONCE_INIT;
 
 /// Representation of an open gbm device to create rendering backends
-pub struct GbmDevice<D: RawDevice + ControlDevice + 'static>
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
-{
+pub struct GbmDevice<D: RawDevice + ControlDevice + 'static> {
     pub(self) dev: Rc<RefCell<gbm::Device<D>>>,
-    backends: Rc<RefCell<HashMap<crtc::Handle, Weak<GbmSurface<D>>>>>,
+    backends: Rc<RefCell<HashMap<crtc::Handle, Weak<GbmSurfaceInternal<D>>>>>,
     logger: ::slog::Logger,
 }
 
-impl<D: RawDevice + ControlDevice + 'static> GbmDevice<D>
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
-{
+impl<D: RawDevice + ControlDevice + 'static> GbmDevice<D> {
     /// Create a new `GbmDevice` from an open drm node
     ///
     /// Returns an error if the file is no valid drm node or context creation was not
@@ -73,33 +68,26 @@ where
     }
 }
 
-struct InternalDeviceHandler<D: RawDevice + ControlDevice + 'static>
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
-{
+struct InternalDeviceHandler<D: RawDevice + ControlDevice + 'static> {
     handler: Box<DeviceHandler<Device = GbmDevice<D>> + 'static>,
-    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<GbmSurface<D>>>>>,
+    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<GbmSurfaceInternal<D>>>>>,
     logger: ::slog::Logger,
 }
 
-impl<D: RawDevice + ControlDevice + 'static> DeviceHandler for InternalDeviceHandler<D>
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
-{
+impl<D: RawDevice + ControlDevice + 'static> DeviceHandler for InternalDeviceHandler<D> {
     type Device = D;
 
-    fn vblank(&mut self, surface: &<D as Device>::Surface) {
+    fn vblank(&mut self, crtc: crtc::Handle) {
         if let Some(backends) = self.backends.upgrade() {
-            if let Some(surface) = backends.borrow().get(&surface.crtc()) {
+            if let Some(surface) = backends.borrow().get(&crtc) {
                 if let Some(surface) = surface.upgrade() {
                     surface.unlock_buffer();
-                    self.handler.vblank(&*surface);
+                    self.handler.vblank(crtc);
                 }
             } else {
                 warn!(
                     self.logger,
-                    "Surface ({:?}) not managed by gbm, event not handled.",
-                    surface.crtc()
+                    "Surface ({:?}) not managed by gbm, event not handled.", crtc
                 );
             }
         }
@@ -110,12 +98,8 @@ where
     }
 }
 
-impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D>
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
-{
+impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
     type Surface = GbmSurface<D>;
-    type Return = Rc<GbmSurface<D>>;
 
     fn set_handler(&mut self, handler: impl DeviceHandler<Device = Self> + 'static) {
         self.dev.borrow_mut().set_handler(InternalDeviceHandler {
@@ -133,8 +117,8 @@ where
         &mut self,
         crtc: crtc::Handle,
         mode: Mode,
-        connectors: impl Into<<Self::Surface as Surface>::Connectors>,
-    ) -> Result<Rc<GbmSurface<D>>> {
+        connectors: impl IntoIterator<Item = connector::Handle>,
+    ) -> Result<GbmSurface<D>> {
         info!(self.logger, "Initializing GbmSurface");
 
         let (w, h) = mode.size();
@@ -173,7 +157,7 @@ where
             (0, 0),
         ));
 
-        let backend = Rc::new(GbmSurface {
+        let backend = Rc::new(GbmSurfaceInternal {
             dev: self.dev.clone(),
             surface: RefCell::new(surface),
             crtc: Device::create_surface(&mut **self.dev.borrow_mut(), crtc, mode, connectors)
@@ -185,7 +169,7 @@ where
             logger: self.logger.new(o!("crtc" => format!("{:?}", crtc))),
         });
         self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));
-        Ok(backend)
+        Ok(GbmSurface(backend))
     }
 
     fn process_events(&mut self) {
@@ -193,10 +177,7 @@ where
     }
 }
 
-impl<D: RawDevice + ControlDevice + 'static> AsRawFd for GbmDevice<D>
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
-{
+impl<D: RawDevice + ControlDevice + 'static> AsRawFd for GbmDevice<D> {
     fn as_raw_fd(&self) -> RawFd {
         self.dev.borrow().as_raw_fd()
     }

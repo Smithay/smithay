@@ -19,7 +19,7 @@ pub struct State {
     pub connectors: HashSet<connector::Handle>,
 }
 
-pub struct LegacyDrmSurface<A: AsRawFd + 'static> {
+pub(super) struct LegacyDrmSurfaceInternal<A: AsRawFd + 'static> {
     pub(super) dev: Rc<Dev<A>>,
     pub(super) crtc: crtc::Handle,
     pub(super) state: RwLock<State>,
@@ -27,16 +27,16 @@ pub struct LegacyDrmSurface<A: AsRawFd + 'static> {
     pub(super) logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurface<A> {
+impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurfaceInternal<A> {
     fn as_raw_fd(&self) -> RawFd {
         self.dev.as_raw_fd()
     }
 }
 
-impl<A: AsRawFd + 'static> BasicDevice for LegacyDrmSurface<A> {}
-impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmSurface<A> {}
+impl<A: AsRawFd + 'static> BasicDevice for LegacyDrmSurfaceInternal<A> {}
+impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmSurfaceInternal<A> {}
 
-impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurface<A> {
+impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurfaceInternal<A> {
     type CursorFormat = &'a Buffer;
     type Error = Error;
 
@@ -61,7 +61,7 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurface<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Surface for LegacyDrmSurface<A> {
+impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
     type Error = Error;
     type Connectors = HashSet<connector::Handle>;
 
@@ -149,7 +149,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurface<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurface<A> {
+impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
     fn commit_pending(&self) -> bool {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
@@ -220,9 +220,87 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurface<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Drop for LegacyDrmSurface<A> {
+impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
     fn drop(&mut self) {
         // ignore failure at this point
         let _ = crtc::clear_cursor(self, self.crtc);
+    }
+}
+
+pub struct LegacyDrmSurface<A: AsRawFd + 'static>(pub(super) Rc<LegacyDrmSurfaceInternal<A>>);
+
+impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurface<A> {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0.as_raw_fd()
+    }
+}
+
+impl<A: AsRawFd + 'static> BasicDevice for LegacyDrmSurface<A> {}
+impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmSurface<A> {}
+
+impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurface<A> {
+    type CursorFormat = &'a Buffer;
+    type Error = Error;
+
+    fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
+        self.0.set_cursor_position(x, y)
+    }
+
+    fn set_cursor_representation<'b>(&'b self, buffer: Self::CursorFormat, hotspot: (u32, u32)) -> Result<()>
+    where
+        'a: 'b,
+    {
+        self.0.set_cursor_representation(buffer, hotspot)
+    }
+}
+
+impl<A: AsRawFd + 'static> Surface for LegacyDrmSurface<A> {
+    type Error = Error;
+    type Connectors = HashSet<connector::Handle>;
+
+    fn crtc(&self) -> crtc::Handle {
+        self.0.crtc()
+    }
+
+    fn current_connectors(&self) -> Self::Connectors {
+        self.0.current_connectors()
+    }
+
+    fn pending_connectors(&self) -> Self::Connectors {
+        self.0.pending_connectors()
+    }
+
+    fn current_mode(&self) -> Mode {
+        self.0.current_mode()
+    }
+
+    fn pending_mode(&self) -> Mode {
+        self.0.pending_mode()
+    }
+
+    fn add_connector(&self, connector: connector::Handle) -> Result<()> {
+        self.0.add_connector(connector)
+    }
+
+    fn remove_connector(&self, connector: connector::Handle) -> Result<()> {
+        self.0.remove_connector(connector)
+    }
+
+    fn use_mode(&self, mode: Mode) -> Result<()> {
+        self.0.use_mode(mode)
+    }
+}
+
+impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurface<A> {
+    fn commit_pending(&self) -> bool {
+        self.0.commit_pending()
+    }
+
+    fn commit(&self, framebuffer: framebuffer::Handle) -> Result<()> {
+        self.0.commit(framebuffer)
+    }
+
+    fn page_flip(&self, framebuffer: framebuffer::Handle) -> ::std::result::Result<(), SwapBuffersError> {
+        self.0.page_flip(framebuffer)
     }
 }

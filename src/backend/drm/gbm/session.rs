@@ -5,26 +5,22 @@ use std::collections::HashMap;
 use std::os::unix::io::RawFd;
 use std::rc::{Rc, Weak};
 
-use super::{GbmDevice, GbmSurface};
-use backend::drm::{Device, RawDevice, RawSurface};
+use super::{GbmDevice, GbmSurfaceInternal};
+use backend::drm::{RawDevice, RawSurface};
 use backend::session::{AsSessionObserver, SessionObserver};
 
 /// `SessionObserver` linked to the `DrmDevice` it was created from.
 pub struct GbmDeviceObserver<
     S: SessionObserver + 'static,
     D: RawDevice + ControlDevice + AsSessionObserver<S> + 'static,
-> where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
-{
+> {
     observer: S,
-    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<GbmSurface<D>>>>>,
+    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<GbmSurfaceInternal<D>>>>>,
     logger: ::slog::Logger,
 }
 
 impl<S: SessionObserver + 'static, D: RawDevice + ControlDevice + AsSessionObserver<S> + 'static>
     AsSessionObserver<GbmDeviceObserver<S, D>> for GbmDevice<D>
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     fn observer(&mut self) -> GbmDeviceObserver<S, D> {
         GbmDeviceObserver {
@@ -37,8 +33,6 @@ where
 
 impl<S: SessionObserver + 'static, D: RawDevice + ControlDevice + AsSessionObserver<S> + 'static>
     SessionObserver for GbmDeviceObserver<S, D>
-where
-    <D as Device>::Return: ::std::borrow::Borrow<<D as RawDevice>::Surface>,
 {
     fn pause(&mut self, devnum: Option<(u32, u32)>) {
         self.observer.pause(devnum);
@@ -51,7 +45,8 @@ where
             for (crtc, backend) in backends.borrow().iter() {
                 if let Some(backend) = backend.upgrade() {
                     // restart rendering loop
-                    if let Err(err) = ::std::borrow::Borrow::borrow(&backend.crtc)
+                    if let Err(err) = &backend
+                        .crtc
                         .page_flip(backend.current_frame_buffer.get().handle())
                     {
                         warn!(self.logger, "Failed to restart rendering loop. Error: {}", err);

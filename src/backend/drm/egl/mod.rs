@@ -1,8 +1,8 @@
 use drm::control::{crtc, Mode};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::iter::FromIterator;
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use wayland_server::Display;
 
 use super::{Device, DeviceHandler, Surface};
@@ -28,7 +28,6 @@ pub struct EglDevice<
     <D as Device>::Surface: NativeSurface,
 {
     dev: Rc<RefCell<EGLContext<B, D>>>,
-    backends: Rc<RefCell<HashMap<crtc::Handle, Weak<EglSurface<B, D>>>>>,
     logger: ::slog::Logger,
 }
 
@@ -85,7 +84,6 @@ where
             dev: Rc::new(RefCell::new(
                 EGLContext::new(dev, attributes, Default::default(), log.clone()).map_err(Error::from)?,
             )),
-            backends: Rc::new(RefCell::new(HashMap::new())),
             logger: log,
         })
     }
@@ -98,36 +96,18 @@ struct InternalDeviceHandler<
     <D as Device>::Surface: NativeSurface,
 {
     handler: Box<DeviceHandler<Device = EglDevice<B, D>> + 'static>,
-    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<EglSurface<B, D>>>>>,
-    logger: ::slog::Logger,
 }
 
 impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
     DeviceHandler for InternalDeviceHandler<B, D>
 where
-    <D as NativeDisplay<B>>::Arguments: From<(
-        crtc::Handle,
-        Mode,
-        <<D as Device>::Surface as Surface>::Connectors,
-    )>,
+    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     type Device = D;
 
-    fn vblank(&mut self, surface: &<D as Device>::Surface) {
-        if let Some(backends) = self.backends.upgrade() {
-            if let Some(surface) = backends.borrow().get(&surface.crtc()) {
-                if let Some(surface) = surface.upgrade() {
-                    self.handler.vblank(&*surface);
-                }
-            } else {
-                warn!(
-                    self.logger,
-                    "Surface ({:?}) not managed by egl, event not handled.",
-                    surface.crtc()
-                );
-            }
-        }
+    fn vblank(&mut self, crtc: crtc::Handle) {
+        self.handler.vblank(crtc)
     }
     fn error(&mut self, error: <<D as Device>::Surface as Surface>::Error) {
         self.handler
@@ -138,21 +118,14 @@ where
 impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static> Device
     for EglDevice<B, D>
 where
-    <D as NativeDisplay<B>>::Arguments: From<(
-        crtc::Handle,
-        Mode,
-        <<D as Device>::Surface as Surface>::Connectors,
-    )>,
+    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     type Surface = EglSurface<B, D>;
-    type Return = Rc<EglSurface<B, D>>;
 
     fn set_handler(&mut self, handler: impl DeviceHandler<Device = Self> + 'static) {
         self.dev.borrow_mut().set_handler(InternalDeviceHandler {
             handler: Box::new(handler),
-            backends: Rc::downgrade(&self.backends),
-            logger: self.logger.clone(),
         });
     }
 
@@ -164,21 +137,19 @@ where
         &mut self,
         crtc: crtc::Handle,
         mode: Mode,
-        connectors: impl Into<<<Self as Device>::Surface as Surface>::Connectors>,
-    ) -> Result<Rc<EglSurface<B, D>>> {
+        connectors: impl IntoIterator<Item = connector::Handle>,
+    ) -> Result<EglSurface<B, D>> {
         info!(self.logger, "Initializing EglSurface");
 
         let surface = self
             .dev
             .borrow_mut()
-            .create_surface((crtc, mode, connectors.into()).into())?;
+            .create_surface((crtc, mode, Vec::from_iter(connectors)).into())?;
 
-        let backend = Rc::new(EglSurface {
+        Ok(EglSurface {
             dev: self.dev.clone(),
             surface,
-        });
-        self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));
-        Ok(backend)
+        })
     }
 
     fn process_events(&mut self) {
