@@ -6,8 +6,8 @@ use backend::{
         EGLDisplay, EGLGraphicsBackend, EGLSurface,
     },
     graphics::{
-        gl::{GLGraphicsBackend, PixelFormat},
-        CursorBackend, SwapBuffersError,
+        gl::GLGraphicsBackend,
+        CursorBackend, SwapBuffersError, PixelFormat,
     },
     input::{
         Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState, KeyboardKeyEvent,

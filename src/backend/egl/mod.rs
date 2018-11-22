@@ -337,6 +337,7 @@ impl EGLDisplay {
         context: &EGLContext<B, N>,
         display: *mut wl_display,
     ) -> EGLDisplay {
+        #[cfg(feature = "renderer_gl")]
         let gl = gl_ffi::Gles2::load_with(|s| unsafe { context.get_proc_address(s) as *const _ });
 
         EGLDisplay {

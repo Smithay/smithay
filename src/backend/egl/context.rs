@@ -1,7 +1,7 @@
 //! EGL context related structs
 
 use super::{error::*, ffi, native, EGLSurface};
-use backend::graphics::gl::PixelFormat;
+use backend::graphics::PixelFormat;
 use nix::libc::{c_int, c_void};
 use slog;
 use std::{

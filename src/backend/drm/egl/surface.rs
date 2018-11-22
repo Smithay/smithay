@@ -7,7 +7,10 @@ use super::error::*;
 use backend::drm::{Device, Surface};
 use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use backend::egl::{EGLContext, EGLSurface};
-use backend::graphics::gl::{GLGraphicsBackend, PixelFormat};
+#[cfg(feature = "renderer_gl")]
+use backend::graphics::gl::GLGraphicsBackend;
+#[cfg(feature = "renderer_gl")]
+use backend::graphics::PixelFormat;
 use backend::graphics::{CursorBackend, SwapBuffersError};
 
 pub struct EglSurface<
@@ -91,6 +94,7 @@ where
     }
 }
 
+#[cfg(feature = "renderer_gl")]
 impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
     GLGraphicsBackend for EglSurface<B, D>
 where

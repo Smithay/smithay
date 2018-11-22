@@ -8,6 +8,9 @@ pub use self::errors::*;
 mod cursor;
 pub use self::cursor::*;
 
+mod format;
+pub use self::format::*;
+
 #[cfg(feature = "renderer_gl")]
 pub mod gl;
 #[cfg(feature = "renderer_glium")]
