@@ -1,13 +1,31 @@
 use std::sync::{Arc, Mutex};
 use wayland_server::{
     protocol::{
-        wl_pointer::{Axis, AxisSource, ButtonState, Event, Request, WlPointer},
+        wl_pointer::{self, Axis, AxisSource, ButtonState, Event, Request, WlPointer},
         wl_surface::WlSurface,
     },
     NewResource, Resource,
 };
 
-// TODO: handle pointer surface role
+use wayland::compositor::{roles::Role, CompositorToken};
+
+/// The role representing a surface set as the pointer cursor
+#[derive(Default, Copy, Clone)]
+pub struct CursorImageRole {
+    /// Location of the hotspot of the pointer in the surface
+    pub hotspot: (i32, i32),
+}
+
+/// Possible status of a cursor as requested by clients
+#[derive(Clone)]
+pub enum CursorImageStatus {
+    /// The cursor should be hidden
+    Hidden,
+    /// The compositor should draw its cursor
+    Default,
+    /// The cursor should be drawn using this surface as an image
+    Image(Resource<WlSurface>),
+}
 
 enum GrabStatus {
     None,
@@ -22,10 +40,35 @@ struct PointerInternal {
     location: (f64, f64),
     grab: GrabStatus,
     pressed_buttons: Vec<u32>,
+    image_callback: Box<FnMut(CursorImageStatus) + Send>,
 }
 
 impl PointerInternal {
-    fn new() -> PointerInternal {
+    fn new<F, U, R>(token: CompositorToken<U, R>, mut cb: F) -> PointerInternal
+    where
+        U: 'static,
+        R: Role<CursorImageRole> + 'static,
+        F: FnMut(CursorImageStatus) + Send + 'static,
+    {
+        let mut old_status = CursorImageStatus::Default;
+        let wrapper = move |new_status: CursorImageStatus| {
+            if let CursorImageStatus::Image(surface) =
+                ::std::mem::replace(&mut old_status, new_status.clone())
+            {
+                match new_status {
+                    CursorImageStatus::Image(ref new_surface) if new_surface == &surface => {
+                        // don't remove the role, we are just re-binding the same surface
+                    }
+                    _ => {
+                        if surface.is_alive() {
+                            token.remove_role::<CursorImageRole>(&surface).unwrap();
+                        }
+                    }
+                }
+            }
+            cb(new_status)
+        };
+
         PointerInternal {
             known_pointers: Vec::new(),
             focus: None,
@@ -33,6 +76,7 @@ impl PointerInternal {
             location: (0.0, 0.0),
             grab: GrabStatus::None,
             pressed_buttons: Vec::new(),
+            image_callback: Box::new(wrapper) as Box<_>,
         }
     }
 
@@ -297,6 +341,7 @@ impl<'a> PointerInnerHandle<'a> {
                 }
             });
             self.inner.focus = None;
+            (self.inner.image_callback)(CursorImageStatus::Default);
         }
 
         // do we enter one ?
@@ -431,6 +476,7 @@ pub struct AxisFrame {
 }
 
 impl AxisFrame {
+    /// Create a new frame of axis events
     pub fn new(time: u32) -> Self {
         AxisFrame {
             source: None,
@@ -501,34 +547,83 @@ impl AxisFrame {
     }
 }
 
-pub(crate) fn create_pointer_handler() -> PointerHandle {
+pub(crate) fn create_pointer_handler<F, U, R>(token: CompositorToken<U, R>, cb: F) -> PointerHandle
+where
+    R: Role<CursorImageRole> + 'static,
+    U: 'static,
+    F: FnMut(CursorImageStatus) + Send + 'static,
+{
     PointerHandle {
-        inner: Arc::new(Mutex::new(PointerInternal::new())),
+        inner: Arc::new(Mutex::new(PointerInternal::new(token, cb))),
     }
 }
 
-pub(crate) fn implement_pointer(
+pub(crate) fn implement_pointer<U, R>(
     new_pointer: NewResource<WlPointer>,
     handle: Option<&PointerHandle>,
-) -> Resource<WlPointer> {
-    let destructor = match handle {
-        Some(h) => {
-            let inner = h.inner.clone();
-            Some(move |pointer: Resource<_>| {
-                inner
-                    .lock()
-                    .unwrap()
-                    .known_pointers
-                    .retain(|p| !p.equals(&pointer))
-            })
-        }
+    token: CompositorToken<U, R>,
+) -> Resource<WlPointer>
+where
+    R: Role<CursorImageRole> + 'static,
+    U: 'static,
+{
+    let inner = handle.map(|h| h.inner.clone());
+    let destructor = match inner.clone() {
+        Some(inner) => Some(move |pointer: Resource<_>| {
+            inner
+                .lock()
+                .unwrap()
+                .known_pointers
+                .retain(|p| !p.equals(&pointer))
+        }),
         None => None,
     };
     new_pointer.implement(
-        |request, _pointer| {
+        move |request, pointer| {
             match request {
-                Request::SetCursor { .. } => {
-                    // TODO
+                Request::SetCursor {
+                    serial: _,
+                    surface,
+                    hotspot_x,
+                    hotspot_y,
+                } => {
+                    if let Some(ref inner) = inner {
+                        let mut guard = inner.lock().unwrap();
+                        // only allow setting the cursor icon if the current pointer focus
+                        // is of the same client
+                        let PointerInternal {
+                            ref mut image_callback,
+                            ref focus,
+                            ..
+                        } = *guard;
+                        if let Some((ref focus, _)) = *focus {
+                            if focus.same_client_as(&pointer) {
+                                match surface {
+                                    Some(surface) => {
+                                        let role_data = CursorImageRole {
+                                            hotspot: (hotspot_x, hotspot_y),
+                                        };
+                                        // we gracefully tolerate the client to provide a surface that
+                                        // already had the "CursorImage" role, as most clients will
+                                        // always reuse the same surface (and they are right to do so!)
+                                        if token.with_role_data(&surface, |data| *data = role_data).is_err()
+                                            && token.give_role_with(&surface, role_data).is_err()
+                                        {
+                                            pointer.post_error(
+                                                wl_pointer::Error::Role as u32,
+                                                "Given wl_surface has another role.".into(),
+                                            );
+                                            return;
+                                        }
+                                        image_callback(CursorImageStatus::Image(surface));
+                                    }
+                                    None => {
+                                        image_callback(CursorImageStatus::Hidden);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 Request::Release => {
                     // Our destructors already handle it
