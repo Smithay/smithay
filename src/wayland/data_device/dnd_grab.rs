@@ -8,37 +8,49 @@ use wayland_server::{
     NewResource, Resource,
 };
 
-use wayland::seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat};
+use wayland::{
+    compositor::{roles::Role, CompositorToken},
+    seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat},
+};
 
-use super::{with_source_metadata, DataDeviceData, SeatData};
+use super::{with_source_metadata, DataDeviceData, DnDIconRole, SeatData};
 
-pub(crate) struct DnDGrab {
+pub(crate) struct DnDGrab<U, R> {
     data_source: Option<Resource<wl_data_source::WlDataSource>>,
     current_focus: Option<Resource<wl_surface::WlSurface>>,
     pending_offers: Vec<Resource<wl_data_offer::WlDataOffer>>,
     offer_data: Option<Arc<Mutex<OfferData>>>,
+    icon: Option<Resource<wl_surface::WlSurface>>,
     origin: Resource<wl_surface::WlSurface>,
+    callback: Arc<Mutex<FnMut(super::DataDeviceEvent) + Send>>,
+    token: CompositorToken<U, R>,
     seat: Seat,
 }
 
-impl DnDGrab {
+impl<U: 'static, R: Role<DnDIconRole> + 'static> DnDGrab<U, R> {
     pub(crate) fn new(
         source: Option<Resource<wl_data_source::WlDataSource>>,
         origin: Resource<wl_surface::WlSurface>,
         seat: Seat,
-    ) -> DnDGrab {
+        icon: Option<Resource<wl_surface::WlSurface>>,
+        token: CompositorToken<U, R>,
+        callback: Arc<Mutex<FnMut(super::DataDeviceEvent) + Send>>,
+    ) -> DnDGrab<U, R> {
         DnDGrab {
             data_source: source,
             current_focus: None,
             pending_offers: Vec::with_capacity(1),
             offer_data: None,
             origin,
+            icon,
+            callback,
+            token,
             seat,
         }
     }
 }
 
-impl PointerGrab for DnDGrab {
+impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
     fn motion(
         &mut self,
         _handle: &mut PointerInnerHandle,
@@ -213,6 +225,12 @@ impl PointerGrab for DnDGrab {
                 source.send(wl_data_source::Event::DndDropPerformed);
                 if !validated {
                     source.send(wl_data_source::Event::Cancelled);
+                }
+            }
+            (&mut *self.callback.lock().unwrap())(super::DataDeviceEvent::DnDDropped);
+            if let Some(icon) = self.icon.take() {
+                if icon.is_alive() {
+                    self.token.remove_role::<super::DnDIconRole>(&icon).unwrap();
                 }
             }
             // in all cases abandon the drop

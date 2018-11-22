@@ -9,6 +9,7 @@ use rand;
 use smithay::{
     wayland::{
         compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent},
+        data_device::DnDIconRole,
         seat::CursorImageRole,
         shell::{
             legacy::{
@@ -31,6 +32,7 @@ use window_map::{Kind as SurfaceKind, WindowMap};
 define_roles!(Roles =>
     [ XdgSurface, XdgSurfaceRole ]
     [ ShellSurface, ShellSurfaceRole<()>]
+    [ DnDIcon, DnDIconRole ]
     [ CursorImage, CursorImageRole ]
 );
 
