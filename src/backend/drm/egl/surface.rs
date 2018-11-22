@@ -70,14 +70,13 @@ where
 impl<'a, B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
     CursorBackend<'a> for EglSurface<B, D>
 where
-    D: CursorBackend<'a>,
-    <D as Device>::Surface: NativeSurface,
+    <D as Device>::Surface: NativeSurface + CursorBackend<'a>,
 {
-    type CursorFormat = <D as CursorBackend<'a>>::CursorFormat;
-    type Error = <D as CursorBackend<'a>>::Error;
+    type CursorFormat = <D::Surface as CursorBackend<'a>>::CursorFormat;
+    type Error = <D::Surface as CursorBackend<'a>>::Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> ::std::result::Result<(), Self::Error> {
-        self.dev.borrow().set_cursor_position(x, y)
+        self.surface.set_cursor_position(x, y)
     }
 
     fn set_cursor_representation<'b>(
@@ -88,8 +87,7 @@ where
     where
         'a: 'b,
     {
-        let dev = self.dev.borrow();
-        dev.set_cursor_representation(buffer, hotspot)
+        self.surface.set_cursor_representation(buffer, hotspot)
     }
 }
 
