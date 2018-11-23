@@ -18,8 +18,10 @@ enum GrabStatus {
 struct PointerInternal {
     known_pointers: Vec<Resource<WlPointer>>,
     focus: Option<(Resource<WlSurface>, (f64, f64))>,
+    pending_focus: Option<(Resource<WlSurface>, (f64, f64))>,
     location: (f64, f64),
     grab: GrabStatus,
+    pressed_buttons: Vec<u32>,
 }
 
 impl PointerInternal {
@@ -27,8 +29,10 @@ impl PointerInternal {
         PointerInternal {
             known_pointers: Vec::new(),
             focus: None,
+            pending_focus: None,
             location: (0.0, 0.0),
             grab: GrabStatus::None,
+            pressed_buttons: Vec::new(),
         }
     }
 
@@ -136,7 +140,9 @@ impl PointerHandle {
         serial: u32,
         time: u32,
     ) {
-        self.inner.lock().unwrap().with_grab(move |mut handle, grab| {
+        let mut inner = self.inner.lock().unwrap();
+        inner.pending_focus = focus.clone();
+        inner.with_grab(move |mut handle, grab| {
             grab.motion(&mut handle, location, focus, serial, time);
         });
     }
@@ -146,7 +152,16 @@ impl PointerHandle {
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
     pub fn button(&self, button: u32, state: ButtonState, serial: u32, time: u32) {
-        self.inner.lock().unwrap().with_grab(|mut handle, grab| {
+        let mut inner = self.inner.lock().unwrap();
+        match state {
+            ButtonState::Pressed => {
+                inner.pressed_buttons.push(button);
+            }
+            ButtonState::Released => {
+                inner.pressed_buttons.retain(|b| *b != button);
+            }
+        }
+        inner.with_grab(|mut handle, grab| {
             grab.button(&mut handle, button, state, serial, time);
         });
     }
@@ -215,8 +230,14 @@ impl<'a> PointerInnerHandle<'a> {
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
-    pub fn unset_grab(&mut self) {
+    ///
+    /// This will also restore the focus of the underlying pointer
+    pub fn unset_grab(&mut self, serial: u32, time: u32) {
         self.inner.grab = GrabStatus::None;
+        // restore the focus
+        let location = self.current_location();
+        let focus = self.inner.pending_focus.take();
+        self.motion(location, focus, serial, time);
     }
 
     /// Access the current focus of this pointer
@@ -227,6 +248,14 @@ impl<'a> PointerInnerHandle<'a> {
     /// Access the current location of this pointer in the global space
     pub fn current_location(&self) -> (f64, f64) {
         self.inner.location
+    }
+
+    /// A list of the currently physically pressed buttons
+    ///
+    /// This still includes buttons that your grab have intercepted and not sent
+    /// to the client.
+    pub fn current_pressed(&self) -> &[u32] {
+        &self.inner.pressed_buttons
     }
 
     /// Notify that the pointer moved
@@ -542,7 +571,6 @@ impl PointerGrab for DefaultGrab {
         handle.set_grab(
             serial,
             ClickGrab {
-                buttons: vec![button],
                 current_focus,
                 pending_focus: None,
             },
@@ -559,7 +587,6 @@ impl PointerGrab for DefaultGrab {
 // In case the user maintains several simultaneous clicks, release
 // the grab once all are released.
 struct ClickGrab {
-    buttons: Vec<u32>,
     current_focus: Option<(Resource<WlSurface>, (f64, f64))>,
     pending_focus: Option<(Resource<WlSurface>, (f64, f64))>,
 }
@@ -585,17 +612,10 @@ impl PointerGrab for ClickGrab {
         serial: u32,
         time: u32,
     ) {
-        match state {
-            ButtonState::Pressed => self.buttons.push(button),
-            ButtonState::Released => self.buttons.retain(|b| *b != button),
-        }
         handle.button(button, state, serial, time);
-        if self.buttons.is_empty() {
+        if handle.current_pressed().len() == 0 {
             // no more buttons are pressed, release the grab
-            handle.unset_grab();
-            // restore the focus
-            let location = handle.current_location();
-            handle.motion(location, self.pending_focus.clone(), serial, time);
+            handle.unset_grab(serial, time);
         }
     }
     fn axis(&mut self, handle: &mut PointerInnerHandle, details: AxisFrame) {

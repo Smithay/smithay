@@ -68,9 +68,9 @@ pub fn init_shell(
         compositor_token,
         move |shell_event| match shell_event {
             XdgRequest::NewToplevel { surface } => {
-                // place the window at a random location in the [0;300]x[0;300] square
+                // place the window at a random location in the [0;800]x[0;800] square
                 use rand::distributions::{IndependentSample, Range};
-                let range = Range::new(0, 300);
+                let range = Range::new(0, 800);
                 let mut rng = rand::thread_rng();
                 let x = range.ind_sample(&mut rng);
                 let y = range.ind_sample(&mut rng);
