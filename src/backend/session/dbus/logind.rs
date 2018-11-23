@@ -404,26 +404,12 @@ pub struct Id(usize);
 impl SessionNotifier for LogindSessionNotifier {
     type Id = Id;
 
-    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(
-        &mut self,
-        signal: &mut A,
-    ) -> Self::Id {
-        self.internal
-            .signals
-            .borrow_mut()
-            .push(Some(Box::new(signal.observer())));
+    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Self::Id {
+        self.internal.signals.borrow_mut().push(Some(Box::new(signal)));
         Id(self.internal.signals.borrow().len() - 1)
     }
     fn unregister(&mut self, signal: Id) {
         self.internal.signals.borrow_mut()[signal.0] = None;
-    }
-
-    fn is_active(&self) -> bool {
-        self.internal.active.load(Ordering::SeqCst)
-    }
-
-    fn seat(&self) -> &str {
-        &self.internal.seat
     }
 }
 

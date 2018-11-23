@@ -17,7 +17,7 @@ use slog::Logger;
 use smithay::{
     backend::{
         drm::{
-            dev_t,
+            dev_t, device_bind,
             egl::{EglDevice, EglSurface},
             gbm::{egl::Gbm as EglGbmBackend, GbmDevice},
             legacy::LegacyDrmDevice,
@@ -29,7 +29,7 @@ use smithay::{
         libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface},
         session::{
             auto::{auto_session_bind, AutoSession},
-            OFlag, Session, SessionNotifier,
+            notify_multiplexer, AsSessionObserver, OFlag, Session, SessionNotifier,
         },
         udev::{primary_gpu, udev_backend_bind, UdevBackend, UdevHandler},
     },
@@ -48,7 +48,14 @@ use smithay::{
         seat::{Seat, XkbConfig},
         shm::init_shm_global,
     },
-    wayland_server::{calloop::EventLoop, protocol::wl_output, Display},
+    wayland_server::{
+        calloop::{
+            generic::{EventedFd, Generic},
+            EventLoop, LoopHandle, Source,
+        },
+        protocol::wl_output,
+        Display,
+    },
 };
 
 use glium_drawer::GliumDrawer;
@@ -87,6 +94,8 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
      * Initialize session
      */
     let (session, mut notifier) = AutoSession::new(log.clone()).ok_or(())?;
+    let (udev_observer, udev_notifier) = notify_multiplexer();
+    let udev_session_id = notifier.register(udev_observer);
 
     let running = Arc::new(AtomicBool::new(true));
 
@@ -113,6 +122,8 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
             window_map: window_map.clone(),
             pointer_location: pointer_location.clone(),
             pointer_image: ImageBuffer::from_raw(64, 64, bytes.to_vec()).unwrap(),
+            loop_handle: event_loop.handle(),
+            notifier: udev_notifier,
             logger: log.clone(),
         },
         seat.clone(),
@@ -168,7 +179,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
      */
     let mut libinput_context =
         Libinput::new_from_udev::<LibinputSessionInterface<AutoSession>>(session.clone().into(), &context);
-    let libinput_session_id = notifier.register(&mut libinput_context);
+    let libinput_session_id = notifier.register(libinput_context.observer());
     libinput_context.udev_assign_seat(&seat).unwrap();
     let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
     libinput_backend.set_handler(AnvilInputHandler::new_with_session(
@@ -205,6 +216,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
 
     let mut notifier = session_event_source.unbind();
     notifier.unregister(libinput_session_id);
+    notifier.unregister(udev_session_id);
 
     libinput_event_source.remove();
     udev_event_source.remove();
@@ -212,14 +224,15 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     Ok(())
 }
 
-struct UdevHandlerImpl {
+struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
     compositor_token: CompositorToken<SurfaceData, Roles>,
     active_egl_context: Rc<RefCell<Option<EGLDisplay>>>,
     session: AutoSession,
     backends: HashMap<
         dev_t,
         (
-            RenderDevice,
+            S::Id,
+            Source<Generic<EventedFd<RenderDevice>>>,
             Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<RenderSurface>>>>,
         ),
     >,
@@ -228,14 +241,15 @@ struct UdevHandlerImpl {
     window_map: Rc<RefCell<MyWindowMap>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
     pointer_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
+    loop_handle: LoopHandle<Data>,
+    notifier: S,
     logger: ::slog::Logger,
 }
 
-impl UdevHandlerImpl {
+impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
     pub fn scan_connectors(
         device: &mut RenderDevice,
         egl_display: Rc<RefCell<Option<EGLDisplay>>>,
-        pointer_image: &ImageBuffer<Rgba<u8>, Vec<u8>>,
         logger: &::slog::Logger,
     ) -> HashMap<crtc::Handle, GliumDrawer<RenderSurface>> {
         // Get a set of all modesetting resource handles (excluding planes):
@@ -272,19 +286,6 @@ impl UdevHandlerImpl {
                             logger.clone(),
                         );
 
-                        // create cursor
-                        renderer
-                            .borrow()
-                            .set_cursor_representation(pointer_image, (2, 2))
-                            .unwrap();
-
-                        // render first frame
-                        {
-                            let mut frame = renderer.draw();
-                            frame.clear_color(0.8, 0.8, 0.9, 1.0);
-                            frame.finish().unwrap();
-                        }
-
                         backends.insert(crtc, renderer);
                         break;
                     }
@@ -296,7 +297,7 @@ impl UdevHandlerImpl {
     }
 }
 
-impl UdevHandler for UdevHandlerImpl {
+impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data> {
     fn device_added(&mut self, _device: dev_t, path: PathBuf) {
         if let Some(mut device) = self
             .session
@@ -313,10 +314,9 @@ impl UdevHandler for UdevHandlerImpl {
                 *self.active_egl_context.borrow_mut() = device.bind_wl_display(&*self.display.borrow()).ok();
             }
 
-            let backends = Rc::new(RefCell::new(UdevHandlerImpl::scan_connectors(
+            let backends = Rc::new(RefCell::new(UdevHandlerImpl::<S, Data>::scan_connectors(
                 &mut device,
                 self.active_egl_context.clone(),
-                &self.pointer_image,
                 &self.logger,
             )));
 
@@ -328,29 +328,72 @@ impl UdevHandler for UdevHandlerImpl {
                 logger: self.logger.clone(),
             });
 
-            self.backends.insert(device.device_id(), (device, backends));
+            let device_session_id = self.notifier.register(device.observer());
+            let dev_id = device.device_id();
+            let event_source = device_bind(&self.loop_handle, device)
+                .map_err(|e| -> IoError { e.into() })
+                .unwrap();
+
+            for renderer in backends.borrow_mut().values() {
+                // create cursor
+                renderer
+                    .borrow()
+                    .set_cursor_representation(&self.pointer_image, (2, 2))
+                    .unwrap();
+
+                // render first frame
+                {
+                    let mut frame = renderer.draw();
+                    frame.clear_color(0.8, 0.8, 0.9, 1.0);
+                    frame.finish().unwrap();
+                }
+            }
+
+            self.backends
+                .insert(dev_id, (device_session_id, event_source, backends));
         }
     }
 
     fn device_changed(&mut self, device: dev_t) {
         //quick and dirty, just re-init all backends
-        if let Some((ref mut device, ref backends)) = self.backends.get_mut(&device) {
-            *backends.borrow_mut() = UdevHandlerImpl::scan_connectors(
-                device,
+        if let Some((_, ref mut evt_source, ref backends)) = self.backends.get_mut(&device) {
+            let source = evt_source.clone_inner();
+            let mut evented = source.borrow_mut();
+            let mut backends = backends.borrow_mut();
+            *backends = UdevHandlerImpl::<S, Data>::scan_connectors(
+                &mut (*evented).0,
                 self.active_egl_context.clone(),
-                &self.pointer_image,
                 &self.logger,
             );
+
+            for renderer in backends.values() {
+                // create cursor
+                renderer
+                    .borrow()
+                    .set_cursor_representation(&self.pointer_image, (2, 2))
+                    .unwrap();
+
+                // render first frame
+                {
+                    let mut frame = renderer.draw();
+                    frame.clear_color(0.8, 0.8, 0.9, 1.0);
+                    frame.finish().unwrap();
+                }
+            }
         }
     }
 
     fn device_removed(&mut self, device: dev_t) {
         // drop the backends on this side
-        if let Some((dev, _)) = self.backends.remove(&device) {
+        if let Some((id, evt_source, _)) = self.backends.remove(&device) {
             // don't use hardware acceleration anymore, if this was the primary gpu
-            if dev.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
+            let source = evt_source.clone_inner();
+            let evented = source.borrow();
+            if (*evented).0.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
                 *self.active_egl_context.borrow_mut() = None;
             }
+
+            self.notifier.unregister(id);
         }
     }
 }

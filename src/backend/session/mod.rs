@@ -54,15 +54,9 @@ pub trait SessionNotifier {
     /// Registers a given `SessionObserver`.
     ///
     /// Returns an id of the inserted observer, can be used to remove it again.
-    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(&mut self, signal: &mut A)
-        -> Self::Id;
+    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Self::Id;
     /// Removes an observer by its given id from `SessionNotifier::register`.
     fn unregister(&mut self, signal: Self::Id);
-
-    /// Check if this session is currently active
-    fn is_active(&self) -> bool;
-    /// Which seat this session is on
-    fn seat(&self) -> &str;
 }
 
 /// Trait describing the ability to return a `SessionObserver` related to Self.
@@ -186,3 +180,5 @@ pub mod auto;
 mod dbus;
 pub mod direct;
 pub use self::dbus::*;
+mod multi;
+pub use self::multi::*;

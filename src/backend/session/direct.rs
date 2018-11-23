@@ -45,7 +45,7 @@
 //! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
 //! automatically by the `UdevBackend`, if not done manually).
 
-use super::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
+use super::{AsErrno, Session, SessionNotifier, SessionObserver};
 use nix::{
     fcntl::{self, open, OFlag},
     libc::c_int,
@@ -350,28 +350,18 @@ pub struct Id(usize);
 impl SessionNotifier for DirectSessionNotifier {
     type Id = Id;
 
-    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(
-        &mut self,
-        signal: &mut A,
-    ) -> Self::Id {
-        self.signals.push(Some(Box::new(signal.observer())));
+    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Self::Id {
+        self.signals.push(Some(Box::new(signal)));
         Id(self.signals.len() - 1)
     }
     fn unregister(&mut self, signal: Id) {
         self.signals[signal.0] = None;
     }
-
-    fn is_active(&self) -> bool {
-        self.active.load(Ordering::SeqCst)
-    }
-    fn seat(&self) -> &str {
-        "seat0"
-    }
 }
 
 impl DirectSessionNotifier {
     fn signal_received(&mut self) {
-        if self.is_active() {
+        if self.active.load(Ordering::SeqCst) {
             info!(self.logger, "Session shall become inactive.");
             for signal in &mut self.signals {
                 if let Some(ref mut signal) = *signal {

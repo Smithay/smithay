@@ -1,4 +1,4 @@
-use drm::control::{connector, crtc, Device as ControlDevice};
+use drm::control::{connector, crtc};
 use drm::Device as BasicDevice;
 use nix::libc::dev_t;
 use nix::sys::stat;
@@ -23,7 +23,7 @@ pub struct LegacyDrmDeviceObserver<A: AsRawFd + 'static> {
     logger: ::slog::Logger,
 }
 
-impl<A: ControlDevice + 'static> AsSessionObserver<LegacyDrmDeviceObserver<A>> for LegacyDrmDevice<A> {
+impl<A: AsRawFd + 'static> AsSessionObserver<LegacyDrmDeviceObserver<A>> for LegacyDrmDevice<A> {
     fn observer(&mut self) -> LegacyDrmDeviceObserver<A> {
         LegacyDrmDeviceObserver {
             dev: Rc::downgrade(&self.dev),
@@ -37,7 +37,7 @@ impl<A: ControlDevice + 'static> AsSessionObserver<LegacyDrmDeviceObserver<A>> f
     }
 }
 
-impl<A: ControlDevice + 'static> SessionObserver for LegacyDrmDeviceObserver<A> {
+impl<A: AsRawFd + 'static> SessionObserver for LegacyDrmDeviceObserver<A> {
     fn pause(&mut self, devnum: Option<(u32, u32)>) {
         if let Some((major, minor)) = devnum {
             if major as u64 != stat::major(self.dev_id) || minor as u64 != stat::minor(self.dev_id) {
