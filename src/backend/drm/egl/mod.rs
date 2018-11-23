@@ -1,6 +1,5 @@
 use drm::control::{connector, crtc, Mode, ResourceHandles, ResourceInfo};
 use nix::libc::dev_t;
-use std::cell::RefCell;
 use std::iter::FromIterator;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
@@ -28,7 +27,7 @@ pub struct EglDevice<
 > where
     <D as Device>::Surface: NativeSurface,
 {
-    dev: Rc<RefCell<EGLContext<B, D>>>,
+    dev: Rc<EGLContext<B, D>>,
     logger: ::slog::Logger,
 }
 
@@ -82,9 +81,9 @@ where
         debug!(log, "Creating egl context from device");
         Ok(EglDevice {
             // Open the gbm device from the drm device and create a context based on that
-            dev: Rc::new(RefCell::new(
+            dev: Rc::new(
                 EGLContext::new(dev, attributes, Default::default(), log.clone()).map_err(Error::from)?,
-            )),
+            ),
             logger: log,
         })
     }
@@ -148,7 +147,6 @@ where
 
         let surface = self
             .dev
-            .borrow_mut()
             .create_surface((crtc, mode, Vec::from_iter(connectors)).into())?;
 
         Ok(EglSurface {
@@ -182,6 +180,6 @@ where
     <D as Device>::Surface: NativeSurface,
 {
     fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
-        self.dev.borrow().bind_wl_display(display)
+        self.dev.bind_wl_display(display)
     }
 }

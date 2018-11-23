@@ -5,10 +5,7 @@ use backend::{
         context::GlAttributes, error as egl_error, error::Result as EGLResult, native, EGLContext,
         EGLDisplay, EGLGraphicsBackend, EGLSurface,
     },
-    graphics::{
-        gl::GLGraphicsBackend,
-        CursorBackend, SwapBuffersError, PixelFormat,
-    },
+    graphics::{gl::GLGraphicsBackend, CursorBackend, PixelFormat, SwapBuffersError},
     input::{
         Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState, KeyboardKeyEvent,
         MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent,
@@ -17,7 +14,12 @@ use backend::{
     },
 };
 use nix::libc::c_void;
-use std::{cell::RefCell, cmp, error, fmt, rc::Rc, time::Instant};
+use std::{
+    cell::{Ref, RefCell},
+    cmp, error, fmt,
+    rc::Rc,
+    time::Instant,
+};
 use wayland_client::egl as wegl;
 use wayland_server::Display;
 use winit::{
@@ -56,10 +58,10 @@ enum Window {
 }
 
 impl Window {
-    fn window(&self) -> &WinitWindow {
+    fn window(&self) -> Ref<WinitWindow> {
         match *self {
-            Window::Wayland { ref context, .. } => &**context,
-            Window::X11 { ref context, .. } => &**context,
+            Window::Wayland { ref context, .. } => context.borrow(),
+            Window::X11 { ref context, .. } => context.borrow(),
         }
     }
 }
@@ -218,7 +220,7 @@ pub trait WinitEventsHandler {
 
 impl WinitGraphicsBackend {
     /// Get a reference to the internally used `winit::Window`
-    pub fn winit_window(&self) -> &WinitWindow {
+    pub fn winit_window(&self) -> Ref<WinitWindow> {
         self.window.window()
     }
 }

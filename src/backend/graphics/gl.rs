@@ -1,6 +1,6 @@
 use nix::libc::c_void;
 
-use super::{SwapBuffersError, PixelFormat};
+use super::{PixelFormat, SwapBuffersError};
 
 #[cfg_attr(feature = "cargo-clippy", allow(clippy))]
 #[allow(missing_docs)]

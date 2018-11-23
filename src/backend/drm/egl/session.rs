@@ -20,7 +20,7 @@ where
 {
     fn observer(&mut self) -> EglDeviceObserver<S> {
         EglDeviceObserver {
-            observer: (**self.dev.borrow_mut()).observer(),
+            observer: self.dev.borrow_mut().observer(),
         }
     }
 }

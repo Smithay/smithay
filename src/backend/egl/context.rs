@@ -5,17 +5,16 @@ use backend::graphics::PixelFormat;
 use nix::libc::{c_int, c_void};
 use slog;
 use std::{
+    cell::{Ref, RefCell, RefMut},
     ffi::{CStr, CString},
     marker::PhantomData,
-    mem,
-    ops::{Deref, DerefMut},
-    ptr,
+    mem, ptr,
     rc::Rc,
 };
 
 /// EGL context for rendering
 pub struct EGLContext<B: native::Backend, N: native::NativeDisplay<B>> {
-    native: N,
+    native: RefCell<N>,
     pub(crate) context: Rc<ffi::egl::types::EGLContext>,
     pub(crate) display: Rc<ffi::egl::types::EGLDisplay>,
     pub(crate) config_id: ffi::egl::types::EGLConfig,
@@ -24,19 +23,6 @@ pub struct EGLContext<B: native::Backend, N: native::NativeDisplay<B>> {
     pub(crate) wl_drm_support: bool,
     logger: slog::Logger,
     _backend: PhantomData<B>,
-}
-
-impl<B: native::Backend, N: native::NativeDisplay<B>> Deref for EGLContext<B, N> {
-    type Target = N;
-    fn deref(&self) -> &N {
-        &self.native
-    }
-}
-
-impl<B: native::Backend, N: native::NativeDisplay<B>> DerefMut for EGLContext<B, N> {
-    fn deref_mut(&mut self) -> &mut N {
-        &mut self.native
-    }
 }
 
 impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
@@ -56,7 +42,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             unsafe { EGLContext::<B, N>::new_internal(ptr, attributes, reqs, log.clone()) }?;
 
         Ok(EGLContext {
-            native,
+            native: RefCell::new(native),
             context,
             display,
             config_id,
@@ -429,10 +415,11 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     }
 
     /// Creates a surface for rendering
-    pub fn create_surface(&mut self, args: N::Arguments) -> Result<EGLSurface<B::Surface>> {
+    pub fn create_surface(&self, args: N::Arguments) -> Result<EGLSurface<B::Surface>> {
         trace!(self.logger, "Creating EGL window surface.");
         let surface = self
             .native
+            .borrow_mut()
             .create_surface(args)
             .chain_err(|| ErrorKind::SurfaceCreationFailed)?;
         EGLSurface::new(self, surface).map(|x| {
@@ -458,6 +445,25 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     /// Returns the pixel format of the main framebuffer of the context.
     pub fn get_pixel_format(&self) -> PixelFormat {
         self.pixel_format
+    }
+
+    /// Borrow the underlying native display.
+    ///
+    /// This follows the same semantics as `std::cell:RefCell`.
+    /// Multiple read-only borrows are possible. Borrowing the
+    /// backend while there is a mutable reference will panic.
+    pub fn borrow(&self) -> Ref<N> {
+        self.native.borrow()
+    }
+
+    /// Borrow the underlying native display mutably.
+    ///
+    /// This follows the same semantics as `std::cell:RefCell`.
+    /// Holding any other borrow while trying to borrow the backend
+    /// mutably will panic. Note that EGL will borrow the display
+    /// mutably during surface creation.
+    pub fn borrow_mut(&self) -> RefMut<N> {
+        self.native.borrow_mut()
     }
 }
 

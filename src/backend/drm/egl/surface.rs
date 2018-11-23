@@ -1,6 +1,5 @@
 use drm::control::{connector, crtc, Mode};
 use nix::libc::c_void;
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::error::*;
@@ -19,7 +18,7 @@ pub struct EglSurface<
 > where
     <D as Device>::Surface: NativeSurface,
 {
-    pub(super) dev: Rc<RefCell<EGLContext<B, D>>>,
+    pub(super) dev: Rc<EGLContext<B, D>>,
     pub(super) surface: EGLSurface<B::Surface>,
 }
 
@@ -105,7 +104,7 @@ where
     }
 
     unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        self.dev.borrow().get_proc_address(symbol)
+        self.dev.get_proc_address(symbol)
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
@@ -114,7 +113,7 @@ where
     }
 
     fn is_current(&self) -> bool {
-        self.dev.borrow().is_current() && self.surface.is_current()
+        self.dev.is_current() && self.surface.is_current()
     }
 
     unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
@@ -122,6 +121,6 @@ where
     }
 
     fn get_pixel_format(&self) -> PixelFormat {
-        self.dev.borrow().get_pixel_format()
+        self.dev.get_pixel_format()
     }
 }

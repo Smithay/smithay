@@ -73,15 +73,16 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         };
         self.next_buffer.set(Some(next_bo));
 
-        trace!(self.logger, "Queueing Page flip");
         if self.recreated.get() {
+            debug!(self.logger, "Commiting new state");
             self.crtc
                 .commit(fb.handle())
                 .map_err(|_| SwapBuffersError::ContextLost)?;
             self.recreated.set(false);
-        } else {
-            self.crtc.page_flip(fb.handle())?;
         }
+
+        trace!(self.logger, "Queueing Page flip");
+        self.crtc.page_flip(fb.handle())?;
 
         self.current_frame_buffer.set(Some(fb));
 

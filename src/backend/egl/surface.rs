@@ -74,12 +74,11 @@ impl<N: native::NativeSurface> EGLSurface<N> {
                         err => return Err(SwapBuffersError::Unknown(err)),
                     };
                 } else {
-                    return Ok(());
+                    self.native.swap_buffers()?;
                 }
             } else {
                 return Err(SwapBuffersError::ContextLost);
             }
-            self.native.swap_buffers()?;
         };
 
         if self.native.needs_recreation() || surface.is_null() {
