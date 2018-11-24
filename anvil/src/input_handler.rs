@@ -11,7 +11,7 @@ use std::{
 use slog::Logger;
 
 #[cfg(feature = "udev")]
-use smithay::backend::session::auto::AutoSession;
+use smithay::backend::session::{Session, auto::AutoSession};
 use smithay::{
     backend::input::{
         self, Event, InputBackend, InputHandler, KeyState, KeyboardKeyEvent, PointerAxisEvent,
@@ -131,7 +131,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
                 info!(self.log, "Quitting.");
                 self.running.store(false, Ordering::SeqCst);
             }
-            #[cfg(feature = "tty_lauch")]
+            #[cfg(feature = "udev")]
             KeyAction::VtSwitch(vt) => if let Some(ref mut session) = self.session {
                 info!(log, "Trying to switch to vt {}", vt);
                 if let Err(err) = session.change_vt(vt) {
