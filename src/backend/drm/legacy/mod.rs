@@ -264,10 +264,10 @@ impl<A: AsRawFd + 'static> Drop for LegacyDrmDevice<A> {
                     error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
                 }
             }
-            if self.priviledged {
-                if let Err(err) = self.drop_master() {
-                    error!(self.logger, "Failed to drop drm master state. Error: {}", err);
-                }
+        }
+        if self.priviledged {
+            if let Err(err) = self.drop_master() {
+                error!(self.logger, "Failed to drop drm master state. Error: {}", err);
             }
         }
     }
