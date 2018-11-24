@@ -30,7 +30,7 @@
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
 
-use backend::session::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
+use backend::session::{AsErrno, Session, SessionNotifier, SessionObserver};
 use dbus::{
     BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interface, Member, Message, MessageItem,
     OwnedFd, Path as DbusPath, Watch, WatchEvent,
@@ -441,7 +441,10 @@ pub fn logind_session_bind<Data: 'static>(
         .into_iter()
         .map(|watch| {
             let mut source = Generic::from_raw_fd(watch.fd());
-            source.set_interest(Ready::readable() | Ready::writable());
+            source.set_interest(
+                if watch.readable() { Ready::readable() } else { Ready::empty() }
+              | if watch.writable() { Ready::writable() } else { Ready::empty() }
+            );
             handle.insert_source(source, {
                 let mut notifier = notifier.clone();
                 move |evt, _| notifier.event(evt)
