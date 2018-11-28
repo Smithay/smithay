@@ -217,6 +217,8 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         }
     }
 
+    window_map.borrow_mut().clear();
+
     let mut notifier = session_event_source.unbind();
     notifier.unregister(libinput_session_id);
     notifier.unregister(udev_session_id);
