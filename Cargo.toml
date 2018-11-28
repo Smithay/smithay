@@ -11,8 +11,8 @@ members = [ "anvil" ]
 
 [dependencies]
 wayland-server = "0.21.6"
-wayland-sys = "0.21.3"
 wayland-commons = "0.21.1"
+wayland-sys = { version = "0.21.6", optional = true }
 nix = "0.11"
 xkbcommon = "0.2.1"
 tempfile = "2.1.5"
@@ -28,7 +28,7 @@ input = { version = "0.4.0", optional = true }
 udev = { version = "0.2.0", optional = true }
 dbus = { version = "0.6.1", optional = true }
 systemd = { version = "^0.2.0", optional = true }
-wayland-protocols = { version = "0.21.3", features = ["unstable_protocols", "native_server"] }
+wayland-protocols = { version = "0.21.3", features = ["unstable_protocols", "server"] }
 image = "0.17.0"
 error-chain = "0.11.0"
 lazy_static = "1.0.0"
@@ -38,7 +38,7 @@ gl_generator = { version = "0.9", optional = true }
 
 [features]
 default = ["backend_winit", "backend_drm_legacy", "backend_drm_gbm", "backend_drm_egl", "backend_libinput", "backend_udev", "backend_session", "renderer_glium", "xwayland"]
-backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen", "backend_egl", "renderer_gl"]
+backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen", "backend_egl", "renderer_gl", "native_lib"]
 backend_drm = ["drm"]
 backend_drm_legacy = ["backend_drm"]
 backend_drm_gbm = ["backend_drm", "gbm"]
@@ -50,4 +50,5 @@ backend_udev = ["udev"]
 backend_session_logind = ["dbus", "systemd", "backend_session"]
 renderer_gl = ["gl_generator"]
 renderer_glium = ["renderer_gl", "glium"]
+native_lib = ["wayland-sys", "wayland-server/native_lib", "wayland-protocols/native_server"]
 xwayland = []

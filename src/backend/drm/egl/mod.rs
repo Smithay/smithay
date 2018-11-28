@@ -9,7 +9,9 @@ use super::{Device, DeviceHandler, Surface};
 use backend::egl::context::GlAttributes;
 use backend::egl::error::Result as EGLResult;
 use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
-use backend::egl::{EGLContext, EGLDisplay, EGLGraphicsBackend};
+use backend::egl::EGLContext;
+#[cfg(feature = "native_lib")]
+use backend::egl::{EGLDisplay, EGLGraphicsBackend};
 
 pub mod error;
 use self::error::*;
@@ -178,6 +180,7 @@ where
     }
 }
 
+#[cfg(feature = "native_lib")]
 impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
     EGLGraphicsBackend for EglDevice<B, D>
 where

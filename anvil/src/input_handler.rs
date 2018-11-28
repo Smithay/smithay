@@ -11,7 +11,7 @@ use std::{
 use slog::Logger;
 
 #[cfg(feature = "udev")]
-use smithay::backend::session::{Session, auto::AutoSession};
+use smithay::backend::session::{auto::AutoSession, Session};
 use smithay::{
     backend::input::{
         self, Event, InputBackend, InputHandler, KeyState, KeyboardKeyEvent, PointerAxisEvent,

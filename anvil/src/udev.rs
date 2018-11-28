@@ -14,6 +14,8 @@ use std::{
 use glium::Surface as GliumSurface;
 use slog::Logger;
 
+#[cfg(feature = "egl")]
+use smithay::backend::egl::{EGLDisplay, EGLGraphicsBackend};
 use smithay::{
     backend::{
         drm::{
@@ -23,7 +25,6 @@ use smithay::{
             legacy::LegacyDrmDevice,
             DevPath, Device, DeviceHandler, Surface,
         },
-        egl::{EGLDisplay, EGLGraphicsBackend},
         graphics::CursorBackend,
         input::InputBackend,
         libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface},
@@ -79,6 +80,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     info!(log, "Listening on wayland socket"; "name" => name.clone());
     ::std::env::set_var("WAYLAND_DISPLAY", name);
 
+    #[cfg(feature = "egl")]
     let active_egl_context = Rc::new(RefCell::new(None));
 
     let display = Rc::new(RefCell::new(display));
@@ -114,6 +116,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         &context,
         UdevHandlerImpl {
             compositor_token,
+            #[cfg(feature = "egl")]
             active_egl_context,
             session: session.clone(),
             backends: HashMap::new(),
@@ -226,6 +229,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
 
 struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
     compositor_token: CompositorToken<SurfaceData, Roles>,
+    #[cfg(feature = "egl")]
     active_egl_context: Rc<RefCell<Option<EGLDisplay>>>,
     session: AutoSession,
     backends: HashMap<
@@ -247,6 +251,7 @@ struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
 }
 
 impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
+    #[cfg(feature = "egl")]
     pub fn scan_connectors(
         device: &mut RenderDevice,
         egl_display: Rc<RefCell<Option<EGLDisplay>>>,
@@ -295,6 +300,54 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
 
         backends
     }
+
+    #[cfg(not(feature = "egl"))]
+    pub fn scan_connectors(
+        device: &mut RenderDevice,
+        logger: &::slog::Logger,
+    ) -> HashMap<crtc::Handle, GliumDrawer<RenderSurface>> {
+        // Get a set of all modesetting resource handles (excluding planes):
+        let res_handles = device.resource_handles().unwrap();
+
+        // Use first connected connector
+        let connector_infos: Vec<ConnectorInfo> = res_handles
+            .connectors()
+            .iter()
+            .map(|conn| device.resource_info::<ConnectorInfo>(*conn).unwrap())
+            .filter(|conn| conn.connection_state() == ConnectorState::Connected)
+            .inspect(|conn| info!(logger, "Connected: {:?}", conn.connector_type()))
+            .collect();
+
+        let mut backends = HashMap::new();
+
+        // very naive way of finding good crtc/encoder/connector combinations. This problem is np-complete
+        for connector_info in connector_infos {
+            let encoder_infos = connector_info
+                .encoders()
+                .iter()
+                .flat_map(|encoder_handle| device.resource_info::<EncoderInfo>(*encoder_handle))
+                .collect::<Vec<EncoderInfo>>();
+            for encoder_info in encoder_infos {
+                for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
+                    if !backends.contains_key(&crtc) {
+                        let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
+                                                              // create a backend
+                        let renderer = GliumDrawer::init(
+                            device
+                                .create_surface(crtc, mode, vec![connector_info.handle()].into_iter())
+                                .unwrap(),
+                            logger.clone(),
+                        );
+
+                        backends.insert(crtc, renderer);
+                        break;
+                    }
+                }
+            }
+        }
+
+        backends
+    }
 }
 
 impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data> {
@@ -310,13 +363,24 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             .and_then(|gbm| EglDevice::new(gbm, self.logger.clone()).ok())
         {
             // init hardware acceleration on the primary gpu.
-            if path.canonicalize().ok() == self.primary_gpu {
-                *self.active_egl_context.borrow_mut() = device.bind_wl_display(&*self.display.borrow()).ok();
+            #[cfg(feature = "egl")]
+            {
+                if path.canonicalize().ok() == self.primary_gpu {
+                    *self.active_egl_context.borrow_mut() =
+                        device.bind_wl_display(&*self.display.borrow()).ok();
+                }
             }
 
+            #[cfg(feature = "egl")]
             let backends = Rc::new(RefCell::new(UdevHandlerImpl::<S, Data>::scan_connectors(
                 &mut device,
                 self.active_egl_context.clone(),
+                &self.logger,
+            )));
+
+            #[cfg(not(feature = "egl"))]
+            let backends = Rc::new(RefCell::new(UdevHandlerImpl::<S, Data>::scan_connectors(
+                &mut device,
                 &self.logger,
             )));
 
@@ -360,11 +424,15 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             let source = evt_source.clone_inner();
             let mut evented = source.borrow_mut();
             let mut backends = backends.borrow_mut();
-            *backends = UdevHandlerImpl::<S, Data>::scan_connectors(
+            #[cfg(feature = "egl")]
+            let new_backends = UdevHandlerImpl::<S, Data>::scan_connectors(
                 &mut (*evented).0,
                 self.active_egl_context.clone(),
                 &self.logger,
             );
+            #[cfg(not(feature = "egl"))]
+            let new_backends = UdevHandlerImpl::<S, Data>::scan_connectors(&mut (*evented).0, &self.logger);
+            *backends = new_backends;
 
             for renderer in backends.values() {
                 // create cursor
@@ -391,9 +459,17 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             debug!(self.logger, "Surfaces dropped");
 
             // don't use hardware acceleration anymore, if this was the primary gpu
-            let device = Rc::try_unwrap(evt_source.remove().unwrap()).map_err(|_| "This should not happend").unwrap().into_inner().0;
-            if device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
-                *self.active_egl_context.borrow_mut() = None;
+            let device = Rc::try_unwrap(evt_source.remove().unwrap())
+                .map_err(|_| "This should not happend")
+                .unwrap()
+                .into_inner()
+                .0;
+
+            #[cfg(feature = "egl")]
+            {
+                if device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
+                    *self.active_egl_context.borrow_mut() = None;
+                }
             }
 
             self.notifier.unregister(id);

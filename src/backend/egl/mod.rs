@@ -29,6 +29,7 @@ use wayland_server::{
     protocol::wl_buffer::{self, WlBuffer},
     Display, Resource,
 };
+#[cfg(feature = "native_lib")]
 use wayland_sys::server::wl_display;
 
 pub mod context;
@@ -303,6 +304,7 @@ impl Drop for EGLImages {
 
 /// Trait any backend type may implement that allows binding a `wayland_server::Display`
 /// to create an `EGLDisplay` for EGL-based `WlBuffer`s.
+#[cfg(feature = "native_lib")]
 pub trait EGLGraphicsBackend {
     /// Binds this EGL context to the given Wayland display.
     ///
@@ -323,6 +325,7 @@ pub trait EGLGraphicsBackend {
 /// Type to receive `EGLImages` for EGL-based `WlBuffer`s.
 ///
 /// Can be created by using `EGLGraphicsBackend::bind_wl_display`.
+#[cfg(feature = "native_lib")]
 pub struct EGLDisplay {
     egl: Weak<ffi::egl::types::EGLDisplay>,
     wayland: *mut wl_display,
@@ -332,6 +335,7 @@ pub struct EGLDisplay {
     egl_to_texture_support: bool,
 }
 
+#[cfg(feature = "native_lib")]
 impl EGLDisplay {
     fn new<B: native::Backend, N: native::NativeDisplay<B>>(
         context: &EGLContext<B, N>,
@@ -469,6 +473,7 @@ impl EGLDisplay {
     }
 }
 
+#[cfg(feature = "native_lib")]
 impl Drop for EGLDisplay {
     fn drop(&mut self) {
         if let Some(display) = self.egl.upgrade() {
@@ -481,12 +486,14 @@ impl Drop for EGLDisplay {
     }
 }
 
+#[cfg(feature = "native_lib")]
 impl<E: EGLGraphicsBackend> EGLGraphicsBackend for Rc<E> {
     fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay> {
         (**self).bind_wl_display(display)
     }
 }
 
+#[cfg(feature = "native_lib")]
 impl<B: native::Backend, N: native::NativeDisplay<B>> EGLGraphicsBackend for EGLContext<B, N> {
     fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay> {
         if !self.wl_drm_support {

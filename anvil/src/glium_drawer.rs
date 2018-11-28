@@ -11,9 +11,11 @@ use glium::{
 };
 use slog::Logger;
 
+#[cfg(feature = "egl")]
+use smithay::backend::egl::EGLDisplay;
 use smithay::{
     backend::{
-        egl::{BufferAccessError, EGLDisplay, EGLImages, Format},
+        egl::{BufferAccessError, EGLImages, Format},
         graphics::{gl::GLGraphicsBackend, glium::GliumGraphicsBackend},
     },
     wayland::{
@@ -39,6 +41,7 @@ pub struct GliumDrawer<F: GLGraphicsBackend + 'static> {
     vertex_buffer: glium::VertexBuffer<Vertex>,
     index_buffer: glium::IndexBuffer<u16>,
     programs: [glium::Program; shaders::FRAGMENT_COUNT],
+    #[cfg(feature = "egl")]
     egl_display: Rc<RefCell<Option<EGLDisplay>>>,
     log: Logger,
 }
@@ -50,6 +53,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
 }
 
 impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer<T> {
+    #[cfg(feature = "egl")]
     pub fn init(backend: T, egl_display: Rc<RefCell<Option<EGLDisplay>>>, log: Logger) -> GliumDrawer<T> {
         let display = backend.into();
 
@@ -91,9 +95,52 @@ impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer
             log,
         }
     }
+
+    #[cfg(not(feature = "egl"))]
+    pub fn init(backend: T, log: Logger) -> GliumDrawer<T> {
+        let display = backend.into();
+
+        // building the vertex buffer, which contains all the vertices that we will draw
+        let vertex_buffer = glium::VertexBuffer::new(
+            &display,
+            &[
+                Vertex {
+                    position: [0.0, 0.0],
+                    tex_coords: [0.0, 0.0],
+                },
+                Vertex {
+                    position: [0.0, 1.0],
+                    tex_coords: [0.0, 1.0],
+                },
+                Vertex {
+                    position: [1.0, 1.0],
+                    tex_coords: [1.0, 1.0],
+                },
+                Vertex {
+                    position: [1.0, 0.0],
+                    tex_coords: [1.0, 0.0],
+                },
+            ],
+        ).unwrap();
+
+        // building the index buffer
+        let index_buffer =
+            glium::IndexBuffer::new(&display, PrimitiveType::TriangleStrip, &[1 as u16, 2, 0, 3]).unwrap();
+
+        let programs = opengl_programs!(&display);
+
+        GliumDrawer {
+            display,
+            vertex_buffer,
+            index_buffer,
+            programs,
+            log,
+        }
+    }
 }
 
 impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
+    #[cfg(feature = "egl")]
     pub fn texture_from_buffer(&self, buffer: Resource<wl_buffer::WlBuffer>) -> Result<TextureMetadata, ()> {
         // try to retrieve the egl contents of this buffer
         let images = if let Some(display) = &self.egl_display.borrow().as_ref() {
@@ -134,29 +181,39 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
             }
             Err(BufferAccessError::NotManaged(buffer)) => {
                 // this is not an EGL buffer, try SHM
-                match shm_buffer_contents(&buffer, |slice, data| {
-                    ::shm_load::load_shm_buffer(data, slice)
-                        .map(|(image, kind)| (Texture2d::new(&self.display, image).unwrap(), kind, data))
-                }) {
-                    Ok(Ok((texture, kind, data))) => Ok(TextureMetadata {
-                        texture,
-                        fragment: kind,
-                        y_inverted: false,
-                        dimensions: (data.width as u32, data.height as u32),
-                        images: None,
-                    }),
-                    Ok(Err(format)) => {
-                        warn!(self.log, "Unsupported SHM buffer format"; "format" => format!("{:?}", format));
-                        Err(())
-                    }
-                    Err(err) => {
-                        warn!(self.log, "Unable to load buffer contents"; "err" => format!("{:?}", err));
-                        Err(())
-                    }
-                }
+                self.texture_from_shm_buffer(buffer)
             }
             Err(err) => {
                 error!(self.log, "EGL error"; "err" => format!("{:?}", err));
+                Err(())
+            }
+        }
+    }
+
+    #[cfg(not(feature = "egl"))]
+    pub fn texture_from_buffer(&self, buffer: Resource<wl_buffer::WlBuffer>) -> Result<TextureMetadata, ()> {
+        self.texture_from_shm_buffer(buffer)
+    }
+
+    fn texture_from_shm_buffer(&self, buffer: Resource<wl_buffer::WlBuffer>) -> Result<TextureMetadata, ()> {
+        match shm_buffer_contents(&buffer, |slice, data| {
+            ::shm_load::load_shm_buffer(data, slice)
+                .map(|(image, kind)| (Texture2d::new(&self.display, image).unwrap(), kind, data))
+        }) {
+            Ok(Ok((texture, kind, data))) => Ok(TextureMetadata {
+                texture,
+                fragment: kind,
+                y_inverted: false,
+                dimensions: (data.width as u32, data.height as u32),
+                #[cfg(feature = "egl")]
+                images: None,
+            }),
+            Ok(Err(format)) => {
+                warn!(self.log, "Unsupported SHM buffer format"; "format" => format!("{:?}", format));
+                Err(())
+            }
+            Err(err) => {
+                warn!(self.log, "Unable to load buffer contents"; "err" => format!("{:?}", err));
                 Err(())
             }
         }
@@ -218,6 +275,7 @@ pub struct TextureMetadata {
     pub fragment: usize,
     pub y_inverted: bool,
     pub dimensions: (u32, u32),
+    #[cfg(feature = "egl")]
     images: Option<EGLImages>,
 }
 

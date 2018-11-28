@@ -14,6 +14,7 @@ extern crate tempfile;
 pub extern crate wayland_commons;
 pub extern crate wayland_protocols;
 pub extern crate wayland_server;
+#[cfg(feature = "native_lib")]
 extern crate wayland_sys;
 extern crate xkbcommon;
 
