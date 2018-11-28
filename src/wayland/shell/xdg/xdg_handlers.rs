@@ -533,7 +533,6 @@ where
         // the wl_surface is destroyed, this means the client is not
         // trying to change the role but it's a cleanup (possibly a
         // disconnecting client), ignore the protocol check.
-        return;
     } else {
         data.shell_data
             .compositor_token
@@ -622,7 +621,6 @@ where
         // the wl_surface is destroyed, this means the client is not
         // trying to change the role but it's a cleanup (possibly a
         // disconnecting client), ignore the protocol check.
-        return;
     } else {
         data.shell_data
             .compositor_token
