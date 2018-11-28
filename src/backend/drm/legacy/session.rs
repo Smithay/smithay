@@ -18,7 +18,6 @@ pub struct LegacyDrmDeviceObserver<A: AsRawFd + 'static> {
     dev_id: dev_t,
     priviledged: bool,
     active: Arc<AtomicBool>,
-    old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     backends: Weak<RefCell<HashMap<crtc::Handle, Weak<LegacyDrmSurfaceInternal<A>>>>>,
     logger: ::slog::Logger,
 }
@@ -28,9 +27,8 @@ impl<A: AsRawFd + 'static> AsSessionObserver<LegacyDrmDeviceObserver<A>> for Leg
         LegacyDrmDeviceObserver {
             dev: Rc::downgrade(&self.dev),
             dev_id: self.dev_id,
-            old_state: self.old_state.clone(),
             active: self.active.clone(),
-            priviledged: self.priviledged,
+            priviledged: self.dev.priviledged,
             backends: Rc::downgrade(&self.backends),
             logger: self.logger.clone(),
         }
@@ -48,18 +46,6 @@ impl<A: AsRawFd + 'static> SessionObserver for LegacyDrmDeviceObserver<A> {
             if let Some(backends) = self.backends.upgrade() {
                 for surface in backends.borrow().values().filter_map(Weak::upgrade) {
                     let _ = crtc::clear_cursor(&*device, surface.crtc);
-                }
-            }
-            for (handle, &(ref info, ref connectors)) in &self.old_state {
-                if let Err(err) = crtc::set(
-                    &*device,
-                    *handle,
-                    info.fb(),
-                    connectors,
-                    info.position(),
-                    info.mode(),
-                ) {
-                    error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
                 }
             }
         }

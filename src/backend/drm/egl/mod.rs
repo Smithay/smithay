@@ -25,6 +25,7 @@ pub struct EglDevice<
     B: Backend<Surface = <D as Device>::Surface> + 'static,
     D: Device + NativeDisplay<B> + 'static,
 > where
+    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     dev: Rc<EGLContext<B, D>>,
@@ -34,6 +35,7 @@ pub struct EglDevice<
 impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static> AsRawFd
     for EglDevice<B, D>
 where
+    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     fn as_raw_fd(&self) -> RawFd {
@@ -44,6 +46,7 @@ where
 impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
     EglDevice<B, D>
 where
+    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     /// Create a new `EglGbmDrmDevice` from an open drm node
@@ -93,6 +96,7 @@ struct InternalDeviceHandler<
     B: Backend<Surface = <D as Device>::Surface> + 'static,
     D: Device + NativeDisplay<B> + 'static,
 > where
+    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     handler: Box<DeviceHandler<Device = EglDevice<B, D>> + 'static>,
@@ -177,9 +181,21 @@ where
 impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
     EGLGraphicsBackend for EglDevice<B, D>
 where
+    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
         self.dev.bind_wl_display(display)
+    }
+}
+
+impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
+    Drop for EglDevice<B, D>
+where
+    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
+    <D as Device>::Surface: NativeSurface,
+{
+    fn drop(&mut self) {
+        self.clear_handler();
     }
 }

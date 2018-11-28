@@ -26,22 +26,51 @@ pub mod session;
 pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
     dev: Rc<Dev<A>>,
     dev_id: dev_t,
-    priviledged: bool,
     active: Arc<AtomicBool>,
-    old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<LegacyDrmSurfaceInternal<A>>>>>,
     handler: Option<RefCell<Box<DeviceHandler<Device = LegacyDrmDevice<A>>>>>,
     logger: ::slog::Logger,
 }
 
-pub(in crate::backend::drm) struct Dev<A: AsRawFd + 'static>(A);
+pub(in crate::backend::drm) struct Dev<A: AsRawFd + 'static> {
+    fd: A,
+    priviledged: bool,
+    active: Arc<AtomicBool>,
+    old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
+    logger: ::slog::Logger,
+}
 impl<A: AsRawFd + 'static> AsRawFd for Dev<A> {
     fn as_raw_fd(&self) -> RawFd {
-        self.0.as_raw_fd()
+        self.fd.as_raw_fd()
     }
 }
 impl<A: AsRawFd + 'static> BasicDevice for Dev<A> {}
 impl<A: AsRawFd + 'static> ControlDevice for Dev<A> {}
+impl<A: AsRawFd + 'static>  Drop for Dev<A> {
+    fn drop(&mut self) {
+        info!(self.logger, "Dropping device: {:?}", self.dev_path());
+        if self.active.load(Ordering::SeqCst) {
+            let old_state = self.old_state.clone();
+            for (handle, (info, connectors)) in old_state {
+                if let Err(err) = crtc::set(
+                    &*self,
+                    handle,
+                    info.fb(),
+                    &connectors,
+                    info.position(),
+                    info.mode(),
+                ) {
+                    error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
+                }
+            }
+        }
+        if self.priviledged {
+            if let Err(err) = self.drop_master() {
+                error!(self.logger, "Failed to drop drm master state. Error: {}", err);
+            }
+        }
+    }
+}
 
 impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
     /// Create a new `LegacyDrmDevice` from an open drm node
@@ -53,47 +82,43 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
         L: Into<Option<::slog::Logger>>,
     {
         let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm"));
+        info!(log, "DrmDevice initializing");
 
         let dev_id = fstat(dev.as_raw_fd())
             .chain_err(|| ErrorKind::UnableToGetDeviceId)?
             .st_rdev;
 
-        let mut drm = LegacyDrmDevice {
-            // Open the drm device and create a context based on that
-            dev: Rc::new(Dev(dev)),
-            dev_id,
+        let active = Arc::new(AtomicBool::new(true));
+        let mut dev = Dev {
+            fd: dev,
             priviledged: true,
-            active: Arc::new(AtomicBool::new(true)),
             old_state: HashMap::new(),
-            backends: Rc::new(RefCell::new(HashMap::new())),
-            handler: None,
+            active: active.clone(),
             logger: log.clone(),
         };
 
-        info!(log, "DrmDevice initializing");
-
         // we want to modeset, so we better be the master, if we run via a tty session
-        if drm.set_master().is_err() {
+        if dev.set_master().is_err() {
             warn!(log, "Unable to become drm master, assuming unpriviledged mode");
-            drm.priviledged = false;
+            dev.priviledged = false;
         };
 
-        let res_handles = ControlDevice::resource_handles(&drm).chain_err(|| {
-            ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", drm.dev_path()))
+        let res_handles = ControlDevice::resource_handles(&dev).chain_err(|| {
+            ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", dev.dev_path()))
         })?;
         for &con in res_handles.connectors() {
-            let con_info = connector::Info::load_from_device(&drm, con).chain_err(|| {
-                ErrorKind::DrmDev(format!("Error loading connector info on {:?}", drm.dev_path()))
+            let con_info = connector::Info::load_from_device(&dev, con).chain_err(|| {
+                ErrorKind::DrmDev(format!("Error loading connector info on {:?}", dev.dev_path()))
             })?;
             if let Some(enc) = con_info.current_encoder() {
-                let enc_info = encoder::Info::load_from_device(&drm, enc).chain_err(|| {
-                    ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", drm.dev_path()))
+                let enc_info = encoder::Info::load_from_device(&dev, enc).chain_err(|| {
+                    ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", dev.dev_path()))
                 })?;
                 if let Some(crtc) = enc_info.current_crtc() {
-                    let info = crtc::Info::load_from_device(&drm, crtc).chain_err(|| {
-                        ErrorKind::DrmDev(format!("Error loading crtc info on {:?}", drm.dev_path()))
+                    let info = crtc::Info::load_from_device(&dev, crtc).chain_err(|| {
+                        ErrorKind::DrmDev(format!("Error loading crtc info on {:?}", dev.dev_path()))
                     })?;
-                    drm.old_state
+                    dev.old_state
                         .entry(crtc)
                         .or_insert((info, Vec::new()))
                         .1
@@ -101,14 +126,22 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
                 }
             }
         }
-
-        Ok(drm)
+        
+        Ok(LegacyDrmDevice {
+            // Open the drm device and create a context based on that
+            dev: Rc::new(dev),
+            dev_id,
+            active,
+            backends: Rc::new(RefCell::new(HashMap::new())),
+            handler: None,
+            logger: log.clone(),
+        })
     }
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmDevice<A> {
     fn as_raw_fd(&self) -> RawFd {
-        self.dev.0.as_raw_fd()
+        self.dev.as_raw_fd()
     }
 }
 
@@ -247,28 +280,6 @@ impl<A: AsRawFd + 'static> RawDevice for LegacyDrmDevice<A> {
 
 impl<A: AsRawFd + 'static> Drop for LegacyDrmDevice<A> {
     fn drop(&mut self) {
-        self.backends.borrow_mut().clear();
-        if Rc::strong_count(&self.dev) > 1 {
-            panic!("Pending DrmBackends. You need to free all backends before the DrmDevice gets destroyed");
-        }
-        if self.active.load(Ordering::SeqCst) {
-            for (handle, (info, connectors)) in self.old_state.drain() {
-                if let Err(err) = crtc::set(
-                    &*self.dev,
-                    handle,
-                    info.fb(),
-                    &connectors,
-                    info.position(),
-                    info.mode(),
-                ) {
-                    error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
-                }
-            }
-        }
-        if self.priviledged {
-            if let Err(err) = self.drop_master() {
-                error!(self.logger, "Failed to drop drm master state. Error: {}", err);
-            }
-        }
+        self.clear_handler();
     }
 }

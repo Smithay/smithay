@@ -1,4 +1,5 @@
 use std::os::unix::io::RawFd;
+use drm::control::{crtc, connector, Mode};
 
 use super::EglDevice;
 use backend::drm::Device;
@@ -16,6 +17,7 @@ impl<
         D: Device + NativeDisplay<B> + AsSessionObserver<S> + 'static,
     > AsSessionObserver<EglDeviceObserver<S>> for EglDevice<B, D>
 where
+    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     fn observer(&mut self) -> EglDeviceObserver<S> {

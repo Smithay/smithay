@@ -192,3 +192,9 @@ impl<D: RawDevice + ControlDevice + 'static> AsRawFd for GbmDevice<D> {
         self.dev.borrow().as_raw_fd()
     }
 }
+
+impl<D: RawDevice + ControlDevice + 'static> Drop for GbmDevice<D> {
+    fn drop(&mut self) {
+        self.clear_handler();
+    }
+}

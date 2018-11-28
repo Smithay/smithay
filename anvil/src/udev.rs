@@ -385,15 +385,19 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
 
     fn device_removed(&mut self, device: dev_t) {
         // drop the backends on this side
-        if let Some((id, evt_source, _)) = self.backends.remove(&device) {
+        if let Some((id, evt_source, renderers)) = self.backends.remove(&device) {
+            // drop surfaces
+            renderers.borrow_mut().clear();
+            debug!(self.logger, "Surfaces dropped");
+
             // don't use hardware acceleration anymore, if this was the primary gpu
-            let source = evt_source.clone_inner();
-            let evented = source.borrow();
-            if (*evented).0.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
+            let device = Rc::try_unwrap(evt_source.remove().unwrap()).map_err(|_| "This should not happend").unwrap().into_inner().0;
+            if device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
                 *self.active_egl_context.borrow_mut() = None;
             }
 
             self.notifier.unregister(id);
+            debug!(self.logger, "Dropping device");
         }
     }
 }
