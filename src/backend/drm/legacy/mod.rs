@@ -1,13 +1,22 @@
-use super::{DevPath, Device, DeviceHandler, RawDevice, Surface};
+//!
+//! [`RawDevice`](../trait.RawDevice.html) and [`RawSurface`](../trait.RawSurface.html)
+//! implementations using the legacy mode-setting infrastructure.
+//!
+//! Usually this implementation will be wrapped into a [`GbmDevice`](../gbm/struct.GbmDevice.html).
+//! Take a look at `anvil`s source code for an example of this.
+//!
+//! For an example how to use this standalone, take a look at the `raw_drm` example.
+//!
 
-use drm::control::{connector, crtc, encoder, Device as ControlDevice, Mode, ResourceHandles, ResourceInfo};
+use super::{DevPath, Device, DeviceHandler, RawDevice};
+
+use drm::control::{connector, crtc, encoder, Device as ControlDevice, ResourceHandles, ResourceInfo};
 use drm::Device as BasicDevice;
 use nix::libc::dev_t;
 use nix::sys::stat::fstat;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::iter::FromIterator;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,6 +32,7 @@ use self::error::*;
 #[cfg(feature = "backend_session")]
 pub mod session;
 
+/// Open raw drm device utilizing legacy mode-setting
 pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
     dev: Rc<Dev<A>>,
     dev_id: dev_t,

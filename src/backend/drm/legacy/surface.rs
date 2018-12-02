@@ -233,16 +233,8 @@ impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
     }
 }
 
+/// Open raw crtc utilizing legacy mode-setting
 pub struct LegacyDrmSurface<A: AsRawFd + 'static>(pub(super) Rc<LegacyDrmSurfaceInternal<A>>);
-
-impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurface<A> {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0.as_raw_fd()
-    }
-}
-
-impl<A: AsRawFd + 'static> BasicDevice for LegacyDrmSurface<A> {}
-impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmSurface<A> {}
 
 impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurface<A> {
     type CursorFormat = &'a Buffer;
