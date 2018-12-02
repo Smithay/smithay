@@ -16,6 +16,12 @@ error_chain! {
             display("Creation of gbm surface failed"),
         }
 
+        #[doc = "No mode is set, blocking the current operation"]
+        NoModeSet {
+            description("No mode is currently set"),
+            display("No mode is currently set"),
+        }
+
         #[doc = "Creation of gbm buffer object failed"]
         BufferCreationFailed {
             description("Creation of gbm buffer object failed"),

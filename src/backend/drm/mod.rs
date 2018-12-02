@@ -38,8 +38,6 @@ pub trait Device: AsRawFd + DevPath {
     fn create_surface(
         &mut self,
         ctrc: crtc::Handle,
-        mode: Mode,
-        connectors: impl IntoIterator<Item = connector::Handle>,
     ) -> Result<Self::Surface, <Self::Surface as Surface>::Error>;
     fn process_events(&mut self);
     fn resource_info<T: ResourceInfo>(
@@ -62,9 +60,9 @@ pub trait Surface {
     fn pending_connectors(&self) -> Self::Connectors;
     fn add_connector(&self, connector: connector::Handle) -> Result<(), Self::Error>;
     fn remove_connector(&self, connector: connector::Handle) -> Result<(), Self::Error>;
-    fn current_mode(&self) -> Mode;
-    fn pending_mode(&self) -> Mode;
-    fn use_mode(&self, mode: Mode) -> Result<(), Self::Error>;
+    fn current_mode(&self) -> Option<Mode>;
+    fn pending_mode(&self) -> Option<Mode>;
+    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Self::Error>;
 }
 
 pub trait RawSurface: Surface + ControlDevice + BasicDevice {

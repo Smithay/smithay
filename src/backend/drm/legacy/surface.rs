@@ -15,7 +15,7 @@ use super::{error::*, Dev};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {
-    pub mode: Mode,
+    pub mode: Option<Mode>,
     pub connectors: HashSet<connector::Handle>,
 }
 
@@ -77,11 +77,11 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         self.pending.read().unwrap().connectors.clone()
     }
 
-    fn current_mode(&self) -> Mode {
+    fn current_mode(&self) -> Option<Mode> {
         self.state.read().unwrap().mode.clone()
     }
 
-    fn pending_mode(&self) -> Mode {
+    fn pending_mode(&self) -> Option<Mode> {
         self.pending.read().unwrap().mode.clone()
     }
 
@@ -93,7 +93,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         let mut pending = self.pending.write().unwrap();
 
         // check if the connector can handle the current mode
-        if info.modes().contains(&pending.mode) {
+        if info.modes().contains(pending.mode.as_ref().unwrap()) {
             // check if there is a valid encoder
             let encoders = info
                 .encoders()
@@ -119,7 +119,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
             pending.connectors.insert(connector);
             Ok(())
         } else {
-            bail!(ErrorKind::ModeNotSuitable(pending.mode));
+            bail!(ErrorKind::ModeNotSuitable(pending.mode.unwrap()));
         }
     }
 
@@ -128,18 +128,20 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         Ok(())
     }
 
-    fn use_mode(&self, mode: Mode) -> Result<()> {
+    fn use_mode(&self, mode: Option<Mode>) -> Result<()> {
         let mut pending = self.pending.write().unwrap();
 
         // check the connectors
-        for connector in &pending.connectors {
-            if !connector::Info::load_from_device(self, *connector)
-                .chain_err(|| {
-                    ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
-                })?.modes()
-                .contains(&mode)
-            {
-                bail!(ErrorKind::ModeNotSuitable(mode));
+        if let Some(mode) = mode {
+            for connector in &pending.connectors {
+                if !connector::Info::load_from_device(self, *connector)
+                    .chain_err(|| {
+                        ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
+                    })?.modes()
+                    .contains(&mode)
+                {
+                    bail!(ErrorKind::ModeNotSuitable(mode));
+                }
             }
         }
 
@@ -179,7 +181,11 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             }
 
             if current.mode != pending.mode {
-                info!(self.logger, "Setting new mode: {:?}", pending.mode.name());
+                info!(
+                    self.logger,
+                    "Setting new mode: {:?}",
+                    pending.mode.as_ref().unwrap().name()
+                );
             }
         }
 
@@ -194,7 +200,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
                 .map(|x| *x)
                 .collect::<Vec<connector::Handle>>(),
             (0, 0),
-            Some(pending.mode),
+            pending.mode,
         ).chain_err(|| {
             ErrorKind::DrmDev(format!(
                 "Error setting crtc {:?} on {:?}",
@@ -270,11 +276,11 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurface<A> {
         self.0.pending_connectors()
     }
 
-    fn current_mode(&self) -> Mode {
+    fn current_mode(&self) -> Option<Mode> {
         self.0.current_mode()
     }
 
-    fn pending_mode(&self) -> Mode {
+    fn pending_mode(&self) -> Option<Mode> {
         self.0.pending_mode()
     }
 
@@ -286,7 +292,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurface<A> {
         self.0.remove_connector(connector)
     }
 
-    fn use_mode(&self, mode: Mode) -> Result<()> {
+    fn use_mode(&self, mode: Option<Mode>) -> Result<()> {
         self.0.use_mode(mode)
     }
 }

@@ -119,18 +119,16 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
         self.dev.borrow_mut().clear_handler();
     }
 
-    fn create_surface(
-        &mut self,
-        crtc: crtc::Handle,
-        mode: Mode,
-        connectors: impl IntoIterator<Item = connector::Handle>,
-    ) -> Result<GbmSurface<D>> {
+    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<GbmSurface<D>> {
         info!(self.logger, "Initializing GbmSurface");
 
-        let drm_surface = Device::create_surface(&mut **self.dev.borrow_mut(), crtc, mode, connectors)
+        let drm_surface = Device::create_surface(&mut **self.dev.borrow_mut(), crtc)
             .chain_err(|| ErrorKind::UnderlyingBackendError)?;
 
-        let (w, h) = mode.size();
+        let (w, h) = drm_surface
+            .pending_mode()
+            .map(|mode| mode.size())
+            .unwrap_or((1, 1));
         let surface = self
             .dev
             .borrow()

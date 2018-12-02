@@ -45,28 +45,8 @@ impl<D: RawDevice + 'static> Backend for Gbm<D> {
     }
 }
 
-/// Arguments necessary to construct a `GbmSurface`
-pub struct SurfaceArguments {
-    /// Crtc
-    pub crtc: crtc::Handle,
-    /// Mode
-    pub mode: Mode,
-    /// Connectors
-    pub connectors: Vec<connector::Handle>,
-}
-
-impl From<(crtc::Handle, Mode, Vec<connector::Handle>)> for SurfaceArguments {
-    fn from((crtc, mode, connectors): (crtc::Handle, Mode, Vec<connector::Handle>)) -> Self {
-        SurfaceArguments {
-            crtc,
-            mode,
-            connectors: Vec::from_iter(connectors),
-        }
-    }
-}
-
 unsafe impl<D: RawDevice + ControlDevice + 'static> NativeDisplay<Gbm<D>> for GbmDevice<D> {
-    type Arguments = SurfaceArguments;
+    type Arguments = crtc::Handle;
     type Error = Error;
 
     fn is_backend(&self) -> bool {
@@ -77,8 +57,8 @@ unsafe impl<D: RawDevice + ControlDevice + 'static> NativeDisplay<Gbm<D>> for Gb
         Ok(self.dev.borrow().as_raw() as *const _)
     }
 
-    fn create_surface(&mut self, args: SurfaceArguments) -> Result<GbmSurface<D>> {
-        Device::create_surface(self, args.crtc, args.mode, args.connectors)
+    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<GbmSurface<D>> {
+        Device::create_surface(self, crtc)
     }
 }
 

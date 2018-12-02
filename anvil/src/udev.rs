@@ -38,7 +38,6 @@ use smithay::{
         connector::{Info as ConnectorInfo, State as ConnectorState},
         crtc,
         encoder::Info as EncoderInfo,
-        ResourceInfo,
     },
     image::{ImageBuffer, Rgba},
     input::Libinput,
@@ -283,11 +282,9 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
             for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
                     if !backends.contains_key(&crtc) {
-                        let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
-                                                              // create a backend
                         let renderer = GliumDrawer::init(
                             device
-                                .create_surface(crtc, mode, vec![connector_info.handle()].into_iter())
+                                .create_surface(crtc)
                                 .unwrap(),
                             egl_display.clone(),
                             logger.clone(),
@@ -332,11 +329,9 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
             for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
                     if !backends.contains_key(&crtc) {
-                        let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
-                                                              // create a backend
                         let renderer = GliumDrawer::init(
                             device
-                                .create_surface(crtc, mode, vec![connector_info.handle()].into_iter())
+                                .create_surface(crtc)
                                 .unwrap(),
                             logger.clone(),
                         );

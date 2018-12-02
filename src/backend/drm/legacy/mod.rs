@@ -46,7 +46,7 @@ impl<A: AsRawFd + 'static> AsRawFd for Dev<A> {
 }
 impl<A: AsRawFd + 'static> BasicDevice for Dev<A> {}
 impl<A: AsRawFd + 'static> ControlDevice for Dev<A> {}
-impl<A: AsRawFd + 'static>  Drop for Dev<A> {
+impl<A: AsRawFd + 'static> Drop for Dev<A> {
     fn drop(&mut self) {
         info!(self.logger, "Dropping device: {:?}", self.dev_path());
         if self.active.load(Ordering::SeqCst) {
@@ -126,7 +126,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
                 }
             }
         }
-        
+
         Ok(LegacyDrmDevice {
             // Open the drm device and create a context based on that
             dev: Rc::new(dev),
@@ -163,12 +163,7 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
         let _ = self.handler.take();
     }
 
-    fn create_surface(
-        &mut self,
-        crtc: crtc::Handle,
-        mode: Mode,
-        connectors: impl IntoIterator<Item = connector::Handle>,
-    ) -> Result<LegacyDrmSurface<A>> {
+    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<LegacyDrmSurface<A>> {
         if self.backends.borrow().contains_key(&crtc) {
             bail!(ErrorKind::CrtcAlreadyInUse(crtc));
         }
@@ -177,52 +172,38 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
             bail!(ErrorKind::DeviceInactive);
         }
 
-        let connectors = HashSet::from_iter(connectors);
-        // check if we have an encoder for every connector and the mode mode
-        for connector in &connectors {
-            let con_info = connector::Info::load_from_device(self, *connector).chain_err(|| {
+        let crtc_info = crtc::Info::load_from_device(self, crtc)
+            .chain_err(|| ErrorKind::DrmDev(format!("Error loading crtc info on {:?}", self.dev_path())))?;
+
+        let mode = crtc_info.mode();
+
+        let mut connectors = HashSet::new();
+        let res_handles = ControlDevice::resource_handles(self).chain_err(|| {
+            ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", self.dev_path()))
+        })?;
+        for &con in res_handles.connectors() {
+            let con_info = connector::Info::load_from_device(self, con).chain_err(|| {
                 ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
             })?;
-
-            // check the mode
-            if !con_info.modes().contains(&mode) {
-                bail!(ErrorKind::ModeNotSuitable(mode));
-            }
-
-            // check for every connector which encoders it does support
-            let encoders = con_info
-                .encoders()
-                .iter()
-                .map(|encoder| {
-                    encoder::Info::load_from_device(self, *encoder).chain_err(|| {
-                        ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", self.dev_path()))
-                    })
-                }).collect::<Result<Vec<encoder::Info>>>()?;
-
-            // and if any encoder supports the selected crtc
-            let resource_handles = ControlDevice::resource_handles(self).chain_err(|| {
-                ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", self.dev_path()))
-            })?;
-            if !encoders
-                .iter()
-                .map(|encoder| encoder.possible_crtcs())
-                .any(|crtc_list| resource_handles.filter_crtcs(crtc_list).contains(&crtc))
-            {
-                bail!(ErrorKind::NoSuitableEncoder(con_info, crtc))
+            if let Some(enc) = con_info.current_encoder() {
+                let enc_info = encoder::Info::load_from_device(self, enc).chain_err(|| {
+                    ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", self.dev_path()))
+                })?;
+                if let Some(current_crtc) = enc_info.current_crtc() {
+                    if crtc == current_crtc {
+                        connectors.insert(con);
+                    }
+                }
             }
         }
 
-        // configuration is valid, the kernel will figure out the rest
-        let logger = self.logger.new(o!("crtc" => format!("{:?}", crtc)));
-
         let state = State { mode, connectors };
-
         let backend = Rc::new(LegacyDrmSurfaceInternal {
             dev: self.dev.clone(),
             crtc,
             state: RwLock::new(state.clone()),
             pending: RwLock::new(state),
-            logger,
+            logger: self.logger.new(o!("crtc" => format!("{:?}", crtc))),
         });
 
         self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));

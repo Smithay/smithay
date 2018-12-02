@@ -1,6 +1,5 @@
-use drm::control::{connector, crtc, Mode, ResourceHandles, ResourceInfo};
+use drm::control::{crtc, ResourceHandles, ResourceInfo};
 use nix::libc::dev_t;
-use std::iter::FromIterator;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use wayland_server::Display;
@@ -25,19 +24,19 @@ pub mod session;
 /// Representation of an open gbm device to create rendering backends
 pub struct EglDevice<
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B> + 'static,
+    D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
 > where
-    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     dev: Rc<EGLContext<B, D>>,
     logger: ::slog::Logger,
 }
 
-impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static> AsRawFd
-    for EglDevice<B, D>
+impl<
+        B: Backend<Surface = <D as Device>::Surface> + 'static,
+        D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    > AsRawFd for EglDevice<B, D>
 where
-    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     fn as_raw_fd(&self) -> RawFd {
@@ -45,10 +44,11 @@ where
     }
 }
 
-impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
-    EglDevice<B, D>
+impl<
+        B: Backend<Surface = <D as Device>::Surface> + 'static,
+        D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    > EglDevice<B, D>
 where
-    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     /// Create a new `EglGbmDrmDevice` from an open drm node
@@ -96,18 +96,18 @@ where
 
 struct InternalDeviceHandler<
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B> + 'static,
+    D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
 > where
-    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     handler: Box<DeviceHandler<Device = EglDevice<B, D>> + 'static>,
 }
 
-impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
-    DeviceHandler for InternalDeviceHandler<B, D>
+impl<
+        B: Backend<Surface = <D as Device>::Surface> + 'static,
+        D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    > DeviceHandler for InternalDeviceHandler<B, D>
 where
-    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     type Device = D;
@@ -121,10 +121,11 @@ where
     }
 }
 
-impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static> Device
-    for EglDevice<B, D>
+impl<
+        B: Backend<Surface = <D as Device>::Surface> + 'static,
+        D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    > Device for EglDevice<B, D>
 where
-    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     type Surface = EglSurface<B, D>;
@@ -143,17 +144,10 @@ where
         self.dev.borrow_mut().clear_handler()
     }
 
-    fn create_surface(
-        &mut self,
-        crtc: crtc::Handle,
-        mode: Mode,
-        connectors: impl IntoIterator<Item = connector::Handle>,
-    ) -> Result<EglSurface<B, D>> {
+    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<EglSurface<B, D>> {
         info!(self.logger, "Initializing EglSurface");
 
-        let surface = self
-            .dev
-            .create_surface((crtc, mode, Vec::from_iter(connectors)).into())?;
+        let surface = self.dev.create_surface(crtc)?;
 
         Ok(EglSurface {
             dev: self.dev.clone(),
@@ -181,10 +175,11 @@ where
 }
 
 #[cfg(feature = "native_lib")]
-impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
-    EGLGraphicsBackend for EglDevice<B, D>
+impl<
+        B: Backend<Surface = <D as Device>::Surface> + 'static,
+        D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    > EGLGraphicsBackend for EglDevice<B, D>
 where
-    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
@@ -192,10 +187,11 @@ where
     }
 }
 
-impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
-    Drop for EglDevice<B, D>
+impl<
+        B: Backend<Surface = <D as Device>::Surface> + 'static,
+        D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    > Drop for EglDevice<B, D>
 where
-    <D as NativeDisplay<B>>::Arguments: From<(crtc::Handle, Mode, Vec<connector::Handle>)>,
     <D as Device>::Surface: NativeSurface,
 {
     fn drop(&mut self) {

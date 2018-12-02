@@ -90,7 +90,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
     }
 
     pub fn recreate(&self) -> Result<()> {
-        let (w, h) = self.pending_mode().size();
+        let (w, h) = self.pending_mode().chain_err(|| ErrorKind::NoModeSet)?.size();
 
         // Recreate the surface and the related resources to match the new
         // resolution.
@@ -161,15 +161,15 @@ impl<D: RawDevice + 'static> Surface for GbmSurfaceInternal<D> {
             .chain_err(|| ErrorKind::UnderlyingBackendError)
     }
 
-    fn current_mode(&self) -> Mode {
+    fn current_mode(&self) -> Option<Mode> {
         self.crtc.current_mode()
     }
 
-    fn pending_mode(&self) -> Mode {
+    fn pending_mode(&self) -> Option<Mode> {
         self.crtc.pending_mode()
     }
 
-    fn use_mode(&self, mode: Mode) -> Result<()> {
+    fn use_mode(&self, mode: Option<Mode>) -> Result<()> {
         self.crtc
             .use_mode(mode)
             .chain_err(|| ErrorKind::UnderlyingBackendError)
@@ -314,15 +314,15 @@ impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
         self.0.remove_connector(connector)
     }
 
-    fn current_mode(&self) -> Mode {
+    fn current_mode(&self) -> Option<Mode> {
         self.0.current_mode()
     }
 
-    fn pending_mode(&self) -> Mode {
+    fn pending_mode(&self) -> Option<Mode> {
         self.0.pending_mode()
     }
 
-    fn use_mode(&self, mode: Mode) -> Result<()> {
+    fn use_mode(&self, mode: Option<Mode>) -> Result<()> {
         self.0.use_mode(mode)
     }
 }

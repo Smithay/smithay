@@ -54,15 +54,15 @@ where
             .chain_err(|| ErrorKind::UnderlyingBackendError)
     }
 
-    fn current_mode(&self) -> Mode {
+    fn current_mode(&self) -> Option<Mode> {
         self.surface.current_mode()
     }
 
-    fn pending_mode(&self) -> Mode {
+    fn pending_mode(&self) -> Option<Mode> {
         self.surface.pending_mode()
     }
 
-    fn use_mode(&self, mode: Mode) -> Result<()> {
+    fn use_mode(&self, mode: Option<Mode>) -> Result<()> {
         self.surface
             .use_mode(mode)
             .chain_err(|| ErrorKind::UnderlyingBackendError)
@@ -108,7 +108,7 @@ where
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
-        let (w, h) = self.pending_mode().size();
+        let (w, h) = self.pending_mode().map(|mode| mode.size()).unwrap_or((1, 1));
         (w as u32, h as u32)
     }
 
