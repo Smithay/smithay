@@ -1,3 +1,5 @@
+//! Gl rendering types
+
 use nix::libc::c_void;
 
 use super::{PixelFormat, SwapBuffersError};
