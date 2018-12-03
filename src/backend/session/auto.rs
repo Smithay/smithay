@@ -114,6 +114,7 @@ impl AutoSession {
         }
     }
 
+    /// Tries to create a new session via the best available interface.
     #[cfg(not(feature = "backend_session_logind"))]
     pub fn new<L>(logger: L) -> Option<(AutoSession, AutoSessionNotifier)>
     where
