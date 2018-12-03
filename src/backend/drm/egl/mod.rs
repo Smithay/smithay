@@ -1,3 +1,13 @@
+//!
+//! [`Device`](../trait.Device.html) and [`Surface`](../trait.Surface.html)
+//! implementations using egl contexts and surfaces for efficient rendering.
+//!
+//! Usually this implementation's [`EglSurface`](struct.EglSurface.html)s implementation
+//! of [`GlGraphicsBackend`](../../graphics/gl/trait.GlGraphicsBackend.html) will be used
+//! to let your compositor render.
+//! Take a look at `anvil`s source code for an example of this.
+//!
+
 use drm::control::{crtc, ResourceHandles, ResourceInfo};
 use nix::libc::dev_t;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -21,7 +31,7 @@ pub use self::surface::*;
 #[cfg(feature = "backend_session")]
 pub mod session;
 
-/// Representation of an open gbm device to create rendering backends
+/// Representation of an egl device to create egl rendering surfaces
 pub struct EglDevice<
     B: Backend<Surface = <D as Device>::Surface> + 'static,
     D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
@@ -51,10 +61,10 @@ impl<
 where
     <D as Device>::Surface: NativeSurface,
 {
-    /// Create a new `EglGbmDrmDevice` from an open drm node
+    /// Try to create a new `EglDevice` from an open device.
     ///
-    /// Returns an error if the file is no valid drm node or context creation was not
-    /// successful.
+    /// Returns an error if the file is no valid device or context 
+    /// creation was not successful.
     pub fn new<L>(dev: D, logger: L) -> Result<Self>
     where
         L: Into<Option<::slog::Logger>>,
@@ -71,10 +81,10 @@ where
         )
     }
 
-    /// Create a new `EglGbmDrmDevice` from an open `RawDevice` and given `GlAttributes`
+    /// Create a new `EglDevice` from an open device and given `GlAttributes`
     ///
-    /// Returns an error if the file is no valid drm node or context creation was not
-    /// successful.
+    /// Returns an error if the file is no valid device or context
+    /// creation was not successful.
     pub fn new_with_gl_attr<L>(mut dev: D, attributes: GlAttributes, logger: L) -> Result<Self>
     where
         L: Into<Option<::slog::Logger>>,

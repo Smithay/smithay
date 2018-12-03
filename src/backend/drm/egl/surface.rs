@@ -12,6 +12,7 @@ use backend::graphics::gl::GLGraphicsBackend;
 use backend::graphics::PixelFormat;
 use backend::graphics::{CursorBackend, SwapBuffersError};
 
+/// Egl surface for rendering
 pub struct EglSurface<
     B: Backend<Surface = <D as Device>::Surface> + 'static,
     D: Device + NativeDisplay<B> + 'static,

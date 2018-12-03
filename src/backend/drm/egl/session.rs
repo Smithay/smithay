@@ -1,4 +1,9 @@
-use drm::control::{connector, crtc, Mode};
+//!
+//! Support to register an [`EglDevice`](../struct.EglDevice.html)
+//! to an open [`Session`](../../session/trait.Session.html).
+//!
+
+use drm::control::crtc;
 use std::os::unix::io::RawFd;
 
 use super::EglDevice;
@@ -6,7 +11,9 @@ use backend::drm::Device;
 use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use backend::session::{AsSessionObserver, SessionObserver};
 
-/// `SessionObserver` linked to the `DrmDevice` it was created from.
+/// [`SessionObserver`](../../session/trait.SessionObserver.html)
+/// linked to the [`EglDevice`](../struct.EglDevice.html) it was
+/// created from.
 pub struct EglDeviceObserver<S: SessionObserver + 'static> {
     observer: S,
 }
