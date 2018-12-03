@@ -52,6 +52,11 @@ impl SessionNotifier for MultiNotifier {
     }
 }
 
+/// Create a pair of a linked [`SessionObserver`](../trait.SessionObserver.html) and a
+/// [`SessionNotifier`](../trait.SessionNotifier.html).
+///
+/// Observers added to the returned notifier are notified,
+/// when the returned observer is notified.
 pub fn notify_multiplexer() -> (impl SessionObserver, impl SessionNotifier<Id = Id>) {
     let observer = Arc::new(Mutex::new(HashMap::new()));
 
