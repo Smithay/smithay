@@ -1,4 +1,10 @@
-use backend::drm::{connector, Device, RawDevice, RawSurface, Surface};
+//!
+//! Egl [`NativeDisplay`](../../egl/native/trait.NativeDisplay.html) and
+//! [`NativeSurface`](../../egl/native/trait.NativeSurface.html) support for
+//! [`GbmDevice`](../struct.GbmDevice.html) and [`GbmSurface`](../struct.GbmSurface.html).
+//!
+
+use backend::drm::{Device, RawDevice};
 use backend::egl::error::Result as EglResult;
 use backend::egl::ffi;
 use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
@@ -7,13 +13,14 @@ use backend::graphics::SwapBuffersError;
 use super::error::{Error, Result};
 use super::{GbmDevice, GbmSurface};
 
-use drm::control::{crtc, Device as ControlDevice, Mode};
+use drm::control::{crtc, Device as ControlDevice};
 use gbm::AsRaw;
-use std::iter::{FromIterator, IntoIterator};
 use std::marker::PhantomData;
 use std::ptr;
 
-/// Gbm backend type
+/// Egl Gbm backend type
+///
+/// See [`Backend`](../../egl/native/trait.Backend.html).
 pub struct Gbm<D: RawDevice + 'static> {
     _userdata: PhantomData<D>,
 }
@@ -68,7 +75,7 @@ unsafe impl<D: RawDevice + 'static> NativeSurface for GbmSurface<D> {
     }
 
     fn needs_recreation(&self) -> bool {
-        self.0.crtc.commit_pending()
+        self.needs_recreation()
     }
 
     fn recreate(&self) -> bool {

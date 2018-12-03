@@ -48,6 +48,6 @@ error_chain! {
     }
 
     foreign_links {
-        FailedToSwap(::backend::graphics::SwapBuffersError);
+        FailedToSwap(::backend::graphics::SwapBuffersError) #[doc = "Swapping front buffers failed"];
     }
 }

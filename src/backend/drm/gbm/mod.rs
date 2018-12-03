@@ -1,6 +1,17 @@
+//!
+//! [`Device`](../trait.Device.html) and [`Surface`](../trait.Surface.html)
+//! implementations using gbm buffers for efficient rendering.
+//!
+//! Usually this implementation will be wrapped into a [`EglDevice`](../egl/struct.EglDevice.html).
+//! Take a look at `anvil`s source code for an example of this.
+//!
+//! To use these types standalone, you will need to consider the special requirements
+//! of [`GbmSurface::page_flip`](struct.GbmSurface.html#method.page_flip).
+//!
+
 use super::{Device, DeviceHandler, RawDevice, ResourceHandles, ResourceInfo, Surface};
 
-use drm::control::{connector, crtc, Device as ControlDevice, Mode};
+use drm::control::{crtc, Device as ControlDevice};
 use gbm::{self, BufferObjectFlags, Format as GbmFormat};
 use nix::libc::dev_t;
 
@@ -25,7 +36,7 @@ pub mod session;
 
 static LOAD: Once = ONCE_INIT;
 
-/// Representation of an open gbm device to create rendering backends
+/// Representation of an open gbm device to create rendering surfaces
 pub struct GbmDevice<D: RawDevice + ControlDevice + 'static> {
     pub(self) dev: Rc<RefCell<gbm::Device<D>>>,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<GbmSurfaceInternal<D>>>>>,

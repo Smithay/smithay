@@ -1,7 +1,7 @@
 use super::super::{Device, RawDevice, RawSurface, Surface};
 use super::error::*;
 
-use drm::control::{connector, crtc, framebuffer, Mode, ResourceHandles, ResourceInfo};
+use drm::control::{connector, crtc, framebuffer, Mode, ResourceInfo};
 use gbm::{self, BufferObject, BufferObjectFlags, Format as GbmFormat, SurfaceBufferHandle};
 use image::{ImageBuffer, Rgba};
 
@@ -278,15 +278,32 @@ impl<D: RawDevice + 'static> Drop for GbmSurfaceInternal<D> {
     }
 }
 
+/// Gbm surface for rendering
 pub struct GbmSurface<D: RawDevice + 'static>(pub(super) Rc<GbmSurfaceInternal<D>>);
 
 impl<D: RawDevice + 'static> GbmSurface<D> {
+    /// Flips the underlying buffers.
+    ///
+    /// *Note*: This might trigger a full modeset on the underlying device,
+    /// potentially causing some flickering. In that case this operation is
+    /// blocking until the crtc is in the desired state.
     pub fn page_flip(&self) -> ::std::result::Result<(), SwapBuffersError> {
         self.0.page_flip()
     }
 
+    /// Recreate underlying gbm resources.
+    ///
+    /// This recreates the gbm surfaces resources, which might be needed after e.g.
+    /// calling [`Surface::use_mode`](../trait.Surface.html#method.use_mode).
+    /// You may check if your `GbmSurface` needs recreation through
+    /// [`needs_recreation`](#method.needs_recreation).
     pub fn recreate(&self) -> Result<()> {
         self.0.recreate()
+    }
+
+    /// Check if underlying gbm resources need to be recreated.
+    pub fn needs_recreation(&self) -> bool {
+        self.0.crtc.commit_pending()
     }
 }
 
