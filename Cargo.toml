@@ -33,6 +33,9 @@ image = "0.17.0"
 error-chain = "0.11.0"
 lazy_static = "1.0.0"
 
+[dev-dependencies]
+slog-term = "2.3"
+
 [build-dependencies]
 gl_generator = { version = "0.9", optional = true }
 
