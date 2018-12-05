@@ -88,6 +88,8 @@ unsafe impl<D: RawDevice + 'static> NativeSurface for GbmSurface<D> {
     }
 
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
+        // this is save since `eglSwapBuffers` will have been called exactly once
+        // if this is used by our egl module, which is why this trait is unsafe.
         unsafe { self.page_flip() }
     }
 }

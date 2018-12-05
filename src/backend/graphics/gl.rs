@@ -49,7 +49,7 @@ pub trait GLGraphicsBackend {
 ///
 /// This remains valid as long as the underlying `GLGraphicsBackend` is alive
 /// and may only be used in combination with the backend. Using this with any
-/// other gl context may cause undefined behavior.
+/// other gl context *may* cause undefined behavior.
 pub fn load_raw_gl<B: GLGraphicsBackend>(backend: &B) -> Gles2 {
     Gles2::load_with(|s| unsafe { backend.get_proc_address(s) as *const _ })
 }

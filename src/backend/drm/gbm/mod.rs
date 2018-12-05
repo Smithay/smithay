@@ -136,6 +136,7 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
         let drm_surface = Device::create_surface(&mut **self.dev.borrow_mut(), crtc)
             .chain_err(|| ErrorKind::UnderlyingBackendError)?;
 
+        // initialize the surface
         let (w, h) = drm_surface
             .pending_mode()
             .map(|mode| mode.size())
@@ -150,6 +151,7 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
                 BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
             ).chain_err(|| ErrorKind::SurfaceCreationFailed)?;
 
+        // initialize a buffer for the cursor image
         let cursor = Cell::new((
             self.dev
                 .borrow()

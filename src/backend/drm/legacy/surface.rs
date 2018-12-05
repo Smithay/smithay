@@ -131,7 +131,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
     fn use_mode(&self, mode: Option<Mode>) -> Result<()> {
         let mut pending = self.pending.write().unwrap();
 
-        // check the connectors
+        // check the connectors to see if this mode is supported
         if let Some(mode) = mode {
             for connector in &pending.connectors {
                 if !connector::Info::load_from_device(self, *connector)
@@ -235,6 +235,15 @@ impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
 
 /// Open raw crtc utilizing legacy mode-setting
 pub struct LegacyDrmSurface<A: AsRawFd + 'static>(pub(super) Rc<LegacyDrmSurfaceInternal<A>>);
+
+impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurface<A> {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0.as_raw_fd()
+    }
+}
+
+impl<A: AsRawFd + 'static> BasicDevice for LegacyDrmSurface<A> {}
+impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmSurface<A> {}
 
 impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurface<A> {
     type CursorFormat = &'a Buffer;

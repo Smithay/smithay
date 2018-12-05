@@ -60,6 +60,9 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
     fn drop(&mut self) {
         info!(self.logger, "Dropping device: {:?}", self.dev_path());
         if self.active.load(Ordering::SeqCst) {
+            // Here we restore the tty to it's previous state.
+            // In case e.g. getty was running on the tty sets the correct framebuffer again,
+            // so that getty will be visible.
             let old_state = self.old_state.clone();
             for (handle, (info, connectors)) in old_state {
                 if let Err(err) = crtc::set(
@@ -113,6 +116,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
             dev.priviledged = false;
         };
 
+        // enumerate (and save) the current device state
         let res_handles = ControlDevice::resource_handles(&dev).chain_err(|| {
             ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", dev.dev_path()))
         })?;
@@ -138,7 +142,6 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
         }
 
         Ok(LegacyDrmDevice {
-            // Open the drm device and create a context based on that
             dev: Rc::new(dev),
             dev_id,
             active,
@@ -181,6 +184,8 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
         if !self.active.load(Ordering::SeqCst) {
             bail!(ErrorKind::DeviceInactive);
         }
+
+        // Try to enumarate the current state to set the initial state variable correctly
 
         let crtc_info = crtc::Info::load_from_device(self, crtc)
             .chain_err(|| ErrorKind::DrmDev(format!("Error loading crtc info on {:?}", self.dev_path())))?;

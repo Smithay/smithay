@@ -63,7 +63,7 @@ where
 {
     /// Try to create a new `EglDevice` from an open device.
     ///
-    /// Returns an error if the file is no valid device or context 
+    /// Returns an error if the file is no valid device or context
     /// creation was not successful.
     pub fn new<L>(dev: D, logger: L) -> Result<Self>
     where

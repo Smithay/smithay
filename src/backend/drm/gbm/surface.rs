@@ -284,6 +284,11 @@ pub struct GbmSurface<D: RawDevice + 'static>(pub(super) Rc<GbmSurfaceInternal<D
 impl<D: RawDevice + 'static> GbmSurface<D> {
     /// Flips the underlying buffers.
     ///
+    /// The surface will reported being already flipped until the matching events
+    /// was processed either by calling `GbmDevice::process_events` manually after the flip
+    /// (bad idea performance-wise) or by binding the device to an event-loop by using
+    /// `device_bind`.
+    ///
     /// *Note*: This might trigger a full modeset on the underlying device,
     /// potentially causing some flickering. In that case this operation is
     /// blocking until the crtc is in the desired state.

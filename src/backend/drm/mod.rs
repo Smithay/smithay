@@ -36,8 +36,9 @@
 //!
 
 pub use drm::{
-    control::{connector, crtc, framebuffer, Device as ControlDevice, Mode, ResourceHandles, ResourceInfo},
     Device as BasicDevice,
+    buffer::Buffer,
+    control::{connector, crtc, framebuffer, Mode, ResourceHandles, ResourceInfo, Device as ControlDevice},
 };
 pub use nix::libc::dev_t;
 

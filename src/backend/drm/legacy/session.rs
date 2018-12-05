@@ -3,7 +3,7 @@
 //! to an open [`Session`](../../session/trait.Session.html).
 //!
 
-use drm::control::{crtc};
+use drm::control::crtc;
 use drm::Device as BasicDevice;
 use nix::libc::dev_t;
 use nix::sys::stat;
@@ -52,6 +52,8 @@ impl<A: AsRawFd + 'static> SessionObserver for LegacyDrmDeviceObserver<A> {
         if let Some(device) = self.dev.upgrade() {
             if let Some(backends) = self.backends.upgrade() {
                 for surface in backends.borrow().values().filter_map(Weak::upgrade) {
+                    // other ttys that use no cursor, might not clear it themselves.
+                    // This makes sure our cursor won't stay visible.
                     let _ = crtc::clear_cursor(&*device, surface.crtc);
                 }
             }
