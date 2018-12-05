@@ -132,6 +132,9 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         log.clone(),
     ).map_err(|_| ())?;
 
+    /*
+     * Initialize wayland clipboard
+     */
     init_data_device(
         &mut display.borrow_mut(),
         |_| {},
@@ -139,6 +142,9 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         log.clone(),
     );
 
+    /*
+     * Initialize wayland input object
+     */
     let (mut w_seat, _) = Seat::new(&mut display.borrow_mut(), session.seat(), log.clone());
 
     let pointer = w_seat.add_pointer();
@@ -147,6 +153,9 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
             set_data_device_focus(seat, focus.and_then(|s| s.client()))
         }).expect("Failed to initialize the keyboard");
 
+    /*
+     * Initialize a fake output (we render one screen to every device in this example)
+     */
     let (output, _output_global) = Output::new(
         &mut display.borrow_mut(),
         "Drm".into(),
@@ -194,6 +203,10 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         pointer_location,
         session,
     ));
+
+    /*
+     * Bind all our objects that get driven by the event loop
+     */
     let libinput_event_source = libinput_bind(libinput_backend, event_loop.handle())
         .map_err(|e| -> IoError { e.into() })
         .unwrap();
@@ -204,6 +217,9 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         .map_err(|e| -> IoError { e.into() })
         .unwrap();
 
+    /*
+     * And run our loop
+     */
     while running.load(Ordering::SeqCst) {
         if event_loop
             .dispatch(Some(::std::time::Duration::from_millis(16)), &mut ())
@@ -216,6 +232,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         }
     }
 
+    // Cleanup stuff
     window_map.borrow_mut().clear();
 
     let mut notifier = session_event_source.unbind();
@@ -283,9 +300,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
                     if !backends.contains_key(&crtc) {
                         let renderer = GliumDrawer::init(
-                            device
-                                .create_surface(crtc)
-                                .unwrap(),
+                            device.create_surface(crtc).unwrap(),
                             egl_display.clone(),
                             logger.clone(),
                         );
@@ -329,12 +344,8 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
             for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
                     if !backends.contains_key(&crtc) {
-                        let renderer = GliumDrawer::init(
-                            device
-                                .create_surface(crtc)
-                                .unwrap(),
-                            logger.clone(),
-                        );
+                        let renderer =
+                            GliumDrawer::init(device.create_surface(crtc).unwrap(), logger.clone());
 
                         backends.insert(crtc, renderer);
                         break;
@@ -349,6 +360,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
 
 impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data> {
     fn device_added(&mut self, _device: dev_t, path: PathBuf) {
+        // Try to open the device
         if let Some(mut device) = self
             .session
             .open(
@@ -381,6 +393,9 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
                 &self.logger,
             )));
 
+            // Set the handler.
+            // Note: if you replicate this (very simple) structure, it is rather easy
+            // to introduce reference cycles with Rc. Be sure about your drop order
             device.set_handler(DrmHandlerImpl {
                 compositor_token: self.compositor_token,
                 backends: backends.clone(),
@@ -455,13 +470,13 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             renderers.borrow_mut().clear();
             debug!(self.logger, "Surfaces dropped");
 
-            // don't use hardware acceleration anymore, if this was the primary gpu
             let device = Rc::try_unwrap(evt_source.remove().unwrap())
                 .map_err(|_| "This should not happend")
                 .unwrap()
                 .into_inner()
                 .0;
 
+            // don't use hardware acceleration anymore, if this was the primary gpu
             #[cfg(feature = "egl")]
             {
                 if device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
@@ -495,6 +510,7 @@ impl DeviceHandler for DrmHandlerImpl {
                     .set_cursor_position(x.trunc().abs() as u32, y.trunc().abs() as u32);
             }
 
+            // and draw in sync with our monitor
             drawer.draw_windows(&*self.window_map.borrow(), self.compositor_token, &self.logger);
         }
     }
