@@ -594,7 +594,7 @@ impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
 
 impl AsRawFd for LibinputInputBackend {
     fn as_raw_fd(&self) -> RawFd {
-        unsafe { self.context.fd() }
+        self.context.as_raw_fd()
     }
 }
 
