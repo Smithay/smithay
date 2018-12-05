@@ -88,6 +88,6 @@ unsafe impl<D: RawDevice + 'static> NativeSurface for GbmSurface<D> {
     }
 
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        self.page_flip()
+        unsafe { self.page_flip() }
     }
 }

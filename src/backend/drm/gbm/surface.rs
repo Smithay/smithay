@@ -35,7 +35,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         // drop and release the old buffer
     }
 
-    pub fn page_flip(&self) -> ::std::result::Result<(), SwapBuffersError> {
+    pub unsafe fn page_flip(&self) -> ::std::result::Result<(), SwapBuffersError> {
         let res = {
             let nb = self.next_buffer.take();
             let res = nb.is_some();
@@ -287,7 +287,7 @@ impl<D: RawDevice + 'static> GbmSurface<D> {
     /// *Note*: This might trigger a full modeset on the underlying device,
     /// potentially causing some flickering. In that case this operation is
     /// blocking until the crtc is in the desired state.
-    pub fn page_flip(&self) -> ::std::result::Result<(), SwapBuffersError> {
+    pub unsafe fn page_flip(&self) -> ::std::result::Result<(), SwapBuffersError> {
         self.0.page_flip()
     }
 
