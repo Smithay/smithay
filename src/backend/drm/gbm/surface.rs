@@ -284,7 +284,7 @@ pub struct GbmSurface<D: RawDevice + 'static>(pub(super) Rc<GbmSurfaceInternal<D
 impl<D: RawDevice + 'static> GbmSurface<D> {
     /// Flips the underlying buffers.
     ///
-    /// The surface will reported being already flipped until the matching events
+    /// The surface will report being already flipped until the matching event
     /// was processed either by calling `GbmDevice::process_events` manually after the flip
     /// (bad idea performance-wise) or by binding the device to an event-loop by using
     /// `device_bind`.

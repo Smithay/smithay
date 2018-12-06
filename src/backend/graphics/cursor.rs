@@ -6,7 +6,7 @@ pub trait CursorBackend<'a> {
     /// Error the underlying backend throws if operations fail
     type Error;
 
-    /// Sets the cursor position and therefor updates the drawn cursors position.
+    /// Sets the cursor position and therefore updates the drawn cursors position.
     /// Useful as well for e.g. pointer wrapping.
     ///
     /// Not guaranteed to be supported on every backend. The result usually
