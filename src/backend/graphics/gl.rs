@@ -25,9 +25,9 @@ pub trait GLGraphicsBackend {
 
     /// Returns the dimensions of the window, or screen, etc in points.
     ///
-    /// That are the scaled pixels of the underlying graphics backend.
-    /// For nested compositors this will respect the scaling of the root compositor.
-    /// For drawing directly onto hardware this unit will be equal to actual pixels.
+    /// These are the actual pixels of the underlying graphics backend.
+    /// For nested compositors you will need to handle the scaling
+    /// of the root compositor yourself, if you want to.
     fn get_framebuffer_dimensions(&self) -> (u32, u32);
 
     /// Returns true if the OpenGL context is the current one in the thread.
