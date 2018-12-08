@@ -130,7 +130,8 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         },
         seat.clone(),
         log.clone(),
-    ).map_err(|_| ())?;
+    )
+    .map_err(|_| ())?;
 
     /*
      * Initialize wayland clipboard
@@ -151,7 +152,8 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     let keyboard = w_seat
         .add_keyboard(XkbConfig::default(), 1000, 500, |seat, focus| {
             set_data_device_focus(seat, focus.and_then(|s| s.client()))
-        }).expect("Failed to initialize the keyboard");
+        })
+        .expect("Failed to initialize the keyboard");
 
     /*
      * Initialize a fake output (we render one screen to every device in this example)
@@ -366,7 +368,8 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             .open(
                 &path,
                 OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK,
-            ).ok()
+            )
+            .ok()
             .and_then(|fd| LegacyDrmDevice::new(SessionFd(fd), self.logger.clone()).ok())
             .and_then(|drm| GbmDevice::new(drm, self.logger.clone()).ok())
             .and_then(|gbm| EglDevice::new(gbm, self.logger.clone()).ok())

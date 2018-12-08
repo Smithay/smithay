@@ -103,7 +103,8 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
                 h as u32,
                 GbmFormat::XRGB8888,
                 BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
-            ).chain_err(|| ErrorKind::SurfaceCreationFailed)?;
+            )
+            .chain_err(|| ErrorKind::SurfaceCreationFailed)?;
 
         // Clean up buffers
         if let Some(Ok(Some(fb))) = self.next_buffer.take().map(|mut bo| bo.take_userdata()) {
@@ -185,7 +186,7 @@ impl<'a, D: RawDevice + 'static> CursorBackend<'a> for GbmSurfaceInternal<D>
 where
     <D as RawDevice>::Surface: CursorBackend<'a>,
     <<D as RawDevice>::Surface as CursorBackend<'a>>::CursorFormat: Buffer,
-    <<D as RawDevice>::Surface as CursorBackend<'a>>::Error: ::std::error::Error + Send 
+    <<D as RawDevice>::Surface as CursorBackend<'a>>::Error: ::std::error::Error + Send
 {
 */
 //
@@ -195,7 +196,7 @@ impl<'a, D: RawDevice + 'static> GraphicsBackend<'a> for GbmSurfaceInternal<D>
 where
     <D as RawDevice>::Surface: CursorBackend<'a>,
     <<D as RawDevice>::Surface as CursorBackend<'a>>::CursorFormat=&'a Buffer,
-    <<D as RawDevice>::Surface as CursorBackend<'a>>::Error: ::std::error::Error + Send 
+    <<D as RawDevice>::Surface as CursorBackend<'a>>::Error: ::std::error::Error + Send
 {
 */
 // But for now got to do this:
@@ -231,7 +232,8 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurfaceInternal<LegacyDr
                 h,
                 GbmFormat::ARGB8888,
                 BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
-            ).chain_err(|| ErrorKind::BufferCreationFailed)?;
+            )
+            .chain_err(|| ErrorKind::BufferCreationFailed)?;
 
         cursor
             .write(&**buffer)

@@ -61,16 +61,15 @@ impl<S: SessionObserver + 'static, D: RawDevice + ControlDevice + AsSessionObser
                     }
                     // reset cursor
                     {
-                        let &(ref cursor, ref hotspot): &(
-                            BufferObject<()>,
-                            (u32, u32),
-                        ) = unsafe { &*backend.cursor.as_ptr() };
+                        let &(ref cursor, ref hotspot): &(BufferObject<()>, (u32, u32)) =
+                            unsafe { &*backend.cursor.as_ptr() };
                         if crtc::set_cursor2(
                             &*backend.dev.borrow(),
                             *crtc,
                             cursor,
                             ((*hotspot).0 as i32, (*hotspot).1 as i32),
-                        ).is_err()
+                        )
+                        .is_err()
                         {
                             if let Err(err) = crtc::set_cursor(&*backend.dev.borrow(), *crtc, cursor) {
                                 error!(self.logger, "Failed to reset cursor. Error: {}", err);

@@ -149,7 +149,8 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
                 h as u32,
                 GbmFormat::XRGB8888,
                 BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
-            ).chain_err(|| ErrorKind::SurfaceCreationFailed)?;
+            )
+            .chain_err(|| ErrorKind::SurfaceCreationFailed)?;
 
         // initialize a buffer for the cursor image
         let cursor = Cell::new((
@@ -160,7 +161,8 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
                     1,
                     GbmFormat::ARGB8888,
                     BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
-                ).chain_err(|| ErrorKind::BufferCreationFailed)?,
+                )
+                .chain_err(|| ErrorKind::BufferCreationFailed)?,
             (0, 0),
         ));
 

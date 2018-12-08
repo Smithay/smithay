@@ -132,12 +132,14 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
                 self.running.store(false, Ordering::SeqCst);
             }
             #[cfg(feature = "udev")]
-            KeyAction::VtSwitch(vt) => if let Some(ref mut session) = self.session {
-                info!(log, "Trying to switch to vt {}", vt);
-                if let Err(err) = session.change_vt(vt) {
-                    error!(log, "Error switching to vt {}: {}", vt, err);
+            KeyAction::VtSwitch(vt) => {
+                if let Some(ref mut session) = self.session {
+                    info!(log, "Trying to switch to vt {}", vt);
+                    if let Err(err) = session.change_vt(vt) {
+                        error!(log, "Error switching to vt {}: {}", vt, err);
+                    }
                 }
-            },
+            }
             KeyAction::Run(cmd) => {
                 info!(self.log, "Starting program"; "cmd" => cmd.clone());
                 if let Err(e) = Command::new(&cmd).spawn() {

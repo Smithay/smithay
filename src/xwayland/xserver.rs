@@ -97,7 +97,8 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
                             debug_assert!(evt.signal() == Signal::SIGUSR1);
                             xwayland_ready(&inner);
                         },
-                    ).map_err(|_| ())
+                    )
+                    .map_err(|_| ())
             }),
             wayland_display: display,
             instance: None,

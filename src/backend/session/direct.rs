@@ -185,8 +185,10 @@ impl DirectSession {
                     path,
                     fcntl::OFlag::O_RDWR | fcntl::OFlag::O_CLOEXEC,
                     Mode::empty(),
-                ).chain_err(|| ErrorKind::FailedToOpenTTY(String::from(path.to_string_lossy())))
-            }).unwrap_or_else(|| {
+                )
+                .chain_err(|| ErrorKind::FailedToOpenTTY(String::from(path.to_string_lossy())))
+            })
+            .unwrap_or_else(|| {
                 dup(0 /*stdin*/).chain_err(|| ErrorKind::FailedToOpenTTY(String::from("<stdin>")))
             })?;
 
@@ -429,7 +431,8 @@ pub fn direct_session_bind<Data: 'static>(
         .insert_source(source, {
             let notifier = notifier.clone();
             move |_, _| notifier.borrow_mut().signal_received()
-        }).map_err(move |e| {
+        })
+        .map_err(move |e| {
             // the backend in the closure should already have been dropped
             let notifier = Rc::try_unwrap(fail_notifier)
                 .unwrap_or_else(|_| unreachable!())

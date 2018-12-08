@@ -78,7 +78,8 @@ impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer
                     tex_coords: [1.0, 0.0],
                 },
             ],
-        ).unwrap();
+        )
+        .unwrap();
 
         // building the index buffer
         let index_buffer =
@@ -121,7 +122,8 @@ impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer
                     tex_coords: [1.0, 0.0],
                 },
             ],
-        ).unwrap();
+        )
+        .unwrap();
 
         // building the index buffer
         let index_buffer =
@@ -165,7 +167,8 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                     MipmapsOption::NoMipmap,
                     images.width,
                     images.height,
-                ).unwrap();
+                )
+                .unwrap();
                 unsafe {
                     images
                         .bind_to_texture(0, opengl_texture.get_id())
@@ -261,7 +264,8 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                     blend: blending,
                     ..Default::default()
                 },
-            ).unwrap();
+            )
+            .unwrap();
     }
 
     #[inline]
@@ -338,7 +342,8 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                                     TraversalAction::SkipChildren
                                 }
                             },
-                        ).unwrap();
+                        )
+                        .unwrap();
                 }
             });
         }

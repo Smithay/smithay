@@ -227,35 +227,40 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
 
     fn process_events(&mut self) {
         match crtc::receive_events(self) {
-            Ok(events) => for event in events {
-                if let crtc::Event::PageFlip(event) = event {
-                    if self.active.load(Ordering::SeqCst) {
-                        if self
-                            .backends
-                            .borrow()
-                            .get(&event.crtc)
-                            .iter()
-                            .flat_map(|x| x.upgrade())
-                            .next()
-                            .is_some()
-                        {
-                            trace!(self.logger, "Handling event for backend {:?}", event.crtc);
-                            if let Some(handler) = self.handler.as_ref() {
-                                handler.borrow_mut().vblank(event.crtc);
+            Ok(events) => {
+                for event in events {
+                    if let crtc::Event::PageFlip(event) = event {
+                        if self.active.load(Ordering::SeqCst) {
+                            if self
+                                .backends
+                                .borrow()
+                                .get(&event.crtc)
+                                .iter()
+                                .flat_map(|x| x.upgrade())
+                                .next()
+                                .is_some()
+                            {
+                                trace!(self.logger, "Handling event for backend {:?}", event.crtc);
+                                if let Some(handler) = self.handler.as_ref() {
+                                    handler.borrow_mut().vblank(event.crtc);
+                                }
+                            } else {
+                                self.backends.borrow_mut().remove(&event.crtc);
                             }
-                        } else {
-                            self.backends.borrow_mut().remove(&event.crtc);
                         }
                     }
                 }
-            },
-            Err(err) => if let Some(handler) = self.handler.as_ref() {
-                handler.borrow_mut().error(
-                    ResultExt::<()>::chain_err(Err(err), || {
-                        ErrorKind::DrmDev(format!("Error processing drm events on {:?}", self.dev_path()))
-                    }).unwrap_err(),
-                );
-            },
+            }
+            Err(err) => {
+                if let Some(handler) = self.handler.as_ref() {
+                    handler.borrow_mut().error(
+                        ResultExt::<()>::chain_err(Err(err), || {
+                            ErrorKind::DrmDev(format!("Error processing drm events on {:?}", self.dev_path()))
+                        })
+                        .unwrap_err(),
+                    );
+                }
+            }
         }
     }
 

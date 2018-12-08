@@ -102,7 +102,8 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
                     encoder::Info::load_from_device(self, *encoder).chain_err(|| {
                         ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", self.dev_path()))
                     })
-                }).collect::<Result<Vec<encoder::Info>>>()?;
+                })
+                .collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
             let resource_handles = self.resource_handles().chain_err(|| {
@@ -137,7 +138,8 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
                 if !connector::Info::load_from_device(self, *connector)
                     .chain_err(|| {
                         ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
-                    })?.modes()
+                    })?
+                    .modes()
                     .contains(&mode)
                 {
                     bail!(ErrorKind::ModeNotSuitable(mode));
@@ -201,7 +203,8 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
                 .collect::<Vec<connector::Handle>>(),
             (0, 0),
             pending.mode,
-        ).chain_err(|| {
+        )
+        .chain_err(|| {
             ErrorKind::DrmDev(format!(
                 "Error setting crtc {:?} on {:?}",
                 self.crtc,
@@ -222,7 +225,8 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             self.crtc,
             framebuffer,
             &[crtc::PageFlipFlags::PageFlipEvent],
-        ).map_err(|_| SwapBuffersError::ContextLost)
+        )
+        .map_err(|_| SwapBuffersError::ContextLost)
     }
 }
 

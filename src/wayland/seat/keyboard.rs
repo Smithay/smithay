@@ -141,7 +141,8 @@ impl KbdInternal {
             &xkb_config.variant,
             xkb_config.options,
             xkb::KEYMAP_COMPILE_NO_FLAGS,
-        ).ok_or(())?;
+        )
+        .ok_or(())?;
         let state = xkb::State::new(&keymap);
         Ok(KbdInternal {
             known_kbds: Vec::new(),

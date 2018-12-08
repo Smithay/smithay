@@ -150,7 +150,8 @@ impl SeatData {
                                     // check if the source and associated mime type is still valid
                                     let valid = with_source_metadata(&source, |meta| {
                                         meta.mime_types.contains(&mime_type)
-                                    }).unwrap_or(false)
+                                    })
+                                    .unwrap_or(false)
                                         && source.is_alive();
                                     if !valid {
                                         // deny the receive
@@ -171,7 +172,8 @@ impl SeatData {
                         for mime_type in meta.mime_types.iter().cloned() {
                             offer.send(wl_data_offer::Event::Offer { mime_type })
                         }
-                    }).unwrap();
+                    })
+                    .unwrap();
                     dd.send(wl_data_device::Event::Selection { id: Some(offer) });
                 }
             }

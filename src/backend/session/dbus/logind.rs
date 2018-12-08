@@ -101,7 +101,8 @@ impl LogindSession {
             "org.freedesktop.login1.Manager",
             "GetSession",
             Some(vec![session_id.clone().into()]),
-        )?.get1::<DbusPath<'static>>()
+        )?
+        .get1::<DbusPath<'static>>()
         .chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
 
         // Match all signals that we want to receive and handle
@@ -342,7 +343,8 @@ impl Session for LogindSession {
                     (major(stat.st_rdev) as u32).into(),
                     (minor(stat.st_rdev) as u32).into(),
                 ]),
-            )?.get2::<OwnedFd, bool>();
+            )?
+            .get2::<OwnedFd, bool>();
             let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?.into_fd();
             Ok(fd)
         } else {
@@ -363,7 +365,8 @@ impl Session for LogindSession {
                     (major(stat.st_rdev) as u32).into(),
                     (minor(stat.st_rdev) as u32).into(),
                 ]),
-            ).map(|_| ())
+            )
+            .map(|_| ())
         } else {
             bail!(ErrorKind::SessionLost)
         }
@@ -390,7 +393,8 @@ impl Session for LogindSession {
                 "org.freedesktop.login1.Seat",
                 "SwitchTo",
                 Some(vec![(vt_num as u32).into()]),
-            ).map(|_| ())
+            )
+            .map(|_| ())
         } else {
             bail!(ErrorKind::SessionLost)
         }

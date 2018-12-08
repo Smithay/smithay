@@ -108,7 +108,8 @@ impl PointerGrab for DnDGrab {
                                     offer_data.clone(),
                                     action_choice,
                                 )
-                            }).unwrap();
+                            })
+                            .unwrap();
                         // advertize the offer to the client
                         device.send(wl_data_device::Event::DataOffer { id: offer.clone() });
                         with_source_metadata(source, |meta| {
@@ -118,7 +119,8 @@ impl PointerGrab for DnDGrab {
                             offer.send(wl_data_offer::Event::SourceActions {
                                 source_actions: meta.dnd_action.to_raw(),
                             });
-                        }).unwrap();
+                        })
+                        .unwrap();
                         device.send(wl_data_device::Event::Enter {
                             serial,
                             x: x - sx,

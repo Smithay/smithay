@@ -119,7 +119,8 @@ where
                             } else {
                                 false
                             }
-                        }).expect("wl_shell_surface exists but surface has not the right role?");
+                        })
+                        .expect("wl_shell_surface exists but surface has not the right role?");
                     if valid {
                         (&mut *user_impl)(ShellRequest::Pong {
                             surface: make_handle(&shell_surface, ctoken),

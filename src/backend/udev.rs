@@ -73,7 +73,8 @@ impl<T: UdevHandler + 'static> UdevBackend<T> {
                     warn!(log, "Unable to get id of {:?}, Error: {:?}. Skipping", path, err);
                     None
                 }
-            }).collect();
+            })
+            .collect();
 
         let mut builder = MonitorBuilder::new(context)?;
         builder.match_subsystem("drm")?;
@@ -217,6 +218,7 @@ pub fn all_gpus<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Vec<Pat
                 .map(|x| x.to_os_string())
                 .unwrap_or(OsString::from("seat0"))
                 == *seat.as_ref()
-        }).flat_map(|device| device.devnode().map(PathBuf::from))
+        })
+        .flat_map(|device| device.devnode().map(PathBuf::from))
         .collect())
 }

@@ -59,7 +59,8 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
     let keyboard = seat
         .add_keyboard(XkbConfig::default(), 1000, 500, |seat, focus| {
             set_data_device_focus(seat, focus.and_then(|s| s.client()))
-        }).expect("Failed to initialize the keyboard");
+        })
+        .expect("Failed to initialize the keyboard");
 
     let (output, _) = Output::new(
         display,

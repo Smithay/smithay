@@ -33,7 +33,8 @@ fn main() {
                 "EGL_EXT_platform_device",
                 "EGL_KHR_image_base",
             ],
-        ).write_bindings(gl_generator::GlobalGenerator, &mut file)
+        )
+        .write_bindings(gl_generator::GlobalGenerator, &mut file)
         .unwrap();
     }
 
@@ -45,7 +46,8 @@ fn main() {
             Profile::Compatibility,
             Fallbacks::None,
             ["GL_OES_EGL_image"],
-        ).write_bindings(gl_generator::StructGenerator, &mut file)
+        )
+        .write_bindings(gl_generator::StructGenerator, &mut file)
         .unwrap();
     }
 }

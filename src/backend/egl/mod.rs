@@ -37,12 +37,7 @@ pub use self::context::EGLContext;
 pub mod error;
 use self::error::*;
 
-#[allow(
-    non_camel_case_types,
-    dead_code,
-    unused_mut,
-    non_upper_case_globals
-)]
+#[allow(non_camel_case_types, dead_code, unused_mut, non_upper_case_globals)]
 pub mod ffi;
 use self::ffi::egl::types::EGLImage;
 

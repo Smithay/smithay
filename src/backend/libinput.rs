@@ -24,10 +24,7 @@ use wayland_server::calloop::{
 // No idea if this is the same across unix platforms
 // Lets make this linux exclusive for now, once someone tries to build it for
 // any BSD-like system, they can verify if this is right and make a PR to change this.
-#[cfg(all(
-    any(target_os = "linux", target_os = "android"),
-    feature = "backend_session"
-))]
+#[cfg(all(any(target_os = "linux", target_os = "android"), feature = "backend_session"))]
 const INPUT_MAJOR: u32 = 13;
 
 /// Libinput based `InputBackend`.
@@ -448,16 +445,18 @@ impl backend::InputBackend for LibinputInputBackend {
                 libinput::Event::Keyboard(keyboard_event) => {
                     use input::event::keyboard::*;
                     match keyboard_event {
-                        KeyboardEvent::Key(key_event) => if let Some(ref mut handler) = self.handler {
-                            let device_seat = key_event.device().seat();
-                            if let Some(ref seat) = self.seats.get(&device_seat) {
-                                trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
-                                handler.on_keyboard_key(seat, key_event);
-                            } else {
-                                warn!(self.logger, "Received key event of non existing Seat");
-                                continue;
+                        KeyboardEvent::Key(key_event) => {
+                            if let Some(ref mut handler) = self.handler {
+                                let device_seat = key_event.device().seat();
+                                if let Some(ref seat) = self.seats.get(&device_seat) {
+                                    trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
+                                    handler.on_keyboard_key(seat, key_event);
+                                } else {
+                                    warn!(self.logger, "Received key event of non existing Seat");
+                                    continue;
+                                }
                             }
-                        },
+                        }
                     }
                 }
                 libinput::Event::Pointer(pointer_event) => {
