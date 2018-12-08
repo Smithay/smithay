@@ -13,19 +13,20 @@ use backend::graphics::PixelFormat;
 use backend::graphics::{CursorBackend, SwapBuffersError};
 
 /// Egl surface for rendering
-pub struct EglSurface<
+pub struct EglSurface<B, D>
+where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
     D: Device + NativeDisplay<B> + 'static,
-> where
     <D as Device>::Surface: NativeSurface,
 {
     pub(super) dev: Rc<EGLContext<B, D>>,
     pub(super) surface: EGLSurface<B::Surface>,
 }
 
-impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static> Surface
-    for EglSurface<B, D>
+impl<B, D> Surface for EglSurface<B, D>
 where
+    B: Backend<Surface = <D as Device>::Surface> + 'static,
+    D: Device + NativeDisplay<B> + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     type Error = Error;
@@ -70,9 +71,10 @@ where
     }
 }
 
-impl<'a, B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
-    CursorBackend<'a> for EglSurface<B, D>
+impl<'a, B, D> CursorBackend<'a> for EglSurface<B, D>
 where
+    B: Backend<Surface = <D as Device>::Surface> + 'static,
+    D: Device + NativeDisplay<B> + 'static,
     <D as Device>::Surface: NativeSurface + CursorBackend<'a>,
 {
     type CursorFormat = <D::Surface as CursorBackend<'a>>::CursorFormat;
@@ -95,9 +97,10 @@ where
 }
 
 #[cfg(feature = "renderer_gl")]
-impl<B: Backend<Surface = <D as Device>::Surface> + 'static, D: Device + NativeDisplay<B> + 'static>
-    GLGraphicsBackend for EglSurface<B, D>
+impl<B, D> GLGraphicsBackend for EglSurface<B, D>
 where
+    B: Backend<Surface = <D as Device>::Surface> + 'static,
+    D: Device + NativeDisplay<B> + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
