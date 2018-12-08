@@ -1,6 +1,6 @@
 //!
-//! Support to register an open [`LegacyDrmDevice`](../struct.LegacyDrmDevice.html)
-//! to an open [`Session`](../../session/trait.Session.html).
+//! Support to register an open [`LegacyDrmDevice`](LegacyDrmDevice)
+//! to an open [`Session`](::backend::session::Session).
 //!
 
 use drm::control::crtc;
@@ -17,8 +17,8 @@ use std::sync::Arc;
 use super::{Dev, LegacyDrmDevice, LegacyDrmSurfaceInternal};
 use backend::session::{AsSessionObserver, SessionObserver};
 
-/// [`SessionObserver`](../../session/trait.SessionObserver.html)
-/// linked to the [`LegacyDrmDevice`](../struct.LegacyDrmDevice.html)
+/// [`SessionObserver`](SessionObserver)
+/// linked to the [`LegacyDrmDevice`](LegacyDrmDevice)
 /// it was created from.
 pub struct LegacyDrmDeviceObserver<A: AsRawFd + 'static> {
     dev: Weak<Dev<A>>,

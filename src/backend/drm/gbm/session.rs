@@ -1,6 +1,6 @@
 //!
-//! Support to register a [`GbmDevice`](../struct.GbmDevice.html)
-//! to an open [`Session`](../../session/trait.Session.html).
+//! Support to register a [`GbmDevice`](GbmDevice)
+//! to an open [`Session`](::backend::session::Session).
 //!
 
 use drm::control::{crtc, Device as ControlDevice, ResourceInfo};
@@ -14,8 +14,8 @@ use super::{GbmDevice, GbmSurfaceInternal};
 use backend::drm::{RawDevice, RawSurface};
 use backend::session::{AsSessionObserver, SessionObserver};
 
-/// [`SessionObserver`](../../session/trait.SessionObserver.html)
-/// linked to the [`GbmDevice`](../struct.GbmDevice.html) it was
+/// [`SessionObserver`](SessionObserver)
+/// linked to the [`GbmDevice`](GbmDevice) it was
 /// created from.
 pub struct GbmDeviceObserver<
     S: SessionObserver + 'static,

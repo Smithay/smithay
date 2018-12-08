@@ -1,6 +1,6 @@
 //!
-//! Support to register an [`EglDevice`](../struct.EglDevice.html)
-//! to an open [`Session`](../../session/trait.Session.html).
+//! Support to register an [`EglDevice`](EglDevice)
+//! to an open [`Session`](::backend::session::Session).
 //!
 
 use drm::control::crtc;
@@ -11,8 +11,8 @@ use backend::drm::Device;
 use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use backend::session::{AsSessionObserver, SessionObserver};
 
-/// [`SessionObserver`](../../session/trait.SessionObserver.html)
-/// linked to the [`EglDevice`](../struct.EglDevice.html) it was
+/// [`SessionObserver`](SessionObserver)
+/// linked to the [`EglDevice`](EglDevice) it was
 /// created from.
 pub struct EglDeviceObserver<S: SessionObserver + 'static> {
     observer: S,

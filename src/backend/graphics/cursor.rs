@@ -1,4 +1,9 @@
-/// Functions to render cursors on any graphics backend independently from it's rendering techique.
+/// Functions to render cursors on graphics backend independently from it's rendering techique.
+///
+/// In the most cases this will be the fastest available implementation utilizing hardware composing
+/// where possible. This may however be quite restrictive in terms of supported formats.
+///
+/// For those reasons you may always choose to render your cursor(s) (partially) in software instead.
 pub trait CursorBackend<'a> {
     /// Format representing the image drawn for the cursor.
     type CursorFormat: 'a;
@@ -19,7 +24,7 @@ pub trait CursorBackend<'a> {
     ///
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Self::Error>;
 
-    /// Set the cursor drawn on the `CursorBackend`.
+    /// Set the cursor drawn on the [`CursorBackend`].
     ///
     /// The format is entirely dictated by the concrete implementation and might range
     /// from raw image buffers over a fixed list of possible cursor types to simply the

@@ -275,9 +275,9 @@ struct KbdArc {
 /// This handle gives you 2 main ways to interact with the keyboard handling:
 ///
 /// - set the current focus for this keyboard: designing the surface that will receive the key inputs
-///   using the `KeyboardHandle::set_focus` method.
+///   using the [`KeyboardHandle::set_focus`] method.
 /// - process key inputs from the input backend, allowing them to be caught at the compositor-level
-///   or forwarded to the client. See the documentation of the `KeyboardHandle::input` method for
+///   or forwarded to the client. See the documentation of the [`KeyboardHandle::input`] method for
 ///   details.
 #[derive(Clone)]
 pub struct KeyboardHandle {
@@ -295,7 +295,7 @@ impl KeyboardHandle {
     /// returns false, the input will not be sent to the client. This mechanism can be used to
     /// implement compositor-level key bindings for example.
     ///
-    /// The module `smithay::keyboard::keysyms` exposes definitions of all possible keysyms
+    /// The module [`wayland::seat::keysyms`](::wayland::seat::keysyms) exposes definitions of all possible keysyms
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
     pub fn input<F>(&self, keycode: u32, state: KeyState, serial: u32, time: u32, filter: F)
     where
@@ -357,8 +357,9 @@ impl KeyboardHandle {
     /// Set the current focus of this keyboard
     ///
     /// If the new focus is different from the previous one, any previous focus
-    /// will be sent a `wl_keyboard::leave` event, and if the new focus is not `None`,
-    /// a `wl_keyboard::enter` event will be sent.
+    /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
+    /// event, and if the new focus is not `None`,
+    /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
     pub fn set_focus(&self, focus: Option<&Resource<WlSurface>>, serial: u32) {
         let mut guard = self.arc.internal.lock().unwrap();
 

@@ -287,9 +287,9 @@ impl<D: RawDevice + 'static> GbmSurface<D> {
     /// Flips the underlying buffers.
     ///
     /// The surface will report being already flipped until the matching event
-    /// was processed either by calling `GbmDevice::process_events` manually after the flip
+    /// was processed either by calling [`Device::process_events`] manually after the flip
     /// (bad idea performance-wise) or by binding the device to an event-loop by using
-    /// `device_bind`.
+    /// [`device_bind`](::backend::drm::device_bind).
     ///
     /// *Note*: This might trigger a full modeset on the underlying device,
     /// potentially causing some flickering. In that case this operation is
@@ -301,9 +301,9 @@ impl<D: RawDevice + 'static> GbmSurface<D> {
     /// Recreate underlying gbm resources.
     ///
     /// This recreates the gbm surfaces resources, which might be needed after e.g.
-    /// calling [`Surface::use_mode`](../trait.Surface.html#method.use_mode).
-    /// You may check if your `GbmSurface` needs recreation through
-    /// [`needs_recreation`](#method.needs_recreation).
+    /// calling [`Surface::use_mode`](Surface::use_mode).
+    /// You may check if your [`GbmSurface`] needs recreation through
+    /// [`needs_recreation`](GbmSurface::needs_recreation).
     pub fn recreate(&self) -> Result<()> {
         self.0.recreate()
     }

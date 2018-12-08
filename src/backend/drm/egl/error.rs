@@ -1,5 +1,6 @@
 //!
-//! Errors thrown by the `DrmDevice` and `DrmBackend`
+//! Errors thrown by the [`EglDevice`](::backend::drm::egl::EglDevice)
+//! and [`EglSurface`](::backend::drm::egl::EglSurface).
 //!
 
 use backend::egl::error as egl;

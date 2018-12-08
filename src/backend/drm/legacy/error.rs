@@ -1,5 +1,6 @@
 //!
-//! Errors thrown by the `LegacyDrmDevice` and `LegacyDrmSurface`
+//! Errors thrown by the [`LegacyDrmDevice`](::backend::drm::legacy::LegacyDrmDevice)
+//! and [`LegacyDrmSurface`](::backend::drm::legacy::LegacyDrmSurface).
 //!
 
 use drm::control::{connector, crtc, Mode};

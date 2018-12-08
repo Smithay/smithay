@@ -45,10 +45,10 @@ impl<T: GLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
 
     /// Start drawing on the backbuffer.
     ///
-    /// This function returns a `Frame`, which can be used to draw on it. When the `Frame` is
-    /// destroyed, the buffers are swapped.
+    /// This function returns a [`Frame`], which can be used to draw on it.
+    /// When the [`Frame`] is destroyed, the buffers are swapped.
     ///
-    /// Note that destroying a `Frame` is immediate, even if vsync is enabled.
+    /// Note that destroying a [`Frame`] is immediate, even if vsync is enabled.
     #[inline]
     pub fn draw(&self) -> Frame {
         Frame::new(self.context.clone(), self.backend.get_framebuffer_dimensions())
@@ -56,7 +56,7 @@ impl<T: GLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
 
     /// Borrow the underlying backend.
     ///
-    /// This follows the same semantics as `std::cell:RefCell`.
+    /// This follows the same semantics as [`std::cell::RefCell`](RefCell::borrow).
     /// Multiple read-only borrows are possible. Borrowing the
     /// backend while there is a mutable reference will panic.
     pub fn borrow(&self) -> Ref<T> {
@@ -65,7 +65,7 @@ impl<T: GLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
 
     /// Borrow the underlying backend mutably.
     ///
-    /// This follows the same semantics as `std::cell:RefCell`.
+    /// This follows the same semantics as [`std::cell::RefCell`](RefCell::borrow_mut).
     /// Holding any other borrow while trying to borrow the backend
     /// mutably will panic. Note that Glium will borrow the backend
     /// (not mutably) during rendering.

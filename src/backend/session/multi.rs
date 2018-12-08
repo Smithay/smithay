@@ -11,7 +11,7 @@ use super::{SessionNotifier, SessionObserver};
 
 static ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-/// Ids of registered `SessionObserver`s of the `DirectSessionNotifier`
+/// Ids of registered [`SessionObserver`](SessionObserver)s
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Id(usize);
 
@@ -52,8 +52,8 @@ impl SessionNotifier for MultiNotifier {
     }
 }
 
-/// Create a pair of a linked [`SessionObserver`](../trait.SessionObserver.html) and a
-/// [`SessionNotifier`](../trait.SessionNotifier.html).
+/// Create a pair of a linked [`SessionObserver`] and a
+/// [`SessionNotifier`](SessionNotifier).
 ///
 /// Observers added to the returned notifier are notified,
 /// when the returned observer is notified.

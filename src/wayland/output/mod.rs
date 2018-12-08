@@ -7,12 +7,12 @@
 //!
 //! # How to use it
 //!
-//! You need to instantiate an `Output` for each output global you want
-//! to advertise to clients.
+//! You need to instantiate an [`Output`](::wayland::output::Output)
+//! for each output global you want to advertise to clients.
 //!
-//! Just add it to your Display using the `Output::new(..)` method.
-//! You can use the returned `Output` to change the properties of your
-//! output (if the current resolution mode changes for example),
+//! Just add it to your Display using the [`Output::new(..)`](::wayland::output::Output::new)
+//! method. You can use the returned [`Output`](::wayland::output::Output) to change
+//! the properties of your output (if the current resolution mode changes for example),
 //! it'll automatically forward any changes to the clients.
 //!
 //! ```
@@ -306,7 +306,7 @@ impl Output {
         }
     }
 
-    /// Check is given `wl_output` instance is managed by this `Output`.
+    /// Check is given [`wl_output`](WlOutput) instance is managed by this [`Output`].
     pub fn owns(&self, output: &Resource<WlOutput>) -> bool {
         self.inner
             .lock()

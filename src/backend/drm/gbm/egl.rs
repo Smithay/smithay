@@ -1,7 +1,7 @@
 //!
-//! Egl [`NativeDisplay`](../../egl/native/trait.NativeDisplay.html) and
-//! [`NativeSurface`](../../egl/native/trait.NativeSurface.html) support for
-//! [`GbmDevice`](../struct.GbmDevice.html) and [`GbmSurface`](../struct.GbmSurface.html).
+//! Egl [`NativeDisplay`](::backend::egl::native::NativeDisplay) and
+//! [`NativeSurface`](::backend::egl::native::NativeSurface) support for
+//! [`GbmDevice`](GbmDevice) and [`GbmSurface`](GbmSurface).
 //!
 
 use backend::drm::{Device, RawDevice};
@@ -20,7 +20,7 @@ use std::ptr;
 
 /// Egl Gbm backend type
 ///
-/// See [`Backend`](../../egl/native/trait.Backend.html).
+/// See [`Backend`](::backend::egl::native::Backend).
 pub struct Gbm<D: RawDevice + 'static> {
     _userdata: PhantomData<D>,
 }

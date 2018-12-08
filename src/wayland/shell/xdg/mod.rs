@@ -21,9 +21,9 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this handler, simple use the `xdg_shell_init` function provided in this
-//! module. You will need to provide it the `CompositorToken` you retrieved from an
-//! instantiation of the compositor global provided by smithay.
+//! To initialize this handler, simple use the [`xdg_shell_init`](::wayland::shell::xdg::xdg_shell_init) function provided in this
+//! module. You will need to provide it the [`CompositorToken`](::wayland::compositor::CompositorToken)
+//! you retrieved from an instantiation of the compositor global provided by smithay.
 //!
 //! ```no_run
 //! # extern crate wayland_server;
@@ -73,17 +73,22 @@
 //!
 //! There are mainly 3 kind of objects that you'll manipulate from this implementation:
 //!
-//! - `ShellClient`: This is a handle representing an instantiation of a shell global
+//! - [`ShellClient`](::wayland::shell::xdg::ShellClient):
+//!   This is a handle representing an instantiation of a shell global
 //!   you can associate client-wise metadata to it (this is the `MyShellData` type in
 //!   the example above).
-//! - `ToplevelSurface`: This is a handle representing a toplevel surface, you can
-//!   retrieve a list of all currently alive toplevel surface from the `ShellState`.
-//! - `PopupSurface`: This is a handle representing a popup/tooltip surface. Similarly,
-//!   you can get a list of all currently alive popup surface from the `ShellState`.
+//! - [`ToplevelSurface`](::wayland::shell::xdg::ToplevelSurface):
+//!   This is a handle representing a toplevel surface, you can
+//!   retrieve a list of all currently alive toplevel surface from the
+//!   [`ShellState`](::wayland::shell::xdg::ShellState).
+//! - [`PopupSurface`](::wayland::shell::xdg::PopupSurface):
+//!   This is a handle representing a popup/tooltip surface. Similarly,
+//!   you can get a list of all currently alive popup surface from the
+//!   [`ShellState`](::wayland::shell::xdg::ShellState).
 //!
 //! You'll obtain these objects though two means: either via the callback methods of
-//! the subhandler you provided, or via methods on the `ShellState` that you are given
-//! (in an `Arc<Mutex<_>>`) as return value of the `init` function.
+//! the subhandler you provided, or via methods on the [`ShellState`](::wayland::shell::xdg::ShellState)
+//! that you are given (in an `Arc<Mutex<_>>`) as return value of the `init` function.
 
 use std::{
     cell::RefCell,
@@ -408,7 +413,7 @@ where
 
     /// Send a ping request to this shell client
     ///
-    /// You'll receive the reply as a `XdgRequest::ClientPong` request.
+    /// You'll receive the reply as a [`XdgRequest::ClientPong`] request.
     ///
     /// A typical use is to start a timer at the same time you send this ping
     /// request, and cancel it when you receive the pong. If the timer runs
@@ -843,7 +848,7 @@ pub enum XdgRequest<U, R, SD> {
     },
     /// A new toplevel surface was created
     ///
-    /// You likely need to send a `ToplevelConfigure` to the surface, to hint the
+    /// You likely need to send a [`ToplevelConfigure`] to the surface, to hint the
     /// client as to how its window should be
     NewToplevel {
         /// the surface
@@ -851,7 +856,7 @@ pub enum XdgRequest<U, R, SD> {
     },
     /// A new popup surface was created
     ///
-    /// You likely need to send a `PopupConfigure` to the surface, to hint the
+    /// You likely need to send a [`PopupConfigure`] to the surface, to hint the
     /// client as to how its popup should be
     NewPopup {
         /// the surface

@@ -1,12 +1,12 @@
 //!
-//! [`Device`](../trait.Device.html) and [`Surface`](../trait.Surface.html)
+//! [`Device`](Device) and [`Surface`](Surface)
 //! implementations using gbm buffers for efficient rendering.
 //!
-//! Usually this implementation will be wrapped into a [`EglDevice`](../egl/struct.EglDevice.html).
+//! Usually this implementation will be wrapped into a [`EglDevice`](::backend::drm::egl::EglDevice).
 //! Take a look at `anvil`s source code for an example of this.
 //!
 //! To use these types standalone, you will need to consider the special requirements
-//! of [`GbmSurface::page_flip`](struct.GbmSurface.html#method.page_flip).
+//! of [`GbmSurface::page_flip`](::backend::drm::gbm::GbmSurface::page_flip).
 //!
 
 use super::{Device, DeviceHandler, RawDevice, ResourceHandles, ResourceInfo, Surface};
@@ -44,7 +44,7 @@ pub struct GbmDevice<D: RawDevice + ControlDevice + 'static> {
 }
 
 impl<D: RawDevice + ControlDevice + 'static> GbmDevice<D> {
-    /// Create a new `GbmDevice` from an open drm node
+    /// Create a new [`GbmDevice`] from an open drm node
     ///
     /// Returns an error if the file is no valid drm node or context creation was not
     /// successful.
