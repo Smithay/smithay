@@ -16,8 +16,6 @@ use smithay::wayland_server::{calloop::EventLoop, Display};
 mod shaders;
 mod glium_drawer;
 mod input_handler;
-#[cfg(feature = "tty_launch")]
-mod raw_drm;
 mod shell;
 mod shm_load;
 #[cfg(feature = "udev")]
@@ -29,8 +27,6 @@ mod winit;
 static POSSIBLE_BACKENDS: &'static [&'static str] = &[
     #[cfg(feature = "winit")]
     "--winit : Run anvil as a X11 or Wayland client using winit.",
-    #[cfg(feature = "tty_launch")]
-    "--tty-raw : Run anvil as a raw DRM client (requires root).",
     #[cfg(feature = "udev")]
     "--tty-udev : Run anvil as a tty udev client (requires root if without logind).",
 ];
@@ -52,13 +48,6 @@ fn main() {
             info!(log, "Starting anvil with winit backend");
             if let Err(()) = winit::run_winit(&mut display, &mut event_loop, log.clone()) {
                 crit!(log, "Failed to initialize winit backend.");
-            }
-        }
-        #[cfg(feature = "tty_launch")]
-        Some("--tty-raw") => {
-            info!(log, "Starting anvil on a tty using raw DRM");
-            if let Err(()) = raw_drm::run_raw_drm(display, event_loop, log.clone()) {
-                crit!(log, "Failed to initialize tty backend.");
             }
         }
         #[cfg(feature = "udev")]

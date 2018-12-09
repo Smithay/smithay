@@ -5,11 +5,7 @@ use std::{
 };
 
 use smithay::{
-    backend::{
-        graphics::egl::{wayland::EGLWaylandExtensions, EGLGraphicsBackend},
-        input::InputBackend,
-        winit,
-    },
+    backend::{egl::EGLGraphicsBackend, graphics::gl::GLGraphicsBackend, input::InputBackend, winit},
     wayland::{
         data_device::{default_action_chooser, init_data_device, set_data_device_focus},
         output::{Mode, Output, PhysicalProperties},
@@ -63,7 +59,8 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
     let keyboard = seat
         .add_keyboard(XkbConfig::default(), 1000, 500, |seat, focus| {
             set_data_device_focus(seat, focus.and_then(|s| s.client()))
-        }).expect("Failed to initialize the keyboard");
+        })
+        .expect("Failed to initialize the keyboard");
 
     let (output, _) = Output::new(
         display,

@@ -11,20 +11,18 @@ use glium::{
 };
 use slog::Logger;
 
+#[cfg(feature = "egl")]
+use smithay::backend::egl::EGLDisplay;
 use smithay::{
-    backend::graphics::{
-        egl::{
-            error::Result as EGLResult,
-            wayland::{BufferAccessError, EGLDisplay, EGLImages, EGLWaylandExtensions, Format},
-            EGLGraphicsBackend,
-        },
-        glium::GliumGraphicsBackend,
+    backend::{
+        egl::{BufferAccessError, EGLImages, Format},
+        graphics::{gl::GLGraphicsBackend, glium::GliumGraphicsBackend},
     },
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
         shm::with_buffer_contents as shm_buffer_contents,
     },
-    wayland_server::{protocol::wl_buffer, Display, Resource},
+    wayland_server::{protocol::wl_buffer, Resource},
 };
 
 use shaders;
@@ -38,22 +36,24 @@ struct Vertex {
 
 implement_vertex!(Vertex, position, tex_coords);
 
-pub struct GliumDrawer<F: EGLGraphicsBackend + 'static> {
+pub struct GliumDrawer<F: GLGraphicsBackend + 'static> {
     display: GliumGraphicsBackend<F>,
     vertex_buffer: glium::VertexBuffer<Vertex>,
     index_buffer: glium::IndexBuffer<u16>,
     programs: [glium::Program; shaders::FRAGMENT_COUNT],
+    #[cfg(feature = "egl")]
     egl_display: Rc<RefCell<Option<EGLDisplay>>>,
     log: Logger,
 }
 
-impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
+impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     pub fn borrow(&self) -> Ref<F> {
         self.display.borrow()
     }
 }
 
-impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> GliumDrawer<T> {
+impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer<T> {
+    #[cfg(feature = "egl")]
     pub fn init(backend: T, egl_display: Rc<RefCell<Option<EGLDisplay>>>, log: Logger) -> GliumDrawer<T> {
         let display = backend.into();
 
@@ -78,7 +78,8 @@ impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> GliumDrawe
                     tex_coords: [1.0, 0.0],
                 },
             ],
-        ).unwrap();
+        )
+        .unwrap();
 
         // building the index buffer
         let index_buffer =
@@ -95,9 +96,53 @@ impl<T: Into<GliumGraphicsBackend<T>> + EGLGraphicsBackend + 'static> GliumDrawe
             log,
         }
     }
+
+    #[cfg(not(feature = "egl"))]
+    pub fn init(backend: T, log: Logger) -> GliumDrawer<T> {
+        let display = backend.into();
+
+        // building the vertex buffer, which contains all the vertices that we will draw
+        let vertex_buffer = glium::VertexBuffer::new(
+            &display,
+            &[
+                Vertex {
+                    position: [0.0, 0.0],
+                    tex_coords: [0.0, 0.0],
+                },
+                Vertex {
+                    position: [0.0, 1.0],
+                    tex_coords: [0.0, 1.0],
+                },
+                Vertex {
+                    position: [1.0, 1.0],
+                    tex_coords: [1.0, 1.0],
+                },
+                Vertex {
+                    position: [1.0, 0.0],
+                    tex_coords: [1.0, 0.0],
+                },
+            ],
+        )
+        .unwrap();
+
+        // building the index buffer
+        let index_buffer =
+            glium::IndexBuffer::new(&display, PrimitiveType::TriangleStrip, &[1 as u16, 2, 0, 3]).unwrap();
+
+        let programs = opengl_programs!(&display);
+
+        GliumDrawer {
+            display,
+            vertex_buffer,
+            index_buffer,
+            programs,
+            log,
+        }
+    }
 }
 
-impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
+impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
+    #[cfg(feature = "egl")]
     pub fn texture_from_buffer(&self, buffer: Resource<wl_buffer::WlBuffer>) -> Result<TextureMetadata, ()> {
         // try to retrieve the egl contents of this buffer
         let images = if let Some(display) = &self.egl_display.borrow().as_ref() {
@@ -122,7 +167,8 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                     MipmapsOption::NoMipmap,
                     images.width,
                     images.height,
-                ).unwrap();
+                )
+                .unwrap();
                 unsafe {
                     images
                         .bind_to_texture(0, opengl_texture.get_id())
@@ -138,29 +184,39 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
             }
             Err(BufferAccessError::NotManaged(buffer)) => {
                 // this is not an EGL buffer, try SHM
-                match shm_buffer_contents(&buffer, |slice, data| {
-                    ::shm_load::load_shm_buffer(data, slice)
-                        .map(|(image, kind)| (Texture2d::new(&self.display, image).unwrap(), kind, data))
-                }) {
-                    Ok(Ok((texture, kind, data))) => Ok(TextureMetadata {
-                        texture,
-                        fragment: kind,
-                        y_inverted: false,
-                        dimensions: (data.width as u32, data.height as u32),
-                        images: None,
-                    }),
-                    Ok(Err(format)) => {
-                        warn!(self.log, "Unsupported SHM buffer format"; "format" => format!("{:?}", format));
-                        Err(())
-                    }
-                    Err(err) => {
-                        warn!(self.log, "Unable to load buffer contents"; "err" => format!("{:?}", err));
-                        Err(())
-                    }
-                }
+                self.texture_from_shm_buffer(buffer)
             }
             Err(err) => {
                 error!(self.log, "EGL error"; "err" => format!("{:?}", err));
+                Err(())
+            }
+        }
+    }
+
+    #[cfg(not(feature = "egl"))]
+    pub fn texture_from_buffer(&self, buffer: Resource<wl_buffer::WlBuffer>) -> Result<TextureMetadata, ()> {
+        self.texture_from_shm_buffer(buffer)
+    }
+
+    fn texture_from_shm_buffer(&self, buffer: Resource<wl_buffer::WlBuffer>) -> Result<TextureMetadata, ()> {
+        match shm_buffer_contents(&buffer, |slice, data| {
+            ::shm_load::load_shm_buffer(data, slice)
+                .map(|(image, kind)| (Texture2d::new(&self.display, image).unwrap(), kind, data))
+        }) {
+            Ok(Ok((texture, kind, data))) => Ok(TextureMetadata {
+                texture,
+                fragment: kind,
+                y_inverted: false,
+                dimensions: (data.width as u32, data.height as u32),
+                #[cfg(feature = "egl")]
+                images: None,
+            }),
+            Ok(Err(format)) => {
+                warn!(self.log, "Unsupported SHM buffer format"; "format" => format!("{:?}", format));
+                Err(())
+            }
+            Err(err) => {
+                warn!(self.log, "Unable to load buffer contents"; "err" => format!("{:?}", err));
                 Err(())
             }
         }
@@ -208,7 +264,8 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                     blend: blending,
                     ..Default::default()
                 },
-            ).unwrap();
+            )
+            .unwrap();
     }
 
     #[inline]
@@ -217,21 +274,16 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
     }
 }
 
-impl<G: EGLWaylandExtensions + EGLGraphicsBackend + 'static> EGLWaylandExtensions for GliumDrawer<G> {
-    fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
-        self.display.bind_wl_display(display)
-    }
-}
-
 pub struct TextureMetadata {
     pub texture: Texture2d,
     pub fragment: usize,
     pub y_inverted: bool,
     pub dimensions: (u32, u32),
+    #[cfg(feature = "egl")]
     images: Option<EGLImages>,
 }
 
-impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
+impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     pub fn draw_windows(&self, window_map: &MyWindowMap, compositor_token: MyCompositorToken, log: &Logger) {
         let mut frame = self.draw();
         frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
@@ -290,7 +342,8 @@ impl<F: EGLGraphicsBackend + 'static> GliumDrawer<F> {
                                     TraversalAction::SkipChildren
                                 }
                             },
-                        ).unwrap();
+                        )
+                        .unwrap();
                 }
             });
         }

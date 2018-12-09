@@ -45,7 +45,7 @@
 //! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
 //! automatically by the `UdevBackend`, if not done manually).
 
-use super::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
+use super::{AsErrno, Session, SessionNotifier, SessionObserver};
 use nix::{
     fcntl::{self, open, OFlag},
     libc::c_int,
@@ -67,7 +67,7 @@ use std::{
         Arc,
     },
 };
-#[cfg(feature = "backend_session_udev")]
+#[cfg(feature = "backend_udev")]
 use udev::Context;
 use wayland_server::calloop::{signals::Signals, LoopHandle, Source};
 
@@ -120,12 +120,12 @@ const TTY_MAJOR: u64 = 4;
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 const TTY_MAJOR: u64 = 0;
 
-#[cfg(not(feature = "backend_session_udev"))]
+#[cfg(not(feature = "backend_udev"))]
 fn is_tty_device(dev: dev_t, _path: Option<&Path>) -> bool {
     major(dev) == TTY_MAJOR
 }
 
-#[cfg(feature = "backend_session_udev")]
+#[cfg(feature = "backend_udev")]
 fn is_tty_device(dev: dev_t, path: Option<&Path>) -> bool {
     match path {
         Some(path) => {
@@ -185,8 +185,10 @@ impl DirectSession {
                     path,
                     fcntl::OFlag::O_RDWR | fcntl::OFlag::O_CLOEXEC,
                     Mode::empty(),
-                ).chain_err(|| ErrorKind::FailedToOpenTTY(String::from(path.to_string_lossy())))
-            }).unwrap_or_else(|| {
+                )
+                .chain_err(|| ErrorKind::FailedToOpenTTY(String::from(path.to_string_lossy())))
+            })
+            .unwrap_or_else(|| {
                 dup(0 /*stdin*/).chain_err(|| ErrorKind::FailedToOpenTTY(String::from("<stdin>")))
             })?;
 
@@ -350,28 +352,18 @@ pub struct Id(usize);
 impl SessionNotifier for DirectSessionNotifier {
     type Id = Id;
 
-    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(
-        &mut self,
-        signal: &mut A,
-    ) -> Self::Id {
-        self.signals.push(Some(Box::new(signal.observer())));
+    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Self::Id {
+        self.signals.push(Some(Box::new(signal)));
         Id(self.signals.len() - 1)
     }
     fn unregister(&mut self, signal: Id) {
         self.signals[signal.0] = None;
     }
-
-    fn is_active(&self) -> bool {
-        self.active.load(Ordering::SeqCst)
-    }
-    fn seat(&self) -> &str {
-        "seat0"
-    }
 }
 
 impl DirectSessionNotifier {
     fn signal_received(&mut self) {
-        if self.is_active() {
+        if self.active.load(Ordering::SeqCst) {
             info!(self.logger, "Session shall become inactive.");
             for signal in &mut self.signals {
                 if let Some(ref mut signal) = *signal {
@@ -439,7 +431,8 @@ pub fn direct_session_bind<Data: 'static>(
         .insert_source(source, {
             let notifier = notifier.clone();
             move |_, _| notifier.borrow_mut().signal_received()
-        }).map_err(move |e| {
+        })
+        .map_err(move |e| {
             // the backend in the closure should already have been dropped
             let notifier = Rc::try_unwrap(fail_notifier)
                 .unwrap_or_else(|_| unreachable!())

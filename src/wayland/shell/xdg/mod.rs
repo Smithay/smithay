@@ -620,7 +620,8 @@ where
             .with_role_data::<XdgSurfaceRole, _, _>(&self.wl_surface, |data| match data.pending_state {
                 XdgSurfacePendingState::Toplevel(ref state) => Some(state.clone()),
                 _ => None,
-            }).ok()
+            })
+            .ok()
             .and_then(|x| x)
     }
 }
@@ -782,7 +783,8 @@ where
             .with_role_data::<XdgSurfaceRole, _, _>(&self.wl_surface, |data| match data.pending_state {
                 XdgSurfacePendingState::Popup(ref state) => Some(state.clone()),
                 _ => None,
-            }).ok()
+            })
+            .ok()
             .and_then(|x| x)
     }
 }

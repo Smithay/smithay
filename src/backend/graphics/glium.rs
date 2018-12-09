@@ -1,10 +1,6 @@
 //! Glium compatibility module
 
-use backend::graphics::egl::{
-    error::Result as EGLResult,
-    wayland::{EGLDisplay, EGLWaylandExtensions},
-    EGLGraphicsBackend, SwapBuffersError,
-};
+use backend::graphics::{gl::GLGraphicsBackend, SwapBuffersError};
 use glium::{
     backend::{Backend, Context, Facade},
     debug::DebugCallbackBehavior,
@@ -15,7 +11,6 @@ use std::{
     os::raw::c_void,
     rc::Rc,
 };
-use wayland_server::Display;
 
 impl From<SwapBuffersError> for GliumSwapBuffersError {
     fn from(error: SwapBuffersError) -> Self {
@@ -28,14 +23,14 @@ impl From<SwapBuffersError> for GliumSwapBuffersError {
 }
 
 /// Wrapper to expose `Glium` compatibility
-pub struct GliumGraphicsBackend<T: EGLGraphicsBackend> {
+pub struct GliumGraphicsBackend<T: GLGraphicsBackend> {
     context: Rc<Context>,
     backend: Rc<InternalBackend<T>>,
 }
 
-struct InternalBackend<T: EGLGraphicsBackend>(RefCell<T>);
+struct InternalBackend<T: GLGraphicsBackend>(RefCell<T>);
 
-impl<T: EGLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
+impl<T: GLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
     fn new(backend: T) -> GliumGraphicsBackend<T> {
         let internal = Rc::new(InternalBackend(RefCell::new(backend)));
 
@@ -79,27 +74,19 @@ impl<T: EGLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
     }
 }
 
-impl<T: EGLGraphicsBackend> Facade for GliumGraphicsBackend<T> {
+impl<T: GLGraphicsBackend> Facade for GliumGraphicsBackend<T> {
     fn get_context(&self) -> &Rc<Context> {
         &self.context
     }
 }
 
-impl<T: EGLGraphicsBackend + 'static> From<T> for GliumGraphicsBackend<T> {
+impl<T: GLGraphicsBackend + 'static> From<T> for GliumGraphicsBackend<T> {
     fn from(backend: T) -> Self {
         GliumGraphicsBackend::new(backend)
     }
 }
 
-impl<T: EGLGraphicsBackend + EGLWaylandExtensions + 'static> EGLWaylandExtensions
-    for GliumGraphicsBackend<T>
-{
-    fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
-        (*self.backend).0.borrow().bind_wl_display(display)
-    }
-}
-
-unsafe impl<T: EGLGraphicsBackend> Backend for InternalBackend<T> {
+unsafe impl<T: GLGraphicsBackend> Backend for InternalBackend<T> {
     fn swap_buffers(&self) -> Result<(), GliumSwapBuffersError> {
         self.0.borrow().swap_buffers().map_err(Into::into)
     }

@@ -131,7 +131,8 @@ where
                                 self.callback.clone(),
                                 action_choice,
                             )
-                        }).unwrap();
+                        })
+                        .unwrap();
                     // advertize the offer to the client
                     device.send(wl_data_device::Event::DataOffer { id: offer.clone() });
                     for mime_type in self.metadata.mime_types.iter().cloned() {

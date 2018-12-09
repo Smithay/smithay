@@ -23,8 +23,8 @@ features = [ "renderer_glium" ]
 gl_generator = "0.9"
 
 [features]
-default = [ "winit", "tty_launch", "udev" ]
+default = [ "winit", "egl", "udev" ]
+egl = [ "smithay/native_lib" ]
 winit = [ "smithay/backend_winit" ]
-tty_launch = [ "smithay/backend_libinput", "smithay/backend_drm" ]
-udev = [ "tty_launch", "smithay/backend_udev" ]
+udev = [ "smithay/backend_libinput", "smithay/backend_drm_legacy", "smithay/backend_drm_gbm", "smithay/backend_drm_egl", "smithay/backend_udev", "smithay/backend_session" ]
 logind = [ "smithay/backend_session_logind" ]

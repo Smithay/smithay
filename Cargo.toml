@@ -10,9 +10,9 @@ repository = "https://github.com/Smithay/smithay"
 members = [ "anvil" ]
 
 [dependencies]
-wayland-server = "0.21.1"
-wayland-sys = "0.21.1"
+wayland-server = "0.21.6"
 wayland-commons = "0.21.1"
+wayland-sys = { version = "0.21.6", optional = true }
 nix = "0.11"
 xkbcommon = "0.2.1"
 tempfile = "2.1.5"
@@ -21,29 +21,37 @@ slog-stdlog = "3.0.2"
 libloading = "0.4.0"
 wayland-client = { version = "0.21.1", features = ["egl"], optional = true }
 winit = { version = "0.18.0", optional = true }
-drm = { version = "^0.3.1", optional = true }
-gbm = { version = "^0.4.0", optional = true, default-features = false, features = ["drm-support"] }
+drm = { version = "^0.3.4", optional = true }
+gbm = { version = "^0.5.0", optional = true, default-features = false, features = ["drm-support"] }
 glium = { version = "0.19.0", optional = true, default-features = false }
-input = { version = "0.4.0", optional = true }
+input = { version = "0.4.1", optional = true }
 udev = { version = "0.2.0", optional = true }
 dbus = { version = "0.6.1", optional = true }
 systemd = { version = "^0.2.0", optional = true }
-wayland-protocols = { version = "0.21.1", features = ["unstable_protocols", "native_server"] }
+wayland-protocols = { version = "0.21.3", features = ["unstable_protocols", "server"] }
 image = "0.17.0"
 error-chain = "0.11.0"
 lazy_static = "1.0.0"
 
+[dev-dependencies]
+slog-term = "2.3"
+
 [build-dependencies]
-gl_generator = "0.9"
+gl_generator = { version = "0.9", optional = true }
 
 [features]
-default = ["backend_winit", "backend_drm", "backend_libinput", "backend_udev", "renderer_glium", "xwayland"]
-backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen"]
-backend_drm = ["drm", "gbm"]
+default = ["backend_winit", "backend_drm_legacy", "backend_drm_gbm", "backend_drm_egl", "backend_libinput", "backend_udev", "backend_session", "renderer_glium", "xwayland"]
+backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen", "backend_egl", "renderer_gl", "native_lib"]
+backend_drm = ["drm"]
+backend_drm_legacy = ["backend_drm"]
+backend_drm_gbm = ["backend_drm", "gbm"]
+backend_drm_egl = ["backend_drm", "backend_egl"]
+backend_egl = ["gl_generator"]
 backend_libinput = ["input"]
 backend_session = []
-backend_session_udev = ["udev", "backend_session"]
+backend_udev = ["udev"]
 backend_session_logind = ["dbus", "systemd", "backend_session"]
-backend_udev = ["udev", "backend_drm", "backend_session_udev"]
-renderer_glium = ["glium"]
+renderer_gl = ["gl_generator"]
+renderer_glium = ["renderer_gl", "glium"]
+native_lib = ["wayland-sys", "wayland-server/native_lib", "wayland-protocols/native_server"]
 xwayland = []

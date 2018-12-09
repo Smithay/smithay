@@ -236,7 +236,8 @@ where
                     "xdg_surface was destroyed before its role object".into(),
                 );
             }
-        }).expect("xdg_surface exists but surface has not shell_surface role?!");
+        })
+        .expect("xdg_surface exists but surface has not shell_surface role?!");
 }
 
 fn xdg_surface_implementation<U, R, SD>(
@@ -263,7 +264,8 @@ fn xdg_surface_implementation<U, R, SD>(
                         min_size: (0, 0),
                         max_size: (0, 0),
                     });
-                }).expect("xdg_surface exists but surface has not shell_surface role?!");
+                })
+                .expect("xdg_surface exists but surface has not shell_surface role?!");
             let toplevel = id.implement_nonsend(
                 toplevel_implementation::<U, R, SD>,
                 Some(destroy_toplevel::<U, R, SD>),
@@ -302,7 +304,8 @@ fn xdg_surface_implementation<U, R, SD>(
                         parent: Some(parent_data.wl_surface.clone()),
                         positioner: positioner_data.borrow().clone(),
                     });
-                }).expect("xdg_surface exists but surface has not shell_surface role?!");
+                })
+                .expect("xdg_surface exists but surface has not shell_surface role?!");
             let popup = id.implement_nonsend(
                 popup_implementation::<U, R, SD>,
                 Some(destroy_popup::<U, R, SD>),
@@ -331,7 +334,8 @@ fn xdg_surface_implementation<U, R, SD>(
                 .compositor_token
                 .with_role_data::<XdgSurfaceRole, _, _>(&data.wl_surface, |data| {
                     data.window_geometry = Some(Rectangle { x, y, width, height });
-                }).expect("xdg_surface exists but surface has not shell_surface role?!");
+                })
+                .expect("xdg_surface exists but surface has not shell_surface role?!");
         }
         zxdg_surface_v6::Request::AckConfigure { serial } => {
             data.shell_data
@@ -352,7 +356,8 @@ fn xdg_surface_implementation<U, R, SD>(
                         );
                     }
                     role_data.configured = true;
-                }).expect("xdg_surface exists but surface has not shell_surface role?!");
+                })
+                .expect("xdg_surface exists but surface has not shell_surface role?!");
         }
     }
 }
@@ -382,7 +387,8 @@ where
         .with_role_data::<XdgSurfaceRole, _, _>(&data.wl_surface, |data| match data.pending_state {
             XdgSurfacePendingState::Toplevel(ref mut toplevel_data) => f(toplevel_data),
             _ => unreachable!(),
-        }).expect("xdg_toplevel exists but surface has not shell_surface role?!");
+        })
+        .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
 pub fn send_toplevel_configure<U, R, SD>(
@@ -553,7 +559,8 @@ where
             .with_role_data::<XdgSurfaceRole, _, _>(&data.wl_surface, |data| {
                 data.pending_state = XdgSurfacePendingState::None;
                 data.configured = false;
-            }).expect("xdg_toplevel exists but surface has not shell_surface role?!");
+            })
+            .expect("xdg_toplevel exists but surface has not shell_surface role?!");
     }
     // remove this surface from the known ones (as well as any leftover dead surface)
     data.shell_data
@@ -644,7 +651,8 @@ where
             .with_role_data::<XdgSurfaceRole, _, _>(&data.wl_surface, |data| {
                 data.pending_state = XdgSurfacePendingState::None;
                 data.configured = false;
-            }).expect("xdg_popup exists but surface has not shell_surface role?!");
+            })
+            .expect("xdg_popup exists but surface has not shell_surface role?!");
     }
     // remove this surface from the known ones (as well as any leftover dead surface)
     data.shell_data

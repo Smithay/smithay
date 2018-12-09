@@ -6,26 +6,25 @@ use backend::{input as backend, input::Axis};
 use input as libinput;
 use input::event;
 
+#[cfg(feature = "backend_session")]
+use std::path::Path;
 use std::{
-    cell::RefCell,
     collections::hash_map::{DefaultHasher, Entry, HashMap},
     hash::{Hash, Hasher},
     io::Error as IoError,
-    os::unix::io::RawFd,
-    path::Path,
-    rc::Rc,
+    os::unix::io::{AsRawFd, RawFd},
 };
 
 use wayland_server::calloop::{
-    generic::{EventedRawFd, Generic},
+    generic::{EventedFd, Generic},
     mio::Ready,
-    LoopHandle, Source,
+    InsertError, LoopHandle, Source,
 };
 
 // No idea if this is the same across unix platforms
 // Lets make this linux exclusive for now, once someone tries to build it for
 // any BSD-like system, they can verify if this is right and make a PR to change this.
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(all(any(target_os = "linux", target_os = "android"), feature = "backend_session"))]
 const INPUT_MAJOR: u32 = 13;
 
 /// Libinput based `InputBackend`.
@@ -446,16 +445,18 @@ impl backend::InputBackend for LibinputInputBackend {
                 libinput::Event::Keyboard(keyboard_event) => {
                     use input::event::keyboard::*;
                     match keyboard_event {
-                        KeyboardEvent::Key(key_event) => if let Some(ref mut handler) = self.handler {
-                            let device_seat = key_event.device().seat();
-                            if let Some(ref seat) = self.seats.get(&device_seat) {
-                                trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
-                                handler.on_keyboard_key(seat, key_event);
-                            } else {
-                                warn!(self.logger, "Received key event of non existing Seat");
-                                continue;
+                        KeyboardEvent::Key(key_event) => {
+                            if let Some(ref mut handler) = self.handler {
+                                let device_seat = key_event.device().seat();
+                                if let Some(ref seat) = self.seats.get(&device_seat) {
+                                    trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
+                                    handler.on_keyboard_key(seat, key_event);
+                                } else {
+                                    warn!(self.logger, "Received key event of non existing Seat");
+                                    continue;
+                                }
                             }
-                        },
+                        }
                     }
                 }
                 libinput::Event::Pointer(pointer_event) => {
@@ -590,6 +591,12 @@ impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
     }
 }
 
+impl AsRawFd for LibinputInputBackend {
+    fn as_raw_fd(&self) -> RawFd {
+        self.context.as_raw_fd()
+    }
+}
+
 /// Binds a `LibinputInputBackend` to a given `EventLoop`.
 ///
 /// Automatically feeds the backend with incoming events without any manual calls to
@@ -597,22 +604,19 @@ impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
 pub fn libinput_bind<Data: 'static>(
     backend: LibinputInputBackend,
     handle: LoopHandle<Data>,
-) -> ::std::result::Result<Source<Generic<EventedRawFd>>, (IoError, LibinputInputBackend)> {
-    let mut source = Generic::from_raw_fd(unsafe { backend.context.fd() });
+) -> ::std::result::Result<
+    Source<Generic<EventedFd<LibinputInputBackend>>>,
+    InsertError<Generic<EventedFd<LibinputInputBackend>>>,
+> {
+    let mut source = Generic::from_fd_source(backend);
     source.set_interest(Ready::readable());
-    let backend = Rc::new(RefCell::new(backend));
-    let fail_backend = backend.clone();
-    handle
-        .insert_source(source, move |_, _| {
-            use backend::input::InputBackend;
-            if let Err(error) = backend.borrow_mut().dispatch_new_events() {
-                warn!(backend.borrow().logger, "Libinput errored: {}", error);
-            }
-        }).map_err(move |e| {
-            // the backend in the closure should already have been dropped
-            let backend = Rc::try_unwrap(fail_backend)
-                .unwrap_or_else(|_| unreachable!())
-                .into_inner();
-            (e.into(), backend)
-        })
+
+    handle.insert_source(source, move |evt, _| {
+        use backend::input::InputBackend;
+
+        let mut backend = evt.source.borrow_mut();
+        if let Err(error) = backend.0.dispatch_new_events() {
+            warn!(backend.0.logger, "Libinput errored: {}", error);
+        }
+    })
 }

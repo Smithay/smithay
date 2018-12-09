@@ -31,7 +31,7 @@
 use super::logind::{self, logind_session_bind, BoundLogindSession, LogindSession, LogindSessionNotifier};
 use super::{
     direct::{self, direct_session_bind, BoundDirectSession, DirectSession, DirectSessionNotifier},
-    AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver,
+    AsErrno, Session, SessionNotifier, SessionObserver,
 };
 use nix::fcntl::OFlag;
 use std::{cell::RefCell, io::Error as IoError, os::unix::io::RawFd, path::Path, rc::Rc};
@@ -114,6 +114,7 @@ impl AutoSession {
         }
     }
 
+    /// Tries to create a new session via the best available interface.
     #[cfg(not(feature = "backend_session_logind"))]
     pub fn new<L>(logger: L) -> Option<(AutoSession, AutoSessionNotifier)>
     where
@@ -202,10 +203,7 @@ impl Session for AutoSession {
 impl SessionNotifier for AutoSessionNotifier {
     type Id = AutoId;
 
-    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(
-        &mut self,
-        signal: &mut A,
-    ) -> Self::Id {
+    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Self::Id {
         match *self {
             #[cfg(feature = "backend_session_logind")]
             AutoSessionNotifier::Logind(ref mut logind) => {
@@ -229,21 +227,6 @@ impl SessionNotifier for AutoSessionNotifier {
             }
             // this pattern is needed when the logind backend is activated
             _ => unreachable!(),
-        }
-    }
-
-    fn is_active(&self) -> bool {
-        match *self {
-            #[cfg(feature = "backend_session_logind")]
-            AutoSessionNotifier::Logind(ref logind) => logind.is_active(),
-            AutoSessionNotifier::Direct(ref direct) => direct.is_active(),
-        }
-    }
-    fn seat(&self) -> &str {
-        match *self {
-            #[cfg(feature = "backend_session_logind")]
-            AutoSessionNotifier::Logind(ref logind) => logind.seat(),
-            AutoSessionNotifier::Direct(ref direct) => direct.seat(),
         }
     }
 }

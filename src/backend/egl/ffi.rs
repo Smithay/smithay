@@ -14,11 +14,6 @@ pub type NativePixmapType = *const c_void;
 pub type NativeWindowType = *const c_void;
 
 #[cfg_attr(feature = "cargo-clippy", allow(clippy))]
-pub mod gl {
-    include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
-}
-
-#[cfg_attr(feature = "cargo-clippy", allow(clippy))]
 pub mod egl {
     use super::*;
     use libloading::Library;

@@ -1,8 +1,7 @@
 //!
-//! Errors thrown by the `DrmDevice` and `DrmBackend`
+//! Errors thrown by the `LegacyDrmDevice` and `LegacyDrmSurface`
 //!
 
-use backend::graphics::egl::error as egl;
 use drm::control::{connector, crtc, Mode};
 
 error_chain! {
@@ -21,18 +20,6 @@ error_chain! {
         #[doc = "Unable to determine device id of drm device"]
         UnableToGetDeviceId {
             description("Unable to determine device id of drm device"),
-        }
-
-        #[doc = "Creation of gbm resource failed"]
-        GbmInitFailed {
-            description("Creation of gbm resource failed"),
-            display("Creation of gbm resource failed"),
-        }
-
-        #[doc = "Swapping front buffers failed"]
-        FailedToSwap {
-            description("Swapping front buffers failed"),
-            display("Swapping front buffers failed"),
         }
 
         #[doc = "Device is currently paused"]
@@ -60,7 +47,7 @@ error_chain! {
         }
     }
 
-    links {
-        EGL(egl::Error, egl::ErrorKind) #[doc = "EGL error"];
+    foreign_links {
+        FailedToSwap(::backend::graphics::SwapBuffersError) #[doc = "Swapping front buffers failed"];
     }
 }

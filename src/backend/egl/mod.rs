@@ -1,3 +1,10 @@
+//! Common traits and types for egl rendering
+//!
+//! Large parts of this module are taken from
+//! https://github.com/tomaka/glutin/tree/044e651edf67a2029eecc650dd42546af1501414/src/api/egl/
+//!
+//! It therefore falls under glutin's Apache 2.0 license
+//! (see https://github.com/tomaka/glutin/tree/044e651edf67a2029eecc650dd42546af1501414/LICENSE)
 //! Wayland specific EGL functionality - EGL based `WlBuffer`s.
 //!
 //! The types of this module can be used to initialize hardware acceleration rendering
@@ -10,13 +17,11 @@
 //! You may then use the resulting `EGLDisplay` to receive `EGLImages` of an EGL-based `WlBuffer`
 //! for rendering.
 
-use backend::graphics::egl::{
-    error::*,
-    ffi::{self, egl::types::EGLImage},
-    native, EGLContext, EglExtensionNotSupportedError,
-};
+#[cfg(feature = "renderer_gl")]
+use backend::graphics::gl::ffi as gl_ffi;
 use nix::libc::c_uint;
 use std::{
+    ffi::CStr,
     fmt,
     rc::{Rc, Weak},
 };
@@ -24,7 +29,46 @@ use wayland_server::{
     protocol::wl_buffer::{self, WlBuffer},
     Display, Resource,
 };
+#[cfg(feature = "native_lib")]
 use wayland_sys::server::wl_display;
+
+pub mod context;
+pub use self::context::EGLContext;
+pub mod error;
+use self::error::*;
+
+#[allow(non_camel_case_types, dead_code, unused_mut, non_upper_case_globals)]
+pub mod ffi;
+use self::ffi::egl::types::EGLImage;
+
+pub mod native;
+pub mod surface;
+pub use self::surface::EGLSurface;
+
+/// Error that can happen on optional EGL features
+#[derive(Debug, Clone, PartialEq)]
+pub struct EglExtensionNotSupportedError(&'static [&'static str]);
+
+impl fmt::Display for EglExtensionNotSupportedError {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
+        write!(
+            formatter,
+            "None of the following EGL extensions is supported by the underlying EGL implementation,
+                     at least one is required: {:?}",
+            self.0
+        )
+    }
+}
+
+impl ::std::error::Error for EglExtensionNotSupportedError {
+    fn description(&self) -> &str {
+        "The required EGL extension is not supported by the underlying EGL implementation"
+    }
+
+    fn cause(&self) -> Option<&::std::error::Error> {
+        None
+    }
+}
 
 /// Error that can occur when accessing an EGL buffer
 pub enum BufferAccessError {
@@ -104,6 +148,8 @@ pub enum TextureCreationError {
     /// application on sleep and wakes it up later. However any OpenGL implementation
     /// can theoretically lose the context at any time.
     ContextLost,
+    /// Required OpenGL Extension for texture creation is missing
+    GLExtensionNotSupported(&'static str),
     /// Failed to bind the `EGLImage` to the given texture
     ///
     /// The given argument is the GL error code
@@ -116,6 +162,9 @@ impl fmt::Display for TextureCreationError {
         match *self {
             TextureCreationError::ContextLost => write!(formatter, "{}", self.description()),
             TextureCreationError::PlaneIndexOutOfBounds => write!(formatter, "{}", self.description()),
+            TextureCreationError::GLExtensionNotSupported(ext) => {
+                write!(formatter, "{}: {:}", self.description(), ext)
+            }
             TextureCreationError::TextureBindingFailed(code) => {
                 write!(formatter, "{}. Gl error code: {:?}", self.description(), code)
             }
@@ -128,6 +177,9 @@ impl ::std::error::Error for TextureCreationError {
         match *self {
             TextureCreationError::ContextLost => "The context has been lost, it needs to be recreated",
             TextureCreationError::PlaneIndexOutOfBounds => "This buffer is not managed by EGL",
+            TextureCreationError::GLExtensionNotSupported(_) => {
+                "Required OpenGL Extension for texture creation is missing"
+            }
             TextureCreationError::TextureBindingFailed(_) => "Failed to create EGLImages from the buffer",
         }
     }
@@ -180,6 +232,10 @@ pub struct EGLImages {
     pub format: Format,
     images: Vec<EGLImage>,
     buffer: Resource<WlBuffer>,
+    #[cfg(feature = "renderer_gl")]
+    gl: gl_ffi::Gles2,
+    #[cfg(feature = "renderer_gl")]
+    egl_to_texture_support: bool,
 }
 
 impl EGLImages {
@@ -195,17 +251,22 @@ impl EGLImages {
     /// # Unsafety
     ///
     /// The given `tex_id` needs to be a valid GL texture otherwise undefined behavior might occur.
+    #[cfg(feature = "renderer_gl")]
     pub unsafe fn bind_to_texture(
         &self,
         plane: usize,
         tex_id: c_uint,
     ) -> ::std::result::Result<(), TextureCreationError> {
         if self.display.upgrade().is_some() {
+            if !self.egl_to_texture_support {
+                return Err(TextureCreationError::GLExtensionNotSupported("GL_OES_EGL_image"));
+            }
+
             let mut old_tex_id: i32 = 0;
-            ffi::gl::GetIntegerv(ffi::gl::TEXTURE_BINDING_2D, &mut old_tex_id);
-            ffi::gl::BindTexture(ffi::gl::TEXTURE_2D, tex_id);
-            ffi::gl::EGLImageTargetTexture2DOES(
-                ffi::gl::TEXTURE_2D,
+            self.gl.GetIntegerv(gl_ffi::TEXTURE_BINDING_2D, &mut old_tex_id);
+            self.gl.BindTexture(gl_ffi::TEXTURE_2D, tex_id);
+            self.gl.EGLImageTargetTexture2DOES(
+                gl_ffi::TEXTURE_2D,
                 *self
                     .images
                     .get(plane)
@@ -215,7 +276,7 @@ impl EGLImages {
                 ffi::egl::SUCCESS => Ok(()),
                 err => Err(TextureCreationError::TextureBindingFailed(err)),
             };
-            ffi::gl::BindTexture(ffi::gl::TEXTURE_2D, old_tex_id as u32);
+            self.gl.BindTexture(gl_ffi::TEXTURE_2D, old_tex_id as u32);
             res
         } else {
             Err(TextureCreationError::ContextLost)
@@ -238,7 +299,8 @@ impl Drop for EGLImages {
 
 /// Trait any backend type may implement that allows binding a `wayland_server::Display`
 /// to create an `EGLDisplay` for EGL-based `WlBuffer`s.
-pub trait EGLWaylandExtensions {
+#[cfg(feature = "native_lib")]
+pub trait EGLGraphicsBackend {
     /// Binds this EGL context to the given Wayland display.
     ///
     /// This will allow clients to utilize EGL to create hardware-accelerated
@@ -257,15 +319,42 @@ pub trait EGLWaylandExtensions {
 
 /// Type to receive `EGLImages` for EGL-based `WlBuffer`s.
 ///
-/// Can be created by using `EGLWaylandExtensions::bind_wl_display`.
-pub struct EGLDisplay(Weak<ffi::egl::types::EGLDisplay>, *mut wl_display);
+/// Can be created by using `EGLGraphicsBackend::bind_wl_display`.
+#[cfg(feature = "native_lib")]
+pub struct EGLDisplay {
+    egl: Weak<ffi::egl::types::EGLDisplay>,
+    wayland: *mut wl_display,
+    #[cfg(feature = "renderer_gl")]
+    gl: gl_ffi::Gles2,
+    #[cfg(feature = "renderer_gl")]
+    egl_to_texture_support: bool,
+}
 
+#[cfg(feature = "native_lib")]
 impl EGLDisplay {
     fn new<B: native::Backend, N: native::NativeDisplay<B>>(
         context: &EGLContext<B, N>,
         display: *mut wl_display,
     ) -> EGLDisplay {
-        EGLDisplay(Rc::downgrade(&context.display), display)
+        #[cfg(feature = "renderer_gl")]
+        let gl = gl_ffi::Gles2::load_with(|s| unsafe { context.get_proc_address(s) as *const _ });
+
+        EGLDisplay {
+            egl: Rc::downgrade(&context.display),
+            wayland: display,
+            #[cfg(feature = "renderer_gl")]
+            egl_to_texture_support: {
+                // the list of gl extensions supported by the context
+                let data = unsafe { CStr::from_ptr(gl.GetString(gl_ffi::EXTENSIONS) as *const _) }
+                    .to_bytes()
+                    .to_vec();
+                let list = String::from_utf8(data).unwrap();
+                list.split(' ')
+                    .any(|s| s == "GL_OES_EGL_image" || s == "GL_OES_EGL_image_base")
+            },
+            #[cfg(feature = "renderer_gl")]
+            gl,
+        }
     }
 
     /// Try to receive `EGLImages` from a given `WlBuffer`.
@@ -277,7 +366,7 @@ impl EGLDisplay {
         &self,
         buffer: Resource<WlBuffer>,
     ) -> ::std::result::Result<EGLImages, BufferAccessError> {
-        if let Some(display) = self.0.upgrade() {
+        if let Some(display) = self.egl.upgrade() {
             let mut format: i32 = 0;
             if unsafe {
                 ffi::egl::QueryWaylandBufferWL(
@@ -368,6 +457,10 @@ impl EGLDisplay {
                 format,
                 images,
                 buffer,
+                #[cfg(feature = "renderer_gl")]
+                gl: self.gl.clone(),
+                #[cfg(feature = "renderer_gl")]
+                egl_to_texture_support: self.egl_to_texture_support,
             })
         } else {
             Err(BufferAccessError::ContextLost)
@@ -375,33 +468,33 @@ impl EGLDisplay {
     }
 }
 
+#[cfg(feature = "native_lib")]
 impl Drop for EGLDisplay {
     fn drop(&mut self) {
-        if let Some(display) = self.0.upgrade() {
-            if !self.1.is_null() {
+        if let Some(display) = self.egl.upgrade() {
+            if !self.wayland.is_null() {
                 unsafe {
-                    ffi::egl::UnbindWaylandDisplayWL(*display, self.1 as *mut _);
+                    ffi::egl::UnbindWaylandDisplayWL(*display, self.wayland as *mut _);
                 }
             }
         }
     }
 }
 
-impl<E: EGLWaylandExtensions> EGLWaylandExtensions for Rc<E> {
+#[cfg(feature = "native_lib")]
+impl<E: EGLGraphicsBackend> EGLGraphicsBackend for Rc<E> {
     fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay> {
         (**self).bind_wl_display(display)
     }
 }
 
-impl<B: native::Backend, N: native::NativeDisplay<B>> EGLWaylandExtensions for EGLContext<B, N> {
+#[cfg(feature = "native_lib")]
+impl<B: native::Backend, N: native::NativeDisplay<B>> EGLGraphicsBackend for EGLContext<B, N> {
     fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay> {
         if !self.wl_drm_support {
             bail!(ErrorKind::EglExtensionNotSupported(&[
                 "EGL_WL_bind_wayland_display"
             ]));
-        }
-        if !self.egl_to_texture_support {
-            bail!(ErrorKind::EglExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
         let res = unsafe { ffi::egl::BindWaylandDisplayWL(*self.display, display.c_ptr() as *mut _) };
         if res == 0 {

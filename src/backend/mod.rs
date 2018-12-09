@@ -19,6 +19,8 @@ pub mod input;
 
 #[cfg(feature = "backend_drm")]
 pub mod drm;
+#[cfg(feature = "backend_egl")]
+pub mod egl;
 #[cfg(feature = "backend_libinput")]
 pub mod libinput;
 #[cfg(feature = "backend_session")]

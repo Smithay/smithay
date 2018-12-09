@@ -30,7 +30,7 @@
 //! automatically by the `UdevBackend`, if not done manually).
 //! ```
 
-use backend::session::{AsErrno, AsSessionObserver, Session, SessionNotifier, SessionObserver};
+use backend::session::{AsErrno, Session, SessionNotifier, SessionObserver};
 use dbus::{
     BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interface, Member, Message, MessageItem,
     OwnedFd, Path as DbusPath, Watch, WatchEvent,
@@ -101,7 +101,8 @@ impl LogindSession {
             "org.freedesktop.login1.Manager",
             "GetSession",
             Some(vec![session_id.clone().into()]),
-        )?.get1::<DbusPath<'static>>()
+        )?
+        .get1::<DbusPath<'static>>()
         .chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
 
         // Match all signals that we want to receive and handle
@@ -342,7 +343,8 @@ impl Session for LogindSession {
                     (major(stat.st_rdev) as u32).into(),
                     (minor(stat.st_rdev) as u32).into(),
                 ]),
-            )?.get2::<OwnedFd, bool>();
+            )?
+            .get2::<OwnedFd, bool>();
             let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?.into_fd();
             Ok(fd)
         } else {
@@ -363,7 +365,8 @@ impl Session for LogindSession {
                     (major(stat.st_rdev) as u32).into(),
                     (minor(stat.st_rdev) as u32).into(),
                 ]),
-            ).map(|_| ())
+            )
+            .map(|_| ())
         } else {
             bail!(ErrorKind::SessionLost)
         }
@@ -390,7 +393,8 @@ impl Session for LogindSession {
                 "org.freedesktop.login1.Seat",
                 "SwitchTo",
                 Some(vec![(vt_num as u32).into()]),
-            ).map(|_| ())
+            )
+            .map(|_| ())
         } else {
             bail!(ErrorKind::SessionLost)
         }
@@ -404,26 +408,12 @@ pub struct Id(usize);
 impl SessionNotifier for LogindSessionNotifier {
     type Id = Id;
 
-    fn register<S: SessionObserver + 'static, A: AsSessionObserver<S>>(
-        &mut self,
-        signal: &mut A,
-    ) -> Self::Id {
-        self.internal
-            .signals
-            .borrow_mut()
-            .push(Some(Box::new(signal.observer())));
+    fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Self::Id {
+        self.internal.signals.borrow_mut().push(Some(Box::new(signal)));
         Id(self.internal.signals.borrow().len() - 1)
     }
     fn unregister(&mut self, signal: Id) {
         self.internal.signals.borrow_mut()[signal.0] = None;
-    }
-
-    fn is_active(&self) -> bool {
-        self.internal.active.load(Ordering::SeqCst)
-    }
-
-    fn seat(&self) -> &str {
-        &self.internal.seat
     }
 }
 
@@ -455,7 +445,10 @@ pub fn logind_session_bind<Data: 'static>(
         .into_iter()
         .map(|watch| {
             let mut source = Generic::from_raw_fd(watch.fd());
-            source.set_interest(Ready::readable() | Ready::writable());
+            source.set_interest(
+                if watch.readable() { Ready::readable() } else { Ready::empty() }
+              | if watch.writable() { Ready::writable() } else { Ready::empty() }
+            );
             handle.insert_source(source, {
                 let mut notifier = notifier.clone();
                 move |evt, _| notifier.event(evt)
