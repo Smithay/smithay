@@ -20,9 +20,14 @@ use smithay::{
     },
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
+        data_device::DnDIconRole,
+        seat::CursorImageRole,
         shm::with_buffer_contents as shm_buffer_contents,
     },
-    wayland_server::{protocol::wl_buffer, Resource},
+    wayland_server::{
+        protocol::{wl_buffer, wl_surface},
+        Resource,
+    },
 };
 
 use shaders;
@@ -284,71 +289,120 @@ pub struct TextureMetadata {
 }
 
 impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
-    pub fn draw_windows(&self, window_map: &MyWindowMap, compositor_token: MyCompositorToken, log: &Logger) {
-        let mut frame = self.draw();
-        frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
+    fn draw_surface_tree(
+        &self,
+        frame: &mut Frame,
+        root: &Resource<wl_surface::WlSurface>,
+        location: (i32, i32),
+        compositor_token: MyCompositorToken,
+        screen_dimensions: (u32, u32),
+    ) {
+        compositor_token
+            .with_surface_tree_upward(root, location, |_surface, attributes, role, &(mut x, mut y)| {
+                // there is actually something to draw !
+                if attributes.user_data.texture.is_none() {
+                    if let Some(buffer) = attributes.user_data.buffer.take() {
+                        if let Ok(m) = self.texture_from_buffer(buffer.clone()) {
+                            attributes.user_data.texture = Some(m);
+                        }
+                        // notify the client that we have finished reading the
+                        // buffer
+                        buffer.send(wl_buffer::Event::Release);
+                    }
+                }
+                if let Some(ref metadata) = attributes.user_data.texture {
+                    if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                        x += subdata.location.0;
+                        y += subdata.location.1;
+                    }
+                    self.render_texture(
+                        frame,
+                        &metadata.texture,
+                        metadata.fragment,
+                        metadata.y_inverted,
+                        metadata.dimensions,
+                        (x, y),
+                        screen_dimensions,
+                        ::glium::Blend {
+                            color: ::glium::BlendingFunction::Addition {
+                                source: ::glium::LinearBlendingFactor::One,
+                                destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                            },
+                            alpha: ::glium::BlendingFunction::Addition {
+                                source: ::glium::LinearBlendingFactor::One,
+                                destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                            },
+                            ..Default::default()
+                        },
+                    );
+                    TraversalAction::DoChildren((x, y))
+                } else {
+                    // we are not display, so our children are neither
+                    TraversalAction::SkipChildren
+                }
+            })
+            .unwrap();
+    }
+
+    pub fn draw_windows(
+        &self,
+        frame: &mut Frame,
+        window_map: &MyWindowMap,
+        compositor_token: MyCompositorToken,
+    ) {
         // redraw the frame, in a simple but inneficient way
         {
             let screen_dimensions = self.borrow().get_framebuffer_dimensions();
             window_map.with_windows_from_bottom_to_top(|toplevel_surface, initial_place| {
                 if let Some(wl_surface) = toplevel_surface.get_surface() {
                     // this surface is a root of a subsurface tree that needs to be drawn
-                    compositor_token
-                        .with_surface_tree_upward(
-                            wl_surface,
-                            initial_place,
-                            |_surface, attributes, role, &(mut x, mut y)| {
-                                // there is actually something to draw !
-                                if attributes.user_data.texture.is_none() {
-                                    if let Some(buffer) = attributes.user_data.buffer.take() {
-                                        if let Ok(m) = self.texture_from_buffer(buffer.clone()) {
-                                            attributes.user_data.texture = Some(m);
-                                        }
-                                        // notify the client that we have finished reading the
-                                        // buffer
-                                        buffer.send(wl_buffer::Event::Release);
-                                    }
-                                }
-                                if let Some(ref metadata) = attributes.user_data.texture {
-                                    if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                                        x += subdata.location.0;
-                                        y += subdata.location.1;
-                                    }
-                                    self.render_texture(
-                                        &mut frame,
-                                        &metadata.texture,
-                                        metadata.fragment,
-                                        metadata.y_inverted,
-                                        metadata.dimensions,
-                                        (x, y),
-                                        screen_dimensions,
-                                        ::glium::Blend {
-                                            color: ::glium::BlendingFunction::Addition {
-                                                source: ::glium::LinearBlendingFactor::One,
-                                                destination:
-                                                    ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
-                                            },
-                                            alpha: ::glium::BlendingFunction::Addition {
-                                                source: ::glium::LinearBlendingFactor::One,
-                                                destination:
-                                                    ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
-                                            },
-                                            ..Default::default()
-                                        },
-                                    );
-                                    TraversalAction::DoChildren((x, y))
-                                } else {
-                                    // we are not display, so our children are neither
-                                    TraversalAction::SkipChildren
-                                }
-                            },
-                        )
-                        .unwrap();
+                    self.draw_surface_tree(
+                        frame,
+                        &wl_surface,
+                        initial_place,
+                        compositor_token,
+                        screen_dimensions,
+                    );
                 }
             });
         }
-        if let Err(err) = frame.finish() {
-            error!(log, "Error during rendering: {:?}", err);
+    }
+
+    pub fn draw_cursor(
+        &self,
+        frame: &mut Frame,
+        surface: &Resource<wl_surface::WlSurface>,
+        (x, y): (i32, i32),
+        token: MyCompositorToken,
+    ) {
+        let (dx, dy) = match token.with_role_data::<CursorImageRole, _, _>(surface, |data| data.hotspot) {
+            Ok(h) => h,
+            Err(_) => {
+                warn!(
+                    self.log,
+                    "Trying to display as a cursor a surface that does not have the CursorImage role."
+                );
+                (0, 0)
+            }
+        };
+        let screen_dimensions = self.borrow().get_framebuffer_dimensions();
+        self.draw_surface_tree(frame, surface, (x - dx, y - dy), token, screen_dimensions);
+    }
+
+    pub fn draw_dnd_icon(
+        &self,
+        frame: &mut Frame,
+        surface: &Resource<wl_surface::WlSurface>,
+        (x, y): (i32, i32),
+        token: MyCompositorToken,
+    ) {
+        if !token.has_role::<DnDIconRole>(surface) {
+            warn!(
+                self.log,
+                "Trying to display as a dnd icon a surface that does not have the DndIcon role."
+            );
         }
+        let screen_dimensions = self.borrow().get_framebuffer_dimensions();
+        self.draw_surface_tree(frame, surface, (x, y), token, screen_dimensions);
     }
 }

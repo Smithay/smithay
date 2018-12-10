@@ -7,7 +7,7 @@ use std::{
     rc::Rc,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
 };
 
@@ -43,9 +43,9 @@ use smithay::{
     input::Libinput,
     wayland::{
         compositor::CompositorToken,
-        data_device::{default_action_chooser, init_data_device, set_data_device_focus},
+        data_device::{default_action_chooser, init_data_device, set_data_device_focus, DataDeviceEvent},
         output::{Mode, Output, PhysicalProperties},
-        seat::{Seat, XkbConfig},
+        seat::{CursorImageStatus, Seat, XkbConfig},
         shm::init_shm_global,
     },
     wayland_server::{
@@ -53,8 +53,8 @@ use smithay::{
             generic::{EventedFd, Generic},
             EventLoop, LoopHandle, Source,
         },
-        protocol::wl_output,
-        Display,
+        protocol::{wl_output, wl_surface},
+        Display, Resource,
     },
 };
 
@@ -101,6 +101,8 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     let running = Arc::new(AtomicBool::new(true));
 
     let pointer_location = Rc::new(RefCell::new((0.0, 0.0)));
+    let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
+    let dnd_icon = Arc::new(Mutex::new(None));
 
     /*
      * Initialize the udev backend
@@ -124,6 +126,8 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
             window_map: window_map.clone(),
             pointer_location: pointer_location.clone(),
             pointer_image: ImageBuffer::from_raw(64, 64, bytes.to_vec()).unwrap(),
+            cursor_status: cursor_status.clone(),
+            dnd_icon: dnd_icon.clone(),
             loop_handle: event_loop.handle(),
             notifier: udev_notifier,
             logger: log.clone(),
@@ -136,9 +140,18 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     /*
      * Initialize wayland clipboard
      */
+
     init_data_device(
         &mut display.borrow_mut(),
-        |_| {},
+        move |event| match event {
+            DataDeviceEvent::DnDStarted { icon, .. } => {
+                *dnd_icon.lock().unwrap() = icon;
+            }
+            DataDeviceEvent::DnDDropped => {
+                *dnd_icon.lock().unwrap() = None;
+            }
+            _ => {}
+        },
         default_action_chooser,
         compositor_token.clone(),
         log.clone(),
@@ -154,7 +167,9 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         log.clone(),
     );
 
-    let pointer = w_seat.add_pointer(compositor_token.clone(), |_| {});
+    let pointer = w_seat.add_pointer(compositor_token.clone(), move |new_status| {
+        *cursor_status.lock().unwrap() = new_status;
+    });
     let keyboard = w_seat
         .add_keyboard(XkbConfig::default(), 1000, 500, |seat, focus| {
             set_data_device_focus(seat, focus.and_then(|s| s.client()))
@@ -271,6 +286,8 @@ struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
     window_map: Rc<RefCell<MyWindowMap>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
     pointer_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
+    cursor_status: Arc<Mutex<CursorImageStatus>>,
+    dnd_icon: Arc<Mutex<Option<Resource<wl_surface::WlSurface>>>>,
     loop_handle: LoopHandle<Data>,
     notifier: S,
     logger: ::slog::Logger,
@@ -410,6 +427,8 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
                 backends: backends.clone(),
                 window_map: self.window_map.clone(),
                 pointer_location: self.pointer_location.clone(),
+                cursor_status: self.cursor_status.clone(),
+                dnd_icon: self.dnd_icon.clone(),
                 logger: self.logger.clone(),
             });
 
@@ -504,6 +523,8 @@ pub struct DrmHandlerImpl {
     backends: Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<RenderSurface>>>>,
     window_map: Rc<RefCell<MyWindowMap>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
+    cursor_status: Arc<Mutex<CursorImageStatus>>,
+    dnd_icon: Arc<Mutex<Option<Resource<wl_surface::WlSurface>>>>,
     logger: ::slog::Logger,
 }
 
@@ -520,7 +541,44 @@ impl DeviceHandler for DrmHandlerImpl {
             }
 
             // and draw in sync with our monitor
-            drawer.draw_windows(&*self.window_map.borrow(), self.compositor_token, &self.logger);
+            let mut frame = drawer.draw();
+            frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
+            // draw the surfaces
+            drawer.draw_windows(&mut frame, &*self.window_map.borrow(), self.compositor_token);
+            let (x, y) = *self.pointer_location.borrow();
+            // draw the dnd icon if applicable
+            {
+                let guard = self.dnd_icon.lock().unwrap();
+                if let Some(ref surface) = *guard {
+                    if surface.is_alive() {
+                        drawer.draw_dnd_icon(
+                            &mut frame,
+                            surface,
+                            (x as i32, y as i32),
+                            self.compositor_token,
+                        );
+                    }
+                }
+            }
+            // draw the cursor as relevant
+            {
+                let mut guard = self.cursor_status.lock().unwrap();
+                // reset the cursor if the surface is no longer alive
+                let mut reset = false;
+                if let CursorImageStatus::Image(ref surface) = *guard {
+                    reset = !surface.is_alive();
+                }
+                if reset {
+                    *guard = CursorImageStatus::Default;
+                }
+                if let CursorImageStatus::Image(ref surface) = *guard {
+                    drawer.draw_cursor(&mut frame, surface, (x as i32, y as i32), self.compositor_token);
+                }
+            }
+
+            if let Err(err) = frame.finish() {
+                error!(self.logger, "Error during rendering: {:?}", err);
+            }
         }
     }
 
