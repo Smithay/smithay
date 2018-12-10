@@ -17,7 +17,7 @@ pub struct CursorImageRole {
 }
 
 /// Possible status of a cursor as requested by clients
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum CursorImageStatus {
     /// The cursor should be hidden
     Hidden,
