@@ -76,12 +76,14 @@
 //! as well as implement a few trait for it, allowing it to be used by
 //! all smithay handlers:
 //!
-//! - The trait `RoleType`, which defines it as a type handling roles
-//! - For each of your roles, the trait `Role<Token>` (where `Token` is your
-//!   token type), marking its ability to handle this given role.
+//! - The trait [`RoleType`](::wayland::compositor::roles::RoleType),
+//!   which defines it as a type handling roles
+//! - For each of your roles, the trait [`Role<Token>`](::wayland::compositor::roles::Role)
+//!   (where `Token` is your token type), marking its ability to handle this given role.
 //!
 //! All handlers that handle a specific role will require you to provide
-//! them with a `CompositorToken<U, R, H>` where `R: Role<TheToken>`.
+//! them with a [`CompositorToken<U, R, H>`](::wayland::compositor::CompositorToken)
+//! where `R: Role<TheToken>`.
 //!
 //! See the documentation of these traits for their specific definition and
 //! capabilities.
@@ -98,13 +100,13 @@ pub trait RoleType {
     /// Check if the associated surface has a role
     ///
     /// Only reports if the surface has any role or no role.
-    /// To check for a role in particular, see `Role::has`.
+    /// To check for a role in particular, see [`Role::has`].
     fn has_role(&self) -> bool;
 }
 
-/// A trait representing the capability of a `RoleType` to handle a given role
+/// A trait representing the capability of a [`RoleType`] to handle a given role
 ///
-/// This trait allows to interact with the different roles a `RoleType` can
+/// This trait allows to interact with the different roles a [`RoleType`] can
 /// handle.
 ///
 /// This trait is meant to be used generically, for example, to retrieve the
@@ -115,7 +117,8 @@ pub trait RoleType {
 ///                 .expect("The surface does not have this role.");
 /// ```
 ///
-/// The methods of this trait are mirrored on `CompositorToken` for easy
+/// The methods of this trait are mirrored on
+/// [`CompositorToken`](::wayland::compositor::CompositorToken) for easy
 /// access to the role data of the surfaces.
 ///
 /// Note that if a role is automatically handled for you by a Handler provided

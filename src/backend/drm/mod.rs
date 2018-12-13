@@ -63,11 +63,11 @@ pub mod gbm;
 #[cfg(feature = "backend_drm_legacy")]
 pub mod legacy;
 
-/// Trait to receive events of a bound [`Device`](trait.Device.html)
+/// Trait to receive events of a bound [`Device`]
 ///
-/// See [`device_bind`](fn.device_bind.html)
+/// See [`device_bind`]
 pub trait DeviceHandler {
-    /// The [`Device`](trait.Device.html) type this handler can handle
+    /// The [`Device`] type this handler can handle
     type Device: Device + ?Sized;
 
     /// A vblank blank event on the provided crtc has happend
@@ -78,15 +78,15 @@ pub trait DeviceHandler {
 
 /// An open drm device
 pub trait Device: AsRawFd + DevPath {
-    /// Associated [`Surface`](trait.Surface.html) of this `Device` type
+    /// Associated [`Surface`] of this [`Device`] type
     type Surface: Surface;
 
-    /// Returns the `id` of this device node.
+    /// Returns the id of this device node.
     fn device_id(&self) -> dev_t;
 
-    /// Assigns a `DeviceHandler` called during event processing.
+    /// Assigns a [`DeviceHandler`] called during event processing.
     ///
-    /// See [`device_bind`](fn.device_bind.html) and [`DeviceHandler`](trait.DeviceHandler.html)
+    /// See [`device_bind`] and [`DeviceHandler`]
     fn set_handler(&mut self, handler: impl DeviceHandler<Device = Self> + 'static);
     /// Clear a set [`DeviceHandler`](trait.DeviceHandler.html), if any
     fn clear_handler(&mut self);
@@ -108,26 +108,26 @@ pub trait Device: AsRawFd + DevPath {
     /// Processes any open events of the underlying file descriptor.
     ///
     /// You should not call this function manually, but rather use
-    /// [`device_bind`](fn.device_bind.html) to register the device
+    /// [`device_bind`] to register the device
     /// to an [`EventLoop`](https://docs.rs/calloop/0.4.2/calloop/struct.EventLoop.html)
     /// to synchronize your rendering to the vblank events of the open crtc's
     fn process_events(&mut self);
 
-    /// Load the resource from a `Device` given its
+    /// Load the resource from a [`Device`] given its
     /// [`ResourceHandle`](https://docs.rs/drm/0.3.4/drm/control/trait.ResourceHandle.html)
     fn resource_info<T: ResourceInfo>(
         &self,
         handle: T::Handle,
     ) -> Result<T, <Self::Surface as Surface>::Error>;
 
-    /// Attempts to acquire a copy of the `Device`'s
+    /// Attempts to acquire a copy of the [`Device`]'s
     /// [`ResourceHandles`](https://docs.rs/drm/0.3.4/drm/control/struct.ResourceHandles.html)
     fn resource_handles(&self) -> Result<ResourceHandles, <Self::Surface as Surface>::Error>;
 }
 
-/// Marker trait for `Device`s able to provide [`RawSurface`](trait.RawSurface.html)s
+/// Marker trait for [`Device`]s able to provide [`RawSurface`]s
 pub trait RawDevice: Device<Surface = <Self as RawDevice>::Surface> {
-    /// Associated [`RawSurface`](trait.RawSurface.html) of this `RawDevice` type
+    /// Associated [`RawSurface`] of this [`RawDevice`] type
     type Surface: RawSurface;
 }
 
@@ -135,8 +135,8 @@ pub trait RawDevice: Device<Surface = <Self as RawDevice>::Surface> {
 pub trait Surface {
     /// Type repesenting a collection of
     /// [`connector`](https://docs.rs/drm/0.3.4/drm/control/connector/index.html)s
-    /// returned by [`current_connectors`](#method.current_connectors) and
-    /// [`pending_connectors`](#method.pending_connectors)
+    /// returned by [`current_connectors`](Surface::current_connectors) and
+    /// [`pending_connectors`](Surface::pending_connectors)
     type Connectors: IntoIterator<Item = connector::Handle>;
     /// Error type returned by methods of this trait
     type Error: Error + Send;
@@ -146,10 +146,10 @@ pub trait Surface {
     /// Currently used [`connector`](https://docs.rs/drm/0.3.4/drm/control/connector/index.html)s of this `Surface`
     fn current_connectors(&self) -> Self::Connectors;
     /// Returns the pending [`connector`](https://docs.rs/drm/0.3.4/drm/control/connector/index.html)s
-    /// used after the next `commit` of this `Surface`
+    /// used after the next [`commit`](RawSurface::commit) of this [`Surface`]
     ///
-    /// *Note*: Only on a [`RawSurface`](trait.RawSurface.html) you may directly trigger
-    /// a [`commit`](trait.RawSurface.html#method.commit). Other `Surface`s provide their
+    /// *Note*: Only on a [`RawSurface`] you may directly trigger
+    /// a [`commit`](RawSurface::commit). Other `Surface`s provide their
     /// own methods that *may* trigger a commit, you will need to read their docs.
     fn pending_connectors(&self) -> Self::Connectors;
     /// Tries to add a new [`connector`](https://docs.rs/drm/0.3.4/drm/control/connector/index.html)
@@ -177,8 +177,8 @@ pub trait Surface {
     /// [`crtc`](https://docs.rs/drm/0.3.4/drm/control/crtc/index.html) or any of the
     /// pending [`connector`](https://docs.rs/drm/0.3.4/drm/control/connector/index.html)s.
     ///
-    /// *Note*: Only on a [`RawSurface`](trait.RawSurface.html) you may directly trigger
-    /// a [`commit`](trait.RawSurface.html#method.commit). Other `Surface`s provide their
+    /// *Note*: Only on a [`RawSurface`] you may directly trigger
+    /// a [`commit`](RawSurface::commit). Other [`Surface`]s provide their
     /// own methods that *may* trigger a commit, you will need to read their docs.
     fn use_mode(&self, mode: Option<Mode>) -> Result<(), Self::Error>;
 }
@@ -188,15 +188,15 @@ pub trait RawSurface: Surface + ControlDevice + BasicDevice {
     /// Returns true whenever any state changes are pending to be commited
     ///
     /// The following functions may trigger a pending commit:
-    /// - [`add_connector`](trait.Surface.html#method.add_connector)
-    /// - [`remove_connector`](trait.Surface.html#method.remove_connector)
-    /// - [`use_mode`](trait.Surface.html#method.use_mode)
+    /// - [`add_connector`](Surface::add_connector)
+    /// - [`remove_connector`](Surface::remove_connector)
+    /// - [`use_mode`](Surface::use_mode)
     fn commit_pending(&self) -> bool;
     /// Commit the pending state rendering a given framebuffer.
     ///
     /// *Note*: This will trigger a full modeset on the underlying device,
     /// potentially causing some flickering. Check before performing this
-    /// operation if a commit really is necessary using [`commit_pending`](#method.commit_pending).
+    /// operation if a commit really is necessary using [`commit_pending`](RawSurface::commit_pending).
     ///
     /// This operation is blocking until the crtc is in the desired state.
     fn commit(&self, framebuffer: framebuffer::Handle) -> Result<(), <Self as Surface>::Error>;
@@ -206,8 +206,8 @@ pub trait RawSurface: Surface + ControlDevice + BasicDevice {
     /// This will not cause the crtc to modeset.
     ///
     /// This operation is not blocking and will produce a `vblank` event once swapping is done.
-    /// Make sure to [set a `DeviceHandler`](trait.Device.html#method.set_handler) and
-    /// [register the belonging `Device`](fn.device_bind.html) before to receive the event in time.
+    /// Make sure to [set a `DeviceHandler`](Device::set_handler) and
+    /// [register the belonging `Device`](device_bind) before to receive the event in time.
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), SwapBuffersError>;
 }
 
@@ -225,10 +225,10 @@ impl<A: AsRawFd> DevPath for A {
     }
 }
 
-/// Bind a `Device` to an `EventLoop`,
+/// Bind a `Device` to an [`EventLoop`](wayland_server::calloop::EventLoop),
 ///
 /// This will cause it to recieve events and feed them into a previously
-/// set [`DeviceHandler`](trait.DeviceHandler.html).
+/// set [`DeviceHandler`](DeviceHandler).
 pub fn device_bind<D: Device + 'static, Data>(
     handle: &LoopHandle<Data>,
     device: D,

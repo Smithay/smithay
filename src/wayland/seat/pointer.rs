@@ -124,7 +124,7 @@ impl PointerInternal {
 /// clients.
 ///
 /// When sending events using this handle, they will be intercepted by a pointer
-/// grab if any is active. See the `PointerGrab` trait for details.
+/// grab if any is active. See the [`PointerGrab`] trait for details.
 #[derive(Clone)]
 pub struct PointerHandle {
     inner: Arc<Mutex<PointerInternal>>,
@@ -213,7 +213,6 @@ impl PointerHandle {
     /// Start an axis frame
     ///
     /// A single frame will group multiple scroll events as if they happened in the same instance.
-    /// Dropping the returned `PointerAxisHandle` will group the events together.
     pub fn axis(&self, details: AxisFrame) {
         self.inner.lock().unwrap().with_grab(|mut handle, grab| {
             grab.axis(&mut handle, details);
@@ -228,9 +227,9 @@ impl PointerHandle {
 /// the underlying surfaces will no longer receive classic pointer event, but rather special events.
 ///
 /// This trait is the interface to intercept regular pointer events and change them as needed, its
-/// interface mimics the `PointerHandle` interface.
+/// interface mimics the [`PointerHandle`] interface.
 ///
-/// If your logic decides that the grab should end, both `PointerInnerHandle` and `PointerHandle` have
+/// If your logic decides that the grab should end, both [`PointerInnerHandle`] and [`PointerHandle`] have
 /// a method to change it.
 ///
 /// When your grab ends (either as you requested it or if it was forcefully cancelled by the server),
@@ -492,7 +491,7 @@ impl AxisFrame {
     /// This event is optional, if no source is known, you can ignore this call.
     /// Only one source event is allowed per frame.
     ///
-    /// Using the `AxisSource::Finger` requires a stop event to be send,
+    /// Using the [`AxisSource::Finger`] requires a stop event to be send,
     /// when the user lifts off the finger (not necessarily in the same frame).
     pub fn source(mut self, source: AxisSource) -> Self {
         self.source = Some(source);
@@ -532,7 +531,7 @@ impl AxisFrame {
 
     /// Notification of stop of scrolling on an axis.
     ///
-    /// This event is required for sources of the `AxisSource::Finger` type
+    /// This event is required for sources of the [`AxisSource::Finger`] type
     /// and otherwise optional.
     pub fn stop(mut self, axis: Axis) -> Self {
         match axis {

@@ -18,11 +18,11 @@ pub trait Backend {
     /// Surface type created by this backend
     type Surface: NativeSurface;
 
-    /// Return an `EGLDisplay` based on this backend
+    /// Return an [`EGLDisplay`](ffi::egl::types::EGLDisplay) based on this backend
     ///
     /// # Unsafety
     ///
-    /// The returned `EGLDisplay` needs to be a valid pointer for EGL,
+    /// The returned [`EGLDisplay`](ffi::egl::types::EGLDisplay) needs to be a valid pointer for EGL,
     /// but there is no way to test that.
     unsafe fn get_display<F: Fn(&str) -> bool>(
         display: ffi::NativeDisplayType,
@@ -91,18 +91,18 @@ impl Backend for X11 {
     }
 }
 
-/// Trait for types returning Surfaces which can be used to initialize `EGLSurface`s
+/// Trait for types returning Surfaces which can be used to initialize [`EGLSurface`](super::EGLSurface)s
 ///
 /// ## Unsafety
 ///
-/// The returned `NativeDisplayType` must be valid for EGL and there is no way to test that.
+/// The returned [`NativeDisplayType`](super::ffi::NativeDisplayType) must be valid for EGL and there is no way to test that.
 pub unsafe trait NativeDisplay<B: Backend> {
     /// Arguments used to surface creation.
     type Arguments;
     /// Error type thrown by the surface creation in case of failure.
     type Error: ::std::error::Error + Send + 'static;
-    /// Because one type might implement multiple `Backend`s this function must be called to check
-    /// if the expected `Backend` is used at runtime.
+    /// Because one type might implement multiple [`Backend`]s this function must be called to check
+    /// if the expected [`Backend`] is used at runtime.
     fn is_backend(&self) -> bool;
     /// Return a raw pointer EGL will accept for context creation.
     fn ptr(&self) -> Result<ffi::NativeDisplayType>;
@@ -163,7 +163,8 @@ unsafe impl NativeDisplay<Wayland> for WinitWindow {
 ///
 /// ## Unsafety
 ///
-/// The returned `NativeWindowType` must be valid for EGL and there is no way to test that.
+/// The returned [`NativeWindowType`](ffi::NativeWindowType) must be valid for EGL
+/// and there is no way to test that.
 pub unsafe trait NativeSurface {
     /// Return a raw pointer egl will accept for surface creation.
     fn ptr(&self) -> ffi::NativeWindowType;
@@ -187,7 +188,8 @@ pub unsafe trait NativeSurface {
         true
     }
 
-    /// Adds additional semantics when calling EGLSurface::swap_buffers
+    /// Adds additional semantics when calling
+    /// [EGLSurface::swap_buffers](::backend::egl::surface::EGLSurface::swap_buffers)
     ///
     /// Only implement if required by the backend.
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {

@@ -23,9 +23,9 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this handler, simple use the `wl_shell_init` function provided in this
-//! module. You will need to provide it the `CompositorToken` you retrieved from an
-//! instantiation of the compositor handler provided by smithay.
+//! To initialize this handler, simple use the [`wl_shell_init`](::wayland::shell::legacy::wl_shell_init)
+//! function provided in this module. You will need to provide it the [`CompositorToken`](::wayland::compositor::CompositorToken)
+//! you retrieved from an instantiation of the compositor handler provided by smithay.
 //!
 //! ```no_run
 //! # extern crate wayland_server;
@@ -85,7 +85,7 @@ use wayland_server::{
 
 mod wl_handlers;
 
-/// Metadata associated with the `xdg_surface` role
+/// Metadata associated with the `wl_surface` role
 pub struct ShellSurfaceRole<D: 'static> {
     /// Title of the surface
     pub title: String,
@@ -133,7 +133,7 @@ where
 
     /// Send a ping request to this shell surface
     ///
-    /// You'll receive the reply as a `ShellRequest::Pong` request
+    /// You'll receive the reply as a [`ShellRequest::Pong`] request
     ///
     /// A typical use is to start a timer at the same time you send this ping
     /// request, and cancel it when you receive the pong. If the timer runs

@@ -1,5 +1,5 @@
 //!
-//! Implementation of the `Session` trait through the legacy vt kernel interface.
+//! Implementation of the [`Session`](Session) trait through the legacy vt kernel interface.
 //!
 //! This requires write permissions for the given tty device and any devices opened through this
 //! interface. This means it will almost certainly require root permissions and not allow to run
@@ -26,24 +26,23 @@
 //!
 //! ### Usage of the session
 //!
-//! The session may be used to open devices manually through the `Session` interface
+//! The session may be used to open devices manually through the [`Session`] interface
 //! or be passed to other objects that need it to open devices themselves.
 //!
-//! Examples for those are e.g. the `LibinputInputBackend` (its context might be initialized through a
-//! `Session` via the `LibinputSessionInterface`) or the `UdevBackend`.
+//! Examples for those are e.g. the [`LibinputInputBackend`](::backend::libinput::LibinputInputBackend)
+//! (its context might be initialized through a [`Session`] via the [`LibinputSessionInterface`](::backend::libinput::LibinputSessionInterface)).
 //!
-//! In case you want to pass the same `Session` to multiple objects, `Session` is implement for
+//! In case you want to pass the same [`Session`] to multiple objects, [`Session`] is implement for
 //! every `Rc<RefCell<Session>>` or `Arc<Mutex<Session>>`.
 //!
 //! ### Usage of the session notifier
 //!
 //! The notifier might be used to pause device access, when the session gets paused (e.g. by
-//! switching the tty via `DirectSession::change_vt`) and to automatically enable it again,
-//! when the session becomes active again.
+//! switching the tty via [`DirectSession::change_vt`](::backend::session::Session::change_vt))
+//! and to automatically enable it again, when the session becomes active again.
 //!
 //! It is crucial to avoid errors during that state. Examples for object that might be registered
-//! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
-//! automatically by the `UdevBackend`, if not done manually).
+//! for notifications are the [`Libinput`](input::Libinput) context or the [`Device`](::backend::drm::Device).
 
 use super::{AsErrno, Session, SessionNotifier, SessionObserver};
 use nix::{
@@ -150,7 +149,7 @@ fn is_tty_device(dev: dev_t, path: Option<&Path>) -> bool {
     }
 }
 
-/// `Session` via the virtual terminal direct kernel interface
+/// [`Session`] via the virtual terminal direct kernel interface
 pub struct DirectSession {
     tty: RawFd,
     active: Arc<AtomicBool>,
@@ -159,7 +158,7 @@ pub struct DirectSession {
     logger: ::slog::Logger,
 }
 
-/// `SessionNotifier` via the virtual terminal direct kernel interface
+/// [`SessionNotifier`] via the virtual terminal direct kernel interface
 pub struct DirectSessionNotifier {
     tty: RawFd,
     active: Arc<AtomicBool>,
@@ -253,7 +252,7 @@ impl DirectSession {
         // https://github.com/nix-rust/nix/issues/495
         /*
         let signal = if tty::__libc_current_sigrtmin() > tty::__libc_current_sigrtmax() {
-            warn!(logger, "Not enough real-time signals available, falling back to USR1");
+            warn!(logger, "Not enough real-time signals available, falling back to USR2");
             nix::sys::signal::SIGUSR2 as i32
         } else {
             tty::__libc_current_sigrtmin()
@@ -345,7 +344,7 @@ impl Drop for DirectSession {
     }
 }
 
-/// Ids of registered `SessionObserver`s of the `DirectSessionNotifier`
+/// Ids of registered [`SessionObserver`]s of the [`DirectSessionNotifier`]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Id(usize);
 
@@ -391,16 +390,16 @@ impl DirectSessionNotifier {
     }
 }
 
-/// Bound logind session that is driven by the `wayland_server::EventLoop`.
+/// Bound logind session that is driven by the [`EventLoop`](wayland_server::calloop::EventLoop).
 ///
-/// See `direct_session_bind` for details.
+/// See [`direct_session_bind`] for details.
 pub struct BoundDirectSession {
     source: Source<Signals>,
     notifier: Rc<RefCell<DirectSessionNotifier>>,
 }
 
 impl BoundDirectSession {
-    /// Unbind the direct session from the `EventLoop`
+    /// Unbind the direct session from the [`EventLoop`](wayland_server::calloop::EventLoop)
     pub fn unbind(self) -> DirectSessionNotifier {
         let BoundDirectSession { source, notifier } = self;
         source.remove();
@@ -411,11 +410,11 @@ impl BoundDirectSession {
     }
 }
 
-/// Bind a `DirectSessionNotifier` to an `EventLoop`.
+/// Bind a [`DirectSessionNotifier`] to an [`EventLoop`](wayland_server::calloop::EventLoop).
 ///
-/// Allows the `DirectSessionNotifier` to listen for incoming signals signalling the session state.
-/// If you don't use this function `DirectSessionNotifier` will not correctly tell you the current
-/// session state and call it's `SessionObservers`.
+/// Allows the [`DirectSessionNotifier`] to listen for incoming signals signalling the session state.
+/// If you don't use this function [`DirectSessionNotifier`] will not correctly tell you the current
+/// session state and call it's [`SessionObserver`]s.
 pub fn direct_session_bind<Data: 'static>(
     notifier: DirectSessionNotifier,
     handle: &LoopHandle<Data>,
@@ -442,59 +441,63 @@ pub fn direct_session_bind<Data: 'static>(
     Ok(BoundDirectSession { source, notifier })
 }
 
-error_chain! {
-    errors {
-        #[doc = "Failed to open tty"]
-        FailedToOpenTTY(path: String) {
-            description("Failed to open tty"),
-            display("Failed to open tty ({:?})", path),
-        }
+/// Errors related to direct/tty sessions
+pub mod errors {
+    error_chain! {
+        errors {
+            #[doc = "Failed to open tty"]
+            FailedToOpenTTY(path: String) {
+                description("Failed to open tty"),
+                display("Failed to open tty ({:?})", path),
+            }
 
-        #[doc = "Not running from a tty"]
-        NotRunningFromTTY {
-            description("Not running from a tty"),
-        }
+            #[doc = "Not running from a tty"]
+            NotRunningFromTTY {
+                description("Not running from a tty"),
+            }
 
-        #[doc = "tty is already in KB_GRAPHICS mode"]
-        TTYAlreadyInGraphicsMode {
-            description("The tty is already in KB_GRAPHICS mode"),
-            display("The tty is already in graphics mode, is already a compositor running?"),
-        }
+            #[doc = "tty is already in KB_GRAPHICS mode"]
+            TTYAlreadyInGraphicsMode {
+                description("The tty is already in KB_GRAPHICS mode"),
+                display("The tty is already in graphics mode, is already a compositor running?"),
+            }
 
-        #[doc = "Failed to activate open tty"]
-        FailedToActivateTTY(num: i32) {
-            description("Failed to activate open tty"),
-            display("Failed to activate open tty ({:?})", num),
-        }
+            #[doc = "Failed to activate open tty"]
+            FailedToActivateTTY(num: i32) {
+                description("Failed to activate open tty"),
+                display("Failed to activate open tty ({:?})", num),
+            }
 
-        #[doc = "Failed to wait for tty to become active"]
-        FailedToWaitForTTY(num: i32) {
-            description("Failed to wait for tty to become active"),
-            display("Failed to wait for tty ({:?}) to become active", num),
-        }
+            #[doc = "Failed to wait for tty to become active"]
+            FailedToWaitForTTY(num: i32) {
+                description("Failed to wait for tty to become active"),
+                display("Failed to wait for tty ({:?}) to become active", num),
+            }
 
-        #[doc = "Failed to save old tty state"]
-        FailedToSaveTTYState(num: i32) {
-            description("Failed to save old tty state"),
-            display("Failed to save old tty ({:?}) state", num),
-        }
+            #[doc = "Failed to save old tty state"]
+            FailedToSaveTTYState(num: i32) {
+                description("Failed to save old tty state"),
+                display("Failed to save old tty ({:?}) state", num),
+            }
 
-        #[doc = "Failed to set tty kb mode"]
-        FailedToSetTTYKbMode(num: i32) {
-            description("Failed to set tty kb mode to K_OFF"),
-            display("Failed to set tty ({:?}) kb mode to K_OFF", num),
-        }
+            #[doc = "Failed to set tty kb mode"]
+            FailedToSetTTYKbMode(num: i32) {
+                description("Failed to set tty kb mode to K_OFF"),
+                display("Failed to set tty ({:?}) kb mode to K_OFF", num),
+            }
 
-        #[doc = "Failed to set tty mode"]
-        FailedToSetTTYMode(num: i32) {
-            description("Failed to set tty mode to KD_GRAPHICS"),
-            display("Failed to set tty ({:?}) mode into graphics mode", num),
-        }
+            #[doc = "Failed to set tty mode"]
+            FailedToSetTTYMode(num: i32) {
+                description("Failed to set tty mode to KD_GRAPHICS"),
+                display("Failed to set tty ({:?}) mode into graphics mode", num),
+            }
 
-        #[doc = "Failed to set tty in process mode"]
-        FailedToTakeControlOfTTY(num: i32) {
-            description("Failed to set tty mode to VT_PROCESS"),
-            display("Failed to take control of tty ({:?})", num),
+            #[doc = "Failed to set tty in process mode"]
+            FailedToTakeControlOfTTY(num: i32) {
+                description("Failed to set tty mode to VT_PROCESS"),
+                display("Failed to take control of tty ({:?})", num),
+            }
         }
     }
 }
+use self::errors::*;

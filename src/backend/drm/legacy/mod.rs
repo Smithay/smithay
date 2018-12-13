@@ -1,8 +1,8 @@
 //!
-//! [`RawDevice`](../trait.RawDevice.html) and [`RawSurface`](../trait.RawSurface.html)
+//! [`RawDevice`](RawDevice) and [`RawSurface`](RawSurface)
 //! implementations using the legacy mode-setting infrastructure.
 //!
-//! Usually this implementation will be wrapped into a [`GbmDevice`](../gbm/struct.GbmDevice.html).
+//! Usually this implementation will be wrapped into a [`GbmDevice`](::backend::drm::gbm::GbmDevice).
 //! Take a look at `anvil`s source code for an example of this.
 //!
 //! For an example how to use this standalone, take a look at the `raw_drm` example.
@@ -86,7 +86,7 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
 }
 
 impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
-    /// Create a new `LegacyDrmDevice` from an open drm node
+    /// Create a new [`LegacyDrmDevice`] from an open drm node
     ///
     /// Returns an error if the file is no valid drm node or context creation was not
     /// successful.

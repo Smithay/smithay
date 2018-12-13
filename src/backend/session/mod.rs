@@ -45,25 +45,26 @@ pub trait Session {
 /// Interface for registering for notifications for a given session.
 ///
 /// Part of the session API which allows to get notified, when the given session
-/// gets paused or becomes active again. Any object implementing the `SessionObserver` trait
-/// may be registered.
+/// gets paused or becomes active again. Any object implementing the [`SessionObserver`]
+/// trait may be registered.
 pub trait SessionNotifier {
     /// Id type of registered observers
     type Id: PartialEq + Eq;
 
-    /// Registers a given `SessionObserver`.
+    /// Registers a given [`SessionObserver`].
     ///
     /// Returns an id of the inserted observer, can be used to remove it again.
     fn register<S: SessionObserver + 'static>(&mut self, signal: S) -> Self::Id;
-    /// Removes an observer by its given id from `SessionNotifier::register`.
+    /// Removes an observer by its given id from [`SessionNotifier::register`].
     fn unregister(&mut self, signal: Self::Id);
 }
 
-/// Trait describing the ability to return a `SessionObserver` related to Self.
+/// Trait describing the ability to return a [`SessionObserver`] related to Self.
 ///
-/// The returned `SessionObserver` is responsible to handle the `pause` and `activate` signals.
+/// The returned [`SessionObserver`] is responsible to handle the [`pause`](SessionObserver::pause)
+/// and [`activate`](SessionObserver::activate) signals.
 pub trait AsSessionObserver<S: SessionObserver + 'static> {
-    /// Create a `SessionObserver` linked to this object
+    /// Create a [`SessionObserver`] linked to this object
     fn observer(&mut self) -> S;
 }
 

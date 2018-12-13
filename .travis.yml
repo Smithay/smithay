@@ -108,7 +108,7 @@ deploy:
   local_dir: "./target/doc"
   on:
     branch: master
-    rust: stable
+    rust: nightly
     condition: "$FEATURES = all"
 
 notifications:

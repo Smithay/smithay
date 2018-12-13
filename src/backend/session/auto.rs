@@ -1,31 +1,32 @@
-//! Implementation of the `Session` trait through various implementations
+//! Implementation of the [`Session`] trait through various implementations
 //! automatically choosing the best available interface.
 //!
 //! ## How to use it
 //!
 //! ### Initialization
 //!
-//! To initialize a session just call `AutoSession::new`. A new session will be opened, if the
-//! any available interface is successful and will be closed once the `AutoSessionNotifier` is dropped.
+//! To initialize a session just call [`AutoSession::new`](::backend::session::auto::AutoSession::new).
+//! A new session will be opened, if the any available interface is successful and will be closed once the
+//! [`AutoSessionNotifier`](::backend::session::auto::AutoSessionNotifier) is dropped.
 //!
 //! ### Usage of the session
 //!
-//! The session may be used to open devices manually through the `Session` interface
+//! The session may be used to open devices manually through the [`Session`] interface
 //! or be passed to other objects that need it to open devices themselves.
-//! The `AutoSession` is clonable and may be passed to multiple devices easily.
+//! The [`AutoSession`](::backend::session::auto::AutoSession) is clonable
+//! and may be passed to multiple devices easily.
 //!
-//! Examples for those are e.g. the `LibinputInputBackend` (its context might be initialized through a
-//! `Session` via the `LibinputSessionInterface`) or the `UdevBackend`.
+//! Examples for those are e.g. the [`LibinputInputBackend`](::backend::libinput::LibinputInputBackend)
+//! (its context might be initialized through a [`Session`] via the [`LibinputSessionInterface`](::backend::libinput::LibinputSessionInterface)).
 //!
 //! ### Usage of the session notifier
 //!
 //! The notifier might be used to pause device access, when the session gets paused (e.g. by
-//! switching the tty via `AutoSession::change_vt`) and to automatically enable it again,
-//! when the session becomes active again.
+//! switching the tty via [`AutoSession::change_vt`](::backend::session::Session::change_vt))
+//! and to automatically enable it again, when the session becomes active again.
 //!
 //! It is crucial to avoid errors during that state. Examples for object that might be registered
-//! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
-//! automatically by the `UdevBackend`, if not done manually).
+//! for notifications are the [`Libinput`](input::Libinput) context or the [`Device`](::backend::drm::Device).
 
 #[cfg(feature = "backend_session_logind")]
 use super::logind::{self, logind_session_bind, BoundLogindSession, LogindSession, LogindSessionNotifier};
@@ -38,7 +39,7 @@ use std::{cell::RefCell, io::Error as IoError, os::unix::io::RawFd, path::Path, 
 
 use wayland_server::calloop::LoopHandle;
 
-/// `Session` using the best available interface
+/// [`Session`] using the best available interface
 #[derive(Clone)]
 pub enum AutoSession {
     /// Logind session
@@ -48,7 +49,7 @@ pub enum AutoSession {
     Direct(Rc<RefCell<DirectSession>>),
 }
 
-/// `SessionNotifier` using the best available interface
+/// [`SessionNotifier`] using the best available interface
 pub enum AutoSessionNotifier {
     /// Logind session notifier
     #[cfg(feature = "backend_session_logind")]
@@ -57,11 +58,11 @@ pub enum AutoSessionNotifier {
     Direct(DirectSessionNotifier),
 }
 
-/// Bound session that is driven by the `calloop::EventLoop`.
+/// Bound session that is driven by a [`EventLoop`](wayland_server::calloop::EventLoop).
 ///
-/// See `auto_session_bind` for details.
+/// See [`auto_session_bind`] for details.
 ///
-/// Dropping this object will close the session just like the `AutoSessionNotifier`.
+/// Dropping this object will close the session just like the [`AutoSessionNotifier`].
 pub enum BoundAutoSession {
     /// Bound logind session
     #[cfg(feature = "backend_session_logind")]
@@ -70,7 +71,7 @@ pub enum BoundAutoSession {
     Direct(BoundDirectSession),
 }
 
-/// Id's used by the `AutoSessionNotifier` internally.
+/// Id's used by the [`AutoSessionNotifier`] internally.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct AutoId(AutoIdInternal);
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -138,11 +139,11 @@ impl AutoSession {
     }
 }
 
-/// Bind an `AutoSessionNotifier` to an `EventLoop`.
+/// Bind an [`AutoSessionNotifier`] to an [`EventLoop`](wayland_server::calloop::EventLoop).
 ///
-/// Allows the `AutoSessionNotifier` to listen for incoming signals signalling the session state.
-/// If you don't use this function `AutoSessionNotifier` will not correctly tell you the
-/// session state and call its `SessionObservers`.
+/// Allows the [`AutoSessionNotifier`] to listen for incoming signals signalling the session state.
+/// If you don't use this function [`AutoSessionNotifier`] will not correctly tell you the
+/// session state and call its [`SessionObserver`]s.
 pub fn auto_session_bind<Data: 'static>(
     notifier: AutoSessionNotifier,
     handle: &LoopHandle<Data>,
@@ -232,7 +233,7 @@ impl SessionNotifier for AutoSessionNotifier {
 }
 
 impl BoundAutoSession {
-    /// Unbind the session from the `EventLoop` again
+    /// Unbind the session from the [`EventLoop`](wayland_server::calloop::EventLoop) again
     pub fn unbind(self) -> AutoSessionNotifier {
         match self {
             #[cfg(feature = "backend_session_logind")]
@@ -242,15 +243,22 @@ impl BoundAutoSession {
     }
 }
 
-error_chain! {
-    links {
-        Logind(logind::Error, logind::ErrorKind) #[cfg(feature = "backend_session_logind")] #[doc = "Underlying logind session error"];
-    }
+/// Errors related to auto sessions
+pub mod errors {
+    #[cfg(feature = "backend_session_logind")]
+    use super::logind::errors as logind;
 
-    foreign_links {
-        Direct(::nix::Error) #[doc = "Underlying direct tty session error"];
+    error_chain! {
+        links {
+            Logind(logind::Error, logind::ErrorKind) #[cfg(feature = "backend_session_logind")] #[doc = "Underlying logind session error"];
+        }
+
+        foreign_links {
+            Direct(::nix::Error) #[doc = "Underlying direct tty session error"];
+        }
     }
 }
+use self::errors::*;
 
 impl AsErrno for Error {
     fn as_errno(&self) -> Option<i32> {

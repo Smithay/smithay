@@ -2,8 +2,8 @@
 
 use backend::{
     egl::{
-        context::GlAttributes, error as egl_error, error::Result as EGLResult, native, EGLContext,
-        EGLDisplay, EGLGraphicsBackend, EGLSurface,
+        context::GlAttributes, error::Result as EGLResult, native, EGLContext, EGLDisplay,
+        EGLGraphicsBackend, EGLSurface,
     },
     graphics::{gl::GLGraphicsBackend, CursorBackend, PixelFormat, SwapBuffersError},
     input::{
@@ -16,7 +16,7 @@ use backend::{
 use nix::libc::c_void;
 use std::{
     cell::{Ref, RefCell},
-    cmp, error, fmt,
+    cmp, fmt,
     rc::Rc,
     time::Instant,
 };
@@ -28,23 +28,29 @@ use winit::{
     MouseScrollDelta, Touch, TouchPhase, Window as WinitWindow, WindowBuilder, WindowEvent,
 };
 
-error_chain! {
-    errors {
-        #[doc = "Failed to initialize a window"]
-        InitFailed {
-            description("Failed to initialize a window")
+/// Errors thrown by the `winit` backends
+pub mod errors {
+    use backend::egl::error as egl_error;
+
+    error_chain! {
+        errors {
+            #[doc = "Failed to initialize a window"]
+            InitFailed {
+                description("Failed to initialize a window")
+            }
+
+            #[doc = "Context creation is not supported on the current window system"]
+            NotSupported {
+                description("Context creation is not supported on the current window system.")
+            }
         }
 
-        #[doc = "Context creation is not supported on the current window system"]
-        NotSupported {
-            description("Context creation is not supported on the current window system.")
+        links {
+            EGL(egl_error::Error, egl_error::ErrorKind) #[doc = "EGL error"];
         }
-    }
-
-    links {
-        EGL(egl_error::Error, egl_error::ErrorKind) #[doc = "EGL error"];
     }
 }
+use self::errors::*;
 
 enum Window {
     Wayland {
@@ -72,16 +78,17 @@ struct WindowSize {
 }
 
 /// Window with an active EGL Context created by `winit`. Implements the
-/// `EGLGraphicsBackend` graphics backend trait
+/// [`EGLGraphicsBackend`] and [`GLGraphicsBackend`] graphics backend trait
 pub struct WinitGraphicsBackend {
     window: Rc<Window>,
     size: Rc<RefCell<WindowSize>>,
     logger: ::slog::Logger,
 }
 
-/// Abstracted event loop of a `winit` `Window` implementing the `InputBackend` trait
+/// Abstracted event loop of a [`WinitWindow`] implementing the [`InputBackend`] trait
 ///
-/// You need to call `dispatch_new_events` periodically to receive any events.
+/// You need to call [`dispatch_new_events`](InputBackend::dispatch_new_events)
+/// periodically to receive any events.
 pub struct WinitInputBackend {
     events_loop: EventsLoop,
     events_handler: Option<Box<WinitEventsHandler>>,
@@ -95,9 +102,9 @@ pub struct WinitInputBackend {
     size: Rc<RefCell<WindowSize>>,
 }
 
-/// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
-/// graphics backend trait and a corresponding `WinitInputBackend`, which implements
-/// the `InputBackend` trait
+/// Create a new [`WinitGraphicsBackend`], which implements the [`EGLGraphicsBackend`]
+/// and [`GLGraphicsBackend`] graphics backend trait and a corresponding [`WinitInputBackend`],
+/// which implements the [`InputBackend`] trait
 pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitInputBackend)>
 where
     L: Into<Option<::slog::Logger>>,
@@ -111,9 +118,9 @@ where
     )
 }
 
-/// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
-/// graphics backend trait, from a given `WindowBuilder` struct and a corresponding
-/// `WinitInputBackend`, which implements the `InputBackend` trait
+/// Create a new [`WinitGraphicsBackend`], which implements the [`EGLGraphicsBackend`]
+/// and [`GLGraphicsBackend`] graphics backend trait, from a given [`WindowBuilder`]
+/// struct and a corresponding [`WinitInputBackend`], which implements the [`InputBackend`] trait
 pub fn init_from_builder<L>(
     builder: WindowBuilder,
     logger: L,
@@ -133,10 +140,10 @@ where
     )
 }
 
-/// Create a new `WinitGraphicsBackend`, which implements the `EGLGraphicsBackend`
-/// graphics backend trait, from a given `WindowBuilder` struct, as well as given
-/// `GlAttributes` for further customization of the rendering pipeline and a
-/// corresponding `WinitInputBackend`, which implements the `InputBackend` trait.
+/// Create a new [`WinitGraphicsBackend`], which implements the [`EGLGraphicsBackend`]
+/// and [`GLGraphicsBackend`] graphics backend trait, from a given [`WindowBuilder`]
+/// struct, as well as given [`GlAttributes`] for further customization of the rendering pipeline and a
+/// corresponding [`WinitInputBackend`], which implements the [`InputBackend`] trait.
 pub fn init_from_builder_with_gl_attr<L>(
     builder: WindowBuilder,
     attributes: GlAttributes,
@@ -208,7 +215,7 @@ where
 
 /// Handler trait to receive window-related events to provide a better *nested* experience.
 pub trait WinitEventsHandler {
-    /// The window was resized, can be used to adjust the associated `wayland::output::Output`s mode.
+    /// The window was resized, can be used to adjust the associated [`Output`](::wayland::output::Output)s mode.
     ///
     /// Here are provided the new size (in physical pixels) and the new scale factor provided by `winit`.
     fn resized(&mut self, size: (f64, f64), scale: f64);
@@ -219,7 +226,7 @@ pub trait WinitEventsHandler {
 }
 
 impl WinitGraphicsBackend {
-    /// Get a reference to the internally used `winit::Window`
+    /// Get a reference to the internally used [`WinitWindow`]
     pub fn winit_window(&self) -> Ref<WinitWindow> {
         self.window.window()
     }
@@ -314,16 +321,16 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
     }
 }
 
-/// Errors that may happen when driving the event loop of `WinitInputBackend`
+/// Errors that may happen when driving the event loop of [`WinitInputBackend`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WinitInputError {
-    /// The underlying `winit` `Window` was closed. No further events can be processed.
+    /// The underlying [`WinitWindow`] was closed. No further events can be processed.
     ///
-    /// See `WinitInputBackend::dispatch_new_events`.
+    /// See `dispatch_new_events`.
     WindowClosed,
 }
 
-impl error::Error for WinitInputError {
+impl ::std::error::Error for WinitInputError {
     fn description(&self) -> &str {
         match *self {
             WinitInputError::WindowClosed => "Glutin Window was closed",
@@ -338,7 +345,7 @@ impl fmt::Display for WinitInputError {
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Winit-Backend internal event wrapping `winit`'s types into a `KeyboardKeyEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a [`KeyboardKeyEvent`]
 pub struct WinitKeyboardInputEvent {
     time: u32,
     key: u32,
@@ -367,7 +374,7 @@ impl KeyboardKeyEvent for WinitKeyboardInputEvent {
 }
 
 #[derive(Clone)]
-/// Winit-Backend internal event wrapping `winit`'s types into a `PointerMotionAbsoluteEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a [`PointerMotionAbsoluteEvent`]
 pub struct WinitMouseMovedEvent {
     size: Rc<RefCell<WindowSize>>,
     time: u32,
@@ -404,7 +411,7 @@ impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// Winit-Backend internal event wrapping `winit`'s types into a `PointerAxisEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a [`PointerAxisEvent`]
 pub struct WinitMouseWheelEvent {
     time: u32,
     delta: MouseScrollDelta,
@@ -442,7 +449,7 @@ impl PointerAxisEvent for WinitMouseWheelEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Winit-Backend internal event wrapping `winit`'s types into a `PointerButtonEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a [`PointerButtonEvent`]
 pub struct WinitMouseInputEvent {
     time: u32,
     button: WinitMouseButton,
@@ -466,7 +473,7 @@ impl PointerButtonEvent for WinitMouseInputEvent {
 }
 
 #[derive(Clone)]
-/// Winit-Backend internal event wrapping `winit`'s types into a `TouchDownEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a [`TouchDownEvent`]
 pub struct WinitTouchStartedEvent {
     size: Rc<RefCell<WindowSize>>,
     time: u32,
@@ -513,7 +520,7 @@ impl TouchDownEvent for WinitTouchStartedEvent {
 }
 
 #[derive(Clone)]
-/// Winit-Backend internal event wrapping `winit`'s types into a `TouchMotionEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a [`TouchMotionEvent`]
 pub struct WinitTouchMovedEvent {
     size: Rc<RefCell<WindowSize>>,
     time: u32,
@@ -573,7 +580,7 @@ impl TouchUpEvent for WinitTouchEndedEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// Winit-Backend internal event wrapping `winit`'s types into a `TouchCancelEvent`
+/// Winit-Backend internal event wrapping `winit`'s types into a [`TouchCancelEvent`]
 pub struct WinitTouchCancelledEvent {
     time: u32,
     id: u64,
@@ -655,17 +662,17 @@ impl InputBackend for WinitInputBackend {
         &mut self.input_config
     }
 
-    /// Processes new events of the underlying event loop to drive the set `InputHandler`.
+    /// Processes new events of the underlying event loop to drive the set [`InputHandler`].
     ///
     /// You need to periodically call this function to keep the underlying event loop and
-    /// `Window` active. Otherwise the window may no respond to user interaction and no
-    /// input events will be received by a set `InputHandler`.
+    /// [`WinitWindow`] active. Otherwise the window may no respond to user interaction and no
+    /// input events will be received by a set [`InputHandler`].
     ///
-    /// Returns an error if the `Window` the window has been closed. Calling
-    /// `dispatch_new_events` again after the `Window` has been closed is considered an
+    /// Returns an error if the [`WinitWindow`] the window has been closed. Calling
+    /// `dispatch_new_events` again after the [`WinitWindow`] has been closed is considered an
     /// application error and unspecified behaviour may occur.
     ///
-    /// The linked `WinitGraphicsBackend` will error with a lost `Context` and should
+    /// The linked [`WinitGraphicsBackend`] will error with a lost context and should
     /// not be used anymore as well.
     fn dispatch_new_events(&mut self) -> ::std::result::Result<(), WinitInputError> {
         let mut closed = false;

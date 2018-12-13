@@ -1,4 +1,4 @@
-//! Gl rendering types
+//! OpenGL rendering types
 
 use nix::libc::c_void;
 
@@ -45,11 +45,11 @@ pub trait GLGraphicsBackend {
     fn get_pixel_format(&self) -> PixelFormat;
 }
 
-/// Loads a Raw GLES Interface for a given `GLGraphicsBackend`
+/// Loads a Raw GLES Interface for a given [`GLGraphicsBackend`]
 ///
-/// This remains valid as long as the underlying `GLGraphicsBackend` is alive
+/// This remains valid as long as the underlying [`GLGraphicsBackend`] is alive
 /// and may only be used in combination with the backend. Using this with any
-/// other gl context *may* cause undefined behavior.
+/// other gl context or after the backend was dropped *may* cause undefined behavior.
 pub fn load_raw_gl<B: GLGraphicsBackend>(backend: &B) -> Gles2 {
     Gles2::load_with(|s| unsafe { backend.get_proc_address(s) as *const _ })
 }

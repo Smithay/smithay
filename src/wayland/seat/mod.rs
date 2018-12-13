@@ -38,7 +38,8 @@
 //! Currently, only pointer and keyboard capabilities are supported by
 //! smithay.
 //!
-//! You can add these capabilities via methods of the `Seat` struct: `add_keyboard`, `add_pointer`.
+//! You can add these capabilities via methods of the [`Seat`](::wayland::seat::Seat) struct:
+//! [`add_keyboard`](::wayland::seat::Seat::add_keyboard), [`add_pointer`](::wayland::seat::Seat::add_pointer).
 //! These methods return handles that can be cloned and sent across thread, so you can keep one around
 //! in your event-handling code to forward inputs to your clients.
 
@@ -101,7 +102,7 @@ impl Inner {
 /// This struct gives you access to the control of the
 /// capabilities of the associated seat.
 ///
-/// It is directly inserted in the event loop by its `new` method.
+/// It is directly inserted in the event loop by its [`new`](Seat::new) method.
 ///
 /// This is an handle to the inner logic, it can be cloned and shared accross
 /// threads.
@@ -160,7 +161,7 @@ impl Seat {
         (seat, global)
     }
 
-    /// Attempt to retrieve a `Seat` from an existing resource
+    /// Attempt to retrieve a [`Seat`] from an existing resource
     pub fn from_resource(seat: &Resource<wl_seat::WlSeat>) -> Option<Seat> {
         seat.user_data::<Arc<SeatArc>>().cloned().map(|arc| Seat { arc })
     }
@@ -172,8 +173,8 @@ impl Seat {
 
     /// Adds the pointer capability to this seat
     ///
-    /// You are provided a `PointerHandle`, which allows you to send input events
-    /// to this keyboard. This handle can be cloned and sent across threads.
+    /// You are provided a [`PointerHandle`], which allows you to send input events
+    /// to this pointer. This handle can be cloned and sent across threads.
     ///
     /// Calling this method on a seat that already has a pointer capability
     /// will overwrite it, and will be seen by the clients as if the
@@ -245,7 +246,7 @@ impl Seat {
 
     /// Adds the keyboard capability to this seat
     ///
-    /// You are provided a `KbdHandle`, which allows you to send input events
+    /// You are provided a [`KeyboardHandle`], which allows you to send input events
     /// to this keyboard. This handle can be cloned and sent across threads.
     ///
     /// You also provide a Model/Layout/Variant/Options specification of the
@@ -324,7 +325,7 @@ impl Seat {
         }
     }
 
-    /// Checks whether a given `WlSeat` is associated with this `Seat`
+    /// Checks whether a given [`WlSeat`](wl_seat::WlSeat) is associated with this [`Seat`]
     pub fn owns(&self, seat: &Resource<wl_seat::WlSeat>) -> bool {
         let inner = self.arc.inner.lock().unwrap();
         inner.known_seats.iter().any(|s| s.equals(seat))

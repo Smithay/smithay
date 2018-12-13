@@ -1,8 +1,8 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
+use backend::input::{self as backend, Axis, InputBackend};
 #[cfg(feature = "backend_session")]
 use backend::session::{AsErrno, Session, SessionObserver};
-use backend::{input as backend, input::Axis};
 use input as libinput;
 use input::event;
 
@@ -27,7 +27,7 @@ use wayland_server::calloop::{
 #[cfg(all(any(target_os = "linux", target_os = "android"), feature = "backend_session"))]
 const INPUT_MAJOR: u32 = 13;
 
-/// Libinput based `InputBackend`.
+/// Libinput based [`InputBackend`].
 ///
 /// Tracks input of all devices given manually or via a udev seat to a provided libinput
 /// context.
@@ -40,8 +40,8 @@ pub struct LibinputInputBackend {
 }
 
 impl LibinputInputBackend {
-    /// Initialize a new `LibinputInputBackend` from a given already initialized libinput
-    /// context.
+    /// Initialize a new [`LibinputInputBackend`] from a given already initialized
+    /// [libinput context](libinput::Libinput).
     pub fn new<L>(context: libinput::Libinput, logger: L) -> Self
     where
         L: Into<Option<::slog::Logger>>,
@@ -248,7 +248,7 @@ impl backend::Event for event::touch::TouchFrameEvent {
 
 impl backend::TouchFrameEvent for event::touch::TouchFrameEvent {}
 
-impl backend::InputBackend for LibinputInputBackend {
+impl InputBackend for LibinputInputBackend {
     type InputConfig = [libinput::Device];
     type EventError = IoError;
 
@@ -565,8 +565,8 @@ impl SessionObserver for libinput::Libinput {
     }
 }
 
-/// Wrapper for types implementing the `Session` trait to provide
-/// a `LibinputInterface` implementation.
+/// Wrapper for types implementing the [`Session`] trait to provide
+/// a [`libinput::LibinputInterface`] implementation.
 #[cfg(feature = "backend_session")]
 pub struct LibinputSessionInterface<S: Session>(S);
 
@@ -597,10 +597,10 @@ impl AsRawFd for LibinputInputBackend {
     }
 }
 
-/// Binds a `LibinputInputBackend` to a given `EventLoop`.
+/// Binds a [`LibinputInputBackend`] to a given [`LoopHandle`].
 ///
 /// Automatically feeds the backend with incoming events without any manual calls to
-/// `dispatch_new_events`. Should be used to achieve the smallest possible latency.
+/// [`dispatch_new_events`](InputBackend::dispatch_new_events). Should be used to achieve the smallest possible latency.
 pub fn libinput_bind<Data: 'static>(
     backend: LibinputInputBackend,
     handle: LoopHandle<Data>,

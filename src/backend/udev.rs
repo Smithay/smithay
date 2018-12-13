@@ -1,12 +1,12 @@
 //!
 //! Provides `udev` related functionality for automated device scanning.
 //!
-//! This module mainly provides the `UdevBackend`, which constantly monitors available DRM devices
-//! and notifies a user supplied `UdevHandler` of any changes.
+//! This module mainly provides the [`UdevBackend`](::backend::udev::UdevBackend), which constantly monitors available DRM devices
+//! and notifies a user supplied [`UdevHandler`](::backend::udev::UdevHandler) of any changes.
 //!
 //! Additionally this contains some utility functions related to scanning.
 //!
-//! See also `examples/udev.rs` for pure hardware backed example of a compositor utilizing this
+//! See also `anvil/src/udev.rs` for pure hardware backed example of a compositor utilizing this
 //! backend.
 
 use nix::sys::stat::{dev_t, stat};
@@ -43,7 +43,7 @@ impl<T: UdevHandler + 'static> AsRawFd for UdevBackend<T> {
 }
 
 impl<T: UdevHandler + 'static> UdevBackend<T> {
-    /// Creates a new `UdevBackend` and adds it to the given `EventLoop`'s state.
+    /// Creates a new [`UdevBackend`]
     ///
     /// ## Arguments
     /// `context` - An initialized udev context
@@ -97,9 +97,9 @@ impl<T: UdevHandler + 'static> Drop for UdevBackend<T> {
     }
 }
 
-/// Binds a `UdevBackend` to a given `EventLoop`.
+/// Binds a [`UdevBackend`] to a given [`EventLoop`](wayland_server::calloop::EventLoop).
 ///
-/// Allows the backend to receive kernel events and thus to drive the `UdevHandler`.
+/// Allows the backend to receive kernel events and thus to drive the [`UdevHandler`].
 /// No runtime functionality can be provided without using this function.
 pub fn udev_backend_bind<T: UdevHandler + 'static, Data: 'static>(
     udev: UdevBackend<T>,
@@ -156,7 +156,7 @@ impl<T: UdevHandler + 'static> UdevBackend<T> {
     }
 }
 
-/// Handler for the `UdevBackend`, allows to open, close and update drm devices as they change during runtime.
+/// Handler for the [`UdevBackend`], allows to open, close and update drm devices as they change during runtime.
 pub trait UdevHandler {
     /// Called when a new device is detected.
     fn device_added(&mut self, device: dev_t, path: PathBuf);
@@ -166,16 +166,13 @@ pub trait UdevHandler {
     /// should scan again for connected monitors and mode switch accordingly.
     fn device_changed(&mut self, device: dev_t);
     /// Called when a device was removed.
-    ///
-    /// The corresponding `UdevRawFd` will never return a valid `RawFd` anymore
-    /// and its file descriptor will be closed once this function returns,
-    /// any open references/tokens to this device need to be released.
     fn device_removed(&mut self, device: dev_t);
 }
 
 /// Returns the path of the primary GPU device if any
 ///
-/// Might be used for filtering in `UdevHandler::device_added` or for manual `DrmDevice` initialization
+/// Might be used for filtering in [`UdevHandler::device_added`] or for manual
+/// [`LegacyDrmDevice`](::backend::drm::legacy::LegacyDrmDevice) initialization.
 pub fn primary_gpu<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Option<PathBuf>> {
     let mut enumerator = Enumerator::new(context)?;
     enumerator.match_subsystem("drm")?;
@@ -205,7 +202,8 @@ pub fn primary_gpu<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Opti
 
 /// Returns the paths of all available GPU devices
 ///
-/// Might be used for manual `DrmDevice` initialization
+/// Might be used for manual  [`LegacyDrmDevice`](::backend::drm::legacy::LegacyDrmDevice)
+/// initialization.
 pub fn all_gpus<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Vec<PathBuf>> {
     let mut enumerator = Enumerator::new(context)?;
     enumerator.match_subsystem("drm")?;

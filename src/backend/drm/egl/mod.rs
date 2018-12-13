@@ -1,9 +1,9 @@
 //!
-//! [`Device`](../trait.Device.html) and [`Surface`](../trait.Surface.html)
+//! [`Device`](Device) and [`Surface`](Surface)
 //! implementations using egl contexts and surfaces for efficient rendering.
 //!
-//! Usually this implementation's [`EglSurface`](struct.EglSurface.html)s implementation
-//! of [`GlGraphicsBackend`](../../graphics/gl/trait.GlGraphicsBackend.html) will be used
+//! Usually this implementation's [`EglSurface`](::backend::drm::egl::EglSurface)s implementation
+//! of [`GLGraphicsBackend`](::backend::graphics::gl::GLGraphicsBackend) will be used
 //! to let your compositor render.
 //! Take a look at `anvil`s source code for an example of this.
 //!
@@ -59,7 +59,7 @@ where
     D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
     <D as Device>::Surface: NativeSurface,
 {
-    /// Try to create a new `EglDevice` from an open device.
+    /// Try to create a new [`EglDevice`] from an open device.
     ///
     /// Returns an error if the file is no valid device or context
     /// creation was not successful.
@@ -79,7 +79,7 @@ where
         )
     }
 
-    /// Create a new `EglDevice` from an open device and given `GlAttributes`
+    /// Create a new [`EglDevice`] from an open device and given [`GlAttributes`]
     ///
     /// Returns an error if the file is no valid device or context
     /// creation was not successful.

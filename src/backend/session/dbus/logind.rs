@@ -1,5 +1,5 @@
 //!
-//! Implementation of the `Session` trait through the logind dbus interface.
+//! Implementation of the [`Session`](::backend::session::Session) trait through the logind dbus interface.
 //!
 //! This requires systemd and dbus to be available and started on the system.
 //!
@@ -7,28 +7,29 @@
 //!
 //! ### Initialization
 //!
-//! To initialize a session just call `LogindSession::new`. A new session will be opened, if the
-//! call is successful and will be closed once the `LogindSessionNotifier` is dropped.
+//! To initialize a session just call [`LogindSession::new`](::backend::session::dbus::logind::LogindSession::new).
+//! A new session will be opened, if the call is successful and will be closed once the
+//! [`LogindSessionNotifier`](::backend::session::dbus::logind::LogindSessionNotifier) is dropped.
 //!
 //! ### Usage of the session
 //!
-//! The session may be used to open devices manually through the `Session` interface
+//! The session may be used to open devices manually through the [`Session`](::backend::session::Session) interface
 //! or be passed to other objects that need it to open devices themselves.
-//! The `LogindSession` is clonable and may be passed to multiple devices easily.
+//! The [`LogindSession`](::backend::session::dbus::logind::LogindSession) is clonable
+//! and may be passed to multiple devices easily.
 //!
-//! Examples for those are e.g. the `LibinputInputBackend` (its context might be initialized through a
-//! `Session` via the `LibinputSessionInterface`) or the `UdevBackend`.
+//! Examples for those are e.g. the [`LibinputInputBackend`](::backend::libinput::LibinputInputBackend)
+//! (its context might be initialized through a [`Session`](::backend::session::Session) via the
+//! [`LibinputSessionInterface`](::backend::libinput::LibinputSessionInterface)).
 //!
 //! ### Usage of the session notifier
 //!
 //! The notifier might be used to pause device access, when the session gets paused (e.g. by
-//! switching the tty via `LogindSession::change_vt`) and to automatically enable it again,
-//! when the session becomes active again.
+//! switching the tty via [`LogindSession::change_vt`](::backend::session::Session::change_vt))
+//! and to automatically enable it again, when the session becomes active again.
 //!
 //! It is crucial to avoid errors during that state. Examples for object that might be registered
-//! for notifications are the `Libinput` context, the `UdevBackend` or a `DrmDevice` (handled
-//! automatically by the `UdevBackend`, if not done manually).
-//! ```
+//! for notifications are the [`Libinput`](input::Libinput) context or the [`Device`](::backend::drm::Device).
 
 use backend::session::{AsErrno, Session, SessionNotifier, SessionObserver};
 use dbus::{
@@ -64,14 +65,14 @@ struct LogindSessionImpl {
     logger: ::slog::Logger,
 }
 
-/// `Session` via the logind dbus interface
+/// [`Session`] via the logind dbus interface
 #[derive(Clone)]
 pub struct LogindSession {
     internal: Weak<LogindSessionImpl>,
     seat: String,
 }
 
-/// `SessionNotifier` via the logind dbus interface
+/// [`SessionNotifier`] via the logind dbus interface
 #[derive(Clone)]
 pub struct LogindSessionNotifier {
     internal: Rc<LogindSessionImpl>,
@@ -401,7 +402,7 @@ impl Session for LogindSession {
     }
 }
 
-/// Ids of registered `SessionObserver`s of the `LogindSessionNotifier`
+/// Ids of registered [`SessionObserver`]s of the [`LogindSessionNotifier`]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Id(usize);
 
@@ -417,22 +418,22 @@ impl SessionNotifier for LogindSessionNotifier {
     }
 }
 
-/// Bound logind session that is driven by the `wayland_server::EventLoop`.
+/// Bound logind session that is driven by the [`EventLoop`](wayland_server::calloop::EventLoop).
 ///
-/// See `logind_session_bind` for details.
+/// See [`logind_session_bind`] for details.
 ///
-/// Dropping this object will close the logind session just like the `LogindSessionNotifier`.
+/// Dropping this object will close the logind session just like the [`LogindSessionNotifier`].
 pub struct BoundLogindSession {
     notifier: LogindSessionNotifier,
     _watches: Vec<Watch>,
     sources: Vec<Source<Generic<EventedRawFd>>>,
 }
 
-/// Bind a `LogindSessionNotifier` to an `EventLoop`.
+/// Bind a [`LogindSessionNotifier`] to an [`EventLoop`](wayland_server::calloop::EventLoop).
 ///
-/// Allows the `LogindSessionNotifier` to listen for incoming signals signalling the session state.
-/// If you don't use this function `LogindSessionNotifier` will not correctly tell you the logind
-/// session state and call it's `SessionObservers`.
+/// Allows the [`LogindSessionNotifier`] to listen for incoming signals signalling the session state.
+/// If you don't use this function [`LogindSessionNotifier`] will not correctly tell you the logind
+/// session state and call it's [`SessionObserver`]s.
 pub fn logind_session_bind<Data: 'static>(
     notifier: LogindSessionNotifier,
     handle: &LoopHandle<Data>,
@@ -471,7 +472,7 @@ pub fn logind_session_bind<Data: 'static>(
 }
 
 impl BoundLogindSession {
-    /// Unbind the logind session from the `EventLoop`
+    /// Unbind the logind session from the [`EventLoop`](wayland_server::calloop::EventLoop)
     pub fn unbind(self) -> LogindSessionNotifier {
         for source in self.sources {
             source.remove();
@@ -518,62 +519,68 @@ impl LogindSessionNotifier {
     }
 }
 
-error_chain! {
-    errors {
-        #[doc = "Failed to connect to dbus system socket"]
-        FailedDbusConnection {
-            description("Failed to connect to dbus system socket"),
-        }
+/// Errors related to logind sessions
+pub mod errors {
+    use dbus::{BusName, Interface, Member, Path as DbusPath};
 
-        #[doc = "Failed to get session from logind"]
-        FailedToGetSession {
-            description("Failed to get session from logind")
-        }
+    error_chain! {
+        errors {
+            #[doc = "Failed to connect to dbus system socket"]
+            FailedDbusConnection {
+                description("Failed to connect to dbus system socket"),
+            }
 
-        #[doc = "Failed to get seat from logind"]
-        FailedToGetSeat {
-            description("Failed to get seat from logind")
-        }
+            #[doc = "Failed to get session from logind"]
+            FailedToGetSession {
+                description("Failed to get session from logind")
+            }
 
-        #[doc = "Failed to get vt from logind"]
-        FailedToGetVT {
-            description("Failed to get vt from logind")
-        }
+            #[doc = "Failed to get seat from logind"]
+            FailedToGetSeat {
+                description("Failed to get seat from logind")
+            }
 
-        #[doc = "Failed to call dbus method"]
-        FailedToSendDbusCall(bus: BusName<'static>, path: DbusPath<'static>, interface: Interface<'static>, member: Member<'static>) {
-            description("Failed to call dbus method")
-            display("Failed to call dbus method for service: {:?}, path: {:?}, interface: {:?}, member: {:?}", bus, path, interface, member),
-        }
+            #[doc = "Failed to get vt from logind"]
+            FailedToGetVT {
+                description("Failed to get vt from logind")
+            }
 
-        #[doc = "Dbus method call failed"]
-        DbusCallFailed(bus: BusName<'static>, path: DbusPath<'static>, interface: Interface<'static>, member: Member<'static>) {
-            description("Dbus method call failed")
-            display("Dbus message call failed for service: {:?}, path: {:?}, interface: {:?}, member: {:?}", bus, path, interface, member),
-        }
+            #[doc = "Failed to call dbus method"]
+            FailedToSendDbusCall(bus: BusName<'static>, path: DbusPath<'static>, interface: Interface<'static>, member: Member<'static>) {
+                description("Failed to call dbus method")
+                display("Failed to call dbus method for service: {:?}, path: {:?}, interface: {:?}, member: {:?}", bus, path, interface, member),
+            }
 
-        #[doc = "Dbus method return had unexpected format"]
-        UnexpectedMethodReturn {
-            description("Dbus method return returned unexpected format")
-        }
+            #[doc = "Dbus method call failed"]
+            DbusCallFailed(bus: BusName<'static>, path: DbusPath<'static>, interface: Interface<'static>, member: Member<'static>) {
+                description("Dbus method call failed")
+                display("Dbus message call failed for service: {:?}, path: {:?}, interface: {:?}, member: {:?}", bus, path, interface, member),
+            }
 
-        #[doc = "Failed to setup dbus match rule"]
-        DbusMatchFailed(rule: String) {
-            description("Failed to setup dbus match rule"),
-            display("Failed to setup dbus match rule {}", rule),
-        }
+            #[doc = "Dbus method return had unexpected format"]
+            UnexpectedMethodReturn {
+                description("Dbus method return returned unexpected format")
+            }
 
-        #[doc = "Failed to stat device"]
-        FailedToStatDevice {
-            description("Failed to stat device")
-        }
+            #[doc = "Failed to setup dbus match rule"]
+            DbusMatchFailed(rule: String) {
+                description("Failed to setup dbus match rule"),
+                display("Failed to setup dbus match rule {}", rule),
+            }
 
-        #[doc = "Session is already closed"]
-        SessionLost {
-            description("Session is already closed")
+            #[doc = "Failed to stat device"]
+            FailedToStatDevice {
+                description("Failed to stat device")
+            }
+
+            #[doc = "Session is already closed"]
+            SessionLost {
+                description("Session is already closed")
+            }
         }
     }
 }
+use self::errors::*;
 
 impl AsErrno for Error {
     fn as_errno(&self) -> Option<i32> {

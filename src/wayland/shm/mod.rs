@@ -36,8 +36,9 @@
 //! # }
 //! ```
 //!
-//! Then, when you have a `WlBuffer` and need to retrieve its contents, use the
-//! `with_buffer_contents` function to do it:
+//! Then, when you have a [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)
+//! and need to retrieve its contents, use the
+//! [`with_buffer_contents`](::wayland::shm::with_buffer_contents) function to do it:
 //!
 //! ```
 //! # extern crate wayland_server;
@@ -103,8 +104,8 @@ pub struct ShmGlobalData {
 /// as they are required by the protocol. Formats given as argument
 /// as additionally advertized.
 ///
-/// The global is directly created on the provided `Display`, and this function
-/// returns the global handle, in case you wish to remove this global in
+/// The global is directly created on the provided [`Display`](wayland_server::Display),
+/// and this function returns the global handle, in case you wish to remove this global in
 /// the future.
 pub fn init_shm_global<L>(
     display: &mut Display,

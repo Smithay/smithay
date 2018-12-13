@@ -21,7 +21,7 @@ pub mod seat;
 pub mod shell;
 pub mod shm;
 
-/// A global `SerialCounter` for use in your compositor.
+/// A global [`SerialCounter`] for use in your compositor.
 ///
 /// Is is also used internally by some parts of Smithay.
 pub static SERIAL_COUNTER: SerialCounter = SerialCounter {

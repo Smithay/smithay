@@ -1,5 +1,6 @@
 //!
-//! Errors thrown by the `DrmDevice` and `DrmBackend`
+//! Errors thrown by the [`GbmDevice`](::backend::drm::gbm::GbmDevice)
+//! and [`GbmSurface`](::backend::drm::gbm::GbmSurface).
 //!
 
 error_chain! {

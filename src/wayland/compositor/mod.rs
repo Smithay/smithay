@@ -2,7 +2,8 @@
 //!
 //! This module provides automatic handling of surfaces, subsurfaces
 //! and region Wayland objects, by registering an implementation for
-//! for the `wl_compositor` and `wl_subcompositor` globals.
+//! for the [`wl_compositor`](wayland_server::protocol::wl_compositor)
+//! and [`wl_subcompositor`](wayland_server::protocol::wl_subcompositor) globals.
 //!
 //! ## Why use this implementation
 //!
@@ -22,8 +23,8 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this implementation, use the `compositor_init` method provided
-//! by this module. It'll require you to first define as few things, as shown in
+//! To initialize this implementation, use the [`compositor_init`](::wayland::compositor::compositor_init)
+//! method provided by this module. It'll require you to first define as few things, as shown in
 //! this example:
 //!
 //! ```
@@ -66,15 +67,17 @@
 //!
 //! As you can see in the previous example, in the end we are retrieving a token from
 //! the `init` function. This token is necessary to retrieve the metadata associated with
-//! a surface. It can be cloned. See `CompositorToken` for the details of what it enables you.
+//! a surface. It can be cloned. See [`CompositorToken`](::wayland::compositor::CompositorToken)
+//! for the details of what it enables you.
 //!
-//! The surface metadata is held in the `SurfaceAttributes` struct. In contains double-buffered
-//! state pending from the client as defined by the protocol for `wl_surface`, as well as your
-//! user-defined type holding any data you need to have associated with a struct. See its
-//! documentation for details.
+//! The surface metadata is held in the [`SurfaceAttributes`](::wayland::compositor::SurfaceAttributes)
+//! struct. In contains double-buffered state pending from the client as defined by the protocol for
+//! [`wl_surface`](wayland_server::protocol::wl_surface), as well as your user-defined type holding
+//! any data you need to have associated with a struct. See its documentation for details.
 //!
-//! This `CompositorToken` also provides access to the metadata associated with the role of the
-//! surfaces. See the documentation of the `roles` submodule for a detailed explanation.
+//! This [`CompositorToken`](::wayland::compositor::CompositorToken) also provides access to the metadata associated with the role of the
+//! surfaces. See the documentation of the [`roles`](::wayland::compositor::roles) submodule
+//! for a detailed explanation.
 
 use std::{cell::RefCell, rc::Rc, sync::Mutex};
 
@@ -117,7 +120,8 @@ struct Marker<U, R> {
 /// Data associated with a surface, aggregated by the handlers
 ///
 /// Most of the fields of this struct represent a double-buffered state, which
-/// should only be applied once a `commit` request is received from the surface.
+/// should only be applied once a [`commit`](::wayland::compositor::SurfaceEvent::Commit)
+/// request is received from the surface.
 ///
 /// You are responsible for setting those values as you see fit to avoid
 /// processing them two times.
@@ -232,7 +236,8 @@ impl Default for RegionAttributes {
 /// A Compositor global token
 ///
 /// This token can be cloned at will, and is the entry-point to
-/// access data associated with the `wl_surface` and `wl_region` managed
+/// access data associated with the [`wl_surface`](wayland_server::protocol::wl_surface)
+/// and [`wl_region`](wayland_server::protocol::wl_region) managed
 /// by the `CompositorGlobal` that provided it.
 pub struct CompositorToken<U, R> {
     _data: ::std::marker::PhantomData<*mut U>,
@@ -292,7 +297,7 @@ where
     /// - a mutable reference to its surface attribute data
     /// - a mutable reference to its role data,
     /// - a custom value that is passed in a fold-like manner, but only from the output of a parent
-    ///   to its children. See `TraversalAction` for details.
+    ///   to its children. See [`TraversalAction`] for details.
     ///
     /// If the surface not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
@@ -315,7 +320,7 @@ where
     /// in a depth-first order. This matches the reverse of the order in which the surfaces are
     /// supposed to be drawn: top-most first.
     ///
-    /// Behavior is the same as `with_surface_tree_upward`.
+    /// Behavior is the same as [`with_surface_tree_upward`](CompositorToken::with_surface_tree_upward).
     pub fn with_surface_tree_downward<F, T>(
         &self,
         surface: &Resource<WlSurface>,
@@ -438,11 +443,12 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     }
 }
 
-/// Create new `wl_compositor` and `wl_subcompositor` globals.
+/// Create new [`wl_compositor`](wayland_server::protocol::wl_compositor)
+/// and [`wl_subcompositor`](wayland_server::protocol::wl_subcompositor) globals.
 ///
 /// The globals are directly registered into the event loop, and this function
-/// returns a `CompositorToken` which you'll need access the data associated to
-/// the `wl_surface`s.
+/// returns a [`CompositorToken`] which you'll need access the data associated to
+/// the [`wl_surface`](wayland_server::protocol::wl_surface)s.
 ///
 /// It also returns the two global handles, in case you wish to remove these
 /// globals from the event loop in the future.
@@ -491,7 +497,7 @@ where
 pub enum SurfaceEvent {
     /// The double-buffered state has been validated by the client
     ///
-    /// At this point, the pending state that has been accumulated in the `SurfaceAttributes` associated
+    /// At this point, the pending state that has been accumulated in the [`SurfaceAttributes`] associated
     /// to this surface should be integrated into the current state of the surface.
     ///
     /// See [`wayland_server::protocol::wl_surface::Implementation::commit`](https://docs.rs/wayland-server/0.10.1/wayland_server/protocol/wl_surface/struct.Implementation.html#structfield.commit)
@@ -499,8 +505,8 @@ pub enum SurfaceEvent {
     Commit,
     /// The client asks to be notified when would be a good time to update the contents of this surface
     ///
-    /// You must keep the provided `WlCallback` and trigger it at the appropriate time by calling
-    /// its `done()` method.
+    /// You must keep the provided [`WlCallback`](wayland_server::protocol::wl_callback::WlCallback)
+    /// and trigger it at the appropriate time by calling its `done()` method.
     ///
     /// See [`wayland_server::protocol::wl_surface::Implementation::frame`](https://docs.rs/wayland-server/0.10.1/wayland_server/protocol/wl_surface/struct.Implementation.html#structfield.frame)
     /// for more details
