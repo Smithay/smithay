@@ -11,38 +11,35 @@
 //! ---
 //!
 //! Initialization of surfaces happens through the types provided by
-//! [`drm-rs`](https://docs.rs/drm/0.3.4/drm/).
+//! [`drm-rs`](drm).
 //!
 //! Four entities are relevant for the initialization procedure.
 //!
-//! [`crtc`](https://docs.rs/drm/0.3.4/drm/control/crtc/index.html)s represent scanout engines
+//! [`crtc`](drm::control::crtc)s represent scanout engines
 //! of the device pointer to one framebuffer.
 //! Their responsibility is to read the data of the framebuffer and export it into an "Encoder".
 //! The number of crtc's represent the number of independant output devices the hardware may handle.
 //!
-//! An [`encoder`](https://docs.rs/drm/0.3.4/drm/control/encoder/index.html) encodes the data of
+//! An [`encoder`](drm::control::encoder) encodes the data of
 //! connected crtcs into a video signal for a fixed set of connectors.
 //! E.g. you might have an analog encoder based on a DAG for VGA ports, but another one for digital ones.
 //! Also not every encoder might be connected to every crtc.
 //!
-//! A [`connector`](https://docs.rs/drm/0.3.4/drm/control/connector/index.html) represents a port
+//! A [`connector`](drm::control::connector) represents a port
 //! on your computer, possibly with a connected monitor, TV, capture card, etc.
 //!
 //! On surface creation a matching encoder for your `encoder`-`connector` is automatically selected,
 //! if it exists, which means you still need to check your configuration.
 //!
-//! At last a [`Mode`](https://docs.rs/drm/0.3.4/drm/control/struct.Mode.html) needs to be selected,
+//! At last a [`Mode`](drm::control::Mode) needs to be selected,
 //! supported by the `crtc` in question.
 //!
 
-pub use drm::{
-    buffer::Buffer,
-    control::{
-        connector, crtc, encoder, framebuffer, Device as ControlDevice, Mode, ResourceHandles, ResourceInfo,
-    },
+use drm::{
+    control::{connector, crtc, framebuffer, Device as ControlDevice, Mode, ResourceHandles, ResourceInfo},
     Device as BasicDevice,
 };
-pub use nix::libc::dev_t;
+use nix::libc::dev_t;
 
 use std::error::Error;
 use std::iter::IntoIterator;
@@ -51,7 +48,7 @@ use std::path::PathBuf;
 
 use wayland_server::calloop::generic::{EventedFd, Generic};
 use wayland_server::calloop::mio::Ready;
-pub use wayland_server::calloop::InsertError;
+use wayland_server::calloop::InsertError;
 use wayland_server::calloop::{LoopHandle, Source};
 
 use super::graphics::SwapBuffersError;
@@ -94,9 +91,9 @@ pub trait Device: AsRawFd + DevPath {
     /// Creates a new rendering surface.
     ///
     /// Initialization of surfaces happens through the types provided by
-    /// [`drm-rs`](https://docs.rs/drm/0.3.4/drm/).
+    /// [`drm-rs`](drm).
     ///
-    /// [`crtc`](https://docs.rs/drm/0.3.4/drm/control/crtc/index.html)s represent scanout engines
+    /// [`crtc`](drm::control::crtc)s represent scanout engines
     /// of the device pointer to one framebuffer.
     /// Their responsibility is to read the data of the framebuffer and export it into an "Encoder".
     /// The number of crtc's represent the number of independant output devices the hardware may handle.
@@ -109,19 +106,19 @@ pub trait Device: AsRawFd + DevPath {
     ///
     /// You should not call this function manually, but rather use
     /// [`device_bind`] to register the device
-    /// to an [`EventLoop`](https://docs.rs/calloop/0.4.2/calloop/struct.EventLoop.html)
+    /// to an [`EventLoop`](wayland_server::calloop::EventLoop)
     /// to synchronize your rendering to the vblank events of the open crtc's
     fn process_events(&mut self);
 
     /// Load the resource from a [`Device`] given its
-    /// [`ResourceHandle`](https://docs.rs/drm/0.3.4/drm/control/trait.ResourceHandle.html)
+    /// [`ResourceHandle`](drm::control::ResourceHandle)
     fn resource_info<T: ResourceInfo>(
         &self,
         handle: T::Handle,
     ) -> Result<T, <Self::Surface as Surface>::Error>;
 
     /// Attempts to acquire a copy of the [`Device`]'s
-    /// [`ResourceHandles`](https://docs.rs/drm/0.3.4/drm/control/struct.ResourceHandles.html)
+    /// [`ResourceHandle`](drm::control::ResourceHandle)
     fn resource_handles(&self) -> Result<ResourceHandles, <Self::Surface as Surface>::Error>;
 }
 
@@ -134,48 +131,48 @@ pub trait RawDevice: Device<Surface = <Self as RawDevice>::Surface> {
 /// An open crtc that can be used for rendering
 pub trait Surface {
     /// Type repesenting a collection of
-    /// [`connector`](https://docs.rs/drm/0.3.4/drm/control/connector/index.html)s
+    /// [`connector`](drm::control::connector)s
     /// returned by [`current_connectors`](Surface::current_connectors) and
     /// [`pending_connectors`](Surface::pending_connectors)
     type Connectors: IntoIterator<Item = connector::Handle>;
     /// Error type returned by methods of this trait
     type Error: Error + Send;
 
-    /// Returns the underlying [`crtc`](https://docs.rs/drm/0.3.4/drm/control/crtc/index.html) of this surface
+    /// Returns the underlying [`crtc`](drm::control::crtc) of this surface
     fn crtc(&self) -> crtc::Handle;
-    /// Currently used [`connector`](https://docs.rs/drm/0.3.4/drm/control/connector/index.html)s of this `Surface`
+    /// Currently used [`connector`](drm::control::connector)s of this `Surface`
     fn current_connectors(&self) -> Self::Connectors;
-    /// Returns the pending [`connector`](https://docs.rs/drm/0.3.4/drm/control/connector/index.html)s
+    /// Returns the pending [`connector`](drm::control::connector)s
     /// used after the next [`commit`](RawSurface::commit) of this [`Surface`]
     ///
     /// *Note*: Only on a [`RawSurface`] you may directly trigger
     /// a [`commit`](RawSurface::commit). Other `Surface`s provide their
     /// own methods that *may* trigger a commit, you will need to read their docs.
     fn pending_connectors(&self) -> Self::Connectors;
-    /// Tries to add a new [`connector`](https://docs.rs/drm/0.3.4/drm/control/connector/index.html)
+    /// Tries to add a new [`connector`](drm::control::connector)
     /// to be used after the next commit.
     ///
-    /// Fails if the `connector` is not compatible with the underlying [`crtc`](https://docs.rs/drm/0.3.4/drm/control/crtc/index.html)
-    /// (e.g. no suitable [`encoder`](https://docs.rs/drm/0.3.4/drm/control/encoder/index.html) may be found)
+    /// Fails if the `connector` is not compatible with the underlying [`crtc`](drm::control::crtc)
+    /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
     /// or is not compatible with the currently pending
-    /// [`Mode`](https://docs.rs/drm/0.3.4/drm/control/struct.Mode.html).
+    /// [`Mode`](drm::control::Mode).
     fn add_connector(&self, connector: connector::Handle) -> Result<(), Self::Error>;
-    /// Tries to mark a [`connector`](https://docs.rs/drm/0.3.4/drm/control/connector/index.html)
+    /// Tries to mark a [`connector`](drm::control::connector)
     /// for removal on the next commit.
     fn remove_connector(&self, connector: connector::Handle) -> Result<(), Self::Error>;
-    /// Returns the currently active [`Mode`](https://docs.rs/drm/0.3.4/drm/control/struct.Mode.html)
-    /// of the underlying [`crtc`](https://docs.rs/drm/0.3.4/drm/control/crtc/index.html)
+    /// Returns the currently active [`Mode`](drm::control::Mode)
+    /// of the underlying [`crtc`](drm::control::crtc)
     /// if any.
     fn current_mode(&self) -> Option<Mode>;
-    /// Returns the currently pending [`Mode`](https://docs.rs/drm/0.3.4/drm/control/struct.Mode.html)
+    /// Returns the currently pending [`Mode`](drm::control::Mode)
     /// to be used after the next commit, if any.
     fn pending_mode(&self) -> Option<Mode>;
-    /// Tries to set a new [`Mode`](https://docs.rs/drm/0.3.4/drm/control/struct.Mode.html)
+    /// Tries to set a new [`Mode`](drm::control::Mode)
     /// to be used after the next commit.
     ///
     /// Fails if the mode is not compatible with the underlying
-    /// [`crtc`](https://docs.rs/drm/0.3.4/drm/control/crtc/index.html) or any of the
-    /// pending [`connector`](https://docs.rs/drm/0.3.4/drm/control/connector/index.html)s.
+    /// [`crtc`](drm::control::crtc) or any of the
+    /// pending [`connector`](drm::control::connector)s.
     ///
     /// *Note*: Only on a [`RawSurface`] you may directly trigger
     /// a [`commit`](RawSurface::commit). Other [`Surface`]s provide their
@@ -200,7 +197,7 @@ pub trait RawSurface: Surface + ControlDevice + BasicDevice {
     ///
     /// This operation is blocking until the crtc is in the desired state.
     fn commit(&self, framebuffer: framebuffer::Handle) -> Result<(), <Self as Surface>::Error>;
-    /// Page-flip the underlying [`crtc`](https://docs.rs/drm/0.3.4/drm/control/crtc/index.html)
+    /// Page-flip the underlying [`crtc`](drm::control::crtc)
     /// to a new given [`framebuffer`].
     ///
     /// This will not cause the crtc to modeset.

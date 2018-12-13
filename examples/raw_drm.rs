@@ -8,12 +8,17 @@ use drm::{buffer::PixelFormat, control::dumbbuffer::DumbBuffer};
 use slog::Drain;
 use smithay::{
     backend::drm::{
-        connector::{self, State as ConnectorState},
-        crtc, device_bind, encoder, framebuffer,
+        device_bind,
         legacy::{error::Error, LegacyDrmDevice, LegacyDrmSurface},
-        ControlDevice, Device, DeviceHandler, RawSurface, ResourceInfo, Surface,
+        Device, DeviceHandler, RawSurface, Surface,
     },
-    wayland_server::calloop::EventLoop,
+    reexports::{
+        drm::control::{
+            connector::{self, State as ConnectorState},
+            crtc, encoder, framebuffer, Device as ControlDevice, ResourceInfo,
+        },
+        wayland_server::calloop::EventLoop,
+    },
 };
 use std::{
     fs::{File, OpenOptions},

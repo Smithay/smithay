@@ -19,7 +19,7 @@ use smithay::backend::egl::{EGLDisplay, EGLGraphicsBackend};
 use smithay::{
     backend::{
         drm::{
-            dev_t, device_bind,
+            device_bind,
             egl::{EglDevice, EglSurface},
             gbm::{egl::Gbm as EglGbmBackend, GbmDevice},
             legacy::LegacyDrmDevice,
@@ -30,31 +30,34 @@ use smithay::{
         libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface},
         session::{
             auto::{auto_session_bind, AutoSession},
-            notify_multiplexer, AsSessionObserver, OFlag, Session, SessionNotifier,
+            notify_multiplexer, AsSessionObserver, Session, SessionNotifier,
         },
         udev::{primary_gpu, udev_backend_bind, UdevBackend, UdevHandler},
     },
-    drm::control::{
-        connector::{Info as ConnectorInfo, State as ConnectorState},
-        crtc,
-        encoder::Info as EncoderInfo,
+    reexports::{
+        drm::control::{
+            connector::{Info as ConnectorInfo, State as ConnectorState},
+            crtc,
+            encoder::Info as EncoderInfo,
+        },
+        image::{ImageBuffer, Rgba},
+        input::Libinput,
+        nix::{fcntl::OFlag, sys::stat::dev_t},
+        wayland_server::{
+            calloop::{
+                generic::{EventedFd, Generic},
+                EventLoop, LoopHandle, Source,
+            },
+            protocol::{wl_output, wl_surface},
+            Display, Resource,
+        },
     },
-    image::{ImageBuffer, Rgba},
-    input::Libinput,
     wayland::{
         compositor::CompositorToken,
         data_device::{default_action_chooser, init_data_device, set_data_device_focus, DataDeviceEvent},
         output::{Mode, Output, PhysicalProperties},
         seat::{CursorImageStatus, Seat, XkbConfig},
         shm::init_shm_global,
-    },
-    wayland_server::{
-        calloop::{
-            generic::{EventedFd, Generic},
-            EventLoop, LoopHandle, Source,
-        },
-        protocol::{wl_output, wl_surface},
-        Display, Resource,
     },
 };
 
