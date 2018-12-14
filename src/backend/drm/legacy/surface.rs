@@ -1,4 +1,4 @@
-pub use drm::buffer::Buffer;
+use drm::buffer::Buffer;
 use drm::control::{connector, crtc, encoder, framebuffer, Device as ControlDevice, Mode, ResourceInfo};
 use drm::Device as BasicDevice;
 

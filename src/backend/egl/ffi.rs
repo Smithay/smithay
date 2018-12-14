@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-pub use nix::libc::{c_long, c_uint, c_void, int32_t, uint64_t};
+use nix::libc::{c_long, c_uint, c_void, int32_t, uint64_t};
 
 pub type khronos_utime_nanoseconds_t = khronos_uint64_t;
 pub type khronos_uint64_t = uint64_t;

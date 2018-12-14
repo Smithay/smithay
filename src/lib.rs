@@ -7,28 +7,40 @@
 // `error_chain!` can recurse deeply
 #![recursion_limit = "1024"]
 
+#[cfg(feature = "backend_drm_gbm")]
+#[doc(hidden)]
 pub extern crate image;
 #[cfg_attr(feature = "backend_session", macro_use)]
-extern crate nix;
+#[doc(hidden)]
+pub extern crate nix;
 extern crate tempfile;
+#[doc(hidden)]
 pub extern crate wayland_commons;
+#[doc(hidden)]
 pub extern crate wayland_protocols;
+#[doc(hidden)]
 pub extern crate wayland_server;
 #[cfg(feature = "native_lib")]
 extern crate wayland_sys;
 extern crate xkbcommon;
 
 #[cfg(feature = "dbus")]
+#[doc(hidden)]
 pub extern crate dbus;
 #[cfg(feature = "backend_drm")]
+#[doc(hidden)]
 pub extern crate drm;
 #[cfg(feature = "backend_drm_gbm")]
+#[doc(hidden)]
 pub extern crate gbm;
 #[cfg(feature = "backend_libinput")]
+#[doc(hidden)]
 pub extern crate input;
 #[cfg(feature = "backend_session_logind")]
+#[doc(hidden)]
 pub extern crate systemd;
 #[cfg(feature = "backend_udev")]
+#[doc(hidden)]
 pub extern crate udev;
 #[cfg(feature = "backend_winit")]
 extern crate wayland_client;
@@ -56,6 +68,8 @@ pub mod wayland;
 
 #[cfg(feature = "xwayland")]
 pub mod xwayland;
+
+pub mod reexports;
 
 fn slog_or_stdlog<L>(logger: L) -> ::slog::Logger
 where
