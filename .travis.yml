@@ -51,6 +51,8 @@ env:
     - FEATURES="default"
       # test all features simultaneously
     - FEATURES="all"
+      # test our examples
+    - FEATURES="examples"
       # test our house compositor
     - FEATURES="anvil" ANVIL_FEATURES=""
     - FEATURES="anvil" ANVIL_FEATURES="egl"
@@ -90,6 +92,9 @@ script:
         "default")
             vagga cargo-$TRAVIS_RUST_VERSION test &&
             vagga cargo-$TRAVIS_RUST_VERSION doc --no-deps
+        ;;
+        "examples")
+            vagga cargo-$TRAVIS_RUST_VERSION check --examples
         ;;
         "cargo-fmt")
             vagga cargo-$TRAVIS_RUST_VERSION fmt --all -- --check
