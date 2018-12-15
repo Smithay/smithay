@@ -55,3 +55,7 @@ renderer_gl = ["gl_generator"]
 renderer_glium = ["renderer_gl", "glium"]
 native_lib = ["wayland-sys", "wayland-server/native_lib", "wayland-protocols/native_server"]
 xwayland = []
+
+[[example]]
+name = "raw_drm"
+required-features = ["backend_drm_legacy"]
