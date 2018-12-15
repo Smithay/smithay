@@ -7,6 +7,10 @@ use std::{
 use rand;
 
 use smithay::{
+    reexports::wayland_server::{
+        protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface},
+        Display, Resource,
+    },
     wayland::{
         compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent},
         data_device::DnDIconRole,
@@ -20,10 +24,6 @@ use smithay::{
                 XdgSurfaceRole,
             },
         },
-    },
-    reexports::wayland_server::{
-        protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface},
-        Display, Resource,
     },
 };
 

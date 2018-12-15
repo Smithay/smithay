@@ -6,13 +6,13 @@ use std::{
 
 use smithay::{
     backend::{egl::EGLGraphicsBackend, graphics::gl::GLGraphicsBackend, input::InputBackend, winit},
+    reexports::wayland_server::{calloop::EventLoop, protocol::wl_output, Display},
     wayland::{
         data_device::{default_action_chooser, init_data_device, set_data_device_focus, DataDeviceEvent},
         output::{Mode, Output, PhysicalProperties},
         seat::{CursorImageStatus, Seat, XkbConfig},
         shm::init_shm_global,
     },
-    reexports::wayland_server::{calloop::EventLoop, protocol::wl_output, Display},
 };
 
 use slog::Logger;

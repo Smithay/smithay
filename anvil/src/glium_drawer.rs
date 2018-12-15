@@ -18,15 +18,15 @@ use smithay::{
         egl::{BufferAccessError, EGLImages, Format},
         graphics::{gl::GLGraphicsBackend, glium::GliumGraphicsBackend},
     },
+    reexports::wayland_server::{
+        protocol::{wl_buffer, wl_surface},
+        Resource,
+    },
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
         data_device::DnDIconRole,
         seat::CursorImageRole,
         shm::with_buffer_contents as shm_buffer_contents,
-    },
-    reexports::wayland_server::{
-        protocol::{wl_buffer, wl_surface},
-        Resource,
     },
 };
 

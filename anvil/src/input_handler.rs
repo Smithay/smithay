@@ -17,11 +17,11 @@ use smithay::{
         self, Event, InputBackend, InputHandler, KeyState, KeyboardKeyEvent, PointerAxisEvent,
         PointerButtonEvent, PointerMotionAbsoluteEvent, PointerMotionEvent,
     },
+    reexports::wayland_server::protocol::wl_pointer,
     wayland::{
         seat::{keysyms as xkb, AxisFrame, KeyboardHandle, Keysym, ModifiersState, PointerHandle},
         SERIAL_COUNTER as SCOUNTER,
     },
-    reexports::wayland_server::protocol::wl_pointer,
 };
 
 use crate::shell::MyWindowMap;

@@ -90,13 +90,13 @@
 //! the subhandler you provided, or via methods on the [`ShellState`](::wayland::shell::xdg::ShellState)
 //! that you are given (in an `Arc<Mutex<_>>`) as return value of the `init` function.
 
+use crate::utils::Rectangle;
+use crate::wayland::compositor::{roles::Role, CompositorToken};
 use std::{
     cell::RefCell,
     rc::Rc,
     sync::{Arc, Mutex},
 };
-use crate::utils::Rectangle;
-use crate::wayland::compositor::{roles::Role, CompositorToken};
 use wayland_protocols::{
     unstable::xdg_shell::v6::server::{zxdg_popup_v6, zxdg_shell_v6, zxdg_surface_v6, zxdg_toplevel_v6},
     xdg_shell::server::{xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base},
