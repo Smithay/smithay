@@ -11,8 +11,8 @@ use std::os::unix::io::RawFd;
 use std::rc::{Rc, Weak};
 
 use super::{GbmDevice, GbmSurfaceInternal};
-use backend::drm::{RawDevice, RawSurface};
-use backend::session::{AsSessionObserver, SessionObserver};
+use crate::backend::drm::{RawDevice, RawSurface};
+use crate::backend::session::{AsSessionObserver, SessionObserver};
 
 /// [`SessionObserver`](SessionObserver)
 /// linked to the [`GbmDevice`](GbmDevice) it was

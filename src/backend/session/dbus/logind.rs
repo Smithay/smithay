@@ -31,7 +31,7 @@
 //! It is crucial to avoid errors during that state. Examples for object that might be registered
 //! for notifications are the [`Libinput`](input::Libinput) context or the [`Device`](::backend::drm::Device).
 
-use backend::session::{AsErrno, Session, SessionNotifier, SessionObserver};
+use crate::backend::session::{AsErrno, Session, SessionNotifier, SessionObserver};
 use dbus::{
     BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interface, Member, Message, MessageItem,
     OwnedFd, Path as DbusPath, Watch, WatchEvent,
@@ -84,7 +84,7 @@ impl LogindSession {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let logger = ::slog_or_stdlog(logger)
+        let logger = crate::slog_or_stdlog(logger)
             .new(o!("smithay_module" => "backend_session", "session_type" => "logind"));
 
         // Acquire session_id, seat and vt (if any) via libsystemd

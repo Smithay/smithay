@@ -24,7 +24,7 @@ use smithay::{
     wayland_server::protocol::wl_pointer,
 };
 
-use shell::MyWindowMap;
+use crate::shell::MyWindowMap;
 
 pub struct AnvilInputHandler {
     log: Logger,

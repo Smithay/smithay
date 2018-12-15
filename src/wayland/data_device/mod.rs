@@ -68,7 +68,7 @@ use wayland_server::{
     Client, Display, Global, NewResource, Resource,
 };
 
-use wayland::{
+use crate::wayland::{
     compositor::{roles::Role, CompositorToken},
     seat::Seat,
 };
@@ -294,7 +294,7 @@ where
     U: 'static,
     L: Into<Option<::slog::Logger>>,
 {
-    let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "data_device_mgr"));
+    let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "data_device_mgr"));
     let action_choice = Arc::new(Mutex::new(action_choice));
     let callback = Arc::new(Mutex::new(callback));
     let global = display.create_global(3, move |new_ddm, _version| {

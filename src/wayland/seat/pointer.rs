@@ -7,7 +7,7 @@ use wayland_server::{
     NewResource, Resource,
 };
 
-use wayland::compositor::{roles::Role, CompositorToken};
+use crate::wayland::compositor::{roles::Role, CompositorToken};
 
 /// The role representing a surface set as the pointer cursor
 #[derive(Default, Copy, Clone)]

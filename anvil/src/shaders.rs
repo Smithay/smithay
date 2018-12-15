@@ -12,7 +12,7 @@ macro_rules! make_program(
     ($display: expr, $fragment_shader:expr) => {
         program!($display,
             100 => {
-                vertex: ::shaders::VERTEX_SHADER,
+                vertex: crate::shaders::VERTEX_SHADER,
                 fragment: $fragment_shader,
             },
         ).unwrap()
@@ -23,11 +23,11 @@ macro_rules! make_program(
 macro_rules! opengl_programs(
     ($display: expr) => {
         [
-            make_program!($display, ::shaders::FRAGMENT_SHADER_RGBA),
-            make_program!($display, ::shaders::FRAGMENT_SHADER_ABGR),
-            make_program!($display, ::shaders::FRAGMENT_SHADER_XBGR),
-            make_program!($display, ::shaders::FRAGMENT_SHADER_BGRA),
-            make_program!($display, ::shaders::FRAGMENT_SHADER_BGRX),
+            make_program!($display, crate::shaders::FRAGMENT_SHADER_RGBA),
+            make_program!($display, crate::shaders::FRAGMENT_SHADER_ABGR),
+            make_program!($display, crate::shaders::FRAGMENT_SHADER_XBGR),
+            make_program!($display, crate::shaders::FRAGMENT_SHADER_BGRA),
+            make_program!($display, crate::shaders::FRAGMENT_SHADER_BGRX),
         ]
     }
 );

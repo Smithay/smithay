@@ -8,7 +8,7 @@ use wayland_server::{
     NewResource, Resource,
 };
 
-use wayland::{
+use crate::wayland::{
     compositor::{roles::Role, CompositorToken},
     seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat},
 };

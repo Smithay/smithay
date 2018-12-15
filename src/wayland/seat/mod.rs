@@ -55,7 +55,7 @@ pub use self::{
     },
 };
 
-use wayland::compositor::{roles::Role, CompositorToken};
+use crate::wayland::compositor::{roles::Role, CompositorToken};
 
 use wayland_commons::utils::UserDataMap;
 
@@ -133,7 +133,7 @@ impl Seat {
         R: Role<CursorImageRole> + 'static,
         L: Into<Option<::slog::Logger>>,
     {
-        let log = ::slog_or_stdlog(logger);
+        let log = crate::slog_or_stdlog(logger);
         let arc = Arc::new(SeatArc {
             inner: Mutex::new(Inner {
                 pointer: None,

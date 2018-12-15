@@ -6,7 +6,7 @@ use wayland_server::{
     NewResource, Resource,
 };
 
-use wayland::seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat};
+use crate::wayland::seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat};
 
 use super::{DataDeviceData, SeatData};
 

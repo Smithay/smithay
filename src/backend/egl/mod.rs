@@ -19,7 +19,7 @@
 //! of an EGL-based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer) for rendering.
 
 #[cfg(feature = "renderer_gl")]
-use backend::graphics::gl::ffi as gl_ffi;
+use crate::backend::graphics::gl::ffi as gl_ffi;
 use nix::libc::c_uint;
 use std::{
     ffi::CStr,

@@ -59,7 +59,7 @@ impl<T: UdevHandler + 'static> UdevBackend<T> {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_udev"));
+        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_udev"));
 
         let devices = all_gpus(context, seat)?
             .into_iter()

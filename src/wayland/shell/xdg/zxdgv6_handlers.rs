@@ -1,6 +1,6 @@
 use std::{cell::RefCell, sync::Mutex};
 
-use wayland::compositor::{roles::*, CompositorToken};
+use crate::wayland::compositor::{roles::*, CompositorToken};
 use wayland_protocols::{
     unstable::xdg_shell::v6::server::{
         zxdg_popup_v6, zxdg_positioner_v6, zxdg_shell_v6, zxdg_surface_v6, zxdg_toplevel_v6,
@@ -9,7 +9,7 @@ use wayland_protocols::{
 };
 use wayland_server::{protocol::wl_surface, DisplayToken, NewResource, Resource};
 
-use utils::Rectangle;
+use crate::utils::Rectangle;
 
 use super::{
     make_shell_client_data, PopupConfigure, PopupKind, PopupState, PositionerState, ShellClient,

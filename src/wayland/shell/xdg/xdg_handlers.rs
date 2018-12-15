@@ -1,12 +1,12 @@
 use std::{cell::RefCell, sync::Mutex};
 
-use wayland::compositor::{roles::*, CompositorToken};
+use crate::wayland::compositor::{roles::*, CompositorToken};
 use wayland_protocols::xdg_shell::server::{
     xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base,
 };
 use wayland_server::{protocol::wl_surface, DisplayToken, NewResource, Resource};
 
-use utils::Rectangle;
+use crate::utils::Rectangle;
 
 use super::{
     make_shell_client_data, PopupConfigure, PopupKind, PopupState, PositionerState, ShellClient,

@@ -95,8 +95,8 @@ use std::{
     rc::Rc,
     sync::{Arc, Mutex},
 };
-use utils::Rectangle;
-use wayland::compositor::{roles::Role, CompositorToken};
+use crate::utils::Rectangle;
+use crate::wayland::compositor::{roles::Role, CompositorToken};
 use wayland_protocols::{
     unstable::xdg_shell::v6::server::{zxdg_popup_v6, zxdg_shell_v6, zxdg_surface_v6, zxdg_toplevel_v6},
     xdg_shell::server::{xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base},
@@ -297,7 +297,7 @@ where
     L: Into<Option<::slog::Logger>>,
     Impl: FnMut(XdgRequest<U, R, SD>) + 'static,
 {
-    let log = ::slog_or_stdlog(logger);
+    let log = crate::slog_or_stdlog(logger);
     let shell_state = Arc::new(Mutex::new(ShellState {
         known_toplevels: Vec::new(),
         known_popups: Vec::new(),

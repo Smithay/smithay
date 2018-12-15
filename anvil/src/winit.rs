@@ -17,9 +17,9 @@ use smithay::{
 
 use slog::Logger;
 
-use glium_drawer::GliumDrawer;
-use input_handler::AnvilInputHandler;
-use shell::init_shell;
+use crate::glium_drawer::GliumDrawer;
+use crate::input_handler::AnvilInputHandler;
+use crate::shell::init_shell;
 
 pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Logger) -> Result<(), ()> {
     let (renderer, mut input) = winit::init(log.clone()).map_err(|_| ())?;

@@ -27,7 +27,7 @@ use smithay::{
     },
 };
 
-use window_map::{Kind as SurfaceKind, WindowMap};
+use crate::window_map::{Kind as SurfaceKind, WindowMap};
 
 define_roles!(Roles =>
     [ XdgSurface, XdgSurfaceRole ]
@@ -132,7 +132,7 @@ pub fn init_shell(
 #[derive(Default)]
 pub struct SurfaceData {
     pub buffer: Option<Resource<wl_buffer::WlBuffer>>,
-    pub texture: Option<::glium_drawer::TextureMetadata>,
+    pub texture: Option<crate::glium_drawer::TextureMetadata>,
 }
 
 fn surface_commit(surface: &Resource<wl_surface::WlSurface>, token: CompositorToken<SurfaceData, Roles>) {

@@ -115,7 +115,7 @@ pub fn init_shm_global<L>(
 where
     L: Into<Option<::slog::Logger>>,
 {
-    let log = ::slog_or_stdlog(logger);
+    let log = crate::slog_or_stdlog(logger);
 
     // always add the mandatory formats
     formats.push(wl_shm::Format::Argb8888);

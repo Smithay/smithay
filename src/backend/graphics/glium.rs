@@ -1,6 +1,6 @@
 //! Glium compatibility module
 
-use backend::graphics::{gl::GLGraphicsBackend, SwapBuffersError};
+use crate::backend::graphics::{gl::GLGraphicsBackend, SwapBuffersError};
 use glium::{
     backend::{Backend, Context, Facade},
     debug::DebugCallbackBehavior,

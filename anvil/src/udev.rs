@@ -61,9 +61,9 @@ use smithay::{
     },
 };
 
-use glium_drawer::GliumDrawer;
-use input_handler::AnvilInputHandler;
-use shell::{init_shell, MyWindowMap, Roles, SurfaceData};
+use crate::glium_drawer::GliumDrawer;
+use crate::input_handler::AnvilInputHandler;
+use crate::shell::{init_shell, MyWindowMap, Roles, SurfaceData};
 
 pub struct SessionFd(RawFd);
 impl AsRawFd for SessionFd {

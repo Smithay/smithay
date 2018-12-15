@@ -9,7 +9,7 @@ use wayland_server::{
     DisplayToken, NewResource, Resource,
 };
 
-use wayland::compositor::{roles::Role, CompositorToken};
+use crate::wayland::compositor::{roles::Role, CompositorToken};
 
 use super::{ShellRequest, ShellState, ShellSurface, ShellSurfaceKind, ShellSurfaceRole};
 

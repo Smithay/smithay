@@ -1,6 +1,6 @@
 //! Implementation of backend traits for types provided by `winit`
 
-use backend::{
+use crate::backend::{
     egl::{
         context::GlAttributes, error::Result as EGLResult, native, EGLContext, EGLDisplay,
         EGLGraphicsBackend, EGLSurface,
@@ -30,7 +30,7 @@ use winit::{
 
 /// Errors thrown by the `winit` backends
 pub mod errors {
-    use backend::egl::error as egl_error;
+    use crate::backend::egl::error as egl_error;
 
     error_chain! {
         errors {
@@ -152,7 +152,7 @@ pub fn init_from_builder_with_gl_attr<L>(
 where
     L: Into<Option<::slog::Logger>>,
 {
-    let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_winit"));
+    let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_winit"));
     info!(log, "Initializing a winit backend");
 
     let events_loop = EventsLoop::new();

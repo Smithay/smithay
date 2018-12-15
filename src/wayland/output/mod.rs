@@ -179,7 +179,7 @@ impl Output {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "output_handler"));
+        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "output_handler"));
 
         info!(log, "Creating new wl_output"; "name" => &name);
 

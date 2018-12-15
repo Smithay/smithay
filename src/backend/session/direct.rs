@@ -175,7 +175,7 @@ impl DirectSession {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let logger = ::slog_or_stdlog(logger)
+        let logger = crate::slog_or_stdlog(logger)
             .new(o!("smithay_module" => "backend_session", "session_type" => "direct/vt"));
 
         let fd = tty

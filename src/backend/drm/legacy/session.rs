@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use super::{Dev, LegacyDrmDevice, LegacyDrmSurfaceInternal};
-use backend::session::{AsSessionObserver, SessionObserver};
+use crate::backend::session::{AsSessionObserver, SessionObserver};
 
 /// [`SessionObserver`](SessionObserver)
 /// linked to the [`LegacyDrmDevice`](LegacyDrmDevice)

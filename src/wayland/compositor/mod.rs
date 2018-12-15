@@ -90,7 +90,7 @@ use self::{
     roles::{Role, RoleType, WrongRole},
     tree::SurfaceData,
 };
-use utils::Rectangle;
+use crate::utils::Rectangle;
 use wayland_server::{
     protocol::{
         wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor, wl_surface::WlSurface,
@@ -467,7 +467,7 @@ where
     R: Default + RoleType + Role<SubsurfaceRole> + 'static,
     Impl: FnMut(SurfaceEvent, Resource<WlSurface>, CompositorToken<U, R>) + 'static,
 {
-    let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "compositor_handler"));
+    let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "compositor_handler"));
     let implem = Rc::new(RefCell::new(implem));
 
     let comp_token = display.get_token();

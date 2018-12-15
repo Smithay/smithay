@@ -1,7 +1,7 @@
 //! EGL context related structs
 
 use super::{error::*, ffi, native, EGLSurface};
-use backend::graphics::PixelFormat;
+use crate::backend::graphics::PixelFormat;
 use nix::libc::{c_int, c_void};
 use slog;
 use std::{
@@ -36,7 +36,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = ::slog_or_stdlog(logger.into()).new(o!("smithay_module" => "renderer_egl"));
+        let log = crate::slog_or_stdlog(logger.into()).new(o!("smithay_module" => "renderer_egl"));
         let ptr = native.ptr()?;
         let (context, display, config_id, surface_attributes, pixel_format, wl_drm_support) =
             unsafe { EGLContext::<B, N>::new_internal(ptr, attributes, reqs, log.clone()) }?;

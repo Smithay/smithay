@@ -33,10 +33,10 @@ pub fn load_shm_buffer(data: BufferData, pool: &[u8]) -> Result<(RawImage2d<u8>,
 
     // sharders format need to be reversed to account for endianness
     let (client_format, fragment) = match data.format {
-        Format::Argb8888 => (ClientFormat::U8U8U8U8, ::shaders::BUFFER_BGRA),
-        Format::Xrgb8888 => (ClientFormat::U8U8U8U8, ::shaders::BUFFER_BGRX),
-        Format::Rgba8888 => (ClientFormat::U8U8U8U8, ::shaders::BUFFER_ABGR),
-        Format::Rgbx8888 => (ClientFormat::U8U8U8U8, ::shaders::BUFFER_XBGR),
+        Format::Argb8888 => (ClientFormat::U8U8U8U8, crate::shaders::BUFFER_BGRA),
+        Format::Xrgb8888 => (ClientFormat::U8U8U8U8, crate::shaders::BUFFER_BGRX),
+        Format::Rgba8888 => (ClientFormat::U8U8U8U8, crate::shaders::BUFFER_ABGR),
+        Format::Rgbx8888 => (ClientFormat::U8U8U8U8, crate::shaders::BUFFER_XBGR),
         _ => return Err(data.format),
     };
     Ok((
