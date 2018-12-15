@@ -61,6 +61,7 @@ env:
     - FEATURES="anvil" ANVIL_FEATURES="all"
 
 matrix:
+  fast_finish: true
   include:
       # special features for lint & fmt
     - rust: stable
