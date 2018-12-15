@@ -24,6 +24,7 @@ use shell::init_shell;
 pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Logger) -> Result<(), ()> {
     let (renderer, mut input) = winit::init(log.clone()).map_err(|_| ())?;
 
+    #[cfg(feature = "egl")]
     let egl_display = Rc::new(RefCell::new(
         if let Ok(egl_display) = renderer.bind_wl_display(&display) {
             info!(log, "EGL hardware-acceleration enabled");
@@ -34,7 +35,10 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
     ));
 
     let (w, h) = renderer.get_framebuffer_dimensions();
+    #[cfg(feature = "egl")]
     let drawer = GliumDrawer::init(renderer, egl_display, log.clone());
+    #[cfg(not(feature = "egl"))]
+    let drawer = GliumDrawer::init(renderer, log.clone());
 
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
     info!(log, "Listening on wayland socket"; "name" => name.clone());
