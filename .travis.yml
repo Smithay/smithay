@@ -52,7 +52,13 @@ env:
       # test all features simultaneously
     - FEATURES="all"
       # test our house compositor
-    - FEATURES="anvil"
+    - FEATURES="anvil" ANVIL_FEATURES=""
+    - FEATURES="anvil" ANVIL_FEATURES="egl"
+    - FEATURES="anvil" ANVIL_FEATURES="winit"
+    - FEATURES="anvil" ANVIL_FEATURES="udev"
+    - FEATURES="anvil" ANVIL_FEATURES="logind"
+    - FEATURES="anvil" ANVIL_FEATURES="default"
+    - FEATURES="anvil" ANVIL_FEATURES="all"
 
 matrix:
   include:
@@ -91,7 +97,17 @@ script:
             vagga cargo-$TRAVIS_RUST_VERSION clippy --all-features -- -D warnings
         ;;
         "anvil")
-            vagga cargo-$TRAVIS_RUST_VERSION test -p anvil --all-features
+          cd anvil
+          case $ANVIL_FEATURES in
+            "all")
+              vagga cargo-$TRAVIS_RUST_VERSION test --all-features
+            ;;
+            "default")
+              vagga cargo-$TRAVIS_RUST_VERSION test
+            ;;
+            *)
+              vagga cargo-$TRAVIS_RUST_VERSION check --no-default-features --features "$ANVIL_FEATURES"
+          esac
         ;;
         *)
             vagga cargo-$TRAVIS_RUST_VERSION check --tests --no-default-features --features "$FEATURES" &&
