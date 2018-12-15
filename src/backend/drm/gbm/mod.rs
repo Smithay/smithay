@@ -82,7 +82,7 @@ impl<D: RawDevice + ControlDevice + 'static> GbmDevice<D> {
 }
 
 struct InternalDeviceHandler<D: RawDevice + ControlDevice + 'static> {
-    handler: Box<DeviceHandler<Device = GbmDevice<D>> + 'static>,
+    handler: Box<dyn DeviceHandler<Device = GbmDevice<D>> + 'static>,
     backends: Weak<RefCell<HashMap<crtc::Handle, Weak<GbmSurfaceInternal<D>>>>>,
     logger: ::slog::Logger,
 }

@@ -38,7 +38,7 @@ pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
     dev_id: dev_t,
     active: Arc<AtomicBool>,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<LegacyDrmSurfaceInternal<A>>>>>,
-    handler: Option<RefCell<Box<DeviceHandler<Device = LegacyDrmDevice<A>>>>>,
+    handler: Option<RefCell<Box<dyn DeviceHandler<Device = LegacyDrmDevice<A>>>>>,
     logger: ::slog::Logger,
 }
 

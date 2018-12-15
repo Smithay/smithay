@@ -263,7 +263,7 @@ pub(crate) struct ShellData<U, R, SD> {
     log: ::slog::Logger,
     compositor_token: CompositorToken<U, R>,
     display_token: DisplayToken,
-    user_impl: Rc<RefCell<FnMut(XdgRequest<U, R, SD>)>>,
+    user_impl: Rc<RefCell<dyn FnMut(XdgRequest<U, R, SD>)>>,
     shell_state: Arc<Mutex<ShellState<U, R, SD>>>,
 }
 

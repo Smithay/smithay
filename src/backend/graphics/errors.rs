@@ -22,7 +22,7 @@ pub enum SwapBuffersError {
 }
 
 impl fmt::Display for SwapBuffersError {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         use std::error::Error;
         write!(formatter, "{}", self.description())
     }
@@ -39,7 +39,7 @@ impl Error for SwapBuffersError {
         }
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         None
     }
 }

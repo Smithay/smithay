@@ -35,7 +35,7 @@ pub struct LibinputInputBackend {
     context: libinput::Libinput,
     devices: Vec<libinput::Device>,
     seats: HashMap<libinput::Seat, backend::Seat>,
-    handler: Option<Box<backend::InputHandler<LibinputInputBackend> + 'static>>,
+    handler: Option<Box<dyn backend::InputHandler<LibinputInputBackend> + 'static>>,
     logger: ::slog::Logger,
 }
 
@@ -275,10 +275,10 @@ impl InputBackend for LibinputInputBackend {
         self.handler = Some(Box::new(handler));
     }
 
-    fn get_handler(&mut self) -> Option<&mut backend::InputHandler<Self>> {
+    fn get_handler(&mut self) -> Option<&mut dyn backend::InputHandler<Self>> {
         self.handler
             .as_mut()
-            .map(|handler| handler as &mut backend::InputHandler<Self>)
+            .map(|handler| handler as &mut dyn backend::InputHandler<Self>)
     }
 
     fn clear_handler(&mut self) {

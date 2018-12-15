@@ -22,7 +22,7 @@ pub(crate) struct DnDGrab<U, R> {
     offer_data: Option<Arc<Mutex<OfferData>>>,
     icon: Option<Resource<wl_surface::WlSurface>>,
     origin: Resource<wl_surface::WlSurface>,
-    callback: Arc<Mutex<FnMut(super::DataDeviceEvent) + Send>>,
+    callback: Arc<Mutex<dyn FnMut(super::DataDeviceEvent) + Send>>,
     token: CompositorToken<U, R>,
     seat: Seat,
 }
@@ -34,7 +34,7 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> DnDGrab<U, R> {
         seat: Seat,
         icon: Option<Resource<wl_surface::WlSurface>>,
         token: CompositorToken<U, R>,
-        callback: Arc<Mutex<FnMut(super::DataDeviceEvent) + Send>>,
+        callback: Arc<Mutex<dyn FnMut(super::DataDeviceEvent) + Send>>,
     ) -> DnDGrab<U, R> {
         DnDGrab {
             data_source: source,
@@ -53,7 +53,7 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> DnDGrab<U, R> {
 impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
     fn motion(
         &mut self,
-        _handle: &mut PointerInnerHandle,
+        _handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         focus: Option<(Resource<wl_surface::WlSurface>, (f64, f64))>,
         serial: u32,
@@ -179,7 +179,7 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
 
     fn button(
         &mut self,
-        handle: &mut PointerInnerHandle,
+        handle: &mut PointerInnerHandle<'_>,
         _button: u32,
         _state: wl_pointer::ButtonState,
         serial: u32,
@@ -239,7 +239,7 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
         }
     }
 
-    fn axis(&mut self, handle: &mut PointerInnerHandle, details: AxisFrame) {
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
         // we just forward the axis events as is
         handle.axis(details);
     }
@@ -256,7 +256,7 @@ fn implement_dnd_data_offer(
     offer: NewResource<wl_data_offer::WlDataOffer>,
     source: Resource<wl_data_source::WlDataSource>,
     offer_data: Arc<Mutex<OfferData>>,
-    action_choice: Arc<Mutex<FnMut(DndAction, DndAction) -> DndAction + Send + 'static>>,
+    action_choice: Arc<Mutex<dyn FnMut(DndAction, DndAction) -> DndAction + Send + 'static>>,
 ) -> Resource<wl_data_offer::WlDataOffer> {
     use self::wl_data_offer::Request;
     offer.implement(

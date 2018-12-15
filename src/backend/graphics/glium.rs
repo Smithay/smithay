@@ -59,7 +59,7 @@ impl<T: GLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
     /// This follows the same semantics as [`std::cell::RefCell`](RefCell::borrow).
     /// Multiple read-only borrows are possible. Borrowing the
     /// backend while there is a mutable reference will panic.
-    pub fn borrow(&self) -> Ref<T> {
+    pub fn borrow(&self) -> Ref<'_, T> {
         self.backend.0.borrow()
     }
 
@@ -69,7 +69,7 @@ impl<T: GLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
     /// Holding any other borrow while trying to borrow the backend
     /// mutably will panic. Note that Glium will borrow the backend
     /// (not mutably) during rendering.
-    pub fn borrow_mut(&self) -> RefMut<T> {
+    pub fn borrow_mut(&self) -> RefMut<'_, T> {
         self.backend.0.borrow_mut()
     }
 }

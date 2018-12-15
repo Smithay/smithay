@@ -60,7 +60,7 @@ struct LogindSessionImpl {
     conn: RefCell<Connection>,
     session_path: DbusPath<'static>,
     active: AtomicBool,
-    signals: RefCell<Vec<Option<Box<SessionObserver>>>>,
+    signals: RefCell<Vec<Option<Box<dyn SessionObserver>>>>,
     seat: String,
     logger: ::slog::Logger,
 }
@@ -246,7 +246,7 @@ impl LogindSessionImpl {
         }
     }
 
-    fn handle_signals(&self, signals: ConnectionItems) -> Result<()> {
+    fn handle_signals(&self, signals: ConnectionItems<'_>) -> Result<()> {
         for item in signals {
             let message = if let ConnectionItem::Signal(ref s) = item {
                 s
@@ -314,7 +314,7 @@ impl LogindSessionImpl {
                 use dbus::arg::{Array, Dict, Get, Iter, Variant};
 
                 let (_, changed, _) =
-                    message.get3::<String, Dict<String, Variant<Iter>, Iter>, Array<String, Iter>>();
+                    message.get3::<String, Dict<'_, String, Variant<Iter<'_>>, Iter<'_>>, Array<'_, String, Iter<'_>>>();
                 let mut changed = changed.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
                 if let Some((_, mut value)) = changed.find(|&(ref key, _)| &*key == "Active") {
                     if let Some(active) = Get::get(&mut value.0) {

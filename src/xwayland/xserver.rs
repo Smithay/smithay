@@ -127,7 +127,7 @@ struct XWaylandInstance {
 // Inner implementation of the XWayland manager
 struct Inner<WM: XWindowManager> {
     wm: WM,
-    source_maker: Box<FnMut(Rc<RefCell<Inner<WM>>>) -> Result<Source<Signals>, ()>>,
+    source_maker: Box<dyn FnMut(Rc<RefCell<Inner<WM>>>) -> Result<Source<Signals>, ()>>,
     wayland_display: Rc<RefCell<Display>>,
     instance: Option<XWaylandInstance>,
     log: ::slog::Logger,

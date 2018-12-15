@@ -64,7 +64,7 @@ enum Window {
 }
 
 impl Window {
-    fn window(&self) -> Ref<WinitWindow> {
+    fn window(&self) -> Ref<'_, WinitWindow> {
         match *self {
             Window::Wayland { ref context, .. } => context.borrow(),
             Window::X11 { ref context, .. } => context.borrow(),
@@ -91,13 +91,13 @@ pub struct WinitGraphicsBackend {
 /// periodically to receive any events.
 pub struct WinitInputBackend {
     events_loop: EventsLoop,
-    events_handler: Option<Box<WinitEventsHandler>>,
+    events_handler: Option<Box<dyn WinitEventsHandler>>,
     window: Rc<Window>,
     time: Instant,
     key_counter: u32,
     seat: Seat,
     input_config: (),
-    handler: Option<Box<InputHandler<WinitInputBackend> + 'static>>,
+    handler: Option<Box<dyn InputHandler<WinitInputBackend> + 'static>>,
     logger: ::slog::Logger,
     size: Rc<RefCell<WindowSize>>,
 }
@@ -162,12 +162,12 @@ where
     let reqs = Default::default();
     let window = Rc::new(
         if native::NativeDisplay::<native::Wayland>::is_backend(&winit_window) {
-            let mut context =
+            let context =
                 EGLContext::<native::Wayland, WinitWindow>::new(winit_window, attributes, reqs, log.clone())?;
             let surface = context.create_surface(())?;
             Window::Wayland { context, surface }
         } else if native::NativeDisplay::<native::X11>::is_backend(&winit_window) {
-            let mut context =
+            let context =
                 EGLContext::<native::X11, WinitWindow>::new(winit_window, attributes, reqs, log.clone())?;
             let surface = context.create_surface(())?;
             Window::X11 { context, surface }
@@ -227,7 +227,7 @@ pub trait WinitEventsHandler {
 
 impl WinitGraphicsBackend {
     /// Get a reference to the internally used [`WinitWindow`]
-    pub fn winit_window(&self) -> Ref<WinitWindow> {
+    pub fn winit_window(&self) -> Ref<'_, WinitWindow> {
         self.window.window()
     }
 }
@@ -339,7 +339,7 @@ impl ::std::error::Error for WinitInputError {
 }
 
 impl fmt::Display for WinitInputError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use std::error::Error;
         write!(f, "{}", self.description())
     }
@@ -606,10 +606,10 @@ impl WinitInputBackend {
     }
 
     /// Get a reference to the set events handler, if any
-    pub fn get_events_handler(&mut self) -> Option<&mut WinitEventsHandler> {
+    pub fn get_events_handler(&mut self) -> Option<&mut dyn WinitEventsHandler> {
         self.events_handler
             .as_mut()
-            .map(|handler| &mut **handler as &mut WinitEventsHandler)
+            .map(|handler| &mut **handler as &mut dyn WinitEventsHandler)
     }
 
     /// Clear out the currently set events handler
@@ -644,10 +644,10 @@ impl InputBackend for WinitInputBackend {
         self.handler = Some(Box::new(handler));
     }
 
-    fn get_handler(&mut self) -> Option<&mut InputHandler<Self>> {
+    fn get_handler(&mut self) -> Option<&mut dyn InputHandler<Self>> {
         self.handler
             .as_mut()
-            .map(|handler| handler as &mut InputHandler<Self>)
+            .map(|handler| handler as &mut dyn InputHandler<Self>)
     }
 
     fn clear_handler(&mut self) {
@@ -683,8 +683,8 @@ impl InputBackend for WinitInputBackend {
             // upcoming closure, which is why all are borrowed manually and the
             // assignments are then moved into the closure to avoid rustc's
             // wrong interference.
-            let mut closed_ptr = &mut closed;
-            let mut key_counter = &mut self.key_counter;
+            let closed_ptr = &mut closed;
+            let key_counter = &mut self.key_counter;
             let time = &self.time;
             let seat = &self.seat;
             let window = &self.window;

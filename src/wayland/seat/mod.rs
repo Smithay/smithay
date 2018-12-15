@@ -281,7 +281,7 @@ impl Seat {
     /// ```
     pub fn add_keyboard<F>(
         &mut self,
-        xkb_config: keyboard::XkbConfig,
+        xkb_config: keyboard::XkbConfig<'_>,
         repeat_delay: i32,
         repeat_rate: i32,
         mut focus_hook: F,

@@ -1,7 +1,7 @@
-extern crate smithay;
+#![warn(rust_2018_idioms)]
+
 #[macro_use]
 extern crate slog;
-extern crate slog_term;
 
 use slog::Drain;
 use smithay::{
@@ -145,7 +145,7 @@ impl DeviceHandler for DrmHandlerImpl {
             // now we could render to the mapping via software rendering.
             // this example just sets some grey color
 
-            for mut x in mapping.as_mut() {
+            for x in mapping.as_mut() {
                 *x = 128;
             }
         }

@@ -419,8 +419,8 @@ where
 }
 
 struct DataDeviceData {
-    callback: Arc<Mutex<FnMut(DataDeviceEvent) + Send + 'static>>,
-    action_choice: Arc<Mutex<FnMut(DndAction, DndAction) -> DndAction + Send + 'static>>,
+    callback: Arc<Mutex<dyn FnMut(DataDeviceEvent) + Send + 'static>>,
+    action_choice: Arc<Mutex<dyn FnMut(DndAction, DndAction) -> DndAction + Send + 'static>>,
 }
 
 fn implement_data_device<F, C, U, R>(

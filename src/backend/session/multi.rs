@@ -16,26 +16,26 @@ static ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub struct Id(usize);
 
 struct MultiObserver {
-    observer: Arc<Mutex<HashMap<Id, Box<SessionObserver>>>>,
+    observer: Arc<Mutex<HashMap<Id, Box<dyn SessionObserver>>>>,
 }
 
 impl SessionObserver for MultiObserver {
     fn pause(&mut self, device: Option<(u32, u32)>) {
         let mut lock = self.observer.lock().unwrap();
-        for mut observer in lock.values_mut() {
+        for observer in lock.values_mut() {
             observer.pause(device)
         }
     }
     fn activate(&mut self, device: Option<(u32, u32, Option<RawFd>)>) {
         let mut lock = self.observer.lock().unwrap();
-        for mut observer in lock.values_mut() {
+        for observer in lock.values_mut() {
             observer.activate(device)
         }
     }
 }
 
 struct MultiNotifier {
-    observer: Arc<Mutex<HashMap<Id, Box<SessionObserver>>>>,
+    observer: Arc<Mutex<HashMap<Id, Box<dyn SessionObserver>>>>,
 }
 
 impl SessionNotifier for MultiNotifier {

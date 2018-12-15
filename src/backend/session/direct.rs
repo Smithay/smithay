@@ -162,7 +162,7 @@ pub struct DirectSession {
 pub struct DirectSessionNotifier {
     tty: RawFd,
     active: Arc<AtomicBool>,
-    signals: Vec<Option<Box<SessionObserver>>>,
+    signals: Vec<Option<Box<dyn SessionObserver>>>,
     signal: Signal,
     logger: ::slog::Logger,
 }

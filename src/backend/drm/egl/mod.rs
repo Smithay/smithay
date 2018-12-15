@@ -108,7 +108,7 @@ where
     D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
     <D as Device>::Surface: NativeSurface,
 {
-    handler: Box<DeviceHandler<Device = EglDevice<B, D>> + 'static>,
+    handler: Box<dyn DeviceHandler<Device = EglDevice<B, D>> + 'static>,
 }
 
 impl<B, D> DeviceHandler for InternalDeviceHandler<B, D>

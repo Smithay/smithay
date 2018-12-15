@@ -1,16 +1,14 @@
+#![warn(rust_2018_idioms)]
+
 #[macro_use]
 extern crate glium;
-extern crate rand;
 #[macro_use]
 extern crate slog;
-extern crate slog_async;
-extern crate slog_term;
 #[macro_use(define_roles)]
 extern crate smithay;
-extern crate xkbcommon;
 
 use slog::Drain;
-use smithay::wayland_server::{calloop::EventLoop, Display};
+use smithay::reexports::wayland_server::{calloop::EventLoop, Display};
 
 #[macro_use]
 mod shaders;

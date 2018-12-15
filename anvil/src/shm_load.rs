@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
-use smithay::{wayland::shm::BufferData, wayland_server::protocol::wl_shm::Format};
+use smithay::{wayland::shm::BufferData, reexports::wayland_server::protocol::wl_shm::Format};
 
 use glium::texture::{ClientFormat, RawImage2d};
 
-pub fn load_shm_buffer(data: BufferData, pool: &[u8]) -> Result<(RawImage2d<u8>, usize), Format> {
+pub fn load_shm_buffer(data: BufferData, pool: &[u8]) -> Result<(RawImage2d<'_, u8>, usize), Format> {
     let offset = data.offset as usize;
     let width = data.width as usize;
     let height = data.height as usize;
@@ -17,7 +17,7 @@ pub fn load_shm_buffer(data: BufferData, pool: &[u8]) -> Result<(RawImage2d<u8>,
     // ensure consistency, the SHM handler of smithay should ensure this
     assert!(offset + (height - 1) * stride + width * pixelsize <= pool.len());
 
-    let slice: Cow<[u8]> = if stride == width * pixelsize {
+    let slice: Cow<'_, [u8]> = if stride == width * pixelsize {
         // the buffer is cleanly continuous, use as-is
         Cow::Borrowed(&pool[offset..(offset + height * width * pixelsize)])
     } else {

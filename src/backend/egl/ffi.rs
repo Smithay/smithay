@@ -13,7 +13,7 @@ pub type NativeDisplayType = *const c_void;
 pub type NativePixmapType = *const c_void;
 pub type NativeWindowType = *const c_void;
 
-#[cfg_attr(feature = "cargo-clippy", allow(clippy))]
+#[allow(clippy::all, rust_2018_idioms)]
 pub mod egl {
     use super::*;
     use libloading::Library;

@@ -51,7 +51,7 @@ where
 // Internal implementation data of surfaces
 pub(crate) struct SurfaceImplem<U, R> {
     log: ::slog::Logger,
-    implem: Rc<RefCell<FnMut(SurfaceEvent, Resource<wl_surface::WlSurface>, CompositorToken<U, R>)>>,
+    implem: Rc<RefCell<dyn FnMut(SurfaceEvent, Resource<wl_surface::WlSurface>, CompositorToken<U, R>)>>,
 }
 
 impl<U, R> SurfaceImplem<U, R> {

@@ -37,7 +37,7 @@ impl<A: AsRawFd + 'static> BasicDevice for LegacyDrmSurfaceInternal<A> {}
 impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmSurfaceInternal<A> {}
 
 impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurfaceInternal<A> {
-    type CursorFormat = &'a Buffer;
+    type CursorFormat = &'a dyn Buffer;
     type Error = Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
@@ -250,7 +250,7 @@ impl<A: AsRawFd + 'static> BasicDevice for LegacyDrmSurface<A> {}
 impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmSurface<A> {}
 
 impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurface<A> {
-    type CursorFormat = &'a Buffer;
+    type CursorFormat = &'a dyn Buffer;
     type Error = Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {

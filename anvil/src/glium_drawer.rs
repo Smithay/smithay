@@ -24,7 +24,7 @@ use smithay::{
         seat::CursorImageRole,
         shm::with_buffer_contents as shm_buffer_contents,
     },
-    wayland_server::{
+    reexports::wayland_server::{
         protocol::{wl_buffer, wl_surface},
         Resource,
     },
@@ -52,7 +52,7 @@ pub struct GliumDrawer<F: GLGraphicsBackend + 'static> {
 }
 
 impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
-    pub fn borrow(&self) -> Ref<F> {
+    pub fn borrow(&self) -> Ref<'_, F> {
         self.display.borrow()
     }
 }

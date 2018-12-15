@@ -21,7 +21,7 @@ use smithay::{
             },
         },
     },
-    wayland_server::{
+    reexports::wayland_server::{
         protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface},
         Display, Resource,
     },

@@ -521,7 +521,7 @@ pub trait InputBackend: Sized {
     /// Sets a new handler for this [`InputBackend`]
     fn set_handler<H: InputHandler<Self> + 'static>(&mut self, handler: H);
     /// Get a reference to the currently set handler, if any
-    fn get_handler(&mut self) -> Option<&mut InputHandler<Self>>;
+    fn get_handler(&mut self) -> Option<&mut dyn InputHandler<Self>>;
     /// Clears the currently handler, if one is set
     fn clear_handler(&mut self);
 
@@ -626,7 +626,7 @@ pub trait InputHandler<B: InputBackend> {
     fn on_input_config_changed(&mut self, config: &mut B::InputConfig);
 }
 
-impl<B: InputBackend> InputHandler<B> for Box<InputHandler<B>> {
+impl<B: InputBackend> InputHandler<B> for Box<dyn InputHandler<B>> {
     fn on_seat_created(&mut self, seat: &Seat) {
         (**self).on_seat_created(seat)
     }

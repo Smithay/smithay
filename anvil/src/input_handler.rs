@@ -21,7 +21,7 @@ use smithay::{
         seat::{keysyms as xkb, AxisFrame, KeyboardHandle, Keysym, ModifiersState, PointerHandle},
         SERIAL_COUNTER as SCOUNTER,
     },
-    wayland_server::protocol::wl_pointer,
+    reexports::wayland_server::protocol::wl_pointer,
 };
 
 use crate::shell::MyWindowMap;

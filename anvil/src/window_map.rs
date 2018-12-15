@@ -7,7 +7,7 @@ use smithay::{
             xdg::{ToplevelSurface, XdgSurfaceRole},
         },
     },
-    wayland_server::{protocol::wl_surface, Resource},
+    reexports::wayland_server::{protocol::wl_surface, Resource},
 };
 
 pub enum Kind<U, R, SD, D> {

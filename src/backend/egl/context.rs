@@ -452,7 +452,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     /// This follows the same semantics as [`std::cell:RefCell`](std::cell::RefCell).
     /// Multiple read-only borrows are possible. Borrowing the
     /// backend while there is a mutable reference will panic.
-    pub fn borrow(&self) -> Ref<N> {
+    pub fn borrow(&self) -> Ref<'_, N> {
         self.native.borrow()
     }
 
@@ -462,7 +462,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     /// Holding any other borrow while trying to borrow the backend
     /// mutably will panic. Note that EGL will borrow the display
     /// mutably during surface creation.
-    pub fn borrow_mut(&self) -> RefMut<N> {
+    pub fn borrow_mut(&self) -> RefMut<'_, N> {
         self.native.borrow_mut()
     }
 }

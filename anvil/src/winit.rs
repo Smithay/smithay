@@ -12,7 +12,7 @@ use smithay::{
         seat::{CursorImageStatus, Seat, XkbConfig},
         shm::init_shm_global,
     },
-    wayland_server::{calloop::EventLoop, protocol::wl_output, Display},
+    reexports::wayland_server::{calloop::EventLoop, protocol::wl_output, Display},
 };
 
 use slog::Logger;

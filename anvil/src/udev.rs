@@ -110,7 +110,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     /*
      * Initialize the udev backend
      */
-    let context = ::smithay::udev::Context::new().map_err(|_| ())?;
+    let context = ::smithay::reexports::udev::Context::new().map_err(|_| ())?;
     let seat = session.seat();
 
     let primary_gpu = primary_gpu(&context, &seat).unwrap_or_default();
