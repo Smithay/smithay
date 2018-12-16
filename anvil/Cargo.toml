@@ -17,7 +17,7 @@ xkbcommon = "0.2.1"
 [dependencies.smithay]
 path = ".."
 default-features = false
-features = [ "renderer_glium" ]
+features = [ "renderer_glium", "backend_egl" ]
 
 [build-dependencies]
 gl_generator = "0.9"
