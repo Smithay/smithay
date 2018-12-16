@@ -42,5 +42,3 @@ The currently available backends are:
 - `--tty-udev`: start anvil in a tty with udev support. This is the "traditional" launch of a Wayland
   compositor. Note that this requires you to start anvil as root if your system does not have logind
   available ([consolekit support is planned](https://github.com/Smithay/smithay/issues/95)).
-- `--tty-raw`: start anvil without udev support, manually binding all ressources. Requires to be run as root.
-  This backend is mostly present as example code for use in very minimalistic systems.
