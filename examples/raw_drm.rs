@@ -1,10 +1,8 @@
-extern crate drm;
 extern crate smithay;
 #[macro_use]
 extern crate slog;
 extern crate slog_term;
 
-use drm::{buffer::PixelFormat, control::dumbbuffer::DumbBuffer};
 use slog::Drain;
 use smithay::{
     backend::drm::{
@@ -13,9 +11,14 @@ use smithay::{
         Device, DeviceHandler, RawSurface, Surface,
     },
     reexports::{
-        drm::control::{
-            connector::{self, State as ConnectorState},
-            crtc, encoder, framebuffer, Device as ControlDevice, ResourceInfo,
+        drm::{
+            buffer::PixelFormat,
+            control::{
+                connector::{self, State as ConnectorState},
+                crtc,
+                dumbbuffer::DumbBuffer,
+                encoder, framebuffer, Device as ControlDevice, ResourceInfo,
+            },
         },
         wayland_server::calloop::EventLoop,
     },
