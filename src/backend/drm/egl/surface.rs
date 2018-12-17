@@ -3,14 +3,14 @@ use nix::libc::c_void;
 use std::rc::Rc;
 
 use super::error::*;
-use backend::drm::{Device, Surface};
-use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
-use backend::egl::{EGLContext, EGLSurface};
+use crate::backend::drm::{Device, Surface};
+use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
+use crate::backend::egl::{EGLContext, EGLSurface};
 #[cfg(feature = "renderer_gl")]
-use backend::graphics::gl::GLGraphicsBackend;
+use crate::backend::graphics::gl::GLGraphicsBackend;
 #[cfg(feature = "renderer_gl")]
-use backend::graphics::PixelFormat;
-use backend::graphics::{CursorBackend, SwapBuffersError};
+use crate::backend::graphics::PixelFormat;
+use crate::backend::graphics::{CursorBackend, SwapBuffersError};
 
 /// Egl surface for rendering
 pub struct EglSurface<B, D>

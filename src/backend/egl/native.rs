@@ -1,7 +1,7 @@
 //! Type safe native types for safe context/surface creation
 
 use super::{error::*, ffi};
-use backend::graphics::SwapBuffersError;
+use crate::backend::graphics::SwapBuffersError;
 
 #[cfg(feature = "backend_winit")]
 use std::ptr;

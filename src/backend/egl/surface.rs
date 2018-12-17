@@ -1,7 +1,7 @@
 //! EGL surface related structs
 
 use super::{error::*, ffi, native, EGLContext};
-use backend::graphics::SwapBuffersError;
+use crate::backend::graphics::SwapBuffersError;
 use nix::libc::c_int;
 use std::{
     cell::Cell,

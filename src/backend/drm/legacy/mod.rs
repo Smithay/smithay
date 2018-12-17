@@ -38,7 +38,7 @@ pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
     dev_id: dev_t,
     active: Arc<AtomicBool>,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<LegacyDrmSurfaceInternal<A>>>>>,
-    handler: Option<RefCell<Box<DeviceHandler<Device = LegacyDrmDevice<A>>>>>,
+    handler: Option<RefCell<Box<dyn DeviceHandler<Device = LegacyDrmDevice<A>>>>>,
     logger: ::slog::Logger,
 }
 
@@ -94,7 +94,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm"));
+        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm"));
         info!(log, "DrmDevice initializing");
 
         let dev_id = fstat(dev.as_raw_fd())

@@ -3,7 +3,7 @@
 //! and [`EglSurface`](::backend::drm::egl::EglSurface).
 //!
 
-use backend::egl::error as egl;
+use crate::backend::egl::error as egl;
 
 error_chain! {
     errors {

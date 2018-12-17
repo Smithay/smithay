@@ -4,11 +4,11 @@
 //! [`GbmDevice`](GbmDevice) and [`GbmSurface`](GbmSurface).
 //!
 
-use backend::drm::{Device, RawDevice};
-use backend::egl::error::Result as EglResult;
-use backend::egl::ffi;
-use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
-use backend::graphics::SwapBuffersError;
+use crate::backend::drm::{Device, RawDevice};
+use crate::backend::egl::error::Result as EglResult;
+use crate::backend::egl::ffi;
+use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
+use crate::backend::graphics::SwapBuffersError;
 
 use super::error::{Error, Result};
 use super::{GbmDevice, GbmSurface};

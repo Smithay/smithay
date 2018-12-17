@@ -61,9 +61,9 @@ use smithay::{
     },
 };
 
-use glium_drawer::GliumDrawer;
-use input_handler::AnvilInputHandler;
-use shell::{init_shell, MyWindowMap, Roles, SurfaceData};
+use crate::glium_drawer::GliumDrawer;
+use crate::input_handler::AnvilInputHandler;
+use crate::shell::{init_shell, MyWindowMap, Roles, SurfaceData};
 
 pub struct SessionFd(RawFd);
 impl AsRawFd for SessionFd {
@@ -110,7 +110,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     /*
      * Initialize the udev backend
      */
-    let context = ::smithay::udev::Context::new().map_err(|_| ())?;
+    let context = ::smithay::reexports::udev::Context::new().map_err(|_| ())?;
     let seat = session.seat();
 
     let primary_gpu = primary_gpu(&context, &seat).unwrap_or_default();

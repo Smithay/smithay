@@ -1,8 +1,8 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
-use backend::input::{self as backend, Axis, InputBackend};
+use crate::backend::input::{self as backend, Axis, InputBackend};
 #[cfg(feature = "backend_session")]
-use backend::session::{AsErrno, Session, SessionObserver};
+use crate::backend::session::{AsErrno, Session, SessionObserver};
 use input as libinput;
 use input::event;
 
@@ -35,7 +35,7 @@ pub struct LibinputInputBackend {
     context: libinput::Libinput,
     devices: Vec<libinput::Device>,
     seats: HashMap<libinput::Seat, backend::Seat>,
-    handler: Option<Box<backend::InputHandler<LibinputInputBackend> + 'static>>,
+    handler: Option<Box<dyn backend::InputHandler<LibinputInputBackend> + 'static>>,
     logger: ::slog::Logger,
 }
 
@@ -46,7 +46,7 @@ impl LibinputInputBackend {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_libinput"));
+        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_libinput"));
         info!(log, "Initializing a libinput backend");
         LibinputInputBackend {
             context,
@@ -275,10 +275,10 @@ impl InputBackend for LibinputInputBackend {
         self.handler = Some(Box::new(handler));
     }
 
-    fn get_handler(&mut self) -> Option<&mut backend::InputHandler<Self>> {
+    fn get_handler(&mut self) -> Option<&mut dyn backend::InputHandler<Self>> {
         self.handler
             .as_mut()
-            .map(|handler| handler as &mut backend::InputHandler<Self>)
+            .map(|handler| handler as &mut dyn backend::InputHandler<Self>)
     }
 
     fn clear_handler(&mut self) {
@@ -612,7 +612,7 @@ pub fn libinput_bind<Data: 'static>(
     source.set_interest(Ready::readable());
 
     handle.insert_source(source, move |evt, _| {
-        use backend::input::InputBackend;
+        use crate::backend::input::InputBackend;
 
         let mut backend = evt.source.borrow_mut();
         if let Err(error) = backend.0.dispatch_new_events() {

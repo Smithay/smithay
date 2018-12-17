@@ -15,12 +15,12 @@ use std::rc::Rc;
 use wayland_server::Display;
 
 use super::{Device, DeviceHandler, Surface};
-use backend::egl::context::GlAttributes;
-use backend::egl::error::Result as EGLResult;
-use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
-use backend::egl::EGLContext;
+use crate::backend::egl::context::GlAttributes;
+use crate::backend::egl::error::Result as EGLResult;
+use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
+use crate::backend::egl::EGLContext;
 #[cfg(feature = "native_lib")]
-use backend::egl::{EGLDisplay, EGLGraphicsBackend};
+use crate::backend::egl::{EGLDisplay, EGLGraphicsBackend};
 
 pub mod error;
 use self::error::*;
@@ -87,7 +87,7 @@ where
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = ::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_egl"));
+        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_egl"));
 
         dev.clear_handler();
 
@@ -108,7 +108,7 @@ where
     D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
     <D as Device>::Surface: NativeSurface,
 {
-    handler: Box<DeviceHandler<Device = EglDevice<B, D>> + 'static>,
+    handler: Box<dyn DeviceHandler<Device = EglDevice<B, D>> + 'static>,
 }
 
 impl<B, D> DeviceHandler for InternalDeviceHandler<B, D>

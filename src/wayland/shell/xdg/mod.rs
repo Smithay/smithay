@@ -90,13 +90,13 @@
 //! the subhandler you provided, or via methods on the [`ShellState`](::wayland::shell::xdg::ShellState)
 //! that you are given (in an `Arc<Mutex<_>>`) as return value of the `init` function.
 
+use crate::utils::Rectangle;
+use crate::wayland::compositor::{roles::Role, CompositorToken};
 use std::{
     cell::RefCell,
     rc::Rc,
     sync::{Arc, Mutex},
 };
-use utils::Rectangle;
-use wayland::compositor::{roles::Role, CompositorToken};
 use wayland_protocols::{
     unstable::xdg_shell::v6::server::{zxdg_popup_v6, zxdg_shell_v6, zxdg_surface_v6, zxdg_toplevel_v6},
     xdg_shell::server::{xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base},
@@ -263,7 +263,7 @@ pub(crate) struct ShellData<U, R, SD> {
     log: ::slog::Logger,
     compositor_token: CompositorToken<U, R>,
     display_token: DisplayToken,
-    user_impl: Rc<RefCell<FnMut(XdgRequest<U, R, SD>)>>,
+    user_impl: Rc<RefCell<dyn FnMut(XdgRequest<U, R, SD>)>>,
     shell_state: Arc<Mutex<ShellState<U, R, SD>>>,
 }
 
@@ -297,7 +297,7 @@ where
     L: Into<Option<::slog::Logger>>,
     Impl: FnMut(XdgRequest<U, R, SD>) + 'static,
 {
-    let log = ::slog_or_stdlog(logger);
+    let log = crate::slog_or_stdlog(logger);
     let shell_state = Arc::new(Mutex::new(ShellState {
         known_toplevels: Vec::new(),
         known_popups: Vec::new(),

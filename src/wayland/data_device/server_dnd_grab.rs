@@ -6,7 +6,7 @@ use wayland_server::{
     NewResource, Resource,
 };
 
-use wayland::seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat};
+use crate::wayland::seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat};
 
 use super::{DataDeviceData, SeatData};
 
@@ -67,7 +67,7 @@ where
 {
     fn motion(
         &mut self,
-        _handle: &mut PointerInnerHandle,
+        _handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         focus: Option<(Resource<wl_surface::WlSurface>, (f64, f64))>,
         serial: u32,
@@ -169,7 +169,7 @@ where
 
     fn button(
         &mut self,
-        handle: &mut PointerInnerHandle,
+        handle: &mut PointerInnerHandle<'_>,
         _button: u32,
         _state: wl_pointer::ButtonState,
         serial: u32,
@@ -220,7 +220,7 @@ where
         }
     }
 
-    fn axis(&mut self, handle: &mut PointerInnerHandle, details: AxisFrame) {
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
         // we just forward the axis events as is
         handle.axis(details);
     }
@@ -238,7 +238,7 @@ fn implement_dnd_data_offer<C>(
     metadata: super::SourceMetadata,
     offer_data: Arc<Mutex<OfferData>>,
     callback: Arc<Mutex<C>>,
-    action_choice: Arc<Mutex<FnMut(DndAction, DndAction) -> DndAction + Send + 'static>>,
+    action_choice: Arc<Mutex<dyn FnMut(DndAction, DndAction) -> DndAction + Send + 'static>>,
 ) -> Resource<wl_data_offer::WlDataOffer>
 where
     C: FnMut(ServerDndEvent) + Send + 'static,

@@ -49,6 +49,6 @@ error_chain! {
     }
 
     foreign_links {
-        FailedToSwap(::backend::graphics::SwapBuffersError) #[doc = "Swapping front buffers failed"];
+        FailedToSwap(crate::backend::graphics::SwapBuffersError) #[doc = "Swapping front buffers failed"];
     }
 }

@@ -7,7 +7,7 @@ use wayland_server::{
     NewResource, Resource,
 };
 
-use wayland::compositor::{roles::Role, CompositorToken};
+use crate::wayland::compositor::{roles::Role, CompositorToken};
 
 /// The role representing a surface set as the pointer cursor
 #[derive(Default, Copy, Clone)]
@@ -29,7 +29,7 @@ pub enum CursorImageStatus {
 
 enum GrabStatus {
     None,
-    Active(u32, Box<PointerGrab>),
+    Active(u32, Box<dyn PointerGrab>),
     Borrowed,
 }
 
@@ -40,7 +40,7 @@ struct PointerInternal {
     location: (f64, f64),
     grab: GrabStatus,
     pressed_buttons: Vec<u32>,
-    image_callback: Box<FnMut(CursorImageStatus) + Send>,
+    image_callback: Box<dyn FnMut(CursorImageStatus) + Send>,
 }
 
 impl PointerInternal {
@@ -95,7 +95,7 @@ impl PointerInternal {
 
     fn with_grab<F>(&mut self, f: F)
     where
-        F: FnOnce(PointerInnerHandle, &mut PointerGrab),
+        F: FnOnce(PointerInnerHandle<'_>, &mut dyn PointerGrab),
     {
         let mut grab = ::std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
         match grab {
@@ -239,7 +239,7 @@ pub trait PointerGrab: Send + Sync {
     /// A motion was reported
     fn motion(
         &mut self,
-        handle: &mut PointerInnerHandle,
+        handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         focus: Option<(Resource<WlSurface>, (f64, f64))>,
         serial: u32,
@@ -248,14 +248,14 @@ pub trait PointerGrab: Send + Sync {
     /// A button press was reported
     fn button(
         &mut self,
-        handle: &mut PointerInnerHandle,
+        handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: u32,
         time: u32,
     );
     /// An axis scroll was reported
-    fn axis(&mut self, handle: &mut PointerInnerHandle, details: AxisFrame);
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame);
 }
 
 /// This inner handle is accessed from inside a pointer grab logic, and directly
@@ -644,7 +644,7 @@ struct DefaultGrab;
 impl PointerGrab for DefaultGrab {
     fn motion(
         &mut self,
-        handle: &mut PointerInnerHandle,
+        handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         focus: Option<(Resource<WlSurface>, (f64, f64))>,
         serial: u32,
@@ -654,7 +654,7 @@ impl PointerGrab for DefaultGrab {
     }
     fn button(
         &mut self,
-        handle: &mut PointerInnerHandle,
+        handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: u32,
@@ -670,7 +670,7 @@ impl PointerGrab for DefaultGrab {
             },
         );
     }
-    fn axis(&mut self, handle: &mut PointerInnerHandle, details: AxisFrame) {
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
         handle.axis(details);
     }
 }
@@ -688,7 +688,7 @@ struct ClickGrab {
 impl PointerGrab for ClickGrab {
     fn motion(
         &mut self,
-        handle: &mut PointerInnerHandle,
+        handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         focus: Option<(Resource<WlSurface>, (f64, f64))>,
         serial: u32,
@@ -700,7 +700,7 @@ impl PointerGrab for ClickGrab {
     }
     fn button(
         &mut self,
-        handle: &mut PointerInnerHandle,
+        handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: u32,
@@ -712,7 +712,7 @@ impl PointerGrab for ClickGrab {
             handle.unset_grab(serial, time);
         }
     }
-    fn axis(&mut self, handle: &mut PointerInnerHandle, details: AxisFrame) {
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
         handle.axis(details);
     }
 }

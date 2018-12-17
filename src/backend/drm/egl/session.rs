@@ -7,9 +7,9 @@ use drm::control::crtc;
 use std::os::unix::io::RawFd;
 
 use super::EglDevice;
-use backend::drm::Device;
-use backend::egl::native::{Backend, NativeDisplay, NativeSurface};
-use backend::session::{AsSessionObserver, SessionObserver};
+use crate::backend::drm::Device;
+use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
+use crate::backend::session::{AsSessionObserver, SessionObserver};
 
 /// [`SessionObserver`](SessionObserver)
 /// linked to the [`EglDevice`](EglDevice) it was

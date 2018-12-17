@@ -1,7 +1,7 @@
 //! EGL context related structs
 
 use super::{error::*, ffi, native, EGLSurface};
-use backend::graphics::PixelFormat;
+use crate::backend::graphics::PixelFormat;
 use nix::libc::{c_int, c_void};
 use slog;
 use std::{
@@ -36,7 +36,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = ::slog_or_stdlog(logger.into()).new(o!("smithay_module" => "renderer_egl"));
+        let log = crate::slog_or_stdlog(logger.into()).new(o!("smithay_module" => "renderer_egl"));
         let ptr = native.ptr()?;
         let (context, display, config_id, surface_attributes, pixel_format, wl_drm_support) =
             unsafe { EGLContext::<B, N>::new_internal(ptr, attributes, reqs, log.clone()) }?;
@@ -452,7 +452,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     /// This follows the same semantics as [`std::cell:RefCell`](std::cell::RefCell).
     /// Multiple read-only borrows are possible. Borrowing the
     /// backend while there is a mutable reference will panic.
-    pub fn borrow(&self) -> Ref<N> {
+    pub fn borrow(&self) -> Ref<'_, N> {
         self.native.borrow()
     }
 
@@ -462,7 +462,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     /// Holding any other borrow while trying to borrow the backend
     /// mutably will panic. Note that EGL will borrow the display
     /// mutably during surface creation.
-    pub fn borrow_mut(&self) -> RefMut<N> {
+    pub fn borrow_mut(&self) -> RefMut<'_, N> {
         self.native.borrow_mut()
     }
 }

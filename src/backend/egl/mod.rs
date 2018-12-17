@@ -19,7 +19,7 @@
 //! of an EGL-based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer) for rendering.
 
 #[cfg(feature = "renderer_gl")]
-use backend::graphics::gl::ffi as gl_ffi;
+use crate::backend::graphics::gl::ffi as gl_ffi;
 use nix::libc::c_uint;
 use std::{
     ffi::CStr,
@@ -51,7 +51,7 @@ pub use self::surface::EGLSurface;
 pub struct EglExtensionNotSupportedError(&'static [&'static str]);
 
 impl fmt::Display for EglExtensionNotSupportedError {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> ::std::result::Result<(), fmt::Error> {
         write!(
             formatter,
             "None of the following EGL extensions is supported by the underlying EGL implementation,
@@ -66,7 +66,7 @@ impl ::std::error::Error for EglExtensionNotSupportedError {
         "The required EGL extension is not supported by the underlying EGL implementation"
     }
 
-    fn cause(&self) -> Option<&::std::error::Error> {
+    fn cause(&self) -> Option<&dyn ::std::error::Error> {
         None
     }
 }
@@ -84,7 +84,7 @@ pub enum BufferAccessError {
 }
 
 impl fmt::Debug for BufferAccessError {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> ::std::result::Result<(), fmt::Error> {
         match *self {
             BufferAccessError::ContextLost => write!(formatter, "BufferAccessError::ContextLost"),
             BufferAccessError::NotManaged(_) => write!(formatter, "BufferAccessError::NotManaged"),
@@ -97,7 +97,7 @@ impl fmt::Debug for BufferAccessError {
 }
 
 impl fmt::Display for BufferAccessError {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> ::std::result::Result<(), fmt::Error> {
         use std::error::Error;
         match *self {
             BufferAccessError::ContextLost
@@ -118,7 +118,7 @@ impl ::std::error::Error for BufferAccessError {
         }
     }
 
-    fn cause(&self) -> Option<&::std::error::Error> {
+    fn cause(&self) -> Option<&dyn ::std::error::Error> {
         match *self {
             BufferAccessError::EglExtensionNotSupported(ref err) => Some(err),
             _ => None,
@@ -158,7 +158,7 @@ pub enum TextureCreationError {
 }
 
 impl fmt::Display for TextureCreationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> ::std::result::Result<(), fmt::Error> {
         use std::error::Error;
         match *self {
             TextureCreationError::ContextLost => write!(formatter, "{}", self.description()),
@@ -185,7 +185,7 @@ impl ::std::error::Error for TextureCreationError {
         }
     }
 
-    fn cause(&self) -> Option<&::std::error::Error> {
+    fn cause(&self) -> Option<&dyn ::std::error::Error> {
         None
     }
 }

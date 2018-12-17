@@ -1,4 +1,5 @@
 use smithay::{
+    reexports::wayland_server::{protocol::wl_surface, Resource},
     utils::Rectangle,
     wayland::{
         compositor::{roles::Role, CompositorToken, SubsurfaceRole, SurfaceAttributes, TraversalAction},
@@ -7,7 +8,6 @@ use smithay::{
             xdg::{ToplevelSurface, XdgSurfaceRole},
         },
     },
-    wayland_server::{protocol::wl_surface, Resource},
 };
 
 pub enum Kind<U, R, SD, D> {

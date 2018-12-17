@@ -162,7 +162,7 @@ pub struct DirectSession {
 pub struct DirectSessionNotifier {
     tty: RawFd,
     active: Arc<AtomicBool>,
-    signals: Vec<Option<Box<SessionObserver>>>,
+    signals: Vec<Option<Box<dyn SessionObserver>>>,
     signal: Signal,
     logger: ::slog::Logger,
 }
@@ -175,7 +175,7 @@ impl DirectSession {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let logger = ::slog_or_stdlog(logger)
+        let logger = crate::slog_or_stdlog(logger)
             .new(o!("smithay_module" => "backend_session", "session_type" => "direct/vt"));
 
         let fd = tty

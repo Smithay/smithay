@@ -7,6 +7,10 @@ use std::{
 use rand;
 
 use smithay::{
+    reexports::wayland_server::{
+        protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface},
+        Display, Resource,
+    },
     wayland::{
         compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent},
         data_device::DnDIconRole,
@@ -21,13 +25,9 @@ use smithay::{
             },
         },
     },
-    wayland_server::{
-        protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface},
-        Display, Resource,
-    },
 };
 
-use window_map::{Kind as SurfaceKind, WindowMap};
+use crate::window_map::{Kind as SurfaceKind, WindowMap};
 
 define_roles!(Roles =>
     [ XdgSurface, XdgSurfaceRole ]
@@ -132,7 +132,7 @@ pub fn init_shell(
 #[derive(Default)]
 pub struct SurfaceData {
     pub buffer: Option<Resource<wl_buffer::WlBuffer>>,
-    pub texture: Option<::glium_drawer::TextureMetadata>,
+    pub texture: Option<crate::glium_drawer::TextureMetadata>,
 }
 
 fn surface_commit(surface: &Resource<wl_surface::WlSurface>, token: CompositorToken<SurfaceData, Roles>) {

@@ -1,4 +1,4 @@
-use backend::input::KeyState;
+use crate::backend::input::KeyState;
 use std::{
     default::Default,
     io::{Error as IoError, Write},
@@ -112,7 +112,7 @@ struct KbdInternal {
     state: xkb::State,
     repeat_rate: i32,
     repeat_delay: i32,
-    focus_hook: Box<FnMut(Option<&Resource<WlSurface>>)>,
+    focus_hook: Box<dyn FnMut(Option<&Resource<WlSurface>>)>,
 }
 
 // This is OK because all parts of `xkb` will remain on the
@@ -121,10 +121,10 @@ unsafe impl Send for KbdInternal {}
 
 impl KbdInternal {
     fn new(
-        xkb_config: XkbConfig,
+        xkb_config: XkbConfig<'_>,
         repeat_rate: i32,
         repeat_delay: i32,
-        focus_hook: Box<FnMut(Option<&Resource<WlSurface>>)>,
+        focus_hook: Box<dyn FnMut(Option<&Resource<WlSurface>>)>,
     ) -> Result<KbdInternal, ()> {
         // we create a new contex for each keyboard because libxkbcommon is actually NOT threadsafe
         // so confining it inside the KbdInternal allows us to use Rusts mutability rules to make
@@ -228,7 +228,7 @@ pub enum Error {
 
 /// Create a keyboard handler from a set of RMLVO rules
 pub(crate) fn create_keyboard_handler<F>(
-    xkb_config: XkbConfig,
+    xkb_config: XkbConfig<'_>,
     repeat_delay: i32,
     repeat_rate: i32,
     logger: &::slog::Logger,

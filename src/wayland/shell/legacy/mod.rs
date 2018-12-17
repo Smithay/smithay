@@ -76,7 +76,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use wayland::compositor::{roles::Role, CompositorToken};
+use crate::wayland::compositor::{roles::Role, CompositorToken};
 
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface},
@@ -327,7 +327,7 @@ where
     L: Into<Option<::slog::Logger>>,
     Impl: FnMut(ShellRequest<U, R, D>) + 'static,
 {
-    let _log = ::slog_or_stdlog(logger);
+    let _log = crate::slog_or_stdlog(logger);
 
     let implementation = Rc::new(RefCell::new(implementation));
 

@@ -10,9 +10,9 @@ use std::os::unix::io::AsRawFd;
 use std::rc::Rc;
 
 #[cfg(feature = "backend_drm_legacy")]
-use backend::drm::legacy::LegacyDrmDevice;
-use backend::graphics::CursorBackend;
-use backend::graphics::SwapBuffersError;
+use crate::backend::drm::legacy::LegacyDrmDevice;
+use crate::backend::graphics::CursorBackend;
+use crate::backend::graphics::SwapBuffersError;
 
 pub(super) struct GbmSurfaceInternal<D: RawDevice + 'static> {
     pub(super) dev: Rc<RefCell<gbm::Device<D>>>,

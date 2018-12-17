@@ -4,6 +4,7 @@ version = "0.0.1"
 authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victor Brekenfeld)"]
 license = "MIT"
 publish = false
+edition = "2018"
 
 [dependencies]
 slog = { version = "2.1.1" }

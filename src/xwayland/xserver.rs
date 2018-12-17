@@ -86,7 +86,7 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = ::slog_or_stdlog(logger);
+        let log = crate::slog_or_stdlog(logger);
         let inner = Rc::new(RefCell::new(Inner {
             wm,
             source_maker: Box::new(move |inner| {
@@ -127,7 +127,7 @@ struct XWaylandInstance {
 // Inner implementation of the XWayland manager
 struct Inner<WM: XWindowManager> {
     wm: WM,
-    source_maker: Box<FnMut(Rc<RefCell<Inner<WM>>>) -> Result<Source<Signals>, ()>>,
+    source_maker: Box<dyn FnMut(Rc<RefCell<Inner<WM>>>) -> Result<Source<Signals>, ()>>,
     wayland_display: Rc<RefCell<Display>>,
     instance: Option<XWaylandInstance>,
     log: ::slog::Logger,

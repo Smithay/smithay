@@ -18,20 +18,20 @@ use smithay::{
         egl::{BufferAccessError, EGLImages, Format},
         graphics::{gl::GLGraphicsBackend, glium::GliumGraphicsBackend},
     },
+    reexports::wayland_server::{
+        protocol::{wl_buffer, wl_surface},
+        Resource,
+    },
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
         data_device::DnDIconRole,
         seat::CursorImageRole,
         shm::with_buffer_contents as shm_buffer_contents,
     },
-    wayland_server::{
-        protocol::{wl_buffer, wl_surface},
-        Resource,
-    },
 };
 
-use shaders;
-use shell::{MyCompositorToken, MyWindowMap};
+use crate::shaders;
+use crate::shell::{MyCompositorToken, MyWindowMap};
 
 #[derive(Copy, Clone)]
 struct Vertex {
@@ -52,7 +52,7 @@ pub struct GliumDrawer<F: GLGraphicsBackend + 'static> {
 }
 
 impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
-    pub fn borrow(&self) -> Ref<F> {
+    pub fn borrow(&self) -> Ref<'_, F> {
         self.display.borrow()
     }
 }
@@ -181,7 +181,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                 }
                 Ok(TextureMetadata {
                     texture: opengl_texture,
-                    fragment: ::shaders::BUFFER_RGBA,
+                    fragment: crate::shaders::BUFFER_RGBA,
                     y_inverted: images.y_inverted,
                     dimensions: (images.width, images.height),
                     images: Some(images), // I guess we need to keep this alive ?
@@ -205,7 +205,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
 
     fn texture_from_shm_buffer(&self, buffer: Resource<wl_buffer::WlBuffer>) -> Result<TextureMetadata, ()> {
         match shm_buffer_contents(&buffer, |slice, data| {
-            ::shm_load::load_shm_buffer(data, slice)
+            crate::shm_load::load_shm_buffer(data, slice)
                 .map(|(image, kind)| (Texture2d::new(&self.display, image).unwrap(), kind, data))
         }) {
             Ok(Ok((texture, kind, data))) => Ok(TextureMetadata {
