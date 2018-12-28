@@ -5,14 +5,20 @@
 ### General
 
 - **[Breaking]** Upgrade to wayland-rs 0.21
+- **[Breaking]** Moving the public dependencies to a `reexports` module
+- Migrate the codebase to Rust 2018
 
 ### Backends
 
 - **[Breaking]** WinitBackend: Upgrade to winit 0.18
+- **[Breaking]** Global refactor of the DRM & Session backends
+- **[Breaking]** Restructuration of the backends around the `calloop` event-loop
 
 ### Clients & Protocol
 
 - Basic XWayland support
+- Data device & Drag'n'Drop support
+- Custom client pointers support
 
 ## version 0.1.0 (2017-10-01)
 
