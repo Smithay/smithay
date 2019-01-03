@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## version 0.2.0 (2019-01-03)
+
 ### General
 
 - **[Breaking]** Upgrade to wayland-rs 0.21
