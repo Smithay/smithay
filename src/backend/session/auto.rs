@@ -37,7 +37,7 @@ use super::{
 use nix::fcntl::OFlag;
 use std::{cell::RefCell, io::Error as IoError, os::unix::io::RawFd, path::Path, rc::Rc};
 
-use wayland_server::calloop::LoopHandle;
+use calloop::LoopHandle;
 
 /// [`Session`] using the best available interface
 #[derive(Clone)]
@@ -58,7 +58,7 @@ pub enum AutoSessionNotifier {
     Direct(DirectSessionNotifier),
 }
 
-/// Bound session that is driven by a [`EventLoop`](wayland_server::calloop::EventLoop).
+/// Bound session that is driven by a [`EventLoop`](calloop::EventLoop).
 ///
 /// See [`auto_session_bind`] for details.
 ///
@@ -139,7 +139,7 @@ impl AutoSession {
     }
 }
 
-/// Bind an [`AutoSessionNotifier`] to an [`EventLoop`](wayland_server::calloop::EventLoop).
+/// Bind an [`AutoSessionNotifier`] to an [`EventLoop`](calloop::EventLoop).
 ///
 /// Allows the [`AutoSessionNotifier`] to listen for incoming signals signalling the session state.
 /// If you don't use this function [`AutoSessionNotifier`] will not correctly tell you the
@@ -233,7 +233,7 @@ impl SessionNotifier for AutoSessionNotifier {
 }
 
 impl BoundAutoSession {
-    /// Unbind the session from the [`EventLoop`](wayland_server::calloop::EventLoop) again
+    /// Unbind the session from the [`EventLoop`](calloop::EventLoop) again
     pub fn unbind(self) -> AutoSessionNotifier {
         match self {
             #[cfg(feature = "backend_session_logind")]

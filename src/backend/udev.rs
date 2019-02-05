@@ -18,7 +18,7 @@ use std::{
 };
 use udev::{Context, Enumerator, EventType, MonitorBuilder, MonitorSocket, Result as UdevResult};
 
-use wayland_server::calloop::{
+use calloop::{
     generic::{EventedFd, Generic},
     mio::Ready,
     InsertError, LoopHandle, Source,
@@ -97,7 +97,7 @@ impl<T: UdevHandler + 'static> Drop for UdevBackend<T> {
     }
 }
 
-/// Binds a [`UdevBackend`] to a given [`EventLoop`](wayland_server::calloop::EventLoop).
+/// Binds a [`UdevBackend`] to a given [`EventLoop`](calloop::EventLoop).
 ///
 /// Allows the backend to receive kernel events and thus to drive the [`UdevHandler`].
 /// No runtime functionality can be provided without using this function.

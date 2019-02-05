@@ -46,10 +46,10 @@ use std::iter::IntoIterator;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 
-use wayland_server::calloop::generic::{EventedFd, Generic};
-use wayland_server::calloop::mio::Ready;
-use wayland_server::calloop::InsertError;
-use wayland_server::calloop::{LoopHandle, Source};
+use calloop::generic::{EventedFd, Generic};
+use calloop::mio::Ready;
+use calloop::InsertError;
+use calloop::{LoopHandle, Source};
 
 use super::graphics::SwapBuffersError;
 
@@ -106,7 +106,7 @@ pub trait Device: AsRawFd + DevPath {
     ///
     /// You should not call this function manually, but rather use
     /// [`device_bind`] to register the device
-    /// to an [`EventLoop`](wayland_server::calloop::EventLoop)
+    /// to an [`EventLoop`](calloop::EventLoop)
     /// to synchronize your rendering to the vblank events of the open crtc's
     fn process_events(&mut self);
 
@@ -222,7 +222,7 @@ impl<A: AsRawFd> DevPath for A {
     }
 }
 
-/// Bind a `Device` to an [`EventLoop`](wayland_server::calloop::EventLoop),
+/// Bind a `Device` to an [`EventLoop`](calloop::EventLoop),
 ///
 /// This will cause it to recieve events and feed them into a previously
 /// set [`DeviceHandler`](DeviceHandler).

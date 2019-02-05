@@ -19,6 +19,7 @@ extern crate lazy_static;
 
 pub mod backend;
 pub mod utils;
+#[cfg(feature = "wayland_frontend")]
 pub mod wayland;
 
 #[cfg(feature = "xwayland")]

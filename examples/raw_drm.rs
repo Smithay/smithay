@@ -11,6 +11,7 @@ use smithay::{
         Device, DeviceHandler, RawSurface, Surface,
     },
     reexports::{
+        calloop::EventLoop,
         drm::{
             buffer::PixelFormat,
             control::{
@@ -20,7 +21,6 @@ use smithay::{
                 encoder, framebuffer, Device as ControlDevice, ResourceInfo,
             },
         },
-        wayland_server::calloop::EventLoop,
     },
 };
 use std::{

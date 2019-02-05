@@ -1,5 +1,6 @@
 //! Reexports of crates, that are part of the public api, for convenience
 
+pub use calloop;
 #[cfg(feature = "dbus")]
 pub use dbus;
 #[cfg(feature = "backend_drm")]
@@ -16,6 +17,9 @@ pub use nix;
 pub use systemd;
 #[cfg(feature = "backend_udev")]
 pub use udev;
+#[cfg(feature = "wayland_frontend")]
 pub use wayland_commons;
+#[cfg(feature = "wayland_frontend")]
 pub use wayland_protocols;
+#[cfg(feature = "wayland_frontend")]
 pub use wayland_server;

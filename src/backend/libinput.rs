@@ -15,7 +15,7 @@ use std::{
     os::unix::io::{AsRawFd, RawFd},
 };
 
-use wayland_server::calloop::{
+use calloop::{
     generic::{EventedFd, Generic},
     mio::Ready,
     InsertError, LoopHandle, Source,

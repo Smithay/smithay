@@ -8,7 +8,7 @@ extern crate slog;
 extern crate smithay;
 
 use slog::Drain;
-use smithay::reexports::wayland_server::{calloop::EventLoop, Display};
+use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
 
 #[macro_use]
 mod shaders;
