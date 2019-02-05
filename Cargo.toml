@@ -11,9 +11,10 @@ edition = "2018"
 members = [ "anvil" ]
 
 [dependencies]
-wayland-server = "0.21.6"
-wayland-commons = "0.21.1"
+wayland-server = { version = "0.21.6", optional = true }
+wayland-commons = { version = "0.21.1", optional = true }
 wayland-sys = { version = "0.21.6", optional = true }
+calloop = "0.4.2"
 nix = "0.11"
 xkbcommon = "0.2.1"
 tempfile = "2.1.5"
@@ -29,8 +30,8 @@ input = { version = "0.4.1", optional = true }
 udev = { version = "0.2.0", optional = true }
 dbus = { version = "0.6.1", optional = true }
 systemd = { version = "^0.2.0", optional = true }
-wayland-protocols = { version = "0.21.3", features = ["unstable_protocols", "server"] }
-image = "0.17.0"
+wayland-protocols = { version = "0.21.3", features = ["unstable_protocols", "server"], optional = true }
+image = { version = "0.17.0", optional = true }
 error-chain = "0.11.0"
 lazy_static = "1.0.0"
 
@@ -41,11 +42,11 @@ slog-term = "2.3"
 gl_generator = { version = "0.9", optional = true }
 
 [features]
-default = ["backend_winit", "backend_drm_legacy", "backend_drm_gbm", "backend_drm_egl", "backend_libinput", "backend_udev", "backend_session", "renderer_glium", "xwayland"]
+default = ["backend_winit", "backend_drm_legacy", "backend_drm_gbm", "backend_drm_egl", "backend_libinput", "backend_udev", "backend_session", "renderer_glium", "xwayland", "wayland_frontend"]
 backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen", "backend_egl", "renderer_gl", "native_lib"]
 backend_drm = ["drm"]
 backend_drm_legacy = ["backend_drm"]
-backend_drm_gbm = ["backend_drm", "gbm"]
+backend_drm_gbm = ["backend_drm", "gbm", "image"]
 backend_drm_egl = ["backend_drm", "backend_egl"]
 backend_egl = ["gl_generator"]
 backend_libinput = ["input"]
@@ -54,8 +55,9 @@ backend_udev = ["udev"]
 backend_session_logind = ["dbus", "systemd", "backend_session"]
 renderer_gl = ["gl_generator"]
 renderer_glium = ["renderer_gl", "glium"]
-native_lib = ["wayland-sys", "wayland-server/native_lib", "wayland-protocols/native_server"]
-xwayland = []
+native_lib = ["wayland_frontend", "wayland-sys", "wayland-server/native_lib", "wayland-protocols/native_server"]
+wayland_frontend = ["wayland-server", "wayland-commons", "wayland-protocols"]
+xwayland = ["wayland_frontend"]
 
 [[example]]
 name = "raw_drm"

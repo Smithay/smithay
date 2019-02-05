@@ -46,6 +46,7 @@ env:
     - FEATURES="backend_session_logind"
     - FEATURES="renderer_gl"
     - FEATURES="renderer_glium"
+    - FEATURES="wayland_frontend"
     - FEATURES="xwayland"
       # test default features
     - FEATURES="default"

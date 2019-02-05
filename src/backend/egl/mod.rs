@@ -26,6 +26,7 @@ use std::{
     fmt,
     rc::{Rc, Weak},
 };
+#[cfg(feature = "wayland_frontend")]
 use wayland_server::{
     protocol::wl_buffer::{self, WlBuffer},
     Display, Resource,
@@ -72,6 +73,7 @@ impl ::std::error::Error for EglExtensionNotSupportedError {
 }
 
 /// Error that can occur when accessing an EGL buffer
+#[cfg(feature = "wayland_frontend")]
 pub enum BufferAccessError {
     /// The corresponding Context is not alive anymore
     ContextLost,
@@ -83,6 +85,7 @@ pub enum BufferAccessError {
     EglExtensionNotSupported(EglExtensionNotSupportedError),
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl fmt::Debug for BufferAccessError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> ::std::result::Result<(), fmt::Error> {
         match *self {
@@ -96,6 +99,7 @@ impl fmt::Debug for BufferAccessError {
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl fmt::Display for BufferAccessError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> ::std::result::Result<(), fmt::Error> {
         use std::error::Error;
@@ -108,6 +112,7 @@ impl fmt::Display for BufferAccessError {
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl ::std::error::Error for BufferAccessError {
     fn description(&self) -> &str {
         match *self {
@@ -126,6 +131,7 @@ impl ::std::error::Error for BufferAccessError {
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl From<EglExtensionNotSupportedError> for BufferAccessError {
     fn from(error: EglExtensionNotSupportedError) -> Self {
         BufferAccessError::EglExtensionNotSupported(error)
@@ -221,6 +227,7 @@ impl Format {
 }
 
 /// Images of the EGL-based [`WlBuffer`].
+#[cfg(feature = "wayland_frontend")]
 pub struct EGLImages {
     display: Weak<ffi::egl::types::EGLDisplay>,
     /// Width in pixels
@@ -239,6 +246,7 @@ pub struct EGLImages {
     egl_to_texture_support: bool,
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl EGLImages {
     /// Amount of planes of these `EGLImages`
     pub fn num_planes(&self) -> usize {
@@ -285,6 +293,7 @@ impl EGLImages {
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl Drop for EGLImages {
     fn drop(&mut self) {
         if let Some(display) = self.display.upgrade() {

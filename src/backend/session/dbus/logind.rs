@@ -50,7 +50,7 @@ use std::{
 };
 use systemd::login;
 
-use wayland_server::calloop::{
+use calloop::{
     generic::{Event, EventedRawFd, Generic},
     mio::Ready,
     InsertError, LoopHandle, Source,
@@ -418,7 +418,7 @@ impl SessionNotifier for LogindSessionNotifier {
     }
 }
 
-/// Bound logind session that is driven by the [`EventLoop`](wayland_server::calloop::EventLoop).
+/// Bound logind session that is driven by the [`EventLoop`](calloop::EventLoop).
 ///
 /// See [`logind_session_bind`] for details.
 ///
@@ -429,7 +429,7 @@ pub struct BoundLogindSession {
     sources: Vec<Source<Generic<EventedRawFd>>>,
 }
 
-/// Bind a [`LogindSessionNotifier`] to an [`EventLoop`](wayland_server::calloop::EventLoop).
+/// Bind a [`LogindSessionNotifier`] to an [`EventLoop`](calloop::EventLoop).
 ///
 /// Allows the [`LogindSessionNotifier`] to listen for incoming signals signalling the session state.
 /// If you don't use this function [`LogindSessionNotifier`] will not correctly tell you the logind
@@ -472,7 +472,7 @@ pub fn logind_session_bind<Data: 'static>(
 }
 
 impl BoundLogindSession {
-    /// Unbind the logind session from the [`EventLoop`](wayland_server::calloop::EventLoop)
+    /// Unbind the logind session from the [`EventLoop`](calloop::EventLoop)
     pub fn unbind(self) -> LogindSessionNotifier {
         for source in self.sources {
             source.remove();

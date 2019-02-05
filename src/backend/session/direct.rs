@@ -45,6 +45,7 @@
 //! for notifications are the [`Libinput`](input::Libinput) context or the [`Device`](::backend::drm::Device).
 
 use super::{AsErrno, Session, SessionNotifier, SessionObserver};
+use calloop::{signals::Signals, LoopHandle, Source};
 use nix::{
     fcntl::{self, open, OFlag},
     libc::c_int,
@@ -68,7 +69,6 @@ use std::{
 };
 #[cfg(feature = "backend_udev")]
 use udev::Context;
-use wayland_server::calloop::{signals::Signals, LoopHandle, Source};
 
 #[allow(dead_code)]
 mod tty {
@@ -390,7 +390,7 @@ impl DirectSessionNotifier {
     }
 }
 
-/// Bound logind session that is driven by the [`EventLoop`](wayland_server::calloop::EventLoop).
+/// Bound logind session that is driven by the [`EventLoop`](calloop::EventLoop).
 ///
 /// See [`direct_session_bind`] for details.
 pub struct BoundDirectSession {
@@ -399,7 +399,7 @@ pub struct BoundDirectSession {
 }
 
 impl BoundDirectSession {
-    /// Unbind the direct session from the [`EventLoop`](wayland_server::calloop::EventLoop)
+    /// Unbind the direct session from the [`EventLoop`](calloop::EventLoop)
     pub fn unbind(self) -> DirectSessionNotifier {
         let BoundDirectSession { source, notifier } = self;
         source.remove();
@@ -410,7 +410,7 @@ impl BoundDirectSession {
     }
 }
 
-/// Bind a [`DirectSessionNotifier`] to an [`EventLoop`](wayland_server::calloop::EventLoop).
+/// Bind a [`DirectSessionNotifier`] to an [`EventLoop`](calloop::EventLoop).
 ///
 /// Allows the [`DirectSessionNotifier`] to listen for incoming signals signalling the session state.
 /// If you don't use this function [`DirectSessionNotifier`] will not correctly tell you the current

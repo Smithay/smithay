@@ -12,6 +12,7 @@ use drm::control::{crtc, ResourceHandles, ResourceInfo};
 use nix::libc::dev_t;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
+#[cfg(feature = "native_lib")]
 use wayland_server::Display;
 
 use super::{Device, DeviceHandler, Surface};
