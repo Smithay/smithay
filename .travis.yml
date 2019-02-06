@@ -3,8 +3,6 @@ language: rust
 # We need this for the matrix, install is quick although unused
 rust:
   - stable
-  - beta
-  - nightly
 
 sudo: required
 
@@ -66,6 +64,15 @@ env:
 matrix:
   fast_finish: true
   include:
+      # continue testing the full crate on beta&nightly to spot rustc regressions
+    - rust: beta
+      env: FEATURES="all"
+    - rust: beta
+      env: FEATURES="anvil" ANVIL_FEATURES="all"
+    - rust: nightly
+      env: FEATURES="all"
+    - rust: nightly
+      env: FEATURES="anvil" ANVIL_FEATURES="all"
       # special features for lint & fmt
     - rust: stable
       env: FEATURES="cargo-fmt"
