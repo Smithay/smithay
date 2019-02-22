@@ -1,5 +1,5 @@
 use smithay::{
-    reexports::wayland_server::{protocol::wl_surface, Resource},
+    reexports::wayland_server::protocol::wl_surface,
     utils::Rectangle,
     wayland::{
         compositor::{roles::Role, CompositorToken, SubsurfaceRole, SurfaceAttributes, TraversalAction},
@@ -28,7 +28,7 @@ where
             Kind::Wl(ref t) => t.alive(),
         }
     }
-    pub fn get_surface(&self) -> Option<&Resource<wl_surface::WlSurface>> {
+    pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
         match *self {
             Kind::Xdg(ref t) => t.get_surface(),
             Kind::Wl(ref t) => t.get_surface(),
@@ -55,7 +55,7 @@ where
         point: (f64, f64),
         ctoken: CompositorToken<U, R>,
         get_size: F,
-    ) -> Option<(Resource<wl_surface::WlSurface>, (f64, f64))>
+    ) -> Option<(wl_surface::WlSurface, (f64, f64))>
     where
         F: Fn(&SurfaceAttributes<U>) -> Option<(i32, i32)>,
     {
@@ -177,10 +177,7 @@ where
         self.windows.insert(0, window);
     }
 
-    pub fn get_surface_under(
-        &self,
-        point: (f64, f64),
-    ) -> Option<(Resource<wl_surface::WlSurface>, (f64, f64))> {
+    pub fn get_surface_under(&self, point: (f64, f64)) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         for w in &self.windows {
             if let Some(surface) = w.matching(point, self.ctoken, &self.get_size) {
                 return Some(surface);
@@ -192,7 +189,7 @@ where
     pub fn get_surface_and_bring_to_top(
         &mut self,
         point: (f64, f64),
-    ) -> Option<(Resource<wl_surface::WlSurface>, (f64, f64))> {
+    ) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         let mut found = None;
         for (i, w) in self.windows.iter().enumerate() {
             if let Some(surface) = w.matching(point, self.ctoken, &self.get_size) {

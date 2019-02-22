@@ -49,7 +49,7 @@ use smithay::{
                 EventLoop, LoopHandle, Source,
             },
             protocol::{wl_output, wl_surface},
-            Display, Resource,
+            Display,
         },
     },
     wayland::{
@@ -175,7 +175,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     });
     let keyboard = w_seat
         .add_keyboard(XkbConfig::default(), 1000, 500, |seat, focus| {
-            set_data_device_focus(seat, focus.and_then(|s| s.client()))
+            set_data_device_focus(seat, focus.and_then(|s| s.as_ref().client()))
         })
         .expect("Failed to initialize the keyboard");
 
@@ -290,7 +290,7 @@ struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
     pointer_location: Rc<RefCell<(f64, f64)>>,
     pointer_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     cursor_status: Arc<Mutex<CursorImageStatus>>,
-    dnd_icon: Arc<Mutex<Option<Resource<wl_surface::WlSurface>>>>,
+    dnd_icon: Arc<Mutex<Option<wl_surface::WlSurface>>>,
     loop_handle: LoopHandle<Data>,
     notifier: S,
     logger: ::slog::Logger,
@@ -527,7 +527,7 @@ pub struct DrmHandlerImpl {
     window_map: Rc<RefCell<MyWindowMap>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
     cursor_status: Arc<Mutex<CursorImageStatus>>,
-    dnd_icon: Arc<Mutex<Option<Resource<wl_surface::WlSurface>>>>,
+    dnd_icon: Arc<Mutex<Option<wl_surface::WlSurface>>>,
     logger: ::slog::Logger,
 }
 
@@ -553,7 +553,7 @@ impl DeviceHandler for DrmHandlerImpl {
             {
                 let guard = self.dnd_icon.lock().unwrap();
                 if let Some(ref surface) = *guard {
-                    if surface.is_alive() {
+                    if surface.as_ref().is_alive() {
                         drawer.draw_dnd_icon(
                             &mut frame,
                             surface,
@@ -569,7 +569,7 @@ impl DeviceHandler for DrmHandlerImpl {
                 // reset the cursor if the surface is no longer alive
                 let mut reset = false;
                 if let CursorImageStatus::Image(ref surface) = *guard {
-                    reset = !surface.is_alive();
+                    reset = !surface.as_ref().is_alive();
                 }
                 if reset {
                     *guard = CursorImageStatus::Default;

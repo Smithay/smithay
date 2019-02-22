@@ -8,8 +8,8 @@ use rand;
 
 use smithay::{
     reexports::wayland_server::{
-        protocol::{wl_buffer, wl_callback, wl_shell_surface, wl_surface},
-        Display, Resource,
+        protocol::{wl_buffer, wl_shell_surface, wl_surface},
+        Display,
     },
     wayland::{
         compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent},
@@ -56,8 +56,8 @@ pub fn init_shell(
         move |request, surface, ctoken| match request {
             SurfaceEvent::Commit => surface_commit(&surface, ctoken),
             SurfaceEvent::Frame { callback } => callback
-                .implement(|e, _| match e {}, None::<fn(_)>, ())
-                .send(wl_callback::Event::Done { callback_data: 0 }),
+                .implement_closure(|_, _| unreachable!(), None::<fn(_)>, ())
+                .done(0),
         },
         log.clone(),
     );
@@ -131,11 +131,11 @@ pub fn init_shell(
 
 #[derive(Default)]
 pub struct SurfaceData {
-    pub buffer: Option<Resource<wl_buffer::WlBuffer>>,
+    pub buffer: Option<wl_buffer::WlBuffer>,
     pub texture: Option<crate::glium_drawer::TextureMetadata>,
 }
 
-fn surface_commit(surface: &Resource<wl_surface::WlSurface>, token: CompositorToken<SurfaceData, Roles>) {
+fn surface_commit(surface: &wl_surface::WlSurface, token: CompositorToken<SurfaceData, Roles>) {
     // we retrieve the contents of the associated buffer and copy it
     token.with_surface_data(surface, |attributes| {
         match attributes.buffer.take() {
