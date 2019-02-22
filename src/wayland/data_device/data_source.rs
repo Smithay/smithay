@@ -5,7 +5,7 @@ use wayland_server::{
         wl_data_device_manager::DndAction,
         wl_data_source::{Request, WlDataSource},
     },
-    NewResource, Resource,
+    NewResource,
 };
 
 /// The metadata describing a data source

@@ -66,7 +66,7 @@ use wayland_server::{
         wl_data_device_manager::{self, DndAction},
         wl_data_offer, wl_data_source, wl_surface,
     },
-    Client, Display, Global, NewResource, Resource,
+    Client, Display, Global, NewResource,
 };
 
 use crate::wayland::{

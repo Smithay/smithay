@@ -6,7 +6,7 @@ use std::{
 
 use wayland_server::{
     protocol::{wl_shell, wl_shell_surface, wl_surface},
-    NewResource, Resource,
+    NewResource,
 };
 
 use crate::wayland::compositor::{roles::Role, CompositorToken};

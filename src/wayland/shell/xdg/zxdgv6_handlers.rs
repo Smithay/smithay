@@ -7,7 +7,7 @@ use wayland_protocols::{
     },
     xdg_shell::server::{xdg_positioner, xdg_toplevel},
 };
-use wayland_server::{protocol::wl_surface, NewResource, Resource};
+use wayland_server::{protocol::wl_surface, NewResource};
 
 use crate::utils::Rectangle;
 

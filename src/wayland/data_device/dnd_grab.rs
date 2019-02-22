@@ -2,11 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use wayland_server::{
-    protocol::{
-        wl_data_device, wl_data_device_manager::DndAction, wl_data_offer, wl_data_source, wl_pointer,
-        wl_surface,
-    },
-    NewResource, Resource,
+    protocol::{wl_data_device_manager::DndAction, wl_data_offer, wl_data_source, wl_pointer, wl_surface},
+    NewResource,
 };
 
 use crate::wayland::{

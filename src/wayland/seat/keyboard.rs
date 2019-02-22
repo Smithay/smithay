@@ -9,10 +9,10 @@ use std::{
 use tempfile::tempfile;
 use wayland_server::{
     protocol::{
-        wl_keyboard::{Event, KeyState as WlKeyState, KeymapFormat, Request, WlKeyboard},
+        wl_keyboard::{KeyState as WlKeyState, KeymapFormat, Request, WlKeyboard},
         wl_surface::WlSurface,
     },
-    Client, NewResource, Resource,
+    Client, NewResource,
 };
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
