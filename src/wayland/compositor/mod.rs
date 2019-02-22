@@ -137,7 +137,7 @@ pub struct SurfaceAttributes<U> {
     /// You are free to set this field to `None` to avoid processing it several
     /// times. It'll be set to `Some(...)` if the user attaches a buffer (or `NULL`) to
     /// the surface.
-    pub buffer: Option<Option<(Resource<wl_buffer::WlBuffer>, (i32, i32))>>,
+    pub buffer: Option<Option<(wl_buffer::WlBuffer, (i32, i32))>>,
     /// Scale of the contents of the buffer, for higher-resolution contents.
     ///
     /// If it matches the one of the output displaying this surface, no change
@@ -272,7 +272,7 @@ impl<U: 'static, R: 'static> CompositorToken<U, R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_surface_data<F, T>(&self, surface: &Resource<WlSurface>, f: F) -> T
+    pub fn with_surface_data<F, T>(&self, surface: &WlSurface, f: F) -> T
     where
         F: FnOnce(&mut SurfaceAttributes<U>) -> T,
     {
@@ -301,14 +301,9 @@ where
     ///
     /// If the surface not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_surface_tree_upward<F, T>(
-        &self,
-        surface: &Resource<WlSurface>,
-        initial: T,
-        f: F,
-    ) -> Result<(), ()>
+    pub fn with_surface_tree_upward<F, T>(&self, surface: &WlSurface, initial: T, f: F) -> Result<(), ()>
     where
-        F: FnMut(&Resource<WlSurface>, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+        F: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
     {
         SurfaceData::<U, R>::map_tree(surface, initial, f, false);
         Ok(())
@@ -321,14 +316,9 @@ where
     /// supposed to be drawn: top-most first.
     ///
     /// Behavior is the same as [`with_surface_tree_upward`](CompositorToken::with_surface_tree_upward).
-    pub fn with_surface_tree_downward<F, T>(
-        &self,
-        surface: &Resource<WlSurface>,
-        initial: T,
-        f: F,
-    ) -> Result<(), ()>
+    pub fn with_surface_tree_downward<F, T>(&self, surface: &WlSurface, initial: T, f: F) -> Result<(), ()>
     where
-        F: FnMut(&Resource<WlSurface>, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+        F: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
     {
         SurfaceData::<U, R>::map_tree(surface, initial, f, true);
         Ok(())
@@ -340,7 +330,7 @@ where
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn get_parent(&self, surface: &Resource<WlSurface>) -> Option<Resource<WlSurface>> {
+    pub fn get_parent(&self, surface: &WlSurface) -> Option<WlSurface> {
         SurfaceData::<U, R>::get_parent(surface)
     }
 
@@ -348,7 +338,7 @@ where
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn get_children(&self, surface: &Resource<WlSurface>) -> Vec<Resource<WlSurface>> {
+    pub fn get_children(&self, surface: &WlSurface) -> Vec<WlSurface> {
         SurfaceData::<U, R>::get_children(surface)
     }
 }
@@ -358,7 +348,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn has_a_role(&self, surface: &Resource<WlSurface>) -> bool {
+    pub fn has_a_role(&self, surface: &WlSurface) -> bool {
         SurfaceData::<U, R>::has_a_role(surface)
     }
 
@@ -366,7 +356,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn has_role<RoleData>(&self, surface: &Resource<WlSurface>) -> bool
+    pub fn has_role<RoleData>(&self, surface: &WlSurface) -> bool
     where
         R: Role<RoleData>,
     {
@@ -379,7 +369,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn give_role<RoleData>(&self, surface: &Resource<WlSurface>) -> Result<(), ()>
+    pub fn give_role<RoleData>(&self, surface: &WlSurface) -> Result<(), ()>
     where
         R: Role<RoleData>,
         RoleData: Default,
@@ -393,11 +383,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn give_role_with<RoleData>(
-        &self,
-        surface: &Resource<WlSurface>,
-        data: RoleData,
-    ) -> Result<(), RoleData>
+    pub fn give_role_with<RoleData>(&self, surface: &WlSurface, data: RoleData) -> Result<(), RoleData>
     where
         R: Role<RoleData>,
     {
@@ -410,7 +396,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_role_data<RoleData, F, T>(&self, surface: &Resource<WlSurface>, f: F) -> Result<T, WrongRole>
+    pub fn with_role_data<RoleData, F, T>(&self, surface: &WlSurface, f: F) -> Result<T, WrongRole>
     where
         R: Role<RoleData>,
         F: FnOnce(&mut RoleData) -> T,
@@ -424,7 +410,7 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn remove_role<RoleData>(&self, surface: &Resource<WlSurface>) -> Result<RoleData, WrongRole>
+    pub fn remove_role<RoleData>(&self, surface: &WlSurface) -> Result<RoleData, WrongRole>
     where
         R: Role<RoleData>,
     {
@@ -435,8 +421,8 @@ impl<U: 'static, R: RoleType + 'static> CompositorToken<U, R> {
     ///
     /// If the region is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn get_region_attributes(&self, region: &Resource<wl_region::WlRegion>) -> RegionAttributes {
-        match region.user_data::<Mutex<RegionAttributes>>() {
+    pub fn get_region_attributes(&self, region: &wl_region::WlRegion) -> RegionAttributes {
+        match region.as_ref().user_data::<Mutex<RegionAttributes>>() {
             Some(mutex) => mutex.lock().unwrap().clone(),
             None => panic!("Accessing the data of foreign regions is not supported."),
         }
@@ -465,25 +451,17 @@ where
     L: Into<Option<::slog::Logger>>,
     U: Default + 'static,
     R: Default + RoleType + Role<SubsurfaceRole> + 'static,
-    Impl: FnMut(SurfaceEvent, Resource<WlSurface>, CompositorToken<U, R>) + 'static,
+    Impl: FnMut(SurfaceEvent, WlSurface, CompositorToken<U, R>) + 'static,
 {
     let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "compositor_handler"));
     let implem = Rc::new(RefCell::new(implem));
 
-    let comp_token = display.get_token();
-    let sub_token = display.get_token();
-
     let compositor = display.create_global(4, move |new_compositor, _version| {
-        self::handlers::implement_compositor::<U, R, Impl>(
-            new_compositor,
-            comp_token.clone(),
-            log.clone(),
-            implem.clone(),
-        );
+        self::handlers::implement_compositor::<U, R, Impl>(new_compositor, log.clone(), implem.clone());
     });
 
     let subcompositor = display.create_global(1, move |new_subcompositor, _version| {
-        self::handlers::implement_subcompositor::<U, R>(new_subcompositor, sub_token.clone());
+        self::handlers::implement_subcompositor::<U, R>(new_subcompositor);
     });
 
     (CompositorToken::make(), compositor, subcompositor)

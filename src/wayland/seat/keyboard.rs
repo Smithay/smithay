@@ -104,15 +104,15 @@ impl<'a> Default for XkbConfig<'a> {
 }
 
 struct KbdInternal {
-    known_kbds: Vec<Resource<WlKeyboard>>,
-    focus: Option<Resource<WlSurface>>,
+    known_kbds: Vec<WlKeyboard>,
+    focus: Option<WlSurface>,
     pressed_keys: Vec<u32>,
     mods_state: ModifiersState,
     keymap: xkb::Keymap,
     state: xkb::State,
     repeat_rate: i32,
     repeat_delay: i32,
-    focus_hook: Box<dyn FnMut(Option<&Resource<WlSurface>>)>,
+    focus_hook: Box<dyn FnMut(Option<&WlSurface>)>,
 }
 
 // This is OK because all parts of `xkb` will remain on the
@@ -124,7 +124,7 @@ impl KbdInternal {
         xkb_config: XkbConfig<'_>,
         repeat_rate: i32,
         repeat_delay: i32,
-        focus_hook: Box<dyn FnMut(Option<&Resource<WlSurface>>)>,
+        focus_hook: Box<dyn FnMut(Option<&WlSurface>)>,
     ) -> Result<KbdInternal, ()> {
         // we create a new contex for each keyboard because libxkbcommon is actually NOT threadsafe
         // so confining it inside the KbdInternal allows us to use Rusts mutability rules to make
@@ -205,11 +205,11 @@ impl KbdInternal {
 
     fn with_focused_kbds<F>(&self, mut f: F)
     where
-        F: FnMut(&Resource<WlKeyboard>, &Resource<WlSurface>),
+        F: FnMut(&WlKeyboard, &WlSurface),
     {
         if let Some(ref surface) = self.focus {
             for kbd in &self.known_kbds {
-                if kbd.same_client_as(surface) {
+                if kbd.as_ref().same_client_as(surface.as_ref()) {
                     f(kbd, surface);
                 }
             }
@@ -235,7 +235,7 @@ pub(crate) fn create_keyboard_handler<F>(
     focus_hook: F,
 ) -> Result<KeyboardHandle, Error>
 where
-    F: FnMut(Option<&Resource<WlSurface>>) + 'static,
+    F: FnMut(Option<&WlSurface>) + 'static,
 {
     let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
     info!(log, "Initializing a xkbcommon handler with keymap query";
@@ -332,20 +332,9 @@ impl KeyboardHandle {
         };
         guard.with_focused_kbds(|kbd, _| {
             if let Some((dep, la, lo, gr)) = modifiers {
-                kbd.send(Event::Modifiers {
-                    serial,
-                    mods_depressed: dep,
-                    mods_latched: la,
-                    mods_locked: lo,
-                    group: gr,
-                });
+                kbd.modifiers(serial, dep, la, lo, gr);
             }
-            kbd.send(Event::Key {
-                serial,
-                time,
-                key: keycode,
-                state: wl_state,
-            });
+            kbd.key(serial, time, keycode, wl_state);
         });
         if guard.focus.is_some() {
             trace!(self.arc.logger, "Input forwarded to client");
@@ -360,22 +349,19 @@ impl KeyboardHandle {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus(&self, focus: Option<&Resource<WlSurface>>, serial: u32) {
+    pub fn set_focus(&self, focus: Option<&WlSurface>, serial: u32) {
         let mut guard = self.arc.internal.lock().unwrap();
 
         let same = guard
             .focus
             .as_ref()
-            .and_then(|f| focus.map(|s| s.equals(f)))
+            .and_then(|f| focus.map(|s| s.as_ref().equals(f.as_ref())))
             .unwrap_or(false);
 
         if !same {
             // unset old focus
             guard.with_focused_kbds(|kbd, s| {
-                kbd.send(Event::Leave {
-                    serial,
-                    surface: s.clone(),
-                });
+                kbd.leave(serial, &s);
             });
 
             // set new focus
@@ -383,18 +369,8 @@ impl KeyboardHandle {
             let (dep, la, lo, gr) = guard.serialize_modifiers();
             let keys = guard.serialize_pressed_keys();
             guard.with_focused_kbds(|kbd, surface| {
-                kbd.send(Event::Modifiers {
-                    serial,
-                    mods_depressed: dep,
-                    mods_latched: la,
-                    mods_locked: lo,
-                    group: gr,
-                });
-                kbd.send(Event::Enter {
-                    serial,
-                    surface: surface.clone(),
-                    keys: keys.clone(),
-                });
+                kbd.modifiers(serial, dep, la, lo, gr);
+                kbd.enter(serial, &surface, keys.clone());
             });
             {
                 let KbdInternal {
@@ -422,7 +398,7 @@ impl KeyboardHandle {
             .unwrap()
             .focus
             .as_ref()
-            .and_then(|f| f.client())
+            .and_then(|f| f.as_ref().client())
             .map(|c| c.equals(client))
             .unwrap_or(false)
     }
@@ -432,18 +408,18 @@ impl KeyboardHandle {
     /// The keymap will automatically be sent to it
     ///
     /// This should be done first, before anything else is done with this keyboard.
-    pub(crate) fn new_kbd(&self, kbd: Resource<WlKeyboard>) {
+    pub(crate) fn new_kbd(&self, kbd: WlKeyboard) {
         trace!(self.arc.logger, "Sending keymap to client");
 
         // prepare a tempfile with the keymap, to send it to the client
         let ret = tempfile().and_then(|mut f| {
             f.write_all(self.arc.keymap.as_bytes())?;
             f.flush()?;
-            kbd.send(Event::Keymap {
-                format: KeymapFormat::XkbV1,
-                fd: f.as_raw_fd(),
-                size: self.arc.keymap.as_bytes().len() as u32,
-            });
+            kbd.keymap(
+                KeymapFormat::XkbV1,
+                f.as_raw_fd(),
+                self.arc.keymap.as_bytes().len() as u32,
+            );
             Ok(())
         });
 
@@ -456,11 +432,8 @@ impl KeyboardHandle {
         };
 
         let mut guard = self.arc.internal.lock().unwrap();
-        if kbd.version() >= 4 {
-            kbd.send(Event::RepeatInfo {
-                rate: guard.repeat_rate,
-                delay: guard.repeat_delay,
-            });
+        if kbd.as_ref().version() >= 4 {
+            kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
         }
         guard.known_kbds.push(kbd);
     }
@@ -471,7 +444,7 @@ impl KeyboardHandle {
         guard.repeat_delay = delay;
         guard.repeat_rate = rate;
         for kbd in &guard.known_kbds {
-            kbd.send(Event::RepeatInfo { rate, delay });
+            kbd.repeat_info(rate, delay);
         }
     }
 }
@@ -479,26 +452,27 @@ impl KeyboardHandle {
 pub(crate) fn implement_keyboard(
     new_keyboard: NewResource<WlKeyboard>,
     handle: Option<&KeyboardHandle>,
-) -> Resource<WlKeyboard> {
+) -> WlKeyboard {
     let destructor = match handle {
         Some(h) => {
             let arc = h.arc.clone();
-            Some(move |keyboard: Resource<_>| {
+            Some(move |keyboard: WlKeyboard| {
                 arc.internal
                     .lock()
                     .unwrap()
                     .known_kbds
-                    .retain(|k| !k.equals(&keyboard))
+                    .retain(|k| !k.as_ref().equals(&keyboard.as_ref()))
             })
         }
         None => None,
     };
-    new_keyboard.implement(
+    new_keyboard.implement_closure(
         |request, _keyboard| {
             match request {
                 Request::Release => {
                     // Our destructors already handle it
                 }
+                _ => unreachable!(),
             }
         },
         destructor,

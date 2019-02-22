@@ -45,14 +45,14 @@
 //! for notifications are the [`Libinput`](input::Libinput) context or the [`Device`](::backend::drm::Device).
 
 use super::{AsErrno, Session, SessionNotifier, SessionObserver};
-use calloop::{signals::Signals, LoopHandle, Source};
+use calloop::{
+    signals::{Signal, Signals},
+    LoopHandle, Source,
+};
 use nix::{
     fcntl::{self, open, OFlag},
     libc::c_int,
-    sys::{
-        signal::{self, Signal},
-        stat::{dev_t, fstat, major, minor, Mode},
-    },
+    sys::stat::{dev_t, fstat, major, minor, Mode},
     unistd::{close, dup},
     Error as NixError, Result as NixResult,
 };
@@ -257,7 +257,7 @@ impl DirectSession {
         } else {
             tty::__libc_current_sigrtmin()
         };*/
-        let signal = signal::SIGUSR2;
+        let signal = ::nix::sys::signal::SIGUSR2;
 
         let mode = tty::VtMode {
             mode: tty::VT_PROCESS,
@@ -270,7 +270,7 @@ impl DirectSession {
             tty::vt_set_mode(tty, &mode).chain_err(|| ErrorKind::FailedToTakeControlOfTTY(vt_num))?;
         }
 
-        Ok((vt_num, old_keyboard_mode, signal))
+        Ok((vt_num, old_keyboard_mode, Signal::SIGUSR2))
     }
 
     /// Get the number of the virtual terminal used by this session

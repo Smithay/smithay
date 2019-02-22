@@ -98,8 +98,8 @@ pub struct ShellSurfaceRole<D: 'static> {
 
 /// A handle to a shell surface
 pub struct ShellSurface<U, R, D> {
-    wl_surface: Resource<wl_surface::WlSurface>,
-    shell_surface: Resource<wl_shell_surface::WlShellSurface>,
+    wl_surface: wl_surface::WlSurface,
+    shell_surface: wl_shell_surface::WlShellSurface,
     token: CompositorToken<U, R>,
     _d: ::std::marker::PhantomData<D>,
 }
@@ -112,18 +112,18 @@ where
 {
     /// Is the shell surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
-        self.shell_surface.is_alive() && self.wl_surface.is_alive()
+        self.shell_surface.as_ref().is_alive() && self.wl_surface.as_ref().is_alive()
     }
 
     /// Do this handle and the other one actually refer to the same shell surface?
     pub fn equals(&self, other: &Self) -> bool {
-        self.shell_surface.equals(&other.shell_surface)
+        self.shell_surface.as_ref().equals(&other.shell_surface.as_ref())
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface
     ///
     /// Returns `None` if the toplevel surface actually no longer exists.
-    pub fn get_surface(&self) -> Option<&Resource<wl_surface::WlSurface>> {
+    pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
         if self.alive() {
             Some(&self.wl_surface)
         } else {
@@ -153,7 +153,7 @@ where
             }
         });
         if let Ok(true) = ret {
-            self.shell_surface.send(wl_shell_surface::Event::Ping { serial });
+            self.shell_surface.ping(serial);
             Ok(())
         } else {
             Err(())
@@ -162,16 +162,12 @@ where
 
     /// Send a configure event to this toplevel surface to suggest it a new configuration
     pub fn send_configure(&self, size: (u32, u32), edges: wl_shell_surface::Resize) {
-        self.shell_surface.send(wl_shell_surface::Event::Configure {
-            edges,
-            width: size.0 as i32,
-            height: size.1 as i32,
-        })
+        self.shell_surface.configure(edges, size.0 as i32, size.1 as i32)
     }
 
     /// Signal a popup surface that it has lost focus
     pub fn send_popup_done(&self) {
-        self.shell_surface.send(wl_shell_surface::Event::PopupDone)
+        self.shell_surface.popup_done()
     }
 
     /// Access the user data you associated to this surface
@@ -195,7 +191,7 @@ pub enum ShellSurfaceKind {
     /// and as such should only be visible in their parent window is, and on top of it.
     Transient {
         /// The surface considered as parent
-        parent: Resource<wl_surface::WlSurface>,
+        parent: wl_surface::WlSurface,
         /// Location relative to the parent
         location: (i32, i32),
         /// Wether this window should be marked as inactive
@@ -208,7 +204,7 @@ pub enum ShellSurfaceKind {
         /// Framerate (relevant only for driver fullscreen)
         framerate: u32,
         /// Requested output if any
-        output: Option<Resource<wl_output::WlOutput>>,
+        output: Option<wl_output::WlOutput>,
     },
     /// A popup surface
     ///
@@ -216,7 +212,7 @@ pub enum ShellSurfaceKind {
     /// contexts.
     Popup {
         /// The parent surface of this popup
-        parent: Resource<wl_surface::WlSurface>,
+        parent: wl_surface::WlSurface,
         /// The serial of the input event triggering the creation of this
         /// popup
         serial: u32,
@@ -226,7 +222,7 @@ pub enum ShellSurfaceKind {
         location: (i32, i32),
         /// Seat associated this the input that triggered the creation of the
         /// popup. Used to define when the "popup done" event is sent.
-        seat: Resource<wl_seat::WlSeat>,
+        seat: wl_seat::WlSeat,
     },
     /// A maximized surface
     ///
@@ -234,7 +230,7 @@ pub enum ShellSurfaceKind {
     /// while keeping any relevant desktop-environment interface visible.
     Maximized {
         /// Requested output for maximization
-        output: Option<Resource<wl_output::WlOutput>>,
+        output: Option<wl_output::WlOutput>,
     },
 }
 
@@ -264,7 +260,7 @@ pub enum ShellRequest<U, R, D> {
         /// Serial of the implicit grab that initiated the move
         serial: u32,
         /// Seat associated with the move
-        seat: Resource<wl_seat::WlSeat>,
+        seat: wl_seat::WlSeat,
     },
     /// Start of an interactive resize
     ///
@@ -275,7 +271,7 @@ pub enum ShellRequest<U, R, D> {
         /// Serial of the implicit grab that initiated the resize
         serial: u32,
         /// Seat associated with the resize
-        seat: Resource<wl_seat::WlSeat>,
+        seat: wl_seat::WlSeat,
         /// Direction of the resize
         edges: wl_shell_surface::Resize,
     },
@@ -331,21 +327,13 @@ where
 
     let implementation = Rc::new(RefCell::new(implementation));
 
-    let dtoken = display.get_token();
-
     let state = Arc::new(Mutex::new(ShellState {
         known_surfaces: Vec::new(),
     }));
     let state2 = state.clone();
 
     let global = display.create_global(1, move |shell, _version| {
-        self::wl_handlers::implement_shell(
-            shell,
-            dtoken.clone(),
-            ctoken,
-            implementation.clone(),
-            state2.clone(),
-        );
+        self::wl_handlers::implement_shell(shell, ctoken, implementation.clone(), state2.clone());
     });
 
     (state, global)

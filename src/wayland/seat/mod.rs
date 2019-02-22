@@ -67,7 +67,7 @@ use wayland_server::{
 struct Inner {
     pointer: Option<PointerHandle>,
     keyboard: Option<KeyboardHandle>,
-    known_seats: Vec<Resource<wl_seat::WlSeat>>,
+    known_seats: Vec<wl_seat::WlSeat>,
 }
 
 pub(crate) struct SeatArc {
@@ -92,7 +92,7 @@ impl Inner {
     fn send_all_caps(&self) {
         let capabilities = self.compute_caps();
         for seat in &self.known_seats {
-            seat.send(wl_seat::Event::Capabilities { capabilities });
+            seat.capabilities(capabilities);
         }
     }
 }
@@ -148,22 +148,21 @@ impl Seat {
         let global = display.create_global(5, move |new_seat, _version| {
             let seat = implement_seat(new_seat, arc.clone(), token.clone());
             let mut inner = arc.inner.lock().unwrap();
-            if seat.version() >= 2 {
-                seat.send(wl_seat::Event::Name {
-                    name: arc.name.clone(),
-                });
+            if seat.as_ref().version() >= 2 {
+                seat.name(arc.name.clone());
             }
-            seat.send(wl_seat::Event::Capabilities {
-                capabilities: inner.compute_caps(),
-            });
+            seat.capabilities(inner.compute_caps());
             inner.known_seats.push(seat);
         });
         (seat, global)
     }
 
     /// Attempt to retrieve a [`Seat`] from an existing resource
-    pub fn from_resource(seat: &Resource<wl_seat::WlSeat>) -> Option<Seat> {
-        seat.user_data::<Arc<SeatArc>>().cloned().map(|arc| Seat { arc })
+    pub fn from_resource(seat: &wl_seat::WlSeat) -> Option<Seat> {
+        seat.as_ref()
+            .user_data::<Arc<SeatArc>>()
+            .cloned()
+            .map(|arc| Seat { arc })
     }
 
     /// Acces the `UserDataMap` associated with this `Seat`
@@ -287,7 +286,7 @@ impl Seat {
         mut focus_hook: F,
     ) -> Result<KeyboardHandle, KeyboardError>
     where
-        F: FnMut(&Seat, Option<&Resource<wl_surface::WlSurface>>) + 'static,
+        F: FnMut(&Seat, Option<&wl_surface::WlSurface>) + 'static,
     {
         let me = self.clone();
         let mut inner = self.arc.inner.lock().unwrap();
@@ -326,9 +325,9 @@ impl Seat {
     }
 
     /// Checks whether a given [`WlSeat`](wl_seat::WlSeat) is associated with this [`Seat`]
-    pub fn owns(&self, seat: &Resource<wl_seat::WlSeat>) -> bool {
+    pub fn owns(&self, seat: &wl_seat::WlSeat) -> bool {
         let inner = self.arc.inner.lock().unwrap();
-        inner.known_seats.iter().any(|s| s.equals(seat))
+        inner.known_seats.iter().any(|s| s.as_ref().equals(seat.as_ref()))
     }
 }
 
@@ -342,15 +341,15 @@ fn implement_seat<U, R>(
     new_seat: NewResource<wl_seat::WlSeat>,
     arc: Arc<SeatArc>,
     token: CompositorToken<U, R>,
-) -> Resource<wl_seat::WlSeat>
+) -> wl_seat::WlSeat
 where
     R: Role<CursorImageRole> + 'static,
     U: 'static,
 {
     let dest_arc = arc.clone();
-    new_seat.implement(
+    new_seat.implement_closure(
         move |request, seat| {
-            let arc = seat.user_data::<Arc<SeatArc>>().unwrap();
+            let arc = seat.as_ref().user_data::<Arc<SeatArc>>().unwrap();
             let inner = arc.inner.lock().unwrap();
             match request {
                 wl_seat::Request::GetPointer { id } => {
@@ -376,15 +375,16 @@ where
                 wl_seat::Request::Release => {
                     // Our destructors already handle it
                 }
+                _ => unreachable!(),
             }
         },
-        Some(move |seat| {
+        Some(move |seat: wl_seat::WlSeat| {
             dest_arc
                 .inner
                 .lock()
                 .unwrap()
                 .known_seats
-                .retain(|s| !s.equals(&seat));
+                .retain(|s| !s.as_ref().equals(&seat.as_ref()));
         }),
         arc,
     )

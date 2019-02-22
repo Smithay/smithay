@@ -16,12 +16,12 @@ use crate::wayland::{
 use super::{with_source_metadata, DataDeviceData, DnDIconRole, SeatData};
 
 pub(crate) struct DnDGrab<U, R> {
-    data_source: Option<Resource<wl_data_source::WlDataSource>>,
-    current_focus: Option<Resource<wl_surface::WlSurface>>,
-    pending_offers: Vec<Resource<wl_data_offer::WlDataOffer>>,
+    data_source: Option<wl_data_source::WlDataSource>,
+    current_focus: Option<wl_surface::WlSurface>,
+    pending_offers: Vec<wl_data_offer::WlDataOffer>,
     offer_data: Option<Arc<Mutex<OfferData>>>,
-    icon: Option<Resource<wl_surface::WlSurface>>,
-    origin: Resource<wl_surface::WlSurface>,
+    icon: Option<wl_surface::WlSurface>,
+    origin: wl_surface::WlSurface,
     callback: Arc<Mutex<dyn FnMut(super::DataDeviceEvent) + Send>>,
     token: CompositorToken<U, R>,
     seat: Seat,
@@ -29,10 +29,10 @@ pub(crate) struct DnDGrab<U, R> {
 
 impl<U: 'static, R: Role<DnDIconRole> + 'static> DnDGrab<U, R> {
     pub(crate) fn new(
-        source: Option<Resource<wl_data_source::WlDataSource>>,
-        origin: Resource<wl_surface::WlSurface>,
+        source: Option<wl_data_source::WlDataSource>,
+        origin: wl_surface::WlSurface,
         seat: Seat,
-        icon: Option<Resource<wl_surface::WlSurface>>,
+        icon: Option<wl_surface::WlSurface>,
         token: CompositorToken<U, R>,
         callback: Arc<Mutex<dyn FnMut(super::DataDeviceEvent) + Send>>,
     ) -> DnDGrab<U, R> {
@@ -55,7 +55,7 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
         &mut self,
         _handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
-        focus: Option<(Resource<wl_surface::WlSurface>, (f64, f64))>,
+        focus: Option<(wl_surface::WlSurface, (f64, f64))>,
         serial: u32,
         time: u32,
     ) {
@@ -71,10 +71,10 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 // only leave if there is a data source or we are on the original client
-                if self.data_source.is_some() || self.origin.same_client_as(&surface) {
+                if self.data_source.is_some() || self.origin.as_ref().same_client_as(&surface.as_ref()) {
                     for device in &seat_data.known_devices {
-                        if device.same_client_as(&surface) {
-                            device.send(wl_data_device::Event::Leave);
+                        if device.as_ref().same_client_as(&surface.as_ref()) {
+                            device.leave();
                         }
                     }
                     // disable the offers
@@ -87,7 +87,7 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
         }
         if let Some((surface, (sx, sy))) = focus {
             // early return if the surface is no longer valid
-            let client = match surface.client() {
+            let client = match surface.as_ref().client() {
                 Some(c) => c,
                 None => return,
             };
@@ -103,16 +103,17 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
                     for device in seat_data
                         .known_devices
                         .iter()
-                        .filter(|d| d.same_client_as(&surface))
+                        .filter(|d| d.as_ref().same_client_as(&surface.as_ref()))
                     {
                         let action_choice = device
+                            .as_ref()
                             .user_data::<DataDeviceData>()
                             .unwrap()
                             .action_choice
                             .clone();
                         // create a data offer
                         let offer = client
-                            .create_resource::<wl_data_offer::WlDataOffer>(device.version())
+                            .create_resource::<wl_data_offer::WlDataOffer>(device.as_ref().version())
                             .map(|offer| {
                                 implement_dnd_data_offer(
                                     offer,
@@ -123,38 +124,24 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
                             })
                             .unwrap();
                         // advertize the offer to the client
-                        device.send(wl_data_device::Event::DataOffer { id: offer.clone() });
+                        device.data_offer(&offer);
                         with_source_metadata(source, |meta| {
                             for mime_type in meta.mime_types.iter().cloned() {
-                                offer.send(wl_data_offer::Event::Offer { mime_type })
+                                offer.offer(mime_type);
                             }
-                            offer.send(wl_data_offer::Event::SourceActions {
-                                source_actions: meta.dnd_action.to_raw(),
-                            });
+                            offer.source_actions(meta.dnd_action.to_raw());
                         })
                         .unwrap();
-                        device.send(wl_data_device::Event::Enter {
-                            serial,
-                            x: x - sx,
-                            y: y - sy,
-                            surface: surface.clone(),
-                            id: Some(offer.clone()),
-                        });
+                        device.enter(serial, &surface, x - sx, y - sy, Some(&offer));
                         self.pending_offers.push(offer);
                     }
                     self.offer_data = Some(offer_data);
                 } else {
                     // only send if we are on a surface of the same client
-                    if self.origin.same_client_as(&surface) {
+                    if self.origin.as_ref().same_client_as(&surface.as_ref()) {
                         for device in &seat_data.known_devices {
-                            if device.same_client_as(&surface) {
-                                device.send(wl_data_device::Event::Enter {
-                                    serial,
-                                    x: x - sx,
-                                    y: y - sy,
-                                    surface: surface.clone(),
-                                    id: None,
-                                });
+                            if device.as_ref().same_client_as(&surface.as_ref()) {
+                                device.enter(serial, &surface, x - sx, y - sy, None);
                             }
                         }
                     }
@@ -162,14 +149,10 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
                 self.current_focus = Some(surface);
             } else {
                 // make a move
-                if self.data_source.is_some() || self.origin.same_client_as(&surface) {
+                if self.data_source.is_some() || self.origin.as_ref().same_client_as(&surface.as_ref()) {
                     for device in &seat_data.known_devices {
-                        if device.same_client_as(&surface) {
-                            device.send(wl_data_device::Event::Motion {
-                                time,
-                                x: x - sx,
-                                y: y - sy,
-                            });
+                        if device.as_ref().same_client_as(&surface.as_ref()) {
+                            device.motion(time, x - sx, y - sy);
                         }
                     }
                 }
@@ -201,13 +184,13 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
                 false
             };
             if let Some(ref surface) = self.current_focus {
-                if self.data_source.is_some() || self.origin.same_client_as(&surface) {
+                if self.data_source.is_some() || self.origin.as_ref().same_client_as(&surface.as_ref()) {
                     for device in &seat_data.known_devices {
-                        if device.same_client_as(surface) {
+                        if device.as_ref().same_client_as(surface.as_ref()) {
                             if validated {
-                                device.send(wl_data_device::Event::Drop);
+                                device.drop();
                             } else {
-                                device.send(wl_data_device::Event::Leave);
+                                device.leave();
                             }
                         }
                     }
@@ -222,14 +205,14 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
                 }
             }
             if let Some(ref source) = self.data_source {
-                source.send(wl_data_source::Event::DndDropPerformed);
+                source.dnd_drop_performed();
                 if !validated {
-                    source.send(wl_data_source::Event::Cancelled);
+                    source.cancelled();
                 }
             }
             (&mut *self.callback.lock().unwrap())(super::DataDeviceEvent::DnDDropped);
             if let Some(icon) = self.icon.take() {
-                if icon.is_alive() {
+                if icon.as_ref().is_alive() {
                     self.token.remove_role::<super::DnDIconRole>(&icon).unwrap();
                 }
             }
@@ -254,12 +237,12 @@ struct OfferData {
 
 fn implement_dnd_data_offer(
     offer: NewResource<wl_data_offer::WlDataOffer>,
-    source: Resource<wl_data_source::WlDataSource>,
+    source: wl_data_source::WlDataSource,
     offer_data: Arc<Mutex<OfferData>>,
     action_choice: Arc<Mutex<dyn FnMut(DndAction, DndAction) -> DndAction + Send + 'static>>,
-) -> Resource<wl_data_offer::WlDataOffer> {
+) -> wl_data_offer::WlDataOffer {
     use self::wl_data_offer::Request;
-    offer.implement(
+    offer.implement_closure(
         move |req, offer| {
             let mut data = offer_data.lock().unwrap();
             match req {
@@ -278,40 +261,40 @@ fn implement_dnd_data_offer(
                     // check if the source and associated mime type is still valid
                     let valid = with_source_metadata(&source, |meta| meta.mime_types.contains(&mime_type))
                         .unwrap_or(false)
-                        && source.is_alive()
+                        && source.as_ref().is_alive()
                         && data.active;
                     if valid {
-                        source.send(wl_data_source::Event::Send { mime_type, fd });
+                        source.send(mime_type, fd);
                     }
                     let _ = ::nix::unistd::close(fd);
                 }
                 Request::Destroy => {}
                 Request::Finish => {
                     if !data.active {
-                        offer.post_error(
+                        offer.as_ref().post_error(
                             wl_data_offer::Error::InvalidFinish as u32,
                             "Cannot finish a data offer that is no longer active.".into(),
                         );
                     }
                     if !data.accepted {
-                        offer.post_error(
+                        offer.as_ref().post_error(
                             wl_data_offer::Error::InvalidFinish as u32,
                             "Cannot finish a data offer that has not been accepted.".into(),
                         );
                     }
                     if !data.dropped {
-                        offer.post_error(
+                        offer.as_ref().post_error(
                             wl_data_offer::Error::InvalidFinish as u32,
                             "Cannot finish a data offer that has not been dropped.".into(),
                         );
                     }
                     if data.chosen_action.is_empty() {
-                        offer.post_error(
+                        offer.as_ref().post_error(
                             wl_data_offer::Error::InvalidFinish as u32,
                             "Cannot finish a data offer with no valid action.".into(),
                         );
                     }
-                    source.send(wl_data_source::Event::DndFinished);
+                    source.dnd_finished();
                     data.active = false;
                 }
                 Request::SetActions {
@@ -320,7 +303,7 @@ fn implement_dnd_data_offer(
                 } => {
                     let preferred_action = DndAction::from_bits_truncate(preferred_action);
                     if ![DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&preferred_action) {
-                        offer.post_error(
+                        offer.as_ref().post_error(
                             wl_data_offer::Error::InvalidAction as u32,
                             "Invalid preferred action.".into(),
                         );
@@ -334,13 +317,10 @@ fn implement_dnd_data_offer(
                     debug_assert!(
                         [DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&data.chosen_action)
                     );
-                    offer.send(wl_data_offer::Event::Action {
-                        dnd_action: data.chosen_action.to_raw(),
-                    });
-                    source.send(wl_data_source::Event::Action {
-                        dnd_action: data.chosen_action.to_raw(),
-                    });
+                    offer.action(data.chosen_action.to_raw());
+                    source.action(data.chosen_action.to_raw());
                 }
+                _ => unreachable!(),
             }
         },
         None::<fn(_)>,

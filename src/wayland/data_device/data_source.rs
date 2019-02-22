@@ -17,10 +17,10 @@ pub struct SourceMetadata {
     pub dnd_action: DndAction,
 }
 
-pub(crate) fn implement_data_source(src: NewResource<WlDataSource>) -> Resource<WlDataSource> {
-    src.implement(
+pub(crate) fn implement_data_source(src: NewResource<WlDataSource>) -> WlDataSource {
+    src.implement_closure(
         |req, me| {
-            let data: &Mutex<SourceMetadata> = me.user_data().unwrap();
+            let data: &Mutex<SourceMetadata> = me.as_ref().user_data().unwrap();
             let mut guard = data.lock().unwrap();
             match req {
                 Request::Offer { mime_type } => guard.mime_types.push(mime_type),
@@ -28,6 +28,7 @@ pub(crate) fn implement_data_source(src: NewResource<WlDataSource>) -> Resource<
                     guard.dnd_action = DndAction::from_bits_truncate(dnd_actions);
                 }
                 Request::Destroy => {}
+                _ => unreachable!(),
             }
         },
         None::<fn(_)>,
@@ -40,10 +41,10 @@ pub(crate) fn implement_data_source(src: NewResource<WlDataSource>) -> Resource<
 
 /// Access the metadata of a data source
 pub fn with_source_metadata<T, F: FnOnce(&SourceMetadata) -> T>(
-    source: &Resource<WlDataSource>,
+    source: &WlDataSource,
     f: F,
 ) -> Result<T, ()> {
-    match source.user_data::<Mutex<SourceMetadata>>() {
+    match source.as_ref().user_data::<Mutex<SourceMetadata>>() {
         Some(data) => Ok(f(&data.lock().unwrap())),
         None => Err(()),
     }
