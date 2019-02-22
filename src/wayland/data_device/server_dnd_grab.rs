@@ -3,8 +3,8 @@ use std::os::unix::io::RawFd;
 use std::rc::Rc;
 
 use wayland_server::{
-    protocol::{wl_data_device, wl_data_device_manager::DndAction, wl_data_offer, wl_pointer, wl_surface},
-    NewResource, Resource,
+    protocol::{wl_data_device_manager::DndAction, wl_data_offer, wl_pointer, wl_surface},
+    NewResource,
 };
 
 use crate::wayland::seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat};

@@ -3,10 +3,10 @@ use std::rc::Rc;
 
 use wayland_server::{
     protocol::{
-        wl_pointer::{self, Axis, AxisSource, ButtonState, Event, Request, WlPointer},
+        wl_pointer::{self, Axis, AxisSource, ButtonState, Request, WlPointer},
         wl_surface::WlSurface,
     },
-    NewResource, Resource,
+    NewResource,
 };
 
 use crate::wayland::compositor::{roles::Role, CompositorToken};

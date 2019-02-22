@@ -103,7 +103,7 @@ use wayland_protocols::{
 };
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_surface},
-    Display, Global, Resource,
+    Display, Global,
 };
 
 // handlers for the xdg_shell protocol

@@ -80,7 +80,7 @@ use crate::wayland::compositor::{roles::Role, CompositorToken};
 
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface},
-    Display, Global, Resource,
+    Display, Global,
 };
 
 mod wl_handlers;

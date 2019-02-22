@@ -61,7 +61,7 @@ use wayland_commons::utils::UserDataMap;
 
 use wayland_server::{
     protocol::{wl_seat, wl_surface},
-    Display, Global, NewResource, Resource,
+    Display, Global, NewResource,
 };
 
 struct Inner {

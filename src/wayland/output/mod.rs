@@ -55,8 +55,8 @@ use std::sync::{Arc, Mutex};
 
 use wayland_server::protocol::wl_output::{Subpixel, Transform};
 use wayland_server::{
-    protocol::wl_output::{Event, Mode as WMode, Request, WlOutput},
-    Display, Global, NewResource, Resource,
+    protocol::wl_output::{Mode as WMode, WlOutput},
+    Display, Global, NewResource,
 };
 
 /// An output mode

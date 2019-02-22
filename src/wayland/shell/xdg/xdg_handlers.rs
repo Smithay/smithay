@@ -4,7 +4,7 @@ use crate::wayland::compositor::{roles::*, CompositorToken};
 use wayland_protocols::xdg_shell::server::{
     xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base,
 };
-use wayland_server::{protocol::wl_surface, NewResource, Resource};
+use wayland_server::{protocol::wl_surface, NewResource};
 
 use crate::utils::Rectangle;
 

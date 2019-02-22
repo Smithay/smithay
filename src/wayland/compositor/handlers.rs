@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Mutex};
 
 use wayland_server::{
     protocol::{wl_compositor, wl_region, wl_subcompositor, wl_subsurface, wl_surface},
-    NewResource, Resource,
+    NewResource,
 };
 
 use super::{

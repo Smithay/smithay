@@ -81,7 +81,7 @@ use self::pool::{Pool, ResizeError};
 use std::{rc::Rc, sync::Arc};
 use wayland_server::{
     protocol::{wl_buffer, wl_shm, wl_shm_pool},
-    Display, Global, NewResource, Resource,
+    Display, Global, NewResource,
 };
 
 mod pool;

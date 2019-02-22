@@ -95,7 +95,7 @@ use wayland_server::{
     protocol::{
         wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor, wl_surface::WlSurface,
     },
-    Display, Global, NewResource, Resource,
+    Display, Global, NewResource,
 };
 
 /// Description of which part of a surface
