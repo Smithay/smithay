@@ -103,7 +103,7 @@ use wayland_protocols::{
 };
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_surface},
-    Display, DisplayToken, Global, Resource,
+    Display, Global, Resource,
 };
 
 // handlers for the xdg_shell protocol
@@ -204,7 +204,7 @@ pub struct ToplevelState {
     ///
     /// If this surface has a parent, it should be hidden
     /// or displayed, brought up at the same time as it.
-    pub parent: Option<Resource<wl_surface::WlSurface>>,
+    pub parent: Option<wl_surface::WlSurface>,
     /// Title of this shell surface
     pub title: String,
     /// App id for this shell surface
@@ -238,7 +238,7 @@ impl Clone for ToplevelState {
 /// The pending state of a popup surface
 pub struct PopupState {
     /// Parent of this popup surface
-    pub parent: Option<Resource<wl_surface::WlSurface>>,
+    pub parent: Option<wl_surface::WlSurface>,
     /// The positioner specifying how this tooltip should
     /// be placed relative to its parent.
     pub positioner: PositionerState,
@@ -262,7 +262,6 @@ impl Default for XdgSurfacePendingState {
 pub(crate) struct ShellData<U, R, SD> {
     log: ::slog::Logger,
     compositor_token: CompositorToken<U, R>,
-    display_token: DisplayToken,
     user_impl: Rc<RefCell<dyn FnMut(XdgRequest<U, R, SD>)>>,
     shell_state: Arc<Mutex<ShellState<U, R, SD>>>,
 }
@@ -272,7 +271,6 @@ impl<U, R, SD> Clone for ShellData<U, R, SD> {
         ShellData {
             log: self.log.clone(),
             compositor_token: self.compositor_token,
-            display_token: self.display_token.clone(),
             user_impl: self.user_impl.clone(),
             shell_state: self.shell_state.clone(),
         }
@@ -305,7 +303,6 @@ where
 
     let shell_data = ShellData {
         log: log.new(o!("smithay_module" => "xdg_shell_handler")),
-        display_token: display.get_token(),
         compositor_token: ctoken,
         user_impl: Rc::new(RefCell::new(implementation)),
         shell_state: shell_state.clone(),
@@ -355,8 +352,8 @@ where
  */
 
 enum ShellClientKind {
-    Xdg(Resource<xdg_wm_base::XdgWmBase>),
-    ZxdgV6(Resource<zxdg_shell_v6::ZxdgShellV6>),
+    Xdg(xdg_wm_base::XdgWmBase),
+    ZxdgV6(zxdg_shell_v6::ZxdgShellV6),
 }
 
 pub(crate) struct ShellClientData<SD> {
@@ -396,8 +393,8 @@ where
     /// Is the shell client represented by this handle still connected?
     pub fn alive(&self) -> bool {
         match self.kind {
-            ShellClientKind::Xdg(ref s) => s.is_alive(),
-            ShellClientKind::ZxdgV6(ref s) => s.is_alive(),
+            ShellClientKind::Xdg(ref s) => s.as_ref().is_alive(),
+            ShellClientKind::ZxdgV6(ref s) => s.as_ref().is_alive(),
         }
     }
 
@@ -405,8 +402,10 @@ where
     /// same shell client
     pub fn equals(&self, other: &Self) -> bool {
         match (&self.kind, &other.kind) {
-            (&ShellClientKind::Xdg(ref s1), &ShellClientKind::Xdg(ref s2)) => s1.equals(s2),
-            (&ShellClientKind::ZxdgV6(ref s1), &ShellClientKind::ZxdgV6(ref s2)) => s1.equals(s2),
+            (&ShellClientKind::Xdg(ref s1), &ShellClientKind::Xdg(ref s2)) => s1.as_ref().equals(s2.as_ref()),
+            (&ShellClientKind::ZxdgV6(ref s1), &ShellClientKind::ZxdgV6(ref s2)) => {
+                s1.as_ref().equals(s2.as_ref())
+            }
             _ => false,
         }
     }
@@ -427,6 +426,7 @@ where
         match self.kind {
             ShellClientKind::Xdg(ref shell) => {
                 let user_data = shell
+                    .as_ref()
                     .user_data::<self::xdg_handlers::ShellUserData<U, R, SD>>()
                     .unwrap();
                 let mut guard = user_data.client_data.lock().unwrap();
@@ -434,10 +434,11 @@ where
                     return Err(());
                 }
                 guard.pending_ping = serial;
-                shell.send(xdg_wm_base::Event::Ping { serial });
+                shell.ping(serial);
             }
             ShellClientKind::ZxdgV6(ref shell) => {
                 let user_data = shell
+                    .as_ref()
                     .user_data::<self::zxdgv6_handlers::ShellUserData<U, R, SD>>()
                     .unwrap();
                 let mut guard = user_data.client_data.lock().unwrap();
@@ -445,7 +446,7 @@ where
                     return Err(());
                 }
                 guard.pending_ping = serial;
-                shell.send(zxdg_shell_v6::Event::Ping { serial });
+                shell.ping(serial);
             }
         }
         Ok(())
@@ -462,6 +463,7 @@ where
         match self.kind {
             ShellClientKind::Xdg(ref shell) => {
                 let data = shell
+                    .as_ref()
                     .user_data::<self::xdg_handlers::ShellUserData<U, R, SD>>()
                     .unwrap();
                 let mut guard = data.client_data.lock().unwrap();
@@ -469,6 +471,7 @@ where
             }
             ShellClientKind::ZxdgV6(ref shell) => {
                 let data = shell
+                    .as_ref()
                     .user_data::<self::zxdgv6_handlers::ShellUserData<U, R, SD>>()
                     .unwrap();
                 let mut guard = data.client_data.lock().unwrap();
@@ -479,13 +482,13 @@ where
 }
 
 pub(crate) enum ToplevelKind {
-    Xdg(Resource<xdg_toplevel::XdgToplevel>),
-    ZxdgV6(Resource<zxdg_toplevel_v6::ZxdgToplevelV6>),
+    Xdg(xdg_toplevel::XdgToplevel),
+    ZxdgV6(zxdg_toplevel_v6::ZxdgToplevelV6),
 }
 
 /// A handle to a toplevel surface
 pub struct ToplevelSurface<U, R, SD> {
-    wl_surface: Resource<wl_surface::WlSurface>,
+    wl_surface: wl_surface::WlSurface,
     shell_surface: ToplevelKind,
     token: CompositorToken<U, R>,
     _shell_data: ::std::marker::PhantomData<SD>,
@@ -500,15 +503,15 @@ where
     /// Is the toplevel surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
         let shell_alive = match self.shell_surface {
-            ToplevelKind::Xdg(ref s) => s.is_alive(),
-            ToplevelKind::ZxdgV6(ref s) => s.is_alive(),
+            ToplevelKind::Xdg(ref s) => s.as_ref().is_alive(),
+            ToplevelKind::ZxdgV6(ref s) => s.as_ref().is_alive(),
         };
-        shell_alive && self.wl_surface.is_alive()
+        shell_alive && self.wl_surface.as_ref().is_alive()
     }
 
     /// Do this handle and the other one actually refer to the same toplevel surface?
     pub fn equals(&self, other: &Self) -> bool {
-        self.alive() && other.alive() && self.wl_surface.equals(&other.wl_surface)
+        self.alive() && other.alive() && self.wl_surface.as_ref().equals(&other.wl_surface.as_ref())
     }
 
     /// Retrieve the shell client owning this toplevel surface
@@ -522,12 +525,14 @@ where
         let shell = match self.shell_surface {
             ToplevelKind::Xdg(ref s) => {
                 let data = s
+                    .as_ref()
                     .user_data::<self::xdg_handlers::ShellSurfaceUserData<U, R, SD>>()
                     .unwrap();
                 ShellClientKind::Xdg(data.wm_base.clone())
             }
             ToplevelKind::ZxdgV6(ref s) => {
                 let data = s
+                    .as_ref()
                     .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<U, R, SD>>()
                     .unwrap();
                 ShellClientKind::ZxdgV6(data.shell.clone())
@@ -574,18 +579,20 @@ where
             match self.shell_surface {
                 ToplevelKind::Xdg(ref s) => {
                     let data = s
+                        .as_ref()
                         .user_data::<self::xdg_handlers::ShellSurfaceUserData<U, R, SD>>()
                         .unwrap();
-                    data.xdg_surface.post_error(
+                    data.xdg_surface.as_ref().post_error(
                         xdg_surface::Error::NotConstructed as u32,
                         "Surface has not been configured yet.".into(),
                     );
                 }
                 ToplevelKind::ZxdgV6(ref s) => {
                     let data = s
+                        .as_ref()
                         .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<U, R, SD>>()
                         .unwrap();
-                    data.xdg_surface.post_error(
+                    data.xdg_surface.as_ref().post_error(
                         zxdg_surface_v6::Error::NotConstructed as u32,
                         "Surface has not been configured yet.".into(),
                     );
@@ -598,15 +605,15 @@ where
     /// Send a "close" event to the client
     pub fn send_close(&self) {
         match self.shell_surface {
-            ToplevelKind::Xdg(ref s) => s.send(xdg_toplevel::Event::Close),
-            ToplevelKind::ZxdgV6(ref s) => s.send(zxdg_toplevel_v6::Event::Close),
+            ToplevelKind::Xdg(ref s) => s.close(),
+            ToplevelKind::ZxdgV6(ref s) => s.close(),
         }
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface
     ///
     /// Returns `None` if the toplevel surface actually no longer exists.
-    pub fn get_surface(&self) -> Option<&Resource<wl_surface::WlSurface>> {
+    pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
         if self.alive() {
             Some(&self.wl_surface)
         } else {
@@ -632,8 +639,8 @@ where
 }
 
 pub(crate) enum PopupKind {
-    Xdg(Resource<xdg_popup::XdgPopup>),
-    ZxdgV6(Resource<zxdg_popup_v6::ZxdgPopupV6>),
+    Xdg(xdg_popup::XdgPopup),
+    ZxdgV6(zxdg_popup_v6::ZxdgPopupV6),
 }
 
 /// A handle to a popup surface
@@ -641,7 +648,7 @@ pub(crate) enum PopupKind {
 /// This is an unified abstraction over the popup surfaces
 /// of both `wl_shell` and `xdg_shell`.
 pub struct PopupSurface<U, R, SD> {
-    wl_surface: Resource<wl_surface::WlSurface>,
+    wl_surface: wl_surface::WlSurface,
     shell_surface: PopupKind,
     token: CompositorToken<U, R>,
     _shell_data: ::std::marker::PhantomData<SD>,
@@ -656,15 +663,15 @@ where
     /// Is the popup surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
         let shell_alive = match self.shell_surface {
-            PopupKind::Xdg(ref p) => p.is_alive(),
-            PopupKind::ZxdgV6(ref p) => p.is_alive(),
+            PopupKind::Xdg(ref p) => p.as_ref().is_alive(),
+            PopupKind::ZxdgV6(ref p) => p.as_ref().is_alive(),
         };
-        shell_alive && self.wl_surface.is_alive()
+        shell_alive && self.wl_surface.as_ref().is_alive()
     }
 
     /// Do this handle and the other one actually refer to the same popup surface?
     pub fn equals(&self, other: &Self) -> bool {
-        self.alive() && other.alive() && self.wl_surface.equals(&other.wl_surface)
+        self.alive() && other.alive() && self.wl_surface.as_ref().equals(&other.wl_surface.as_ref())
     }
 
     /// Retrieve the shell client owning this popup surface
@@ -678,12 +685,14 @@ where
         let shell = match self.shell_surface {
             PopupKind::Xdg(ref p) => {
                 let data = p
+                    .as_ref()
                     .user_data::<self::xdg_handlers::ShellSurfaceUserData<U, R, SD>>()
                     .unwrap();
                 ShellClientKind::Xdg(data.wm_base.clone())
             }
             PopupKind::ZxdgV6(ref p) => {
                 let data = p
+                    .as_ref()
                     .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<U, R, SD>>()
                     .unwrap();
                 ShellClientKind::ZxdgV6(data.shell.clone())
@@ -734,18 +743,20 @@ where
             match self.shell_surface {
                 PopupKind::Xdg(ref s) => {
                     let data = s
+                        .as_ref()
                         .user_data::<self::xdg_handlers::ShellSurfaceUserData<U, R, SD>>()
                         .unwrap();
-                    data.xdg_surface.post_error(
+                    data.xdg_surface.as_ref().post_error(
                         xdg_surface::Error::NotConstructed as u32,
                         "Surface has not been configured yet.".into(),
                     );
                 }
                 PopupKind::ZxdgV6(ref s) => {
                     let data = s
+                        .as_ref()
                         .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<U, R, SD>>()
                         .unwrap();
-                    data.xdg_surface.post_error(
+                    data.xdg_surface.as_ref().post_error(
                         zxdg_surface_v6::Error::NotConstructed as u32,
                         "Surface has not been configured yet.".into(),
                     );
@@ -761,15 +772,15 @@ where
     /// the pointer has left the area of popup grab if there was a grab.
     pub fn send_popup_done(&self) {
         match self.shell_surface {
-            PopupKind::Xdg(ref p) => p.send(xdg_popup::Event::PopupDone),
-            PopupKind::ZxdgV6(ref p) => p.send(zxdg_popup_v6::Event::PopupDone),
+            PopupKind::Xdg(ref p) => p.popup_done(),
+            PopupKind::ZxdgV6(ref p) => p.popup_done(),
         }
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface
     ///
     /// Returns `None` if the toplevel surface actually no longer exists.
-    pub fn get_surface(&self) -> Option<&Resource<wl_surface::WlSurface>> {
+    pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
         if self.alive() {
             Some(&self.wl_surface)
         } else {
@@ -867,7 +878,7 @@ pub enum XdgRequest<U, R, SD> {
         /// the surface
         surface: ToplevelSurface<U, R, SD>,
         /// the seat associated to this move
-        seat: Resource<wl_seat::WlSeat>,
+        seat: wl_seat::WlSeat,
         /// the grab serial
         serial: u32,
     },
@@ -876,7 +887,7 @@ pub enum XdgRequest<U, R, SD> {
         /// The surface
         surface: ToplevelSurface<U, R, SD>,
         /// The seat associated with this resize
-        seat: Resource<wl_seat::WlSeat>,
+        seat: wl_seat::WlSeat,
         /// The grab serial
         serial: u32,
         /// Specification of which part of the window's border is being dragged
@@ -890,7 +901,7 @@ pub enum XdgRequest<U, R, SD> {
         /// The surface
         surface: PopupSurface<U, R, SD>,
         /// The seat to grab
-        seat: Resource<wl_seat::WlSeat>,
+        seat: wl_seat::WlSeat,
         /// The grab serial
         serial: u32,
     },
@@ -909,7 +920,7 @@ pub enum XdgRequest<U, R, SD> {
         /// The surface
         surface: ToplevelSurface<U, R, SD>,
         /// The output (if any) on which the fullscreen is requested
-        output: Option<Resource<wl_output::WlOutput>>,
+        output: Option<wl_output::WlOutput>,
     },
     /// A toplevel surface request to stop being fullscreen
     UnFullscreen {
@@ -929,7 +940,7 @@ pub enum XdgRequest<U, R, SD> {
         /// The surface
         surface: ToplevelSurface<U, R, SD>,
         /// The seat associated with this input grab
-        seat: Resource<wl_seat::WlSeat>,
+        seat: wl_seat::WlSeat,
         /// the grab serial
         serial: u32,
         /// location of the menu request

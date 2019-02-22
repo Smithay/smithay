@@ -94,7 +94,7 @@ pub struct PhysicalProperties {
 struct Inner {
     name: String,
     log: ::slog::Logger,
-    instances: Vec<Resource<WlOutput>>,
+    instances: Vec<WlOutput>,
     physical: PhysicalProperties,
     location: (i32, i32),
     transform: Transform,
@@ -105,7 +105,7 @@ struct Inner {
 }
 
 impl Inner {
-    fn new_global(&mut self, output: Resource<WlOutput>) {
+    fn new_global(&mut self, output: WlOutput) {
         trace!(self.log, "New global instantiated.");
 
         if self.modes.is_empty() {
@@ -127,32 +127,27 @@ impl Inner {
             if Some(mode) == self.preferred_mode {
                 flags |= WMode::Preferred;
             }
-            output.send(Event::Mode {
-                flags,
-                width: mode.width,
-                height: mode.height,
-                refresh: mode.refresh,
-            });
+            output.mode(flags, mode.width, mode.height, mode.refresh);
         }
-        if output.version() >= 2 {
-            output.send(Event::Scale { factor: self.scale });
-            output.send(Event::Done);
+        if output.as_ref().version() >= 2 {
+            output.scale(self.scale);
+            output.done();
         }
 
         self.instances.push(output);
     }
 
-    fn send_geometry(&self, output: &Resource<WlOutput>) {
-        output.send(Event::Geometry {
-            x: self.location.0,
-            y: self.location.1,
-            physical_width: self.physical.width,
-            physical_height: self.physical.height,
-            subpixel: self.physical.subpixel,
-            make: self.physical.make.clone(),
-            model: self.physical.model.clone(),
-            transform: self.transform,
-        });
+    fn send_geometry(&self, output: &WlOutput) {
+        output.geometry(
+            self.location.0,
+            self.location.1,
+            self.physical.width,
+            self.physical.height,
+            self.physical.subpixel,
+            self.physical.make.clone(),
+            self.physical.model.clone(),
+            self.transform,
+        );
     }
 }
 
@@ -199,14 +194,15 @@ impl Output {
         let output = Output { inner: inner.clone() };
 
         let global = display.create_global(3, move |new_output: NewResource<_>, _version| {
-            let output = new_output.implement(
-                |req, _| {
-                    // this will break if new variants are added :)
-                    let Request::Release = req;
-                },
-                Some(|output: Resource<WlOutput>| {
-                    let inner = output.user_data::<Arc<Mutex<Inner>>>().unwrap();
-                    inner.lock().unwrap().instances.retain(|o| !o.equals(&output));
+            let output = new_output.implement_closure(
+                |_, _| {},
+                Some(|output: WlOutput| {
+                    let inner = output.as_ref().user_data::<Arc<Mutex<Inner>>>().unwrap();
+                    inner
+                        .lock()
+                        .unwrap()
+                        .instances
+                        .retain(|o| !o.as_ref().equals(&output.as_ref()));
                 }),
                 inner.clone(),
             );
@@ -285,34 +281,29 @@ impl Output {
         }
         for output in &inner.instances {
             if let Some(mode) = new_mode {
-                output.send(Event::Mode {
-                    flags,
-                    width: mode.width,
-                    height: mode.height,
-                    refresh: mode.refresh,
-                });
+                output.mode(flags, mode.width, mode.height, mode.refresh);
             }
             if new_transform.is_some() {
                 inner.send_geometry(output);
             }
             if let Some(scale) = new_scale {
-                if output.version() >= 2 {
-                    output.send(Event::Scale { factor: scale });
+                if output.as_ref().version() >= 2 {
+                    output.scale(scale);
                 }
             }
-            if output.version() >= 2 {
-                output.send(Event::Done);
+            if output.as_ref().version() >= 2 {
+                output.done();
             }
         }
     }
 
     /// Check is given [`wl_output`](WlOutput) instance is managed by this [`Output`].
-    pub fn owns(&self, output: &Resource<WlOutput>) -> bool {
+    pub fn owns(&self, output: &WlOutput) -> bool {
         self.inner
             .lock()
             .unwrap()
             .instances
             .iter()
-            .any(|o| o.equals(output))
+            .any(|o| o.as_ref().equals(output.as_ref()))
     }
 }

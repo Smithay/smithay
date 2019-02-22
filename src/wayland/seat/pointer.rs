@@ -24,7 +24,7 @@ pub enum CursorImageStatus {
     /// The compositor should draw its cursor
     Default,
     /// The cursor should be drawn using this surface as an image
-    Image(Resource<WlSurface>),
+    Image(WlSurface),
 }
 
 enum GrabStatus {
@@ -34,13 +34,13 @@ enum GrabStatus {
 }
 
 struct PointerInternal {
-    known_pointers: Vec<Resource<WlPointer>>,
-    focus: Option<(Resource<WlSurface>, (f64, f64))>,
-    pending_focus: Option<(Resource<WlSurface>, (f64, f64))>,
+    known_pointers: Vec<WlPointer>,
+    focus: Option<(WlSurface, (f64, f64))>,
+    pending_focus: Option<(WlSurface, (f64, f64))>,
     location: (f64, f64),
     grab: GrabStatus,
     pressed_buttons: Vec<u32>,
-    image_callback: Box<dyn FnMut(CursorImageStatus) + Send>,
+    image_callback: Box<dyn FnMut(CursorImageStatus)>,
 }
 
 impl PointerInternal {
@@ -60,7 +60,7 @@ impl PointerInternal {
                         // don't remove the role, we are just re-binding the same surface
                     }
                     _ => {
-                        if surface.is_alive() {
+                        if surface.as_ref().is_alive() {
                             token.remove_role::<CursorImageRole>(&surface).unwrap();
                         }
                     }
@@ -82,11 +82,11 @@ impl PointerInternal {
 
     fn with_focused_pointers<F>(&self, mut f: F)
     where
-        F: FnMut(&Resource<WlPointer>, &Resource<WlSurface>),
+        F: FnMut(&WlPointer, &WlSurface),
     {
         if let Some((ref focus, _)) = self.focus {
             for ptr in &self.known_pointers {
-                if ptr.same_client_as(focus) {
+                if ptr.as_ref().same_client_as(focus.as_ref()) {
                     f(ptr, focus)
                 }
             }
@@ -131,7 +131,7 @@ pub struct PointerHandle {
 }
 
 impl PointerHandle {
-    pub(crate) fn new_pointer(&self, pointer: Resource<WlPointer>) {
+    pub(crate) fn new_pointer(&self, pointer: WlPointer) {
         let mut guard = self.inner.lock().unwrap();
         guard.known_pointers.push(pointer);
     }
@@ -180,7 +180,7 @@ impl PointerHandle {
     pub fn motion(
         &self,
         location: (f64, f64),
-        focus: Option<(Resource<WlSurface>, (f64, f64))>,
+        focus: Option<(WlSurface, (f64, f64))>,
         serial: u32,
         time: u32,
     ) {
@@ -204,6 +204,7 @@ impl PointerHandle {
             ButtonState::Released => {
                 inner.pressed_buttons.retain(|b| *b != button);
             }
+            _ => unreachable!(),
         }
         inner.with_grab(|mut handle, grab| {
             grab.button(&mut handle, button, state, serial, time);
@@ -235,13 +236,13 @@ impl PointerHandle {
 /// When your grab ends (either as you requested it or if it was forcefully cancelled by the server),
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
-pub trait PointerGrab: Send + Sync {
+pub trait PointerGrab {
     /// A motion was reported
     fn motion(
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
-        focus: Option<(Resource<WlSurface>, (f64, f64))>,
+        focus: Option<(WlSurface, (f64, f64))>,
         serial: u32,
         time: u32,
     );
@@ -284,7 +285,7 @@ impl<'a> PointerInnerHandle<'a> {
     }
 
     /// Access the current focus of this pointer
-    pub fn current_focus(&self) -> Option<&(Resource<WlSurface>, (f64, f64))> {
+    pub fn current_focus(&self) -> Option<&(WlSurface, (f64, f64))> {
         self.inner.focus.as_ref()
     }
 
@@ -315,7 +316,7 @@ impl<'a> PointerInnerHandle<'a> {
     pub fn motion(
         &mut self,
         (x, y): (f64, f64),
-        focus: Option<(Resource<WlSurface>, (f64, f64))>,
+        focus: Option<(WlSurface, (f64, f64))>,
         serial: u32,
         time: u32,
     ) {
@@ -324,19 +325,16 @@ impl<'a> PointerInnerHandle<'a> {
         self.inner.location = (x, y);
         if let Some((ref current_focus, _)) = self.inner.focus {
             if let Some((ref surface, _)) = focus {
-                if current_focus.equals(surface) {
+                if current_focus.as_ref().equals(surface.as_ref()) {
                     leave = false;
                 }
             }
         }
         if leave {
             self.inner.with_focused_pointers(|pointer, surface| {
-                pointer.send(Event::Leave {
-                    serial,
-                    surface: surface.clone(),
-                });
-                if pointer.version() >= 5 {
-                    pointer.send(Event::Frame);
+                pointer.leave(serial, &surface);
+                if pointer.as_ref().version() >= 5 {
+                    pointer.frame();
                 }
             });
             self.inner.focus = None;
@@ -351,26 +349,17 @@ impl<'a> PointerInnerHandle<'a> {
             self.inner.focus = Some((surface.clone(), (sx, sy)));
             if entered {
                 self.inner.with_focused_pointers(|pointer, surface| {
-                    pointer.send(Event::Enter {
-                        serial,
-                        surface: surface.clone(),
-                        surface_x: x - sx,
-                        surface_y: y - sy,
-                    });
-                    if pointer.version() >= 5 {
-                        pointer.send(Event::Frame);
+                    pointer.enter(serial, &surface, x - sx, y - sy);
+                    if pointer.as_ref().version() >= 5 {
+                        pointer.frame();
                     }
                 })
             } else {
                 // we were on top of a surface and remained on it
                 self.inner.with_focused_pointers(|pointer, _| {
-                    pointer.send(Event::Motion {
-                        time,
-                        surface_x: x - sx,
-                        surface_y: y - sy,
-                    });
-                    if pointer.version() >= 5 {
-                        pointer.send(Event::Frame);
+                    pointer.motion(time, x - sx, y - sy);
+                    if pointer.as_ref().version() >= 5 {
+                        pointer.frame();
                     }
                 })
             }
@@ -383,14 +372,9 @@ impl<'a> PointerInnerHandle<'a> {
     /// objects matching with the currently focused surface.
     pub fn button(&self, button: u32, state: ButtonState, serial: u32, time: u32) {
         self.inner.with_focused_pointers(|pointer, _| {
-            pointer.send(Event::Button {
-                serial,
-                time,
-                button,
-                state,
-            });
-            if pointer.version() >= 5 {
-                pointer.send(Event::Frame);
+            pointer.button(serial, time, button, state);
+            if pointer.as_ref().version() >= 5 {
+                pointer.frame();
             }
         })
     }
@@ -403,52 +387,32 @@ impl<'a> PointerInnerHandle<'a> {
         self.inner.with_focused_pointers(|pointer, _| {
             // axis
             if details.axis.0 != 0.0 {
-                pointer.send(Event::Axis {
-                    time: details.time,
-                    axis: Axis::HorizontalScroll,
-                    value: details.axis.0,
-                });
+                pointer.axis(details.time, Axis::HorizontalScroll, details.axis.0);
             }
             if details.axis.1 != 0.0 {
-                pointer.send(Event::Axis {
-                    time: details.time,
-                    axis: Axis::VerticalScroll,
-                    value: details.axis.1,
-                });
+                pointer.axis(details.time, Axis::VerticalScroll, details.axis.1);
             }
-            if pointer.version() >= 5 {
+            if pointer.as_ref().version() >= 5 {
                 // axis source
                 if let Some(source) = details.source {
-                    pointer.send(Event::AxisSource { axis_source: source });
+                    pointer.axis_source(source);
                 }
                 // axis discrete
                 if details.discrete.0 != 0 {
-                    pointer.send(Event::AxisDiscrete {
-                        axis: Axis::HorizontalScroll,
-                        discrete: details.discrete.0,
-                    });
+                    pointer.axis_discrete(Axis::HorizontalScroll, details.discrete.0);
                 }
                 if details.discrete.1 != 0 {
-                    pointer.send(Event::AxisDiscrete {
-                        axis: Axis::VerticalScroll,
-                        discrete: details.discrete.1,
-                    });
+                    pointer.axis_discrete(Axis::VerticalScroll, details.discrete.1);
                 }
                 // stop
                 if details.stop.0 {
-                    pointer.send(Event::AxisStop {
-                        time: details.time,
-                        axis: Axis::HorizontalScroll,
-                    });
+                    pointer.axis_stop(details.time, Axis::HorizontalScroll);
                 }
                 if details.stop.1 {
-                    pointer.send(Event::AxisStop {
-                        time: details.time,
-                        axis: Axis::VerticalScroll,
-                    });
+                    pointer.axis_stop(details.time, Axis::VerticalScroll);
                 }
                 // frame
-                pointer.send(Event::Frame);
+                pointer.frame();
             }
         });
     }
@@ -511,6 +475,7 @@ impl AxisFrame {
             Axis::VerticalScroll => {
                 self.discrete.1 = steps;
             }
+            _ => unreachable!(),
         };
         self
     }
@@ -525,6 +490,7 @@ impl AxisFrame {
             Axis::VerticalScroll => {
                 self.axis.1 = value;
             }
+            _ => unreachable!(),
         };
         self
     }
@@ -541,6 +507,7 @@ impl AxisFrame {
             Axis::VerticalScroll => {
                 self.stop.1 = true;
             }
+            _ => unreachable!(),
         };
         self
     }
@@ -561,24 +528,24 @@ pub(crate) fn implement_pointer<U, R>(
     new_pointer: NewResource<WlPointer>,
     handle: Option<&PointerHandle>,
     token: CompositorToken<U, R>,
-) -> Resource<WlPointer>
+) -> WlPointer
 where
     R: Role<CursorImageRole> + 'static,
     U: 'static,
 {
     let inner = handle.map(|h| h.inner.clone());
     let destructor = match inner.clone() {
-        Some(inner) => Some(move |pointer: Resource<_>| {
+        Some(inner) => Some(move |pointer: WlPointer| {
             inner
                 .lock()
                 .unwrap()
                 .known_pointers
-                .retain(|p| !p.equals(&pointer))
+                .retain(|p| !p.as_ref().equals(&pointer.as_ref()))
         }),
         None => None,
     };
-    new_pointer.implement(
-        move |request, pointer| {
+    new_pointer.implement_closure(
+        move |request, pointer: WlPointer| {
             match request {
                 Request::SetCursor {
                     serial: _,
@@ -596,7 +563,7 @@ where
                             ..
                         } = *guard;
                         if let Some((ref focus, _)) = *focus {
-                            if focus.same_client_as(&pointer) {
+                            if focus.as_ref().same_client_as(&pointer.as_ref()) {
                                 match surface {
                                     Some(surface) => {
                                         let role_data = CursorImageRole {
@@ -608,7 +575,7 @@ where
                                         if token.with_role_data(&surface, |data| *data = role_data).is_err()
                                             && token.give_role_with(&surface, role_data).is_err()
                                         {
-                                            pointer.post_error(
+                                            pointer.as_ref().post_error(
                                                 wl_pointer::Error::Role as u32,
                                                 "Given wl_surface has another role.".into(),
                                             );
@@ -627,6 +594,7 @@ where
                 Request::Release => {
                     // Our destructors already handle it
                 }
+                _ => unreachable!(),
             }
         },
         destructor,
@@ -646,7 +614,7 @@ impl PointerGrab for DefaultGrab {
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
-        focus: Option<(Resource<WlSurface>, (f64, f64))>,
+        focus: Option<(WlSurface, (f64, f64))>,
         serial: u32,
         time: u32,
     ) {
@@ -681,8 +649,8 @@ impl PointerGrab for DefaultGrab {
 // In case the user maintains several simultaneous clicks, release
 // the grab once all are released.
 struct ClickGrab {
-    current_focus: Option<(Resource<WlSurface>, (f64, f64))>,
-    pending_focus: Option<(Resource<WlSurface>, (f64, f64))>,
+    current_focus: Option<(WlSurface, (f64, f64))>,
+    pending_focus: Option<(WlSurface, (f64, f64))>,
 }
 
 impl PointerGrab for ClickGrab {
@@ -690,7 +658,7 @@ impl PointerGrab for ClickGrab {
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
-        focus: Option<(Resource<WlSurface>, (f64, f64))>,
+        focus: Option<(WlSurface, (f64, f64))>,
         serial: u32,
         time: u32,
     ) {
