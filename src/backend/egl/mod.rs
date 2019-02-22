@@ -27,10 +27,7 @@ use std::{
     rc::{Rc, Weak},
 };
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::{
-    protocol::wl_buffer::{self, WlBuffer},
-    Display, Resource,
-};
+use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
 #[cfg(feature = "native_lib")]
 use wayland_sys::server::wl_display;
 
@@ -78,7 +75,7 @@ pub enum BufferAccessError {
     /// The corresponding Context is not alive anymore
     ContextLost,
     /// This buffer is not managed by the EGL buffer
-    NotManaged(Resource<WlBuffer>),
+    NotManaged(WlBuffer),
     /// Failed to create `EGLImages` from the buffer
     EGLImageCreationFailed,
     /// The required EGL extension is not supported by the underlying EGL implementation
@@ -239,7 +236,7 @@ pub struct EGLImages {
     /// Format of these images
     pub format: Format,
     images: Vec<EGLImage>,
-    buffer: Resource<WlBuffer>,
+    buffer: WlBuffer,
     #[cfg(feature = "renderer_gl")]
     gl: gl_ffi::Gles2,
     #[cfg(feature = "renderer_gl")]
@@ -303,7 +300,7 @@ impl Drop for EGLImages {
                 }
             }
         }
-        self.buffer.send(wl_buffer::Event::Release);
+        self.buffer.release();
     }
 }
 
@@ -373,14 +370,14 @@ impl EGLDisplay {
     /// to render it another way.
     pub fn egl_buffer_contents(
         &self,
-        buffer: Resource<WlBuffer>,
+        buffer: WlBuffer,
     ) -> ::std::result::Result<EGLImages, BufferAccessError> {
         if let Some(display) = self.egl.upgrade() {
             let mut format: i32 = 0;
             if unsafe {
                 ffi::egl::QueryWaylandBufferWL(
                     *display,
-                    buffer.c_ptr() as *mut _,
+                    buffer.as_ref().c_ptr() as *mut _,
                     ffi::egl::EGL_TEXTURE_FORMAT,
                     &mut format as *mut _,
                 ) == 0
@@ -401,7 +398,7 @@ impl EGLDisplay {
             if unsafe {
                 ffi::egl::QueryWaylandBufferWL(
                     *display,
-                    buffer.c_ptr() as *mut _,
+                    buffer.as_ref().c_ptr() as *mut _,
                     ffi::egl::WIDTH as i32,
                     &mut width as *mut _,
                 ) == 0
@@ -413,7 +410,7 @@ impl EGLDisplay {
             if unsafe {
                 ffi::egl::QueryWaylandBufferWL(
                     *display,
-                    buffer.c_ptr() as *mut _,
+                    buffer.as_ref().c_ptr() as *mut _,
                     ffi::egl::HEIGHT as i32,
                     &mut height as *mut _,
                 ) == 0
@@ -425,7 +422,7 @@ impl EGLDisplay {
             if unsafe {
                 ffi::egl::QueryWaylandBufferWL(
                     *display,
-                    buffer.c_ptr() as *mut _,
+                    buffer.as_ref().c_ptr() as *mut _,
                     ffi::egl::WAYLAND_Y_INVERTED_WL,
                     &mut inverted as *mut _,
                 ) != 0
@@ -446,7 +443,7 @@ impl EGLDisplay {
                             *display,
                             ffi::egl::NO_CONTEXT,
                             ffi::egl::WAYLAND_BUFFER_WL,
-                            buffer.c_ptr() as *mut _,
+                            buffer.as_ref().c_ptr() as *mut _,
                             out.as_ptr(),
                         )
                     };

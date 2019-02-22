@@ -88,7 +88,7 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
 
     let keyboard = seat
         .add_keyboard(XkbConfig::default(), 1000, 500, |seat, focus| {
-            set_data_device_focus(seat, focus.and_then(|s| s.client()))
+            set_data_device_focus(seat, focus.and_then(|s| s.as_ref().client()))
         })
         .expect("Failed to initialize the keyboard");
 
@@ -151,7 +151,7 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
             {
                 let guard = dnd_icon.lock().unwrap();
                 if let Some(ref surface) = *guard {
-                    if surface.is_alive() {
+                    if surface.as_ref().is_alive() {
                         drawer.draw_dnd_icon(&mut frame, surface, (x as i32, y as i32), compositor_token);
                     }
                 }
@@ -162,7 +162,7 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
                 // reset the cursor if the surface is no longer alive
                 let mut reset = false;
                 if let CursorImageStatus::Image(ref surface) = *guard {
-                    reset = !surface.is_alive();
+                    reset = !surface.as_ref().is_alive();
                 }
                 if reset {
                     *guard = CursorImageStatus::Default;

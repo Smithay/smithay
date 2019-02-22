@@ -18,10 +18,7 @@ use smithay::{
         egl::{BufferAccessError, EGLImages, Format},
         graphics::{gl::GLGraphicsBackend, glium::GliumGraphicsBackend},
     },
-    reexports::wayland_server::{
-        protocol::{wl_buffer, wl_surface},
-        Resource,
-    },
+    reexports::wayland_server::protocol::{wl_buffer, wl_surface},
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
         data_device::DnDIconRole,
@@ -148,7 +145,7 @@ impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer
 
 impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     #[cfg(feature = "egl")]
-    pub fn texture_from_buffer(&self, buffer: Resource<wl_buffer::WlBuffer>) -> Result<TextureMetadata, ()> {
+    pub fn texture_from_buffer(&self, buffer: wl_buffer::WlBuffer) -> Result<TextureMetadata, ()> {
         // try to retrieve the egl contents of this buffer
         let images = if let Some(display) = &self.egl_display.borrow().as_ref() {
             display.egl_buffer_contents(buffer)
@@ -199,11 +196,11 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     }
 
     #[cfg(not(feature = "egl"))]
-    pub fn texture_from_buffer(&self, buffer: Resource<wl_buffer::WlBuffer>) -> Result<TextureMetadata, ()> {
+    pub fn texture_from_buffer(&self, buffer: wl_buffer::WlBuffer) -> Result<TextureMetadata, ()> {
         self.texture_from_shm_buffer(buffer)
     }
 
-    fn texture_from_shm_buffer(&self, buffer: Resource<wl_buffer::WlBuffer>) -> Result<TextureMetadata, ()> {
+    fn texture_from_shm_buffer(&self, buffer: wl_buffer::WlBuffer) -> Result<TextureMetadata, ()> {
         match shm_buffer_contents(&buffer, |slice, data| {
             crate::shm_load::load_shm_buffer(data, slice)
                 .map(|(image, kind)| (Texture2d::new(&self.display, image).unwrap(), kind, data))
@@ -292,7 +289,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     fn draw_surface_tree(
         &self,
         frame: &mut Frame,
-        root: &Resource<wl_surface::WlSurface>,
+        root: &wl_surface::WlSurface,
         location: (i32, i32),
         compositor_token: MyCompositorToken,
         screen_dimensions: (u32, u32),
@@ -307,7 +304,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                         }
                         // notify the client that we have finished reading the
                         // buffer
-                        buffer.send(wl_buffer::Event::Release);
+                        buffer.release();
                     }
                 }
                 if let Some(ref metadata) = attributes.user_data.texture {
@@ -371,7 +368,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     pub fn draw_cursor(
         &self,
         frame: &mut Frame,
-        surface: &Resource<wl_surface::WlSurface>,
+        surface: &wl_surface::WlSurface,
         (x, y): (i32, i32),
         token: MyCompositorToken,
     ) {
@@ -392,7 +389,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     pub fn draw_dnd_icon(
         &self,
         frame: &mut Frame,
-        surface: &Resource<wl_surface::WlSurface>,
+        surface: &wl_surface::WlSurface,
         (x, y): (i32, i32),
         token: MyCompositorToken,
     ) {
