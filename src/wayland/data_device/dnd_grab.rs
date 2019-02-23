@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use wayland_server::{
     protocol::{
@@ -19,10 +20,10 @@ pub(crate) struct DnDGrab<U, R> {
     data_source: Option<wl_data_source::WlDataSource>,
     current_focus: Option<wl_surface::WlSurface>,
     pending_offers: Vec<wl_data_offer::WlDataOffer>,
-    offer_data: Option<Arc<Mutex<OfferData>>>,
+    offer_data: Option<Rc<RefCell<OfferData>>>,
     icon: Option<wl_surface::WlSurface>,
     origin: wl_surface::WlSurface,
-    callback: Arc<Mutex<dyn FnMut(super::DataDeviceEvent) + Send>>,
+    callback: Rc<RefCell<dyn FnMut(super::DataDeviceEvent)>>,
     token: CompositorToken<U, R>,
     seat: Seat,
 }
@@ -34,7 +35,7 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> DnDGrab<U, R> {
         seat: Seat,
         icon: Option<wl_surface::WlSurface>,
         token: CompositorToken<U, R>,
-        callback: Arc<Mutex<dyn FnMut(super::DataDeviceEvent) + Send>>,
+        callback: Rc<RefCell<dyn FnMut(super::DataDeviceEvent)>>,
     ) -> DnDGrab<U, R> {
         DnDGrab {
             data_source: source,
@@ -63,10 +64,9 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
         let seat_data = self
             .seat
             .user_data()
-            .get::<Mutex<SeatData>>()
+            .get::<RefCell<SeatData>>()
             .unwrap()
-            .lock()
-            .unwrap();
+            .borrow_mut();
         if focus.as_ref().map(|&(ref s, _)| s) != self.current_focus.as_ref() {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
@@ -80,7 +80,7 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
                     // disable the offers
                     self.pending_offers.clear();
                     if let Some(offer_data) = self.offer_data.take() {
-                        offer_data.lock().unwrap().active = false;
+                        offer_data.borrow_mut().active = false;
                     }
                 }
             }
@@ -94,7 +94,7 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
             if self.current_focus.is_none() {
                 // We entered a new surface, send the data offer if appropriate
                 if let Some(ref source) = self.data_source {
-                    let offer_data = Arc::new(Mutex::new(OfferData {
+                    let offer_data = Rc::new(RefCell::new(OfferData {
                         active: true,
                         dropped: false,
                         accepted: true,
@@ -173,12 +173,11 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
             let seat_data = self
                 .seat
                 .user_data()
-                .get::<Mutex<SeatData>>()
+                .get::<RefCell<SeatData>>()
                 .unwrap()
-                .lock()
-                .unwrap();
+                .borrow_mut();
             let validated = if let Some(ref data) = self.offer_data {
-                let data = data.lock().unwrap();
+                let data = data.borrow();
                 data.accepted && (!data.chosen_action.is_empty())
             } else {
                 false
@@ -197,7 +196,7 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
                 }
             }
             if let Some(ref offer_data) = self.offer_data {
-                let mut data = offer_data.lock().unwrap();
+                let mut data = offer_data.borrow_mut();
                 if validated {
                     data.dropped = true;
                 } else {
@@ -210,7 +209,7 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
                     source.cancelled();
                 }
             }
-            (&mut *self.callback.lock().unwrap())(super::DataDeviceEvent::DnDDropped);
+            (&mut *self.callback.borrow_mut())(super::DataDeviceEvent::DnDDropped);
             if let Some(icon) = self.icon.take() {
                 if icon.as_ref().is_alive() {
                     self.token.remove_role::<super::DnDIconRole>(&icon).unwrap();
@@ -238,13 +237,13 @@ struct OfferData {
 fn implement_dnd_data_offer(
     offer: NewResource<wl_data_offer::WlDataOffer>,
     source: wl_data_source::WlDataSource,
-    offer_data: Arc<Mutex<OfferData>>,
-    action_choice: Arc<Mutex<dyn FnMut(DndAction, DndAction) -> DndAction + Send + 'static>>,
+    offer_data: Rc<RefCell<OfferData>>,
+    action_choice: Rc<RefCell<dyn FnMut(DndAction, DndAction) -> DndAction + 'static>>,
 ) -> wl_data_offer::WlDataOffer {
     use self::wl_data_offer::Request;
     offer.implement_closure(
         move |req, offer| {
-            let mut data = offer_data.lock().unwrap();
+            let mut data = offer_data.borrow_mut();
             match req {
                 Request::Accept { serial: _, mime_type } => {
                     if let Some(mtype) = mime_type {
@@ -312,7 +311,7 @@ fn implement_dnd_data_offer(
                         with_source_metadata(&source, |meta| meta.dnd_action).unwrap_or(DndAction::empty());
                     let possible_actions = source_actions & DndAction::from_bits_truncate(dnd_actions);
                     data.chosen_action =
-                        (&mut *action_choice.lock().unwrap())(possible_actions, preferred_action);
+                        (&mut *action_choice.borrow_mut())(possible_actions, preferred_action);
                     // check that the user provided callback respects that one precise action should be chosen
                     debug_assert!(
                         [DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&data.chosen_action)

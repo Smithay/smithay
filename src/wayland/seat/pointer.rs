@@ -1,4 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use wayland_server::{
     protocol::{
         wl_pointer::{self, Axis, AxisSource, ButtonState, Event, Request, WlPointer},
@@ -48,7 +50,7 @@ impl PointerInternal {
     where
         U: 'static,
         R: Role<CursorImageRole> + 'static,
-        F: FnMut(CursorImageStatus) + Send + 'static,
+        F: FnMut(CursorImageStatus) + 'static,
     {
         let mut old_status = CursorImageStatus::Default;
         let wrapper = move |new_status: CursorImageStatus| {
@@ -117,8 +119,7 @@ impl PointerInternal {
 
 /// An handle to a pointer handler
 ///
-/// It can be cloned and all clones manipulate the same internal state. Clones
-/// can also be sent across threads.
+/// It can be cloned and all clones manipulate the same internal state.
 ///
 /// This handle gives you access to an interface to send pointer events to your
 /// clients.
@@ -127,12 +128,12 @@ impl PointerInternal {
 /// grab if any is active. See the [`PointerGrab`] trait for details.
 #[derive(Clone)]
 pub struct PointerHandle {
-    inner: Arc<Mutex<PointerInternal>>,
+    inner: Rc<RefCell<PointerInternal>>,
 }
 
 impl PointerHandle {
     pub(crate) fn new_pointer(&self, pointer: WlPointer) {
-        let mut guard = self.inner.lock().unwrap();
+        let mut guard = self.inner.borrow_mut();
         guard.known_pointers.push(pointer);
     }
 
@@ -140,17 +141,17 @@ impl PointerHandle {
     ///
     /// Overwrites any current grab.
     pub fn set_grab<G: PointerGrab + 'static>(&self, grab: G, serial: u32) {
-        self.inner.lock().unwrap().grab = GrabStatus::Active(serial, Box::new(grab));
+        self.inner.borrow_mut().grab = GrabStatus::Active(serial, Box::new(grab));
     }
 
     /// Remove any current grab on this pointer, reseting it to the default behavior
     pub fn unset_grab(&self) {
-        self.inner.lock().unwrap().grab = GrabStatus::None;
+        self.inner.borrow_mut().grab = GrabStatus::None;
     }
 
     /// Check if this pointer is currently grabbed with this serial
     pub fn has_grab(&self, serial: u32) -> bool {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.borrow_mut();
         match guard.grab {
             GrabStatus::Active(s, _) => s == serial,
             _ => false,
@@ -159,7 +160,7 @@ impl PointerHandle {
 
     /// Check if this pointer is currently being grabbed
     pub fn is_grabbed(&self) -> bool {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.borrow_mut();
         match guard.grab {
             GrabStatus::None => false,
             _ => true,
@@ -184,7 +185,7 @@ impl PointerHandle {
         serial: u32,
         time: u32,
     ) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.borrow_mut();
         inner.pending_focus = focus.clone();
         inner.with_grab(move |mut handle, grab| {
             grab.motion(&mut handle, location, focus, serial, time);
@@ -196,7 +197,7 @@ impl PointerHandle {
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
     pub fn button(&self, button: u32, state: ButtonState, serial: u32, time: u32) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.borrow_mut();
         match state {
             ButtonState::Pressed => {
                 inner.pressed_buttons.push(button);
@@ -215,7 +216,7 @@ impl PointerHandle {
     ///
     /// A single frame will group multiple scroll events as if they happened in the same instance.
     pub fn axis(&self, details: AxisFrame) {
-        self.inner.lock().unwrap().with_grab(|mut handle, grab| {
+        self.inner.borrow_mut().with_grab(|mut handle, grab| {
             grab.axis(&mut handle, details);
         });
     }
@@ -517,10 +518,10 @@ pub(crate) fn create_pointer_handler<F, U, R>(token: CompositorToken<U, R>, cb: 
 where
     R: Role<CursorImageRole> + 'static,
     U: 'static,
-    F: FnMut(CursorImageStatus) + Send + 'static,
+    F: FnMut(CursorImageStatus) + 'static,
 {
     PointerHandle {
-        inner: Arc::new(Mutex::new(PointerInternal::new(token, cb))),
+        inner: Rc::new(RefCell::new(PointerInternal::new(token, cb))),
     }
 }
 
@@ -537,8 +538,7 @@ where
     let destructor = match inner.clone() {
         Some(inner) => Some(move |pointer: WlPointer| {
             inner
-                .lock()
-                .unwrap()
+                .borrow_mut()
                 .known_pointers
                 .retain(|p| !p.as_ref().equals(&pointer.as_ref()))
         }),
@@ -554,7 +554,7 @@ where
                     hotspot_y,
                 } => {
                     if let Some(ref inner) = inner {
-                        let mut guard = inner.lock().unwrap();
+                        let mut guard = inner.borrow_mut();
                         // only allow setting the cursor icon if the current pointer focus
                         // is of the same client
                         let PointerInternal {
