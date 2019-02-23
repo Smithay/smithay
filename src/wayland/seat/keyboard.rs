@@ -1,9 +1,10 @@
 use crate::backend::input::KeyState;
 use std::{
+    cell::RefCell,
     default::Default,
     io::{Error as IoError, Write},
     os::unix::io::AsRawFd,
-    sync::{Arc, Mutex},
+    rc::Rc,
 };
 use tempfile::tempfile;
 use wayland_server::{
@@ -253,24 +254,23 @@ where
     let keymap = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
 
     Ok(KeyboardHandle {
-        arc: Arc::new(KbdArc {
-            internal: Mutex::new(internal),
+        arc: Rc::new(KbdRc {
+            internal: RefCell::new(internal),
             keymap,
             logger: log,
         }),
     })
 }
 
-struct KbdArc {
-    internal: Mutex<KbdInternal>,
+struct KbdRc {
+    internal: RefCell<KbdInternal>,
     keymap: String,
     logger: ::slog::Logger,
 }
 
 /// An handle to a keyboard handler
 ///
-/// It can be cloned and all clones manipulate the same internal state. Clones
-/// can also be sent across threads.
+/// It can be cloned and all clones manipulate the same internal state.
 ///
 /// This handle gives you 2 main ways to interact with the keyboard handling:
 ///
@@ -281,7 +281,7 @@ struct KbdArc {
 ///   details.
 #[derive(Clone)]
 pub struct KeyboardHandle {
-    arc: Arc<KbdArc>,
+    arc: Rc<KbdRc>,
 }
 
 impl KeyboardHandle {
@@ -302,7 +302,7 @@ impl KeyboardHandle {
         F: FnOnce(&ModifiersState, Keysym) -> bool,
     {
         trace!(self.arc.logger, "Handling keystroke"; "keycode" => keycode, "state" => format_args!("{:?}", state));
-        let mut guard = self.arc.internal.lock().unwrap();
+        let mut guard = self.arc.internal.borrow_mut();
 
         // Offset the keycode by 8, as the evdev XKB rules reflect X's
         // broken keycode system, which starts at 8.
@@ -350,7 +350,7 @@ impl KeyboardHandle {
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
     pub fn set_focus(&self, focus: Option<&WlSurface>, serial: u32) {
-        let mut guard = self.arc.internal.lock().unwrap();
+        let mut guard = self.arc.internal.borrow_mut();
 
         let same = guard
             .focus
@@ -394,8 +394,7 @@ impl KeyboardHandle {
     pub fn has_focus(&self, client: &Client) -> bool {
         self.arc
             .internal
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .focus
             .as_ref()
             .and_then(|f| f.as_ref().client())
@@ -431,7 +430,7 @@ impl KeyboardHandle {
             return;
         };
 
-        let mut guard = self.arc.internal.lock().unwrap();
+        let mut guard = self.arc.internal.borrow_mut();
         if kbd.as_ref().version() >= 4 {
             kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
         }
@@ -440,7 +439,7 @@ impl KeyboardHandle {
 
     /// Change the repeat info configured for this keyboard
     pub fn change_repeat_info(&self, rate: i32, delay: i32) {
-        let mut guard = self.arc.internal.lock().unwrap();
+        let mut guard = self.arc.internal.borrow_mut();
         guard.repeat_delay = delay;
         guard.repeat_rate = rate;
         for kbd in &guard.known_kbds {
@@ -458,8 +457,7 @@ pub(crate) fn implement_keyboard(
             let arc = h.arc.clone();
             Some(move |keyboard: WlKeyboard| {
                 arc.internal
-                    .lock()
-                    .unwrap()
+                    .borrow_mut()
                     .known_kbds
                     .retain(|k| !k.as_ref().equals(&keyboard.as_ref()))
             })

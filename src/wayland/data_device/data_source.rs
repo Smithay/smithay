@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::cell::RefCell;
 
 use wayland_server::{
     protocol::{
@@ -20,8 +20,8 @@ pub struct SourceMetadata {
 pub(crate) fn implement_data_source(src: NewResource<WlDataSource>) -> WlDataSource {
     src.implement_closure(
         |req, me| {
-            let data: &Mutex<SourceMetadata> = me.as_ref().user_data().unwrap();
-            let mut guard = data.lock().unwrap();
+            let data: &RefCell<SourceMetadata> = me.as_ref().user_data().unwrap();
+            let mut guard = data.borrow_mut();
             match req {
                 Request::Offer { mime_type } => guard.mime_types.push(mime_type),
                 Request::SetActions { dnd_actions } => {
@@ -32,7 +32,7 @@ pub(crate) fn implement_data_source(src: NewResource<WlDataSource>) -> WlDataSou
             }
         },
         None::<fn(_)>,
-        Mutex::new(SourceMetadata {
+        RefCell::new(SourceMetadata {
             mime_types: Vec::new(),
             dnd_action: DndAction::None,
         }),
@@ -44,8 +44,8 @@ pub fn with_source_metadata<T, F: FnOnce(&SourceMetadata) -> T>(
     source: &WlDataSource,
     f: F,
 ) -> Result<T, ()> {
-    match source.as_ref().user_data::<Mutex<SourceMetadata>>() {
-        Some(data) => Ok(f(&data.lock().unwrap())),
+    match source.as_ref().user_data::<RefCell<SourceMetadata>>() {
+        Some(data) => Ok(f(&data.borrow())),
         None => Err(()),
     }
 }

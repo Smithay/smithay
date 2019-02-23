@@ -56,8 +56,9 @@
 //! # }
 //! ```
 
+use std::cell::RefCell;
 use std::os::unix::io::RawFd;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 
 use wayland_server::{
     protocol::{
@@ -237,7 +238,7 @@ impl SeatData {
                                         debug!(log, "Denying a wl_data_offer.receive with invalid source.");
                                         let _ = ::nix::unistd::close(fd);
                                     } else {
-                                        (&mut *callback.lock().unwrap())(DataDeviceEvent::SendSelection {
+                                        (&mut *callback.borrow_mut())(DataDeviceEvent::SendSelection {
                                             mime_type,
                                             fd,
                                         });
@@ -293,15 +294,15 @@ pub fn init_data_device<F, C, U, R, L>(
     logger: L,
 ) -> Global<wl_data_device_manager::WlDataDeviceManager>
 where
-    F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
-    C: FnMut(DataDeviceEvent) + Send + 'static,
+    F: FnMut(DndAction, DndAction) -> DndAction + 'static,
+    C: FnMut(DataDeviceEvent) + 'static,
     R: Role<DnDIconRole> + 'static,
     U: 'static,
     L: Into<Option<::slog::Logger>>,
 {
     let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "data_device_mgr"));
-    let action_choice = Arc::new(Mutex::new(action_choice));
-    let callback = Arc::new(Mutex::new(callback));
+    let action_choice = Rc::new(RefCell::new(action_choice));
+    let callback = Rc::new(RefCell::new(callback));
     let global = display.create_global(3, move |new_ddm, _version| {
         implement_ddm(
             new_ddm,
@@ -323,12 +324,12 @@ pub fn set_data_device_focus(seat: &Seat, client: Option<Client>) {
     // This should be a rare path anyway, it is unlikely that a client gets focus
     // before initializing its data device, which would already init the user_data.
     seat.user_data().insert_if_missing(|| {
-        Mutex::new(SeatData::new(
+        RefCell::new(SeatData::new(
             seat.arc.log.new(o!("smithay_module" => "data_device_mgr")),
         ))
     });
-    let seat_data = seat.user_data().get::<Mutex<SeatData>>().unwrap();
-    seat_data.lock().unwrap().set_focus(client);
+    let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
+    seat_data.borrow_mut().set_focus(client);
 }
 
 /// Set a compositor-provided selection for this seat
@@ -340,14 +341,13 @@ pub fn set_data_device_focus(seat: &Seat, client: Option<Client>) {
 pub fn set_data_device_selection(seat: &Seat, mime_types: Vec<String>) {
     // TODO: same question as in set_data_device_focus
     seat.user_data().insert_if_missing(|| {
-        Mutex::new(SeatData::new(
+        RefCell::new(SeatData::new(
             seat.arc.log.new(o!("smithay_module" => "data_device_mgr")),
         ))
     });
-    let seat_data = seat.user_data().get::<Mutex<SeatData>>().unwrap();
+    let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
     seat_data
-        .lock()
-        .unwrap()
+        .borrow_mut()
         .set_selection(Selection::Compositor(SourceMetadata {
             mime_types,
             dnd_action: DndAction::empty(),
@@ -361,17 +361,17 @@ pub fn set_data_device_selection(seat: &Seat, mime_types: Vec<String>) {
 /// which events can be generated and what response is expected from you to them.
 pub fn start_dnd<C>(seat: &Seat, serial: u32, metadata: SourceMetadata, callback: C)
 where
-    C: FnMut(ServerDndEvent) + Send + 'static,
+    C: FnMut(ServerDndEvent) + 'static,
 {
     // TODO: same question as in set_data_device_focus
     seat.user_data().insert_if_missing(|| {
-        Mutex::new(SeatData::new(
+        RefCell::new(SeatData::new(
             seat.arc.log.new(o!("smithay_module" => "data_device_mgr")),
         ))
     });
     if let Some(pointer) = seat.get_pointer() {
         pointer.set_grab(
-            server_dnd_grab::ServerDnDGrab::new(metadata, seat.clone(), Arc::new(Mutex::new(callback))),
+            server_dnd_grab::ServerDnDGrab::new(metadata, seat.clone(), Rc::new(RefCell::new(callback))),
             serial,
         );
         return;
@@ -380,14 +380,14 @@ where
 
 fn implement_ddm<F, C, U, R>(
     new_ddm: NewResource<wl_data_device_manager::WlDataDeviceManager>,
-    callback: Arc<Mutex<C>>,
-    action_choice: Arc<Mutex<F>>,
+    callback: Rc<RefCell<C>>,
+    action_choice: Rc<RefCell<F>>,
     token: CompositorToken<U, R>,
     log: ::slog::Logger,
 ) -> wl_data_device_manager::WlDataDeviceManager
 where
-    F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
-    C: FnMut(DataDeviceEvent) + Send + 'static,
+    F: FnMut(DndAction, DndAction) -> DndAction + 'static,
+    C: FnMut(DataDeviceEvent) + 'static,
     R: Role<DnDIconRole> + 'static,
     U: 'static,
 {
@@ -401,8 +401,8 @@ where
                 Some(seat) => {
                     // ensure the seat user_data is ready
                     seat.user_data()
-                        .insert_if_missing(|| Mutex::new(SeatData::new(log.clone())));
-                    let seat_data = seat.user_data().get::<Mutex<SeatData>>().unwrap();
+                        .insert_if_missing(|| RefCell::new(SeatData::new(log.clone())));
+                    let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
                     let data_device = implement_data_device(
                         id,
                         seat.clone(),
@@ -411,7 +411,7 @@ where
                         token.clone(),
                         log.clone(),
                     );
-                    seat_data.lock().unwrap().known_devices.push(data_device);
+                    seat_data.borrow_mut().known_devices.push(data_device);
                 }
                 None => {
                     error!(log, "Unmanaged seat given to a data device.");
@@ -425,21 +425,21 @@ where
 }
 
 struct DataDeviceData {
-    callback: Arc<Mutex<dyn FnMut(DataDeviceEvent) + Send + 'static>>,
-    action_choice: Arc<Mutex<dyn FnMut(DndAction, DndAction) -> DndAction + Send + 'static>>,
+    callback: Rc<RefCell<dyn FnMut(DataDeviceEvent) + 'static>>,
+    action_choice: Rc<RefCell<dyn FnMut(DndAction, DndAction) -> DndAction + 'static>>,
 }
 
 fn implement_data_device<F, C, U, R>(
     new_dd: NewResource<wl_data_device::WlDataDevice>,
     seat: Seat,
-    callback: Arc<Mutex<C>>,
-    action_choice: Arc<Mutex<F>>,
+    callback: Rc<RefCell<C>>,
+    action_choice: Rc<RefCell<F>>,
     token: CompositorToken<U, R>,
     log: ::slog::Logger,
 ) -> wl_data_device::WlDataDevice
 where
-    F: FnMut(DndAction, DndAction) -> DndAction + Send + 'static,
-    C: FnMut(DataDeviceEvent) + Send + 'static,
+    F: FnMut(DndAction, DndAction) -> DndAction + 'static,
+    C: FnMut(DataDeviceEvent) + 'static,
     R: Role<DnDIconRole> + 'static,
     U: 'static,
 {
@@ -469,7 +469,7 @@ where
                             }
                         }
                         // The StartDrag is in response to a pointer implicit grab, all is good
-                        (&mut *callback.lock().unwrap())(DataDeviceEvent::DnDStarted {
+                        (&mut *callback.borrow_mut())(DataDeviceEvent::DnDStarted {
                             source: source.clone(),
                             icon: icon.clone(),
                         });
@@ -498,12 +498,11 @@ where
                         .map(|c| keyboard.has_focus(c))
                         .unwrap_or(false)
                     {
-                        let seat_data = seat.user_data().get::<Mutex<SeatData>>().unwrap();
-                        (&mut *callback.lock().unwrap())(DataDeviceEvent::NewSelection(source.clone()));
+                        let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
+                        (&mut *callback.borrow_mut())(DataDeviceEvent::NewSelection(source.clone()));
                         // The client has kbd focus, it can set the selection
                         seat_data
-                            .lock()
-                            .unwrap()
+                            .borrow_mut()
                             .set_selection(source.map(Selection::Client).unwrap_or(Selection::Empty));
                         return;
                     }
@@ -513,10 +512,9 @@ where
             Request::Release => {
                 // Clean up the known devices
                 seat.user_data()
-                    .get::<Mutex<SeatData>>()
+                    .get::<RefCell<SeatData>>()
                     .unwrap()
-                    .lock()
-                    .unwrap()
+                    .borrow_mut()
                     .known_devices
                     .retain(|ndd| ndd.as_ref().is_alive() && (!ndd.as_ref().equals(&dd.as_ref())))
             }

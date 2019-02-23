@@ -1,5 +1,6 @@
+use std::cell::RefCell;
 use std::os::unix::io::RawFd;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 
 use wayland_server::{
     protocol::{wl_data_device, wl_data_device_manager::DndAction, wl_data_offer, wl_pointer, wl_surface},
@@ -39,16 +40,16 @@ pub(crate) struct ServerDnDGrab<C: 'static> {
     metadata: super::SourceMetadata,
     current_focus: Option<wl_surface::WlSurface>,
     pending_offers: Vec<wl_data_offer::WlDataOffer>,
-    offer_data: Option<Arc<Mutex<OfferData>>>,
+    offer_data: Option<Rc<RefCell<OfferData>>>,
     seat: Seat,
-    callback: Arc<Mutex<C>>,
+    callback: Rc<RefCell<C>>,
 }
 
 impl<C: 'static> ServerDnDGrab<C> {
     pub(crate) fn new(
         metadata: super::SourceMetadata,
         seat: Seat,
-        callback: Arc<Mutex<C>>,
+        callback: Rc<RefCell<C>>,
     ) -> ServerDnDGrab<C> {
         ServerDnDGrab {
             metadata,
@@ -63,7 +64,7 @@ impl<C: 'static> ServerDnDGrab<C> {
 
 impl<C> PointerGrab for ServerDnDGrab<C>
 where
-    C: FnMut(ServerDndEvent) + Send + 'static,
+    C: FnMut(ServerDndEvent) + 'static,
 {
     fn motion(
         &mut self,
@@ -77,10 +78,9 @@ where
         let seat_data = self
             .seat
             .user_data()
-            .get::<Mutex<SeatData>>()
+            .get::<RefCell<SeatData>>()
             .unwrap()
-            .lock()
-            .unwrap();
+            .borrow_mut();
         if focus.as_ref().map(|&(ref s, _)| s) != self.current_focus.as_ref() {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
@@ -92,7 +92,7 @@ where
                 // disable the offers
                 self.pending_offers.clear();
                 if let Some(offer_data) = self.offer_data.take() {
-                    offer_data.lock().unwrap().active = false;
+                    offer_data.borrow_mut().active = false;
                 }
             }
         }
@@ -104,7 +104,7 @@ where
             };
             if self.current_focus.is_none() {
                 // We entered a new surface, send the data offer
-                let offer_data = Arc::new(Mutex::new(OfferData {
+                let offer_data = Rc::new(RefCell::new(OfferData {
                     active: true,
                     dropped: false,
                     accepted: true,
@@ -169,12 +169,11 @@ where
             let seat_data = self
                 .seat
                 .user_data()
-                .get::<Mutex<SeatData>>()
+                .get::<RefCell<SeatData>>()
                 .unwrap()
-                .lock()
-                .unwrap();
+                .borrow_mut();
             let validated = if let Some(ref data) = self.offer_data {
-                let data = data.lock().unwrap();
+                let data = data.borrow();
                 data.accepted && (!data.chosen_action.is_empty())
             } else {
                 false
@@ -191,14 +190,14 @@ where
                 }
             }
             if let Some(ref offer_data) = self.offer_data {
-                let mut data = offer_data.lock().unwrap();
+                let mut data = offer_data.borrow_mut();
                 if validated {
                     data.dropped = true;
                 } else {
                     data.active = false;
                 }
             }
-            let mut callback = self.callback.lock().unwrap();
+            let mut callback = self.callback.borrow_mut();
             (&mut *callback)(ServerDndEvent::Dropped);
             if !validated {
                 (&mut *callback)(ServerDndEvent::Cancelled);
@@ -225,17 +224,17 @@ struct OfferData {
 fn implement_dnd_data_offer<C>(
     offer: NewResource<wl_data_offer::WlDataOffer>,
     metadata: super::SourceMetadata,
-    offer_data: Arc<Mutex<OfferData>>,
-    callback: Arc<Mutex<C>>,
-    action_choice: Arc<Mutex<dyn FnMut(DndAction, DndAction) -> DndAction + Send + 'static>>,
+    offer_data: Rc<RefCell<OfferData>>,
+    callback: Rc<RefCell<C>>,
+    action_choice: Rc<RefCell<dyn FnMut(DndAction, DndAction) -> DndAction + 'static>>,
 ) -> wl_data_offer::WlDataOffer
 where
-    C: FnMut(ServerDndEvent) + Send + 'static,
+    C: FnMut(ServerDndEvent) + 'static,
 {
     use self::wl_data_offer::Request;
     offer.implement_closure(
         move |req, offer| {
-            let mut data = offer_data.lock().unwrap();
+            let mut data = offer_data.borrow_mut();
             match req {
                 Request::Accept { serial: _, mime_type } => {
                     if let Some(mtype) = mime_type {
@@ -247,7 +246,7 @@ where
                 Request::Receive { mime_type, fd } => {
                     // check if the source and associated mime type is still valid
                     if metadata.mime_types.contains(&mime_type) && data.active {
-                        (&mut *callback.lock().unwrap())(ServerDndEvent::Send { mime_type, fd });
+                        (&mut *callback.borrow_mut())(ServerDndEvent::Send { mime_type, fd });
                     }
                 }
                 Request::Destroy => {}
@@ -276,7 +275,7 @@ where
                             "Cannot finish a data offer with no valid action.".into(),
                         );
                     }
-                    (&mut *callback.lock().unwrap())(ServerDndEvent::Finished);
+                    (&mut *callback.borrow_mut())(ServerDndEvent::Finished);
                     data.active = false;
                 }
                 Request::SetActions {
@@ -292,13 +291,13 @@ where
                     }
                     let possible_actions = metadata.dnd_action & DndAction::from_bits_truncate(dnd_actions);
                     data.chosen_action =
-                        (&mut *action_choice.lock().unwrap())(possible_actions, preferred_action);
+                        (&mut *action_choice.borrow_mut())(possible_actions, preferred_action);
                     // check that the user provided callback respects that one precise action should be chosen
                     debug_assert!(
                         [DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&data.chosen_action)
                     );
                     offer.action(data.chosen_action.to_raw());
-                    (&mut *callback.lock().unwrap())(ServerDndEvent::Action(data.chosen_action));
+                    (&mut *callback.borrow_mut())(ServerDndEvent::Action(data.chosen_action));
                 }
                 _ => unreachable!(),
             }
