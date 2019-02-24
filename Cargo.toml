@@ -15,31 +15,31 @@ wayland-server = { version = "0.23", optional = true }
 wayland-commons = { version = "0.23", optional = true }
 wayland-sys = { version = "0.23", optional = true }
 calloop = "0.4.2"
-nix = "0.11"
-xkbcommon = "0.2.1"
-tempfile = "2.1.5"
+nix = "0.13"
+xkbcommon = "0.4.0"
+tempfile = "3.0"
 slog = "2.1.1"
 slog-stdlog = "3.0.2"
-libloading = "0.4.0"
+libloading = "0.5.0"
 wayland-client = { version = "0.23", features = ["egl"], optional = true }
 winit = { version = "0.18.0", optional = true }
 drm = { version = "^0.3.4", optional = true }
 gbm = { version = "^0.5.0", optional = true, default-features = false, features = ["drm-support"] }
-glium = { version = "0.19.0", optional = true, default-features = false }
+glium = { version = "0.23.0", optional = true, default-features = false }
 input = { version = "0.4.1", optional = true }
 udev = { version = "0.2.0", optional = true }
 dbus = { version = "0.6.1", optional = true }
-systemd = { version = "^0.2.0", optional = true }
+systemd = { version = "0.4.0", optional = true }
 wayland-protocols = { version = "0.23", features = ["unstable_protocols", "server"], optional = true }
-image = { version = "0.17.0", optional = true }
-error-chain = "0.11.0"
+image = { version = "0.21.0", optional = true }
+error-chain = "0.12.0"
 lazy_static = "1.0.0"
 
 [dev-dependencies]
 slog-term = "2.3"
 
 [build-dependencies]
-gl_generator = { version = "0.9", optional = true }
+gl_generator = { version = "0.10", optional = true }
 
 [features]
 default = ["backend_winit", "backend_drm_legacy", "backend_drm_gbm", "backend_drm_egl", "backend_libinput", "backend_udev", "backend_session", "renderer_glium", "xwayland", "wayland_frontend"]
