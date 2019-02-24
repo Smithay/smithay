@@ -76,11 +76,11 @@ pub fn init_shell(
         move |shell_event| match shell_event {
             XdgRequest::NewToplevel { surface } => {
                 // place the window at a random location in the [0;800]x[0;800] square
-                use rand::distributions::{IndependentSample, Range};
-                let range = Range::new(0, 800);
+                use rand::distributions::{Distribution, Uniform};
+                let range = Uniform::new(0, 800);
                 let mut rng = rand::thread_rng();
-                let x = range.ind_sample(&mut rng);
-                let y = range.ind_sample(&mut rng);
+                let x = range.sample(&mut rng);
+                let y = range.sample(&mut rng);
                 surface.send_configure(ToplevelConfigure {
                     size: None,
                     states: vec![],
@@ -111,12 +111,12 @@ pub fn init_shell(
                 kind: ShellSurfaceKind::Toplevel,
             } = req
             {
-                // place the window at a random location in the [0;300]x[0;300] square
-                use rand::distributions::{IndependentSample, Range};
-                let range = Range::new(0, 300);
+                // place the window at a random location in the [0;800]x[0;800] square
+                use rand::distributions::{Distribution, Uniform};
+                let range = Uniform::new(0, 800);
                 let mut rng = rand::thread_rng();
-                let x = range.ind_sample(&mut rng);
-                let y = range.ind_sample(&mut rng);
+                let x = range.sample(&mut rng);
+                let y = range.sample(&mut rng);
                 surface.send_configure((0, 0), wl_shell_surface::Resize::None);
                 shell_window_map
                     .borrow_mut()
