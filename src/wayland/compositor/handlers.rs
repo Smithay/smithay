@@ -139,6 +139,7 @@ where
         Some(|surface| SurfaceData::<U, R>::cleanup(&surface)),
         SurfaceData::<U, R>::new(),
     );
+    SurfaceData::<U, R>::init(&surface);
     surface
 }
 

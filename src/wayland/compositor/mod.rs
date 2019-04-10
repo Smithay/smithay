@@ -287,11 +287,21 @@ where
 {
     /// Access the data of a surface tree from bottom to top
     ///
-    /// The provided closure is called successively on the surface and all its child subsurfaces,
-    /// in a depth-first order. This matches the order in which the surfaces are supposed to be
-    /// drawn: top-most last.
+    /// You provide three closures, a "filter", a "processor" and a "post filter".
     ///
-    /// The arguments provided to the closure are, in this order:
+    /// The first closure is initially called on a surface to determine if its children
+    /// should be processed as well. It returns a `TraversalAction<T>` reflecting that.
+    ///
+    /// The second closure is supposed to do the actual processing. The processing closure for
+    /// a surface may be called after the processing closure of some of its children, depending
+    /// on the stack ordering the client requested. Here the surfaces are processed in the same
+    /// order as they are supposed to be drawn: from the farthest of the screen to the nearest.
+    ///
+    /// The third closure is called once all the subtree of a node has been processed, and gives
+    /// an opportunity for early-stopping. If it returns `true` the processing will continue,
+    /// while if it returns `false` it'll stop.
+    ///
+    /// The arguments provided to the closures are, in this order:
     ///
     /// - The surface object itself
     /// - a mutable reference to its surface attribute data
@@ -301,27 +311,40 @@ where
     ///
     /// If the surface not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_surface_tree_upward<F, T>(&self, surface: &WlSurface, initial: T, f: F) -> Result<(), ()>
-    where
-        F: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+    pub fn with_surface_tree_upward<F1, F2, F3, T>(
+        &self,
+        surface: &WlSurface,
+        initial: T,
+        filter: F1,
+        processor: F2,
+        post_filter: F3,
+    ) where
+        F1: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+        F2: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T),
+        F3: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> bool,
     {
-        SurfaceData::<U, R>::map_tree(surface, initial, f, false);
-        Ok(())
+        SurfaceData::<U, R>::map_tree(surface, &initial, filter, processor, post_filter, false);
     }
 
     /// Access the data of a surface tree from top to bottom
     ///
-    /// The provided closure is called successively on the surface and all its child subsurfaces,
-    /// in a depth-first order. This matches the reverse of the order in which the surfaces are
-    /// supposed to be drawn: top-most first.
+    /// Behavior is the same as [`with_surface_tree_upward`](CompositorToken::with_surface_tree_upward), but
+    /// the processing is done in the reverse order, from the nearest of the screen to the deepest.
     ///
-    /// Behavior is the same as [`with_surface_tree_upward`](CompositorToken::with_surface_tree_upward).
-    pub fn with_surface_tree_downward<F, T>(&self, surface: &WlSurface, initial: T, f: F) -> Result<(), ()>
-    where
-        F: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+    /// This would typically be used to find out which surface of a subsurface tree has been clicked for example.
+    pub fn with_surface_tree_downward<F1, F2, F3, T>(
+        &self,
+        surface: &WlSurface,
+        initial: T,
+        filter: F1,
+        processor: F2,
+        post_filter: F3,
+    ) where
+        F1: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+        F2: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T),
+        F3: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> bool,
     {
-        SurfaceData::<U, R>::map_tree(surface, initial, f, true);
-        Ok(())
+        SurfaceData::<U, R>::map_tree(surface, &initial, filter, processor, post_filter, true);
     }
 
     /// Retrieve the parent of this surface

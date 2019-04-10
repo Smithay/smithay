@@ -300,6 +300,7 @@ impl Drop for EGLImages {
                 }
             }
         }
+        println!("RELEASING EGL BUFFER");
         self.buffer.release();
     }
 }
