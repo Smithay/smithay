@@ -11,7 +11,7 @@ edition = "2018"
 members = [ "anvil" ]
 
 [dependencies]
-wayland-server = { version = "0.23", optional = true }
+wayland-server = { version = "0.23.2", optional = true }
 wayland-commons = { version = "0.23", optional = true }
 wayland-sys = { version = "0.23", optional = true }
 calloop = "0.4.2"

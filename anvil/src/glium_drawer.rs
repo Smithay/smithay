@@ -302,11 +302,24 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                 if attributes.user_data.texture.is_none() {
                     if let Some(buffer) = attributes.user_data.buffer.take() {
                         if let Ok(m) = self.texture_from_buffer(buffer.clone()) {
+                            // release the buffer if it was an SHM buffer
+                            #[cfg(feature = "egl")]
+                            {
+                                if m.images.is_none() {
+                                    buffer.release();
+                                }
+                            }
+                            #[cfg(not(feature = "egl"))]
+                            {
+                                buffer.release();
+                            }
+
                             attributes.user_data.texture = Some(m);
+                        } else {
+                            // there was an error reading the buffer, release it, we
+                            // already logged the error
+                            buffer.release();
                         }
-                        // notify the client that we have finished reading the
-                        // buffer
-                        buffer.release();
                     }
                 }
                 // Now, should we be drawn ?
