@@ -13,11 +13,8 @@ use wayland_server::protocol::wl_surface::WlSurface;
 /// fact that lifetime of objects are decided by Wayland-server to ensure
 /// the cleanup will be done properly, and we won't leak anything.
 ///
-/// This implementation is not strictly a tree, but rather a directed graph
-/// with the constraint that node can have at most one incoming edge. Aka like
-/// a tree, but with loops allowed. This is because the Wayland protocol does not
-/// have a failure case to forbid this. Note that if any node in such a graph does not
-/// have a parent, then the graph is a tree and this node is its root.
+/// Each node also appears within its children list, to allow relative placement
+/// between them.
 pub struct SurfaceData<U, R> {
     parent: Option<WlSurface>,
     children: Vec<WlSurface>,
@@ -44,7 +41,7 @@ impl<U: Default, R: Default> SurfaceData<U, R> {
     pub fn new() -> Mutex<SurfaceData<U, R>> {
         Mutex::new(SurfaceData {
             parent: None,
-            children: Vec::new(),
+            children: vec![],
             role: Default::default(),
             attributes: Default::default(),
         })
@@ -56,22 +53,28 @@ where
     U: 'static,
     R: 'static,
 {
+    /// Initializes the surface, must be called at creation for state coherence
+    pub fn init(surface: &WlSurface) {
+        let my_data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<U, R>>>().unwrap();
+        let mut my_data = my_data_mutex.lock().unwrap();
+        debug_assert!(my_data.children.len() == 0);
+        my_data.children.push(surface.clone());
+    }
+
     /// Cleans the `as_ref().user_data` of that surface, must be called when it is destroyed
     pub fn cleanup(surface: &WlSurface) {
         let my_data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<U, R>>>().unwrap();
         let mut my_data = my_data_mutex.lock().unwrap();
         if let Some(old_parent) = my_data.parent.take() {
-            if !old_parent.as_ref().equals(surface.as_ref()) {
-                // We had a parent that is not ourselves, lets unregister ourselves from it
-                let old_parent_mutex = old_parent
-                    .as_ref()
-                    .user_data::<Mutex<SurfaceData<U, R>>>()
-                    .unwrap();
-                let mut old_parent_guard = old_parent_mutex.lock().unwrap();
-                old_parent_guard
-                    .children
-                    .retain(|c| !c.as_ref().equals(surface.as_ref()));
-            }
+            // We had a parent, lets unregister ourselves from it
+            let old_parent_mutex = old_parent
+                .as_ref()
+                .user_data::<Mutex<SurfaceData<U, R>>>()
+                .unwrap();
+            let mut old_parent_guard = old_parent_mutex.lock().unwrap();
+            old_parent_guard
+                .children
+                .retain(|c| !c.as_ref().equals(surface.as_ref()));
         }
         // orphan all our children
         for child in &my_data.children {
@@ -159,6 +162,21 @@ impl<U: 'static, R: RoleType + 'static> SurfaceData<U, R> {
 }
 
 impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R> {
+    /// Checks if the first surface is an ancestor of the second
+    pub fn is_ancestor(a: &WlSurface, b: &WlSurface) -> bool {
+        let b_mutex = b.as_ref().user_data::<Mutex<SurfaceData<U, R>>>().unwrap();
+        let b_guard = b_mutex.lock().unwrap();
+        if let Some(ref parent) = b_guard.parent {
+            if parent.as_ref().equals(a.as_ref()) {
+                return true;
+            } else {
+                return Self::is_ancestor(a, parent);
+            }
+        } else {
+            return false;
+        }
+    }
+
     /// Sets the parent of a surface
     ///
     /// if this surface already has a role, does nothing and fails, otherwise
@@ -166,6 +184,10 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
     pub fn set_parent(child: &WlSurface, parent: &WlSurface) -> Result<(), ()> {
         debug_assert!(child.as_ref().is_alive());
         debug_assert!(parent.as_ref().is_alive());
+        // ensure the child is not already a parent of the parent
+        if Self::is_ancestor(child, parent) {
+            return Err(());
+        }
 
         // change child's parent
         {
@@ -177,7 +199,6 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
             child_guard.parent = Some(parent.clone());
         }
         // register child to new parent
-        // double scoping is to be robust to have a child be its own parent
         {
             let parent_mutex = parent.as_ref().user_data::<Mutex<SurfaceData<U, R>>>().unwrap();
             let mut parent_guard = parent_mutex.lock().unwrap();
@@ -222,11 +243,16 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
         child_guard.parent.as_ref().cloned()
     }
 
-    /// Retrieve the parent surface (if any) of this surface
-    pub fn get_children(child: &WlSurface) -> Vec<WlSurface> {
-        let child_mutex = child.as_ref().user_data::<Mutex<SurfaceData<U, R>>>().unwrap();
-        let child_guard = child_mutex.lock().unwrap();
-        child_guard.children.to_vec()
+    /// Retrieve the children surface (if any) of this surface
+    pub fn get_children(parent: &WlSurface) -> Vec<WlSurface> {
+        let parent_mutex = parent.as_ref().user_data::<Mutex<SurfaceData<U, R>>>().unwrap();
+        let parent_guard = parent_mutex.lock().unwrap();
+        parent_guard
+            .children
+            .iter()
+            .filter(|s| !s.as_ref().equals(parent.as_ref()))
+            .cloned()
+            .collect()
     }
 
     /// Reorders a surface relative to one of its sibling
@@ -238,10 +264,6 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
             let data_guard = data_mutex.lock().unwrap();
             data_guard.parent.as_ref().cloned().unwrap()
         };
-        if parent.as_ref().equals(relative_to.as_ref()) {
-            // TODO: handle positioning relative to parent
-            return Ok(());
-        }
 
         fn index_of(surface: &WlSurface, slice: &[WlSurface]) -> Option<usize> {
             for (i, s) in slice.iter().enumerate() {
@@ -255,7 +277,7 @@ impl<U: 'static, R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<U, R>
         let parent_mutex = parent.as_ref().user_data::<Mutex<SurfaceData<U, R>>>().unwrap();
         let mut parent_guard = parent_mutex.lock().unwrap();
         let my_index = index_of(surface, &parent_guard.children).unwrap();
-        let mut other_index = match index_of(surface, &parent_guard.children) {
+        let mut other_index = match index_of(relative_to, &parent_guard.children) {
             Some(idx) => idx,
             None => return Err(()),
         };
@@ -295,76 +317,81 @@ impl<U: 'static, R: 'static> SurfaceData<U, R> {
     /// Note that an internal lock is taken during access of this data,
     /// so the tree cannot be manipulated at the same time.
     ///
-    /// The callback returns whether the traversal should continue or not. Returning
-    /// false will cause an early-stopping.
-    pub fn map_tree<F, T>(root: &WlSurface, initial: T, mut f: F, reverse: bool)
-    where
-        F: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+    /// The first callback determines if this node children should be processed or not.
+    ///
+    /// The second actually does the processing, being called on children in display depth
+    /// order.
+    ///
+    /// The third is called once all the children of a node has been processed (including itself), only if the first
+    /// returned `DoChildren`, and gives an opportunity to early stop
+    pub fn map_tree<F1, F2, F3, T>(
+        surface: &WlSurface,
+        initial: &T,
+        mut filter: F1,
+        mut processor: F2,
+        mut post_filter: F3,
+        reverse: bool,
+    ) where
+        F1: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+        F2: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T),
+        F3: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> bool,
     {
-        // helper function for recursion
-        fn map<U: 'static, R: 'static, F, T>(
-            surface: &WlSurface,
-            root: &WlSurface,
-            initial: &T,
-            f: &mut F,
-            reverse: bool,
-        ) -> bool
-        where
-            F: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
-        {
-            // stop if we met the root, so to not deadlock/inifinte loop
-            if surface.as_ref().equals(root.as_ref()) {
-                return true;
-            }
+        Self::map(
+            surface,
+            initial,
+            &mut filter,
+            &mut processor,
+            &mut post_filter,
+            reverse,
+        );
+    }
 
-            let data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<U, R>>>().unwrap();
-            let mut data_guard = data_mutex.lock().unwrap();
-            let data_guard = &mut *data_guard;
-            // call the callback on ourselves
-            match f(surface, &mut data_guard.attributes, &mut data_guard.role, initial) {
-                TraversalAction::DoChildren(t) => {
-                    // loop over children
-                    if reverse {
-                        for c in data_guard.children.iter().rev() {
-                            if !map::<U, R, _, _>(c, root, &t, f, true) {
-                                return false;
-                            }
-                        }
-                    } else {
-                        for c in &data_guard.children {
-                            if !map::<U, R, _, _>(c, root, &t, f, false) {
-                                return false;
-                            }
-                        }
-                    }
-                    true
-                }
-                TraversalAction::SkipChildren => true,
-                TraversalAction::Break => false,
-            }
-        }
-
-        let data_mutex = root.as_ref().user_data::<Mutex<SurfaceData<U, R>>>().unwrap();
+    // helper function for map_tree
+    fn map<F1, F2, F3, T>(
+        surface: &WlSurface,
+        initial: &T,
+        filter: &mut F1,
+        processor: &mut F2,
+        post_filter: &mut F3,
+        reverse: bool,
+    ) -> bool
+    where
+        F1: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> TraversalAction<T>,
+        F2: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T),
+        F3: FnMut(&WlSurface, &mut SurfaceAttributes<U>, &mut R, &T) -> bool,
+    {
+        let data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<U, R>>>().unwrap();
         let mut data_guard = data_mutex.lock().unwrap();
         let data_guard = &mut *data_guard;
-        // call the callback on ourselves
-        if let TraversalAction::DoChildren(t) =
-            f(root, &mut data_guard.attributes, &mut data_guard.role, &initial)
-        {
-            // loop over children
-            if reverse {
-                for c in data_guard.children.iter().rev() {
-                    if !map::<U, R, _, _>(c, root, &t, &mut f, true) {
-                        break;
+        // call the filter on ourselves
+        match filter(surface, &mut data_guard.attributes, &mut data_guard.role, initial) {
+            TraversalAction::DoChildren(t) => {
+                // loop over children
+                if reverse {
+                    for c in data_guard.children.iter().rev() {
+                        if c.as_ref().equals(surface.as_ref()) {
+                            processor(surface, &mut data_guard.attributes, &mut data_guard.role, initial);
+                        } else if !Self::map(c, &t, filter, processor, post_filter, true) {
+                            return false;
+                        }
+                    }
+                } else {
+                    for c in &data_guard.children {
+                        if c.as_ref().equals(surface.as_ref()) {
+                            processor(surface, &mut data_guard.attributes, &mut data_guard.role, initial);
+                        } else if !Self::map(c, &t, filter, processor, post_filter, false) {
+                            return false;
+                        }
                     }
                 }
-            } else {
-                for c in &data_guard.children {
-                    if !map::<U, R, _, _>(c, root, &t, &mut f, false) {
-                        break;
-                    }
-                }
+                post_filter(surface, &mut data_guard.attributes, &mut data_guard.role, initial)
             }
+            TraversalAction::SkipChildren => {
+                // still process ourselves
+                processor(surface, &mut data_guard.attributes, &mut data_guard.role, initial);
+                true
+            }
+            TraversalAction::Break => false,
         }
     }
 }

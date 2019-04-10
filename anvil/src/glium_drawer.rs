@@ -294,9 +294,11 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
         compositor_token: MyCompositorToken,
         screen_dimensions: (u32, u32),
     ) {
-        compositor_token
-            .with_surface_tree_upward(root, location, |_surface, attributes, role, &(mut x, mut y)| {
-                // there is actually something to draw !
+        compositor_token.with_surface_tree_upward(
+            root,
+            location,
+            |_surface, attributes, role, &(mut x, mut y)| {
+                // Pull a new buffer if available
                 if attributes.user_data.texture.is_none() {
                     if let Some(buffer) = attributes.user_data.buffer.take() {
                         if let Ok(m) = self.texture_from_buffer(buffer.clone()) {
@@ -307,7 +309,23 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                         buffer.release();
                     }
                 }
+                // Now, should we be drawn ?
+                if attributes.user_data.texture.is_some() {
+                    // if yes, also process the children
+                    if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                        x += subdata.location.0;
+                        y += subdata.location.1;
+                    }
+                    TraversalAction::DoChildren((x, y))
+                } else {
+                    // we are not display, so our children are neither
+                    TraversalAction::SkipChildren
+                }
+            },
+            |_surface, attributes, role, &(mut x, mut y)| {
                 if let Some(ref metadata) = attributes.user_data.texture {
+                    // we need to re-extract the subsurface offset, as the previous closure
+                    // only passes it to our children
                     if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                         x += subdata.location.0;
                         y += subdata.location.1;
@@ -332,13 +350,10 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                             ..Default::default()
                         },
                     );
-                    TraversalAction::DoChildren((x, y))
-                } else {
-                    // we are not display, so our children are neither
-                    TraversalAction::SkipChildren
                 }
-            })
-            .unwrap();
+            },
+            |_, _, _, _| true,
+        );
     }
 
     pub fn draw_windows(

@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use smithay::{
     reexports::wayland_server::protocol::wl_surface,
     utils::Rectangle,
@@ -63,7 +65,7 @@ where
             return None;
         }
         // need to check more carefully
-        let mut found = None;
+        let found = RefCell::new(None);
         if let Some(wl_surface) = self.toplevel.get_surface() {
             let _ = ctoken.with_surface_tree_downward(
                 wl_surface,
@@ -81,18 +83,22 @@ where
                             height: h,
                         };
                         if my_rect.contains((point.0 as i32, point.1 as i32)) {
-                            found = Some((wl_surface.clone(), (my_rect.x as f64, my_rect.y as f64)));
-                            TraversalAction::Break
-                        } else {
-                            TraversalAction::DoChildren((x, y))
+                            *found.borrow_mut() =
+                                Some((wl_surface.clone(), (my_rect.x as f64, my_rect.y as f64)));
                         }
+                        TraversalAction::DoChildren((x, y))
                     } else {
                         TraversalAction::SkipChildren
                     }
                 },
+                |_, _, _, _| {},
+                |_, _, _, _| {
+                    // only continue if the point is not found
+                    found.borrow().is_none()
+                },
             );
         }
-        found
+        found.into_inner()
     }
 
     fn self_update<F>(&mut self, ctoken: CompositorToken<U, R>, get_size: F)
@@ -129,6 +135,8 @@ where
                         TraversalAction::SkipChildren
                     }
                 },
+                |_, _, _, _| {},
+                |_, _, _, _| true,
             );
         }
         self.surface = Rectangle {
