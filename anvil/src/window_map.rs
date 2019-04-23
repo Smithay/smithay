@@ -12,16 +12,14 @@ use smithay::{
     },
 };
 
-pub enum Kind<R, SD, D> {
-    Xdg(ToplevelSurface<R, SD>),
-    Wl(ShellSurface<R, D>),
+pub enum Kind<R> {
+    Xdg(ToplevelSurface<R>),
+    Wl(ShellSurface<R>),
 }
 
-impl<R, SD, D> Kind<R, SD, D>
+impl<R> Kind<R>
 where
-    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole<D>> + 'static,
-    SD: 'static,
-    D: 'static,
+    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole> + 'static,
 {
     pub fn alive(&self) -> bool {
         match *self {
@@ -37,17 +35,15 @@ where
     }
 }
 
-struct Window<R, SD, D> {
+struct Window<R> {
     location: (i32, i32),
     surface: Rectangle,
-    toplevel: Kind<R, SD, D>,
+    toplevel: Kind<R>,
 }
 
-impl<R, SD, D> Window<R, SD, D>
+impl<R> Window<R>
 where
-    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole<D>> + 'static,
-    SD: 'static,
-    D: 'static,
+    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole> + 'static,
 {
     // Find the topmost surface under this point if any and the location of this surface
     fn matching<F>(
@@ -146,20 +142,18 @@ where
     }
 }
 
-pub struct WindowMap<R, SD, D, F> {
+pub struct WindowMap<R, F> {
     ctoken: CompositorToken<R>,
-    windows: Vec<Window<R, SD, D>>,
+    windows: Vec<Window<R>>,
     get_size: F,
 }
 
-impl<R, SD, D, F> WindowMap<R, SD, D, F>
+impl<R, F> WindowMap<R, F>
 where
     F: Fn(&SurfaceAttributes) -> Option<(i32, i32)>,
-    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole<D>> + 'static,
-    SD: 'static,
-    D: 'static,
+    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole> + 'static,
 {
-    pub fn new(ctoken: CompositorToken<R>, get_size: F) -> WindowMap<R, D, SD, F> {
+    pub fn new(ctoken: CompositorToken<R>, get_size: F) -> WindowMap<R, F> {
         WindowMap {
             ctoken,
             windows: Vec::new(),
@@ -167,7 +161,7 @@ where
         }
     }
 
-    pub fn insert(&mut self, toplevel: Kind<R, SD, D>, location: (i32, i32)) {
+    pub fn insert(&mut self, toplevel: Kind<R>, location: (i32, i32)) {
         let mut window = Window {
             location,
             surface: Rectangle {
@@ -213,7 +207,7 @@ where
 
     pub fn with_windows_from_bottom_to_top<Func>(&self, mut f: Func)
     where
-        Func: FnMut(&Kind<R, SD, D>, (i32, i32)),
+        Func: FnMut(&Kind<R>, (i32, i32)),
     {
         for w in self.windows.iter().rev() {
             f(&w.toplevel, w.location)
