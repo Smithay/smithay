@@ -31,12 +31,12 @@ use crate::window_map::{Kind as SurfaceKind, WindowMap};
 
 define_roles!(Roles =>
     [ XdgSurface, XdgSurfaceRole ]
-    [ ShellSurface, ShellSurfaceRole<()>]
+    [ ShellSurface, ShellSurfaceRole]
     [ DnDIcon, DnDIconRole ]
     [ CursorImage, CursorImageRole ]
 );
 
-pub type MyWindowMap = WindowMap<Roles, (), (), fn(&SurfaceAttributes) -> Option<(i32, i32)>>;
+pub type MyWindowMap = WindowMap<Roles, fn(&SurfaceAttributes) -> Option<(i32, i32)>>;
 
 pub type MyCompositorToken = CompositorToken<Roles>;
 
@@ -45,8 +45,8 @@ pub fn init_shell(
     log: ::slog::Logger,
 ) -> (
     CompositorToken<Roles>,
-    Arc<Mutex<XdgShellState<Roles, ()>>>,
-    Arc<Mutex<WlShellState<Roles, ()>>>,
+    Arc<Mutex<XdgShellState<Roles>>>,
+    Arc<Mutex<WlShellState<Roles>>>,
     Rc<RefCell<MyWindowMap>>,
 ) {
     // Create the compositor
@@ -62,7 +62,7 @@ pub fn init_shell(
     );
 
     // Init a window map, to track the location of our windows
-    let window_map = Rc::new(RefCell::new(WindowMap::<_, (), (), _>::new(
+    let window_map = Rc::new(RefCell::new(WindowMap::<_, _>::new(
         compositor_token,
         get_size as _,
     )));
@@ -104,7 +104,7 @@ pub fn init_shell(
     let (wl_shell_state, _) = wl_shell_init(
         display,
         compositor_token,
-        move |req: ShellRequest<_, ()>| {
+        move |req: ShellRequest<_>| {
             if let ShellRequest::SetKind {
                 surface,
                 kind: ShellSurfaceKind::Toplevel,
