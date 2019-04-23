@@ -28,7 +28,7 @@ use smithay::{
 };
 
 use crate::shaders;
-use crate::shell::{MyCompositorToken, MyWindowMap};
+use crate::shell::{MyCompositorToken, MyWindowMap, SurfaceData};
 
 #[derive(Copy, Clone)]
 struct Vertex {
@@ -299,70 +299,77 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
             location,
             |_surface, attributes, role, &(mut x, mut y)| {
                 // Pull a new buffer if available
-                if attributes.user_data.texture.is_none() {
-                    if let Some(buffer) = attributes.user_data.buffer.take() {
-                        if let Ok(m) = self.texture_from_buffer(buffer.clone()) {
-                            // release the buffer if it was an SHM buffer
-                            #[cfg(feature = "egl")]
-                            {
-                                if m.images.is_none() {
+                if let Some(data) = attributes.user_data.get_mut::<SurfaceData>() {
+                    if data.texture.is_none() {
+                        if let Some(buffer) = data.buffer.take() {
+                            if let Ok(m) = self.texture_from_buffer(buffer.clone()) {
+                                // release the buffer if it was an SHM buffer
+                                #[cfg(feature = "egl")]
+                                {
+                                    if m.images.is_none() {
+                                        buffer.release();
+                                    }
+                                }
+                                #[cfg(not(feature = "egl"))]
+                                {
                                     buffer.release();
                                 }
-                            }
-                            #[cfg(not(feature = "egl"))]
-                            {
+
+                                data.texture = Some(m);
+                            } else {
+                                // there was an error reading the buffer, release it, we
+                                // already logged the error
                                 buffer.release();
                             }
-
-                            attributes.user_data.texture = Some(m);
-                        } else {
-                            // there was an error reading the buffer, release it, we
-                            // already logged the error
-                            buffer.release();
                         }
                     }
-                }
-                // Now, should we be drawn ?
-                if attributes.user_data.texture.is_some() {
-                    // if yes, also process the children
-                    if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                        x += subdata.location.0;
-                        y += subdata.location.1;
+                    // Now, should we be drawn ?
+                    if data.texture.is_some() {
+                        // if yes, also process the children
+                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                            x += subdata.location.0;
+                            y += subdata.location.1;
+                        }
+                        TraversalAction::DoChildren((x, y))
+                    } else {
+                        // we are not displayed, so our children are neither
+                        TraversalAction::SkipChildren
                     }
-                    TraversalAction::DoChildren((x, y))
                 } else {
-                    // we are not display, so our children are neither
+                    // we are not displayed, so our children are neither
                     TraversalAction::SkipChildren
                 }
             },
             |_surface, attributes, role, &(mut x, mut y)| {
-                if let Some(ref metadata) = attributes.user_data.texture {
-                    // we need to re-extract the subsurface offset, as the previous closure
-                    // only passes it to our children
-                    if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                        x += subdata.location.0;
-                        y += subdata.location.1;
+                if let Some(ref data) = attributes.user_data.get::<SurfaceData>() {
+                    if let Some(ref metadata) = data.texture {
+                        // we need to re-extract the subsurface offset, as the previous closure
+                        // only passes it to our children
+                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                            x += subdata.location.0;
+                            y += subdata.location.1;
+                        }
+                        self.render_texture(
+                            frame,
+                            &metadata.texture,
+                            metadata.fragment,
+                            metadata.y_inverted,
+                            metadata.dimensions,
+                            (x, y),
+                            screen_dimensions,
+                            ::glium::Blend {
+                                color: ::glium::BlendingFunction::Addition {
+                                    source: ::glium::LinearBlendingFactor::One,
+                                    destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                },
+                                alpha: ::glium::BlendingFunction::Addition {
+                                    source: ::glium::LinearBlendingFactor::One,
+                                    destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                },
+                                ..Default::default()
+                            },
+                        );
                     }
-                    self.render_texture(
-                        frame,
-                        &metadata.texture,
-                        metadata.fragment,
-                        metadata.y_inverted,
-                        metadata.dimensions,
-                        (x, y),
-                        screen_dimensions,
-                        ::glium::Blend {
-                            color: ::glium::BlendingFunction::Addition {
-                                source: ::glium::LinearBlendingFactor::One,
-                                destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
-                            },
-                            alpha: ::glium::BlendingFunction::Addition {
-                                source: ::glium::LinearBlendingFactor::One,
-                                destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
-                            },
-                            ..Default::default()
-                        },
-                    );
                 }
             },
             |_, _, _, _| true,

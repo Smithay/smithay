@@ -43,7 +43,7 @@
 //! # fn main(){
 //! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
-//! # let (compositor_token, _, _) = compositor_init::<(), Roles, _, _>(&mut display, |_, _, _| {}, None);
+//! # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _| {}, None);
 //! // init the data device:
 //! init_data_device(
 //!     &mut display,            // the display
@@ -286,18 +286,17 @@ impl SeatData {
 /// and the second argument is the preferred action reported by the target. If no action should be
 /// chosen (and thus the drag'n'drop should abort on drop), return
 /// [`DndAction::empty()`](wayland_server::protocol::wl_data_device_manager::DndAction::empty).
-pub fn init_data_device<F, C, U, R, L>(
+pub fn init_data_device<F, C, R, L>(
     display: &mut Display,
     callback: C,
     action_choice: F,
-    token: CompositorToken<U, R>,
+    token: CompositorToken<R>,
     logger: L,
 ) -> Global<wl_data_device_manager::WlDataDeviceManager>
 where
     F: FnMut(DndAction, DndAction) -> DndAction + 'static,
     C: FnMut(DataDeviceEvent) + 'static,
     R: Role<DnDIconRole> + 'static,
-    U: 'static,
     L: Into<Option<::slog::Logger>>,
 {
     let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "data_device_mgr"));
@@ -378,18 +377,17 @@ where
     }
 }
 
-fn implement_ddm<F, C, U, R>(
+fn implement_ddm<F, C, R>(
     new_ddm: NewResource<wl_data_device_manager::WlDataDeviceManager>,
     callback: Rc<RefCell<C>>,
     action_choice: Rc<RefCell<F>>,
-    token: CompositorToken<U, R>,
+    token: CompositorToken<R>,
     log: ::slog::Logger,
 ) -> wl_data_device_manager::WlDataDeviceManager
 where
     F: FnMut(DndAction, DndAction) -> DndAction + 'static,
     C: FnMut(DataDeviceEvent) + 'static,
     R: Role<DnDIconRole> + 'static,
-    U: 'static,
 {
     use self::wl_data_device_manager::Request;
     new_ddm.implement_closure(
@@ -429,19 +427,18 @@ struct DataDeviceData {
     action_choice: Rc<RefCell<dyn FnMut(DndAction, DndAction) -> DndAction + 'static>>,
 }
 
-fn implement_data_device<F, C, U, R>(
+fn implement_data_device<F, C, R>(
     new_dd: NewResource<wl_data_device::WlDataDevice>,
     seat: Seat,
     callback: Rc<RefCell<C>>,
     action_choice: Rc<RefCell<F>>,
-    token: CompositorToken<U, R>,
+    token: CompositorToken<R>,
     log: ::slog::Logger,
 ) -> wl_data_device::WlDataDevice
 where
     F: FnMut(DndAction, DndAction) -> DndAction + 'static,
     C: FnMut(DataDeviceEvent) + 'static,
     R: Role<DnDIconRole> + 'static,
-    U: 'static,
 {
     use self::wl_data_device::Request;
     let dd_data = DataDeviceData {

@@ -35,7 +35,6 @@
 //! use smithay::wayland::shell::xdg::{xdg_shell_init, XdgSurfaceRole, XdgRequest};
 //! use wayland_protocols::unstable::xdg_shell::v6::server::zxdg_shell_v6::ZxdgShellV6;
 //! # use wayland_server::protocol::{wl_seat, wl_output};
-//! # #[derive(Default)] struct MySurfaceData;
 //!
 //! // define the roles type. You need to integrate the XdgSurface role:
 //! define_roles!(MyRoles =>
@@ -51,7 +50,7 @@
 //! # fn main() {
 //! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
-//! # let (compositor_token, _, _) = smithay::wayland::compositor::compositor_init::<(), MyRoles, _, _>(
+//! # let (compositor_token, _, _) = smithay::wayland::compositor::compositor_init::<MyRoles, _, _>(
 //! #     &mut display,
 //! #     |_, _, _| {},
 //! #     None
@@ -61,7 +60,7 @@
 //!     // token from the compositor implementation
 //!     compositor_token,
 //!     // your implementation
-//!     |event: XdgRequest<_, _, MyShellData>| { /* ... */ },
+//!     |event: XdgRequest<_, MyShellData>| { /* ... */ },
 //!     None  // put a logger if you want
 //! );
 //!
@@ -259,14 +258,14 @@ impl Default for XdgSurfacePendingState {
     }
 }
 
-pub(crate) struct ShellData<U, R, SD> {
+pub(crate) struct ShellData<R, SD> {
     log: ::slog::Logger,
-    compositor_token: CompositorToken<U, R>,
-    user_impl: Rc<RefCell<dyn FnMut(XdgRequest<U, R, SD>)>>,
-    shell_state: Arc<Mutex<ShellState<U, R, SD>>>,
+    compositor_token: CompositorToken<R>,
+    user_impl: Rc<RefCell<dyn FnMut(XdgRequest<R, SD>)>>,
+    shell_state: Arc<Mutex<ShellState<R, SD>>>,
 }
 
-impl<U, R, SD> Clone for ShellData<U, R, SD> {
+impl<R, SD> Clone for ShellData<R, SD> {
     fn clone(&self) -> Self {
         ShellData {
             log: self.log.clone(),
@@ -278,22 +277,21 @@ impl<U, R, SD> Clone for ShellData<U, R, SD> {
 }
 
 /// Create a new `xdg_shell` globals
-pub fn xdg_shell_init<U, R, SD, L, Impl>(
+pub fn xdg_shell_init<R, SD, L, Impl>(
     display: &mut Display,
-    ctoken: CompositorToken<U, R>,
+    ctoken: CompositorToken<R>,
     implementation: Impl,
     logger: L,
 ) -> (
-    Arc<Mutex<ShellState<U, R, SD>>>,
+    Arc<Mutex<ShellState<R, SD>>>,
     Global<xdg_wm_base::XdgWmBase>,
     Global<zxdg_shell_v6::ZxdgShellV6>,
 )
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: Default + 'static,
     L: Into<Option<::slog::Logger>>,
-    Impl: FnMut(XdgRequest<U, R, SD>) + 'static,
+    Impl: FnMut(XdgRequest<R, SD>) + 'static,
 {
     let log = crate::slog_or_stdlog(logger);
     let shell_state = Arc::new(Mutex::new(ShellState {
@@ -325,24 +323,23 @@ where
 ///
 /// This state allows you to retrieve a list of surfaces
 /// currently known to the shell global.
-pub struct ShellState<U, R, SD> {
-    known_toplevels: Vec<ToplevelSurface<U, R, SD>>,
-    known_popups: Vec<PopupSurface<U, R, SD>>,
+pub struct ShellState<R, SD> {
+    known_toplevels: Vec<ToplevelSurface<R, SD>>,
+    known_popups: Vec<PopupSurface<R, SD>>,
 }
 
-impl<U, R, SD> ShellState<U, R, SD>
+impl<R, SD> ShellState<R, SD>
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     /// Access all the shell surfaces known by this handler
-    pub fn toplevel_surfaces(&self) -> &[ToplevelSurface<U, R, SD>] {
+    pub fn toplevel_surfaces(&self) -> &[ToplevelSurface<R, SD>] {
         &self.known_toplevels[..]
     }
 
     /// Access all the popup surfaces known by this handler
-    pub fn popup_surfaces(&self) -> &[PopupSurface<U, R, SD>] {
+    pub fn popup_surfaces(&self) -> &[PopupSurface<R, SD>] {
         &self.known_popups[..]
     }
 }
@@ -378,15 +375,14 @@ fn make_shell_client_data<SD: Default>() -> ShellClientData<SD> {
 ///
 /// You can use this handle to access a storage for any
 /// client-specific data you wish to associate with it.
-pub struct ShellClient<U, R, SD> {
+pub struct ShellClient<R, SD> {
     kind: ShellClientKind,
-    _token: CompositorToken<U, R>,
+    _token: CompositorToken<R>,
     _data: ::std::marker::PhantomData<*mut SD>,
 }
 
-impl<U, R, SD> ShellClient<U, R, SD>
+impl<R, SD> ShellClient<R, SD>
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
@@ -427,7 +423,7 @@ where
             ShellClientKind::Xdg(ref shell) => {
                 let user_data = shell
                     .as_ref()
-                    .user_data::<self::xdg_handlers::ShellUserData<U, R, SD>>()
+                    .user_data::<self::xdg_handlers::ShellUserData<R, SD>>()
                     .unwrap();
                 let mut guard = user_data.client_data.lock().unwrap();
                 if guard.pending_ping == 0 {
@@ -439,7 +435,7 @@ where
             ShellClientKind::ZxdgV6(ref shell) => {
                 let user_data = shell
                     .as_ref()
-                    .user_data::<self::zxdgv6_handlers::ShellUserData<U, R, SD>>()
+                    .user_data::<self::zxdgv6_handlers::ShellUserData<R, SD>>()
                     .unwrap();
                 let mut guard = user_data.client_data.lock().unwrap();
                 if guard.pending_ping == 0 {
@@ -464,7 +460,7 @@ where
             ShellClientKind::Xdg(ref shell) => {
                 let data = shell
                     .as_ref()
-                    .user_data::<self::xdg_handlers::ShellUserData<U, R, SD>>()
+                    .user_data::<self::xdg_handlers::ShellUserData<R, SD>>()
                     .unwrap();
                 let mut guard = data.client_data.lock().unwrap();
                 Ok(f(&mut guard.data))
@@ -472,7 +468,7 @@ where
             ShellClientKind::ZxdgV6(ref shell) => {
                 let data = shell
                     .as_ref()
-                    .user_data::<self::zxdgv6_handlers::ShellUserData<U, R, SD>>()
+                    .user_data::<self::zxdgv6_handlers::ShellUserData<R, SD>>()
                     .unwrap();
                 let mut guard = data.client_data.lock().unwrap();
                 Ok(f(&mut guard.data))
@@ -487,16 +483,15 @@ pub(crate) enum ToplevelKind {
 }
 
 /// A handle to a toplevel surface
-pub struct ToplevelSurface<U, R, SD> {
+pub struct ToplevelSurface<R, SD> {
     wl_surface: wl_surface::WlSurface,
     shell_surface: ToplevelKind,
-    token: CompositorToken<U, R>,
+    token: CompositorToken<R>,
     _shell_data: ::std::marker::PhantomData<SD>,
 }
 
-impl<U, R, SD> ToplevelSurface<U, R, SD>
+impl<R, SD> ToplevelSurface<R, SD>
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
@@ -517,7 +512,7 @@ where
     /// Retrieve the shell client owning this toplevel surface
     ///
     /// Returns `None` if the surface does actually no longer exist.
-    pub fn client(&self) -> Option<ShellClient<U, R, SD>> {
+    pub fn client(&self) -> Option<ShellClient<R, SD>> {
         if !self.alive() {
             return None;
         }
@@ -526,14 +521,14 @@ where
             ToplevelKind::Xdg(ref s) => {
                 let data = s
                     .as_ref()
-                    .user_data::<self::xdg_handlers::ShellSurfaceUserData<U, R, SD>>()
+                    .user_data::<self::xdg_handlers::ShellSurfaceUserData<R, SD>>()
                     .unwrap();
                 ShellClientKind::Xdg(data.wm_base.clone())
             }
             ToplevelKind::ZxdgV6(ref s) => {
                 let data = s
                     .as_ref()
-                    .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<U, R, SD>>()
+                    .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<R, SD>>()
                     .unwrap();
                 ShellClientKind::ZxdgV6(data.shell.clone())
             }
@@ -554,8 +549,8 @@ where
             return;
         }
         match self.shell_surface {
-            ToplevelKind::Xdg(ref s) => self::xdg_handlers::send_toplevel_configure::<U, R, SD>(s, cfg),
-            ToplevelKind::ZxdgV6(ref s) => self::zxdgv6_handlers::send_toplevel_configure::<U, R, SD>(s, cfg),
+            ToplevelKind::Xdg(ref s) => self::xdg_handlers::send_toplevel_configure::<R, SD>(s, cfg),
+            ToplevelKind::ZxdgV6(ref s) => self::zxdgv6_handlers::send_toplevel_configure::<R, SD>(s, cfg),
         }
     }
 
@@ -580,7 +575,7 @@ where
                 ToplevelKind::Xdg(ref s) => {
                     let data = s
                         .as_ref()
-                        .user_data::<self::xdg_handlers::ShellSurfaceUserData<U, R, SD>>()
+                        .user_data::<self::xdg_handlers::ShellSurfaceUserData<R, SD>>()
                         .unwrap();
                     data.xdg_surface.as_ref().post_error(
                         xdg_surface::Error::NotConstructed as u32,
@@ -590,7 +585,7 @@ where
                 ToplevelKind::ZxdgV6(ref s) => {
                     let data = s
                         .as_ref()
-                        .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<U, R, SD>>()
+                        .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<R, SD>>()
                         .unwrap();
                     data.xdg_surface.as_ref().post_error(
                         zxdg_surface_v6::Error::NotConstructed as u32,
@@ -647,16 +642,15 @@ pub(crate) enum PopupKind {
 ///
 /// This is an unified abstraction over the popup surfaces
 /// of both `wl_shell` and `xdg_shell`.
-pub struct PopupSurface<U, R, SD> {
+pub struct PopupSurface<R, SD> {
     wl_surface: wl_surface::WlSurface,
     shell_surface: PopupKind,
-    token: CompositorToken<U, R>,
+    token: CompositorToken<R>,
     _shell_data: ::std::marker::PhantomData<SD>,
 }
 
-impl<U, R, SD> PopupSurface<U, R, SD>
+impl<R, SD> PopupSurface<R, SD>
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
@@ -677,7 +671,7 @@ where
     /// Retrieve the shell client owning this popup surface
     ///
     /// Returns `None` if the surface does actually no longer exist.
-    pub fn client(&self) -> Option<ShellClient<U, R, SD>> {
+    pub fn client(&self) -> Option<ShellClient<R, SD>> {
         if !self.alive() {
             return None;
         }
@@ -686,14 +680,14 @@ where
             PopupKind::Xdg(ref p) => {
                 let data = p
                     .as_ref()
-                    .user_data::<self::xdg_handlers::ShellSurfaceUserData<U, R, SD>>()
+                    .user_data::<self::xdg_handlers::ShellSurfaceUserData<R, SD>>()
                     .unwrap();
                 ShellClientKind::Xdg(data.wm_base.clone())
             }
             PopupKind::ZxdgV6(ref p) => {
                 let data = p
                     .as_ref()
-                    .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<U, R, SD>>()
+                    .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<R, SD>>()
                     .unwrap();
                 ShellClientKind::ZxdgV6(data.shell.clone())
             }
@@ -715,10 +709,10 @@ where
         }
         match self.shell_surface {
             PopupKind::Xdg(ref p) => {
-                self::xdg_handlers::send_popup_configure::<U, R, SD>(p, cfg);
+                self::xdg_handlers::send_popup_configure::<R, SD>(p, cfg);
             }
             PopupKind::ZxdgV6(ref p) => {
-                self::zxdgv6_handlers::send_popup_configure::<U, R, SD>(p, cfg);
+                self::zxdgv6_handlers::send_popup_configure::<R, SD>(p, cfg);
             }
         }
     }
@@ -744,7 +738,7 @@ where
                 PopupKind::Xdg(ref s) => {
                     let data = s
                         .as_ref()
-                        .user_data::<self::xdg_handlers::ShellSurfaceUserData<U, R, SD>>()
+                        .user_data::<self::xdg_handlers::ShellSurfaceUserData<R, SD>>()
                         .unwrap();
                     data.xdg_surface.as_ref().post_error(
                         xdg_surface::Error::NotConstructed as u32,
@@ -754,7 +748,7 @@ where
                 PopupKind::ZxdgV6(ref s) => {
                     let data = s
                         .as_ref()
-                        .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<U, R, SD>>()
+                        .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<R, SD>>()
                         .unwrap();
                     data.xdg_surface.as_ref().post_error(
                         zxdg_surface_v6::Error::NotConstructed as u32,
@@ -843,11 +837,11 @@ pub struct PopupConfigure {
 /// for you directly.
 ///
 /// Depending on what you want to do, you might ignore some of them
-pub enum XdgRequest<U, R, SD> {
+pub enum XdgRequest<R, SD> {
     /// A new shell client was instantiated
     NewClient {
         /// the client
-        client: ShellClient<U, R, SD>,
+        client: ShellClient<R, SD>,
     },
     /// The pong for a pending ping of this shell client was received
     ///
@@ -855,7 +849,7 @@ pub enum XdgRequest<U, R, SD> {
     /// from the pending ping.
     ClientPong {
         /// the client
-        client: ShellClient<U, R, SD>,
+        client: ShellClient<R, SD>,
     },
     /// A new toplevel surface was created
     ///
@@ -863,7 +857,7 @@ pub enum XdgRequest<U, R, SD> {
     /// client as to how its window should be
     NewToplevel {
         /// the surface
-        surface: ToplevelSurface<U, R, SD>,
+        surface: ToplevelSurface<R, SD>,
     },
     /// A new popup surface was created
     ///
@@ -871,12 +865,12 @@ pub enum XdgRequest<U, R, SD> {
     /// client as to how its popup should be
     NewPopup {
         /// the surface
-        surface: PopupSurface<U, R, SD>,
+        surface: PopupSurface<R, SD>,
     },
     /// The client requested the start of an interactive move for this surface
     Move {
         /// the surface
-        surface: ToplevelSurface<U, R, SD>,
+        surface: ToplevelSurface<R, SD>,
         /// the seat associated to this move
         seat: wl_seat::WlSeat,
         /// the grab serial
@@ -885,7 +879,7 @@ pub enum XdgRequest<U, R, SD> {
     /// The client requested the start of an interactive resize for this surface
     Resize {
         /// The surface
-        surface: ToplevelSurface<U, R, SD>,
+        surface: ToplevelSurface<R, SD>,
         /// The seat associated with this resize
         seat: wl_seat::WlSeat,
         /// The grab serial
@@ -899,7 +893,7 @@ pub enum XdgRequest<U, R, SD> {
     /// the grab area.
     Grab {
         /// The surface
-        surface: PopupSurface<U, R, SD>,
+        surface: PopupSurface<R, SD>,
         /// The seat to grab
         seat: wl_seat::WlSeat,
         /// The grab serial
@@ -908,29 +902,29 @@ pub enum XdgRequest<U, R, SD> {
     /// A toplevel surface requested to be maximized
     Maximize {
         /// The surface
-        surface: ToplevelSurface<U, R, SD>,
+        surface: ToplevelSurface<R, SD>,
     },
     /// A toplevel surface requested to stop being maximized
     UnMaximize {
         /// The surface
-        surface: ToplevelSurface<U, R, SD>,
+        surface: ToplevelSurface<R, SD>,
     },
     /// A toplevel surface requested to be set fullscreen
     Fullscreen {
         /// The surface
-        surface: ToplevelSurface<U, R, SD>,
+        surface: ToplevelSurface<R, SD>,
         /// The output (if any) on which the fullscreen is requested
         output: Option<wl_output::WlOutput>,
     },
     /// A toplevel surface request to stop being fullscreen
     UnFullscreen {
         /// The surface
-        surface: ToplevelSurface<U, R, SD>,
+        surface: ToplevelSurface<R, SD>,
     },
     /// A toplevel surface requested to be minimized
     Minimize {
         /// The surface
-        surface: ToplevelSurface<U, R, SD>,
+        surface: ToplevelSurface<R, SD>,
     },
     /// The client requests the window menu to be displayed on this surface at this location
     ///
@@ -938,7 +932,7 @@ pub enum XdgRequest<U, R, SD> {
     /// control of the window (maximize/minimize/close/move/etc...).
     ShowWindowMenu {
         /// The surface
-        surface: ToplevelSurface<U, R, SD>,
+        surface: ToplevelSurface<R, SD>,
         /// The seat associated with this input grab
         seat: wl_seat::WlSeat,
         /// the grab serial

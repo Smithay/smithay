@@ -63,7 +63,7 @@ use smithay::{
 
 use crate::glium_drawer::GliumDrawer;
 use crate::input_handler::AnvilInputHandler;
-use crate::shell::{init_shell, MyWindowMap, Roles, SurfaceData};
+use crate::shell::{init_shell, MyWindowMap, Roles};
 
 pub struct SessionFd(RawFd);
 impl AsRawFd for SessionFd {
@@ -272,7 +272,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
 }
 
 struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
-    compositor_token: CompositorToken<SurfaceData, Roles>,
+    compositor_token: CompositorToken<Roles>,
     #[cfg(feature = "egl")]
     active_egl_context: Rc<RefCell<Option<EGLDisplay>>>,
     session: AutoSession,
@@ -522,7 +522,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
 }
 
 pub struct DrmHandlerImpl {
-    compositor_token: CompositorToken<SurfaceData, Roles>,
+    compositor_token: CompositorToken<Roles>,
     backends: Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<RenderSurface>>>>,
     window_map: Rc<RefCell<MyWindowMap>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
