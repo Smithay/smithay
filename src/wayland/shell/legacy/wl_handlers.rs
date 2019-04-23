@@ -13,15 +13,14 @@ use crate::wayland::compositor::{roles::Role, CompositorToken};
 
 use super::{ShellRequest, ShellState, ShellSurface, ShellSurfaceKind, ShellSurfaceRole};
 
-pub(crate) fn implement_shell<R, D, Impl>(
+pub(crate) fn implement_shell<R, Impl>(
     shell: NewResource<wl_shell::WlShell>,
     ctoken: CompositorToken<R>,
     implementation: Rc<RefCell<Impl>>,
-    state: Arc<Mutex<ShellState<R, D>>>,
+    state: Arc<Mutex<ShellState<R>>>,
 ) where
-    D: Default + 'static,
-    R: Role<ShellSurfaceRole<D>> + 'static,
-    Impl: FnMut(ShellRequest<R, D>) + 'static,
+    R: Role<ShellSurfaceRole> + 'static,
+    Impl: FnMut(ShellRequest<R>) + 'static,
 {
     shell.implement_closure(
         move |req, shell| {
@@ -33,7 +32,6 @@ pub(crate) fn implement_shell<R, D, Impl>(
                 title: "".into(),
                 class: "".into(),
                 pending_ping: 0,
-                user_data: Default::default(),
             };
             if ctoken.give_role_with(&surface, role_data).is_err() {
                 shell
@@ -58,49 +56,46 @@ pub(crate) fn implement_shell<R, D, Impl>(
     );
 }
 
-fn make_handle<R, SD>(
+fn make_handle<R>(
     shell_surface: &wl_shell_surface::WlShellSurface,
     token: CompositorToken<R>,
-) -> ShellSurface<R, SD>
+) -> ShellSurface<R>
 where
-    R: Role<ShellSurfaceRole<SD>> + 'static,
-    SD: 'static,
+    R: Role<ShellSurfaceRole> + 'static,
 {
     let data = shell_surface
         .as_ref()
-        .user_data::<ShellSurfaceUserData<R, SD>>()
+        .user_data::<ShellSurfaceUserData<R>>()
         .unwrap();
     ShellSurface {
         wl_surface: data.surface.clone(),
         shell_surface: shell_surface.clone(),
         token,
-        _d: ::std::marker::PhantomData,
     }
 }
 
-pub(crate) struct ShellSurfaceUserData<R, SD> {
+pub(crate) struct ShellSurfaceUserData<R> {
     surface: wl_surface::WlSurface,
-    state: Arc<Mutex<ShellState<R, SD>>>,
+    state: Arc<Mutex<ShellState<R>>>,
 }
 
-fn implement_shell_surface<R, Impl, SD>(
+fn implement_shell_surface<R, Impl>(
     shell_surface: NewResource<wl_shell_surface::WlShellSurface>,
     surface: wl_surface::WlSurface,
     implementation: Rc<RefCell<Impl>>,
     ctoken: CompositorToken<R>,
-    state: Arc<Mutex<ShellState<R, SD>>>,
+    state: Arc<Mutex<ShellState<R>>>,
 ) -> wl_shell_surface::WlShellSurface
 where
-    SD: 'static,
-    R: Role<ShellSurfaceRole<SD>> + 'static,
-    Impl: FnMut(ShellRequest<R, SD>) + 'static,
+    R: Role<ShellSurfaceRole> + 'static,
+    Impl: FnMut(ShellRequest<R>) + 'static,
 {
     use self::wl_shell_surface::Request;
     shell_surface.implement_closure(
         move |req, shell_surface| {
             let data = shell_surface
                 .as_ref()
-                .user_data::<ShellSurfaceUserData<R, SD>>()
+                .user_data::<ShellSurfaceUserData<R>>()
                 .unwrap();
             let mut user_impl = implementation.borrow_mut();
             match req {
@@ -193,7 +188,7 @@ where
         Some(|shell_surface: wl_shell_surface::WlShellSurface| {
             let data = shell_surface
                 .as_ref()
-                .user_data::<ShellSurfaceUserData<R, SD>>()
+                .user_data::<ShellSurfaceUserData<R>>()
                 .unwrap();
             data.state.lock().unwrap().cleanup_surfaces();
         }),
