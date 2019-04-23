@@ -13,7 +13,7 @@ use crate::wayland::{
 
 use super::{with_source_metadata, DataDeviceData, DnDIconRole, SeatData};
 
-pub(crate) struct DnDGrab<U, R> {
+pub(crate) struct DnDGrab<R> {
     data_source: Option<wl_data_source::WlDataSource>,
     current_focus: Option<wl_surface::WlSurface>,
     pending_offers: Vec<wl_data_offer::WlDataOffer>,
@@ -21,19 +21,19 @@ pub(crate) struct DnDGrab<U, R> {
     icon: Option<wl_surface::WlSurface>,
     origin: wl_surface::WlSurface,
     callback: Rc<RefCell<dyn FnMut(super::DataDeviceEvent)>>,
-    token: CompositorToken<U, R>,
+    token: CompositorToken<R>,
     seat: Seat,
 }
 
-impl<U: 'static, R: Role<DnDIconRole> + 'static> DnDGrab<U, R> {
+impl<R: Role<DnDIconRole> + 'static> DnDGrab<R> {
     pub(crate) fn new(
         source: Option<wl_data_source::WlDataSource>,
         origin: wl_surface::WlSurface,
         seat: Seat,
         icon: Option<wl_surface::WlSurface>,
-        token: CompositorToken<U, R>,
+        token: CompositorToken<R>,
         callback: Rc<RefCell<dyn FnMut(super::DataDeviceEvent)>>,
-    ) -> DnDGrab<U, R> {
+    ) -> DnDGrab<R> {
         DnDGrab {
             data_source: source,
             current_focus: None,
@@ -48,7 +48,7 @@ impl<U: 'static, R: Role<DnDIconRole> + 'static> DnDGrab<U, R> {
     }
 }
 
-impl<U: 'static, R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<U, R> {
+impl<R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<R> {
     fn motion(
         &mut self,
         _handle: &mut PointerInnerHandle<'_>,

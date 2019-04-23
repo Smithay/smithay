@@ -36,18 +36,17 @@ define_roles!(Roles =>
     [ CursorImage, CursorImageRole ]
 );
 
-pub type MyWindowMap =
-    WindowMap<SurfaceData, Roles, (), (), fn(&SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)>>;
+pub type MyWindowMap = WindowMap<Roles, (), (), fn(&SurfaceAttributes) -> Option<(i32, i32)>>;
 
-pub type MyCompositorToken = CompositorToken<SurfaceData, Roles>;
+pub type MyCompositorToken = CompositorToken<Roles>;
 
 pub fn init_shell(
     display: &mut Display,
     log: ::slog::Logger,
 ) -> (
-    CompositorToken<SurfaceData, Roles>,
-    Arc<Mutex<XdgShellState<SurfaceData, Roles, ()>>>,
-    Arc<Mutex<WlShellState<SurfaceData, Roles, ()>>>,
+    CompositorToken<Roles>,
+    Arc<Mutex<XdgShellState<Roles, ()>>>,
+    Arc<Mutex<WlShellState<Roles, ()>>>,
     Rc<RefCell<MyWindowMap>>,
 ) {
     // Create the compositor
@@ -63,7 +62,7 @@ pub fn init_shell(
     );
 
     // Init a window map, to track the location of our windows
-    let window_map = Rc::new(RefCell::new(WindowMap::<_, _, (), (), _>::new(
+    let window_map = Rc::new(RefCell::new(WindowMap::<_, (), (), _>::new(
         compositor_token,
         get_size as _,
     )));
@@ -105,7 +104,7 @@ pub fn init_shell(
     let (wl_shell_state, _) = wl_shell_init(
         display,
         compositor_token,
-        move |req: ShellRequest<_, _, ()>| {
+        move |req: ShellRequest<_, ()>| {
             if let ShellRequest::SetKind {
                 surface,
                 kind: ShellSurfaceKind::Toplevel,
@@ -135,31 +134,34 @@ pub struct SurfaceData {
     pub texture: Option<crate::glium_drawer::TextureMetadata>,
 }
 
-fn surface_commit(surface: &wl_surface::WlSurface, token: CompositorToken<SurfaceData, Roles>) {
+fn surface_commit(surface: &wl_surface::WlSurface, token: CompositorToken<Roles>) {
     // we retrieve the contents of the associated buffer and copy it
     token.with_surface_data(surface, |attributes| {
+        attributes.user_data.insert_if_missing(|| SurfaceData::default());
         match attributes.buffer.take() {
             Some(Some((buffer, (_x, _y)))) => {
                 // new contents
                 // TODO: handle hotspot coordinates
-                attributes.user_data.buffer = Some(buffer);
-                attributes.user_data.texture = None;
+                let data = attributes.user_data.get_mut::<SurfaceData>().unwrap();
+                data.buffer = Some(buffer);
+                data.texture = None;
             }
             Some(None) => {
                 // erase the contents
-                attributes.user_data.buffer = None;
-                attributes.user_data.texture = None;
+                let data = attributes.user_data.get_mut::<SurfaceData>().unwrap();
+                data.buffer = None;
+                data.texture = None;
             }
             None => {}
         }
     });
 }
 
-fn get_size(attrs: &SurfaceAttributes<SurfaceData>) -> Option<(i32, i32)> {
-    attrs
-        .user_data
-        .texture
-        .as_ref()
-        .map(|ref meta| meta.dimensions)
-        .map(|(x, y)| (x as i32, y as i32))
+fn get_size(attrs: &SurfaceAttributes) -> Option<(i32, i32)> {
+    attrs.user_data.get::<SurfaceData>().and_then(|data| {
+        data.texture
+            .as_ref()
+            .map(|ref meta| meta.dimensions)
+            .map(|(x, y)| (x as i32, y as i32))
+    })
 }

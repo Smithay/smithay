@@ -14,17 +14,16 @@ use super::{
     XdgSurfacePendingState, XdgSurfaceRole,
 };
 
-pub(crate) fn implement_wm_base<U, R, SD>(
+pub(crate) fn implement_wm_base<R, SD>(
     shell: NewResource<xdg_wm_base::XdgWmBase>,
-    shell_data: &ShellData<U, R, SD>,
+    shell_data: &ShellData<R, SD>,
 ) -> xdg_wm_base::XdgWmBase
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: Default + 'static,
 {
     let shell = shell.implement_closure(
-        wm_implementation::<U, R, SD>,
+        wm_implementation::<R, SD>,
         None::<fn(_)>,
         ShellUserData {
             shell_data: shell_data.clone(),
@@ -42,15 +41,15 @@ where
  * xdg_shell
  */
 
-pub(crate) struct ShellUserData<U, R, SD> {
-    shell_data: ShellData<U, R, SD>,
+pub(crate) struct ShellUserData<R, SD> {
+    shell_data: ShellData<R, SD>,
     pub(crate) client_data: Mutex<ShellClientData<SD>>,
 }
 
-pub(crate) fn make_shell_client<U, R, SD>(
+pub(crate) fn make_shell_client<R, SD>(
     resource: &xdg_wm_base::XdgWmBase,
-    token: CompositorToken<U, R>,
-) -> ShellClient<U, R, SD> {
+    token: CompositorToken<R>,
+) -> ShellClient<R, SD> {
     ShellClient {
         kind: super::ShellClientKind::Xdg(resource.clone()),
         _token: token,
@@ -58,13 +57,12 @@ pub(crate) fn make_shell_client<U, R, SD>(
     }
 }
 
-fn wm_implementation<U, R, SD>(request: xdg_wm_base::Request, shell: xdg_wm_base::XdgWmBase)
+fn wm_implementation<R, SD>(request: xdg_wm_base::Request, shell: xdg_wm_base::XdgWmBase)
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
-    let data = shell.as_ref().user_data::<ShellUserData<U, R, SD>>().unwrap();
+    let data = shell.as_ref().user_data::<ShellUserData<R, SD>>().unwrap();
     match request {
         xdg_wm_base::Request::Destroy => {
             // all is handled by destructor
@@ -92,8 +90,8 @@ where
                 return;
             }
             id.implement_closure(
-                xdg_surface_implementation::<U, R, SD>,
-                Some(destroy_surface::<U, R, SD>),
+                xdg_surface_implementation::<R, SD>,
+                Some(destroy_surface::<R, SD>),
                 XdgSurfaceUserData {
                     shell_data: data.shell_data.clone(),
                     wl_surface: surface,
@@ -188,22 +186,18 @@ fn implement_positioner(
  * xdg_surface
  */
 
-struct XdgSurfaceUserData<U, R, SD> {
-    shell_data: ShellData<U, R, SD>,
+struct XdgSurfaceUserData<R, SD> {
+    shell_data: ShellData<R, SD>,
     wl_surface: wl_surface::WlSurface,
     wm_base: xdg_wm_base::XdgWmBase,
 }
 
-fn destroy_surface<U, R, SD>(surface: xdg_surface::XdgSurface)
+fn destroy_surface<R, SD>(surface: xdg_surface::XdgSurface)
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
-    let data = surface
-        .as_ref()
-        .user_data::<XdgSurfaceUserData<U, R, SD>>()
-        .unwrap();
+    let data = surface.as_ref().user_data::<XdgSurfaceUserData<R, SD>>().unwrap();
     if !data.wl_surface.as_ref().is_alive() {
         // the wl_surface is destroyed, this means the client is not
         // trying to change the role but it's a cleanup (possibly a
@@ -225,15 +219,14 @@ where
         .expect("xdg_surface exists but surface has not shell_surface role?!");
 }
 
-fn xdg_surface_implementation<U, R, SD>(request: xdg_surface::Request, xdg_surface: xdg_surface::XdgSurface)
+fn xdg_surface_implementation<R, SD>(request: xdg_surface::Request, xdg_surface: xdg_surface::XdgSurface)
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     let data = xdg_surface
         .as_ref()
-        .user_data::<XdgSurfaceUserData<U, R, SD>>()
+        .user_data::<XdgSurfaceUserData<R, SD>>()
         .unwrap();
     match request {
         xdg_surface::Request::Destroy => {
@@ -253,8 +246,8 @@ where
                 })
                 .expect("xdg_surface exists but surface has not shell_surface role?!");
             let toplevel = id.implement_closure(
-                toplevel_implementation::<U, R, SD>,
-                Some(destroy_toplevel::<U, R, SD>),
+                toplevel_implementation::<R, SD>,
+                Some(destroy_toplevel::<R, SD>),
                 ShellSurfaceUserData {
                     shell_data: data.shell_data.clone(),
                     wl_surface: data.wl_surface.clone(),
@@ -285,10 +278,7 @@ where
                 .unwrap();
 
             let parent_surface = parent.map(|parent| {
-                let parent_data = parent
-                    .as_ref()
-                    .user_data::<XdgSurfaceUserData<U, R, SD>>()
-                    .unwrap();
+                let parent_data = parent.as_ref().user_data::<XdgSurfaceUserData<R, SD>>().unwrap();
                 parent_data.wl_surface.clone()
             });
             data.shell_data
@@ -301,8 +291,8 @@ where
                 })
                 .expect("xdg_surface exists but surface has not shell_surface role?!");
             let popup = id.implement_closure(
-                xg_popup_implementation::<U, R, SD>,
-                Some(destroy_popup::<U, R, SD>),
+                xg_popup_implementation::<R, SD>,
+                Some(destroy_popup::<R, SD>),
                 ShellSurfaceUserData {
                     shell_data: data.shell_data.clone(),
                     wl_surface: data.wl_surface.clone(),
@@ -360,27 +350,26 @@ where
  * xdg_toplevel
  */
 
-pub(crate) struct ShellSurfaceUserData<U, R, SD> {
-    pub(crate) shell_data: ShellData<U, R, SD>,
+pub(crate) struct ShellSurfaceUserData<R, SD> {
+    pub(crate) shell_data: ShellData<R, SD>,
     pub(crate) wl_surface: wl_surface::WlSurface,
     pub(crate) wm_base: xdg_wm_base::XdgWmBase,
     pub(crate) xdg_surface: xdg_surface::XdgSurface,
 }
 
 // Utility functions allowing to factor out a lot of the upcoming logic
-fn with_surface_toplevel_data<U, R, SD, F>(
-    shell_data: &ShellData<U, R, SD>,
+fn with_surface_toplevel_data<R, SD, F>(
+    shell_data: &ShellData<R, SD>,
     toplevel: &xdg_toplevel::XdgToplevel,
     f: F,
 ) where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
     F: FnOnce(&mut ToplevelState),
 {
     let toplevel_data = toplevel
         .as_ref()
-        .user_data::<ShellSurfaceUserData<U, R, SD>>()
+        .user_data::<ShellSurfaceUserData<R, SD>>()
         .unwrap();
     shell_data
         .compositor_token
@@ -391,15 +380,14 @@ fn with_surface_toplevel_data<U, R, SD, F>(
         .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
-pub fn send_toplevel_configure<U, R, SD>(resource: &xdg_toplevel::XdgToplevel, configure: ToplevelConfigure)
+pub fn send_toplevel_configure<R, SD>(resource: &xdg_toplevel::XdgToplevel, configure: ToplevelConfigure)
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     let data = resource
         .as_ref()
-        .user_data::<ShellSurfaceUserData<U, R, SD>>()
+        .user_data::<ShellSurfaceUserData<R, SD>>()
         .unwrap();
     let (width, height) = configure.size.unwrap_or((0, 0));
     // convert the Vec<State> (which is really a Vec<u32>) into Vec<u8>
@@ -421,12 +409,12 @@ where
         .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
-fn make_toplevel_handle<U: 'static, R: 'static, SD: 'static>(
+fn make_toplevel_handle<R: 'static, SD: 'static>(
     resource: &xdg_toplevel::XdgToplevel,
-) -> super::ToplevelSurface<U, R, SD> {
+) -> super::ToplevelSurface<R, SD> {
     let data = resource
         .as_ref()
-        .user_data::<ShellSurfaceUserData<U, R, SD>>()
+        .user_data::<ShellSurfaceUserData<R, SD>>()
         .unwrap();
     super::ToplevelSurface {
         wl_surface: data.wl_surface.clone(),
@@ -436,15 +424,14 @@ fn make_toplevel_handle<U: 'static, R: 'static, SD: 'static>(
     }
 }
 
-fn toplevel_implementation<U, R, SD>(request: xdg_toplevel::Request, toplevel: xdg_toplevel::XdgToplevel)
+fn toplevel_implementation<R, SD>(request: xdg_toplevel::Request, toplevel: xdg_toplevel::XdgToplevel)
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     let data = toplevel
         .as_ref()
-        .user_data::<ShellSurfaceUserData<U, R, SD>>()
+        .user_data::<ShellSurfaceUserData<R, SD>>()
         .unwrap();
     match request {
         xdg_toplevel::Request::Destroy => {
@@ -455,7 +442,7 @@ where
                 toplevel_data.parent = parent.map(|toplevel_surface_parent| {
                     toplevel_surface_parent
                         .as_ref()
-                        .user_data::<ShellSurfaceUserData<U, R, SD>>()
+                        .user_data::<ShellSurfaceUserData<R, SD>>()
                         .unwrap()
                         .wl_surface
                         .clone()
@@ -544,15 +531,14 @@ where
     }
 }
 
-fn destroy_toplevel<U, R, SD>(toplevel: xdg_toplevel::XdgToplevel)
+fn destroy_toplevel<R, SD>(toplevel: xdg_toplevel::XdgToplevel)
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     let data = toplevel
         .as_ref()
-        .user_data::<ShellSurfaceUserData<U, R, SD>>()
+        .user_data::<ShellSurfaceUserData<R, SD>>()
         .unwrap();
     if !data.wl_surface.as_ref().is_alive() {
         // the wl_surface is destroyed, this means the client is not
@@ -580,15 +566,14 @@ where
  * xdg_popup
  */
 
-pub(crate) fn send_popup_configure<U, R, SD>(resource: &xdg_popup::XdgPopup, configure: PopupConfigure)
+pub(crate) fn send_popup_configure<R, SD>(resource: &xdg_popup::XdgPopup, configure: PopupConfigure)
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
     let data = resource
         .as_ref()
-        .user_data::<ShellSurfaceUserData<U, R, SD>>()
+        .user_data::<ShellSurfaceUserData<R, SD>>()
         .unwrap();
     let (x, y) = configure.position;
     let (width, height) = configure.size;
@@ -602,12 +587,10 @@ where
         .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
-fn make_popup_handle<U: 'static, R: 'static, SD: 'static>(
-    resource: &xdg_popup::XdgPopup,
-) -> super::PopupSurface<U, R, SD> {
+fn make_popup_handle<R: 'static, SD: 'static>(resource: &xdg_popup::XdgPopup) -> super::PopupSurface<R, SD> {
     let data = resource
         .as_ref()
-        .user_data::<ShellSurfaceUserData<U, R, SD>>()
+        .user_data::<ShellSurfaceUserData<R, SD>>()
         .unwrap();
     super::PopupSurface {
         wl_surface: data.wl_surface.clone(),
@@ -617,16 +600,12 @@ fn make_popup_handle<U: 'static, R: 'static, SD: 'static>(
     }
 }
 
-fn xg_popup_implementation<U, R, SD>(request: xdg_popup::Request, popup: xdg_popup::XdgPopup)
+fn xg_popup_implementation<R, SD>(request: xdg_popup::Request, popup: xdg_popup::XdgPopup)
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
-    let data = popup
-        .as_ref()
-        .user_data::<ShellSurfaceUserData<U, R, SD>>()
-        .unwrap();
+    let data = popup.as_ref().user_data::<ShellSurfaceUserData<R, SD>>().unwrap();
     match request {
         xdg_popup::Request::Destroy => {
             // all is handled by our destructor
@@ -644,16 +623,12 @@ where
     }
 }
 
-fn destroy_popup<U, R, SD>(popup: xdg_popup::XdgPopup)
+fn destroy_popup<R, SD>(popup: xdg_popup::XdgPopup)
 where
-    U: 'static,
     R: Role<XdgSurfaceRole> + 'static,
     SD: 'static,
 {
-    let data = popup
-        .as_ref()
-        .user_data::<ShellSurfaceUserData<U, R, SD>>()
-        .unwrap();
+    let data = popup.as_ref().user_data::<ShellSurfaceUserData<R, SD>>().unwrap();
     if !data.wl_surface.as_ref().is_alive() {
         // the wl_surface is destroyed, this means the client is not
         // trying to change the role but it's a cleanup (possibly a

@@ -20,7 +20,7 @@
 //! # fn main(){
 //! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
-//! # let (compositor_token, _, _) = compositor_init::<(), Roles, _, _>(&mut display, |_, _, _| {}, None);
+//! # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _| {}, None);
 //! // insert the seat:
 //! let (seat, seat_global) = Seat::new(
 //!     &mut display,             // the display
@@ -121,14 +121,13 @@ impl Seat {
     /// You are provided with the state token to retrieve it (allowing
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
-    pub fn new<U, R, L>(
+    pub fn new<R, L>(
         display: &mut Display,
         name: String,
-        token: CompositorToken<U, R>,
+        token: CompositorToken<R>,
         logger: L,
     ) -> (Seat, Global<wl_seat::WlSeat>)
     where
-        U: 'static,
         R: Role<CursorImageRole> + 'static,
         L: Into<Option<::slog::Logger>>,
     {
@@ -194,7 +193,7 @@ impl Seat {
     /// # fn main(){
     /// # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
     /// # let mut display = wayland_server::Display::new(event_loop.handle());
-    /// # let (compositor_token, _, _) = compositor_init::<(), Roles, _, _>(&mut display, |_, _, _| {}, None);
+    /// # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _| {}, None);
     /// # let (mut seat, seat_global) = Seat::new(
     /// #     &mut display,
     /// #     "seat-0".into(),
@@ -207,9 +206,8 @@ impl Seat {
     /// );
     /// # }
     /// ```
-    pub fn add_pointer<U, R, F>(&mut self, token: CompositorToken<U, R>, cb: F) -> PointerHandle
+    pub fn add_pointer<R, F>(&mut self, token: CompositorToken<R>, cb: F) -> PointerHandle
     where
-        U: 'static,
         R: Role<CursorImageRole> + 'static,
         F: FnMut(CursorImageStatus) + 'static,
     {
@@ -336,14 +334,13 @@ impl ::std::cmp::PartialEq for Seat {
     }
 }
 
-fn implement_seat<U, R>(
+fn implement_seat<R>(
     new_seat: NewResource<wl_seat::WlSeat>,
     arc: Rc<SeatRc>,
-    token: CompositorToken<U, R>,
+    token: CompositorToken<R>,
 ) -> wl_seat::WlSeat
 where
     R: Role<CursorImageRole> + 'static,
-    U: 'static,
 {
     let dest_arc = arc.clone();
     new_seat.implement_closure(

@@ -46,9 +46,8 @@ struct PointerInternal {
 }
 
 impl PointerInternal {
-    fn new<F, U, R>(token: CompositorToken<U, R>, mut cb: F) -> PointerInternal
+    fn new<F, R>(token: CompositorToken<R>, mut cb: F) -> PointerInternal
     where
-        U: 'static,
         R: Role<CursorImageRole> + 'static,
         F: FnMut(CursorImageStatus) + 'static,
     {
@@ -514,10 +513,9 @@ impl AxisFrame {
     }
 }
 
-pub(crate) fn create_pointer_handler<F, U, R>(token: CompositorToken<U, R>, cb: F) -> PointerHandle
+pub(crate) fn create_pointer_handler<F, R>(token: CompositorToken<R>, cb: F) -> PointerHandle
 where
     R: Role<CursorImageRole> + 'static,
-    U: 'static,
     F: FnMut(CursorImageStatus) + 'static,
 {
     PointerHandle {
@@ -525,14 +523,13 @@ where
     }
 }
 
-pub(crate) fn implement_pointer<U, R>(
+pub(crate) fn implement_pointer<R>(
     new_pointer: NewResource<WlPointer>,
     handle: Option<&PointerHandle>,
-    token: CompositorToken<U, R>,
+    token: CompositorToken<R>,
 ) -> WlPointer
 where
     R: Role<CursorImageRole> + 'static,
-    U: 'static,
 {
     let inner = handle.map(|h| h.inner.clone());
     let destructor = match inner.clone() {

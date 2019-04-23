@@ -52,7 +52,7 @@
 //! # fn main() {
 //! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
-//! # let (compositor_token, _, _) = smithay::wayland::compositor::compositor_init::<(), MyRoles, _, _>(
+//! # let (compositor_token, _, _) = smithay::wayland::compositor::compositor_init::<MyRoles, _, _>(
 //! #     &mut display,
 //! #     |_, _, _| {},
 //! #     None
@@ -62,7 +62,7 @@
 //!     // token from the compositor implementation
 //!     compositor_token,
 //!     // your implementation
-//!     |event: ShellRequest<_, _, MyShellSurfaceData>| { /* ... */ },
+//!     |event: ShellRequest<_, MyShellSurfaceData>| { /* ... */ },
 //!     None  // put a logger if you want
 //! );
 //!
@@ -97,16 +97,15 @@ pub struct ShellSurfaceRole<D: 'static> {
 }
 
 /// A handle to a shell surface
-pub struct ShellSurface<U, R, D> {
+pub struct ShellSurface<R, D> {
     wl_surface: wl_surface::WlSurface,
     shell_surface: wl_shell_surface::WlShellSurface,
-    token: CompositorToken<U, R>,
+    token: CompositorToken<R>,
     _d: ::std::marker::PhantomData<D>,
 }
 
-impl<U, R, D> ShellSurface<U, R, D>
+impl<R, D> ShellSurface<R, D>
 where
-    U: 'static,
     R: Role<ShellSurfaceRole<D>> + 'static,
     D: 'static,
 {
@@ -235,13 +234,13 @@ pub enum ShellSurfaceKind {
 }
 
 /// A request triggered by a `wl_shell_surface`
-pub enum ShellRequest<U, R, D> {
+pub enum ShellRequest<R, D> {
     /// A new shell surface was created
     ///
     /// by default it has no kind and this should not be displayed
     NewShellSurface {
         /// The created surface
-        surface: ShellSurface<U, R, D>,
+        surface: ShellSurface<R, D>,
     },
     /// A pong event
     ///
@@ -249,14 +248,14 @@ pub enum ShellRequest<U, R, D> {
     /// event, smithay has already checked that the responded serial was valid.
     Pong {
         /// The surface that sent the pong
-        surface: ShellSurface<U, R, D>,
+        surface: ShellSurface<R, D>,
     },
     /// Start of an interactive move
     ///
     /// The surface requests that an interactive move is started on it
     Move {
         /// The surface requesting the move
-        surface: ShellSurface<U, R, D>,
+        surface: ShellSurface<R, D>,
         /// Serial of the implicit grab that initiated the move
         serial: u32,
         /// Seat associated with the move
@@ -267,7 +266,7 @@ pub enum ShellRequest<U, R, D> {
     /// The surface requests that an interactive resize is started on it
     Resize {
         /// The surface requesting the resize
-        surface: ShellSurface<U, R, D>,
+        surface: ShellSurface<R, D>,
         /// Serial of the implicit grab that initiated the resize
         serial: u32,
         /// Seat associated with the resize
@@ -278,7 +277,7 @@ pub enum ShellRequest<U, R, D> {
     /// The surface changed its kind
     SetKind {
         /// The surface
-        surface: ShellSurface<U, R, D>,
+        surface: ShellSurface<R, D>,
         /// Its new kind
         kind: ShellSurfaceKind,
     },
@@ -288,13 +287,12 @@ pub enum ShellRequest<U, R, D> {
 ///
 /// This state allows you to retrieve a list of surfaces
 /// currently known to the shell global.
-pub struct ShellState<U, R, D> {
-    known_surfaces: Vec<ShellSurface<U, R, D>>,
+pub struct ShellState<R, D> {
+    known_surfaces: Vec<ShellSurface<R, D>>,
 }
 
-impl<U, R, D> ShellState<U, R, D>
+impl<R, D> ShellState<R, D>
 where
-    U: 'static,
     R: Role<ShellSurfaceRole<D>> + 'static,
     D: 'static,
 {
@@ -304,24 +302,23 @@ where
     }
 
     /// Access all the shell surfaces known by this handler
-    pub fn surfaces(&self) -> &[ShellSurface<U, R, D>] {
+    pub fn surfaces(&self) -> &[ShellSurface<R, D>] {
         &self.known_surfaces[..]
     }
 }
 
 /// Create a new `wl_shell` global
-pub fn wl_shell_init<U, R, D, L, Impl>(
+pub fn wl_shell_init<R, D, L, Impl>(
     display: &mut Display,
-    ctoken: CompositorToken<U, R>,
+    ctoken: CompositorToken<R>,
     implementation: Impl,
     logger: L,
-) -> (Arc<Mutex<ShellState<U, R, D>>>, Global<wl_shell::WlShell>)
+) -> (Arc<Mutex<ShellState<R, D>>>, Global<wl_shell::WlShell>)
 where
-    U: 'static,
     D: Default + 'static,
     R: Role<ShellSurfaceRole<D>> + 'static,
     L: Into<Option<::slog::Logger>>,
-    Impl: FnMut(ShellRequest<U, R, D>) + 'static,
+    Impl: FnMut(ShellRequest<R, D>) + 'static,
 {
     let _log = crate::slog_or_stdlog(logger);
 

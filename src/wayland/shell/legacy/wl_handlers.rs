@@ -13,16 +13,15 @@ use crate::wayland::compositor::{roles::Role, CompositorToken};
 
 use super::{ShellRequest, ShellState, ShellSurface, ShellSurfaceKind, ShellSurfaceRole};
 
-pub(crate) fn implement_shell<U, R, D, Impl>(
+pub(crate) fn implement_shell<R, D, Impl>(
     shell: NewResource<wl_shell::WlShell>,
-    ctoken: CompositorToken<U, R>,
+    ctoken: CompositorToken<R>,
     implementation: Rc<RefCell<Impl>>,
-    state: Arc<Mutex<ShellState<U, R, D>>>,
+    state: Arc<Mutex<ShellState<R, D>>>,
 ) where
-    U: 'static,
     D: Default + 'static,
     R: Role<ShellSurfaceRole<D>> + 'static,
-    Impl: FnMut(ShellRequest<U, R, D>) + 'static,
+    Impl: FnMut(ShellRequest<R, D>) + 'static,
 {
     shell.implement_closure(
         move |req, shell| {
@@ -59,18 +58,17 @@ pub(crate) fn implement_shell<U, R, D, Impl>(
     );
 }
 
-fn make_handle<U, R, SD>(
+fn make_handle<R, SD>(
     shell_surface: &wl_shell_surface::WlShellSurface,
-    token: CompositorToken<U, R>,
-) -> ShellSurface<U, R, SD>
+    token: CompositorToken<R>,
+) -> ShellSurface<R, SD>
 where
-    U: 'static,
     R: Role<ShellSurfaceRole<SD>> + 'static,
     SD: 'static,
 {
     let data = shell_surface
         .as_ref()
-        .user_data::<ShellSurfaceUserData<U, R, SD>>()
+        .user_data::<ShellSurfaceUserData<R, SD>>()
         .unwrap();
     ShellSurface {
         wl_surface: data.surface.clone(),
@@ -80,30 +78,29 @@ where
     }
 }
 
-pub(crate) struct ShellSurfaceUserData<U, R, SD> {
+pub(crate) struct ShellSurfaceUserData<R, SD> {
     surface: wl_surface::WlSurface,
-    state: Arc<Mutex<ShellState<U, R, SD>>>,
+    state: Arc<Mutex<ShellState<R, SD>>>,
 }
 
-fn implement_shell_surface<U, R, Impl, SD>(
+fn implement_shell_surface<R, Impl, SD>(
     shell_surface: NewResource<wl_shell_surface::WlShellSurface>,
     surface: wl_surface::WlSurface,
     implementation: Rc<RefCell<Impl>>,
-    ctoken: CompositorToken<U, R>,
-    state: Arc<Mutex<ShellState<U, R, SD>>>,
+    ctoken: CompositorToken<R>,
+    state: Arc<Mutex<ShellState<R, SD>>>,
 ) -> wl_shell_surface::WlShellSurface
 where
-    U: 'static,
     SD: 'static,
     R: Role<ShellSurfaceRole<SD>> + 'static,
-    Impl: FnMut(ShellRequest<U, R, SD>) + 'static,
+    Impl: FnMut(ShellRequest<R, SD>) + 'static,
 {
     use self::wl_shell_surface::Request;
     shell_surface.implement_closure(
         move |req, shell_surface| {
             let data = shell_surface
                 .as_ref()
-                .user_data::<ShellSurfaceUserData<U, R, SD>>()
+                .user_data::<ShellSurfaceUserData<R, SD>>()
                 .unwrap();
             let mut user_impl = implementation.borrow_mut();
             match req {
@@ -196,7 +193,7 @@ where
         Some(|shell_surface: wl_shell_surface::WlShellSurface| {
             let data = shell_surface
                 .as_ref()
-                .user_data::<ShellSurfaceUserData<U, R, SD>>()
+                .user_data::<ShellSurfaceUserData<R, SD>>()
                 .unwrap();
             data.state.lock().unwrap().cleanup_surfaces();
         }),
