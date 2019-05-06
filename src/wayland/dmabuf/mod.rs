@@ -1,3 +1,70 @@
+//! Linux DMABUF protocol
+//!
+//! This module provides helper to handle the linux-dmabuf protocol, which allows clients to submit their
+//! contents as dmabuf file descriptors. These handlers automate the aggregation of the metadata associated
+//! with a dma buffer, and do some basic checking of the sanity of what the client sends.
+//!
+//! ## How to use
+//!
+//! To setup the dmabuf global, you will need to provide 2 things:
+//!
+//! - a list of the dmabuf formats you wish to support
+//! - an implementation of the `DmabufHandler` trait
+//!
+//! The list of supported format is just a `Vec<Format>`, where you will enter all the (format, modifier)
+//! couples you support.
+//!
+//! The implementation of the `DmabufHandler` trait will be called whenever a client has finished setting up
+//! a dma buffer. You will be handled the full details of the sclient's submission as a `BufferInfo` struct,
+//! and you need to validate it and maybe import it into your rendered. The `BufferData` associated type
+//! allows you to store any metadata of handle to the resource you need into the created `wl_buffer`,
+//! user data, to then retrieve it when it is attached to a surface to re-identify the dmabuf.
+//!
+//! ```
+//! # extern crate wayland_server;
+//! # extern crate smithay;
+//! use smithay::wayland::dmabuf::{DmabufHandler, BufferInfo, init_dmabuf_global};
+//!
+//! struct MyDmabufHandler;
+//!
+//! struct MyBufferData {
+//!     /* ... */
+//! }
+//!
+//! impl Drop for MyBufferData {
+//!     fn drop(&mut self) {
+//!         // This is called when all handles to this buffer have been dropped,
+//!         // both client-side and server side.
+//!         // You can now free the associated resource in your renderer.
+//!     }
+//! }
+//!
+//! impl DmabufHandler for MyDmabufHandler {
+//!     type BufferData = MyBufferData;
+//!     fn validate_dmabuf(&mut self, info: BufferInfo) -> Result<Self::BufferData, ()> {
+//!         /* validate the dmabuf and import it into your renderer state */
+//!         Ok(MyBufferData { /* ... */ })
+//!     }
+//! }
+//!
+//! // Once this is defined, you can in your setup initialize the dmabuf global:
+//!
+//! # fn main() {
+//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
+//! # let mut display = wayland_server::Display::new(event_loop.handle());
+//! // define your supported formats
+//! let formats = vec![
+//!     /* ... */
+//! ];
+//! let dmabuf_global = init_dmabuf_global(
+//!     &mut display,
+//!     formats,
+//!     MyDmabufHandler,
+//!     None // we don't provide a logger in this example
+//! );
+//! # }
+//! ```
+
 use std::{cell::RefCell, os::unix::io::RawFd, rc::Rc};
 
 pub use wayland_protocols::unstable::linux_dmabuf::v1::server::zwp_linux_buffer_params_v1::Flags;
@@ -11,12 +78,16 @@ use wayland_server::{protocol::wl_buffer, Display, Global, NewResource};
 
 /// Representation of a Dmabuf format, as advertized to the client
 pub struct Format {
-    /// The format identifier
+    /// The format identifier.
+    ///
+    /// It must be a `DRM_FORMAT` code, as defined by the libdrm's drm_fourcc.h. The Linux kernel's DRM
+    /// sub-system is the authoritative source on how the format codes should work.
     pub format: u32,
-    /// High part of the supported modifiers
-    pub modifier_hi: u32,
-    /// Low part of the supported modifiers
-    pub modifier_lo: u32,
+    /// The supported dmabuf layout modifier.
+    ///
+    /// This is an opaque token. Drivers use this token to express tiling, compression, etc. driver-specific
+    /// modifications to the base format defined by the DRM fourcc code.
+    pub modifier: u64,
     /// Number of planes used by this format
     pub plane_count: u32,
 }
@@ -31,10 +102,8 @@ pub struct Plane {
     pub offset: u32,
     /// Stride for this plane
     pub stride: u32,
-    /// High part of the modifiers for this plane
-    pub modifier_hi: u32,
-    /// Low part of the modifiers for this plane
-    pub modifier_lo: u32,
+    /// Modifier for this plane
+    pub modifier: u64,
 }
 
 /// The complete information provided by the client to create a dmabuf buffer
@@ -60,7 +129,9 @@ pub struct BufferInfo {
 pub trait DmabufHandler {
     /// The data of a successfully imported dmabuf.
     ///
-    /// This will be stored as the `user_data` of the `WlBuffer` associated with this dmabuf.
+    /// This will be stored as the `user_data` of the `WlBuffer` associated with this dmabuf. If it has a
+    /// destructor, it will be run when the client has destroyed the buffer and your compositor has dropped
+    /// all of its `WlBuffer` handles to it.
     type BufferData: 'static;
     /// Validate a dmabuf
     ///
@@ -102,15 +173,22 @@ where
     L: Into<Option<::slog::Logger>>,
     H: DmabufHandler + 'static,
 {
-    let log = crate::slog_or_stdlog(logger);
+    let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "dmabuf_handler"));
 
     let max_planes = formats.iter().map(|f| f.plane_count).max().unwrap_or(0);
     let formats = Rc::new(formats);
     let handler = Rc::new(RefCell::new(handler));
 
+    trace!(
+        log,
+        "Initializing DMABUF handler with {} supported formats",
+        formats.len()
+    );
+
     display.create_global(3, move |new_dmabuf, version| {
         let dma_formats = formats.clone();
         let dma_handler = handler.clone();
+        let dma_log = log.clone();
         let dmabuf: zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1 = new_dmabuf.implement_closure(
             move |req, _| match req {
                 zwp_linux_dmabuf_v1::Request::CreateParams { params_id } => {
@@ -121,6 +199,7 @@ where
                             used: false,
                             formats: dma_formats.clone(),
                             handler: dma_handler.clone(),
+                            log: dma_log.clone(),
                         },
                         None::<fn(_)>,
                         (),
@@ -136,7 +215,7 @@ where
         for f in &*formats {
             dmabuf.format(f.format);
             if version >= 3 {
-                dmabuf.modifier(f.format, f.modifier_hi, f.modifier_lo);
+                dmabuf.modifier(f.format, (f.modifier >> 32) as u32, f.modifier as u32);
             }
         }
     })
@@ -148,6 +227,7 @@ struct ParamsHandler<H: DmabufHandler> {
     used: bool,
     formats: Rc<Vec<Format>>,
     handler: Rc<RefCell<H>>,
+    log: ::slog::Logger,
 }
 
 impl<H: DmabufHandler> ParamRequestHandler for ParamsHandler<H> {
@@ -193,8 +273,7 @@ impl<H: DmabufHandler> ParamRequestHandler for ParamsHandler<H> {
             plane_idx,
             offset,
             stride,
-            modifier_hi,
-            modifier_lo,
+            modifier: ((modifier_hi as u64) << 32) + (modifier_lo as u64),
         });
     }
 
@@ -216,6 +295,7 @@ impl<H: DmabufHandler> ParamRequestHandler for ParamsHandler<H> {
             width,
             height,
         ) {
+            trace!(self.log, "Killing client providing bogus dmabuf buffer params.");
             return;
         }
         let info = BufferInfo {
@@ -233,9 +313,11 @@ impl<H: DmabufHandler> ParamRequestHandler for ParamsHandler<H> {
                 .and_then(|c| c.create_resource::<wl_buffer::WlBuffer>(1))
             {
                 let buffer = handler.create_buffer(data, buffer);
+                trace!(self.log, "Creating a new validated dma wl_buffer.");
                 params.created(&buffer);
             }
         } else {
+            trace!(self.log, "Refusing creation of an invalid dma wl_buffer.");
             params.failed();
         }
     }
@@ -266,6 +348,7 @@ impl<H: DmabufHandler> ParamRequestHandler for ParamsHandler<H> {
             width,
             height,
         ) {
+            trace!(self.log, "Killing client providing bogus dmabuf buffer params.");
             return;
         }
         let info = BufferInfo {
@@ -277,8 +360,13 @@ impl<H: DmabufHandler> ParamRequestHandler for ParamsHandler<H> {
         };
         let mut handler = self.handler.borrow_mut();
         if let Ok(data) = handler.validate_dmabuf(info) {
+            trace!(self.log, "Creating a new validated immediate dma wl_buffer.");
             handler.create_buffer(data, buffer_id);
         } else {
+            trace!(
+                self.log,
+                "Refusing creation of an invalid immediate dma wl_buffer, killing client."
+            );
             params.as_ref().post_error(
                 ParamError::InvalidWlBuffer as u32,
                 "create_immed resulted in an invalid buffer.".into(),
