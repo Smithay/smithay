@@ -4,6 +4,8 @@
 //! contents as dmabuf file descriptors. These handlers automate the aggregation of the metadata associated
 //! with a dma buffer, and do some basic checking of the sanity of what the client sends.
 //!
+//! This module is only available if the `backend_drm` cargo feature is enabled.
+//!
 //! ## How to use
 //!
 //! To setup the dmabuf global, you will need to provide 2 things:
@@ -15,9 +17,9 @@
 //! couples you support.
 //!
 //! The implementation of the `DmabufHandler` trait will be called whenever a client has finished setting up
-//! a dma buffer. You will be handled the full details of the sclient's submission as a `BufferInfo` struct,
-//! and you need to validate it and maybe import it into your rendered. The `BufferData` associated type
-//! allows you to store any metadata of handle to the resource you need into the created `wl_buffer`,
+//! a dma buffer. You will be handled the full details of the client's submission as a `BufferInfo` struct,
+//! and you need to validate it and maybe import it into your renderer. The `BufferData` associated type
+//! allows you to store any metadata or handle to the resource you need into the created `wl_buffer`,
 //! user data, to then retrieve it when it is attached to a surface to re-identify the dmabuf.
 //!
 //! ```
@@ -35,7 +37,7 @@
 //!     fn drop(&mut self) {
 //!         // This is called when all handles to this buffer have been dropped,
 //!         // both client-side and server side.
-//!         // You can now free the associated resource in your renderer.
+//!         // You can now free the associated resources in your renderer.
 //!     }
 //! }
 //!
@@ -79,10 +81,7 @@ use wayland_server::{protocol::wl_buffer, Display, Global, NewResource};
 /// Representation of a Dmabuf format, as advertized to the client
 pub struct Format {
     /// The format identifier.
-    ///
-    /// It must be a `DRM_FORMAT` code, as defined by the libdrm's drm_fourcc.h. The Linux kernel's DRM
-    /// sub-system is the authoritative source on how the format codes should work.
-    pub format: u32,
+    pub format: ::drm::buffer::PixelFormat,
     /// The supported dmabuf layout modifier.
     ///
     /// This is an opaque token. Drivers use this token to express tiling, compression, etc. driver-specific
@@ -106,6 +105,17 @@ pub struct Plane {
     pub modifier: u64,
 }
 
+bitflags! {
+    pub struct BufferFlags: u32 {
+        /// The buffer content is Y-inverted
+        const YInvert = 1;
+        /// The buffer content is interlaced
+        const Interlaced = 2;
+        /// The buffer content if interlaced is bottom-field first
+        const BottomFirst = 4;
+    }
+}
+
 /// The complete information provided by the client to create a dmabuf buffer
 pub struct BufferInfo {
     /// The submitted planes
@@ -119,7 +129,7 @@ pub struct BufferInfo {
     /// The flags applied to it
     ///
     /// This is a bitflag, to be compared with the `Flags` enum reexported by this module.
-    pub flags: u32,
+    pub flags: BufferFlags,
 }
 
 /// Handler trait for dmabuf validation
@@ -213,9 +223,9 @@ where
 
         // send the supported formats
         for f in &*formats {
-            dmabuf.format(f.format);
+            dmabuf.format(f.format.as_raw());
             if version >= 3 {
-                dmabuf.modifier(f.format, (f.modifier >> 32) as u32, f.modifier as u32);
+                dmabuf.modifier(f.format.as_raw(), (f.modifier >> 32) as u32, f.modifier as u32);
             }
         }
     })
@@ -303,7 +313,7 @@ impl<H: DmabufHandler> ParamRequestHandler for ParamsHandler<H> {
             width,
             height,
             format,
-            flags,
+            flags: BufferFlags::from_bits_truncate(flags),
         };
         let mut handler = self.handler.borrow_mut();
         if let Ok(data) = handler.validate_dmabuf(info) {
@@ -356,7 +366,7 @@ impl<H: DmabufHandler> ParamRequestHandler for ParamsHandler<H> {
             width,
             height,
             format,
-            flags,
+            flags: BufferFlags::from_bits_truncate(flags),
         };
         let mut handler = self.handler.borrow_mut();
         if let Ok(data) = handler.validate_dmabuf(info) {
@@ -385,7 +395,7 @@ fn buffer_basic_checks(
 ) -> bool {
     // protocol_checks:
     // This must be a known format
-    let format = match formats.iter().find(|f| f.format == format) {
+    let format = match formats.iter().find(|f| f.format.as_raw() == format) {
         Some(f) => f,
         None => {
             params.as_ref().post_error(
@@ -401,7 +411,7 @@ fn buffer_basic_checks(
         params.as_ref().post_error(
             ParamError::Incomplete as u32,
             format!(
-                "Format {:x} requires {} planes but got {}.",
+                "Format {:?} requires {} planes but got {}.",
                 format.format, format.plane_count, max_plane_set
             ),
         );
@@ -433,6 +443,8 @@ fn buffer_basic_checks(
             Some(e) => e,
         };
         if let Ok(size) = ::nix::unistd::lseek(plane.fd, 0, ::nix::unistd::Whence::SeekEnd) {
+            // reset the seek point
+            let _ = ::nix::unistd::lseek(plane.fd, 0, ::nix::unistd::Whence::SeekSet);
             if plane.offset as i64 > size {
                 params.as_ref().post_error(
                     ParamError::OutOfBounds as u32,
