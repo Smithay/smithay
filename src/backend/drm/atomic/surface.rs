@@ -40,7 +40,7 @@ pub struct Planes {
 
 pub(in crate::backend::drm) struct AtomicDrmSurfaceInternal<A: AsRawFd + 'static> {
     pub(super) dev: Rc<Dev<A>>,
-    pub(super) crtc: crtc::Handle,
+    pub(in crate::backend::drm) crtc: crtc::Handle,
     pub(super) cursor: CursorState,
     pub(in crate::backend::drm) planes: Planes,
     pub(super) state: RwLock<State>,

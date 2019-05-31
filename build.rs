@@ -32,6 +32,17 @@ fn main() {
                 "EGL_EXT_platform_wayland",
                 "EGL_EXT_platform_device",
                 "EGL_KHR_image_base",
+                "EGL_EXT_output_base",
+                "EGL_EXT_output_drm",
+                "EGL_EXT_device_drm",
+                "EGL_EXT_device_enumeration",
+                "EGL_EXT_device_query",
+                "EGL_KHR_stream",
+                "EGL_KHR_stream_producer_eglsurface",
+                "EGL_EXT_stream_consumer_egloutput",
+                "EGL_KHR_stream_fifo",
+                "EGL_NV_output_drm_flip_event",
+                "EGL_NV_stream_attrib",
             ],
         )
         .write_bindings(gl_generator::GlobalGenerator, &mut file)

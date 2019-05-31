@@ -54,6 +54,8 @@ pub mod atomic;
 pub mod common;
 #[cfg(feature = "backend_drm_egl")]
 pub mod egl;
+#[cfg(feature = "backend_drm_eglstream")]
+pub mod eglstream;
 #[cfg(feature = "backend_drm_gbm")]
 pub mod gbm;
 #[cfg(feature = "backend_drm_legacy")]
