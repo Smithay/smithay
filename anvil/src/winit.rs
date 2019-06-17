@@ -1,7 +1,10 @@
 use std::{
     cell::RefCell,
     rc::Rc,
-    sync::{atomic::AtomicBool, Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use smithay::{
@@ -134,7 +137,7 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
 
     info!(log, "Initialization completed, starting the main loop.");
 
-    loop {
+    while running.load(Ordering::SeqCst) {
         input.dispatch_new_events().unwrap();
 
         // drawing logic
@@ -178,11 +181,19 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
             }
         }
 
-        event_loop
+        if event_loop
             .dispatch(Some(::std::time::Duration::from_millis(16)), &mut ())
-            .unwrap();
-        display.flush_clients();
-
-        window_map.borrow_mut().refresh();
+            .is_err()
+        {
+            running.store(false, Ordering::SeqCst);
+        } else {
+            display.flush_clients();
+            window_map.borrow_mut().refresh();
+        }
     }
+
+    // Cleanup stuff
+    window_map.borrow_mut().clear();
+
+    Ok(())
 }
