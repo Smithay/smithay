@@ -1,6 +1,7 @@
 use drm::buffer::Buffer;
-use drm::control::{connector, crtc, encoder, framebuffer, Device as ControlDevice, Mode, ResourceInfo};
+use drm::control::{connector, crtc, dumbbuffer::DumbBuffer, encoder, framebuffer, Device as ControlDevice, Mode, PageFlipFlags};
 use drm::Device as BasicDevice;
+use failure::ResultExt as FailureResultExt;
 
 use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -42,7 +43,8 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurfaceInternal<A>
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
         trace!(self.logger, "Move the cursor to {},{}", x, y);
-        crtc::move_cursor(self, self.crtc, (x as i32, y as i32))
+        self.move_cursor(self.crtc, (x as i32, y as i32))
+            .compat()
             .chain_err(|| ErrorKind::DrmDev(format!("Error moving cursor on {:?}", self.dev_path())))
     }
 
@@ -52,8 +54,9 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurfaceInternal<A>
     {
         trace!(self.logger, "Setting the new imported cursor");
 
-        if crtc::set_cursor2(self, self.crtc, buffer, (hotspot.0 as i32, hotspot.1 as i32)).is_err() {
-            crtc::set_cursor(self, self.crtc, buffer)
+        if self.set_cursor2(self.crtc, Some(buffer), (hotspot.0 as i32, hotspot.1 as i32)).is_err() {
+            self.set_cursor(self.crtc, Some(buffer))
+                .compat()
                 .chain_err(|| ErrorKind::DrmDev(format!("Failed to set cursor on {:?}", self.dev_path())))?;
         }
 
@@ -85,8 +88,8 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         self.pending.read().unwrap().mode
     }
 
-    fn add_connector(&self, connector: connector::Handle) -> Result<()> {
-        let info = connector::Info::load_from_device(self, connector).chain_err(|| {
+    fn add_connector(&self, conn: connector::Handle) -> Result<()> {
+        let info = self.get_connector(conn).compat().chain_err(|| {
             ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
         })?;
 
@@ -98,15 +101,17 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
             let encoders = info
                 .encoders()
                 .iter()
+                .filter(|enc| enc.is_some())
+                .map(|enc| enc.unwrap())
                 .map(|encoder| {
-                    encoder::Info::load_from_device(self, *encoder).chain_err(|| {
+                    self.get_encoder(encoder).compat().chain_err(|| {
                         ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", self.dev_path()))
                     })
                 })
                 .collect::<Result<Vec<encoder::Info>>>()?;
 
             // and if any encoder supports the selected crtc
-            let resource_handles = self.resource_handles().chain_err(|| {
+            let resource_handles = self.resource_handles().compat().chain_err(|| {
                 ErrorKind::DrmDev(format!("Error loading resources on {:?}", self.dev_path()))
             })?;
             if !encoders
@@ -117,7 +122,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
                 bail!(ErrorKind::NoSuitableEncoder(info, self.crtc));
             }
 
-            pending.connectors.insert(connector);
+            pending.connectors.insert(conn);
             Ok(())
         } else {
             bail!(ErrorKind::ModeNotSuitable(pending.mode.unwrap()));
@@ -135,11 +140,14 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         // check the connectors to see if this mode is supported
         if let Some(mode) = mode {
             for connector in &pending.connectors {
-                let info = connector::Info::load_from_device(self, *connector).chain_err(|| {
-                    ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
-                })?;
-
-                if !info.modes().contains(&mode) {
+                if !self.get_connector(*connector)
+                    .compat()
+                    .chain_err(|| {
+                        ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
+                    })?
+                    .modes()
+                    .contains(&mode)
+                {
                     bail!(ErrorKind::ModeNotSuitable(mode));
                 }
             }
@@ -165,16 +173,16 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             let added = pending.connectors.difference(&current.connectors);
 
             for conn in removed {
-                if let Ok(info) = connector::Info::load_from_device(self, *conn) {
-                    info!(self.logger, "Removing connector: {:?}", info.connector_type());
+                if let Ok(info) = self.get_connector(*conn) {
+                    info!(self.logger, "Removing connector: {:?}", info.interface());
                 } else {
                     info!(self.logger, "Removing unknown connector");
                 }
             }
 
             for conn in added {
-                if let Ok(info) = connector::Info::load_from_device(self, *conn) {
-                    info!(self.logger, "Adding connector: {:?}", info.connector_type());
+                if let Ok(info) = self.get_connector(*conn) {
+                    info!(self.logger, "Adding connector: {:?}", info.interface());
                 } else {
                     info!(self.logger, "Adding unknown connector");
                 }
@@ -190,18 +198,18 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
         }
 
         debug!(self.logger, "Setting screen");
-        crtc::set(
-            self,
+        self.set_crtc(
             self.crtc,
-            framebuffer,
+            Some(framebuffer),
+            (0, 0),
             &pending
                 .connectors
                 .iter()
                 .copied()
                 .collect::<Vec<connector::Handle>>(),
-            (0, 0),
             pending.mode,
         )
+        .compat()
         .chain_err(|| {
             ErrorKind::DrmDev(format!(
                 "Error setting crtc {:?} on {:?}",
@@ -218,12 +226,14 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> ::std::result::Result<(), SwapBuffersError> {
         trace!(self.logger, "Queueing Page flip");
 
-        crtc::page_flip(
+        ControlDevice::page_flip(
             self,
             self.crtc,
             framebuffer,
-            &[crtc::PageFlipFlags::PageFlipEvent],
+            &[PageFlipFlags::PageFlipEvent],
+            None,
         )
+        .map_err(|x| dbg!(x))
         .map_err(|_| SwapBuffersError::ContextLost)
     }
 }
@@ -231,7 +241,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
 impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
     fn drop(&mut self) {
         // ignore failure at this point
-        let _ = crtc::clear_cursor(self, self.crtc);
+        let _ = self.set_cursor(self.crtc, Option::<&DumbBuffer>::None);
     }
 }
 
@@ -310,6 +320,6 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurface<A> {
     }
 
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> ::std::result::Result<(), SwapBuffersError> {
-        self.0.page_flip(framebuffer)
+        RawSurface::page_flip(&*self.0, framebuffer)
     }
 }

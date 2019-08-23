@@ -10,8 +10,9 @@
 
 use super::{DevPath, Device, DeviceHandler, RawDevice};
 
-use drm::control::{connector, crtc, encoder, Device as ControlDevice, ResourceHandles, ResourceInfo};
-use drm::Device as BasicDevice;
+use drm::control::{connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, ResourceHandles};
+use drm::{Device as BasicDevice, SystemError as DrmError};
+use failure::ResultExt as FailureResultExt;
 use nix::libc::dev_t;
 use nix::sys::stat::fstat;
 
@@ -65,12 +66,11 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
             // so that getty will be visible.
             let old_state = self.old_state.clone();
             for (handle, (info, connectors)) in old_state {
-                if let Err(err) = crtc::set(
-                    &*self,
+                if let Err(err) = self.set_crtc(
                     handle,
-                    info.fb(),
-                    &connectors,
+                    info.framebuffer(),
                     info.position(),
+                    &connectors,
                     info.mode(),
                 ) {
                     error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
@@ -78,7 +78,7 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
             }
         }
         if self.priviledged {
-            if let Err(err) = self.drop_master() {
+            if let Err(err) = self.release_master_lock() {
                 error!(self.logger, "Failed to drop drm master state. Error: {}", err);
             }
         }
@@ -111,25 +111,25 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
         };
 
         // we want to modeset, so we better be the master, if we run via a tty session
-        if dev.set_master().is_err() {
+        if dev.acquire_master_lock().is_err() {
             warn!(log, "Unable to become drm master, assuming unpriviledged mode");
             dev.priviledged = false;
         };
 
         // enumerate (and save) the current device state
-        let res_handles = ControlDevice::resource_handles(&dev).chain_err(|| {
+        let res_handles = ControlDevice::resource_handles(&dev).compat().chain_err(|| {
             ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", dev.dev_path()))
         })?;
         for &con in res_handles.connectors() {
-            let con_info = connector::Info::load_from_device(&dev, con).chain_err(|| {
+            let con_info = dev.get_connector(con).compat().chain_err(|| {
                 ErrorKind::DrmDev(format!("Error loading connector info on {:?}", dev.dev_path()))
             })?;
             if let Some(enc) = con_info.current_encoder() {
-                let enc_info = encoder::Info::load_from_device(&dev, enc).chain_err(|| {
+                let enc_info = dev.get_encoder(enc).compat().chain_err(|| {
                     ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", dev.dev_path()))
                 })?;
-                if let Some(crtc) = enc_info.current_crtc() {
-                    let info = crtc::Info::load_from_device(&dev, crtc).chain_err(|| {
+                if let Some(crtc) = enc_info.crtc() {
+                    let info = dev.get_crtc(crtc).compat().chain_err(|| {
                         ErrorKind::DrmDev(format!("Error loading crtc info on {:?}", dev.dev_path()))
                     })?;
                     dev.old_state
@@ -187,24 +187,24 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
 
         // Try to enumarate the current state to set the initial state variable correctly
 
-        let crtc_info = crtc::Info::load_from_device(self, crtc)
+        let crtc_info = self.get_crtc(crtc).compat()
             .chain_err(|| ErrorKind::DrmDev(format!("Error loading crtc info on {:?}", self.dev_path())))?;
 
         let mode = crtc_info.mode();
 
         let mut connectors = HashSet::new();
-        let res_handles = ControlDevice::resource_handles(self).chain_err(|| {
+        let res_handles = ControlDevice::resource_handles(self).compat().chain_err(|| {
             ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", self.dev_path()))
         })?;
         for &con in res_handles.connectors() {
-            let con_info = connector::Info::load_from_device(self, con).chain_err(|| {
+            let con_info = self.get_connector(con).compat().chain_err(|| {
                 ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
             })?;
             if let Some(enc) = con_info.current_encoder() {
-                let enc_info = encoder::Info::load_from_device(self, enc).chain_err(|| {
+                let enc_info = self.get_encoder(enc).compat().chain_err(|| {
                     ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", self.dev_path()))
                 })?;
-                if let Some(current_crtc) = enc_info.current_crtc() {
+                if let Some(current_crtc) = enc_info.crtc() {
                     if crtc == current_crtc {
                         connectors.insert(con);
                     }
@@ -226,10 +226,10 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
     }
 
     fn process_events(&mut self) {
-        match crtc::receive_events(self) {
+        match self.receive_events() {
             Ok(events) => {
                 for event in events {
-                    if let crtc::Event::PageFlip(event) = event {
+                    if let Event::PageFlip(event) = event {
                         if self.active.load(Ordering::SeqCst) {
                             if self
                                 .backends
@@ -254,7 +254,7 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
             Err(err) => {
                 if let Some(handler) = self.handler.as_ref() {
                     handler.borrow_mut().error(
-                        ResultExt::<()>::chain_err(Err(err), || {
+                        ResultExt::<()>::chain_err(Err(err).compat(), || {
                             ErrorKind::DrmDev(format!("Error processing drm events on {:?}", self.dev_path()))
                         })
                         .unwrap_err(),
@@ -264,14 +264,25 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
         }
     }
 
-    fn resource_info<T: ResourceInfo>(&self, handle: T::Handle) -> Result<T> {
-        T::load_from_device(self, handle)
+    fn resource_handles(&self) -> Result<ResourceHandles> {
+        ControlDevice::resource_handles(self).compat()
             .chain_err(|| ErrorKind::DrmDev(format!("Error loading resource info on {:?}", self.dev_path())))
     }
 
-    fn resource_handles(&self) -> Result<ResourceHandles> {
-        ControlDevice::resource_handles(self)
-            .chain_err(|| ErrorKind::DrmDev(format!("Error loading resource info on {:?}", self.dev_path())))
+    fn get_connector_info(&self, conn: connector::Handle) -> std::result::Result<connector::Info, DrmError> {
+        self.get_connector(conn)
+    }
+    fn get_crtc_info(&self, crtc: crtc::Handle) -> std::result::Result<crtc::Info, DrmError> {
+        self.get_crtc(crtc)
+    }
+    fn get_encoder_info(&self, enc: encoder::Handle) -> std::result::Result<encoder::Info, DrmError> {
+        self.get_encoder(enc)
+    }
+    fn get_framebuffer_info(&self, fb: framebuffer::Handle) -> std::result::Result<framebuffer::Info, DrmError> {
+        self.get_framebuffer(fb)
+    }
+    fn get_plane_info(&self, plane: plane::Handle) -> std::result::Result<plane::Info, DrmError> {
+        self.get_plane(plane)
     }
 }
 
