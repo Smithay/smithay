@@ -143,13 +143,17 @@ fn surface_commit(surface: &wl_surface::WlSurface, token: CompositorToken<Roles>
                 // new contents
                 // TODO: handle hotspot coordinates
                 let data = attributes.user_data.get_mut::<SurfaceData>().unwrap();
-                data.buffer = Some(buffer);
+                if let Some(old_buffer) = data.buffer.replace(buffer) {
+                    old_buffer.release();
+                }
                 data.texture = None;
             }
             Some(None) => {
                 // erase the contents
                 let data = attributes.user_data.get_mut::<SurfaceData>().unwrap();
-                data.buffer = None;
+                if let Some(old_buffer) = data.buffer.take() {
+                    old_buffer.release();
+                }
                 data.texture = None;
             }
             None => {}
