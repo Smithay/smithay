@@ -67,9 +67,7 @@ where
     fn receive_surface_request(&mut self, req: wl_surface::Request, surface: wl_surface::WlSurface) {
         match req {
             wl_surface::Request::Attach { buffer, x, y } => {
-                SurfaceData::<R>::with_data(&surface, |d| {
-                    d.buffer = Some(buffer.map(|b| (b.clone(), (x, y))))
-                });
+                SurfaceData::<R>::with_data(&surface, |d| d.buffer = Some(buffer.map(|b| (b, (x, y)))));
             }
             wl_surface::Request::Damage { x, y, width, height } => {
                 SurfaceData::<R>::with_data(&surface, |d| {
@@ -189,7 +187,7 @@ where
                     );
                     return;
                 }
-                implement_subsurface::<R>(id, surface.clone());
+                implement_subsurface::<R>(id, surface);
             }
             wl_subcompositor::Request::Destroy => {}
             _ => unreachable!(),

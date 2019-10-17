@@ -402,7 +402,7 @@ fn buffer_basic_checks(
                 ParamError::InvalidFormat as u32,
                 format!("Format {:x} is not supported.", format),
             );
-            return false;;
+            return false;
         }
     };
     // The number of planes set must match what the format expects
@@ -473,5 +473,5 @@ fn buffer_basic_checks(
             }
         }
     }
-    return true;
+    true
 }

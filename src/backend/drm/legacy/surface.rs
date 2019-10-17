@@ -199,7 +199,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             &pending
                 .connectors
                 .iter()
-                .map(|x| *x)
+                .copied()
                 .collect::<Vec<connector::Handle>>(),
             (0, 0),
             pending.mode,

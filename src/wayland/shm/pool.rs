@@ -10,12 +10,12 @@ use std::{
     cell::Cell,
     os::unix::io::RawFd,
     ptr,
-    sync::{Once, RwLock, ONCE_INIT},
+    sync::{Once, RwLock},
 };
 
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr::null_mut(), false)));
 
-static SIGBUS_INIT: Once = ONCE_INIT;
+static SIGBUS_INIT: Once = Once::new();
 static mut OLD_SIGBUS_HANDLER: *mut SigAction = 0 as *mut SigAction;
 
 pub struct Pool {
@@ -147,7 +147,7 @@ impl MemMap {
     }
 
     fn contains(&self, ptr: *mut u8) -> bool {
-        ptr >= self.ptr && ptr < unsafe { self.ptr.offset(self.size as isize) }
+        ptr >= self.ptr && ptr < unsafe { self.ptr.add(self.size) }
     }
 
     fn nullify(&self) -> Result<(), ()> {

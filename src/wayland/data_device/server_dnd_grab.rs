@@ -164,7 +164,7 @@ where
         serial: u32,
         time: u32,
     ) {
-        if handle.current_pressed().len() == 0 {
+        if handle.current_pressed().is_empty() {
             // the user dropped, proceed to the drop
             let seat_data = self
                 .seat

@@ -94,7 +94,7 @@ where
                 Some(destroy_surface::<R>),
                 XdgSurfaceUserData {
                     shell_data: data.shell_data.clone(),
-                    wl_surface: surface.clone(),
+                    wl_surface: surface,
                     shell: shell.clone(),
                 },
             );
