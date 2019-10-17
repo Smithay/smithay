@@ -475,7 +475,7 @@ where
                                 source,
                                 origin,
                                 seat.clone(),
-                                icon.clone(),
+                                icon,
                                 token.clone(),
                                 callback.clone(),
                             ),

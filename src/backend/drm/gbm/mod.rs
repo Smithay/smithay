@@ -19,7 +19,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
-use std::sync::{Once, ONCE_INIT};
+use std::sync::Once;
 
 pub mod error;
 use self::error::*;
@@ -34,7 +34,7 @@ pub mod egl;
 #[cfg(feature = "backend_session")]
 pub mod session;
 
-static LOAD: Once = ONCE_INIT;
+static LOAD: Once = Once::new();
 
 /// Representation of an open gbm device to create rendering surfaces
 pub struct GbmDevice<D: RawDevice + ControlDevice + 'static> {

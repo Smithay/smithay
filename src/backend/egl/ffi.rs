@@ -17,13 +17,13 @@ pub type NativeWindowType = *const c_void;
 pub mod egl {
     use super::*;
     use libloading::Library;
-    use std::sync::{Once, ONCE_INIT};
+    use std::sync::Once;
 
     lazy_static! {
         pub static ref LIB: Library = { Library::new("libEGL.so.1").expect("Failed to load LibEGL") };
     }
 
-    pub static LOAD: Once = ONCE_INIT;
+    pub static LOAD: Once = Once::new();
 
     include!(concat!(env!("OUT_DIR"), "/egl_bindings.rs"));
 

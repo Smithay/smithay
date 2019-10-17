@@ -201,11 +201,11 @@ where
     L: Into<Option<::slog::Logger>>,
     R: 'static,
 {
-    let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "wayland_explicit_synchronization"));
+    let _log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "wayland_explicit_synchronization"));
 
     display.create_global::<zwp_linux_explicit_synchronization_v1::ZwpLinuxExplicitSynchronizationV1, _>(
         2,
-        move |new_sync, version| {
+        move |new_sync, _version| {
             new_sync.implement_closure(
                 move |req, explicit_sync| match req {
                     zwp_linux_explicit_synchronization_v1::Request::GetSynchronization { id, surface } => {

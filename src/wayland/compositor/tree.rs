@@ -56,7 +56,7 @@ where
     pub fn init(surface: &WlSurface) {
         let my_data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
         let mut my_data = my_data_mutex.lock().unwrap();
-        debug_assert!(my_data.children.len() == 0);
+        debug_assert!(my_data.children.is_empty());
         my_data.children.push(surface.clone());
     }
 
@@ -164,12 +164,12 @@ impl<R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<R> {
         let b_guard = b_mutex.lock().unwrap();
         if let Some(ref parent) = b_guard.parent {
             if parent.as_ref().equals(a.as_ref()) {
-                return true;
+                true
             } else {
-                return Self::is_ancestor(a, parent);
+                Self::is_ancestor(a, parent)
             }
         } else {
-            return false;
+            false
         }
     }
 

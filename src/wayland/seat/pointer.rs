@@ -346,7 +346,7 @@ impl<'a> PointerInnerHandle<'a> {
             let entered = self.inner.focus.is_none();
             // in all cases, update the focus, the coordinates of the surface
             // might have changed
-            self.inner.focus = Some((surface.clone(), (sx, sy)));
+            self.inner.focus = Some((surface, (sx, sy)));
             if entered {
                 self.inner.with_focused_pointers(|pointer, surface| {
                     pointer.enter(serial, &surface, x - sx, y - sy);
@@ -672,7 +672,7 @@ impl PointerGrab for ClickGrab {
         time: u32,
     ) {
         handle.button(button, state, serial, time);
-        if handle.current_pressed().len() == 0 {
+        if handle.current_pressed().is_empty() {
             // no more buttons are pressed, release the grab
             handle.unset_grab(serial, time);
         }
