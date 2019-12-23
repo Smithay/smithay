@@ -236,7 +236,7 @@ where
         move |req, offer| {
             let mut data = offer_data.borrow_mut();
             match req {
-                Request::Accept { serial: _, mime_type } => {
+                Request::Accept { mime_type, .. } => {
                     if let Some(mtype) = mime_type {
                         data.accepted = metadata.mime_types.contains(&mtype);
                     } else {

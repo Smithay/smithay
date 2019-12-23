@@ -40,7 +40,6 @@
 //! // to set a surface as a dnd icon
 //! define_roles!(Roles => [DnDIcon, DnDIconRole]);
 //!
-//! # fn main(){
 //! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _| {}, None);
@@ -53,7 +52,6 @@
 //!     compositor_token.clone(), // a compositor token
 //!     None                     // insert a logger here
 //! );
-//! # }
 //! ```
 
 use std::cell::RefCell;
@@ -179,8 +177,9 @@ impl SeatData {
                         .create_resource::<wl_data_offer::WlDataOffer>(dd.as_ref().version())
                         .unwrap()
                         .implement_closure(
-                            move |req, _offer| match req {
-                                wl_data_offer::Request::Receive { fd, mime_type } => {
+                            move |req, _offer| {
+                                // selection data offers only care about the `receive` event
+                                if let wl_data_offer::Request::Receive { fd, mime_type } = req {
                                     // check if the source and associated mime type is still valid
                                     let valid = with_source_metadata(&source, |meta| {
                                         meta.mime_types.contains(&mime_type)
@@ -195,7 +194,6 @@ impl SeatData {
                                     }
                                     let _ = ::nix::unistd::close(fd);
                                 }
-                                _ => { /* seleciton data offers only care about the `receive` event */ }
                             },
                             None::<fn(_)>,
                             (),
@@ -230,8 +228,9 @@ impl SeatData {
                         .create_resource::<wl_data_offer::WlDataOffer>(dd.as_ref().version())
                         .unwrap()
                         .implement_closure(
-                            move |req, _offer| match req {
-                                wl_data_offer::Request::Receive { fd, mime_type } => {
+                            move |req, _offer| {
+                                // selection data offers only care about the `receive` event
+                                if let wl_data_offer::Request::Receive { fd, mime_type } = req {
                                     // check if the associated mime type is valid
                                     if !offer_meta.mime_types.contains(&mime_type) {
                                         // deny the receive
@@ -244,7 +243,6 @@ impl SeatData {
                                         });
                                     }
                                 }
-                                _ => { /* seleciton data offers only care about the `receive` event */ }
                             },
                             None::<fn(_)>,
                             (),
@@ -302,7 +300,7 @@ where
     let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "data_device_mgr"));
     let action_choice = Rc::new(RefCell::new(action_choice));
     let callback = Rc::new(RefCell::new(callback));
-    let global = display.create_global(3, move |new_ddm, _version| {
+    display.create_global(3, move |new_ddm, _version| {
         implement_ddm(
             new_ddm,
             callback.clone(),
@@ -310,9 +308,7 @@ where
             token,
             log.clone(),
         );
-    });
-
-    global
+    })
 }
 
 /// Set the data device focus to a certain client for a given seat
@@ -406,7 +402,7 @@ where
                         seat.clone(),
                         callback.clone(),
                         action_choice.clone(),
-                        token.clone(),
+                        token,
                         log.clone(),
                     );
                     seat_data.borrow_mut().known_devices.push(data_device);
@@ -476,7 +472,7 @@ where
                                 origin,
                                 seat.clone(),
                                 icon,
-                                token.clone(),
+                                token,
                                 callback.clone(),
                             ),
                             serial,
@@ -486,7 +482,7 @@ where
                 }
                 debug!(log, "denying drag from client without implicit grab");
             }
-            Request::SetSelection { source, serial: _ } => {
+            Request::SetSelection { source, .. } => {
                 if let Some(keyboard) = seat.get_keyboard() {
                     if dd
                         .as_ref()

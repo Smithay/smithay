@@ -35,7 +35,6 @@
 //! // Declare the roles enum
 //! define_roles!(MyRoles);
 //!
-//! # fn main() {
 //! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! // Call the init function:
@@ -52,7 +51,6 @@
 //! // this `token` is what you'll use to access the surface associated data
 //!
 //! // You're now ready to go!
-//! # }
 //! ```
 //!
 //! ### Use the surface metadata
@@ -260,7 +258,7 @@ impl<R: 'static> CompositorToken<R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_surface_data<F, T>(&self, surface: &WlSurface, f: F) -> T
+    pub fn with_surface_data<F, T>(self, surface: &WlSurface, f: F) -> T
     where
         F: FnOnce(&mut SurfaceAttributes) -> T,
     {
@@ -299,7 +297,7 @@ where
     /// If the surface not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn with_surface_tree_upward<F1, F2, F3, T>(
-        &self,
+        self,
         surface: &WlSurface,
         initial: T,
         filter: F1,
@@ -320,7 +318,7 @@ where
     ///
     /// This would typically be used to find out which surface of a subsurface tree has been clicked for example.
     pub fn with_surface_tree_downward<F1, F2, F3, T>(
-        &self,
+        self,
         surface: &WlSurface,
         initial: T,
         filter: F1,
@@ -340,7 +338,7 @@ where
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn get_parent(&self, surface: &WlSurface) -> Option<WlSurface> {
+    pub fn get_parent(self, surface: &WlSurface) -> Option<WlSurface> {
         SurfaceData::<R>::get_parent(surface)
     }
 
@@ -348,7 +346,7 @@ where
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn get_children(&self, surface: &WlSurface) -> Vec<WlSurface> {
+    pub fn get_children(self, surface: &WlSurface) -> Vec<WlSurface> {
         SurfaceData::<R>::get_children(surface)
     }
 }
@@ -358,7 +356,7 @@ impl<R: RoleType + 'static> CompositorToken<R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn has_a_role(&self, surface: &WlSurface) -> bool {
+    pub fn has_a_role(self, surface: &WlSurface) -> bool {
         SurfaceData::<R>::has_a_role(surface)
     }
 
@@ -366,7 +364,7 @@ impl<R: RoleType + 'static> CompositorToken<R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn has_role<RoleData>(&self, surface: &WlSurface) -> bool
+    pub fn has_role<RoleData>(self, surface: &WlSurface) -> bool
     where
         R: Role<RoleData>,
     {
@@ -379,7 +377,7 @@ impl<R: RoleType + 'static> CompositorToken<R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn give_role<RoleData>(&self, surface: &WlSurface) -> Result<(), ()>
+    pub fn give_role<RoleData>(self, surface: &WlSurface) -> Result<(), ()>
     where
         R: Role<RoleData>,
         RoleData: Default,
@@ -393,7 +391,7 @@ impl<R: RoleType + 'static> CompositorToken<R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn give_role_with<RoleData>(&self, surface: &WlSurface, data: RoleData) -> Result<(), RoleData>
+    pub fn give_role_with<RoleData>(self, surface: &WlSurface, data: RoleData) -> Result<(), RoleData>
     where
         R: Role<RoleData>,
     {
@@ -406,7 +404,7 @@ impl<R: RoleType + 'static> CompositorToken<R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn with_role_data<RoleData, F, T>(&self, surface: &WlSurface, f: F) -> Result<T, WrongRole>
+    pub fn with_role_data<RoleData, F, T>(self, surface: &WlSurface, f: F) -> Result<T, WrongRole>
     where
         R: Role<RoleData>,
         F: FnOnce(&mut RoleData) -> T,
@@ -420,7 +418,7 @@ impl<R: RoleType + 'static> CompositorToken<R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn remove_role<RoleData>(&self, surface: &WlSurface) -> Result<RoleData, WrongRole>
+    pub fn remove_role<RoleData>(self, surface: &WlSurface) -> Result<RoleData, WrongRole>
     where
         R: Role<RoleData>,
     {
@@ -431,7 +429,7 @@ impl<R: RoleType + 'static> CompositorToken<R> {
     ///
     /// If the region is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn get_region_attributes(&self, region: &wl_region::WlRegion) -> RegionAttributes {
+    pub fn get_region_attributes(self, region: &wl_region::WlRegion) -> RegionAttributes {
         match region.as_ref().user_data::<Mutex<RegionAttributes>>() {
             Some(mutex) => mutex.lock().unwrap().clone(),
             None => panic!("Accessing the data of foreign regions is not supported."),

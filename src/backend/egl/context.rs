@@ -8,7 +8,8 @@ use std::{
     cell::{Ref, RefCell, RefMut},
     ffi::{CStr, CString},
     marker::PhantomData,
-    mem, ptr,
+    mem::MaybeUninit,
+    ptr,
     rc::Rc,
 };
 
@@ -149,12 +150,14 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         }
 
         let egl_version = {
-            let mut major: ffi::egl::types::EGLint = mem::uninitialized();
-            let mut minor: ffi::egl::types::EGLint = mem::uninitialized();
+            let mut major: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
+            let mut minor: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
 
-            if ffi::egl::Initialize(display, &mut major, &mut minor) == 0 {
+            if ffi::egl::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr()) == 0 {
                 bail!(ErrorKind::InitFailed);
             }
+            let major = major.assume_init();
+            let minor = minor.assume_init();
 
             info!(log, "EGL Initialized");
             info!(log, "EGL Version: {:?}", (major, minor));
@@ -294,11 +297,22 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         };
 
         // calling `eglChooseConfig`
-        let mut config_id = mem::uninitialized();
-        let mut num_configs = mem::uninitialized();
-        if ffi::egl::ChooseConfig(display, descriptor.as_ptr(), &mut config_id, 1, &mut num_configs) == 0 {
+        let mut config_id = MaybeUninit::uninit();
+        let mut num_configs = MaybeUninit::uninit();
+        if ffi::egl::ChooseConfig(
+            display,
+            descriptor.as_ptr(),
+            config_id.as_mut_ptr(),
+            1,
+            num_configs.as_mut_ptr(),
+        ) == 0
+        {
             bail!(ErrorKind::ConfigFailed);
         }
+
+        let config_id = config_id.assume_init();
+        let num_configs = num_configs.assume_init();
+
         if num_configs == 0 {
             error!(log, "No matching color format found");
             bail!(ErrorKind::NoAvailablePixelFormat);
@@ -307,17 +321,17 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         // analyzing each config
         macro_rules! attrib {
             ($display:expr, $config:expr, $attr:expr) => {{
-                let mut value = mem::uninitialized();
+                let mut value = MaybeUninit::uninit();
                 let res = ffi::egl::GetConfigAttrib(
                     $display,
                     $config,
                     $attr as ffi::egl::types::EGLint,
-                    &mut value,
+                    value.as_mut_ptr(),
                 );
                 if res == 0 {
                     bail!(ErrorKind::ConfigFailed);
                 }
-                value
+                value.assume_init()
             }};
         };
 

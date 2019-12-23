@@ -431,18 +431,18 @@ impl PointerAxisEvent for WinitMouseWheelEvent {
         }
     }
 
-    fn amount(&self, axis: &Axis) -> Option<f64> {
+    fn amount(&self, axis: Axis) -> Option<f64> {
         match (axis, self.delta) {
-            (&Axis::Horizontal, MouseScrollDelta::PixelDelta(delta)) => Some(delta.x),
-            (&Axis::Vertical, MouseScrollDelta::PixelDelta(delta)) => Some(delta.y),
+            (Axis::Horizontal, MouseScrollDelta::PixelDelta(delta)) => Some(delta.x),
+            (Axis::Vertical, MouseScrollDelta::PixelDelta(delta)) => Some(delta.y),
             (_, MouseScrollDelta::LineDelta(_, _)) => None,
         }
     }
 
-    fn amount_discrete(&self, axis: &Axis) -> Option<f64> {
+    fn amount_discrete(&self, axis: Axis) -> Option<f64> {
         match (axis, self.delta) {
-            (&Axis::Horizontal, MouseScrollDelta::LineDelta(x, _)) => Some(x as f64),
-            (&Axis::Vertical, MouseScrollDelta::LineDelta(_, y)) => Some(y as f64),
+            (Axis::Horizontal, MouseScrollDelta::LineDelta(x, _)) => Some(x as f64),
+            (Axis::Vertical, MouseScrollDelta::LineDelta(_, y)) => Some(y as f64),
             (_, MouseScrollDelta::PixelDelta(_)) => None,
         }
     }

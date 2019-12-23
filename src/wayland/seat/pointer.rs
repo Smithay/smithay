@@ -545,10 +545,10 @@ where
         move |request, pointer: WlPointer| {
             match request {
                 Request::SetCursor {
-                    serial: _,
                     surface,
                     hotspot_x,
                     hotspot_y,
+                    ..
                 } => {
                     if let Some(ref inner) = inner {
                         let mut guard = inner.borrow_mut();

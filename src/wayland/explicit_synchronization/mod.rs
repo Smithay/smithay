@@ -28,7 +28,6 @@
 //! use smithay::wayland::explicit_synchronization::*;
 //! # define_roles!(MyRoles);
 //! #
-//! # fn main() {
 //! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! # let (compositor_token, _, _) = smithay::wayland::compositor::compositor_init::<MyRoles, _, _>(
@@ -41,7 +40,6 @@
 //!     compositor_token,
 //!     None /* You can insert a logger here */
 //! );
-//! # }
 //! ```
 //!
 //! Then when handling a surface commit, you can retrieve the synchronization information for the surface
@@ -207,8 +205,12 @@ where
         2,
         move |new_sync, _version| {
             new_sync.implement_closure(
-                move |req, explicit_sync| match req {
-                    zwp_linux_explicit_synchronization_v1::Request::GetSynchronization { id, surface } => {
+                move |req, explicit_sync| {
+                    if let zwp_linux_explicit_synchronization_v1::Request::GetSynchronization {
+                        id,
+                        surface,
+                    } = req
+                    {
                         let exists = compositor.with_surface_data(&surface, |attrs| {
                             attrs.user_data.insert_if_missing(|| ESUserData { state: None });
                             attrs
@@ -236,7 +238,6 @@ where
                             });
                         });
                     }
-                    _ => {}
                 },
                 None::<fn(_)>,
                 (),

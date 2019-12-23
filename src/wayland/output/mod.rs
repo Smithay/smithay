@@ -21,7 +21,6 @@
 //! use smithay::wayland::output::{Output, PhysicalProperties, Mode};
 //! use wayland_server::protocol::wl_output;
 //!
-//! # fn main() {
 //! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! // Create the Output with given name and physical properties
@@ -48,7 +47,6 @@
 //! // add other supported modes
 //! output.add_mode(Mode { width: 800, height: 600, refresh: 60000 });
 //! output.add_mode(Mode { width: 1024, height: 768, refresh: 60000 });
-//! # }
 //! ```
 
 use std::sync::{Arc, Mutex};

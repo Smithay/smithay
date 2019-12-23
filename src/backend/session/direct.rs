@@ -19,9 +19,7 @@
 //!
 //! use smithay::backend::session::direct::DirectSession;
 //!
-//! # fn main() {
 //! let (session, mut notifier) = DirectSession::new(None, None).unwrap();
-//! # }
 //! ```
 //!
 //! ### Usage of the session

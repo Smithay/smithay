@@ -78,11 +78,11 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
     }
 
     fn current_mode(&self) -> Option<Mode> {
-        self.state.read().unwrap().mode.clone()
+        self.state.read().unwrap().mode
     }
 
     fn pending_mode(&self) -> Option<Mode> {
-        self.pending.read().unwrap().mode.clone()
+        self.pending.read().unwrap().mode
     }
 
     fn add_connector(&self, connector: connector::Handle) -> Result<()> {
