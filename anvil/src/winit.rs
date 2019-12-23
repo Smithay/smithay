@@ -75,11 +75,11 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
             _ => {}
         },
         default_action_chooser,
-        compositor_token.clone(),
+        compositor_token,
         log.clone(),
     );
 
-    let (mut seat, _) = Seat::new(display, "winit".into(), compositor_token.clone(), log.clone());
+    let (mut seat, _) = Seat::new(display, "winit".into(), compositor_token, log.clone());
 
     let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
 

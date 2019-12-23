@@ -32,9 +32,7 @@
 //! type. You can call it like this:
 //!
 //! ```
-//! # #[macro_use]
-//! # extern crate smithay;
-//! #
+//! # use smithay::define_roles;
 //! // Metadata for a first role
 //! #[derive(Default)]
 //! pub struct MyRoleMetadata {
@@ -55,7 +53,6 @@
 //!     /* ... */
 //! );
 //!
-//! # fn main() {}
 //! ```
 //!
 //! And this will expand to an enum like this:

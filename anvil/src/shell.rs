@@ -137,7 +137,7 @@ pub struct SurfaceData {
 fn surface_commit(surface: &wl_surface::WlSurface, token: CompositorToken<Roles>) {
     // we retrieve the contents of the associated buffer and copy it
     token.with_surface_data(surface, |attributes| {
-        attributes.user_data.insert_if_missing(|| SurfaceData::default());
+        attributes.user_data.insert_if_missing(SurfaceData::default);
         match attributes.buffer.take() {
             Some(Some((buffer, (_x, _y)))) => {
                 // new contents

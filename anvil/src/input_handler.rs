@@ -113,7 +113,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
                     "mods" => format!("{:?}", modifiers),
                     "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
                 );
-                action = process_keyboard_shortcut(modifiers, keysym);
+                action = process_keyboard_shortcut(*modifiers, keysym);
                 // forward to client only if action == KeyAction::Forward
                 // both for pressed and released, to avoid inconsistencies
                 if let KeyAction::Forward = action {
@@ -293,7 +293,7 @@ enum KeyAction {
     None,
 }
 
-fn process_keyboard_shortcut(modifiers: &ModifiersState, keysym: Keysym) -> KeyAction {
+fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> KeyAction {
     if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace
         || modifiers.logo && keysym == xkb::KEY_q
     {

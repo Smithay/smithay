@@ -156,7 +156,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
             _ => {}
         },
         default_action_chooser,
-        compositor_token.clone(),
+        compositor_token,
         log.clone(),
     );
 
@@ -166,7 +166,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     let (mut w_seat, _) = Seat::new(
         &mut display.borrow_mut(),
         session.seat(),
-        compositor_token.clone(),
+        compositor_token,
         log.clone(),
     );
 

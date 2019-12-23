@@ -22,7 +22,7 @@ mod window_map;
 #[cfg(feature = "winit")]
 mod winit;
 
-static POSSIBLE_BACKENDS: &'static [&'static str] = &[
+static POSSIBLE_BACKENDS: &[&str] = &[
     #[cfg(feature = "winit")]
     "--winit : Run anvil as a X11 or Wayland client using winit.",
     #[cfg(feature = "udev")]

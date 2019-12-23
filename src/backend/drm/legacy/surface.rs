@@ -132,13 +132,13 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
     fn use_mode(&self, mode: Option<Mode>) -> Result<()> {
         let mut pending = self.pending.write().unwrap();
 
+        let error = || ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()));
+
         // check the connectors to see if this mode is supported
         if let Some(mode) = mode {
             for connector in &pending.connectors {
                 if !connector::Info::load_from_device(self, *connector)
-                    .chain_err(|| {
-                        ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
-                    })?
+                    .chain_err(error)?
                     .modes()
                     .contains(&mode)
                 {
