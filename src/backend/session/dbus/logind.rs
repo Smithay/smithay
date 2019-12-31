@@ -33,8 +33,10 @@
 
 use crate::backend::session::{AsErrno, Session, SessionNotifier, SessionObserver};
 use dbus::{
-    BusName, BusType, Connection, ConnectionItem, ConnectionItems, Interface, Member, Message, MessageItem,
-    OwnedFd, Path as DbusPath, Watch, WatchEvent,
+    arg::{messageitem::MessageItem, OwnedFd},
+    ffidisp::{BusType, Connection, ConnectionItem, Watch, WatchEvent},
+    strings::{BusName, Interface, Member, Path as DbusPath},
+    Message,
 };
 use nix::{
     fcntl::OFlag,
@@ -246,7 +248,10 @@ impl LogindSessionImpl {
         }
     }
 
-    fn handle_signals(&self, signals: ConnectionItems<'_>) -> Result<()> {
+    fn handle_signals<I>(&self, signals: I) -> Result<()>
+    where
+        I: IntoIterator<Item = ConnectionItem>,
+    {
         for item in signals {
             let message = if let ConnectionItem::Signal(ref s) = item {
                 s
@@ -521,7 +526,7 @@ impl LogindSessionNotifier {
 
 /// Errors related to logind sessions
 pub mod errors {
-    use dbus::{BusName, Interface, Member, Path as DbusPath};
+    use dbus::strings::{BusName, Interface, Member, Path as DbusPath};
 
     error_chain! {
         errors {
