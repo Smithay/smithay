@@ -113,7 +113,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
                     "mods" => format!("{:?}", modifiers),
                     "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
                 );
-                action = process_keyboard_shortcut(modifiers, keysym);
+                action = process_keyboard_shortcut(*modifiers, keysym);
                 // forward to client only if action == KeyAction::Forward
                 // both for pressed and released, to avoid inconsistencies
                 if let KeyAction::Forward = action {
@@ -229,13 +229,13 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
             input::AxisSource::Wheel | input::AxisSource::WheelTilt => wl_pointer::AxisSource::Wheel,
         };
         let horizontal_amount = evt
-            .amount(&input::Axis::Horizontal)
-            .unwrap_or_else(|| evt.amount_discrete(&input::Axis::Horizontal).unwrap() * 3.0);
+            .amount(input::Axis::Horizontal)
+            .unwrap_or_else(|| evt.amount_discrete(input::Axis::Horizontal).unwrap() * 3.0);
         let vertical_amount = evt
-            .amount(&input::Axis::Vertical)
-            .unwrap_or_else(|| evt.amount_discrete(&input::Axis::Vertical).unwrap() * 3.0);
-        let horizontal_amount_discrete = evt.amount_discrete(&input::Axis::Horizontal);
-        let vertical_amount_discrete = evt.amount_discrete(&input::Axis::Vertical);
+            .amount(input::Axis::Vertical)
+            .unwrap_or_else(|| evt.amount_discrete(input::Axis::Vertical).unwrap() * 3.0);
+        let horizontal_amount_discrete = evt.amount_discrete(input::Axis::Horizontal);
+        let vertical_amount_discrete = evt.amount_discrete(input::Axis::Vertical);
 
         {
             let mut frame = AxisFrame::new(evt.time()).source(source);
@@ -293,7 +293,7 @@ enum KeyAction {
     None,
 }
 
-fn process_keyboard_shortcut(modifiers: &ModifiersState, keysym: Keysym) -> KeyAction {
+fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> KeyAction {
     if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace
         || modifiers.logo && keysym == xkb::KEY_q
     {

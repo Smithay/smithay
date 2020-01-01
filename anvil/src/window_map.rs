@@ -61,7 +61,7 @@ where
         // need to check more carefully
         let found = RefCell::new(None);
         if let Some(wl_surface) = self.toplevel.get_surface() {
-            let _ = ctoken.with_surface_tree_downward(
+            ctoken.with_surface_tree_downward(
                 wl_surface,
                 self.location,
                 |wl_surface, attributes, role, &(mut x, mut y)| {
@@ -102,7 +102,7 @@ where
         let (base_x, base_y) = self.location;
         let (mut min_x, mut min_y, mut max_x, mut max_y) = (base_x, base_y, base_x, base_y);
         if let Some(wl_surface) = self.toplevel.get_surface() {
-            let _ = ctoken.with_surface_tree_downward(
+            ctoken.with_surface_tree_downward(
                 wl_surface,
                 (base_x, base_y),
                 |_, attributes, role, &(mut x, mut y)| {

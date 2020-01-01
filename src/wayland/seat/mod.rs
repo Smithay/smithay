@@ -17,7 +17,6 @@
 //! // to set a surface as a cursor image
 //! define_roles!(Roles => [CursorImage, CursorImageRole]);
 //!
-//! # fn main(){
 //! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _| {}, None);
@@ -28,7 +27,6 @@
 //!     compositor_token.clone(), // the compositor token
 //!     None                      // insert a logger here
 //! );
-//! # }
 //! ```
 //!
 //! ### Run usage
@@ -144,7 +142,7 @@ impl Seat {
         });
         let seat = Seat { arc: arc.clone() };
         let global = display.create_global(5, move |new_seat, _version| {
-            let seat = implement_seat(new_seat, arc.clone(), token.clone());
+            let seat = implement_seat(new_seat, arc.clone(), token);
             let mut inner = arc.inner.borrow_mut();
             if seat.as_ref().version() >= 2 {
                 seat.name(arc.name.clone());
@@ -190,7 +188,6 @@ impl Seat {
     /// #
     /// # define_roles!(Roles => [CursorImage, CursorImageRole]);
     /// #
-    /// # fn main(){
     /// # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
     /// # let mut display = wayland_server::Display::new(event_loop.handle());
     /// # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _| {}, None);
@@ -204,7 +201,6 @@ impl Seat {
     ///     compositor_token.clone(),
     ///     |new_status| { /* a closure handling requests from clients tot change the cursor icon */ }
     /// );
-    /// # }
     /// ```
     pub fn add_pointer<R, F>(&mut self, token: CompositorToken<R>, cb: F) -> PointerHandle
     where
@@ -349,7 +345,7 @@ where
             let inner = arc.inner.borrow_mut();
             match request {
                 wl_seat::Request::GetPointer { id } => {
-                    let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref(), token.clone());
+                    let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref(), token);
                     if let Some(ref ptr_handle) = inner.pointer {
                         ptr_handle.new_pointer(pointer);
                     } else {

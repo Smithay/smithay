@@ -183,7 +183,7 @@ pub fn primary_gpu<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Opti
         if device
             .property_value("ID_SEAT")
             .map(|x| x.to_os_string())
-            .unwrap_or(OsString::from("seat0"))
+            .unwrap_or_else(|| OsString::from("seat0"))
             == *seat.as_ref()
         {
             if let Some(pci) = device.parent_with_subsystem(Path::new("pci"))? {
@@ -214,7 +214,7 @@ pub fn all_gpus<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Vec<Pat
             device
                 .property_value("ID_SEAT")
                 .map(|x| x.to_os_string())
-                .unwrap_or(OsString::from("seat0"))
+                .unwrap_or_else(|| OsString::from("seat0"))
                 == *seat.as_ref()
         })
         .flat_map(|device| device.devnode().map(PathBuf::from))

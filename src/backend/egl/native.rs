@@ -122,13 +122,13 @@ unsafe impl NativeDisplay<X11> for WinitWindow {
     fn ptr(&self) -> Result<ffi::NativeDisplayType> {
         self.get_xlib_display()
             .map(|ptr| ptr as *const _)
-            .ok_or(ErrorKind::NonMatchingBackend("X11").into())
+            .ok_or_else(|| ErrorKind::NonMatchingBackend("X11").into())
     }
 
     fn create_surface(&mut self, _args: ()) -> Result<XlibWindow> {
         self.get_xlib_window()
             .map(XlibWindow)
-            .ok_or(ErrorKind::NonMatchingBackend("X11").into())
+            .ok_or_else(|| ErrorKind::NonMatchingBackend("X11").into())
     }
 }
 
@@ -144,7 +144,7 @@ unsafe impl NativeDisplay<Wayland> for WinitWindow {
     fn ptr(&self) -> Result<ffi::NativeDisplayType> {
         self.get_wayland_display()
             .map(|ptr| ptr as *const _)
-            .ok_or(ErrorKind::NonMatchingBackend("Wayland").into())
+            .ok_or_else(|| ErrorKind::NonMatchingBackend("Wayland").into())
     }
 
     fn create_surface(&mut self, _args: ()) -> Result<wegl::WlEglSurface> {

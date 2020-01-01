@@ -22,7 +22,6 @@
 //! use smithay::wayland::shm::init_shm_global;
 //! use wayland_server::protocol::wl_shm::Format;
 //!
-//! # fn main() {
 //! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! // Insert the ShmGlobal into your event loop
@@ -33,7 +32,6 @@
 //!     vec![Format::Yuyv, Format::C8],
 //!     None // we don't provide a logger here
 //! );
-//! # }
 //! ```
 //!
 //! Then, when you have a [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)
@@ -67,7 +65,6 @@
 //!     }
 //! }
 //! # }
-//! # fn main() {}
 //! ```
 //!
 //! **Note**

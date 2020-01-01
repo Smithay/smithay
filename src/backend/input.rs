@@ -215,23 +215,23 @@ pub trait PointerAxisEvent: Event {
     /// Amount of scrolling in pixels on the given [`Axis`].
     ///
     /// Guaranteed to be `Some` when source returns either [`AxisSource::Finger`] or [`AxisSource::Continuous`].
-    fn amount(&self, axis: &Axis) -> Option<f64>;
+    fn amount(&self, axis: Axis) -> Option<f64>;
 
     /// Amount of scrolling in discrete steps on the given [`Axis`].
     ///
     /// Guaranteed to be `Some` when source returns either [`AxisSource::Wheel`] or [`AxisSource::WheelTilt`].
-    fn amount_discrete(&self, axis: &Axis) -> Option<f64>;
+    fn amount_discrete(&self, axis: Axis) -> Option<f64>;
 
     /// Source of the scroll event.
     fn source(&self) -> AxisSource;
 }
 
 impl PointerAxisEvent for UnusedEvent {
-    fn amount(&self, _axis: &Axis) -> Option<f64> {
+    fn amount(&self, _axis: Axis) -> Option<f64> {
         match *self {}
     }
 
-    fn amount_discrete(&self, _axis: &Axis) -> Option<f64> {
+    fn amount_discrete(&self, _axis: Axis) -> Option<f64> {
         match *self {}
     }
 

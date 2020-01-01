@@ -51,7 +51,6 @@
 //!
 //! // Once this is defined, you can in your setup initialize the dmabuf global:
 //!
-//! # fn main() {
 //! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! // define your supported formats
@@ -64,7 +63,6 @@
 //!     MyDmabufHandler,
 //!     None // we don't provide a logger in this example
 //! );
-//! # }
 //! ```
 
 use std::{cell::RefCell, os::unix::io::RawFd, rc::Rc};
@@ -108,11 +106,11 @@ pub struct Plane {
 bitflags! {
     pub struct BufferFlags: u32 {
         /// The buffer content is Y-inverted
-        const YInvert = 1;
+        const Y_INVERT = 1;
         /// The buffer content is interlaced
-        const Interlaced = 2;
+        const INTERLACED = 2;
         /// The buffer content if interlaced is bottom-field first
-        const BottomFirst = 4;
+        const BOTTOM_FIRST = 4;
     }
 }
 
@@ -200,8 +198,8 @@ where
         let dma_handler = handler.clone();
         let dma_log = log.clone();
         let dmabuf: zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1 = new_dmabuf.implement_closure(
-            move |req, _| match req {
-                zwp_linux_dmabuf_v1::Request::CreateParams { params_id } => {
+            move |req, _| {
+                if let zwp_linux_dmabuf_v1::Request::CreateParams { params_id } = req {
                     params_id.implement(
                         ParamsHandler {
                             pending_planes: Vec::new(),
@@ -215,7 +213,6 @@ where
                         (),
                     );
                 }
-                _ => (),
             },
             None::<fn(_)>,
             (),

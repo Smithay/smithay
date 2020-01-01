@@ -87,12 +87,12 @@ impl<'a> backend::Event for event::pointer::PointerAxisEvent {
 }
 
 impl backend::PointerAxisEvent for event::pointer::PointerAxisEvent {
-    fn amount(&self, axis: &Axis) -> Option<f64> {
-        Some(self.axis_value((*axis).into()))
+    fn amount(&self, axis: Axis) -> Option<f64> {
+        Some(self.axis_value(axis.into()))
     }
 
-    fn amount_discrete(&self, axis: &Axis) -> Option<f64> {
-        self.axis_value_discrete((*axis).into())
+    fn amount_discrete(&self, axis: Axis) -> Option<f64> {
+        self.axis_value_discrete(axis.into())
     }
 
     fn source(&self) -> backend::AxisSource {
@@ -612,8 +612,6 @@ pub fn libinput_bind<Data: 'static>(
     source.set_interest(Ready::readable());
 
     handle.insert_source(source, move |evt, _| {
-        use crate::backend::input::InputBackend;
-
         let mut backend = evt.source.borrow_mut();
         if let Err(error) = backend.0.dispatch_new_events() {
             warn!(backend.0.logger, "Libinput errored: {}", error);

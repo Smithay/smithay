@@ -242,7 +242,7 @@ fn implement_dnd_data_offer(
         move |req, offer| {
             let mut data = offer_data.borrow_mut();
             match req {
-                Request::Accept { serial: _, mime_type } => {
+                Request::Accept { mime_type, .. } => {
                     if let Some(mtype) = mime_type {
                         if let Err(()) = with_source_metadata(&source, |meta| {
                             data.accepted = meta.mime_types.contains(&mtype);
@@ -304,8 +304,8 @@ fn implement_dnd_data_offer(
                             "Invalid preferred action.".into(),
                         );
                     }
-                    let source_actions =
-                        with_source_metadata(&source, |meta| meta.dnd_action).unwrap_or(DndAction::empty());
+                    let source_actions = with_source_metadata(&source, |meta| meta.dnd_action)
+                        .unwrap_or_else(|_| DndAction::empty());
                     let possible_actions = source_actions & DndAction::from_bits_truncate(dnd_actions);
                     data.chosen_action =
                         (&mut *action_choice.borrow_mut())(possible_actions, preferred_action);

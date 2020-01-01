@@ -1,11 +1,11 @@
 #![allow(missing_docs)]
 
-use nix::libc::{c_long, c_uint, c_void, int32_t, uint64_t};
+use nix::libc::{c_long, c_uint, c_void};
 
 pub type khronos_utime_nanoseconds_t = khronos_uint64_t;
-pub type khronos_uint64_t = uint64_t;
+pub type khronos_uint64_t = u64;
 pub type khronos_ssize_t = c_long;
-pub type EGLint = int32_t;
+pub type EGLint = i32;
 pub type EGLNativeDisplayType = NativeDisplayType;
 pub type EGLNativePixmapType = NativePixmapType;
 pub type EGLNativeWindowType = NativeWindowType;
@@ -162,11 +162,11 @@ pub mod egl {
     // Accepted in the <attrib_list> parameter of eglCreateImageKHR:
     pub const WAYLAND_PLANE_WL: c_uint = 0x31D6;
     // Possible values for EGL_TEXTURE_FORMAT:
-    pub const TEXTURE_Y_U_V_WL: int32_t = 0x31D7;
-    pub const TEXTURE_Y_UV_WL: int32_t = 0x31D8;
-    pub const TEXTURE_Y_XUXV_WL: int32_t = 0x31D9;
-    pub const TEXTURE_EXTERNAL_WL: int32_t = 0x31DA;
+    pub const TEXTURE_Y_U_V_WL: i32 = 0x31D7;
+    pub const TEXTURE_Y_UV_WL: i32 = 0x31D8;
+    pub const TEXTURE_Y_XUXV_WL: i32 = 0x31D9;
+    pub const TEXTURE_EXTERNAL_WL: i32 = 0x31DA;
     // Accepted in the <attribute> parameter of eglQueryWaylandBufferWL:
-    pub const EGL_TEXTURE_FORMAT: int32_t = 0x3080;
-    pub const WAYLAND_Y_INVERTED_WL: int32_t = 0x31DB;
+    pub const EGL_TEXTURE_FORMAT: i32 = 0x3080;
+    pub const WAYLAND_Y_INVERTED_WL: i32 = 0x31DB;
 }

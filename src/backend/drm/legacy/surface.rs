@@ -78,11 +78,11 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
     }
 
     fn current_mode(&self) -> Option<Mode> {
-        self.state.read().unwrap().mode.clone()
+        self.state.read().unwrap().mode
     }
 
     fn pending_mode(&self) -> Option<Mode> {
-        self.pending.read().unwrap().mode.clone()
+        self.pending.read().unwrap().mode
     }
 
     fn add_connector(&self, connector: connector::Handle) -> Result<()> {
@@ -135,13 +135,11 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         // check the connectors to see if this mode is supported
         if let Some(mode) = mode {
             for connector in &pending.connectors {
-                if !connector::Info::load_from_device(self, *connector)
-                    .chain_err(|| {
-                        ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
-                    })?
-                    .modes()
-                    .contains(&mode)
-                {
+                let info = connector::Info::load_from_device(self, *connector).chain_err(|| {
+                    ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
+                })?;
+
+                if !info.modes().contains(&mode) {
                     bail!(ErrorKind::ModeNotSuitable(mode));
                 }
             }
