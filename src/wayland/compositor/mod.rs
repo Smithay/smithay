@@ -222,6 +222,22 @@ impl Default for RegionAttributes {
     }
 }
 
+impl RegionAttributes {
+    /// Checks whether given point is inside the region.
+    pub fn contains(&self, point: (i32, i32)) -> bool {
+        let mut contains = false;
+        for (kind, rect) in &self.rects {
+            if rect.contains(point) {
+                match kind {
+                    RectangleKind::Add => contains = true,
+                    RectangleKind::Subtract => contains = false,
+                }
+            }
+        }
+        contains
+    }
+}
+
 /// A Compositor global token
 ///
 /// This token can be cloned at will, and is the entry-point to
@@ -499,4 +515,100 @@ pub enum SurfaceEvent {
         /// The created `WlCallback`
         callback: NewResource<wl_callback::WlCallback>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn region_attributes_empty() {
+        let region = RegionAttributes { rects: vec![] };
+        assert_eq!(region.contains((0, 0)), false);
+    }
+
+    #[test]
+    fn region_attributes_add() {
+        let region = RegionAttributes {
+            rects: vec![(
+                RectangleKind::Add,
+                Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 10,
+                    height: 10,
+                },
+            )],
+        };
+
+        assert_eq!(region.contains((0, 0)), true);
+    }
+
+    #[test]
+    fn region_attributes_add_subtract() {
+        let region = RegionAttributes {
+            rects: vec![
+                (
+                    RectangleKind::Add,
+                    Rectangle {
+                        x: 0,
+                        y: 0,
+                        width: 10,
+                        height: 10,
+                    },
+                ),
+                (
+                    RectangleKind::Subtract,
+                    Rectangle {
+                        x: 0,
+                        y: 0,
+                        width: 5,
+                        height: 5,
+                    },
+                ),
+            ],
+        };
+
+        assert_eq!(region.contains((0, 0)), false);
+        assert_eq!(region.contains((5, 5)), true);
+    }
+
+    #[test]
+    fn region_attributes_add_subtract_add() {
+        let region = RegionAttributes {
+            rects: vec![
+                (
+                    RectangleKind::Add,
+                    Rectangle {
+                        x: 0,
+                        y: 0,
+                        width: 10,
+                        height: 10,
+                    },
+                ),
+                (
+                    RectangleKind::Subtract,
+                    Rectangle {
+                        x: 0,
+                        y: 0,
+                        width: 5,
+                        height: 5,
+                    },
+                ),
+                (
+                    RectangleKind::Add,
+                    Rectangle {
+                        x: 2,
+                        y: 2,
+                        width: 2,
+                        height: 2,
+                    },
+                ),
+            ],
+        };
+
+        assert_eq!(region.contains((0, 0)), false);
+        assert_eq!(region.contains((5, 5)), true);
+        assert_eq!(region.contains((2, 2)), true);
+    }
 }
