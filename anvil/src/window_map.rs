@@ -48,7 +48,8 @@ impl<R> Window<R>
 where
     R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole> + 'static,
 {
-    // Find the topmost surface under this point if any and the location of this surface
+    /// Finds the topmost surface under this point if any and returns it together with the location of this
+    /// surface.
     fn matching<F>(
         &self,
         point: (f64, f64),
@@ -109,6 +110,8 @@ where
                 wl_surface,
                 (base_x, base_y),
                 |_, attributes, role, &(mut x, mut y)| {
+                    // The input region is intersected with the surface size, so the surface size
+                    // can serve as an approximation for the input bounding box.
                     if let Some((w, h)) = get_size(attributes) {
                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                             x += subdata.location.0;
@@ -148,6 +151,7 @@ where
 pub struct WindowMap<R, F> {
     ctoken: CompositorToken<R>,
     windows: Vec<Window<R>>,
+    /// A function returning the surface size.
     get_size: F,
 }
 
