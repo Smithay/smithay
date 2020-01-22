@@ -188,5 +188,19 @@ fn contains_point(attrs: &SurfaceAttributes, point: (f64, f64)) -> bool {
         width: w,
         height: h,
     };
-    rect.contains((point.0 as i32, point.1 as i32))
+
+    let point = (point.0 as i32, point.1 as i32);
+
+    // The input region is always within the surface itself, so if the surface itself doesn't contain the
+    // point we can return false.
+    if !rect.contains(point) {
+        return false;
+    }
+
+    // If there's no input region, we're done.
+    if attrs.input_region.is_none() {
+        return true;
+    }
+
+    attrs.input_region.as_ref().unwrap().contains(point)
 }
