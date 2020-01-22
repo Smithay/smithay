@@ -50,14 +50,17 @@ where
 {
     /// Finds the topmost surface under this point if any and returns it together with the location of this
     /// surface.
+    ///
+    /// You need to provide a `contains_point` function which checks if the point (in surface-local
+    /// coordinates) is within the input region of the given `SurfaceAttributes`.
     fn matching<F>(
         &self,
         point: (f64, f64),
         ctoken: CompositorToken<R>,
-        get_size: F,
+        contains_point: F,
     ) -> Option<(wl_surface::WlSurface, (f64, f64))>
     where
-        F: Fn(&SurfaceAttributes) -> Option<(i32, i32)>,
+        F: Fn(&SurfaceAttributes, (f64, f64)) -> bool,
     {
         if !self.input_bbox.contains((point.0 as i32, point.1 as i32)) {
             return None;
@@ -69,25 +72,17 @@ where
                 wl_surface,
                 self.location,
                 |wl_surface, attributes, role, &(mut x, mut y)| {
-                    if let Some((w, h)) = get_size(attributes) {
-                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                            x += subdata.location.0;
-                            y += subdata.location.1;
-                        }
-                        let my_rect = Rectangle {
-                            x,
-                            y,
-                            width: w,
-                            height: h,
-                        };
-                        if my_rect.contains((point.0 as i32, point.1 as i32)) {
-                            *found.borrow_mut() =
-                                Some((wl_surface.clone(), (my_rect.x as f64, my_rect.y as f64)));
-                        }
-                        TraversalAction::DoChildren((x, y))
-                    } else {
-                        TraversalAction::SkipChildren
+                    if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
+                        x += subdata.location.0;
+                        y += subdata.location.1;
                     }
+
+                    let surface_local_point = (point.0 - x as f64, point.1 - y as f64);
+                    if contains_point(attributes, surface_local_point) {
+                        *found.borrow_mut() = Some((wl_surface.clone(), (x as f64, y as f64)));
+                    }
+
+                    TraversalAction::DoChildren((x, y))
                 },
                 |_, _, _, _| {},
                 |_, _, _, _| {
@@ -148,23 +143,27 @@ where
     }
 }
 
-pub struct WindowMap<R, F> {
+pub struct WindowMap<R, F, G> {
     ctoken: CompositorToken<R>,
     windows: Vec<Window<R>>,
     /// A function returning the surface size.
     get_size: F,
+    /// A function that checks if the point is in the surface's input region.
+    contains_point: G,
 }
 
-impl<R, F> WindowMap<R, F>
+impl<R, F, G> WindowMap<R, F, G>
 where
     F: Fn(&SurfaceAttributes) -> Option<(i32, i32)>,
+    G: Fn(&SurfaceAttributes, (f64, f64)) -> bool,
     R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole> + 'static,
 {
-    pub fn new(ctoken: CompositorToken<R>, get_size: F) -> WindowMap<R, F> {
+    pub fn new(ctoken: CompositorToken<R>, get_size: F, contains_point: G) -> Self {
         WindowMap {
             ctoken,
             windows: Vec::new(),
             get_size,
+            contains_point,
         }
     }
 
@@ -185,7 +184,7 @@ where
 
     pub fn get_surface_under(&self, point: (f64, f64)) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         for w in &self.windows {
-            if let Some(surface) = w.matching(point, self.ctoken, &self.get_size) {
+            if let Some(surface) = w.matching(point, self.ctoken, &self.contains_point) {
                 return Some(surface);
             }
         }
@@ -198,7 +197,7 @@ where
     ) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         let mut found = None;
         for (i, w) in self.windows.iter().enumerate() {
-            if let Some(surface) = w.matching(point, self.ctoken, &self.get_size) {
+            if let Some(surface) = w.matching(point, self.ctoken, &self.contains_point) {
                 found = Some((i, surface));
                 break;
             }

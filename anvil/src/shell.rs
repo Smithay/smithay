@@ -11,6 +11,7 @@ use smithay::{
         protocol::{wl_buffer, wl_shell_surface, wl_surface},
         Display,
     },
+    utils::Rectangle,
     wayland::{
         compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent},
         data_device::DnDIconRole,
@@ -36,7 +37,11 @@ define_roles!(Roles =>
     [ CursorImage, CursorImageRole ]
 );
 
-pub type MyWindowMap = WindowMap<Roles, fn(&SurfaceAttributes) -> Option<(i32, i32)>>;
+pub type MyWindowMap = WindowMap<
+    Roles,
+    fn(&SurfaceAttributes) -> Option<(i32, i32)>,
+    fn(&SurfaceAttributes, (f64, f64)) -> bool,
+>;
 
 pub type MyCompositorToken = CompositorToken<Roles>;
 
@@ -62,9 +67,10 @@ pub fn init_shell(
     );
 
     // Init a window map, to track the location of our windows
-    let window_map = Rc::new(RefCell::new(WindowMap::<_, _>::new(
+    let window_map = Rc::new(RefCell::new(WindowMap::new(
         compositor_token,
         get_size as _,
+        contains_point as _,
     )));
 
     // init the xdg_shell
@@ -168,4 +174,19 @@ fn get_size(attrs: &SurfaceAttributes) -> Option<(i32, i32)> {
             .map(|ref meta| meta.dimensions)
             .map(|(x, y)| (x as i32, y as i32))
     })
+}
+
+fn contains_point(attrs: &SurfaceAttributes, point: (f64, f64)) -> bool {
+    let (w, h) = match get_size(attrs) {
+        None => return false, // If the surface has no size, it can't have an input region.
+        Some(wh) => wh,
+    };
+
+    let rect = Rectangle {
+        x: 0,
+        y: 0,
+        width: w,
+        height: h,
+    };
+    rect.contains((point.0 as i32, point.1 as i32))
 }
