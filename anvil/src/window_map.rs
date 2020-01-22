@@ -170,12 +170,7 @@ where
     pub fn insert(&mut self, toplevel: Kind<R>, location: (i32, i32)) {
         let mut window = Window {
             location,
-            input_bbox: Rectangle {
-                x: 0,
-                y: 0,
-                width: 0,
-                height: 0,
-            },
+            input_bbox: Rectangle::default(),
             toplevel,
         };
         window.self_update(self.ctoken, &self.get_size);
