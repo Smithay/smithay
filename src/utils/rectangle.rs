@@ -1,5 +1,5 @@
 /// A rectangle defined by its top-left corner and dimensions
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Rectangle {
     /// horizontal position of the top-left corner of the rectangle, in surface coordinates
     pub x: i32,
