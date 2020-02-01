@@ -33,6 +33,15 @@ where
             Kind::Wl(ref t) => t.get_surface(),
         }
     }
+
+    /// Do this handle and the other one actually refer to the same toplevel surface?
+    pub fn equals(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Kind::Xdg(a), Kind::Xdg(b)) => a.equals(b),
+            (Kind::Wl(a), Kind::Wl(b)) => a.equals(b),
+            _ => false,
+        }
+    }
 }
 
 struct Window<R> {
