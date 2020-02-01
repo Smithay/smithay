@@ -242,4 +242,12 @@ where
             .find(|w| w.toplevel.equals(toplevel))
             .map(|w| w.location)
     }
+
+    /// Sets the location of the toplevel, if it exists.
+    pub fn set_location(&mut self, toplevel: &Kind<R>, location: (i32, i32)) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.toplevel.equals(toplevel)) {
+            w.location = location;
+            w.self_update(self.ctoken, &self.get_size);
+        }
+    }
 }
