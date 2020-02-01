@@ -234,4 +234,12 @@ where
     pub fn clear(&mut self) {
         self.windows.clear();
     }
+
+    /// Returns the location of the toplevel, if it exists.
+    pub fn location(&self, toplevel: &Kind<R>) -> Option<(i32, i32)> {
+        self.windows
+            .iter()
+            .find(|w| w.toplevel.equals(toplevel))
+            .map(|w| w.location)
+    }
 }
