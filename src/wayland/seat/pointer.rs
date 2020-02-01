@@ -219,6 +219,11 @@ impl PointerHandle {
             grab.axis(&mut handle, details);
         });
     }
+
+    /// Access the current location of this pointer in the global space
+    pub fn current_location(&self) -> (f64, f64) {
+        self.inner.borrow().location
+    }
 }
 
 /// A trait to implement a pointer grab
