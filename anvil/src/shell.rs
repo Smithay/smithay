@@ -160,6 +160,11 @@ pub fn init_shell(
                 // TODO: touch move.
                 let pointer = seat.get_pointer().unwrap();
 
+                // Check that this surface has a click grab.
+                if !pointer.has_grab(serial) {
+                    return;
+                }
+
                 let start_data = pointer.grab_start_data().unwrap();
 
                 let toplevel = SurfaceKind::Xdg(surface);
@@ -209,6 +214,11 @@ pub fn init_shell(
                     let seat = Seat::from_resource(&seat).unwrap();
                     // TODO: touch move.
                     let pointer = seat.get_pointer().unwrap();
+
+                    // Check that this surface has a click grab.
+                    if !pointer.has_grab(serial) {
+                        return;
+                    }
 
                     let start_data = pointer.grab_start_data().unwrap();
 
