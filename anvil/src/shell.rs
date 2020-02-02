@@ -167,6 +167,19 @@ pub fn init_shell(
 
                 let start_data = pointer.grab_start_data().unwrap();
 
+                // If the focus was for a different surface, ignore the request.
+                if start_data.focus.is_none()
+                    || !start_data
+                        .focus
+                        .as_ref()
+                        .unwrap()
+                        .0
+                        .as_ref()
+                        .same_client_as(surface.get_surface().unwrap().as_ref())
+                {
+                    return;
+                }
+
                 let toplevel = SurfaceKind::Xdg(surface);
                 let initial_window_location = xdg_window_map.borrow().location(&toplevel).unwrap();
 
@@ -221,6 +234,19 @@ pub fn init_shell(
                     }
 
                     let start_data = pointer.grab_start_data().unwrap();
+
+                    // If the focus was for a different surface, ignore the request.
+                    if start_data.focus.is_none()
+                        || !start_data
+                            .focus
+                            .as_ref()
+                            .unwrap()
+                            .0
+                            .as_ref()
+                            .same_client_as(surface.get_surface().unwrap().as_ref())
+                    {
+                        return;
+                    }
 
                     let toplevel = SurfaceKind::Wl(surface);
                     let initial_window_location = shell_window_map.borrow().location(&toplevel).unwrap();
