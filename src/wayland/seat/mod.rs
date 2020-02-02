@@ -49,7 +49,8 @@ mod pointer;
 pub use self::{
     keyboard::{keysyms, Error as KeyboardError, KeyboardHandle, Keysym, ModifiersState, XkbConfig},
     pointer::{
-        AxisFrame, CursorImageRole, CursorImageStatus, PointerGrab, PointerHandle, PointerInnerHandle,
+        AxisFrame, CursorImageRole, CursorImageStatus, GrabStartData, PointerGrab, PointerHandle,
+        PointerInnerHandle,
     },
 };
 

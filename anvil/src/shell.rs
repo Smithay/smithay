@@ -15,7 +15,7 @@ use smithay::{
     wayland::{
         compositor::{compositor_init, CompositorToken, RegionAttributes, SurfaceAttributes, SurfaceEvent},
         data_device::DnDIconRole,
-        seat::{AxisFrame, CursorImageRole, PointerGrab, PointerInnerHandle, Seat},
+        seat::{AxisFrame, CursorImageRole, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
         shell::{
             legacy::{
                 wl_shell_init, ShellRequest, ShellState as WlShellState, ShellSurfaceKind, ShellSurfaceRole,
@@ -47,9 +47,9 @@ pub type MyWindowMap = WindowMap<
 pub type MyCompositorToken = CompositorToken<Roles>;
 
 struct MoveSurfaceGrab {
+    start_data: GrabStartData,
     window_map: Rc<RefCell<MyWindowMap>>,
     toplevel: SurfaceKind<Roles>,
-    initial_pointer_location: (f64, f64),
     initial_window_location: (i32, i32),
 }
 
@@ -62,8 +62,8 @@ impl PointerGrab for MoveSurfaceGrab {
         _serial: u32,
         _time: u32,
     ) {
-        let dx = location.0 - self.initial_pointer_location.0;
-        let dy = location.1 - self.initial_pointer_location.1;
+        let dx = location.0 - self.start_data.location.0;
+        let dy = location.1 - self.start_data.location.1;
         let new_window_x = (self.initial_window_location.0 as f64 + dx) as i32;
         let new_window_y = (self.initial_window_location.1 as f64 + dy) as i32;
 
@@ -89,6 +89,10 @@ impl PointerGrab for MoveSurfaceGrab {
 
     fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
         handle.axis(details)
+    }
+
+    fn start_data(&self) -> &GrabStartData {
+        &self.start_data
     }
 }
 
@@ -156,13 +160,15 @@ pub fn init_shell(
                 // TODO: touch move.
                 let pointer = seat.get_pointer().unwrap();
 
+                let start_data = pointer.grab_start_data().unwrap();
+
                 let toplevel = SurfaceKind::Xdg(surface);
                 let initial_window_location = xdg_window_map.borrow().location(&toplevel).unwrap();
 
                 let grab = MoveSurfaceGrab {
+                    start_data,
                     window_map: xdg_window_map.clone(),
                     toplevel,
-                    initial_pointer_location: pointer.current_location(),
                     initial_window_location,
                 };
 
@@ -204,13 +210,15 @@ pub fn init_shell(
                     // TODO: touch move.
                     let pointer = seat.get_pointer().unwrap();
 
+                    let start_data = pointer.grab_start_data().unwrap();
+
                     let toplevel = SurfaceKind::Wl(surface);
                     let initial_window_location = shell_window_map.borrow().location(&toplevel).unwrap();
 
                     let grab = MoveSurfaceGrab {
+                        start_data,
                         window_map: shell_window_map.clone(),
                         toplevel,
-                        initial_pointer_location: pointer.current_location(),
                         initial_window_location,
                     };
 
