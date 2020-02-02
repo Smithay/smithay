@@ -13,7 +13,7 @@ use smithay::{
     },
     utils::Rectangle,
     wayland::{
-        compositor::{compositor_init, CompositorToken, SurfaceAttributes, SurfaceEvent},
+        compositor::{compositor_init, CompositorToken, RegionAttributes, SurfaceAttributes, SurfaceEvent},
         data_device::DnDIconRole,
         seat::CursorImageRole,
         shell::{
@@ -138,17 +138,21 @@ pub fn init_shell(
 pub struct SurfaceData {
     pub buffer: Option<wl_buffer::WlBuffer>,
     pub texture: Option<crate::glium_drawer::TextureMetadata>,
+    pub input_region: Option<RegionAttributes>,
 }
 
 fn surface_commit(surface: &wl_surface::WlSurface, token: CompositorToken<Roles>) {
-    // we retrieve the contents of the associated buffer and copy it
     token.with_surface_data(surface, |attributes| {
         attributes.user_data.insert_if_missing(SurfaceData::default);
+        let data = attributes.user_data.get_mut::<SurfaceData>().unwrap();
+
+        data.input_region = attributes.input_region.clone();
+
+        // we retrieve the contents of the associated buffer and copy it
         match attributes.buffer.take() {
             Some(Some((buffer, (_x, _y)))) => {
                 // new contents
                 // TODO: handle hotspot coordinates
-                let data = attributes.user_data.get_mut::<SurfaceData>().unwrap();
                 if let Some(old_buffer) = data.buffer.replace(buffer) {
                     old_buffer.release();
                 }
@@ -156,7 +160,6 @@ fn surface_commit(surface: &wl_surface::WlSurface, token: CompositorToken<Roles>
             }
             Some(None) => {
                 // erase the contents
-                let data = attributes.user_data.get_mut::<SurfaceData>().unwrap();
                 if let Some(old_buffer) = data.buffer.take() {
                     old_buffer.release();
                 }
