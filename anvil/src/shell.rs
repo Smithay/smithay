@@ -200,10 +200,12 @@ fn contains_point(attrs: &SurfaceAttributes, point: (f64, f64)) -> bool {
         return false;
     }
 
+    let input_region = &attrs.user_data.get::<SurfaceData>().unwrap().input_region;
+
     // If there's no input region, we're done.
-    if attrs.input_region.is_none() {
+    if input_region.is_none() {
         return true;
     }
 
-    attrs.input_region.as_ref().unwrap().contains(point)
+    input_region.as_ref().unwrap().contains(point)
 }
