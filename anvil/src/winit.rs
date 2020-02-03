@@ -23,6 +23,7 @@ use smithay::{
 
 use slog::Logger;
 
+use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
 use crate::input_handler::AnvilInputHandler;
 use crate::shell::init_shell;
@@ -42,9 +43,14 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
 
     let (w, h) = renderer.get_framebuffer_dimensions();
     #[cfg(feature = "egl")]
-    let drawer = GliumDrawer::init(renderer, egl_display, log.clone());
+    let drawer = GliumDrawer::init(renderer, egl_display.clone(), log.clone());
     #[cfg(not(feature = "egl"))]
     let drawer = GliumDrawer::init(renderer, log.clone());
+
+    #[cfg(feature = "egl")]
+    let buffer_utils = BufferUtils::new(egl_display, log.clone());
+    #[cfg(not(feature = "egl"))]
+    let buffer_utils = BufferUtils::new(log.clone());
 
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
     info!(log, "Listening on wayland socket"; "name" => name.clone());
@@ -58,7 +64,7 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
 
     init_shm_global(display, vec![], log.clone());
 
-    let (compositor_token, _, _, window_map) = init_shell(display, log.clone());
+    let (compositor_token, _, _, window_map) = init_shell(display, buffer_utils, log.clone());
 
     let dnd_icon = Arc::new(Mutex::new(None));
 
