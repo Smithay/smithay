@@ -472,6 +472,42 @@ impl EGLDisplay {
             Err(BufferAccessError::ContextLost)
         }
     }
+
+    /// Try to receive the dimensions of a given [`WlBuffer`].
+    ///
+    /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](::wayland::shm)) or the
+    /// context has been lost, `None` is returned.
+    pub fn egl_buffer_dimensions(&self, buffer: &WlBuffer) -> Option<(i32, i32)> {
+        if let Some(display) = self.egl.upgrade() {
+            let mut width: i32 = 0;
+            if unsafe {
+                ffi::egl::QueryWaylandBufferWL(
+                    *display,
+                    buffer.as_ref().c_ptr() as *mut _,
+                    ffi::egl::WIDTH as i32,
+                    &mut width as *mut _,
+                ) == 0
+            } {
+                return None;
+            }
+
+            let mut height: i32 = 0;
+            if unsafe {
+                ffi::egl::QueryWaylandBufferWL(
+                    *display,
+                    buffer.as_ref().c_ptr() as *mut _,
+                    ffi::egl::HEIGHT as i32,
+                    &mut height as *mut _,
+                ) == 0
+            } {
+                return None;
+            }
+
+            Some((width, height))
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(feature = "native_lib")]
