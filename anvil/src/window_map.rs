@@ -144,6 +144,16 @@ where
             height: max_y - min_y,
         };
     }
+
+    /// Returns the geometry of this window.
+    pub fn geometry(&self, ctoken: CompositorToken<R>) -> Rectangle {
+        // It's the set geometry with the full bounding box as the fallback.
+        ctoken
+            .with_surface_data(self.toplevel.get_surface().unwrap(), |attributes| {
+                attributes.user_data.get::<SurfaceData>().unwrap().geometry
+            })
+            .unwrap_or(self.bbox)
+    }
 }
 
 pub struct WindowMap<R> {
@@ -235,5 +245,13 @@ where
             w.location = location;
             w.self_update(self.ctoken);
         }
+    }
+
+    /// Returns the geometry of the toplevel, if it exists.
+    pub fn geometry(&self, toplevel: &Kind<R>) -> Option<Rectangle> {
+        self.windows
+            .iter()
+            .find(|w| w.toplevel.equals(toplevel))
+            .map(|w| w.geometry(self.ctoken))
     }
 }
