@@ -122,21 +122,17 @@ where
                             x += subdata.location.0;
                             y += subdata.location.1;
                         }
-                        // update the bounding box
-                        if x < min_x {
-                            min_x = x;
-                        }
-                        if y < min_y {
-                            min_y = y;
-                        }
-                        if x + w > max_x {
-                            max_x = x + w;
-                        }
-                        if y + h > max_y {
-                            max_y = y + w;
-                        }
+
+                        // Update the bounding box.
+                        min_x = min_x.min(x);
+                        min_y = min_y.min(y);
+                        max_x = max_x.max(x + w);
+                        max_y = max_y.max(y + h);
+
                         TraversalAction::DoChildren((x, y))
                     } else {
+                        // If the parent surface is unmapped, then the child surfaces are hidden as
+                        // well, no need to consider them here.
                         TraversalAction::SkipChildren
                     }
                 },
