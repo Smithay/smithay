@@ -270,6 +270,7 @@ pub struct SurfaceData {
     pub buffer: Option<wl_buffer::WlBuffer>,
     pub texture: Option<crate::glium_drawer::TextureMetadata>,
     pub dimensions: Option<(i32, i32)>,
+    pub geometry: Option<Rectangle>,
     pub input_region: Option<RegionAttributes>,
 }
 
@@ -315,10 +316,15 @@ fn surface_commit(
     token: CompositorToken<Roles>,
     buffer_utils: &BufferUtils,
 ) {
+    let geometry = token
+        .with_role_data(surface, |role: &mut XdgSurfaceRole| role.window_geometry)
+        .unwrap_or(None);
+
     token.with_surface_data(surface, |attributes| {
         attributes.user_data.insert_if_missing(SurfaceData::default);
         let data = attributes.user_data.get_mut::<SurfaceData>().unwrap();
 
+        data.geometry = geometry;
         data.input_region = attributes.input_region.clone();
 
         // we retrieve the contents of the associated buffer and copy it
