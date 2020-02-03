@@ -4,13 +4,15 @@ use smithay::{
     reexports::wayland_server::protocol::wl_surface,
     utils::Rectangle,
     wayland::{
-        compositor::{roles::Role, CompositorToken, SubsurfaceRole, SurfaceAttributes, TraversalAction},
+        compositor::{roles::Role, CompositorToken, SubsurfaceRole, TraversalAction},
         shell::{
             legacy::{ShellSurface, ShellSurfaceRole},
             xdg::{ToplevelSurface, XdgSurfaceRole},
         },
     },
 };
+
+use crate::shell::SurfaceData;
 
 pub enum Kind<R> {
     Xdg(ToplevelSurface<R>),
@@ -60,18 +62,11 @@ where
 {
     /// Finds the topmost surface under this point if any and returns it together with the location of this
     /// surface.
-    ///
-    /// You need to provide a `contains_point` function which checks if the point (in surface-local
-    /// coordinates) is within the input region of the given `SurfaceAttributes`.
-    fn matching<F>(
+    fn matching(
         &self,
         point: (f64, f64),
         ctoken: CompositorToken<R>,
-        contains_point: F,
-    ) -> Option<(wl_surface::WlSurface, (f64, f64))>
-    where
-        F: Fn(&SurfaceAttributes, (f64, f64)) -> bool,
-    {
+    ) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         if !self.bbox.contains((point.0 as i32, point.1 as i32)) {
             return None;
         }
@@ -82,13 +77,18 @@ where
                 wl_surface,
                 self.location,
                 |wl_surface, attributes, role, &(mut x, mut y)| {
+                    let data = attributes.user_data.get::<SurfaceData>();
+
                     if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                         x += subdata.location.0;
                         y += subdata.location.1;
                     }
 
                     let surface_local_point = (point.0 - x as f64, point.1 - y as f64);
-                    if contains_point(attributes, surface_local_point) {
+                    if data
+                        .map(|data| data.contains_point(surface_local_point))
+                        .unwrap_or(false)
+                    {
                         *found.borrow_mut() = Some((wl_surface.clone(), (x as f64, y as f64)));
                     }
 
@@ -104,10 +104,7 @@ where
         found.into_inner()
     }
 
-    fn self_update<F>(&mut self, ctoken: CompositorToken<R>, get_size: F)
-    where
-        F: Fn(&SurfaceAttributes) -> Option<(i32, i32)>,
-    {
+    fn self_update(&mut self, ctoken: CompositorToken<R>) {
         let (base_x, base_y) = self.location;
         let (mut min_x, mut min_y, mut max_x, mut max_y) = (base_x, base_y, base_x, base_y);
         if let Some(wl_surface) = self.toplevel.get_surface() {
@@ -115,9 +112,9 @@ where
                 wl_surface,
                 (base_x, base_y),
                 |_, attributes, role, &(mut x, mut y)| {
-                    // The input region is intersected with the surface size, so the surface size
-                    // can serve as an approximation for the input bounding box.
-                    if let Some((w, h)) = get_size(attributes) {
+                    let data = attributes.user_data.get::<SurfaceData>();
+
+                    if let Some((w, h)) = data.and_then(SurfaceData::size) {
                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                             x += subdata.location.0;
                             y += subdata.location.1;
@@ -149,27 +146,19 @@ where
     }
 }
 
-pub struct WindowMap<R, F, G> {
+pub struct WindowMap<R> {
     ctoken: CompositorToken<R>,
     windows: Vec<Window<R>>,
-    /// A function returning the surface size.
-    get_size: F,
-    /// A function that checks if the point is in the surface's input region.
-    contains_point: G,
 }
 
-impl<R, F, G> WindowMap<R, F, G>
+impl<R> WindowMap<R>
 where
-    F: Fn(&SurfaceAttributes) -> Option<(i32, i32)>,
-    G: Fn(&SurfaceAttributes, (f64, f64)) -> bool,
     R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole> + 'static,
 {
-    pub fn new(ctoken: CompositorToken<R>, get_size: F, contains_point: G) -> Self {
+    pub fn new(ctoken: CompositorToken<R>) -> Self {
         WindowMap {
             ctoken,
             windows: Vec::new(),
-            get_size,
-            contains_point,
         }
     }
 
@@ -179,13 +168,13 @@ where
             bbox: Rectangle::default(),
             toplevel,
         };
-        window.self_update(self.ctoken, &self.get_size);
+        window.self_update(self.ctoken);
         self.windows.insert(0, window);
     }
 
     pub fn get_surface_under(&self, point: (f64, f64)) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         for w in &self.windows {
-            if let Some(surface) = w.matching(point, self.ctoken, &self.contains_point) {
+            if let Some(surface) = w.matching(point, self.ctoken) {
                 return Some(surface);
             }
         }
@@ -198,7 +187,7 @@ where
     ) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         let mut found = None;
         for (i, w) in self.windows.iter().enumerate() {
-            if let Some(surface) = w.matching(point, self.ctoken, &self.contains_point) {
+            if let Some(surface) = w.matching(point, self.ctoken) {
                 found = Some((i, surface));
                 break;
             }
@@ -224,7 +213,7 @@ where
     pub fn refresh(&mut self) {
         self.windows.retain(|w| w.toplevel.alive());
         for w in &mut self.windows {
-            w.self_update(self.ctoken, &self.get_size);
+            w.self_update(self.ctoken);
         }
     }
 
@@ -244,7 +233,7 @@ where
     pub fn set_location(&mut self, toplevel: &Kind<R>, location: (i32, i32)) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.toplevel.equals(toplevel)) {
             w.location = location;
-            w.self_update(self.ctoken, &self.get_size);
+            w.self_update(self.ctoken);
         }
     }
 }

@@ -41,11 +41,7 @@ define_roles!(Roles =>
     [ CursorImage, CursorImageRole ]
 );
 
-pub type MyWindowMap = WindowMap<
-    Roles,
-    fn(&SurfaceAttributes) -> Option<(i32, i32)>,
-    fn(&SurfaceAttributes, (f64, f64)) -> bool,
->;
+pub type MyWindowMap = WindowMap<Roles>;
 
 pub type MyCompositorToken = CompositorToken<Roles>;
 
@@ -122,11 +118,7 @@ pub fn init_shell(
     );
 
     // Init a window map, to track the location of our windows
-    let window_map = Rc::new(RefCell::new(WindowMap::new(
-        compositor_token,
-        get_size as _,
-        contains_point as _,
-    )));
+    let window_map = Rc::new(RefCell::new(WindowMap::new(compositor_token)));
 
     // init the xdg_shell
     let xdg_window_map = window_map.clone();
@@ -281,6 +273,43 @@ pub struct SurfaceData {
     pub input_region: Option<RegionAttributes>,
 }
 
+impl SurfaceData {
+    /// Returns the size of the surface.
+    pub fn size(&self) -> Option<(i32, i32)> {
+        self.dimensions
+    }
+
+    /// Checks if the surface's input region contains the point.
+    pub fn contains_point(&self, point: (f64, f64)) -> bool {
+        let (w, h) = match self.size() {
+            None => return false, // If the surface has no size, it can't have an input region.
+            Some(wh) => wh,
+        };
+
+        let rect = Rectangle {
+            x: 0,
+            y: 0,
+            width: w,
+            height: h,
+        };
+
+        let point = (point.0 as i32, point.1 as i32);
+
+        // The input region is always within the surface itself, so if the surface itself doesn't contain the
+        // point we can return false.
+        if !rect.contains(point) {
+            return false;
+        }
+
+        // If there's no input region, we're done.
+        if self.input_region.is_none() {
+            return true;
+        }
+
+        self.input_region.as_ref().unwrap().contains(point)
+    }
+}
+
 fn surface_commit(
     surface: &wl_surface::WlSurface,
     token: CompositorToken<Roles>,
@@ -315,42 +344,4 @@ fn surface_commit(
             None => {}
         }
     });
-}
-
-fn get_size(attrs: &SurfaceAttributes) -> Option<(i32, i32)> {
-    attrs
-        .user_data
-        .get::<SurfaceData>()
-        .and_then(|data| data.dimensions)
-}
-
-fn contains_point(attrs: &SurfaceAttributes, point: (f64, f64)) -> bool {
-    let (w, h) = match get_size(attrs) {
-        None => return false, // If the surface has no size, it can't have an input region.
-        Some(wh) => wh,
-    };
-
-    let rect = Rectangle {
-        x: 0,
-        y: 0,
-        width: w,
-        height: h,
-    };
-
-    let point = (point.0 as i32, point.1 as i32);
-
-    // The input region is always within the surface itself, so if the surface itself doesn't contain the
-    // point we can return false.
-    if !rect.contains(point) {
-        return false;
-    }
-
-    let input_region = &attrs.user_data.get::<SurfaceData>().unwrap().input_region;
-
-    // If there's no input region, we're done.
-    if input_region.is_none() {
-        return true;
-    }
-
-    input_region.as_ref().unwrap().contains(point)
 }
