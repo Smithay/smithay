@@ -46,10 +46,11 @@ where
 
 struct Window<R> {
     location: (i32, i32),
-    /// A bounding box over the input areas of this window and its children.
+    /// A bounding box over this window and its children.
     ///
-    /// Used for the fast path of the check in `matching`.
-    input_bbox: Rectangle,
+    /// Used for the fast path of the check in `matching`, and as the fall-back for the window
+    /// geometry if that's not set explicitly.
+    bbox: Rectangle,
     toplevel: Kind<R>,
 }
 
@@ -71,7 +72,7 @@ where
     where
         F: Fn(&SurfaceAttributes, (f64, f64)) -> bool,
     {
-        if !self.input_bbox.contains((point.0 as i32, point.1 as i32)) {
+        if !self.bbox.contains((point.0 as i32, point.1 as i32)) {
             return None;
         }
         // need to check more carefully
@@ -143,7 +144,7 @@ where
                 |_, _, _, _| true,
             );
         }
-        self.input_bbox = Rectangle {
+        self.bbox = Rectangle {
             x: min_x,
             y: min_y,
             width: max_x - min_x,
@@ -179,7 +180,7 @@ where
     pub fn insert(&mut self, toplevel: Kind<R>, location: (i32, i32)) {
         let mut window = Window {
             location,
-            input_bbox: Rectangle::default(),
+            bbox: Rectangle::default(),
             toplevel,
         };
         window.self_update(self.ctoken, &self.get_size);
