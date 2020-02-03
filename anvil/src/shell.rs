@@ -7,9 +7,12 @@ use std::{
 use rand;
 
 use smithay::{
-    reexports::wayland_server::{
-        protocol::{wl_buffer, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
-        Display,
+    reexports::{
+        wayland_protocols::xdg_shell::server::xdg_toplevel,
+        wayland_server::{
+            protocol::{wl_buffer, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
+            Display,
+        },
     },
     utils::Rectangle,
     wayland::{
@@ -83,6 +86,95 @@ impl PointerGrab for MoveSurfaceGrab {
         if handle.current_pressed().is_empty() {
             // No more buttons are pressed, release the grab.
             handle.unset_grab(serial, time);
+        }
+    }
+
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
+        handle.axis(details)
+    }
+
+    fn start_data(&self) -> &GrabStartData {
+        &self.start_data
+    }
+}
+
+struct ResizeSurfaceGrab {
+    start_data: GrabStartData,
+    toplevel: SurfaceKind<Roles>,
+    edges: wl_shell_surface::Resize,
+    initial_window_size: (i32, i32),
+    last_window_size: (i32, i32),
+}
+
+impl PointerGrab for ResizeSurfaceGrab {
+    fn motion(
+        &mut self,
+        _handle: &mut PointerInnerHandle<'_>,
+        location: (f64, f64),
+        _focus: Option<(wl_surface::WlSurface, (f64, f64))>,
+        serial: u32,
+        _time: u32,
+    ) {
+        let mut dx = location.0 - self.start_data.location.0;
+        let mut dy = location.1 - self.start_data.location.1;
+
+        let left_right = wl_shell_surface::Resize::Left | wl_shell_surface::Resize::Right;
+        let top_bottom = wl_shell_surface::Resize::Top | wl_shell_surface::Resize::Bottom;
+        let new_window_width = if self.edges.intersects(left_right) {
+            if self.edges.intersects(wl_shell_surface::Resize::Left) {
+                dx = -dx;
+            }
+
+            ((self.initial_window_size.0 as f64 + dx) as i32).max(1)
+        } else {
+            self.initial_window_size.0
+        };
+        let new_window_height = if self.edges.intersects(top_bottom) {
+            if self.edges.intersects(wl_shell_surface::Resize::Top) {
+                dy = -dy;
+            }
+
+            ((self.initial_window_size.1 as f64 + dy) as i32).max(1)
+        } else {
+            self.initial_window_size.1
+        };
+
+        self.last_window_size = (new_window_width, new_window_height);
+
+        match &self.toplevel {
+            SurfaceKind::Xdg(xdg) => xdg.send_configure(ToplevelConfigure {
+                size: Some(self.last_window_size),
+                states: vec![xdg_toplevel::State::Resizing],
+                serial,
+            }),
+            SurfaceKind::Wl(wl) => wl.send_configure(
+                (self.last_window_size.0 as u32, self.last_window_size.1 as u32),
+                self.edges,
+            ),
+        }
+    }
+
+    fn button(
+        &mut self,
+        handle: &mut PointerInnerHandle<'_>,
+        button: u32,
+        state: ButtonState,
+        serial: u32,
+        time: u32,
+    ) {
+        handle.button(button, state, serial, time);
+        if handle.current_pressed().is_empty() {
+            // No more buttons are pressed, release the grab.
+            handle.unset_grab(serial, time);
+
+            if let SurfaceKind::Xdg(xdg) = &self.toplevel {
+                // Send the final configure without the resizing state.
+                xdg.send_configure(ToplevelConfigure {
+                    size: Some(self.last_window_size),
+                    states: vec![],
+                    serial,
+                });
+            }
         }
     }
 
@@ -188,6 +280,63 @@ pub fn init_shell(
 
                 pointer.set_grab(grab, serial);
             }
+            XdgRequest::Resize {
+                surface,
+                seat,
+                serial,
+                edges,
+            } => {
+                let seat = Seat::from_resource(&seat).unwrap();
+                // TODO: touch resize.
+                let pointer = seat.get_pointer().unwrap();
+
+                // Check that this surface has a click grab.
+                if !pointer.has_grab(serial) {
+                    return;
+                }
+
+                let start_data = pointer.grab_start_data().unwrap();
+
+                // If the focus was for a different surface, ignore the request.
+                if start_data.focus.is_none()
+                    || !start_data
+                        .focus
+                        .as_ref()
+                        .unwrap()
+                        .0
+                        .as_ref()
+                        .same_client_as(surface.get_surface().unwrap().as_ref())
+                {
+                    return;
+                }
+
+                let toplevel = SurfaceKind::Xdg(surface);
+                let initial_window_location = xdg_window_map.borrow().location(&toplevel).unwrap();
+                let geometry = xdg_window_map.borrow().geometry(&toplevel).unwrap();
+                let initial_window_size = (geometry.width, geometry.height);
+
+                let edges = match edges {
+                    xdg_toplevel::ResizeEdge::Top => wl_shell_surface::Resize::Top,
+                    xdg_toplevel::ResizeEdge::Bottom => wl_shell_surface::Resize::Bottom,
+                    xdg_toplevel::ResizeEdge::Left => wl_shell_surface::Resize::Left,
+                    xdg_toplevel::ResizeEdge::TopLeft => wl_shell_surface::Resize::TopLeft,
+                    xdg_toplevel::ResizeEdge::BottomLeft => wl_shell_surface::Resize::BottomLeft,
+                    xdg_toplevel::ResizeEdge::Right => wl_shell_surface::Resize::Right,
+                    xdg_toplevel::ResizeEdge::TopRight => wl_shell_surface::Resize::TopRight,
+                    xdg_toplevel::ResizeEdge::BottomRight => wl_shell_surface::Resize::BottomRight,
+                    _ => return,
+                };
+
+                let grab = ResizeSurfaceGrab {
+                    start_data,
+                    toplevel,
+                    edges,
+                    initial_window_size,
+                    last_window_size: initial_window_size,
+                };
+
+                pointer.set_grab(grab, serial);
+            }
             _ => (),
         },
         log.clone(),
@@ -252,6 +401,51 @@ pub fn init_shell(
                         window_map: shell_window_map.clone(),
                         toplevel,
                         initial_window_location,
+                    };
+
+                    pointer.set_grab(grab, serial);
+                }
+                ShellRequest::Resize {
+                    surface,
+                    seat,
+                    serial,
+                    edges,
+                } => {
+                    let seat = Seat::from_resource(&seat).unwrap();
+                    // TODO: touch resize.
+                    let pointer = seat.get_pointer().unwrap();
+
+                    // Check that this surface has a click grab.
+                    if !pointer.has_grab(serial) {
+                        return;
+                    }
+
+                    let start_data = pointer.grab_start_data().unwrap();
+
+                    // If the focus was for a different surface, ignore the request.
+                    if start_data.focus.is_none()
+                        || !start_data
+                            .focus
+                            .as_ref()
+                            .unwrap()
+                            .0
+                            .as_ref()
+                            .same_client_as(surface.get_surface().unwrap().as_ref())
+                    {
+                        return;
+                    }
+
+                    let toplevel = SurfaceKind::Wl(surface);
+                    let initial_window_location = shell_window_map.borrow().location(&toplevel).unwrap();
+                    let geometry = shell_window_map.borrow().geometry(&toplevel).unwrap();
+                    let initial_window_size = (geometry.width, geometry.height);
+
+                    let grab = ResizeSurfaceGrab {
+                        start_data,
+                        toplevel,
+                        edges,
+                        initial_window_size,
+                        last_window_size: initial_window_size,
                     };
 
                     pointer.set_grab(grab, serial);
