@@ -28,7 +28,10 @@ use smithay::{
     },
 };
 
-use crate::window_map::{Kind as SurfaceKind, WindowMap};
+use crate::{
+    buffer_utils::BufferUtils,
+    window_map::{Kind as SurfaceKind, WindowMap},
+};
 
 define_roles!(Roles =>
     [ XdgSurface, XdgSurfaceRole ]
@@ -47,6 +50,7 @@ pub type MyCompositorToken = CompositorToken<Roles>;
 
 pub fn init_shell(
     display: &mut Display,
+    buffer_utils: BufferUtils,
     log: ::slog::Logger,
 ) -> (
     CompositorToken<Roles>,
@@ -58,7 +62,7 @@ pub fn init_shell(
     let (compositor_token, _, _) = compositor_init(
         display,
         move |request, surface, ctoken| match request {
-            SurfaceEvent::Commit => surface_commit(&surface, ctoken),
+            SurfaceEvent::Commit => surface_commit(&surface, ctoken, &buffer_utils),
             SurfaceEvent::Frame { callback } => callback
                 .implement_closure(|_, _| unreachable!(), None::<fn(_)>, ())
                 .done(0),
@@ -138,10 +142,15 @@ pub fn init_shell(
 pub struct SurfaceData {
     pub buffer: Option<wl_buffer::WlBuffer>,
     pub texture: Option<crate::glium_drawer::TextureMetadata>,
+    pub dimensions: Option<(i32, i32)>,
     pub input_region: Option<RegionAttributes>,
 }
 
-fn surface_commit(surface: &wl_surface::WlSurface, token: CompositorToken<Roles>) {
+fn surface_commit(
+    surface: &wl_surface::WlSurface,
+    token: CompositorToken<Roles>,
+    buffer_utils: &BufferUtils,
+) {
     token.with_surface_data(surface, |attributes| {
         attributes.user_data.insert_if_missing(SurfaceData::default);
         let data = attributes.user_data.get_mut::<SurfaceData>().unwrap();
@@ -157,6 +166,8 @@ fn surface_commit(surface: &wl_surface::WlSurface, token: CompositorToken<Roles>
                     old_buffer.release();
                 }
                 data.texture = None;
+                // If this fails, the buffer will be discarded later by the drawing code.
+                data.dimensions = buffer_utils.dimensions(data.buffer.as_ref().unwrap());
             }
             Some(None) => {
                 // erase the contents
@@ -164,6 +175,7 @@ fn surface_commit(surface: &wl_surface::WlSurface, token: CompositorToken<Roles>
                     old_buffer.release();
                 }
                 data.texture = None;
+                data.dimensions = None;
             }
             None => {}
         }
@@ -171,12 +183,10 @@ fn surface_commit(surface: &wl_surface::WlSurface, token: CompositorToken<Roles>
 }
 
 fn get_size(attrs: &SurfaceAttributes) -> Option<(i32, i32)> {
-    attrs.user_data.get::<SurfaceData>().and_then(|data| {
-        data.texture
-            .as_ref()
-            .map(|ref meta| meta.dimensions)
-            .map(|(x, y)| (x as i32, y as i32))
-    })
+    attrs
+        .user_data
+        .get::<SurfaceData>()
+        .and_then(|data| data.dimensions)
 }
 
 fn contains_point(attrs: &SurfaceAttributes, point: (f64, f64)) -> bool {

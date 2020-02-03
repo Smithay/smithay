@@ -61,6 +61,7 @@ use smithay::{
     },
 };
 
+use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
 use crate::input_handler::AnvilInputHandler;
 use crate::shell::{init_shell, MyWindowMap, Roles};
@@ -85,6 +86,11 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     #[cfg(feature = "egl")]
     let active_egl_context = Rc::new(RefCell::new(None));
 
+    #[cfg(feature = "egl")]
+    let buffer_utils = BufferUtils::new(active_egl_context.clone(), log.clone());
+    #[cfg(not(feature = "egl"))]
+    let buffer_utils = BufferUtils::new(log.clone());
+
     let display = Rc::new(RefCell::new(display));
 
     /*
@@ -92,7 +98,8 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
      */
     init_shm_global(&mut display.borrow_mut(), vec![], log.clone());
 
-    let (compositor_token, _, _, window_map) = init_shell(&mut display.borrow_mut(), log.clone());
+    let (compositor_token, _, _, window_map) =
+        init_shell(&mut display.borrow_mut(), buffer_utils, log.clone());
 
     /*
      * Initialize session
