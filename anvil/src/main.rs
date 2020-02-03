@@ -12,6 +12,7 @@ use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
 
 #[macro_use]
 mod shaders;
+mod buffer_utils;
 mod glium_drawer;
 mod input_handler;
 mod shell;
