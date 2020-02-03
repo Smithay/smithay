@@ -663,7 +663,6 @@ impl PointerGrab for DefaultGrab {
                     button,
                     location: handle.current_location(),
                 },
-                pending_focus: None,
             },
         );
     }
@@ -682,7 +681,6 @@ impl PointerGrab for DefaultGrab {
 // the grab once all are released.
 struct ClickGrab {
     start_data: GrabStartData,
-    pending_focus: Option<(WlSurface, (f64, f64))>,
 }
 
 impl PointerGrab for ClickGrab {
@@ -690,12 +688,10 @@ impl PointerGrab for ClickGrab {
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
-        focus: Option<(WlSurface, (f64, f64))>,
+        _focus: Option<(WlSurface, (f64, f64))>,
         serial: u32,
         time: u32,
     ) {
-        // buffer the future focus, but maintain the current one
-        self.pending_focus = focus;
         handle.motion(location, self.start_data.focus.clone(), serial, time);
     }
     fn button(
