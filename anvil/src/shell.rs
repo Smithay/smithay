@@ -8,14 +8,14 @@ use rand;
 
 use smithay::{
     reexports::wayland_server::{
-        protocol::{wl_buffer, wl_shell_surface, wl_surface},
+        protocol::{wl_buffer, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
         Display,
     },
     utils::Rectangle,
     wayland::{
         compositor::{compositor_init, CompositorToken, RegionAttributes, SurfaceAttributes, SurfaceEvent},
         data_device::DnDIconRole,
-        seat::CursorImageRole,
+        seat::{AxisFrame, CursorImageRole, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
         shell::{
             legacy::{
                 wl_shell_init, ShellRequest, ShellState as WlShellState, ShellSurfaceKind, ShellSurfaceRole,
@@ -25,6 +25,7 @@ use smithay::{
                 XdgSurfaceRole,
             },
         },
+        SERIAL_COUNTER as SCOUNTER,
     },
 };
 
@@ -44,6 +45,56 @@ pub type MyWindowMap = WindowMap<
 >;
 
 pub type MyCompositorToken = CompositorToken<Roles>;
+
+struct MoveSurfaceGrab {
+    start_data: GrabStartData,
+    window_map: Rc<RefCell<MyWindowMap>>,
+    toplevel: SurfaceKind<Roles>,
+    initial_window_location: (i32, i32),
+}
+
+impl PointerGrab for MoveSurfaceGrab {
+    fn motion(
+        &mut self,
+        _handle: &mut PointerInnerHandle<'_>,
+        location: (f64, f64),
+        _focus: Option<(wl_surface::WlSurface, (f64, f64))>,
+        _serial: u32,
+        _time: u32,
+    ) {
+        let dx = location.0 - self.start_data.location.0;
+        let dy = location.1 - self.start_data.location.1;
+        let new_window_x = (self.initial_window_location.0 as f64 + dx) as i32;
+        let new_window_y = (self.initial_window_location.1 as f64 + dy) as i32;
+
+        self.window_map
+            .borrow_mut()
+            .set_location(&self.toplevel, (new_window_x, new_window_y));
+    }
+
+    fn button(
+        &mut self,
+        handle: &mut PointerInnerHandle<'_>,
+        button: u32,
+        state: ButtonState,
+        serial: u32,
+        time: u32,
+    ) {
+        handle.button(button, state, serial, time);
+        if handle.current_pressed().is_empty() {
+            // No more buttons are pressed, release the grab.
+            handle.unset_grab(serial, time);
+        }
+    }
+
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
+        handle.axis(details)
+    }
+
+    fn start_data(&self) -> &GrabStartData {
+        &self.start_data
+    }
+}
 
 pub fn init_shell(
     display: &mut Display,
@@ -100,6 +151,47 @@ pub fn init_shell(
                 position: (10, 10),
                 serial: 42,
             }),
+            XdgRequest::Move {
+                surface,
+                seat,
+                serial,
+            } => {
+                let seat = Seat::from_resource(&seat).unwrap();
+                // TODO: touch move.
+                let pointer = seat.get_pointer().unwrap();
+
+                // Check that this surface has a click grab.
+                if !pointer.has_grab(serial) {
+                    return;
+                }
+
+                let start_data = pointer.grab_start_data().unwrap();
+
+                // If the focus was for a different surface, ignore the request.
+                if start_data.focus.is_none()
+                    || !start_data
+                        .focus
+                        .as_ref()
+                        .unwrap()
+                        .0
+                        .as_ref()
+                        .same_client_as(surface.get_surface().unwrap().as_ref())
+                {
+                    return;
+                }
+
+                let toplevel = SurfaceKind::Xdg(surface);
+                let initial_window_location = xdg_window_map.borrow().location(&toplevel).unwrap();
+
+                let grab = MoveSurfaceGrab {
+                    start_data,
+                    window_map: xdg_window_map.clone(),
+                    toplevel,
+                    initial_window_location,
+                };
+
+                pointer.set_grab(grab, serial);
+            }
             _ => (),
         },
         log.clone(),
@@ -111,21 +203,64 @@ pub fn init_shell(
         display,
         compositor_token,
         move |req: ShellRequest<_>| {
-            if let ShellRequest::SetKind {
-                surface,
-                kind: ShellSurfaceKind::Toplevel,
-            } = req
-            {
-                // place the window at a random location in the [0;800]x[0;800] square
-                use rand::distributions::{Distribution, Uniform};
-                let range = Uniform::new(0, 800);
-                let mut rng = rand::thread_rng();
-                let x = range.sample(&mut rng);
-                let y = range.sample(&mut rng);
-                surface.send_configure((0, 0), wl_shell_surface::Resize::None);
-                shell_window_map
-                    .borrow_mut()
-                    .insert(SurfaceKind::Wl(surface), (x, y));
+            match req {
+                ShellRequest::SetKind {
+                    surface,
+                    kind: ShellSurfaceKind::Toplevel,
+                } => {
+                    // place the window at a random location in the [0;800]x[0;800] square
+                    use rand::distributions::{Distribution, Uniform};
+                    let range = Uniform::new(0, 800);
+                    let mut rng = rand::thread_rng();
+                    let x = range.sample(&mut rng);
+                    let y = range.sample(&mut rng);
+                    surface.send_configure((0, 0), wl_shell_surface::Resize::None);
+                    shell_window_map
+                        .borrow_mut()
+                        .insert(SurfaceKind::Wl(surface), (x, y));
+                }
+                ShellRequest::Move {
+                    surface,
+                    seat,
+                    serial,
+                } => {
+                    let seat = Seat::from_resource(&seat).unwrap();
+                    // TODO: touch move.
+                    let pointer = seat.get_pointer().unwrap();
+
+                    // Check that this surface has a click grab.
+                    if !pointer.has_grab(serial) {
+                        return;
+                    }
+
+                    let start_data = pointer.grab_start_data().unwrap();
+
+                    // If the focus was for a different surface, ignore the request.
+                    if start_data.focus.is_none()
+                        || !start_data
+                            .focus
+                            .as_ref()
+                            .unwrap()
+                            .0
+                            .as_ref()
+                            .same_client_as(surface.get_surface().unwrap().as_ref())
+                    {
+                        return;
+                    }
+
+                    let toplevel = SurfaceKind::Wl(surface);
+                    let initial_window_location = shell_window_map.borrow().location(&toplevel).unwrap();
+
+                    let grab = MoveSurfaceGrab {
+                        start_data,
+                        window_map: shell_window_map.clone(),
+                        toplevel,
+                        initial_window_location,
+                    };
+
+                    pointer.set_grab(grab, serial);
+                }
+                _ => (),
             }
         },
         log.clone(),

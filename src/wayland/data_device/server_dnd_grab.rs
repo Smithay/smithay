@@ -7,7 +7,7 @@ use wayland_server::{
     NewResource,
 };
 
-use crate::wayland::seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat};
+use crate::wayland::seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat};
 
 use super::{DataDeviceData, SeatData};
 
@@ -37,6 +37,7 @@ pub enum ServerDndEvent {
 }
 
 pub(crate) struct ServerDnDGrab<C: 'static> {
+    start_data: GrabStartData,
     metadata: super::SourceMetadata,
     current_focus: Option<wl_surface::WlSurface>,
     pending_offers: Vec<wl_data_offer::WlDataOffer>,
@@ -47,11 +48,13 @@ pub(crate) struct ServerDnDGrab<C: 'static> {
 
 impl<C: 'static> ServerDnDGrab<C> {
     pub(crate) fn new(
+        start_data: GrabStartData,
         metadata: super::SourceMetadata,
         seat: Seat,
         callback: Rc<RefCell<C>>,
     ) -> ServerDnDGrab<C> {
         ServerDnDGrab {
+            start_data,
             metadata,
             current_focus: None,
             pending_offers: Vec::with_capacity(1),
@@ -211,6 +214,10 @@ where
     fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
         // we just forward the axis events as is
         handle.axis(details);
+    }
+
+    fn start_data(&self) -> &GrabStartData {
+        &self.start_data
     }
 }
 

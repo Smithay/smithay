@@ -8,12 +8,13 @@ use wayland_server::{
 
 use crate::wayland::{
     compositor::{roles::Role, CompositorToken},
-    seat::{AxisFrame, PointerGrab, PointerInnerHandle, Seat},
+    seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
 };
 
 use super::{with_source_metadata, DataDeviceData, DnDIconRole, SeatData};
 
 pub(crate) struct DnDGrab<R> {
+    start_data: GrabStartData,
     data_source: Option<wl_data_source::WlDataSource>,
     current_focus: Option<wl_surface::WlSurface>,
     pending_offers: Vec<wl_data_offer::WlDataOffer>,
@@ -27,6 +28,7 @@ pub(crate) struct DnDGrab<R> {
 
 impl<R: Role<DnDIconRole> + 'static> DnDGrab<R> {
     pub(crate) fn new(
+        start_data: GrabStartData,
         source: Option<wl_data_source::WlDataSource>,
         origin: wl_surface::WlSurface,
         seat: Seat,
@@ -35,6 +37,7 @@ impl<R: Role<DnDIconRole> + 'static> DnDGrab<R> {
         callback: Rc<RefCell<dyn FnMut(super::DataDeviceEvent)>>,
     ) -> DnDGrab<R> {
         DnDGrab {
+            start_data,
             data_source: source,
             current_focus: None,
             pending_offers: Vec::with_capacity(1),
@@ -221,6 +224,10 @@ impl<R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<R> {
     fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
         // we just forward the axis events as is
         handle.axis(details);
+    }
+
+    fn start_data(&self) -> &GrabStartData {
+        &self.start_data
     }
 }
 

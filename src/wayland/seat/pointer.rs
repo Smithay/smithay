@@ -166,6 +166,15 @@ impl PointerHandle {
         }
     }
 
+    /// Returns the start data for the grab, if any.
+    pub fn grab_start_data(&self) -> Option<GrabStartData> {
+        let guard = self.inner.borrow();
+        match &guard.grab {
+            GrabStatus::Active(_, g) => Some(g.start_data().clone()),
+            _ => None,
+        }
+    }
+
     /// Notify that the pointer moved
     ///
     /// You provide the new location of the pointer, in the form of:
@@ -219,6 +228,24 @@ impl PointerHandle {
             grab.axis(&mut handle, details);
         });
     }
+
+    /// Access the current location of this pointer in the global space
+    pub fn current_location(&self) -> (f64, f64) {
+        self.inner.borrow().location
+    }
+}
+
+/// Data about the event that started the grab.
+#[derive(Clone)]
+pub struct GrabStartData {
+    /// The focused surface and its location, if any, at the start of the grab.
+    ///
+    /// The location coordinates are in the global compositor space.
+    pub focus: Option<(WlSurface, (f64, f64))>,
+    /// The button that initiated the grab.
+    pub button: u32,
+    /// The location of the click that initiated the grab, in the global compositor space.
+    pub location: (f64, f64),
 }
 
 /// A trait to implement a pointer grab
@@ -257,6 +284,8 @@ pub trait PointerGrab {
     );
     /// An axis scroll was reported
     fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame);
+    /// The data about the event that started the grab.
+    fn start_data(&self) -> &GrabStartData;
 }
 
 /// This inner handle is accessed from inside a pointer grab logic, and directly
@@ -626,17 +655,22 @@ impl PointerGrab for DefaultGrab {
         time: u32,
     ) {
         handle.button(button, state, serial, time);
-        let current_focus = handle.current_focus().cloned();
         handle.set_grab(
             serial,
             ClickGrab {
-                current_focus,
-                pending_focus: None,
+                start_data: GrabStartData {
+                    focus: handle.current_focus().cloned(),
+                    button,
+                    location: handle.current_location(),
+                },
             },
         );
     }
     fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
         handle.axis(details);
+    }
+    fn start_data(&self) -> &GrabStartData {
+        unreachable!()
     }
 }
 
@@ -646,8 +680,7 @@ impl PointerGrab for DefaultGrab {
 // In case the user maintains several simultaneous clicks, release
 // the grab once all are released.
 struct ClickGrab {
-    current_focus: Option<(WlSurface, (f64, f64))>,
-    pending_focus: Option<(WlSurface, (f64, f64))>,
+    start_data: GrabStartData,
 }
 
 impl PointerGrab for ClickGrab {
@@ -655,13 +688,11 @@ impl PointerGrab for ClickGrab {
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
-        focus: Option<(WlSurface, (f64, f64))>,
+        _focus: Option<(WlSurface, (f64, f64))>,
         serial: u32,
         time: u32,
     ) {
-        // buffer the future focus, but maintain the current one
-        self.pending_focus = focus;
-        handle.motion(location, self.current_focus.clone(), serial, time);
+        handle.motion(location, self.start_data.focus.clone(), serial, time);
     }
     fn button(
         &mut self,
@@ -679,5 +710,8 @@ impl PointerGrab for ClickGrab {
     }
     fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
         handle.axis(details);
+    }
+    fn start_data(&self) -> &GrabStartData {
+        &self.start_data
     }
 }

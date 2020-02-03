@@ -33,6 +33,15 @@ where
             Kind::Wl(ref t) => t.get_surface(),
         }
     }
+
+    /// Do this handle and the other one actually refer to the same toplevel surface?
+    pub fn equals(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Kind::Xdg(a), Kind::Xdg(b)) => a.equals(b),
+            (Kind::Wl(a), Kind::Wl(b)) => a.equals(b),
+            _ => false,
+        }
+    }
 }
 
 struct Window<R> {
@@ -224,5 +233,21 @@ where
 
     pub fn clear(&mut self) {
         self.windows.clear();
+    }
+
+    /// Returns the location of the toplevel, if it exists.
+    pub fn location(&self, toplevel: &Kind<R>) -> Option<(i32, i32)> {
+        self.windows
+            .iter()
+            .find(|w| w.toplevel.equals(toplevel))
+            .map(|w| w.location)
+    }
+
+    /// Sets the location of the toplevel, if it exists.
+    pub fn set_location(&mut self, toplevel: &Kind<R>, location: (i32, i32)) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.toplevel.equals(toplevel)) {
+            w.location = location;
+            w.self_update(self.ctoken, &self.get_size);
+        }
     }
 }
