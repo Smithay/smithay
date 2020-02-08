@@ -941,4 +941,11 @@ pub enum XdgRequest<R> {
         /// location of the menu request
         location: (i32, i32),
     },
+    /// A surface has acknowledged a configure serial.
+    AckConfigure {
+        /// The surface.
+        surface: wl_surface::WlSurface,
+        /// The configure serial.
+        serial: u32,
+    },
 }

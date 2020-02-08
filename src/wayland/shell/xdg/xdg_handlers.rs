@@ -333,6 +333,12 @@ where
                     role_data.configured = true;
                 })
                 .expect("xdg_surface exists but surface has not shell_surface role?!");
+
+            let mut user_impl = data.shell_data.user_impl.borrow_mut();
+            (&mut *user_impl)(XdgRequest::AckConfigure {
+                surface: data.wl_surface.clone(),
+                serial,
+            });
         }
         _ => unreachable!(),
     }
