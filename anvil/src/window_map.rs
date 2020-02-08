@@ -237,6 +237,13 @@ where
         }
     }
 
+    /// Refreshes the state of the toplevel, if it exists.
+    pub fn refresh_toplevel(&mut self, toplevel: &Kind<R>) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.toplevel.equals(toplevel)) {
+            w.self_update(self.ctoken);
+        }
+    }
+
     pub fn clear(&mut self) {
         self.windows.clear();
     }
