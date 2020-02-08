@@ -197,11 +197,19 @@ pub fn init_shell(
     Arc<Mutex<WlShellState<Roles>>>,
     Rc<RefCell<MyWindowMap>>,
 ) {
+    // TODO: this is awkward...
+    let almost_window_map = Rc::new(RefCell::new(None::<Rc<RefCell<MyWindowMap>>>));
+    let almost_window_map_compositor = almost_window_map.clone();
+
     // Create the compositor
     let (compositor_token, _, _) = compositor_init(
         display,
         move |request, surface, ctoken| match request {
-            SurfaceEvent::Commit => surface_commit(&surface, ctoken, &buffer_utils),
+            SurfaceEvent::Commit => {
+                let window_map = almost_window_map_compositor.borrow();
+                let window_map = window_map.as_ref().unwrap();
+                surface_commit(&surface, ctoken, &buffer_utils, &*window_map)
+            }
             SurfaceEvent::Frame { callback } => callback
                 .implement_closure(|_, _| unreachable!(), None::<fn(_)>, ())
                 .done(0),
@@ -211,6 +219,7 @@ pub fn init_shell(
 
     // Init a window map, to track the location of our windows
     let window_map = Rc::new(RefCell::new(WindowMap::new(compositor_token)));
+    *almost_window_map.borrow_mut() = Some(window_map.clone());
 
     // init the xdg_shell
     let xdg_window_map = window_map.clone();
@@ -509,12 +518,13 @@ fn surface_commit(
     surface: &wl_surface::WlSurface,
     token: CompositorToken<Roles>,
     buffer_utils: &BufferUtils,
+    window_map: &RefCell<MyWindowMap>,
 ) {
     let geometry = token
         .with_role_data(surface, |role: &mut XdgSurfaceRole| role.window_geometry)
         .unwrap_or(None);
 
-    token.with_surface_data(surface, |attributes| {
+    let refresh = token.with_surface_data(surface, |attributes| {
         attributes.user_data.insert_if_missing(SurfaceData::default);
         let data = attributes.user_data.get_mut::<SurfaceData>().unwrap();
 
@@ -543,5 +553,12 @@ fn surface_commit(
             }
             None => {}
         }
+
+        window_map.borrow().find(surface)
     });
+
+    if let Some(toplevel) = refresh {
+        let mut window_map = window_map.borrow_mut();
+        window_map.refresh_toplevel(&toplevel);
+    }
 }
