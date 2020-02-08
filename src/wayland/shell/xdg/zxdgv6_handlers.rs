@@ -491,7 +491,7 @@ where
         }
         zxdg_toplevel_v6::Request::SetMinSize { width, height } => {
             with_surface_toplevel_data::<R, _>(&toplevel, |toplevel_data| {
-                toplevel_data.max_size = (width, height);
+                toplevel_data.min_size = (width, height);
             });
         }
         zxdg_toplevel_v6::Request::SetMaximized => {

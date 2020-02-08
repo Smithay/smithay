@@ -473,7 +473,7 @@ where
         }
         xdg_toplevel::Request::SetMinSize { width, height } => {
             with_surface_toplevel_data(&data.shell_data, &toplevel, |toplevel_data| {
-                toplevel_data.max_size = (width, height);
+                toplevel_data.min_size = (width, height);
             });
         }
         xdg_toplevel::Request::SetMaximized => {
