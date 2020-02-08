@@ -241,6 +241,21 @@ where
         self.windows.clear();
     }
 
+    /// Finds the toplevel corresponding to the given `WlSurface`.
+    pub fn find(&self, surface: &wl_surface::WlSurface) -> Option<Kind<R>> {
+        self.windows.iter().find_map(|w| {
+            if w.toplevel
+                .get_surface()
+                .map(|s| s.as_ref().equals(surface.as_ref()))
+                .unwrap_or(false)
+            {
+                Some(w.toplevel.clone())
+            } else {
+                None
+            }
+        })
+    }
+
     /// Returns the location of the toplevel, if it exists.
     pub fn location(&self, toplevel: &Kind<R>) -> Option<(i32, i32)> {
         self.windows
