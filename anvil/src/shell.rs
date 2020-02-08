@@ -25,7 +25,7 @@ use smithay::{
             },
             xdg::{
                 xdg_shell_init, PopupConfigure, ShellState as XdgShellState, ToplevelConfigure, XdgRequest,
-                XdgSurfaceRole,
+                XdgSurfacePendingState, XdgSurfaceRole,
             },
         },
         SERIAL_COUNTER as SCOUNTER,
@@ -577,6 +577,14 @@ pub struct SurfaceData {
     pub geometry: Option<Rectangle>,
     pub input_region: Option<RegionAttributes>,
     pub resize_state: ResizeState,
+    /// Minimum width and height, as requested by the surface.
+    ///
+    /// `0` means unlimited.
+    pub min_size: (i32, i32),
+    /// Maximum width and height, as requested by the surface.
+    ///
+    /// `0` means unlimited.
+    pub max_size: (i32, i32),
 }
 
 impl SurfaceData {
@@ -622,9 +630,17 @@ fn surface_commit(
     buffer_utils: &BufferUtils,
     window_map: &RefCell<MyWindowMap>,
 ) {
-    let geometry = token
-        .with_role_data(surface, |role: &mut XdgSurfaceRole| role.window_geometry)
-        .unwrap_or(None);
+    let mut geometry = None;
+    let mut min_size = (0, 0);
+    let mut max_size = (0, 0);
+    let _ = token.with_role_data(surface, |role: &mut XdgSurfaceRole| {
+        if let XdgSurfacePendingState::Toplevel(ref state) = role.pending_state {
+            min_size = state.min_size;
+            max_size = state.max_size;
+        }
+
+        geometry = role.window_geometry;
+    });
 
     let refresh = token.with_surface_data(surface, |attributes| {
         attributes.user_data.insert_if_missing(SurfaceData::default);
@@ -632,6 +648,8 @@ fn surface_commit(
 
         data.geometry = geometry;
         data.input_region = attributes.input_region.clone();
+        data.min_size = min_size;
+        data.max_size = max_size;
 
         // we retrieve the contents of the associated buffer and copy it
         match attributes.buffer.take() {
