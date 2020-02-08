@@ -119,26 +119,50 @@ impl PointerGrab for ResizeSurfaceGrab {
         let mut dx = location.0 - self.start_data.location.0;
         let mut dy = location.1 - self.start_data.location.1;
 
+        let mut new_window_width = self.initial_window_size.0;
+        let mut new_window_height = self.initial_window_size.1;
+
         let left_right = wl_shell_surface::Resize::Left | wl_shell_surface::Resize::Right;
         let top_bottom = wl_shell_surface::Resize::Top | wl_shell_surface::Resize::Bottom;
-        let new_window_width = if self.edges.intersects(left_right) {
+
+        if self.edges.intersects(left_right) {
             if self.edges.intersects(wl_shell_surface::Resize::Left) {
                 dx = -dx;
             }
 
-            ((self.initial_window_size.0 as f64 + dx) as i32).max(1)
-        } else {
-            self.initial_window_size.0
-        };
-        let new_window_height = if self.edges.intersects(top_bottom) {
+            new_window_width = (self.initial_window_size.0 as f64 + dx) as i32;
+        }
+
+        if self.edges.intersects(top_bottom) {
             if self.edges.intersects(wl_shell_surface::Resize::Top) {
                 dy = -dy;
             }
 
-            ((self.initial_window_size.1 as f64 + dy) as i32).max(1)
+            new_window_height = (self.initial_window_size.1 as f64 + dy) as i32;
+        }
+
+        let (min_size, max_size) =
+            self.ctoken
+                .with_surface_data(self.toplevel.get_surface().unwrap(), |attrs| {
+                    let data = attrs.user_data.get::<SurfaceData>().unwrap();
+                    (data.min_size, data.max_size)
+                });
+
+        let min_width = min_size.0.max(1);
+        let min_height = min_size.1.max(1);
+        let max_width = if max_size.0 == 0 {
+            i32::max_value()
         } else {
-            self.initial_window_size.1
+            max_size.0
         };
+        let max_height = if max_size.1 == 0 {
+            i32::max_value()
+        } else {
+            max_size.1
+        };
+
+        new_window_width = new_window_width.max(min_width).min(max_width);
+        new_window_height = new_window_height.max(min_height).min(max_height);
 
         self.last_window_size = (new_window_width, new_window_height);
 
