@@ -19,6 +19,16 @@ pub enum Kind<R> {
     Wl(ShellSurface<R>),
 }
 
+// We implement Clone manually because #[derive(..)] would require R: Clone.
+impl<R> Clone for Kind<R> {
+    fn clone(&self) -> Self {
+        match self {
+            Kind::Xdg(xdg) => Kind::Xdg(xdg.clone()),
+            Kind::Wl(wl) => Kind::Wl(wl.clone()),
+        }
+    }
+}
+
 impl<R> Kind<R>
 where
     R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole> + 'static,
