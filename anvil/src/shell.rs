@@ -218,7 +218,6 @@ pub fn init_shell(
                     let mut rng = rand::thread_rng();
                     let x = range.sample(&mut rng);
                     let y = range.sample(&mut rng);
-                    surface.send_configure((0, 0), wl_shell_surface::Resize::None);
                     shell_window_map
                         .borrow_mut()
                         .insert(SurfaceKind::Wl(surface), (x, y));
