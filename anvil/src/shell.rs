@@ -4,6 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use bitflags::bitflags;
 use rand;
 
 use smithay::{
@@ -98,11 +99,53 @@ impl PointerGrab for MoveSurfaceGrab {
     }
 }
 
+bitflags! {
+    struct ResizeEdge: u32 {
+        const NONE = 0;
+        const TOP = 1;
+        const BOTTOM = 2;
+        const LEFT = 4;
+        const TOP_LEFT = 5;
+        const BOTTOM_LEFT = 6;
+        const RIGHT = 8;
+        const TOP_RIGHT = 9;
+        const BOTTOM_RIGHT = 10;
+    }
+}
+
+impl From<wl_shell_surface::Resize> for ResizeEdge {
+    #[inline]
+    fn from(x: wl_shell_surface::Resize) -> Self {
+        Self::from_bits(x.bits()).unwrap()
+    }
+}
+
+impl From<ResizeEdge> for wl_shell_surface::Resize {
+    #[inline]
+    fn from(x: ResizeEdge) -> Self {
+        Self::from_bits(x.bits()).unwrap()
+    }
+}
+
+impl From<xdg_toplevel::ResizeEdge> for ResizeEdge {
+    #[inline]
+    fn from(x: xdg_toplevel::ResizeEdge) -> Self {
+        Self::from_bits(x.to_raw()).unwrap()
+    }
+}
+
+impl From<ResizeEdge> for xdg_toplevel::ResizeEdge {
+    #[inline]
+    fn from(x: ResizeEdge) -> Self {
+        Self::from_raw(x.bits()).unwrap()
+    }
+}
+
 struct ResizeSurfaceGrab {
     start_data: GrabStartData,
     ctoken: MyCompositorToken,
     toplevel: SurfaceKind<Roles>,
-    edges: wl_shell_surface::Resize,
+    edges: ResizeEdge,
     initial_window_size: (i32, i32),
     last_window_size: (i32, i32),
 }
@@ -122,11 +165,11 @@ impl PointerGrab for ResizeSurfaceGrab {
         let mut new_window_width = self.initial_window_size.0;
         let mut new_window_height = self.initial_window_size.1;
 
-        let left_right = wl_shell_surface::Resize::Left | wl_shell_surface::Resize::Right;
-        let top_bottom = wl_shell_surface::Resize::Top | wl_shell_surface::Resize::Bottom;
+        let left_right = ResizeEdge::LEFT | ResizeEdge::RIGHT;
+        let top_bottom = ResizeEdge::TOP | ResizeEdge::BOTTOM;
 
         if self.edges.intersects(left_right) {
-            if self.edges.intersects(wl_shell_surface::Resize::Left) {
+            if self.edges.intersects(ResizeEdge::LEFT) {
                 dx = -dx;
             }
 
@@ -134,7 +177,7 @@ impl PointerGrab for ResizeSurfaceGrab {
         }
 
         if self.edges.intersects(top_bottom) {
-            if self.edges.intersects(wl_shell_surface::Resize::Top) {
+            if self.edges.intersects(ResizeEdge::TOP) {
                 dy = -dy;
             }
 
@@ -174,7 +217,7 @@ impl PointerGrab for ResizeSurfaceGrab {
             }),
             SurfaceKind::Wl(wl) => wl.send_configure(
                 (self.last_window_size.0 as u32, self.last_window_size.1 as u32),
-                self.edges,
+                self.edges.into(),
             ),
         }
     }
@@ -369,22 +412,10 @@ pub fn init_shell(
                 let geometry = xdg_window_map.borrow().geometry(&toplevel).unwrap();
                 let initial_window_size = (geometry.width, geometry.height);
 
-                let edges = match edges {
-                    xdg_toplevel::ResizeEdge::Top => wl_shell_surface::Resize::Top,
-                    xdg_toplevel::ResizeEdge::Bottom => wl_shell_surface::Resize::Bottom,
-                    xdg_toplevel::ResizeEdge::Left => wl_shell_surface::Resize::Left,
-                    xdg_toplevel::ResizeEdge::TopLeft => wl_shell_surface::Resize::TopLeft,
-                    xdg_toplevel::ResizeEdge::BottomLeft => wl_shell_surface::Resize::BottomLeft,
-                    xdg_toplevel::ResizeEdge::Right => wl_shell_surface::Resize::Right,
-                    xdg_toplevel::ResizeEdge::TopRight => wl_shell_surface::Resize::TopRight,
-                    xdg_toplevel::ResizeEdge::BottomRight => wl_shell_surface::Resize::BottomRight,
-                    _ => return,
-                };
-
                 compositor_token.with_surface_data(surface.get_surface().unwrap(), move |attrs| {
                     attrs.user_data.get_mut::<SurfaceData>().unwrap().resize_state =
                         ResizeState::Resizing(ResizeData {
-                            edges,
+                            edges: edges.into(),
                             initial_window_location,
                             initial_window_size,
                         });
@@ -394,7 +425,7 @@ pub fn init_shell(
                     start_data,
                     ctoken: compositor_token,
                     toplevel,
-                    edges,
+                    edges: edges.into(),
                     initial_window_size,
                     last_window_size: initial_window_size,
                 };
@@ -537,7 +568,7 @@ pub fn init_shell(
                     compositor_token.with_surface_data(surface.get_surface().unwrap(), move |attrs| {
                         attrs.user_data.get_mut::<SurfaceData>().unwrap().resize_state =
                             ResizeState::Resizing(ResizeData {
-                                edges,
+                                edges: edges.into(),
                                 initial_window_location,
                                 initial_window_size,
                             });
@@ -547,7 +578,7 @@ pub fn init_shell(
                         start_data,
                         ctoken: compositor_token,
                         toplevel,
-                        edges,
+                        edges: edges.into(),
                         initial_window_size,
                         last_window_size: initial_window_size,
                     };
@@ -567,7 +598,7 @@ pub fn init_shell(
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct ResizeData {
     /// The edges the surface is being resized with.
-    edges: wl_shell_surface::Resize,
+    edges: ResizeEdge,
     /// The initial window location.
     initial_window_location: (i32, i32),
     /// The initial window size (geometry width and height).
@@ -724,13 +755,13 @@ fn surface_commit(
                         initial_window_size,
                     } = resize_data;
 
-                    if edges.intersects(wl_shell_surface::Resize::TopLeft) {
+                    if edges.intersects(ResizeEdge::TOP_LEFT) {
                         let mut location = window_map.location(&toplevel).unwrap();
 
-                        if edges.intersects(wl_shell_surface::Resize::Left) {
+                        if edges.intersects(ResizeEdge::LEFT) {
                             location.0 = initial_window_location.0 + (initial_window_size.0 - width);
                         }
-                        if edges.intersects(wl_shell_surface::Resize::Top) {
+                        if edges.intersects(ResizeEdge::TOP) {
                             location.1 = initial_window_location.1 + (initial_window_size.1 - height);
                         }
 
