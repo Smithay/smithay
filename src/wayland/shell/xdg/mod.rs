@@ -472,6 +472,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub(crate) enum ToplevelKind {
     Xdg(xdg_toplevel::XdgToplevel),
     ZxdgV6(zxdg_toplevel_v6::ZxdgToplevelV6),
@@ -482,6 +483,17 @@ pub struct ToplevelSurface<R> {
     wl_surface: wl_surface::WlSurface,
     shell_surface: ToplevelKind,
     token: CompositorToken<R>,
+}
+
+// We implement Clone manually because #[derive(..)] would require R: Clone.
+impl<R> Clone for ToplevelSurface<R> {
+    fn clone(&self) -> Self {
+        Self {
+            wl_surface: self.wl_surface.clone(),
+            shell_surface: self.shell_surface.clone(),
+            token: self.token.clone(),
+        }
+    }
 }
 
 impl<R> ToplevelSurface<R>
@@ -928,5 +940,12 @@ pub enum XdgRequest<R> {
         serial: u32,
         /// location of the menu request
         location: (i32, i32),
+    },
+    /// A surface has acknowledged a configure serial.
+    AckConfigure {
+        /// The surface.
+        surface: wl_surface::WlSurface,
+        /// The configure serial.
+        serial: u32,
     },
 }

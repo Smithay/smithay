@@ -4,12 +4,16 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use bitflags::bitflags;
 use rand;
 
 use smithay::{
-    reexports::wayland_server::{
-        protocol::{wl_buffer, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
-        Display,
+    reexports::{
+        wayland_protocols::xdg_shell::server::xdg_toplevel,
+        wayland_server::{
+            protocol::{wl_buffer, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
+            Display,
+        },
     },
     utils::Rectangle,
     wayland::{
@@ -22,7 +26,7 @@ use smithay::{
             },
             xdg::{
                 xdg_shell_init, PopupConfigure, ShellState as XdgShellState, ToplevelConfigure, XdgRequest,
-                XdgSurfaceRole,
+                XdgSurfacePendingState, XdgSurfaceRole,
             },
         },
         SERIAL_COUNTER as SCOUNTER,
@@ -41,11 +45,7 @@ define_roles!(Roles =>
     [ CursorImage, CursorImageRole ]
 );
 
-pub type MyWindowMap = WindowMap<
-    Roles,
-    fn(&SurfaceAttributes) -> Option<(i32, i32)>,
-    fn(&SurfaceAttributes, (f64, f64)) -> bool,
->;
+pub type MyWindowMap = WindowMap<Roles>;
 
 pub type MyCompositorToken = CompositorToken<Roles>;
 
@@ -99,6 +99,182 @@ impl PointerGrab for MoveSurfaceGrab {
     }
 }
 
+bitflags! {
+    struct ResizeEdge: u32 {
+        const NONE = 0;
+        const TOP = 1;
+        const BOTTOM = 2;
+        const LEFT = 4;
+        const TOP_LEFT = 5;
+        const BOTTOM_LEFT = 6;
+        const RIGHT = 8;
+        const TOP_RIGHT = 9;
+        const BOTTOM_RIGHT = 10;
+    }
+}
+
+impl From<wl_shell_surface::Resize> for ResizeEdge {
+    #[inline]
+    fn from(x: wl_shell_surface::Resize) -> Self {
+        Self::from_bits(x.bits()).unwrap()
+    }
+}
+
+impl From<ResizeEdge> for wl_shell_surface::Resize {
+    #[inline]
+    fn from(x: ResizeEdge) -> Self {
+        Self::from_bits(x.bits()).unwrap()
+    }
+}
+
+impl From<xdg_toplevel::ResizeEdge> for ResizeEdge {
+    #[inline]
+    fn from(x: xdg_toplevel::ResizeEdge) -> Self {
+        Self::from_bits(x.to_raw()).unwrap()
+    }
+}
+
+impl From<ResizeEdge> for xdg_toplevel::ResizeEdge {
+    #[inline]
+    fn from(x: ResizeEdge) -> Self {
+        Self::from_raw(x.bits()).unwrap()
+    }
+}
+
+struct ResizeSurfaceGrab {
+    start_data: GrabStartData,
+    ctoken: MyCompositorToken,
+    toplevel: SurfaceKind<Roles>,
+    edges: ResizeEdge,
+    initial_window_size: (i32, i32),
+    last_window_size: (i32, i32),
+}
+
+impl PointerGrab for ResizeSurfaceGrab {
+    fn motion(
+        &mut self,
+        _handle: &mut PointerInnerHandle<'_>,
+        location: (f64, f64),
+        _focus: Option<(wl_surface::WlSurface, (f64, f64))>,
+        serial: u32,
+        _time: u32,
+    ) {
+        let mut dx = location.0 - self.start_data.location.0;
+        let mut dy = location.1 - self.start_data.location.1;
+
+        let mut new_window_width = self.initial_window_size.0;
+        let mut new_window_height = self.initial_window_size.1;
+
+        let left_right = ResizeEdge::LEFT | ResizeEdge::RIGHT;
+        let top_bottom = ResizeEdge::TOP | ResizeEdge::BOTTOM;
+
+        if self.edges.intersects(left_right) {
+            if self.edges.intersects(ResizeEdge::LEFT) {
+                dx = -dx;
+            }
+
+            new_window_width = (self.initial_window_size.0 as f64 + dx) as i32;
+        }
+
+        if self.edges.intersects(top_bottom) {
+            if self.edges.intersects(ResizeEdge::TOP) {
+                dy = -dy;
+            }
+
+            new_window_height = (self.initial_window_size.1 as f64 + dy) as i32;
+        }
+
+        let (min_size, max_size) =
+            self.ctoken
+                .with_surface_data(self.toplevel.get_surface().unwrap(), |attrs| {
+                    let data = attrs.user_data.get::<SurfaceData>().unwrap();
+                    (data.min_size, data.max_size)
+                });
+
+        let min_width = min_size.0.max(1);
+        let min_height = min_size.1.max(1);
+        let max_width = if max_size.0 == 0 {
+            i32::max_value()
+        } else {
+            max_size.0
+        };
+        let max_height = if max_size.1 == 0 {
+            i32::max_value()
+        } else {
+            max_size.1
+        };
+
+        new_window_width = new_window_width.max(min_width).min(max_width);
+        new_window_height = new_window_height.max(min_height).min(max_height);
+
+        self.last_window_size = (new_window_width, new_window_height);
+
+        match &self.toplevel {
+            SurfaceKind::Xdg(xdg) => xdg.send_configure(ToplevelConfigure {
+                size: Some(self.last_window_size),
+                states: vec![xdg_toplevel::State::Resizing],
+                serial,
+            }),
+            SurfaceKind::Wl(wl) => wl.send_configure(
+                (self.last_window_size.0 as u32, self.last_window_size.1 as u32),
+                self.edges.into(),
+            ),
+        }
+    }
+
+    fn button(
+        &mut self,
+        handle: &mut PointerInnerHandle<'_>,
+        button: u32,
+        state: ButtonState,
+        serial: u32,
+        time: u32,
+    ) {
+        handle.button(button, state, serial, time);
+        if handle.current_pressed().is_empty() {
+            // No more buttons are pressed, release the grab.
+            handle.unset_grab(serial, time);
+
+            if let SurfaceKind::Xdg(xdg) = &self.toplevel {
+                // Send the final configure without the resizing state.
+                xdg.send_configure(ToplevelConfigure {
+                    size: Some(self.last_window_size),
+                    states: vec![],
+                    serial,
+                });
+
+                self.ctoken
+                    .with_surface_data(self.toplevel.get_surface().unwrap(), |attrs| {
+                        let data = attrs.user_data.get_mut::<SurfaceData>().unwrap();
+                        if let ResizeState::Resizing(resize_data) = data.resize_state {
+                            data.resize_state = ResizeState::WaitingForFinalAck(resize_data, serial);
+                        } else {
+                            panic!("invalid resize state: {:?}", data.resize_state);
+                        }
+                    });
+            } else {
+                self.ctoken
+                    .with_surface_data(self.toplevel.get_surface().unwrap(), |attrs| {
+                        let data = attrs.user_data.get_mut::<SurfaceData>().unwrap();
+                        if let ResizeState::Resizing(resize_data) = data.resize_state {
+                            data.resize_state = ResizeState::WaitingForCommit(resize_data);
+                        } else {
+                            panic!("invalid resize state: {:?}", data.resize_state);
+                        }
+                    });
+            }
+        }
+    }
+
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
+        handle.axis(details)
+    }
+
+    fn start_data(&self) -> &GrabStartData {
+        &self.start_data
+    }
+}
+
 pub fn init_shell(
     display: &mut Display,
     buffer_utils: BufferUtils,
@@ -109,11 +285,19 @@ pub fn init_shell(
     Arc<Mutex<WlShellState<Roles>>>,
     Rc<RefCell<MyWindowMap>>,
 ) {
+    // TODO: this is awkward...
+    let almost_window_map = Rc::new(RefCell::new(None::<Rc<RefCell<MyWindowMap>>>));
+    let almost_window_map_compositor = almost_window_map.clone();
+
     // Create the compositor
     let (compositor_token, _, _) = compositor_init(
         display,
         move |request, surface, ctoken| match request {
-            SurfaceEvent::Commit => surface_commit(&surface, ctoken, &buffer_utils),
+            SurfaceEvent::Commit => {
+                let window_map = almost_window_map_compositor.borrow();
+                let window_map = window_map.as_ref().unwrap();
+                surface_commit(&surface, ctoken, &buffer_utils, &*window_map)
+            }
             SurfaceEvent::Frame { callback } => callback
                 .implement_closure(|_, _| unreachable!(), None::<fn(_)>, ())
                 .done(0),
@@ -122,11 +306,8 @@ pub fn init_shell(
     );
 
     // Init a window map, to track the location of our windows
-    let window_map = Rc::new(RefCell::new(WindowMap::new(
-        compositor_token,
-        get_size as _,
-        contains_point as _,
-    )));
+    let window_map = Rc::new(RefCell::new(WindowMap::new(compositor_token)));
+    *almost_window_map.borrow_mut() = Some(window_map.clone());
 
     // init the xdg_shell
     let xdg_window_map = window_map.clone();
@@ -196,6 +377,91 @@ pub fn init_shell(
 
                 pointer.set_grab(grab, serial);
             }
+            XdgRequest::Resize {
+                surface,
+                seat,
+                serial,
+                edges,
+            } => {
+                let seat = Seat::from_resource(&seat).unwrap();
+                // TODO: touch resize.
+                let pointer = seat.get_pointer().unwrap();
+
+                // Check that this surface has a click grab.
+                if !pointer.has_grab(serial) {
+                    return;
+                }
+
+                let start_data = pointer.grab_start_data().unwrap();
+
+                // If the focus was for a different surface, ignore the request.
+                if start_data.focus.is_none()
+                    || !start_data
+                        .focus
+                        .as_ref()
+                        .unwrap()
+                        .0
+                        .as_ref()
+                        .same_client_as(surface.get_surface().unwrap().as_ref())
+                {
+                    return;
+                }
+
+                let toplevel = SurfaceKind::Xdg(surface.clone());
+                let initial_window_location = xdg_window_map.borrow().location(&toplevel).unwrap();
+                let geometry = xdg_window_map.borrow().geometry(&toplevel).unwrap();
+                let initial_window_size = (geometry.width, geometry.height);
+
+                compositor_token.with_surface_data(surface.get_surface().unwrap(), move |attrs| {
+                    attrs.user_data.get_mut::<SurfaceData>().unwrap().resize_state =
+                        ResizeState::Resizing(ResizeData {
+                            edges: edges.into(),
+                            initial_window_location,
+                            initial_window_size,
+                        });
+                });
+
+                let grab = ResizeSurfaceGrab {
+                    start_data,
+                    ctoken: compositor_token,
+                    toplevel,
+                    edges: edges.into(),
+                    initial_window_size,
+                    last_window_size: initial_window_size,
+                };
+
+                pointer.set_grab(grab, serial);
+            }
+            XdgRequest::AckConfigure { surface, .. } => {
+                let waiting_for_serial = compositor_token.with_surface_data(&surface, |attrs| {
+                    if let Some(data) = attrs.user_data.get_mut::<SurfaceData>() {
+                        if let ResizeState::WaitingForFinalAck(_, serial) = data.resize_state {
+                            return Some(serial);
+                        }
+                    }
+
+                    None
+                });
+
+                if let Some(serial) = waiting_for_serial {
+                    let acked = compositor_token
+                        .with_role_data(&surface, |role: &mut XdgSurfaceRole| {
+                            !role.pending_configures.contains(&serial)
+                        })
+                        .unwrap();
+
+                    if acked {
+                        compositor_token.with_surface_data(&surface, |attrs| {
+                            let data = attrs.user_data.get_mut::<SurfaceData>().unwrap();
+                            if let ResizeState::WaitingForFinalAck(resize_data, _) = data.resize_state {
+                                data.resize_state = ResizeState::WaitingForCommit(resize_data);
+                            } else {
+                                unreachable!()
+                            }
+                        })
+                    }
+                }
+            }
             _ => (),
         },
         log.clone(),
@@ -263,6 +529,61 @@ pub fn init_shell(
 
                     pointer.set_grab(grab, serial);
                 }
+                ShellRequest::Resize {
+                    surface,
+                    seat,
+                    serial,
+                    edges,
+                } => {
+                    let seat = Seat::from_resource(&seat).unwrap();
+                    // TODO: touch resize.
+                    let pointer = seat.get_pointer().unwrap();
+
+                    // Check that this surface has a click grab.
+                    if !pointer.has_grab(serial) {
+                        return;
+                    }
+
+                    let start_data = pointer.grab_start_data().unwrap();
+
+                    // If the focus was for a different surface, ignore the request.
+                    if start_data.focus.is_none()
+                        || !start_data
+                            .focus
+                            .as_ref()
+                            .unwrap()
+                            .0
+                            .as_ref()
+                            .same_client_as(surface.get_surface().unwrap().as_ref())
+                    {
+                        return;
+                    }
+
+                    let toplevel = SurfaceKind::Wl(surface.clone());
+                    let initial_window_location = shell_window_map.borrow().location(&toplevel).unwrap();
+                    let geometry = shell_window_map.borrow().geometry(&toplevel).unwrap();
+                    let initial_window_size = (geometry.width, geometry.height);
+
+                    compositor_token.with_surface_data(surface.get_surface().unwrap(), move |attrs| {
+                        attrs.user_data.get_mut::<SurfaceData>().unwrap().resize_state =
+                            ResizeState::Resizing(ResizeData {
+                                edges: edges.into(),
+                                initial_window_location,
+                                initial_window_size,
+                            });
+                    });
+
+                    let grab = ResizeSurfaceGrab {
+                        start_data,
+                        ctoken: compositor_token,
+                        toplevel,
+                        edges: edges.into(),
+                        initial_window_size,
+                        last_window_size: initial_window_size,
+                    };
+
+                    pointer.set_grab(grab, serial);
+                }
                 _ => (),
             }
         },
@@ -272,24 +593,117 @@ pub fn init_shell(
     (compositor_token, xdg_shell_state, wl_shell_state, window_map)
 }
 
+/// Information about the resize operation.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct ResizeData {
+    /// The edges the surface is being resized with.
+    edges: ResizeEdge,
+    /// The initial window location.
+    initial_window_location: (i32, i32),
+    /// The initial window size (geometry width and height).
+    initial_window_size: (i32, i32),
+}
+
+/// State of the resize operation.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ResizeState {
+    /// The surface is not being resized.
+    NotResizing,
+    /// The surface is currently being resized.
+    Resizing(ResizeData),
+    /// The resize has finished, and the surface needs to ack the final configure.
+    WaitingForFinalAck(ResizeData, u32),
+    /// The resize has finished, and the surface needs to commit its final state.
+    WaitingForCommit(ResizeData),
+}
+
+impl Default for ResizeState {
+    fn default() -> Self {
+        ResizeState::NotResizing
+    }
+}
+
 #[derive(Default)]
 pub struct SurfaceData {
     pub buffer: Option<wl_buffer::WlBuffer>,
     pub texture: Option<crate::glium_drawer::TextureMetadata>,
     pub dimensions: Option<(i32, i32)>,
+    pub geometry: Option<Rectangle>,
     pub input_region: Option<RegionAttributes>,
+    pub resize_state: ResizeState,
+    /// Minimum width and height, as requested by the surface.
+    ///
+    /// `0` means unlimited.
+    pub min_size: (i32, i32),
+    /// Maximum width and height, as requested by the surface.
+    ///
+    /// `0` means unlimited.
+    pub max_size: (i32, i32),
+}
+
+impl SurfaceData {
+    /// Returns the size of the surface.
+    pub fn size(&self) -> Option<(i32, i32)> {
+        self.dimensions
+    }
+
+    /// Checks if the surface's input region contains the point.
+    pub fn contains_point(&self, point: (f64, f64)) -> bool {
+        let (w, h) = match self.size() {
+            None => return false, // If the surface has no size, it can't have an input region.
+            Some(wh) => wh,
+        };
+
+        let rect = Rectangle {
+            x: 0,
+            y: 0,
+            width: w,
+            height: h,
+        };
+
+        let point = (point.0 as i32, point.1 as i32);
+
+        // The input region is always within the surface itself, so if the surface itself doesn't contain the
+        // point we can return false.
+        if !rect.contains(point) {
+            return false;
+        }
+
+        // If there's no input region, we're done.
+        if self.input_region.is_none() {
+            return true;
+        }
+
+        self.input_region.as_ref().unwrap().contains(point)
+    }
 }
 
 fn surface_commit(
     surface: &wl_surface::WlSurface,
     token: CompositorToken<Roles>,
     buffer_utils: &BufferUtils,
+    window_map: &RefCell<MyWindowMap>,
 ) {
-    token.with_surface_data(surface, |attributes| {
+    let mut geometry = None;
+    let mut min_size = (0, 0);
+    let mut max_size = (0, 0);
+    let _ = token.with_role_data(surface, |role: &mut XdgSurfaceRole| {
+        if let XdgSurfacePendingState::Toplevel(ref state) = role.pending_state {
+            min_size = state.min_size;
+            max_size = state.max_size;
+        }
+
+        geometry = role.window_geometry;
+    });
+
+    let refresh = token.with_surface_data(surface, |attributes| {
         attributes.user_data.insert_if_missing(SurfaceData::default);
         let data = attributes.user_data.get_mut::<SurfaceData>().unwrap();
 
+        data.geometry = geometry;
         data.input_region = attributes.input_region.clone();
+        data.min_size = min_size;
+        data.max_size = max_size;
 
         // we retrieve the contents of the associated buffer and copy it
         match attributes.buffer.take() {
@@ -313,43 +727,59 @@ fn surface_commit(
             }
             None => {}
         }
+
+        window_map.borrow().find(surface)
     });
-}
 
-fn get_size(attrs: &SurfaceAttributes) -> Option<(i32, i32)> {
-    attrs
-        .user_data
-        .get::<SurfaceData>()
-        .and_then(|data| data.dimensions)
-}
+    if let Some(toplevel) = refresh {
+        let mut window_map = window_map.borrow_mut();
+        window_map.refresh_toplevel(&toplevel);
+        // Get the geometry outside since it uses the token, and so would block inside.
+        let Rectangle { width, height, .. } = window_map.geometry(&toplevel).unwrap();
 
-fn contains_point(attrs: &SurfaceAttributes, point: (f64, f64)) -> bool {
-    let (w, h) = match get_size(attrs) {
-        None => return false, // If the surface has no size, it can't have an input region.
-        Some(wh) => wh,
-    };
+        let new_location = token.with_surface_data(surface, |attributes| {
+            let data = attributes.user_data.get_mut::<SurfaceData>().unwrap();
 
-    let rect = Rectangle {
-        x: 0,
-        y: 0,
-        width: w,
-        height: h,
-    };
+            let mut new_location = None;
 
-    let point = (point.0 as i32, point.1 as i32);
+            // If the window is being resized by top or left, its location must be adjusted
+            // accordingly.
+            match data.resize_state {
+                ResizeState::Resizing(resize_data)
+                | ResizeState::WaitingForFinalAck(resize_data, _)
+                | ResizeState::WaitingForCommit(resize_data) => {
+                    let ResizeData {
+                        edges,
+                        initial_window_location,
+                        initial_window_size,
+                    } = resize_data;
 
-    // The input region is always within the surface itself, so if the surface itself doesn't contain the
-    // point we can return false.
-    if !rect.contains(point) {
-        return false;
+                    if edges.intersects(ResizeEdge::TOP_LEFT) {
+                        let mut location = window_map.location(&toplevel).unwrap();
+
+                        if edges.intersects(ResizeEdge::LEFT) {
+                            location.0 = initial_window_location.0 + (initial_window_size.0 - width);
+                        }
+                        if edges.intersects(ResizeEdge::TOP) {
+                            location.1 = initial_window_location.1 + (initial_window_size.1 - height);
+                        }
+
+                        new_location = Some(location);
+                    }
+                }
+                ResizeState::NotResizing => (),
+            }
+
+            // Finish resizing.
+            if let ResizeState::WaitingForCommit(_) = data.resize_state {
+                data.resize_state = ResizeState::NotResizing;
+            }
+
+            new_location
+        });
+
+        if let Some(location) = new_location {
+            window_map.set_location(&toplevel, location);
+        }
     }
-
-    let input_region = &attrs.user_data.get::<SurfaceData>().unwrap().input_region;
-
-    // If there's no input region, we're done.
-    if input_region.is_none() {
-        return true;
-    }
-
-    input_region.as_ref().unwrap().contains(point)
 }

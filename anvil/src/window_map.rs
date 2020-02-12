@@ -4,7 +4,7 @@ use smithay::{
     reexports::wayland_server::protocol::wl_surface,
     utils::Rectangle,
     wayland::{
-        compositor::{roles::Role, CompositorToken, SubsurfaceRole, SurfaceAttributes, TraversalAction},
+        compositor::{roles::Role, CompositorToken, SubsurfaceRole, TraversalAction},
         shell::{
             legacy::{ShellSurface, ShellSurfaceRole},
             xdg::{ToplevelSurface, XdgSurfaceRole},
@@ -12,9 +12,21 @@ use smithay::{
     },
 };
 
+use crate::shell::SurfaceData;
+
 pub enum Kind<R> {
     Xdg(ToplevelSurface<R>),
     Wl(ShellSurface<R>),
+}
+
+// We implement Clone manually because #[derive(..)] would require R: Clone.
+impl<R> Clone for Kind<R> {
+    fn clone(&self) -> Self {
+        match self {
+            Kind::Xdg(xdg) => Kind::Xdg(xdg.clone()),
+            Kind::Wl(wl) => Kind::Wl(wl.clone()),
+        }
+    }
 }
 
 impl<R> Kind<R>
@@ -46,10 +58,11 @@ where
 
 struct Window<R> {
     location: (i32, i32),
-    /// A bounding box over the input areas of this window and its children.
+    /// A bounding box over this window and its children.
     ///
-    /// Used for the fast path of the check in `matching`.
-    input_bbox: Rectangle,
+    /// Used for the fast path of the check in `matching`, and as the fall-back for the window
+    /// geometry if that's not set explicitly.
+    bbox: Rectangle,
     toplevel: Kind<R>,
 }
 
@@ -59,19 +72,12 @@ where
 {
     /// Finds the topmost surface under this point if any and returns it together with the location of this
     /// surface.
-    ///
-    /// You need to provide a `contains_point` function which checks if the point (in surface-local
-    /// coordinates) is within the input region of the given `SurfaceAttributes`.
-    fn matching<F>(
+    fn matching(
         &self,
         point: (f64, f64),
         ctoken: CompositorToken<R>,
-        contains_point: F,
-    ) -> Option<(wl_surface::WlSurface, (f64, f64))>
-    where
-        F: Fn(&SurfaceAttributes, (f64, f64)) -> bool,
-    {
-        if !self.input_bbox.contains((point.0 as i32, point.1 as i32)) {
+    ) -> Option<(wl_surface::WlSurface, (f64, f64))> {
+        if !self.bbox.contains((point.0 as i32, point.1 as i32)) {
             return None;
         }
         // need to check more carefully
@@ -81,13 +87,18 @@ where
                 wl_surface,
                 self.location,
                 |wl_surface, attributes, role, &(mut x, mut y)| {
+                    let data = attributes.user_data.get::<SurfaceData>();
+
                     if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                         x += subdata.location.0;
                         y += subdata.location.1;
                     }
 
                     let surface_local_point = (point.0 - x as f64, point.1 - y as f64);
-                    if contains_point(attributes, surface_local_point) {
+                    if data
+                        .map(|data| data.contains_point(surface_local_point))
+                        .unwrap_or(false)
+                    {
                         *found.borrow_mut() = Some((wl_surface.clone(), (x as f64, y as f64)));
                     }
 
@@ -103,10 +114,7 @@ where
         found.into_inner()
     }
 
-    fn self_update<F>(&mut self, ctoken: CompositorToken<R>, get_size: F)
-    where
-        F: Fn(&SurfaceAttributes) -> Option<(i32, i32)>,
-    {
+    fn self_update(&mut self, ctoken: CompositorToken<R>) {
         let (base_x, base_y) = self.location;
         let (mut min_x, mut min_y, mut max_x, mut max_y) = (base_x, base_y, base_x, base_y);
         if let Some(wl_surface) = self.toplevel.get_surface() {
@@ -114,28 +122,24 @@ where
                 wl_surface,
                 (base_x, base_y),
                 |_, attributes, role, &(mut x, mut y)| {
-                    // The input region is intersected with the surface size, so the surface size
-                    // can serve as an approximation for the input bounding box.
-                    if let Some((w, h)) = get_size(attributes) {
+                    let data = attributes.user_data.get::<SurfaceData>();
+
+                    if let Some((w, h)) = data.and_then(SurfaceData::size) {
                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                             x += subdata.location.0;
                             y += subdata.location.1;
                         }
-                        // update the bounding box
-                        if x < min_x {
-                            min_x = x;
-                        }
-                        if y < min_y {
-                            min_y = y;
-                        }
-                        if x + w > max_x {
-                            max_x = x + w;
-                        }
-                        if y + h > max_y {
-                            max_y = y + w;
-                        }
+
+                        // Update the bounding box.
+                        min_x = min_x.min(x);
+                        min_y = min_y.min(y);
+                        max_x = max_x.max(x + w);
+                        max_y = max_y.max(y + h);
+
                         TraversalAction::DoChildren((x, y))
                     } else {
+                        // If the parent surface is unmapped, then the child surfaces are hidden as
+                        // well, no need to consider them here.
                         TraversalAction::SkipChildren
                     }
                 },
@@ -143,52 +147,54 @@ where
                 |_, _, _, _| true,
             );
         }
-        self.input_bbox = Rectangle {
+        self.bbox = Rectangle {
             x: min_x,
             y: min_y,
             width: max_x - min_x,
             height: max_y - min_y,
         };
     }
+
+    /// Returns the geometry of this window.
+    pub fn geometry(&self, ctoken: CompositorToken<R>) -> Rectangle {
+        // It's the set geometry with the full bounding box as the fallback.
+        ctoken
+            .with_surface_data(self.toplevel.get_surface().unwrap(), |attributes| {
+                attributes.user_data.get::<SurfaceData>().unwrap().geometry
+            })
+            .unwrap_or(self.bbox)
+    }
 }
 
-pub struct WindowMap<R, F, G> {
+pub struct WindowMap<R> {
     ctoken: CompositorToken<R>,
     windows: Vec<Window<R>>,
-    /// A function returning the surface size.
-    get_size: F,
-    /// A function that checks if the point is in the surface's input region.
-    contains_point: G,
 }
 
-impl<R, F, G> WindowMap<R, F, G>
+impl<R> WindowMap<R>
 where
-    F: Fn(&SurfaceAttributes) -> Option<(i32, i32)>,
-    G: Fn(&SurfaceAttributes, (f64, f64)) -> bool,
     R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole> + 'static,
 {
-    pub fn new(ctoken: CompositorToken<R>, get_size: F, contains_point: G) -> Self {
+    pub fn new(ctoken: CompositorToken<R>) -> Self {
         WindowMap {
             ctoken,
             windows: Vec::new(),
-            get_size,
-            contains_point,
         }
     }
 
     pub fn insert(&mut self, toplevel: Kind<R>, location: (i32, i32)) {
         let mut window = Window {
             location,
-            input_bbox: Rectangle::default(),
+            bbox: Rectangle::default(),
             toplevel,
         };
-        window.self_update(self.ctoken, &self.get_size);
+        window.self_update(self.ctoken);
         self.windows.insert(0, window);
     }
 
     pub fn get_surface_under(&self, point: (f64, f64)) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         for w in &self.windows {
-            if let Some(surface) = w.matching(point, self.ctoken, &self.contains_point) {
+            if let Some(surface) = w.matching(point, self.ctoken) {
                 return Some(surface);
             }
         }
@@ -201,7 +207,7 @@ where
     ) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         let mut found = None;
         for (i, w) in self.windows.iter().enumerate() {
-            if let Some(surface) = w.matching(point, self.ctoken, &self.contains_point) {
+            if let Some(surface) = w.matching(point, self.ctoken) {
                 found = Some((i, surface));
                 break;
             }
@@ -227,12 +233,34 @@ where
     pub fn refresh(&mut self) {
         self.windows.retain(|w| w.toplevel.alive());
         for w in &mut self.windows {
-            w.self_update(self.ctoken, &self.get_size);
+            w.self_update(self.ctoken);
+        }
+    }
+
+    /// Refreshes the state of the toplevel, if it exists.
+    pub fn refresh_toplevel(&mut self, toplevel: &Kind<R>) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.toplevel.equals(toplevel)) {
+            w.self_update(self.ctoken);
         }
     }
 
     pub fn clear(&mut self) {
         self.windows.clear();
+    }
+
+    /// Finds the toplevel corresponding to the given `WlSurface`.
+    pub fn find(&self, surface: &wl_surface::WlSurface) -> Option<Kind<R>> {
+        self.windows.iter().find_map(|w| {
+            if w.toplevel
+                .get_surface()
+                .map(|s| s.as_ref().equals(surface.as_ref()))
+                .unwrap_or(false)
+            {
+                Some(w.toplevel.clone())
+            } else {
+                None
+            }
+        })
     }
 
     /// Returns the location of the toplevel, if it exists.
@@ -247,7 +275,15 @@ where
     pub fn set_location(&mut self, toplevel: &Kind<R>, location: (i32, i32)) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.toplevel.equals(toplevel)) {
             w.location = location;
-            w.self_update(self.ctoken, &self.get_size);
+            w.self_update(self.ctoken);
         }
+    }
+
+    /// Returns the geometry of the toplevel, if it exists.
+    pub fn geometry(&self, toplevel: &Kind<R>) -> Option<Rectangle> {
+        self.windows
+            .iter()
+            .find(|w| w.toplevel.equals(toplevel))
+            .map(|w| w.geometry(self.ctoken))
     }
 }

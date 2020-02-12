@@ -92,6 +92,17 @@ pub struct ShellSurface<R> {
     token: CompositorToken<R>,
 }
 
+// We implement Clone manually because #[derive(..)] would require R: Clone.
+impl<R> Clone for ShellSurface<R> {
+    fn clone(&self) -> Self {
+        Self {
+            wl_surface: self.wl_surface.clone(),
+            shell_surface: self.shell_surface.clone(),
+            token: self.token.clone(),
+        }
+    }
+}
+
 impl<R> ShellSurface<R>
 where
     R: Role<ShellSurfaceRole> + 'static,
