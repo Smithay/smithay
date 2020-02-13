@@ -1,5 +1,5 @@
 use super::{roles::*, SubsurfaceRole, SurfaceAttributes};
-use std::sync::Mutex;
+use std::sync::{Mutex, TryLockError};
 use wayland_server::protocol::wl_surface::WlSurface;
 
 /// Node of a subsurface tree, holding some user specified data type U
@@ -74,13 +74,18 @@ where
         }
         // orphan all our children
         for child in &my_data.children {
-            // don't do anything if this child is ourselves
-            if child.as_ref().equals(surface.as_ref()) {
-                continue;
-            }
             let child_mutex = child.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
-            let mut child_guard = child_mutex.lock().unwrap();
-            child_guard.parent = None;
+            match child_mutex.try_lock() {
+                Ok(mut child_guard) => {
+                    child_guard.parent = None;
+                }
+                Err(TryLockError::WouldBlock) => {
+                    // This child is ourselves, don't do anything.
+                }
+                Err(TryLockError::Poisoned(_)) => {
+                    panic!("poisoned mutex");
+                }
+            }
         }
     }
 }
