@@ -1,27 +1,15 @@
 #![warn(rust_2018_idioms)]
 
 #[macro_use]
-extern crate glium;
-#[macro_use]
 extern crate slog;
-#[macro_use(define_roles)]
-extern crate smithay;
 
 use slog::Drain;
 use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
 
-#[macro_use]
-mod shaders;
-mod buffer_utils;
-mod glium_drawer;
-mod input_handler;
-mod shell;
-mod shm_load;
 #[cfg(feature = "udev")]
-mod udev;
-mod window_map;
+use anvil::udev;
 #[cfg(feature = "winit")]
-mod winit;
+use anvil::winit;
 
 static POSSIBLE_BACKENDS: &[&str] = &[
     #[cfg(feature = "winit")]
