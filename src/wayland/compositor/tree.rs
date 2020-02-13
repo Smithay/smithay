@@ -75,7 +75,7 @@ where
         // orphan all our children
         for child in &my_data.children {
             let child_mutex = child.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
-            if child_mutex as *const _ == my_data_mutex as *const _ {
+            if std::ptr::eq(child_mutex, my_data_mutex) {
                 // This child is ourselves, don't do anything.
                 continue;
             }
