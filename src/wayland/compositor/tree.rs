@@ -74,11 +74,12 @@ where
         }
         // orphan all our children
         for child in &my_data.children {
-            // don't do anything if this child is ourselves
-            if child.as_ref().equals(surface.as_ref()) {
+            let child_mutex = child.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+            if child_mutex as *const _ == my_data_mutex as *const _ {
+                // This child is ourselves, don't do anything.
                 continue;
             }
-            let child_mutex = child.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+
             let mut child_guard = child_mutex.lock().unwrap();
             child_guard.parent = None;
         }
