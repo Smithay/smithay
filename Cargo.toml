@@ -1,6 +1,6 @@
 [package]
 name = "smithay"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victor Brekenfeld)"]
 license = "MIT"
 description = "Smithay is a library for writing wayland compositors."
@@ -14,7 +14,7 @@ members = [ "anvil" ]
 wayland-server = "0.21.6"
 wayland-commons = "0.21.1"
 wayland-sys = { version = "0.21.6", optional = true }
-nix = "0.11"
+nix = "0.14"
 xkbcommon = "0.2.1"
 tempfile = "2.1.5"
 slog = "2.1.1"
