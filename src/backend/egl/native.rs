@@ -9,9 +9,9 @@ use std::ptr;
 #[cfg(feature = "backend_winit")]
 use wayland_client::egl as wegl;
 #[cfg(feature = "backend_winit")]
-use winit::os::unix::WindowExt;
+use winit::platform::unix::WindowExtUnix;
 #[cfg(feature = "backend_winit")]
-use winit::Window as WinitWindow;
+use winit::window::Window as WinitWindow;
 
 /// Trait for typed backend variants (X11/Wayland/GBM)
 pub trait Backend {
@@ -116,17 +116,17 @@ unsafe impl NativeDisplay<X11> for WinitWindow {
     type Error = Error;
 
     fn is_backend(&self) -> bool {
-        self.get_xlib_display().is_some()
+        self.xlib_display().is_some()
     }
 
     fn ptr(&self) -> Result<ffi::NativeDisplayType> {
-        self.get_xlib_display()
+        self.xlib_display()
             .map(|ptr| ptr as *const _)
             .ok_or_else(|| ErrorKind::NonMatchingBackend("X11").into())
     }
 
     fn create_surface(&mut self, _args: ()) -> Result<XlibWindow> {
-        self.get_xlib_window()
+        self.xlib_window()
             .map(XlibWindow)
             .ok_or_else(|| ErrorKind::NonMatchingBackend("X11").into())
     }
@@ -138,18 +138,18 @@ unsafe impl NativeDisplay<Wayland> for WinitWindow {
     type Error = Error;
 
     fn is_backend(&self) -> bool {
-        self.get_wayland_display().is_some()
+        self.wayland_display().is_some()
     }
 
     fn ptr(&self) -> Result<ffi::NativeDisplayType> {
-        self.get_wayland_display()
+        self.wayland_display()
             .map(|ptr| ptr as *const _)
             .ok_or_else(|| ErrorKind::NonMatchingBackend("Wayland").into())
     }
 
     fn create_surface(&mut self, _args: ()) -> Result<wegl::WlEglSurface> {
-        if let Some(surface) = self.get_wayland_surface() {
-            let size = self.get_inner_size().unwrap();
+        if let Some(surface) = self.wayland_surface() {
+            let size = self.inner_size();
             Ok(unsafe {
                 wegl::WlEglSurface::new_from_raw(surface as *mut _, size.width as i32, size.height as i32)
             })
