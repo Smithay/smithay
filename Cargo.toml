@@ -23,7 +23,7 @@ slog = "2.1.1"
 slog-stdlog = "3.0.2"
 libloading = "0.5.0"
 wayland-client = { version = "0.23.4", features = ["egl"], optional = true }
-winit = { version = "0.18.0", optional = true }
+winit = { version = "0.22.0", optional = true }
 drm = { version = "^0.3.4", optional = true }
 gbm = { version = "^0.5.0", optional = true, default-features = false, features = ["drm-support"] }
 glium = { version = "0.23.0", optional = true, default-features = false }
