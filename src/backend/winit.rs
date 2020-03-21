@@ -162,7 +162,6 @@ where
 
     let events_loop = EventLoop::new();
     let winit_window = builder.build(&events_loop).chain_err(|| ErrorKind::InitFailed)?;
-    winit_window.set_cursor_visible(false);
 
     debug!(log, "Window created");
 
@@ -183,10 +182,9 @@ where
         },
     );
 
-    let scale_factor = window.window().scale_factor();
     let size = Rc::new(RefCell::new(WindowSize {
         physical_size: window.window().inner_size(), // TODO: original code check if window is alive or not using inner_size().expect()
-        scale_factor,
+        scale_factor: window.window().scale_factor(),
     }));
 
     Ok((
