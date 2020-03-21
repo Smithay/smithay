@@ -509,18 +509,18 @@ impl TouchDownEvent for WinitTouchStartedEvent {
 
     fn x_transformed(&self, width: u32) -> u32 {
         let wsize = self.size.borrow();
-        let w_width = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).width;
+        let w_width = wsize.physical_size.to_logical::<i32>(wsize.scale_factor).width;
         cmp::min(
-            self.location.0 as i32 * width as i32 / w_width as i32,
+            self.location.0 as i32 * width as i32 / w_width,
             0,
         ) as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
         let wsize = self.size.borrow();
-        let w_height = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).height;
+        let w_height = wsize.physical_size.to_logical::<i32>(wsize.scale_factor).height;
         cmp::min(
-            self.location.1 as i32 * height as i32 / w_height as i32,
+            self.location.1 as i32 * height as i32 / w_height,
             0,
         ) as u32
     }
@@ -558,14 +558,14 @@ impl TouchMotionEvent for WinitTouchMovedEvent {
 
     fn x_transformed(&self, width: u32) -> u32 {
         let wsize = self.size.borrow();
-        let w_width = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).width;
-        self.location.0 as u32 * width / w_width as u32
+        let w_width = wsize.physical_size.to_logical::<u32>(wsize.scale_factor).width;
+        self.location.0 as u32 * width / w_width
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
         let wsize = self.size.borrow();
-        let w_height = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).height;
-        self.location.1 as u32 * height / w_height as u32
+        let w_height = wsize.physical_size.to_logical::<u32>(wsize.scale_factor).height;
+        self.location.1 as u32 * height / w_height
     }
 }
 
