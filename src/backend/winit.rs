@@ -381,8 +381,7 @@ impl KeyboardKeyEvent for WinitKeyboardInputEvent {
 pub struct WinitMouseMovedEvent {
     size: Rc<RefCell<WindowSize>>,
     time: u32,
-    x: f64,
-    y: f64,
+    logical_position: LogicalPosition<f64>,
 }
 
 impl BackendEvent for WinitMouseMovedEvent {
@@ -394,24 +393,24 @@ impl BackendEvent for WinitMouseMovedEvent {
 impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent { // TODO: maybe use {Logical, Physical}Position from winit?
     fn x(&self) -> f64 {
         let wsize = self.size.borrow();
-        self.x * wsize.scale_factor
+        self.logical_position.x * wsize.scale_factor
     }
 
     fn y(&self) -> f64 {
         let wsize = self.size.borrow();
-        self.y * wsize.scale_factor
+        self.logical_position.y * wsize.scale_factor
     }
 
     fn x_transformed(&self, width: u32) -> u32 {
         let wsize = self.size.borrow();
         let w_width = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).width;
-        cmp::max((self.x * width as f64 / w_width) as i32, 0) as u32
+        cmp::max((self.logical_position.x * width as f64 / w_width) as i32, 0) as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
         let wsize = self.size.borrow();
         let w_height = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).height;
-        cmp::max((self.y * height as f64 / w_height) as i32, 0) as u32
+        cmp::max((self.logical_position.y * height as f64 / w_height) as i32, 0) as u32
     }
 }
 
@@ -772,13 +771,13 @@ impl InputBackend for WinitInputBackend {
                             }
                             (WindowEvent::CursorMoved { position, .. }, Some(handler), _) => {
                                 trace!(logger, "Calling on_pointer_move_absolute with {:?}", position);
+                                let lpos = position.to_logical(window_size.borrow().scale_factor);
                                 handler.on_pointer_move_absolute(
                                     seat,
                                     WinitMouseMovedEvent {
                                         size: window_size.clone(),
                                         time,
-                                        x: position.x,
-                                        y: position.y,
+                                        logical_position: lpos,
                                     },
                                 )
                             }
