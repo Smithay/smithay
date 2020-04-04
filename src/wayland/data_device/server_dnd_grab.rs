@@ -1,10 +1,8 @@
-use std::cell::RefCell;
-use std::os::unix::io::RawFd;
-use std::rc::Rc;
+use std::{cell::RefCell, ops::Deref as _, os::unix::io::RawFd, rc::Rc};
 
 use wayland_server::{
     protocol::{wl_data_device_manager::DndAction, wl_data_offer, wl_pointer, wl_surface},
-    NewResource,
+    Main,
 };
 
 use crate::wayland::seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat};
@@ -230,7 +228,7 @@ struct OfferData {
 }
 
 fn implement_dnd_data_offer<C>(
-    offer: NewResource<wl_data_offer::WlDataOffer>,
+    offer: Main<wl_data_offer::WlDataOffer>,
     metadata: super::SourceMetadata,
     offer_data: Rc<RefCell<OfferData>>,
     callback: Rc<RefCell<C>>,
@@ -240,77 +238,74 @@ where
     C: FnMut(ServerDndEvent) + 'static,
 {
     use self::wl_data_offer::Request;
-    offer.implement_closure(
-        move |req, offer| {
-            let mut data = offer_data.borrow_mut();
-            match req {
-                Request::Accept { mime_type, .. } => {
-                    if let Some(mtype) = mime_type {
-                        data.accepted = metadata.mime_types.contains(&mtype);
-                    } else {
-                        data.accepted = false;
-                    }
+    offer.quick_assign(move |offer, req, _| {
+        let mut data = offer_data.borrow_mut();
+        match req {
+            Request::Accept { mime_type, .. } => {
+                if let Some(mtype) = mime_type {
+                    data.accepted = metadata.mime_types.contains(&mtype);
+                } else {
+                    data.accepted = false;
                 }
-                Request::Receive { mime_type, fd } => {
-                    // check if the source and associated mime type is still valid
-                    if metadata.mime_types.contains(&mime_type) && data.active {
-                        (&mut *callback.borrow_mut())(ServerDndEvent::Send { mime_type, fd });
-                    }
-                }
-                Request::Destroy => {}
-                Request::Finish => {
-                    if !data.active {
-                        offer.as_ref().post_error(
-                            wl_data_offer::Error::InvalidFinish as u32,
-                            "Cannot finish a data offer that is no longer active.".into(),
-                        );
-                    }
-                    if !data.accepted {
-                        offer.as_ref().post_error(
-                            wl_data_offer::Error::InvalidFinish as u32,
-                            "Cannot finish a data offer that has not been accepted.".into(),
-                        );
-                    }
-                    if !data.dropped {
-                        offer.as_ref().post_error(
-                            wl_data_offer::Error::InvalidFinish as u32,
-                            "Cannot finish a data offer that has not been dropped.".into(),
-                        );
-                    }
-                    if data.chosen_action.is_empty() {
-                        offer.as_ref().post_error(
-                            wl_data_offer::Error::InvalidFinish as u32,
-                            "Cannot finish a data offer with no valid action.".into(),
-                        );
-                    }
-                    (&mut *callback.borrow_mut())(ServerDndEvent::Finished);
-                    data.active = false;
-                }
-                Request::SetActions {
-                    dnd_actions,
-                    preferred_action,
-                } => {
-                    let preferred_action = DndAction::from_bits_truncate(preferred_action);
-                    if ![DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&preferred_action) {
-                        offer.as_ref().post_error(
-                            wl_data_offer::Error::InvalidAction as u32,
-                            "Invalid preferred action.".into(),
-                        );
-                    }
-                    let possible_actions = metadata.dnd_action & DndAction::from_bits_truncate(dnd_actions);
-                    data.chosen_action =
-                        (&mut *action_choice.borrow_mut())(possible_actions, preferred_action);
-                    // check that the user provided callback respects that one precise action should be chosen
-                    debug_assert!(
-                        [DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&data.chosen_action)
-                    );
-                    offer.action(data.chosen_action.to_raw());
-                    (&mut *callback.borrow_mut())(ServerDndEvent::Action(data.chosen_action));
-                }
-                _ => unreachable!(),
             }
-        },
-        None::<fn(_)>,
-        (),
-    )
+            Request::Receive { mime_type, fd } => {
+                // check if the source and associated mime type is still valid
+                if metadata.mime_types.contains(&mime_type) && data.active {
+                    (&mut *callback.borrow_mut())(ServerDndEvent::Send { mime_type, fd });
+                }
+            }
+            Request::Destroy => {}
+            Request::Finish => {
+                if !data.active {
+                    offer.as_ref().post_error(
+                        wl_data_offer::Error::InvalidFinish as u32,
+                        "Cannot finish a data offer that is no longer active.".into(),
+                    );
+                }
+                if !data.accepted {
+                    offer.as_ref().post_error(
+                        wl_data_offer::Error::InvalidFinish as u32,
+                        "Cannot finish a data offer that has not been accepted.".into(),
+                    );
+                }
+                if !data.dropped {
+                    offer.as_ref().post_error(
+                        wl_data_offer::Error::InvalidFinish as u32,
+                        "Cannot finish a data offer that has not been dropped.".into(),
+                    );
+                }
+                if data.chosen_action.is_empty() {
+                    offer.as_ref().post_error(
+                        wl_data_offer::Error::InvalidFinish as u32,
+                        "Cannot finish a data offer with no valid action.".into(),
+                    );
+                }
+                (&mut *callback.borrow_mut())(ServerDndEvent::Finished);
+                data.active = false;
+            }
+            Request::SetActions {
+                dnd_actions,
+                preferred_action,
+            } => {
+                let preferred_action = DndAction::from_bits_truncate(preferred_action);
+                if ![DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&preferred_action) {
+                    offer.as_ref().post_error(
+                        wl_data_offer::Error::InvalidAction as u32,
+                        "Invalid preferred action.".into(),
+                    );
+                }
+                let possible_actions = metadata.dnd_action & DndAction::from_bits_truncate(dnd_actions);
+                data.chosen_action = (&mut *action_choice.borrow_mut())(possible_actions, preferred_action);
+                // check that the user provided callback respects that one precise action should be chosen
+                debug_assert!(
+                    [DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&data.chosen_action)
+                );
+                offer.action(data.chosen_action.to_raw());
+                (&mut *callback.borrow_mut())(ServerDndEvent::Action(data.chosen_action));
+            }
+            _ => unreachable!(),
+        }
+    });
+
+    offer.deref().clone()
 }
