@@ -41,7 +41,7 @@
 //! These methods return handles that can be cloned and sent across thread, so you can keep one around
 //! in your event-handling code to forward inputs to your clients.
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, ops::Deref as _, rc::Rc};
 
 mod keyboard;
 mod pointer;
@@ -58,7 +58,7 @@ use crate::wayland::compositor::{roles::Role, CompositorToken};
 
 use wayland_server::{
     protocol::{wl_seat, wl_surface},
-    Display, Global, UserDataMap,
+    Display, Filter, Global, Main, UserDataMap,
 };
 
 struct Inner {
@@ -140,15 +140,18 @@ impl Seat {
             user_data: UserDataMap::new(),
         });
         let seat = Seat { arc: arc.clone() };
-        let global = display.create_global(5, move |new_seat, _version| {
-            let seat = implement_seat(new_seat, arc.clone(), token);
-            let mut inner = arc.inner.borrow_mut();
-            if seat.as_ref().version() >= 2 {
-                seat.name(arc.name.clone());
-            }
-            seat.capabilities(inner.compute_caps());
-            inner.known_seats.push(seat);
-        });
+        let global = display.create_global(
+            5,
+            Filter::new(move |(new_seat, _version), _, _| {
+                let seat = implement_seat(new_seat, arc.clone(), token);
+                let mut inner = arc.inner.borrow_mut();
+                if seat.as_ref().version() >= 2 {
+                    seat.name(arc.name.clone());
+                }
+                seat.capabilities(inner.compute_caps());
+                inner.known_seats.push(seat);
+            }),
+        );
         (seat, global)
     }
 
@@ -331,7 +334,7 @@ impl ::std::cmp::PartialEq for Seat {
 }
 
 fn implement_seat<R>(
-    new_seat: NewResource<wl_seat::WlSeat>,
+    seat: Main<wl_seat::WlSeat>,
     arc: Rc<SeatRc>,
     token: CompositorToken<R>,
 ) -> wl_seat::WlSeat
@@ -339,44 +342,44 @@ where
     R: Role<CursorImageRole> + 'static,
 {
     let dest_arc = arc.clone();
-    new_seat.implement_closure(
-        move |request, seat| {
-            let arc = seat.as_ref().user_data().get::<Rc<SeatRc>>().unwrap();
-            let inner = arc.inner.borrow_mut();
-            match request {
-                wl_seat::Request::GetPointer { id } => {
-                    let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref(), token);
-                    if let Some(ref ptr_handle) = inner.pointer {
-                        ptr_handle.new_pointer(pointer);
-                    } else {
-                        // we should send a protocol error... but the protocol does not allow
-                        // us, so this pointer will just remain inactive ¯\_(ツ)_/¯
-                    }
+    seat.quick_assign(move |seat, request, _| {
+        let arc = seat.as_ref().user_data().get::<Rc<SeatRc>>().unwrap();
+        let inner = arc.inner.borrow_mut();
+        match request {
+            wl_seat::Request::GetPointer { id } => {
+                let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref(), token);
+                if let Some(ref ptr_handle) = inner.pointer {
+                    ptr_handle.new_pointer(pointer);
+                } else {
+                    // we should send a protocol error... but the protocol does not allow
+                    // us, so this pointer will just remain inactive ¯\_(ツ)_/¯
                 }
-                wl_seat::Request::GetKeyboard { id } => {
-                    let keyboard = self::keyboard::implement_keyboard(id, inner.keyboard.as_ref());
-                    if let Some(ref kbd_handle) = inner.keyboard {
-                        kbd_handle.new_kbd(keyboard);
-                    } else {
-                        // same as pointer, should error but cannot
-                    }
-                }
-                wl_seat::Request::GetTouch { id: _ } => {
-                    // TODO
-                }
-                wl_seat::Request::Release => {
-                    // Our destructors already handle it
-                }
-                _ => unreachable!(),
             }
-        },
-        Some(move |seat: wl_seat::WlSeat| {
-            dest_arc
-                .inner
-                .borrow_mut()
-                .known_seats
-                .retain(|s| !s.as_ref().equals(&seat.as_ref()));
-        }),
-        arc,
-    )
+            wl_seat::Request::GetKeyboard { id } => {
+                let keyboard = self::keyboard::implement_keyboard(id, inner.keyboard.as_ref());
+                if let Some(ref kbd_handle) = inner.keyboard {
+                    kbd_handle.new_kbd(keyboard);
+                } else {
+                    // same as pointer, should error but cannot
+                }
+            }
+            wl_seat::Request::GetTouch { id: _ } => {
+                // TODO
+            }
+            wl_seat::Request::Release => {
+                // Our destructors already handle it
+            }
+            _ => unreachable!(),
+        }
+    });
+    seat.assign_destructor(Filter::new(move |seat: wl_seat::WlSeat, _, _| {
+        dest_arc
+            .inner
+            .borrow_mut()
+            .known_seats
+            .retain(|s| !s.as_ref().equals(&seat.as_ref()));
+    }));
+    seat.as_ref().user_data().set(move || arc);
+
+    seat.deref().clone()
 }

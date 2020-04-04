@@ -3,6 +3,7 @@ use std::{
     cell::RefCell,
     default::Default,
     io::{Error as IoError, Write},
+    ops::Deref as _,
     os::unix::io::AsRawFd,
     rc::Rc,
 };
@@ -12,7 +13,7 @@ use wayland_server::{
         wl_keyboard::{KeyState as WlKeyState, KeymapFormat, Request, WlKeyboard},
         wl_surface::WlSurface,
     },
-    Client, NewResource,
+    Client, Filter, Main,
 };
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
@@ -448,32 +449,25 @@ impl KeyboardHandle {
     }
 }
 
-pub(crate) fn implement_keyboard(
-    new_keyboard: NewResource<WlKeyboard>,
-    handle: Option<&KeyboardHandle>,
-) -> WlKeyboard {
-    let destructor = match handle {
-        Some(h) => {
-            let arc = h.arc.clone();
-            Some(move |keyboard: WlKeyboard| {
-                arc.internal
-                    .borrow_mut()
-                    .known_kbds
-                    .retain(|k| !k.as_ref().equals(&keyboard.as_ref()))
-            })
-        }
-        None => None,
-    };
-    new_keyboard.implement_closure(
-        |request, _keyboard| {
-            match request {
-                Request::Release => {
-                    // Our destructors already handle it
-                }
-                _ => unreachable!(),
+pub(crate) fn implement_keyboard(keyboard: Main<WlKeyboard>, handle: Option<&KeyboardHandle>) -> WlKeyboard {
+    keyboard.quick_assign(|_keyboard, request, _data| {
+        match request {
+            Request::Release => {
+                // Our destructors already handle it
             }
-        },
-        destructor,
-        (),
-    )
+            _ => unreachable!(),
+        }
+    });
+
+    if let Some(h) = handle {
+        let arc = h.arc.clone();
+        keyboard.assign_destructor(Filter::new(move |keyboard: WlKeyboard, _, _| {
+            arc.internal
+                .borrow_mut()
+                .known_kbds
+                .retain(|k| !k.as_ref().equals(&keyboard.as_ref()))
+        }));
+    }
+
+    keyboard.deref().clone()
 }

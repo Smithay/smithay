@@ -1,12 +1,11 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::{cell::RefCell, ops::Deref as _, rc::Rc};
 
 use wayland_server::{
     protocol::{
         wl_pointer::{self, Axis, AxisSource, ButtonState, Request, WlPointer},
         wl_surface::WlSurface,
     },
-    NewResource,
+    Filter, Main,
 };
 
 use crate::wayland::compositor::{roles::Role, CompositorToken};
@@ -553,7 +552,7 @@ where
 }
 
 pub(crate) fn implement_pointer<R>(
-    new_pointer: NewResource<WlPointer>,
+    pointer: Main<WlPointer>,
     handle: Option<&PointerHandle>,
     token: CompositorToken<R>,
 ) -> WlPointer
@@ -561,71 +560,70 @@ where
     R: Role<CursorImageRole> + 'static,
 {
     let inner = handle.map(|h| h.inner.clone());
-    let destructor = match inner.clone() {
-        Some(inner) => Some(move |pointer: WlPointer| {
-            inner
-                .borrow_mut()
-                .known_pointers
-                .retain(|p| !p.as_ref().equals(&pointer.as_ref()))
-        }),
-        None => None,
-    };
-    new_pointer.implement_closure(
-        move |request, pointer: WlPointer| {
-            match request {
-                Request::SetCursor {
-                    surface,
-                    hotspot_x,
-                    hotspot_y,
-                    ..
-                } => {
-                    if let Some(ref inner) = inner {
-                        let mut guard = inner.borrow_mut();
-                        // only allow setting the cursor icon if the current pointer focus
-                        // is of the same client
-                        let PointerInternal {
-                            ref mut image_callback,
-                            ref focus,
-                            ..
-                        } = *guard;
-                        if let Some((ref focus, _)) = *focus {
-                            if focus.as_ref().same_client_as(&pointer.as_ref()) {
-                                match surface {
-                                    Some(surface) => {
-                                        let role_data = CursorImageRole {
-                                            hotspot: (hotspot_x, hotspot_y),
-                                        };
-                                        // we gracefully tolerate the client to provide a surface that
-                                        // already had the "CursorImage" role, as most clients will
-                                        // always reuse the same surface (and they are right to do so!)
-                                        if token.with_role_data(&surface, |data| *data = role_data).is_err()
-                                            && token.give_role_with(&surface, role_data).is_err()
-                                        {
-                                            pointer.as_ref().post_error(
-                                                wl_pointer::Error::Role as u32,
-                                                "Given wl_surface has another role.".into(),
-                                            );
-                                            return;
-                                        }
-                                        image_callback(CursorImageStatus::Image(surface));
+    pointer.quick_assign(move |pointer, request, _data| {
+        match request {
+            Request::SetCursor {
+                surface,
+                hotspot_x,
+                hotspot_y,
+                ..
+            } => {
+                if let Some(ref inner) = inner {
+                    let mut guard = inner.borrow_mut();
+                    // only allow setting the cursor icon if the current pointer focus
+                    // is of the same client
+                    let PointerInternal {
+                        ref mut image_callback,
+                        ref focus,
+                        ..
+                    } = *guard;
+                    if let Some((ref focus, _)) = *focus {
+                        if focus.as_ref().same_client_as(&pointer.as_ref()) {
+                            match surface {
+                                Some(surface) => {
+                                    let role_data = CursorImageRole {
+                                        hotspot: (hotspot_x, hotspot_y),
+                                    };
+                                    // we gracefully tolerate the client to provide a surface that
+                                    // already had the "CursorImage" role, as most clients will
+                                    // always reuse the same surface (and they are right to do so!)
+                                    if token.with_role_data(&surface, |data| *data = role_data).is_err()
+                                        && token.give_role_with(&surface, role_data).is_err()
+                                    {
+                                        pointer.as_ref().post_error(
+                                            wl_pointer::Error::Role as u32,
+                                            "Given wl_surface has another role.".into(),
+                                        );
+                                        return;
                                     }
-                                    None => {
-                                        image_callback(CursorImageStatus::Hidden);
-                                    }
+                                    image_callback(CursorImageStatus::Image(surface));
+                                }
+                                None => {
+                                    image_callback(CursorImageStatus::Hidden);
                                 }
                             }
                         }
                     }
                 }
-                Request::Release => {
-                    // Our destructors already handle it
-                }
-                _ => unreachable!(),
             }
-        },
-        destructor,
-        (),
-    )
+            Request::Release => {
+                // Our destructors already handle it
+            }
+            _ => unreachable!(),
+        }
+    });
+
+    if let Some(h) = handle {
+        let inner = h.inner.clone();
+        pointer.assign_destructor(Filter::new(move |pointer: WlPointer, _, _| {
+            inner
+                .borrow_mut()
+                .known_pointers
+                .retain(|p| !p.as_ref().equals(&pointer.as_ref()))
+        }))
+    }
+
+    pointer.deref().clone()
 }
 
 /*
