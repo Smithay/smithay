@@ -87,7 +87,7 @@ where
                 wl_surface,
                 self.location,
                 |wl_surface, attributes, role, &(mut x, mut y)| {
-                    let data = attributes.user_data.get::<SurfaceData>();
+                    let data = attributes.user_data.get::<RefCell<SurfaceData>>();
 
                     if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                         x += subdata.location.0;
@@ -96,7 +96,7 @@ where
 
                     let surface_local_point = (point.0 - x as f64, point.1 - y as f64);
                     if data
-                        .map(|data| data.contains_point(surface_local_point))
+                        .map(|data| data.borrow().contains_point(surface_local_point))
                         .unwrap_or(false)
                     {
                         *found.borrow_mut() = Some((wl_surface.clone(), (x as f64, y as f64)));
@@ -122,9 +122,9 @@ where
                 wl_surface,
                 (base_x, base_y),
                 |_, attributes, role, &(mut x, mut y)| {
-                    let data = attributes.user_data.get::<SurfaceData>();
+                    let data = attributes.user_data.get::<RefCell<SurfaceData>>();
 
-                    if let Some((w, h)) = data.and_then(SurfaceData::size) {
+                    if let Some((w, h)) = data.and_then(|d| d.borrow().size()) {
                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
                             x += subdata.location.0;
                             y += subdata.location.1;
@@ -160,7 +160,7 @@ where
         // It's the set geometry with the full bounding box as the fallback.
         ctoken
             .with_surface_data(self.toplevel.get_surface().unwrap(), |attributes| {
-                attributes.user_data.get::<SurfaceData>().unwrap().geometry
+                attributes.user_data.get::<RefCell<SurfaceData>>().unwrap().borrow().geometry
             })
             .unwrap_or(self.bbox)
     }

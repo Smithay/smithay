@@ -193,7 +193,8 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
         {
             running.store(false, Ordering::SeqCst);
         } else {
-            display.flush_clients();
+            // FIXME: should we supply non-() data?
+            display.flush_clients(&mut ());
             window_map.borrow_mut().refresh();
         }
     }

@@ -260,7 +260,8 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
         {
             running.store(false, Ordering::SeqCst);
         } else {
-            display.borrow_mut().flush_clients();
+            // FIXME: should we supply non-() data?
+            display.borrow_mut().flush_clients(&mut ());
             window_map.borrow_mut().refresh();
         }
     }

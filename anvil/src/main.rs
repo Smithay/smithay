@@ -38,7 +38,7 @@ fn main() {
     );
 
     let mut event_loop = EventLoop::<()>::new().unwrap();
-    let mut display = Display::new(event_loop.handle());
+    let mut display = Display::new();
 
     let arg = ::std::env::args().nth(1);
     match arg.as_ref().map(|s| &s[..]) {
