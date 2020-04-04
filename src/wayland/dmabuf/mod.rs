@@ -74,7 +74,7 @@ use wayland_protocols::unstable::linux_dmabuf::v1::server::{
     },
     zwp_linux_dmabuf_v1,
 };
-use wayland_server::{protocol::wl_buffer, Display, Global, NewResource};
+use wayland_server::{protocol::wl_buffer, Display, Global, Main};
 
 /// Representation of a Dmabuf format, as advertized to the client
 pub struct Format {
@@ -161,7 +161,7 @@ pub trait DmabufHandler {
     fn create_buffer(
         &mut self,
         data: Self::BufferData,
-        buffer: NewResource<wl_buffer::WlBuffer>,
+        buffer: Main<wl_buffer::WlBuffer>,
     ) -> wl_buffer::WlBuffer {
         buffer.implement_closure(|_, _| {}, None::<fn(_)>, data)
     }
@@ -332,7 +332,7 @@ impl<H: DmabufHandler> ParamRequestHandler for ParamsHandler<H> {
     fn create_immed(
         &mut self,
         params: BufferParams,
-        buffer_id: NewResource<wl_buffer::WlBuffer>,
+        buffer_id: Main<wl_buffer::WlBuffer>,
         width: i32,
         height: i32,
         format: u32,

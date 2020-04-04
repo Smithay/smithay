@@ -71,10 +71,10 @@
 //! # }
 //! ```
 
-use std::os::unix::io::RawFd;
+use std::{ops::Deref as _, os::unix::io::RawFd};
 
 use wayland_protocols::unstable::linux_explicit_synchronization::v1::server::*;
-use wayland_server::{protocol::wl_surface::WlSurface, Display, Global, NewResource};
+use wayland_server::{protocol::wl_surface::WlSurface, Display, Filter, Global, Main};
 
 use crate::wayland::compositor::{CompositorToken, SurfaceAttributes};
 
@@ -203,9 +203,9 @@ where
 
     display.create_global::<zwp_linux_explicit_synchronization_v1::ZwpLinuxExplicitSynchronizationV1, _>(
         2,
-        move |new_sync, _version| {
-            new_sync.implement_closure(
-                move |req, explicit_sync| {
+        Filter::new(move |(sync, _version): (Main<zwp_linux_explicit_synchronization_v1::ZwpLinuxExplicitSynchronizationV1>, _), _, _| {
+            sync.quick_assign(
+                move |explicit_sync, req, _| {
                     if let zwp_linux_explicit_synchronization_v1::Request::GetSynchronization {
                         id,
                         surface,
@@ -238,24 +238,22 @@ where
                             });
                         });
                     }
-                },
-                None::<fn(_)>,
-                (),
+                }
             );
-        },
+        })
     )
 }
 
 fn implement_surface_sync<R>(
-    id: NewResource<zwp_linux_surface_synchronization_v1::ZwpLinuxSurfaceSynchronizationV1>,
+    id: Main<zwp_linux_surface_synchronization_v1::ZwpLinuxSurfaceSynchronizationV1>,
     surface: WlSurface,
     compositor: CompositorToken<R>,
 ) -> zwp_linux_surface_synchronization_v1::ZwpLinuxSurfaceSynchronizationV1
 where
     R: 'static,
 {
-    id.implement_closure(
-        move |req, surface_sync| match req {
+    id.quick_assign(
+        move |surface_sync, req, _| match req {
             zwp_linux_surface_synchronization_v1::Request::SetAcquireFence { fd } => {
                 if !surface.as_ref().is_alive() {
                     surface_sync.as_ref().post_error(
@@ -310,7 +308,6 @@ where
             }
             _ => (),
         },
-        None::<fn(_)>,
-        (),
-    )
+    );
+    id.deref().clone()
 }
