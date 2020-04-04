@@ -25,6 +25,7 @@
  *
  */
 use std::{
+    any::Any,
     cell::RefCell,
     env,
     ffi::CString,
@@ -77,10 +78,11 @@ pub trait XWindowManager {
 
 impl<WM: XWindowManager + 'static> XWayland<WM> {
     /// Start the XWayland server
-    pub fn init<L, Data: 'static>(
+    pub fn init<L, T: Any, Data: 'static>(
         wm: WM,
         handle: LoopHandle<Data>,
         display: Rc<RefCell<Display>>,
+        data: &mut T,
         logger: L,
     ) -> Result<XWayland<WM>, ()>
     where
@@ -104,7 +106,7 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
             instance: None,
             log: log.new(o!("smithay_module" => "XWayland")),
         }));
-        launch(&inner)?;
+        launch(&inner, data)?;
         Ok(XWayland { inner })
     }
 }
@@ -136,7 +138,10 @@ struct Inner<WM: XWindowManager> {
 // Launch an XWayland server
 //
 // Does nothing if there is already a launched instance
-fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Result<(), ()> {
+fn launch<WM: XWindowManager + 'static, T: Any>(
+    inner: &Rc<RefCell<Inner<WM>>>,
+    data: &mut T,
+) -> Result<(), ()> {
     let mut guard = inner.borrow_mut();
     if guard.instance.is_some() {
         return Ok(());
@@ -159,10 +164,12 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
         guard
             .wayland_display
             .borrow_mut()
-            .create_client(wl_me.into_raw_fd(), &mut ())
+            .create_client(wl_me.into_raw_fd(), data)
     };
     client.data_map().insert_if_missing(|| inner.clone());
-    client.add_destructor(Filter::new(|e: Arc<_>, _, _| client_destroy::<WM>(&e)));
+    client.add_destructor(Filter::new(|e: Arc<_>, _, mut data| {
+        client_destroy::<WM, T>(&e, data.get().unwrap())
+    }));
 
     // setup the SIGUSR1 handler
     let sigusr1_handler = (&mut *guard.source_maker)(inner.clone())?;
@@ -245,7 +252,7 @@ impl<WM: XWindowManager> Inner<WM> {
             if let Some(s) = instance.sigusr1_handler.take() {
                 s.remove();
             }
-            // All connexions and lockfiles are cleaned by their destructors
+            // All connections and lockfiles are cleaned by their destructors
 
             // Remove DISPLAY from the env
             ::std::env::remove_var("DISPLAY");
@@ -257,7 +264,7 @@ impl<WM: XWindowManager> Inner<WM> {
     }
 }
 
-fn client_destroy<WM: XWindowManager + 'static>(map: &::wayland_server::UserDataMap) {
+fn client_destroy<WM: XWindowManager + 'static, T: Any>(map: &::wayland_server::UserDataMap, data: &mut T) {
     let inner = map.get::<Rc<RefCell<Inner<WM>>>>().unwrap();
 
     // shutdown the server
@@ -268,7 +275,7 @@ fn client_destroy<WM: XWindowManager + 'static>(map: &::wayland_server::UserData
     // at startup there is no point
     if started_at.map(|t| t.elapsed().as_secs()).unwrap_or(10) > 5 {
         warn!(inner.borrow().log, "XWayland crashed, restarting.");
-        let _ = launch(&inner);
+        let _ = launch(&inner, data);
     } else {
         warn!(
             inner.borrow().log,
