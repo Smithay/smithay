@@ -85,7 +85,7 @@ use wayland_server::{
     protocol::{
         wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor, wl_surface::WlSurface,
     },
-    Display, Global, NewResource,
+    Display, Global, UserDataMap,
 };
 
 /// Description of which part of a surface
@@ -153,7 +153,7 @@ pub struct SurfaceAttributes {
     /// User-controlled data
     ///
     /// This is your field to host whatever you need.
-    pub user_data: ::wayland_commons::utils::UserDataMap,
+    pub user_data: UserDataMap,
 }
 
 impl Default for SurfaceAttributes {
@@ -165,7 +165,7 @@ impl Default for SurfaceAttributes {
             opaque_region: None,
             input_region: None,
             damage: Damage::Full,
-            user_data: ::wayland_commons::utils::UserDataMap::new(),
+            user_data: UserDataMap::new(),
         }
     }
 }

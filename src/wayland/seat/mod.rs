@@ -56,11 +56,9 @@ pub use self::{
 
 use crate::wayland::compositor::{roles::Role, CompositorToken};
 
-use wayland_commons::utils::UserDataMap;
-
 use wayland_server::{
     protocol::{wl_seat, wl_surface},
-    Display, Global, NewResource,
+    Display, Global, UserDataMap,
 };
 
 struct Inner {

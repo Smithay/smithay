@@ -94,14 +94,13 @@ use std::{
     rc::Rc,
     sync::{Arc, Mutex},
 };
-use wayland_commons::utils::UserDataMap;
 use wayland_protocols::{
     unstable::xdg_shell::v6::server::{zxdg_popup_v6, zxdg_shell_v6, zxdg_surface_v6, zxdg_toplevel_v6},
     xdg_shell::server::{xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base},
 };
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_surface},
-    Display, Global,
+    Display, Global, UserDataMap,
 };
 
 // handlers for the xdg_shell protocol
