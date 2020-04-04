@@ -33,6 +33,12 @@ use std::{
         net::UnixStream,
     },
     rc::Rc,
+    sync::Arc,
+};
+
+use calloop::{
+    signals::{Signal, Signals},
+    LoopHandle, Source,
 };
 
 use nix::{
@@ -42,13 +48,7 @@ use nix::{
     Error as NixError, Result as NixResult,
 };
 
-use wayland_server::{
-    calloop::{
-        signals::{Signal, Signals},
-        LoopHandle, Source,
-    },
-    Client, Display,
-};
+use wayland_server::{Client, Display, Filter};
 
 use super::x11_sockets::{prepare_x11_sockets, X11Lock};
 
@@ -159,10 +159,10 @@ fn launch<WM: XWindowManager + 'static>(inner: &Rc<RefCell<Inner<WM>>>) -> Resul
         guard
             .wayland_display
             .borrow_mut()
-            .create_client(wl_me.into_raw_fd())
+            .create_client(wl_me.into_raw_fd(), &mut ())
     };
     client.data_map().insert_if_missing(|| inner.clone());
-    client.add_destructor(client_destroy::<WM>);
+    client.add_destructor(Filter::new(|e: Arc<_>, _, _| client_destroy::<WM>(&e)));
 
     // setup the SIGUSR1 handler
     let sigusr1_handler = (&mut *guard.source_maker)(inner.clone())?;

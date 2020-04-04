@@ -17,7 +17,7 @@
 //! // to set a surface as a cursor image
 //! define_roles!(Roles => [CursorImage, CursorImageRole]);
 //!
-//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
+//! # let mut event_loop = calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _| {}, None);
 //! // insert the seat:
@@ -189,7 +189,7 @@ impl Seat {
     /// #
     /// # define_roles!(Roles => [CursorImage, CursorImageRole]);
     /// #
-    /// # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
+    /// # let mut event_loop = calloop::EventLoop::<()>::new().unwrap();
     /// # let mut display = wayland_server::Display::new(event_loop.handle());
     /// # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _| {}, None);
     /// # let (mut seat, seat_global) = Seat::new(

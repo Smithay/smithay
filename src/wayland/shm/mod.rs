@@ -22,7 +22,7 @@
 //! use smithay::wayland::shm::init_shm_global;
 //! use wayland_server::protocol::wl_shm::Format;
 //!
-//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
+//! # let mut event_loop = calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! // Insert the ShmGlobal into your event loop
 //! // Here, we specify that Yuyv and C8 format are supported

@@ -21,7 +21,7 @@
 //! use smithay::wayland::output::{Output, PhysicalProperties, Mode};
 //! use wayland_server::protocol::wl_output;
 //!
-//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
+//! # let mut event_loop = calloop::EventLoop::<()>::new().unwrap();
 //! # let mut display = wayland_server::Display::new(event_loop.handle());
 //! // Create the Output with given name and physical properties
 //! let (output, _output_global) = Output::new(
