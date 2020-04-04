@@ -21,10 +21,10 @@ pub(crate) fn implement_compositor<R, Impl>(
     implem: Rc<RefCell<Impl>>,
 ) -> wl_compositor::WlCompositor
 where
-    R: Default + 'static,
+    R: Default + Send + 'static,
     Impl: FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>) + 'static,
 {
-    compositor.quick_assign(move |_, request, _compositor| match request {
+    compositor.quick_assign(move |_compositor, request, _| match request {
         wl_compositor::Request::CreateSurface { id } => {
             trace!(log, "Creating a new wl_surface.");
             implement_surface(id, log.clone(), implem.clone());
@@ -120,7 +120,7 @@ fn implement_surface<R, Impl>(
     implem: Rc<RefCell<Impl>>,
 ) -> wl_surface::WlSurface
 where
-    R: Default + 'static,
+    R: Default + Send + 'static,
     Impl: FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>) + 'static,
 {
     surface.quick_assign({
@@ -131,7 +131,8 @@ where
     surface
         .as_ref()
         .user_data()
-        .set(|| SurfaceData::<R>::init(&surface));
+        .set_threadsafe(|| SurfaceData::<R>::new());
+    SurfaceData::<R>::init(&surface);
     surface.deref().clone()
 }
 
@@ -165,7 +166,7 @@ fn implement_region(region: Main<wl_region::WlRegion>) -> wl_region::WlRegion {
     region
         .as_ref()
         .user_data()
-        .set(|| Mutex::new(RegionAttributes::default()));
+        .set_threadsafe(|| Mutex::new(RegionAttributes::default()));
     region.deref().clone()
 }
 
@@ -269,7 +270,7 @@ where
     subsurface.assign_destructor(Filter::new(|subsurface, _, _| {
         destroy_subsurface::<R>(&subsurface)
     }));
-    subsurface.as_ref().user_data().set(|| surface);
+    subsurface.as_ref().user_data().set_threadsafe(|| surface);
     subsurface.deref().clone()
 }
 

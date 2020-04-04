@@ -473,7 +473,7 @@ pub fn compositor_init<R, Impl, L>(
 )
 where
     L: Into<Option<::slog::Logger>>,
-    R: Default + RoleType + Role<SubsurfaceRole> + 'static,
+    R: Default + RoleType + Role<SubsurfaceRole> + Send + 'static,
     Impl: FnMut(SurfaceEvent, WlSurface, CompositorToken<R>) + 'static,
 {
     let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "compositor_handler"));
