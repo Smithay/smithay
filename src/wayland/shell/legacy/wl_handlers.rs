@@ -1,12 +1,13 @@
 use std::{
     cell::RefCell,
+    ops::Deref as _,
     rc::Rc,
     sync::{Arc, Mutex},
 };
 
 use wayland_server::{
     protocol::{wl_shell, wl_shell_surface, wl_surface},
-    NewResource,
+    Filter, Main,
 };
 
 use crate::wayland::compositor::{roles::Role, CompositorToken};
@@ -14,7 +15,7 @@ use crate::wayland::compositor::{roles::Role, CompositorToken};
 use super::{ShellRequest, ShellState, ShellSurface, ShellSurfaceKind, ShellSurfaceRole};
 
 pub(crate) fn implement_shell<R, Impl>(
-    shell: NewResource<wl_shell::WlShell>,
+    shell: Main<wl_shell::WlShell>,
     ctoken: CompositorToken<R>,
     implementation: Rc<RefCell<Impl>>,
     state: Arc<Mutex<ShellState<R>>>,
@@ -22,8 +23,8 @@ pub(crate) fn implement_shell<R, Impl>(
     R: Role<ShellSurfaceRole> + 'static,
     Impl: FnMut(ShellRequest<R>) + 'static,
 {
-    shell.implement_closure(
-        move |req, shell| {
+    shell.quick_assign(
+        move |shell, req, _data| {
             let (id, surface) = match req {
                 wl_shell::Request::GetShellSurface { id, surface } => (id, surface),
                 _ => unreachable!(),
@@ -51,8 +52,6 @@ pub(crate) fn implement_shell<R, Impl>(
                 surface: make_handle(&shell_surface, ctoken),
             });
         },
-        None::<fn(_)>,
-        (),
     );
 }
 
@@ -81,7 +80,7 @@ pub(crate) struct ShellSurfaceUserData<R> {
 }
 
 fn implement_shell_surface<R, Impl>(
-    shell_surface: NewResource<wl_shell_surface::WlShellSurface>,
+    shell_surface: Main<wl_shell_surface::WlShellSurface>,
     surface: wl_surface::WlSurface,
     implementation: Rc<RefCell<Impl>>,
     ctoken: CompositorToken<R>,
@@ -92,8 +91,8 @@ where
     Impl: FnMut(ShellRequest<R>) + 'static,
 {
     use self::wl_shell_surface::Request;
-    shell_surface.implement_closure(
-        move |req, shell_surface| {
+    shell_surface.quick_assign(
+        move |shell_surface, req, _data| {
             let data = shell_surface
                 .as_ref()
                 .user_data()
@@ -187,14 +186,18 @@ where
                 _ => unreachable!(),
             }
         },
-        Some(|shell_surface: wl_shell_surface::WlShellSurface| {
-            let data = shell_surface
-                .as_ref()
-                .user_data()
-                .get::<ShellSurfaceUserData<R>>()
-                .unwrap();
-            data.state.lock().unwrap().cleanup_surfaces();
-        }),
-        ShellSurfaceUserData { surface, state },
-    )
+    );
+
+    shell_surface.assign_destructor(Filter::new(|shell_surface: wl_shell_surface::WlShellSurface, _, _data| {
+        let data = shell_surface
+            .as_ref()
+            .user_data()
+            .get::<ShellSurfaceUserData<R>>()
+            .unwrap();
+        data.state.lock().unwrap().cleanup_surfaces();
+    }));
+
+    shell_surface.as_ref().user_data().set_threadsafe(|| ShellSurfaceUserData { surface, state });
+
+    shell_surface.deref().clone()
 }
