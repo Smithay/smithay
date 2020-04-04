@@ -49,12 +49,15 @@
 //! output.add_mode(Mode { width: 1024, height: 768, refresh: 60000 });
 //! ```
 
-use std::sync::{Arc, Mutex};
+use std::{
+    ops::Deref as _,
+    sync::{Arc, Mutex},
+};
 
 use wayland_server::protocol::wl_output::{Subpixel, Transform};
 use wayland_server::{
     protocol::wl_output::{Mode as WMode, WlOutput},
-    Display, Global, NewResource,
+    Display, Filter, Global, Main,
 };
 
 /// An output mode
@@ -191,21 +194,24 @@ impl Output {
 
         let output = Output { inner: inner.clone() };
 
-        let global = display.create_global(3, move |new_output: NewResource<_>, _version| {
-            let output = new_output.implement_closure(
-                |_, _| {},
-                Some(|output: WlOutput| {
+        let global = display.create_global(
+            3,
+            Filter::new(move |(output, _version): (Main<WlOutput>, _), _, _| {
+                output.assign_destructor(Filter::new(|output: WlOutput, _, _| {
                     let inner = output.as_ref().user_data().get::<Arc<Mutex<Inner>>>().unwrap();
                     inner
                         .lock()
                         .unwrap()
                         .instances
                         .retain(|o| !o.as_ref().equals(&output.as_ref()));
-                }),
-                inner.clone(),
-            );
-            inner.lock().unwrap().new_global(output);
-        });
+                }));
+                output.as_ref().user_data().set_threadsafe({
+                    let inner = inner.clone();
+                    move || inner
+                });
+                inner.lock().unwrap().new_global(output.deref().clone());
+            }),
+        );
 
         (output, global)
     }
