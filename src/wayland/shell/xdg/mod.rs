@@ -100,7 +100,7 @@ use wayland_protocols::{
 };
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_surface},
-    Display, Global, UserDataMap,
+    Display, Filter, Global, UserDataMap,
 };
 
 // handlers for the xdg_shell protocol
@@ -305,13 +305,13 @@ where
 
     let shell_data_z = shell_data.clone();
 
-    let xdg_shell_global = display.create_global(1, move |shell, _version| {
+    let xdg_shell_global = display.create_global(1, Filter::new(move |(shell, _version), _, _data| {
         self::xdg_handlers::implement_wm_base(shell, &shell_data);
-    });
+    }));
 
-    let zxdgv6_shell_global = display.create_global(1, move |shell, _version| {
+    let zxdgv6_shell_global = display.create_global(1, Filter::new(move |(shell, _version), _, _data| {
         self::zxdgv6_handlers::implement_shell(shell, &shell_data_z);
-    });
+    }));
 
     (shell_state, xdg_shell_global, zxdgv6_shell_global)
 }

@@ -1,10 +1,10 @@
-use std::{cell::RefCell, sync::Mutex};
+use std::{cell::RefCell, ops::Deref as _, sync::Mutex};
 
 use crate::wayland::compositor::{roles::*, CompositorToken};
 use wayland_protocols::xdg_shell::server::{
     xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base,
 };
-use wayland_server::{protocol::wl_surface, NewResource};
+use wayland_server::{protocol::wl_surface, Filter, Main};
 
 use crate::utils::Rectangle;
 
@@ -15,15 +15,14 @@ use super::{
 };
 
 pub(crate) fn implement_wm_base<R>(
-    shell: NewResource<xdg_wm_base::XdgWmBase>,
+    shell: Main<xdg_wm_base::XdgWmBase>,
     shell_data: &ShellData<R>,
 ) -> xdg_wm_base::XdgWmBase
 where
     R: Role<XdgSurfaceRole> + 'static,
 {
-    let shell = shell.implement_closure(
-        wm_implementation::<R>,
-        None::<fn(_)>,
+    shell.quick_assign(|shell, req, _data| wm_implementation::<R>(req, shell.deref().clone()));
+    shell.as_ref().user_data().set(||
         ShellUserData {
             shell_data: shell_data.clone(),
             client_data: Mutex::new(make_shell_client_data()),
@@ -33,7 +32,7 @@ where
     (&mut *user_impl)(XdgRequest::NewClient {
         client: make_shell_client(&shell, shell_data.compositor_token),
     });
-    shell
+    shell.deref().clone()
 }
 
 /*
@@ -86,9 +85,11 @@ where
                 );
                 return;
             }
-            id.implement_closure(
-                xdg_surface_implementation::<R>,
-                Some(destroy_surface::<R>),
+            id.quick_assign(|surface, req, _data| {
+                xdg_surface_implementation::<R>(req, surface.deref().clone())
+            });
+            id.assign_destructor(Filter::new(|surface, _, _data| destroy_surface::<R>(surface)));
+            id.as_ref().user_data().set(||
                 XdgSurfaceUserData {
                     shell_data: data.shell_data.clone(),
                     wl_surface: surface,
@@ -121,11 +122,9 @@ where
  * xdg_positioner
  */
 
-fn implement_positioner(
-    positioner: NewResource<xdg_positioner::XdgPositioner>,
-) -> xdg_positioner::XdgPositioner {
-    positioner.implement_closure(
-        |request, positioner| {
+fn implement_positioner(positioner: Main<xdg_positioner::XdgPositioner>) -> xdg_positioner::XdgPositioner {
+    positioner.quick_assign(
+        |positioner, request, _data| {
             let mutex = positioner
                 .as_ref()
                 .user_data()
@@ -175,9 +174,12 @@ fn implement_positioner(
                 _ => unreachable!(),
             }
         },
-        None::<fn(_)>,
+    );
+    positioner.as_ref().user_data().set(||
         RefCell::new(PositionerState::new()),
-    )
+    );
+
+    positioner.deref().clone()
 }
 
 /*
@@ -246,9 +248,11 @@ where
                     });
                 })
                 .expect("xdg_surface exists but surface has not shell_surface role?!");
-            let toplevel = id.implement_closure(
-                toplevel_implementation::<R>,
-                Some(destroy_toplevel::<R>),
+            id.quick_assign(
+                |toplevel, req, _data| toplevel_implementation::<R>(req, toplevel.deref().clone()),
+            );
+            id.assign_destructor(Filter::new(|toplevel, _, _data| destroy_toplevel::<R>(toplevel)));
+            id.as_ref().user_data().set(||
                 ShellSurfaceUserData {
                     shell_data: data.shell_data.clone(),
                     wl_surface: data.wl_surface.clone(),
@@ -262,9 +266,9 @@ where
                 .lock()
                 .unwrap()
                 .known_toplevels
-                .push(make_toplevel_handle(&toplevel));
+                .push(make_toplevel_handle(&id));
 
-            let handle = make_toplevel_handle(&toplevel);
+            let handle = make_toplevel_handle(&id);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
             (&mut *user_impl)(XdgRequest::NewToplevel { surface: handle });
         }
@@ -296,9 +300,9 @@ where
                     });
                 })
                 .expect("xdg_surface exists but surface has not shell_surface role?!");
-            let popup = id.implement_closure(
-                xg_popup_implementation::<R>,
-                Some(destroy_popup::<R>),
+            id.quick_assign(|popup, req, _data| xg_popup_implementation::<R>(req, popup.deref().clone()));
+            id.assign_destructor(Filter::new(|popup, _, _data| destroy_popup::<R>(popup)));
+            id.as_ref().user_data().set(||
                 ShellSurfaceUserData {
                     shell_data: data.shell_data.clone(),
                     wl_surface: data.wl_surface.clone(),
@@ -312,9 +316,9 @@ where
                 .lock()
                 .unwrap()
                 .known_popups
-                .push(make_popup_handle(&popup));
+                .push(make_popup_handle(&id));
 
-            let handle = make_popup_handle(&popup);
+            let handle = make_popup_handle(&id);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
             (&mut *user_impl)(XdgRequest::NewPopup { surface: handle });
         }
@@ -487,7 +491,6 @@ where
             });
         }
         xdg_toplevel::Request::Resize { seat, serial, edges } => {
-            let edges = xdg_toplevel::ResizeEdge::from_raw(edges).unwrap_or(xdg_toplevel::ResizeEdge::None);
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
             (&mut *user_impl)(XdgRequest::Resize {
