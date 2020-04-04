@@ -291,10 +291,10 @@ where
                                 "Multiple releases added for a single surface commit.".into(),
                             )
                         } else {
-                            // FIXME: replace implement_dummy()
-                            //state.sync_state.release = Some(ExplicitBufferRelease {
-                            //    release: release.implement_dummy(),
-                            //});
+                            release.quick_assign(|_, _, _| {});
+                            state.sync_state.release = Some(ExplicitBufferRelease {
+                                release: release.deref().clone(),
+                            });
                         }
                     }
                 });
