@@ -65,7 +65,8 @@ where
 {
     let data = shell_surface
         .as_ref()
-        .user_data::<ShellSurfaceUserData<R>>()
+        .user_data()
+        .get::<ShellSurfaceUserData<R>>()
         .unwrap();
     ShellSurface {
         wl_surface: data.surface.clone(),
@@ -95,7 +96,8 @@ where
         move |req, shell_surface| {
             let data = shell_surface
                 .as_ref()
-                .user_data::<ShellSurfaceUserData<R>>()
+                .user_data()
+                .get::<ShellSurfaceUserData<R>>()
                 .unwrap();
             let mut user_impl = implementation.borrow_mut();
             match req {
@@ -188,7 +190,8 @@ where
         Some(|shell_surface: wl_shell_surface::WlShellSurface| {
             let data = shell_surface
                 .as_ref()
-                .user_data::<ShellSurfaceUserData<R>>()
+                .user_data()
+                .get::<ShellSurfaceUserData<R>>()
                 .unwrap();
             data.state.lock().unwrap().cleanup_surfaces();
         }),

@@ -195,7 +195,7 @@ impl Output {
             let output = new_output.implement_closure(
                 |_, _| {},
                 Some(|output: WlOutput| {
-                    let inner = output.as_ref().user_data::<Arc<Mutex<Inner>>>().unwrap();
+                    let inner = output.as_ref().user_data().get::<Arc<Mutex<Inner>>>().unwrap();
                     inner
                         .lock()
                         .unwrap()

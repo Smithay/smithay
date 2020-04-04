@@ -164,7 +164,7 @@ pub fn with_buffer_contents<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<
 where
     F: FnOnce(&[u8], BufferData) -> T,
 {
-    let data = match buffer.as_ref().user_data::<InternalBufferData>() {
+    let data = match buffer.as_ref().user_data().get::<InternalBufferData>() {
         Some(d) => d,
         None => return Err(BufferAccessError::NotManaged),
     };
@@ -242,7 +242,7 @@ impl ShmGlobalData {
     fn receive_pool_message(&mut self, request: wl_shm_pool::Request, pool: wl_shm_pool::WlShmPool) {
         use self::wl_shm_pool::Request;
 
-        let arc_pool = pool.as_ref().user_data::<Arc<Pool>>().unwrap();
+        let arc_pool = pool.as_ref().user_data().get::<Arc<Pool>>().unwrap();
 
         match request {
             Request::CreateBuffer {

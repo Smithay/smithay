@@ -81,14 +81,14 @@ where
             }
             wl_surface::Request::SetOpaqueRegion { region } => {
                 let attributes = region.map(|r| {
-                    let attributes_mutex = r.as_ref().user_data::<Mutex<RegionAttributes>>().unwrap();
+                    let attributes_mutex = r.as_ref().user_data().get::<Mutex<RegionAttributes>>().unwrap();
                     attributes_mutex.lock().unwrap().clone()
                 });
                 SurfaceData::<R>::with_data(&surface, |d| d.opaque_region = attributes);
             }
             wl_surface::Request::SetInputRegion { region } => {
                 let attributes = region.map(|r| {
-                    let attributes_mutex = r.as_ref().user_data::<Mutex<RegionAttributes>>().unwrap();
+                    let attributes_mutex = r.as_ref().user_data().get::<Mutex<RegionAttributes>>().unwrap();
                     attributes_mutex.lock().unwrap().clone()
                 });
                 SurfaceData::<R>::with_data(&surface, |d| d.input_region = attributes);
@@ -143,7 +143,11 @@ where
  */
 
 fn region_implem(request: wl_region::Request, region: wl_region::WlRegion) {
-    let attributes_mutex = region.as_ref().user_data::<Mutex<RegionAttributes>>().unwrap();
+    let attributes_mutex = region
+        .as_ref()
+        .user_data()
+        .get::<Mutex<RegionAttributes>>()
+        .unwrap();
     let mut guard = attributes_mutex.lock().unwrap();
     match request {
         wl_region::Request::Add { x, y, width, height } => guard
@@ -206,7 +210,11 @@ where
     F: FnOnce(&mut SubsurfaceRole),
     R: RoleType + Role<SubsurfaceRole> + 'static,
 {
-    let surface = subsurface.as_ref().user_data::<wl_surface::WlSurface>().unwrap();
+    let surface = subsurface
+        .as_ref()
+        .user_data()
+        .get::<wl_surface::WlSurface>()
+        .unwrap();
     SurfaceData::<R>::with_role_data::<SubsurfaceRole, _, _>(surface, |d| f(d))
         .expect("The surface does not have a subsurface role while it has a wl_subsurface?!");
 }
@@ -227,7 +235,11 @@ where
                     })
                 }
                 wl_subsurface::Request::PlaceAbove { sibling } => {
-                    let surface = subsurface.as_ref().user_data::<wl_surface::WlSurface>().unwrap();
+                    let surface = subsurface
+                        .as_ref()
+                        .user_data()
+                        .get::<wl_surface::WlSurface>()
+                        .unwrap();
                     if let Err(()) = SurfaceData::<R>::reorder(surface, Location::After, &sibling) {
                         subsurface.as_ref().post_error(
                             wl_subsurface::Error::BadSurface as u32,
@@ -236,7 +248,11 @@ where
                     }
                 }
                 wl_subsurface::Request::PlaceBelow { sibling } => {
-                    let surface = subsurface.as_ref().user_data::<wl_surface::WlSurface>().unwrap();
+                    let surface = subsurface
+                        .as_ref()
+                        .user_data()
+                        .get::<wl_surface::WlSurface>()
+                        .unwrap();
                     if let Err(()) = SurfaceData::<R>::reorder(surface, Location::Before, &sibling) {
                         subsurface.as_ref().post_error(
                             wl_subsurface::Error::BadSurface as u32,
@@ -267,7 +283,11 @@ fn destroy_subsurface<R>(subsurface: &wl_subsurface::WlSubsurface)
 where
     R: RoleType + Role<SubsurfaceRole> + 'static,
 {
-    let surface = subsurface.as_ref().user_data::<wl_surface::WlSurface>().unwrap();
+    let surface = subsurface
+        .as_ref()
+        .user_data()
+        .get::<wl_surface::WlSurface>()
+        .unwrap();
     if surface.as_ref().is_alive() {
         SurfaceData::<R>::unset_parent(&surface);
     }

@@ -219,7 +219,8 @@ impl SeatData {
                     let offer_meta = meta.clone();
                     let callback = dd
                         .as_ref()
-                        .user_data::<DataDeviceData>()
+                        .user_data()
+                        .get::<DataDeviceData>()
                         .unwrap()
                         .callback
                         .clone();

@@ -418,7 +418,8 @@ where
             ShellClientKind::Xdg(ref shell) => {
                 let user_data = shell
                     .as_ref()
-                    .user_data::<self::xdg_handlers::ShellUserData<R>>()
+                    .user_data()
+                    .get::<self::xdg_handlers::ShellUserData<R>>()
                     .unwrap();
                 let mut guard = user_data.client_data.lock().unwrap();
                 if guard.pending_ping == 0 {
@@ -430,7 +431,8 @@ where
             ShellClientKind::ZxdgV6(ref shell) => {
                 let user_data = shell
                     .as_ref()
-                    .user_data::<self::zxdgv6_handlers::ShellUserData<R>>()
+                    .user_data()
+                    .get::<self::zxdgv6_handlers::ShellUserData<R>>()
                     .unwrap();
                 let mut guard = user_data.client_data.lock().unwrap();
                 if guard.pending_ping == 0 {
@@ -455,7 +457,8 @@ where
             ShellClientKind::Xdg(ref shell) => {
                 let data = shell
                     .as_ref()
-                    .user_data::<self::xdg_handlers::ShellUserData<R>>()
+                    .user_data()
+                    .get::<self::xdg_handlers::ShellUserData<R>>()
                     .unwrap();
                 let mut guard = data.client_data.lock().unwrap();
                 Ok(f(&mut guard.data))
@@ -463,7 +466,8 @@ where
             ShellClientKind::ZxdgV6(ref shell) => {
                 let data = shell
                     .as_ref()
-                    .user_data::<self::zxdgv6_handlers::ShellUserData<R>>()
+                    .user_data()
+                    .get::<self::zxdgv6_handlers::ShellUserData<R>>()
                     .unwrap();
                 let mut guard = data.client_data.lock().unwrap();
                 Ok(f(&mut guard.data))
@@ -526,14 +530,16 @@ where
             ToplevelKind::Xdg(ref s) => {
                 let data = s
                     .as_ref()
-                    .user_data::<self::xdg_handlers::ShellSurfaceUserData<R>>()
+                    .user_data()
+                    .get::<self::xdg_handlers::ShellSurfaceUserData<R>>()
                     .unwrap();
                 ShellClientKind::Xdg(data.wm_base.clone())
             }
             ToplevelKind::ZxdgV6(ref s) => {
                 let data = s
                     .as_ref()
-                    .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
+                    .user_data()
+                    .get::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
                     .unwrap();
                 ShellClientKind::ZxdgV6(data.shell.clone())
             }
@@ -579,7 +585,8 @@ where
                 ToplevelKind::Xdg(ref s) => {
                     let data = s
                         .as_ref()
-                        .user_data::<self::xdg_handlers::ShellSurfaceUserData<R>>()
+                        .user_data()
+                        .get::<self::xdg_handlers::ShellSurfaceUserData<R>>()
                         .unwrap();
                     data.xdg_surface.as_ref().post_error(
                         xdg_surface::Error::NotConstructed as u32,
@@ -589,7 +596,8 @@ where
                 ToplevelKind::ZxdgV6(ref s) => {
                     let data = s
                         .as_ref()
-                        .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
+                        .user_data()
+                        .get::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
                         .unwrap();
                     data.xdg_surface.as_ref().post_error(
                         zxdg_surface_v6::Error::NotConstructed as u32,
@@ -682,14 +690,16 @@ where
             PopupKind::Xdg(ref p) => {
                 let data = p
                     .as_ref()
-                    .user_data::<self::xdg_handlers::ShellSurfaceUserData<R>>()
+                    .user_data()
+                    .get::<self::xdg_handlers::ShellSurfaceUserData<R>>()
                     .unwrap();
                 ShellClientKind::Xdg(data.wm_base.clone())
             }
             PopupKind::ZxdgV6(ref p) => {
                 let data = p
                     .as_ref()
-                    .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
+                    .user_data()
+                    .get::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
                     .unwrap();
                 ShellClientKind::ZxdgV6(data.shell.clone())
             }
@@ -739,7 +749,8 @@ where
                 PopupKind::Xdg(ref s) => {
                     let data = s
                         .as_ref()
-                        .user_data::<self::xdg_handlers::ShellSurfaceUserData<R>>()
+                        .user_data()
+                        .get::<self::xdg_handlers::ShellSurfaceUserData<R>>()
                         .unwrap();
                     data.xdg_surface.as_ref().post_error(
                         xdg_surface::Error::NotConstructed as u32,
@@ -749,7 +760,8 @@ where
                 PopupKind::ZxdgV6(ref s) => {
                     let data = s
                         .as_ref()
-                        .user_data::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
+                        .user_data()
+                        .get::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
                         .unwrap();
                     data.xdg_surface.as_ref().post_error(
                         zxdg_surface_v6::Error::NotConstructed as u32,

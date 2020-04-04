@@ -120,7 +120,8 @@ where
                 {
                     let action_choice = device
                         .as_ref()
-                        .user_data::<DataDeviceData>()
+                        .user_data()
+                        .get::<DataDeviceData>()
                         .unwrap()
                         .action_choice
                         .clone();

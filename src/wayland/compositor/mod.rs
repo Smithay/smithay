@@ -446,7 +446,7 @@ impl<R: RoleType + 'static> CompositorToken<R> {
     /// If the region is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn get_region_attributes(self, region: &wl_region::WlRegion) -> RegionAttributes {
-        match region.as_ref().user_data::<Mutex<RegionAttributes>>() {
+        match region.as_ref().user_data().get::<Mutex<RegionAttributes>>() {
             Some(mutex) => mutex.lock().unwrap().clone(),
             None => panic!("Accessing the data of foreign regions is not supported."),
         }

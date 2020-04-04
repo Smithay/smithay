@@ -157,7 +157,8 @@ impl Seat {
     /// Attempt to retrieve a [`Seat`] from an existing resource
     pub fn from_resource(seat: &wl_seat::WlSeat) -> Option<Seat> {
         seat.as_ref()
-            .user_data::<Rc<SeatRc>>()
+            .user_data()
+            .get::<Rc<SeatRc>>()
             .cloned()
             .map(|arc| Seat { arc })
     }
@@ -342,7 +343,7 @@ where
     let dest_arc = arc.clone();
     new_seat.implement_closure(
         move |request, seat| {
-            let arc = seat.as_ref().user_data::<Rc<SeatRc>>().unwrap();
+            let arc = seat.as_ref().user_data().get::<Rc<SeatRc>>().unwrap();
             let inner = arc.inner.borrow_mut();
             match request {
                 wl_seat::Request::GetPointer { id } => {

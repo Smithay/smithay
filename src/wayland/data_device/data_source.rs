@@ -44,7 +44,7 @@ pub fn with_source_metadata<T, F: FnOnce(&SourceMetadata) -> T>(
     source: &WlDataSource,
     f: F,
 ) -> Result<T, ()> {
-    match source.as_ref().user_data::<RefCell<SourceMetadata>>() {
+    match source.as_ref().user_data().get::<RefCell<SourceMetadata>>() {
         Some(data) => Ok(f(&data.borrow())),
         None => Err(()),
     }
