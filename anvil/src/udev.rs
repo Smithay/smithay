@@ -35,6 +35,10 @@ use smithay::{
         udev::{primary_gpu, udev_backend_bind, UdevBackend, UdevHandler},
     },
     reexports::{
+        calloop::{
+            generic::{EventedFd, Generic},
+            EventLoop, LoopHandle, Source,
+        },
         drm::control::{
             connector::{Info as ConnectorInfo, State as ConnectorState},
             crtc,
@@ -44,10 +48,6 @@ use smithay::{
         input::Libinput,
         nix::{fcntl::OFlag, sys::stat::dev_t},
         wayland_server::{
-            calloop::{
-                generic::{EventedFd, Generic},
-                EventLoop, LoopHandle, Source,
-            },
             protocol::{wl_output, wl_surface},
             Display,
         },
