@@ -71,7 +71,7 @@
 //! # }
 //! ```
 
-use std::{ops::Deref as _, os::unix::io::RawFd};
+use std::{cell::RefCell, ops::{Deref as _, DerefMut as _}, os::unix::io::RawFd};
 
 use wayland_protocols::unstable::linux_explicit_synchronization::v1::server::*;
 use wayland_server::{protocol::wl_surface::WlSurface, Display, Filter, Global, Main};
@@ -119,12 +119,12 @@ struct InternalState {
 }
 
 struct ESUserData {
-    state: Option<InternalState>,
+    state: RefCell<Option<InternalState>>,
 }
 
 impl ESUserData {
-    fn take_state(&mut self) -> Option<ExplicitSyncState> {
-        if let Some(ref mut state) = self.state {
+    fn take_state(&self) -> Option<ExplicitSyncState> {
+        if let Some(state) = self.state.borrow_mut().deref_mut() {
             Some(ExplicitSyncState {
                 acquire: state.sync_state.acquire.take(),
                 release: state.sync_state.release.take(),
@@ -156,7 +156,7 @@ pub enum ExplicitSyncError {
 pub fn get_explicit_synchronization_state(attrs: &mut SurfaceAttributes) -> Result<ExplicitSyncState, ()> {
     attrs
         .user_data
-        .get_mut::<ESUserData>()
+        .get::<ESUserData>()
         .and_then(|s| s.take_state())
         .ok_or(())
 }
@@ -168,7 +168,7 @@ pub fn get_explicit_synchronization_state(attrs: &mut SurfaceAttributes) -> Resu
 /// function.
 pub fn send_explicit_synchronization_error(attrs: &SurfaceAttributes, error: ExplicitSyncError) {
     if let Some(ref data) = attrs.user_data.get::<ESUserData>() {
-        if let Some(ref state) = data.state {
+        if let Some(state) = data.state.borrow().deref() {
             match error {
                 ExplicitSyncError::InvalidFence => state.sync_resource.as_ref().post_error(
                     zwp_linux_surface_synchronization_v1::Error::InvalidFence as u32,
@@ -212,11 +212,11 @@ where
                     } = req
                     {
                         let exists = compositor.with_surface_data(&surface, |attrs| {
-                            attrs.user_data.insert_if_missing(|| ESUserData { state: None });
+                            attrs.user_data.insert_if_missing(|| ESUserData { state: RefCell::new(None) });
                             attrs
                                 .user_data
                                 .get::<ESUserData>()
-                                .map(|ud| ud.state.is_some())
+                                .map(|ud| ud.state.borrow().is_some())
                                 .unwrap()
                         });
                         if exists {
@@ -228,8 +228,8 @@ where
                         }
                         let surface_sync = implement_surface_sync(id, surface.clone(), compositor);
                         compositor.with_surface_data(&surface, |attrs| {
-                            let data = attrs.user_data.get_mut::<ESUserData>().unwrap();
-                            data.state = Some(InternalState {
+                            let data = attrs.user_data.get::<ESUserData>().unwrap();
+                            *data.state.borrow_mut() = Some(InternalState {
                                 sync_state: ExplicitSyncState {
                                     acquire: None,
                                     release: None,
@@ -262,8 +262,8 @@ where
                     )
                 }
                 compositor.with_surface_data(&surface, |attrs| {
-                    let data = attrs.user_data.get_mut::<ESUserData>().unwrap();
-                    if let Some(ref mut state) = data.state {
+                    let data = attrs.user_data.get::<ESUserData>().unwrap();
+                    if let Some(state) = data.state.borrow_mut().deref_mut() {
                         if state.sync_state.acquire.is_some() {
                             surface_sync.as_ref().post_error(
                                 zwp_linux_surface_synchronization_v1::Error::DuplicateFence as u32,
@@ -283,17 +283,18 @@ where
                     )
                 }
                 compositor.with_surface_data(&surface, |attrs| {
-                    let data = attrs.user_data.get_mut::<ESUserData>().unwrap();
-                    if let Some(ref mut state) = data.state {
+                    let data = attrs.user_data.get::<ESUserData>().unwrap();
+                    if let Some(state) = data.state.borrow_mut().deref_mut() {
                         if state.sync_state.acquire.is_some() {
                             surface_sync.as_ref().post_error(
                                 zwp_linux_surface_synchronization_v1::Error::DuplicateRelease as u32,
                                 "Multiple releases added for a single surface commit.".into(),
                             )
                         } else {
-                            state.sync_state.release = Some(ExplicitBufferRelease {
-                                release: release.implement_dummy(),
-                            });
+                            // FIXME: replace implement_dummy()
+                            //state.sync_state.release = Some(ExplicitBufferRelease {
+                            //    release: release.implement_dummy(),
+                            //});
                         }
                     }
                 });
@@ -301,8 +302,8 @@ where
             zwp_linux_surface_synchronization_v1::Request::Destroy => {
                 // disable the ESUserData
                 compositor.with_surface_data(&surface, |attrs| {
-                    if let Some(ref mut data) = attrs.user_data.get_mut::<ESUserData>() {
-                        data.state = None;
+                    if let Some(ref mut data) = attrs.user_data.get::<ESUserData>() {
+                        *data.state.borrow_mut() = None;
                     }
                 });
             }
