@@ -85,7 +85,7 @@ use wayland_server::{
     protocol::{
         wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor, wl_surface::WlSurface,
     },
-    Display, Global, UserDataMap,
+    Display, Filter, Global, Main, UserDataMap,
 };
 
 /// Description of which part of a surface
@@ -479,13 +479,19 @@ where
     let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "compositor_handler"));
     let implem = Rc::new(RefCell::new(implem));
 
-    let compositor = display.create_global(4, move |new_compositor, _version| {
-        self::handlers::implement_compositor::<R, Impl>(new_compositor, log.clone(), implem.clone());
-    });
+    let compositor = display.create_global(
+        4,
+        Filter::new(move |(new_compositor, _version), _, _| {
+            self::handlers::implement_compositor::<R, Impl>(new_compositor, log.clone(), implem.clone());
+        }),
+    );
 
-    let subcompositor = display.create_global(1, move |new_subcompositor, _version| {
-        self::handlers::implement_subcompositor::<R>(new_subcompositor);
-    });
+    let subcompositor = display.create_global(
+        1,
+        Filter::new(move |(new_subcompositor, _version), _, _| {
+            self::handlers::implement_subcompositor::<R>(new_subcompositor);
+        }),
+    );
 
     (CompositorToken::make(), compositor, subcompositor)
 }
@@ -513,7 +519,7 @@ pub enum SurfaceEvent {
     /// for more details
     Frame {
         /// The created `WlCallback`
-        callback: NewResource<wl_callback::WlCallback>,
+        callback: Main<wl_callback::WlCallback>,
     },
 }
 
