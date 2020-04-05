@@ -70,16 +70,24 @@
 //! # }
 //! ```
 
-use std::{cell::RefCell, ops::{Deref as _, DerefMut as _}, os::unix::io::RawFd};
+use std::{
+    cell::RefCell,
+    ops::{Deref as _, DerefMut as _},
+    os::unix::io::RawFd,
+};
 
-use wayland_protocols::unstable::linux_explicit_synchronization::v1::server::*;
+use wayland_protocols::unstable::linux_explicit_synchronization::v1::server::{
+    zwp_linux_buffer_release_v1::ZwpLinuxBufferReleaseV1,
+    zwp_linux_explicit_synchronization_v1::{self, ZwpLinuxExplicitSynchronizationV1},
+    zwp_linux_surface_synchronization_v1::{self, ZwpLinuxSurfaceSynchronizationV1},
+};
 use wayland_server::{protocol::wl_surface::WlSurface, Display, Filter, Global, Main};
 
 use crate::wayland::compositor::{CompositorToken, SurfaceAttributes};
 
 /// An object to signal end of use of a buffer
 pub struct ExplicitBufferRelease {
-    release: zwp_linux_buffer_release_v1::ZwpLinuxBufferReleaseV1,
+    release: ZwpLinuxBufferReleaseV1,
 }
 
 impl ExplicitBufferRelease {
@@ -114,7 +122,7 @@ pub struct ExplicitSyncState {
 
 struct InternalState {
     sync_state: ExplicitSyncState,
-    sync_resource: zwp_linux_surface_synchronization_v1::ZwpLinuxSurfaceSynchronizationV1,
+    sync_resource: ZwpLinuxSurfaceSynchronizationV1,
 }
 
 struct ESUserData {
@@ -193,25 +201,27 @@ pub fn init_explicit_synchronization_global<R, L>(
     display: &mut Display,
     compositor: CompositorToken<R>,
     logger: L,
-) -> Global<zwp_linux_explicit_synchronization_v1::ZwpLinuxExplicitSynchronizationV1>
+) -> Global<ZwpLinuxExplicitSynchronizationV1>
 where
     L: Into<Option<::slog::Logger>>,
     R: 'static,
 {
     let _log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "wayland_explicit_synchronization"));
 
-    display.create_global::<zwp_linux_explicit_synchronization_v1::ZwpLinuxExplicitSynchronizationV1, _>(
+    display.create_global::<ZwpLinuxExplicitSynchronizationV1, _>(
         2,
-        Filter::new(move |(sync, _version): (Main<zwp_linux_explicit_synchronization_v1::ZwpLinuxExplicitSynchronizationV1>, _), _, _| {
-            sync.quick_assign(
-                move |explicit_sync, req, _| {
+        Filter::new(
+            move |(sync, _version): (Main<ZwpLinuxExplicitSynchronizationV1>, _), _, _| {
+                sync.quick_assign(move |explicit_sync, req, _| {
                     if let zwp_linux_explicit_synchronization_v1::Request::GetSynchronization {
                         id,
                         surface,
                     } = req
                     {
                         let exists = compositor.with_surface_data(&surface, |attrs| {
-                            attrs.user_data.insert_if_missing(|| ESUserData { state: RefCell::new(None) });
+                            attrs.user_data.insert_if_missing(|| ESUserData {
+                                state: RefCell::new(None),
+                            });
                             attrs
                                 .user_data
                                 .get::<ESUserData>()
@@ -237,77 +247,75 @@ where
                             });
                         });
                     }
-                }
-            );
-        })
+                });
+            },
+        ),
     )
 }
 
 fn implement_surface_sync<R>(
-    id: Main<zwp_linux_surface_synchronization_v1::ZwpLinuxSurfaceSynchronizationV1>,
+    id: Main<ZwpLinuxSurfaceSynchronizationV1>,
     surface: WlSurface,
     compositor: CompositorToken<R>,
-) -> zwp_linux_surface_synchronization_v1::ZwpLinuxSurfaceSynchronizationV1
+) -> ZwpLinuxSurfaceSynchronizationV1
 where
     R: 'static,
 {
-    id.quick_assign(
-        move |surface_sync, req, _| match req {
-            zwp_linux_surface_synchronization_v1::Request::SetAcquireFence { fd } => {
-                if !surface.as_ref().is_alive() {
-                    surface_sync.as_ref().post_error(
-                        zwp_linux_surface_synchronization_v1::Error::NoSurface as u32,
-                        "The associated wl_surface was destroyed.".into(),
-                    )
+    id.quick_assign(move |surface_sync, req, _| match req {
+        zwp_linux_surface_synchronization_v1::Request::SetAcquireFence { fd } => {
+            if !surface.as_ref().is_alive() {
+                surface_sync.as_ref().post_error(
+                    zwp_linux_surface_synchronization_v1::Error::NoSurface as u32,
+                    "The associated wl_surface was destroyed.".into(),
+                )
+            }
+            compositor.with_surface_data(&surface, |attrs| {
+                let data = attrs.user_data.get::<ESUserData>().unwrap();
+                if let Some(state) = data.state.borrow_mut().deref_mut() {
+                    if state.sync_state.acquire.is_some() {
+                        surface_sync.as_ref().post_error(
+                            zwp_linux_surface_synchronization_v1::Error::DuplicateFence as u32,
+                            "Multiple fences added for a single surface commit.".into(),
+                        )
+                    } else {
+                        state.sync_state.acquire = Some(fd);
+                    }
                 }
-                compositor.with_surface_data(&surface, |attrs| {
-                    let data = attrs.user_data.get::<ESUserData>().unwrap();
-                    if let Some(state) = data.state.borrow_mut().deref_mut() {
-                        if state.sync_state.acquire.is_some() {
-                            surface_sync.as_ref().post_error(
-                                zwp_linux_surface_synchronization_v1::Error::DuplicateFence as u32,
-                                "Multiple fences added for a single surface commit.".into(),
-                            )
-                        } else {
-                            state.sync_state.acquire = Some(fd);
-                        }
-                    }
-                });
+            });
+        }
+        zwp_linux_surface_synchronization_v1::Request::GetRelease { release } => {
+            if !surface.as_ref().is_alive() {
+                surface_sync.as_ref().post_error(
+                    zwp_linux_surface_synchronization_v1::Error::NoSurface as u32,
+                    "The associated wl_surface was destroyed.".into(),
+                )
             }
-            zwp_linux_surface_synchronization_v1::Request::GetRelease { release } => {
-                if !surface.as_ref().is_alive() {
-                    surface_sync.as_ref().post_error(
-                        zwp_linux_surface_synchronization_v1::Error::NoSurface as u32,
-                        "The associated wl_surface was destroyed.".into(),
-                    )
+            compositor.with_surface_data(&surface, |attrs| {
+                let data = attrs.user_data.get::<ESUserData>().unwrap();
+                if let Some(state) = data.state.borrow_mut().deref_mut() {
+                    if state.sync_state.acquire.is_some() {
+                        surface_sync.as_ref().post_error(
+                            zwp_linux_surface_synchronization_v1::Error::DuplicateRelease as u32,
+                            "Multiple releases added for a single surface commit.".into(),
+                        )
+                    } else {
+                        release.quick_assign(|_, _, _| {});
+                        state.sync_state.release = Some(ExplicitBufferRelease {
+                            release: release.deref().clone(),
+                        });
+                    }
                 }
-                compositor.with_surface_data(&surface, |attrs| {
-                    let data = attrs.user_data.get::<ESUserData>().unwrap();
-                    if let Some(state) = data.state.borrow_mut().deref_mut() {
-                        if state.sync_state.acquire.is_some() {
-                            surface_sync.as_ref().post_error(
-                                zwp_linux_surface_synchronization_v1::Error::DuplicateRelease as u32,
-                                "Multiple releases added for a single surface commit.".into(),
-                            )
-                        } else {
-                            release.quick_assign(|_, _, _| {});
-                            state.sync_state.release = Some(ExplicitBufferRelease {
-                                release: release.deref().clone(),
-                            });
-                        }
-                    }
-                });
-            }
-            zwp_linux_surface_synchronization_v1::Request::Destroy => {
-                // disable the ESUserData
-                compositor.with_surface_data(&surface, |attrs| {
-                    if let Some(ref mut data) = attrs.user_data.get::<ESUserData>() {
-                        *data.state.borrow_mut() = None;
-                    }
-                });
-            }
-            _ => (),
-        },
-    );
+            });
+        }
+        zwp_linux_surface_synchronization_v1::Request::Destroy => {
+            // disable the ESUserData
+            compositor.with_surface_data(&surface, |attrs| {
+                if let Some(ref mut data) = attrs.user_data.get::<ESUserData>() {
+                    *data.state.borrow_mut() = None;
+                }
+            });
+        }
+        _ => (),
+    });
     id.deref().clone()
 }
