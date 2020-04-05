@@ -299,7 +299,8 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
             location,
             |_surface, attributes, role, &(mut x, mut y)| {
                 // Pull a new buffer if available
-                if let Some(data) = attributes.user_data.get_mut::<SurfaceData>() {
+                if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
+                    let mut data = data.borrow_mut();
                     if data.texture.is_none() {
                         if let Some(buffer) = data.buffer.take() {
                             if let Ok(m) = self.texture_from_buffer(buffer.clone()) {
@@ -341,8 +342,8 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                 }
             },
             |_surface, attributes, role, &(mut x, mut y)| {
-                if let Some(ref data) = attributes.user_data.get::<SurfaceData>() {
-                    if let Some(ref metadata) = data.texture {
+                if let Some(ref data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
+                    if let Some(ref metadata) = data.borrow().texture {
                         // we need to re-extract the subsurface offset, as the previous closure
                         // only passes it to our children
                         if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {

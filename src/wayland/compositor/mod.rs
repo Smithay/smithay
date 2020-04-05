@@ -35,8 +35,7 @@
 //! // Declare the roles enum
 //! define_roles!(MyRoles);
 //!
-//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
-//! # let mut display = wayland_server::Display::new(event_loop.handle());
+//! # let mut display = wayland_server::Display::new();
 //! // Call the init function:
 //! let (token, _, _) = compositor_init::<MyRoles, _, _>(
 //!     &mut display,
@@ -85,7 +84,7 @@ use wayland_server::{
     protocol::{
         wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor, wl_surface::WlSurface,
     },
-    Display, Global, NewResource,
+    Display, Filter, Global, Main, UserDataMap,
 };
 
 /// Description of which part of a surface
@@ -153,7 +152,7 @@ pub struct SurfaceAttributes {
     /// User-controlled data
     ///
     /// This is your field to host whatever you need.
-    pub user_data: ::wayland_commons::utils::UserDataMap,
+    pub user_data: UserDataMap,
 }
 
 impl Default for SurfaceAttributes {
@@ -165,7 +164,7 @@ impl Default for SurfaceAttributes {
             opaque_region: None,
             input_region: None,
             damage: Damage::Full,
-            user_data: ::wayland_commons::utils::UserDataMap::new(),
+            user_data: UserDataMap::new(),
         }
     }
 }
@@ -446,7 +445,7 @@ impl<R: RoleType + 'static> CompositorToken<R> {
     /// If the region is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
     pub fn get_region_attributes(self, region: &wl_region::WlRegion) -> RegionAttributes {
-        match region.as_ref().user_data::<Mutex<RegionAttributes>>() {
+        match region.as_ref().user_data().get::<Mutex<RegionAttributes>>() {
             Some(mutex) => mutex.lock().unwrap().clone(),
             None => panic!("Accessing the data of foreign regions is not supported."),
         }
@@ -473,19 +472,25 @@ pub fn compositor_init<R, Impl, L>(
 )
 where
     L: Into<Option<::slog::Logger>>,
-    R: Default + RoleType + Role<SubsurfaceRole> + 'static,
+    R: Default + RoleType + Role<SubsurfaceRole> + Send + 'static,
     Impl: FnMut(SurfaceEvent, WlSurface, CompositorToken<R>) + 'static,
 {
     let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "compositor_handler"));
     let implem = Rc::new(RefCell::new(implem));
 
-    let compositor = display.create_global(4, move |new_compositor, _version| {
-        self::handlers::implement_compositor::<R, Impl>(new_compositor, log.clone(), implem.clone());
-    });
+    let compositor = display.create_global(
+        4,
+        Filter::new(move |(new_compositor, _version), _, _| {
+            self::handlers::implement_compositor::<R, Impl>(new_compositor, log.clone(), implem.clone());
+        }),
+    );
 
-    let subcompositor = display.create_global(1, move |new_subcompositor, _version| {
-        self::handlers::implement_subcompositor::<R>(new_subcompositor);
-    });
+    let subcompositor = display.create_global(
+        1,
+        Filter::new(move |(new_subcompositor, _version), _, _| {
+            self::handlers::implement_subcompositor::<R>(new_subcompositor);
+        }),
+    );
 
     (CompositorToken::make(), compositor, subcompositor)
 }
@@ -513,7 +518,7 @@ pub enum SurfaceEvent {
     /// for more details
     Frame {
         /// The created `WlCallback`
-        callback: NewResource<wl_callback::WlCallback>,
+        callback: Main<wl_callback::WlCallback>,
     },
 }
 

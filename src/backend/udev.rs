@@ -19,8 +19,8 @@ use std::{
 use udev::{Context, Enumerator, EventType, MonitorBuilder, MonitorSocket, Result as UdevResult};
 
 use calloop::{
-    generic::{EventedFd, Generic},
-    mio::Ready,
+    generic::{SourceFd, Generic},
+    mio::Interest,
     InsertError, LoopHandle, Source,
 };
 
@@ -104,9 +104,9 @@ impl<T: UdevHandler + 'static> Drop for UdevBackend<T> {
 pub fn udev_backend_bind<T: UdevHandler + 'static, Data: 'static>(
     udev: UdevBackend<T>,
     handle: &LoopHandle<Data>,
-) -> Result<Source<Generic<EventedFd<UdevBackend<T>>>>, InsertError<Generic<EventedFd<UdevBackend<T>>>>> {
+) -> Result<Source<Generic<SourceFd<UdevBackend<T>>>>, InsertError<Generic<SourceFd<UdevBackend<T>>>>> {
     let mut source = Generic::from_fd_source(udev);
-    source.set_interest(Ready::readable());
+    source.set_interest(Interest::READABLE);
 
     handle.insert_source(source, |evt, _| {
         evt.source.borrow_mut().0.process_events();

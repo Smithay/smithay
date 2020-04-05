@@ -12,7 +12,7 @@ use drm::control::{crtc, ResourceHandles, ResourceInfo};
 use nix::libc::dev_t;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
-#[cfg(feature = "native_lib")]
+#[cfg(feature = "use_system_lib")]
 use wayland_server::Display;
 
 use super::{Device, DeviceHandler, Surface};
@@ -20,7 +20,7 @@ use crate::backend::egl::context::GlAttributes;
 use crate::backend::egl::error::Result as EGLResult;
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use crate::backend::egl::EGLContext;
-#[cfg(feature = "native_lib")]
+#[cfg(feature = "use_system_lib")]
 use crate::backend::egl::{EGLDisplay, EGLGraphicsBackend};
 
 pub mod error;
@@ -181,7 +181,7 @@ where
     }
 }
 
-#[cfg(feature = "native_lib")]
+#[cfg(feature = "use_system_lib")]
 impl<B, D> EGLGraphicsBackend for EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,

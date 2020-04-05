@@ -16,8 +16,8 @@ use std::{
 };
 
 use calloop::{
-    generic::{EventedFd, Generic},
-    mio::Ready,
+    generic::{SourceFd, Generic},
+    mio::Interest,
     InsertError, LoopHandle, Source,
 };
 
@@ -608,11 +608,11 @@ pub fn libinput_bind<Data: 'static>(
     backend: LibinputInputBackend,
     handle: LoopHandle<Data>,
 ) -> ::std::result::Result<
-    Source<Generic<EventedFd<LibinputInputBackend>>>,
-    InsertError<Generic<EventedFd<LibinputInputBackend>>>,
+    Source<Generic<SourceFd<LibinputInputBackend>>>,
+    InsertError<Generic<SourceFd<LibinputInputBackend>>>,
 > {
     let mut source = Generic::from_fd_source(backend);
-    source.set_interest(Ready::readable());
+    source.set_interest(Interest::READABLE);
 
     handle.insert_source(source, move |evt, _| {
         let mut backend = evt.source.borrow_mut();
