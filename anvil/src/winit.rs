@@ -27,8 +27,9 @@ use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
 use crate::input_handler::AnvilInputHandler;
 use crate::shell::init_shell;
+use crate::AnvilState;
 
-pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Logger) -> Result<(), ()> {
+pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<AnvilState>, log: Logger) -> Result<(), ()> {
     let (renderer, mut input) = winit::init(log.clone()).map_err(|_| ())?;
 
     #[cfg(feature = "egl")]
@@ -187,14 +188,18 @@ pub fn run_winit(display: &mut Display, event_loop: &mut EventLoop<()>, log: Log
             }
         }
 
+        let mut state = AnvilState::default();
+
         if event_loop
-            .dispatch(Some(::std::time::Duration::from_millis(16)), &mut ())
+            .dispatch(Some(::std::time::Duration::from_millis(16)), &mut state)
             .is_err()
         {
             running.store(false, Ordering::SeqCst);
         } else {
-            // FIXME: should we supply non-() data?
-            display.flush_clients(&mut ());
+            if state.need_wayland_dispatch {
+                display.dispatch(std::time::Duration::from_millis(0), &mut state);
+            }
+            display.flush_clients(&mut state);
             window_map.borrow_mut().refresh();
         }
     }

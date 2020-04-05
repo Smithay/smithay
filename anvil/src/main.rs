@@ -8,7 +8,7 @@ extern crate slog;
 extern crate smithay;
 
 use slog::Drain;
-use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
+use smithay::reexports::{calloop::{EventLoop, generic::Generic, mio::Interest}, wayland_server::Display};
 
 #[macro_use]
 mod shaders;
@@ -30,6 +30,20 @@ static POSSIBLE_BACKENDS: &[&str] = &[
     "--tty-udev : Run anvil as a tty udev client (requires root if without logind).",
 ];
 
+pub struct AnvilState {
+    pub need_wayland_dispatch: bool,
+    pub running: bool,
+}
+
+impl Default for AnvilState {
+    fn default() -> AnvilState {
+        AnvilState {
+            need_wayland_dispatch: false,
+            running: true,
+        }
+    }
+}
+
 fn main() {
     // A logger facility, here we use the terminal here
     let log = slog::Logger::root(
@@ -37,8 +51,16 @@ fn main() {
         o!(),
     );
 
-    let mut event_loop = EventLoop::<()>::new().unwrap();
+    let mut event_loop = EventLoop::<AnvilState>::new().unwrap();
     let mut display = Display::new();
+
+    // Glue for event dispatching
+    let mut wayland_event_source = Generic::from_raw_fd(display.get_poll_fd());
+    wayland_event_source.set_interest(Interest::READABLE);
+    let _wayland_source = event_loop.handle().insert_source(
+        wayland_event_source,
+        |_, state: &mut AnvilState| { state.need_wayland_dispatch = true; }
+    );
 
     let arg = ::std::env::args().nth(1);
     match arg.as_ref().map(|s| &s[..]) {

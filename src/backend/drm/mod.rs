@@ -46,8 +46,8 @@ use std::iter::IntoIterator;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 
-use calloop::generic::{EventedFd, Generic};
-use calloop::mio::Ready;
+use calloop::generic::{SourceFd, Generic};
+use calloop::mio::Interest;
 use calloop::InsertError;
 use calloop::{LoopHandle, Source};
 
@@ -229,13 +229,13 @@ impl<A: AsRawFd> DevPath for A {
 pub fn device_bind<D: Device + 'static, Data>(
     handle: &LoopHandle<Data>,
     device: D,
-) -> ::std::result::Result<Source<Generic<EventedFd<D>>>, InsertError<Generic<EventedFd<D>>>>
+) -> ::std::result::Result<Source<Generic<SourceFd<D>>>, InsertError<Generic<SourceFd<D>>>>
 where
     D: Device,
     Data: 'static,
 {
     let mut source = Generic::from_fd_source(device);
-    source.set_interest(Ready::readable());
+    source.set_interest(Interest::READABLE);
 
     handle.insert_source(source, |evt, _| {
         evt.source.borrow_mut().0.process_events();

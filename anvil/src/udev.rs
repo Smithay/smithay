@@ -36,7 +36,7 @@ use smithay::{
     },
     reexports::{
         calloop::{
-            generic::{EventedFd, Generic},
+            generic::{SourceFd, Generic},
             EventLoop, LoopHandle, Source,
         },
         drm::control::{
@@ -65,6 +65,7 @@ use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
 use crate::input_handler::AnvilInputHandler;
 use crate::shell::{init_shell, MyWindowMap, Roles};
+use crate::AnvilState;
 
 pub struct SessionFd(RawFd);
 impl AsRawFd for SessionFd {
@@ -78,7 +79,7 @@ type RenderDevice =
 type RenderSurface =
     EglSurface<EglGbmBackend<LegacyDrmDevice<SessionFd>>, GbmDevice<LegacyDrmDevice<SessionFd>>>;
 
-pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger) -> Result<(), ()> {
+pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log: Logger) -> Result<(), ()> {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
     info!(log, "Listening on wayland socket"; "name" => name.clone());
     ::std::env::set_var("WAYLAND_DISPLAY", name);
@@ -253,15 +254,20 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     /*
      * And run our loop
      */
+    let mut state = AnvilState::default();
+
     while running.load(Ordering::SeqCst) {
         if event_loop
-            .dispatch(Some(::std::time::Duration::from_millis(16)), &mut ())
+            .dispatch(Some(::std::time::Duration::from_millis(16)), &mut state)
             .is_err()
         {
             running.store(false, Ordering::SeqCst);
         } else {
             // FIXME: should we supply non-() data?
-            display.borrow_mut().flush_clients(&mut ());
+            if state.need_wayland_dispatch {
+                display.borrow_mut().dispatch(std::time::Duration::from_millis(0), &mut state);
+            }
+            display.borrow_mut().flush_clients(&mut state);
             window_map.borrow_mut().refresh();
         }
     }
@@ -288,7 +294,7 @@ struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
         dev_t,
         (
             S::Id,
-            Source<Generic<EventedFd<RenderDevice>>>,
+            Source<Generic<SourceFd<RenderDevice>>>,
             Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<RenderSurface>>>>,
         ),
     >,
