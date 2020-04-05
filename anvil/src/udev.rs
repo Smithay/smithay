@@ -263,7 +263,6 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
         {
             running.store(false, Ordering::SeqCst);
         } else {
-            // FIXME: should we supply non-() data?
             if state.need_wayland_dispatch {
                 display.borrow_mut().dispatch(std::time::Duration::from_millis(0), &mut state);
             }
