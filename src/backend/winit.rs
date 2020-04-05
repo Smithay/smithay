@@ -701,7 +701,6 @@ impl InputBackend for WinitInputBackend {
                     match (event, handler.as_mut(), events_handler.as_mut()) {
                         (WindowEvent::Resized(size), _, events_handler) => {
                             trace!(logger, "Resizing window to {:?}", size);
-                            window.window().set_inner_size(size);
                             let mut wsize = window_size.borrow_mut();
                             wsize.logical_size = size;
                             let physical_size = size.to_physical(wsize.dpi_factor);
