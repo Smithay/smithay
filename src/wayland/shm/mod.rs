@@ -22,8 +22,7 @@
 //! use smithay::wayland::shm::init_shm_global;
 //! use wayland_server::protocol::wl_shm::Format;
 //!
-//! # let mut event_loop = calloop::EventLoop::<()>::new().unwrap();
-//! # let mut display = wayland_server::Display::new(event_loop.handle());
+//! # let mut display = wayland_server::Display::new();
 //! // Insert the ShmGlobal into your event loop
 //! // Here, we specify that Yuyv and C8 format are supported
 //! // additionally to the standard Argb8888 and Xrgb8888.

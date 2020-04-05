@@ -40,8 +40,7 @@
 //! // to set a surface as a dnd icon
 //! define_roles!(Roles => [DnDIcon, DnDIconRole]);
 //!
-//! # let mut event_loop = calloop::EventLoop::<()>::new().unwrap();
-//! # let mut display = wayland_server::Display::new(event_loop.handle());
+//! # let mut display = wayland_server::Display::new();
 //! # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _| {}, None);
 //! // init the data device:
 //! init_data_device(

@@ -35,8 +35,7 @@
 //! // Declare the roles enum
 //! define_roles!(MyRoles);
 //!
-//! # let mut event_loop = calloop::EventLoop::<()>::new().unwrap();
-//! # let mut display = wayland_server::Display::new(event_loop.handle());
+//! # let mut display = wayland_server::Display::new();
 //! // Call the init function:
 //! let (token, _, _) = compositor_init::<MyRoles, _, _>(
 //!     &mut display,
