@@ -698,7 +698,7 @@ fn surface_commit(
     });
 
     let refresh = token.with_surface_data(surface, |attributes| {
-        attributes.user_data.insert_if_missing(SurfaceData::default);
+        attributes.user_data.insert_if_missing(|| RefCell::new(SurfaceData::default()));
         let mut data = attributes.user_data.get::<RefCell<SurfaceData>>().unwrap().borrow_mut();
 
         data.geometry = geometry;
