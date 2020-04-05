@@ -51,8 +51,7 @@
 //!
 //! // Once this is defined, you can in your setup initialize the dmabuf global:
 //!
-//! # let mut event_loop = calloop::EventLoop::<()>::new().unwrap();
-//! # let mut display = wayland_server::Display::new(event_loop.handle());
+//! # let mut display = wayland_server::Display::new();
 //! // define your supported formats
 //! let formats = vec![
 //!     /* ... */
