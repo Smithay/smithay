@@ -8,7 +8,8 @@
 //! Take a look at `anvil`s source code for an example of this.
 //!
 
-use drm::control::{crtc, ResourceHandles, ResourceInfo};
+use drm::control::{crtc, connector, encoder, framebuffer, plane, ResourceHandles};
+use drm::SystemError as DrmError;
 use nix::libc::dev_t;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
@@ -166,18 +167,27 @@ where
         self.dev.borrow_mut().process_events()
     }
 
-    fn resource_info<T: ResourceInfo>(&self, handle: T::Handle) -> Result<T> {
-        self.dev
-            .borrow()
-            .resource_info(handle)
-            .chain_err(|| ErrorKind::UnderlyingBackendError)
-    }
-
     fn resource_handles(&self) -> Result<ResourceHandles> {
         self.dev
             .borrow()
             .resource_handles()
             .chain_err(|| ErrorKind::UnderlyingBackendError)
+    }
+
+    fn get_connector_info(&self, conn: connector::Handle) -> std::result::Result<connector::Info, DrmError> {
+        self.dev.borrow().get_connector_info(conn)
+    }
+    fn get_crtc_info(&self, crtc: crtc::Handle) -> std::result::Result<crtc::Info, DrmError> {
+        self.dev.borrow().get_crtc_info(crtc)
+    }
+    fn get_encoder_info(&self, enc: encoder::Handle) -> std::result::Result<encoder::Info, DrmError> {
+        self.dev.borrow().get_encoder_info(enc)
+    }
+    fn get_framebuffer_info(&self, fb: framebuffer::Handle) -> std::result::Result<framebuffer::Info, DrmError> {
+        self.dev.borrow().get_framebuffer_info(fb)
+    }
+    fn get_plane_info(&self, plane: plane::Handle) -> std::result::Result<plane::Info, DrmError> {
+        self.dev.borrow().get_plane_info(plane)
     }
 }
 

@@ -3,7 +3,7 @@
 //! to an open [`Session`](::backend::session::Session).
 //!
 
-use drm::control::{crtc, Device as ControlDevice, ResourceInfo};
+use drm::control::crtc;
 use gbm::BufferObject;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -19,14 +19,14 @@ use crate::backend::session::{AsSessionObserver, SessionObserver};
 /// created from.
 pub struct GbmDeviceObserver<
     S: SessionObserver + 'static,
-    D: RawDevice + ControlDevice + AsSessionObserver<S> + 'static,
+    D: RawDevice + ::drm::control::Device + AsSessionObserver<S> + 'static,
 > {
     observer: S,
     backends: Weak<RefCell<HashMap<crtc::Handle, Weak<GbmSurfaceInternal<D>>>>>,
     logger: ::slog::Logger,
 }
 
-impl<S: SessionObserver + 'static, D: RawDevice + ControlDevice + AsSessionObserver<S> + 'static>
+impl<S: SessionObserver + 'static, D: RawDevice + ::drm::control::Device + AsSessionObserver<S> + 'static>
     AsSessionObserver<GbmDeviceObserver<S, D>> for GbmDevice<D>
 {
     fn observer(&mut self) -> GbmDeviceObserver<S, D> {
@@ -38,7 +38,7 @@ impl<S: SessionObserver + 'static, D: RawDevice + ControlDevice + AsSessionObser
     }
 }
 
-impl<S: SessionObserver + 'static, D: RawDevice + ControlDevice + AsSessionObserver<S> + 'static>
+impl<S: SessionObserver + 'static, D: RawDevice + ::drm::control::Device + AsSessionObserver<S> + 'static>
     SessionObserver for GbmDeviceObserver<S, D>
 {
     fn pause(&mut self, devnum: Option<(u32, u32)>) {
@@ -55,23 +55,24 @@ impl<S: SessionObserver + 'static, D: RawDevice + ControlDevice + AsSessionObser
                     if let Some(Err(err)) = backend
                         .current_frame_buffer
                         .get()
-                        .map(|fb| backend.crtc.page_flip(fb.handle()))
+                        .map(|fb| backend.crtc.page_flip(fb))
                     {
                         warn!(self.logger, "Failed to restart rendering loop. Error: {}", err);
                     }
                     // reset cursor
                     {
+                        use ::drm::control::Device;
+
                         let &(ref cursor, ref hotspot): &(BufferObject<()>, (u32, u32)) =
                             unsafe { &*backend.cursor.as_ptr() };
-                        if crtc::set_cursor2(
-                            &*backend.dev.borrow(),
+                        if backend.dev.borrow().set_cursor2(
                             *crtc,
-                            cursor,
+                            Some(cursor),
                             ((*hotspot).0 as i32, (*hotspot).1 as i32),
                         )
                         .is_err()
                         {
-                            if let Err(err) = crtc::set_cursor(&*backend.dev.borrow(), *crtc, cursor) {
+                            if let Err(err) = backend.dev.borrow().set_cursor(*crtc, Some(cursor)) {
                                 error!(self.logger, "Failed to reset cursor. Error: {}", err);
                             }
                         }

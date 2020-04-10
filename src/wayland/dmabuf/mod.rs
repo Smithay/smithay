@@ -78,7 +78,7 @@ use wayland_server::{protocol::wl_buffer, Display, Global, Main, Filter};
 /// Representation of a Dmabuf format, as advertized to the client
 pub struct Format {
     /// The format identifier.
-    pub format: ::drm::buffer::PixelFormat,
+    pub format: ::drm::buffer::format::PixelFormat,
     /// The supported dmabuf layout modifier.
     ///
     /// This is an opaque token. Drivers use this token to express tiling, compression, etc. driver-specific

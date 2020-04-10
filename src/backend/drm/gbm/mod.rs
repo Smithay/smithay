@@ -9,9 +9,11 @@
 //! of [`GbmSurface::page_flip`](::backend::drm::gbm::GbmSurface::page_flip).
 //!
 
-use super::{Device, DeviceHandler, RawDevice, ResourceHandles, ResourceInfo, Surface};
+use super::{Device, DeviceHandler, RawDevice, ResourceHandles, Surface};
 
-use drm::control::{crtc, Device as ControlDevice};
+use drm::control::{crtc, connector, encoder, framebuffer, plane, Device as ControlDevice};
+use drm::SystemError as DrmError;
+use failure::ResultExt as FailureResultExt;
 use gbm::{self, BufferObjectFlags, Format as GbmFormat};
 use nix::libc::dev_t;
 
@@ -185,18 +187,28 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
         self.dev.borrow_mut().process_events()
     }
 
-    fn resource_info<T: ResourceInfo>(&self, handle: T::Handle) -> Result<T> {
-        self.dev
-            .borrow()
-            .resource_info(handle)
-            .chain_err(|| ErrorKind::UnderlyingBackendError)
-    }
-
     fn resource_handles(&self) -> Result<ResourceHandles> {
         self.dev
             .borrow()
             .resource_handles()
+            .compat()
             .chain_err(|| ErrorKind::UnderlyingBackendError)
+    }
+    
+    fn get_connector_info(&self, conn: connector::Handle) -> std::result::Result<connector::Info, DrmError> {
+        self.dev.borrow().get_connector_info(conn)
+    }
+    fn get_crtc_info(&self, crtc: crtc::Handle) -> std::result::Result<crtc::Info, DrmError> {
+        self.dev.borrow().get_crtc_info(crtc)
+    }
+    fn get_encoder_info(&self, enc: encoder::Handle) -> std::result::Result<encoder::Info, DrmError> {
+        self.dev.borrow().get_encoder_info(enc)
+    }
+    fn get_framebuffer_info(&self, fb: framebuffer::Handle) -> std::result::Result<framebuffer::Info, DrmError> {
+        self.dev.borrow().get_framebuffer_info(fb)
+    }
+    fn get_plane_info(&self, plane: plane::Handle) -> std::result::Result<plane::Info, DrmError> {
+        self.dev.borrow().get_plane_info(plane)
     }
 }
 

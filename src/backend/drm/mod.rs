@@ -36,8 +36,9 @@
 //!
 
 use drm::{
-    control::{connector, crtc, framebuffer, Device as ControlDevice, Mode, ResourceHandles, ResourceInfo},
+    control::{connector, crtc, encoder, plane, framebuffer, Device as ControlDevice, Mode, ResourceHandles},
     Device as BasicDevice,
+    SystemError as DrmError,
 };
 use nix::libc::dev_t;
 
@@ -110,16 +111,15 @@ pub trait Device: AsRawFd + DevPath {
     /// to synchronize your rendering to the vblank events of the open crtc's
     fn process_events(&mut self);
 
-    /// Load the resource from a [`Device`] given its
-    /// [`ResourceHandle`](drm::control::ResourceHandle)
-    fn resource_info<T: ResourceInfo>(
-        &self,
-        handle: T::Handle,
-    ) -> Result<T, <Self::Surface as Surface>::Error>;
-
     /// Attempts to acquire a copy of the [`Device`]'s
     /// [`ResourceHandle`](drm::control::ResourceHandle)
     fn resource_handles(&self) -> Result<ResourceHandles, <Self::Surface as Surface>::Error>;
+
+    fn get_connector_info(&self, conn: connector::Handle) -> Result<connector::Info, DrmError>;
+    fn get_crtc_info(&self, crtc: crtc::Handle) -> Result<crtc::Info, DrmError>;
+    fn get_encoder_info(&self, enc: encoder::Handle) -> Result<encoder::Info, DrmError>;
+    fn get_framebuffer_info(&self, fb: framebuffer::Handle) -> Result<framebuffer::Info, DrmError>;
+    fn get_plane_info(&self, plane: plane::Handle) -> Result<plane::Info, DrmError>;
 }
 
 /// Marker trait for [`Device`]s able to provide [`RawSurface`]s

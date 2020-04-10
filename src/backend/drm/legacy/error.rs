@@ -44,7 +44,7 @@ error_chain! {
         #[doc = "No encoder was found for a given connector on the set crtc"]
         NoSuitableEncoder(connector: connector::Info, crtc: crtc::Handle) {
             description("No encoder found for given connector on set crtc"),
-            display("No encoder found for the given connector '{:?}' on the set crtc ({:?})", connector.connector_type(), crtc),
+            display("No encoder found for the given connector '{:?}' on the set crtc ({:?})", connector.interface(), crtc),
         }
     }
 
