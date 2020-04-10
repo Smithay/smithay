@@ -314,9 +314,12 @@ where
     }));
     let state2 = state.clone();
 
-    let global = display.create_global(1, Filter::new(move |(shell, _version), _, _data| {
-        self::wl_handlers::implement_shell(shell, ctoken, implementation.clone(), state2.clone());
-    }));
+    let global = display.create_global(
+        1,
+        Filter::new(move |(shell, _version), _, _data| {
+            self::wl_handlers::implement_shell(shell, ctoken, implementation.clone(), state2.clone());
+        }),
+    );
 
     (state, global)
 }

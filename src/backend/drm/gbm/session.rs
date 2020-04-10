@@ -26,8 +26,10 @@ pub struct GbmDeviceObserver<
     logger: ::slog::Logger,
 }
 
-impl<S: SessionObserver + 'static, D: RawDevice + ::drm::control::Device + AsSessionObserver<S> + 'static>
-    AsSessionObserver<GbmDeviceObserver<S, D>> for GbmDevice<D>
+impl<
+        S: SessionObserver + 'static,
+        D: RawDevice + ::drm::control::Device + AsSessionObserver<S> + 'static,
+    > AsSessionObserver<GbmDeviceObserver<S, D>> for GbmDevice<D>
 {
     fn observer(&mut self) -> GbmDeviceObserver<S, D> {
         GbmDeviceObserver {
@@ -38,8 +40,10 @@ impl<S: SessionObserver + 'static, D: RawDevice + ::drm::control::Device + AsSes
     }
 }
 
-impl<S: SessionObserver + 'static, D: RawDevice + ::drm::control::Device + AsSessionObserver<S> + 'static>
-    SessionObserver for GbmDeviceObserver<S, D>
+impl<
+        S: SessionObserver + 'static,
+        D: RawDevice + ::drm::control::Device + AsSessionObserver<S> + 'static,
+    > SessionObserver for GbmDeviceObserver<S, D>
 {
     fn pause(&mut self, devnum: Option<(u32, u32)>) {
         self.observer.pause(devnum);
@@ -65,12 +69,11 @@ impl<S: SessionObserver + 'static, D: RawDevice + ::drm::control::Device + AsSes
 
                         let &(ref cursor, ref hotspot): &(BufferObject<()>, (u32, u32)) =
                             unsafe { &*backend.cursor.as_ptr() };
-                        if backend.dev.borrow().set_cursor2(
-                            *crtc,
-                            Some(cursor),
-                            ((*hotspot).0 as i32, (*hotspot).1 as i32),
-                        )
-                        .is_err()
+                        if backend
+                            .dev
+                            .borrow()
+                            .set_cursor2(*crtc, Some(cursor), ((*hotspot).0 as i32, (*hotspot).1 as i32))
+                            .is_err()
                         {
                             if let Err(err) = backend.dev.borrow().set_cursor(*crtc, Some(cursor)) {
                                 error!(self.logger, "Failed to reset cursor. Error: {}", err);

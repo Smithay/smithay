@@ -1,7 +1,7 @@
 use super::super::{Device, RawDevice, RawSurface, Surface};
 use super::error::*;
 
-use drm::control::{connector, crtc, framebuffer, Mode, Device as ControlDevice};
+use drm::control::{connector, crtc, framebuffer, Device as ControlDevice, Mode};
 use gbm::{self, BufferObject, BufferObjectFlags, Format as GbmFormat, SurfaceBufferHandle};
 use image::{ImageBuffer, Rgba};
 
@@ -67,7 +67,9 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         let fb = if let Some(info) = maybe_fb {
             info
         } else {
-            let fb = self.crtc.add_planar_framebuffer(&*next_bo, &[0; 4], 0)
+            let fb = self
+                .crtc
+                .add_planar_framebuffer(&*next_bo, &[0; 4], 0)
                 .map_err(|_| SwapBuffersError::ContextLost)?;
             next_bo.set_userdata(fb).unwrap();
             fb
@@ -76,9 +78,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
 
         if self.recreated.get() {
             debug!(self.logger, "Commiting new state");
-            self.crtc
-                .commit(fb)
-                .map_err(|_| SwapBuffersError::ContextLost)?;
+            self.crtc.commit(fb).map_err(|_| SwapBuffersError::ContextLost)?;
             self.recreated.set(false);
         }
 

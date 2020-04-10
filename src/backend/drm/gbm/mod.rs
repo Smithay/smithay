@@ -11,7 +11,7 @@
 
 use super::{Device, DeviceHandler, RawDevice, ResourceHandles, Surface};
 
-use drm::control::{crtc, connector, encoder, framebuffer, plane, Device as ControlDevice};
+use drm::control::{connector, crtc, encoder, framebuffer, plane, Device as ControlDevice};
 use drm::SystemError as DrmError;
 use failure::ResultExt as FailureResultExt;
 use gbm::{self, BufferObjectFlags, Format as GbmFormat};
@@ -194,7 +194,7 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
             .compat()
             .chain_err(|| ErrorKind::UnderlyingBackendError)
     }
-    
+
     fn get_connector_info(&self, conn: connector::Handle) -> std::result::Result<connector::Info, DrmError> {
         self.dev.borrow().get_connector_info(conn)
     }
@@ -204,7 +204,10 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
     fn get_encoder_info(&self, enc: encoder::Handle) -> std::result::Result<encoder::Info, DrmError> {
         self.dev.borrow().get_encoder_info(enc)
     }
-    fn get_framebuffer_info(&self, fb: framebuffer::Handle) -> std::result::Result<framebuffer::Info, DrmError> {
+    fn get_framebuffer_info(
+        &self,
+        fb: framebuffer::Handle,
+    ) -> std::result::Result<framebuffer::Info, DrmError> {
         self.dev.borrow().get_framebuffer_info(fb)
     }
     fn get_plane_info(&self, plane: plane::Handle) -> std::result::Result<plane::Info, DrmError> {

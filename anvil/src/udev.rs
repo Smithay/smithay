@@ -36,7 +36,7 @@ use smithay::{
     },
     reexports::{
         calloop::{
-            generic::{SourceFd, Generic},
+            generic::{Generic, SourceFd},
             EventLoop, LoopHandle, Source,
         },
         drm::control::{
@@ -264,7 +264,9 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
             running.store(false, Ordering::SeqCst);
         } else {
             if state.need_wayland_dispatch {
-                display.borrow_mut().dispatch(std::time::Duration::from_millis(0), &mut state);
+                display
+                    .borrow_mut()
+                    .dispatch(std::time::Duration::from_millis(0), &mut state);
             }
             display.borrow_mut().flush_clients(&mut state);
             window_map.borrow_mut().refresh();

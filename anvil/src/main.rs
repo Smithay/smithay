@@ -8,7 +8,10 @@ extern crate slog;
 extern crate smithay;
 
 use slog::Drain;
-use smithay::reexports::{calloop::{EventLoop, generic::Generic, mio::Interest}, wayland_server::Display};
+use smithay::reexports::{
+    calloop::{generic::Generic, mio::Interest, EventLoop},
+    wayland_server::Display,
+};
 
 #[macro_use]
 mod shaders;
@@ -57,10 +60,12 @@ fn main() {
     // Glue for event dispatching
     let mut wayland_event_source = Generic::from_raw_fd(display.get_poll_fd());
     wayland_event_source.set_interest(Interest::READABLE);
-    let _wayland_source = event_loop.handle().insert_source(
-        wayland_event_source,
-        |_, state: &mut AnvilState| { state.need_wayland_dispatch = true; }
-    );
+    let _wayland_source =
+        event_loop
+            .handle()
+            .insert_source(wayland_event_source, |_, state: &mut AnvilState| {
+                state.need_wayland_dispatch = true;
+            });
 
     let arg = ::std::env::args().nth(1);
     match arg.as_ref().map(|s| &s[..]) {

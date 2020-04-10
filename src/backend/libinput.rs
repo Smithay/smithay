@@ -16,7 +16,7 @@ use std::{
 };
 
 use calloop::{
-    generic::{SourceFd, Generic},
+    generic::{Generic, SourceFd},
     mio::Interest,
     InsertError, LoopHandle, Source,
 };
@@ -315,7 +315,12 @@ impl InputBackend for LibinputInputBackend {
                             };
 
                             let device_seat = added.seat();
-                            info!(self.logger, "New device {:?} on seat {:?}", added.sysname(),  device_seat.logical_name());
+                            info!(
+                                self.logger,
+                                "New device {:?} on seat {:?}",
+                                added.sysname(),
+                                device_seat.logical_name()
+                            );
                             self.devices.push(added);
 
                             match self.seats.entry(device_seat.clone()) {
@@ -358,7 +363,12 @@ impl InputBackend for LibinputInputBackend {
                             self.devices.retain(|dev| *dev != removed);
 
                             let device_seat = removed.seat();
-                            info!(self.logger, "Removed device {:?} on seat {:?}", removed.sysname(),  device_seat.logical_name());
+                            info!(
+                                self.logger,
+                                "Removed device {:?} on seat {:?}",
+                                removed.sysname(),
+                                device_seat.logical_name()
+                            );
 
                             // update capabilities, so they appear correctly on `on_seat_changed` and `on_seat_destroyed`.
                             if let Some(seat) = self.seats.get_mut(&device_seat) {
@@ -387,7 +397,11 @@ impl InputBackend for LibinputInputBackend {
                             if !self.devices.iter().any(|x| x.seat() == device_seat) {
                                 // it has not, lets destroy it
                                 if let Some(seat) = self.seats.remove(&device_seat) {
-                                    info!(self.logger, "Removing seat {} which no longer has any device", device_seat.logical_name());
+                                    info!(
+                                        self.logger,
+                                        "Removing seat {} which no longer has any device",
+                                        device_seat.logical_name()
+                                    );
                                     if let Some(ref mut handler) = self.handler {
                                         trace!(self.logger, "Calling on_seat_destroyed with {:?}", seat);
                                         handler.on_seat_destroyed(&seat);

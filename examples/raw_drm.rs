@@ -55,7 +55,12 @@ fn main() {
         .unwrap();
 
     // Use the first encoder
-    let encoder = connector_info.encoders().iter().filter_map(|&e| e).next().unwrap();
+    let encoder = connector_info
+        .encoders()
+        .iter()
+        .filter_map(|&e| e)
+        .next()
+        .unwrap();
     let encoder_info = device.get_encoder_info(encoder).unwrap();
 
     // use the connected crtc if any
@@ -90,9 +95,13 @@ fn main() {
      * But they are very slow, this is just for demonstration purposes.
      */
     let (w, h) = mode.size();
-    let front_buffer = device.create_dumb_buffer((w as u32, h as u32), PixelFormat::XRGB8888).unwrap();
+    let front_buffer = device
+        .create_dumb_buffer((w as u32, h as u32), PixelFormat::XRGB8888)
+        .unwrap();
     let front_framebuffer = device.add_framebuffer(&front_buffer).unwrap();
-    let back_buffer = device.create_dumb_buffer((w as u32, h as u32), PixelFormat::XRGB8888).unwrap();
+    let back_buffer = device
+        .create_dumb_buffer((w as u32, h as u32), PixelFormat::XRGB8888)
+        .unwrap();
     let back_framebuffer = device.add_framebuffer(&back_buffer).unwrap();
 
     device.set_handler(DrmHandlerImpl {

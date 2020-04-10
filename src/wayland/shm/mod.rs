@@ -266,7 +266,7 @@ impl ShmGlobalData {
                         format,
                     },
                 };
-                buffer.quick_assign(|_,_,_| {});
+                buffer.quick_assign(|_, _, _| {});
                 buffer.as_ref().user_data().set(|| data);
             }
             Request::Resize { size } => match arc_pool.resize(size) {

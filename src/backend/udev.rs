@@ -19,7 +19,7 @@ use std::{
 use udev::{Context, Enumerator, EventType, MonitorBuilder, MonitorSocket, Result as UdevResult};
 
 use calloop::{
-    generic::{SourceFd, Generic},
+    generic::{Generic, SourceFd},
     mio::Interest,
     InsertError, LoopHandle, Source,
 };
