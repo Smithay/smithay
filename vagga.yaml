@@ -4,7 +4,7 @@ containers:
     base:
         auto-clean: true
         setup:
-            - !UbuntuRelease { codename: cosmic }
+            - !UbuntuRelease { codename: eoan }
             - !UbuntuUniverse
             - !Install [build-essential, wget, curl, pkg-config, file, openssl, sudo, ca-certificates, libssl-dev, cmake, libudev-dev, libgbm-dev, libxkbcommon-dev, libegl1-mesa-dev, libwayland-dev, libinput-dev, libsystemd-dev, libdbus-1-dev]
 
