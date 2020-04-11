@@ -160,7 +160,12 @@ where
         // It's the set geometry with the full bounding box as the fallback.
         ctoken
             .with_surface_data(self.toplevel.get_surface().unwrap(), |attributes| {
-                attributes.user_data.get::<RefCell<SurfaceData>>().unwrap().borrow().geometry
+                attributes
+                    .user_data
+                    .get::<RefCell<SurfaceData>>()
+                    .unwrap()
+                    .borrow()
+                    .geometry
             })
             .unwrap_or(self.bbox)
     }

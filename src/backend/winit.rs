@@ -25,8 +25,8 @@ use wayland_server::Display;
 use winit::{
     dpi::{LogicalPosition, LogicalSize, PhysicalSize},
     event::{
-        ElementState, Event, KeyboardInput, MouseButton as WinitMouseButton,
-        MouseScrollDelta, Touch, TouchPhase, WindowEvent
+        ElementState, Event, KeyboardInput, MouseButton as WinitMouseButton, MouseScrollDelta, Touch,
+        TouchPhase, WindowEvent,
     },
     event_loop::{ControlFlow, EventLoop},
     platform::desktop::EventLoopExtDesktop,
@@ -390,7 +390,8 @@ impl BackendEvent for WinitMouseMovedEvent {
     }
 }
 
-impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent { // TODO: maybe use {Logical, Physical}Position from winit?
+impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
+    // TODO: maybe use {Logical, Physical}Position from winit?
     fn x(&self) -> f64 {
         let wsize = self.size.borrow();
         self.logical_position.x * wsize.scale_factor
@@ -509,19 +510,13 @@ impl TouchDownEvent for WinitTouchStartedEvent {
     fn x_transformed(&self, width: u32) -> u32 {
         let wsize = self.size.borrow();
         let w_width = wsize.physical_size.to_logical::<i32>(wsize.scale_factor).width;
-        cmp::min(
-            self.location.0 as i32 * width as i32 / w_width,
-            0,
-        ) as u32
+        cmp::min(self.location.0 as i32 * width as i32 / w_width, 0) as u32
     }
 
     fn y_transformed(&self, height: u32) -> u32 {
         let wsize = self.size.borrow();
         let w_height = wsize.physical_size.to_logical::<i32>(wsize.scale_factor).height;
-        cmp::min(
-            self.location.1 as i32 * height as i32 / w_height,
-            0,
-        ) as u32
+        cmp::min(self.location.1 as i32 * height as i32 / w_height, 0) as u32
     }
 }
 
@@ -700,17 +695,17 @@ impl InputBackend for WinitInputBackend {
             let mut events_handler = self.events_handler.as_mut();
             let logger = &self.logger;
             let window_size = &self.size;
-            
-            self.events_loop.run_return(move |event, _target, control_flow| {
-                match event {
+
+            self.events_loop
+                .run_return(move |event, _target, control_flow| match event {
                     Event::RedrawEventsCleared => {
                         *control_flow = ControlFlow::Exit;
-                    },
+                    }
                     Event::RedrawRequested(_id) => {
                         if let Some(events_handler) = events_handler.as_mut() {
                             events_handler.refresh();
                         }
-                    },
+                    }
                     Event::WindowEvent { event, .. } => {
                         let duration = Instant::now().duration_since(*time);
                         let nanos = duration.subsec_nanos() as u64;
@@ -732,14 +727,22 @@ impl InputBackend for WinitInputBackend {
                             (WindowEvent::Focused(focus), _, Some(events_handler)) => {
                                 events_handler.focus_changed(focus)
                             }
-                            (WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size: new_psize }, _, events_handler) => {
+                            (
+                                WindowEvent::ScaleFactorChanged {
+                                    scale_factor,
+                                    new_inner_size: new_psize,
+                                },
+                                _,
+                                events_handler,
+                            ) => {
                                 let mut wsize = window_size.borrow_mut();
                                 wsize.scale_factor = scale_factor;
                                 if let Window::Wayland { ref surface, .. } = **window {
                                     surface.resize(new_psize.width as i32, new_psize.height as i32, 0, 0);
                                 }
                                 if let Some(events_handler) = events_handler {
-                                    let psize_f64: (f64, f64) = (new_psize.width.into(), new_psize.height.into());
+                                    let psize_f64: (f64, f64) =
+                                        (new_psize.width.into(), new_psize.height.into());
                                     events_handler.resized(psize_f64, wsize.scale_factor);
                                 }
                             }
@@ -869,13 +872,12 @@ impl InputBackend for WinitInputBackend {
                             (WindowEvent::CloseRequested, _, _) | (WindowEvent::Destroyed, _, _) => {
                                 warn!(logger, "Window closed");
                                 *closed_ptr = true;
-                            },
-                            _ => {},
+                            }
+                            _ => {}
                         }
-                    },
-                    _ => {},
-                }
-            });
+                    }
+                    _ => {}
+                });
         }
 
         if closed {

@@ -54,7 +54,10 @@ impl<A: AsRawFd + 'static> SessionObserver for LegacyDrmDeviceObserver<A> {
                 for surface in backends.borrow().values().filter_map(Weak::upgrade) {
                     // other ttys that use no cursor, might not clear it themselves.
                     // This makes sure our cursor won't stay visible.
-                    let _ = (*device).set_cursor(surface.crtc, Option::<&drm::control::dumbbuffer::DumbBuffer>::None);
+                    let _ = (*device).set_cursor(
+                        surface.crtc,
+                        Option::<&drm::control::dumbbuffer::DumbBuffer>::None,
+                    );
                 }
             }
         }

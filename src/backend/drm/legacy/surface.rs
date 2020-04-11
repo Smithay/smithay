@@ -1,5 +1,8 @@
 use drm::buffer::Buffer;
-use drm::control::{connector, crtc, dumbbuffer::DumbBuffer, encoder, framebuffer, Device as ControlDevice, Mode, PageFlipFlags};
+use drm::control::{
+    connector, crtc, dumbbuffer::DumbBuffer, encoder, framebuffer, Device as ControlDevice, Mode,
+    PageFlipFlags,
+};
 use drm::Device as BasicDevice;
 use failure::ResultExt as FailureResultExt;
 
@@ -54,7 +57,10 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurfaceInternal<A>
     {
         trace!(self.logger, "Setting the new imported cursor");
 
-        if self.set_cursor2(self.crtc, Some(buffer), (hotspot.0 as i32, hotspot.1 as i32)).is_err() {
+        if self
+            .set_cursor2(self.crtc, Some(buffer), (hotspot.0 as i32, hotspot.1 as i32))
+            .is_err()
+        {
             self.set_cursor(self.crtc, Some(buffer))
                 .compat()
                 .chain_err(|| ErrorKind::DrmDev(format!("Failed to set cursor on {:?}", self.dev_path())))?;
@@ -140,7 +146,8 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         // check the connectors to see if this mode is supported
         if let Some(mode) = mode {
             for connector in &pending.connectors {
-                if !self.get_connector(*connector)
+                if !self
+                    .get_connector(*connector)
                     .compat()
                     .chain_err(|| {
                         ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))

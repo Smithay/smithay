@@ -8,7 +8,7 @@
 //! Take a look at `anvil`s source code for an example of this.
 //!
 
-use drm::control::{crtc, connector, encoder, framebuffer, plane, ResourceHandles};
+use drm::control::{connector, crtc, encoder, framebuffer, plane, ResourceHandles};
 use drm::SystemError as DrmError;
 use nix::libc::dev_t;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -183,7 +183,10 @@ where
     fn get_encoder_info(&self, enc: encoder::Handle) -> std::result::Result<encoder::Info, DrmError> {
         self.dev.borrow().get_encoder_info(enc)
     }
-    fn get_framebuffer_info(&self, fb: framebuffer::Handle) -> std::result::Result<framebuffer::Info, DrmError> {
+    fn get_framebuffer_info(
+        &self,
+        fb: framebuffer::Handle,
+    ) -> std::result::Result<framebuffer::Info, DrmError> {
         self.dev.borrow().get_framebuffer_info(fb)
     }
     fn get_plane_info(&self, plane: plane::Handle) -> std::result::Result<plane::Info, DrmError> {

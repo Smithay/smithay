@@ -10,7 +10,9 @@
 
 use super::{DevPath, Device, DeviceHandler, RawDevice};
 
-use drm::control::{connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, ResourceHandles};
+use drm::control::{
+    connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, ResourceHandles,
+};
 use drm::{Device as BasicDevice, SystemError as DrmError};
 use failure::ResultExt as FailureResultExt;
 use nix::libc::dev_t;
@@ -187,7 +189,9 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
 
         // Try to enumarate the current state to set the initial state variable correctly
 
-        let crtc_info = self.get_crtc(crtc).compat()
+        let crtc_info = self
+            .get_crtc(crtc)
+            .compat()
             .chain_err(|| ErrorKind::DrmDev(format!("Error loading crtc info on {:?}", self.dev_path())))?;
 
         let mode = crtc_info.mode();
@@ -265,7 +269,8 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
     }
 
     fn resource_handles(&self) -> Result<ResourceHandles> {
-        ControlDevice::resource_handles(self).compat()
+        ControlDevice::resource_handles(self)
+            .compat()
             .chain_err(|| ErrorKind::DrmDev(format!("Error loading resource info on {:?}", self.dev_path())))
     }
 
@@ -278,7 +283,10 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
     fn get_encoder_info(&self, enc: encoder::Handle) -> std::result::Result<encoder::Info, DrmError> {
         self.get_encoder(enc)
     }
-    fn get_framebuffer_info(&self, fb: framebuffer::Handle) -> std::result::Result<framebuffer::Info, DrmError> {
+    fn get_framebuffer_info(
+        &self,
+        fb: framebuffer::Handle,
+    ) -> std::result::Result<framebuffer::Info, DrmError> {
         self.get_framebuffer(fb)
     }
     fn get_plane_info(&self, plane: plane::Handle) -> std::result::Result<plane::Info, DrmError> {
