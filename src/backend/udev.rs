@@ -16,7 +16,7 @@ use std::{
     os::unix::io::{AsRawFd, RawFd},
     path::{Path, PathBuf},
 };
-use udev::{Context, Enumerator, EventType, MonitorBuilder, MonitorSocket, Result as UdevResult};
+use udev::{Enumerator, EventType, MonitorBuilder, MonitorSocket};
 
 use calloop::{
     generic::{SourceFd, Generic},
@@ -46,22 +46,20 @@ impl<T: UdevHandler + 'static> UdevBackend<T> {
     /// Creates a new [`UdevBackend`]
     ///
     /// ## Arguments
-    /// `context` - An initialized udev context
     /// `handler` - User-provided handler to respond to any detected changes
     /// `seat`    -
     /// `logger`  - slog Logger to be used by the backend and its `DrmDevices`.
     pub fn new<L, S: AsRef<str>>(
-        context: &Context,
         mut handler: T,
         seat: S,
         logger: L,
-    ) -> UdevResult<UdevBackend<T>>
+    ) -> ::std::io::Result<UdevBackend<T>>
     where
         L: Into<Option<::slog::Logger>>,
     {
         let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_udev"));
 
-        let devices = all_gpus(context, seat)?
+        let devices = all_gpus(seat)?
             .into_iter()
             // Create devices
             .flat_map(|path| match stat(&path) {
@@ -76,9 +74,9 @@ impl<T: UdevHandler + 'static> UdevBackend<T> {
             })
             .collect();
 
-        let mut builder = MonitorBuilder::new(context)?;
-        builder.match_subsystem("drm")?;
-        let monitor = builder.listen()?;
+        let monitor = MonitorBuilder::new()?
+            .match_subsystem("drm")?
+            .listen()?;
 
         Ok(UdevBackend {
             devices,
@@ -173,8 +171,8 @@ pub trait UdevHandler {
 ///
 /// Might be used for filtering in [`UdevHandler::device_added`] or for manual
 /// [`LegacyDrmDevice`](::backend::drm::legacy::LegacyDrmDevice) initialization.
-pub fn primary_gpu<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Option<PathBuf>> {
-    let mut enumerator = Enumerator::new(context)?;
+pub fn primary_gpu<S: AsRef<str>>(seat: S) -> ::std::io::Result<Option<PathBuf>> {
+    let mut enumerator = Enumerator::new()?;
     enumerator.match_subsystem("drm")?;
     enumerator.match_sysname("card[0-9]*")?;
 
@@ -204,8 +202,8 @@ pub fn primary_gpu<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Opti
 ///
 /// Might be used for manual  [`LegacyDrmDevice`](::backend::drm::legacy::LegacyDrmDevice)
 /// initialization.
-pub fn all_gpus<S: AsRef<str>>(context: &Context, seat: S) -> UdevResult<Vec<PathBuf>> {
-    let mut enumerator = Enumerator::new(context)?;
+pub fn all_gpus<S: AsRef<str>>(seat: S) -> ::std::io::Result<Vec<PathBuf>> {
+    let mut enumerator = Enumerator::new()?;
     enumerator.match_subsystem("drm")?;
     enumerator.match_sysname("card[0-9]*")?;
     Ok(enumerator
