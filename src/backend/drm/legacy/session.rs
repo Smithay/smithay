@@ -3,7 +3,7 @@
 //! to an open [`Session`](::backend::session::Session).
 //!
 
-use drm::control::crtc;
+use drm::control::{crtc, Device as ControlDevice};
 use drm::Device as BasicDevice;
 use nix::libc::dev_t;
 use nix::sys::stat;
@@ -54,14 +54,14 @@ impl<A: AsRawFd + 'static> SessionObserver for LegacyDrmDeviceObserver<A> {
                 for surface in backends.borrow().values().filter_map(Weak::upgrade) {
                     // other ttys that use no cursor, might not clear it themselves.
                     // This makes sure our cursor won't stay visible.
-                    let _ = crtc::clear_cursor(&*device, surface.crtc);
+                    let _ = (*device).set_cursor(surface.crtc, Option::<&drm::control::dumbbuffer::DumbBuffer>::None);
                 }
             }
         }
         self.active.store(false, Ordering::SeqCst);
         if self.priviledged {
             if let Some(device) = self.dev.upgrade() {
-                if let Err(err) = device.drop_master() {
+                if let Err(err) = device.release_master_lock() {
                     error!(self.logger, "Failed to drop drm master state. Error: {}", err);
                 }
             }
@@ -83,7 +83,7 @@ impl<A: AsRawFd + 'static> SessionObserver for LegacyDrmDeviceObserver<A> {
         self.active.store(true, Ordering::SeqCst);
         if self.priviledged {
             if let Some(device) = self.dev.upgrade() {
-                if let Err(err) = device.set_master() {
+                if let Err(err) = device.acquire_master_lock() {
                     crit!(self.logger, "Failed to acquire drm master again. Error: {}", err);
                 }
             }

@@ -40,8 +40,7 @@
 //! // to set a surface as a dnd icon
 //! define_roles!(Roles => [DnDIcon, DnDIconRole]);
 //!
-//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
-//! # let mut display = wayland_server::Display::new(event_loop.handle());
+//! # let mut display = wayland_server::Display::new();
 //! # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _| {}, None);
 //! // init the data device:
 //! init_data_device(
@@ -54,9 +53,7 @@
 //! );
 //! ```
 
-use std::cell::RefCell;
-use std::os::unix::io::RawFd;
-use std::rc::Rc;
+use std::{cell::RefCell, ops::Deref as _, os::unix::io::RawFd, rc::Rc};
 
 use wayland_server::{
     protocol::{
@@ -64,7 +61,7 @@ use wayland_server::{
         wl_data_device_manager::{self, DndAction},
         wl_data_offer, wl_data_source, wl_surface,
     },
-    Client, Display, Global, NewResource,
+    Client, Display, Filter, Global, Main,
 };
 
 use crate::wayland::{
@@ -175,29 +172,24 @@ impl SeatData {
                     // create a corresponding data offer
                     let offer = client
                         .create_resource::<wl_data_offer::WlDataOffer>(dd.as_ref().version())
-                        .unwrap()
-                        .implement_closure(
-                            move |req, _offer| {
-                                // selection data offers only care about the `receive` event
-                                if let wl_data_offer::Request::Receive { fd, mime_type } = req {
-                                    // check if the source and associated mime type is still valid
-                                    let valid = with_source_metadata(&source, |meta| {
-                                        meta.mime_types.contains(&mime_type)
-                                    })
+                        .unwrap();
+                    offer.quick_assign(move |_offer, req, _| {
+                        // selection data offers only care about the `receive` event
+                        if let wl_data_offer::Request::Receive { fd, mime_type } = req {
+                            // check if the source and associated mime type is still valid
+                            let valid =
+                                with_source_metadata(&source, |meta| meta.mime_types.contains(&mime_type))
                                     .unwrap_or(false)
-                                        && source.as_ref().is_alive();
-                                    if !valid {
-                                        // deny the receive
-                                        debug!(log, "Denying a wl_data_offer.receive with invalid source.");
-                                    } else {
-                                        source.send(mime_type, fd);
-                                    }
-                                    let _ = ::nix::unistd::close(fd);
-                                }
-                            },
-                            None::<fn(_)>,
-                            (),
-                        );
+                                    && source.as_ref().is_alive();
+                            if !valid {
+                                // deny the receive
+                                debug!(log, "Denying a wl_data_offer.receive with invalid source.");
+                            } else {
+                                source.send(mime_type, fd);
+                            }
+                            let _ = ::nix::unistd::close(fd);
+                        }
+                    });
                     // advertize the offer to the client
                     dd.data_offer(&offer);
                     with_source_metadata(data_source, |meta| {
@@ -219,34 +211,31 @@ impl SeatData {
                     let offer_meta = meta.clone();
                     let callback = dd
                         .as_ref()
-                        .user_data::<DataDeviceData>()
+                        .user_data()
+                        .get::<DataDeviceData>()
                         .unwrap()
                         .callback
                         .clone();
                     // create a corresponding data offer
                     let offer = client
                         .create_resource::<wl_data_offer::WlDataOffer>(dd.as_ref().version())
-                        .unwrap()
-                        .implement_closure(
-                            move |req, _offer| {
-                                // selection data offers only care about the `receive` event
-                                if let wl_data_offer::Request::Receive { fd, mime_type } = req {
-                                    // check if the associated mime type is valid
-                                    if !offer_meta.mime_types.contains(&mime_type) {
-                                        // deny the receive
-                                        debug!(log, "Denying a wl_data_offer.receive with invalid source.");
-                                        let _ = ::nix::unistd::close(fd);
-                                    } else {
-                                        (&mut *callback.borrow_mut())(DataDeviceEvent::SendSelection {
-                                            mime_type,
-                                            fd,
-                                        });
-                                    }
-                                }
-                            },
-                            None::<fn(_)>,
-                            (),
-                        );
+                        .unwrap();
+                    offer.quick_assign(move |_offer, req, _| {
+                        // selection data offers only care about the `receive` event
+                        if let wl_data_offer::Request::Receive { fd, mime_type } = req {
+                            // check if the associated mime type is valid
+                            if !offer_meta.mime_types.contains(&mime_type) {
+                                // deny the receive
+                                debug!(log, "Denying a wl_data_offer.receive with invalid source.");
+                                let _ = ::nix::unistd::close(fd);
+                            } else {
+                                (&mut *callback.borrow_mut())(DataDeviceEvent::SendSelection {
+                                    mime_type,
+                                    fd,
+                                });
+                            }
+                        }
+                    });
                     // advertize the offer to the client
                     dd.data_offer(&offer);
                     for mime_type in meta.mime_types.iter().cloned() {
@@ -300,15 +289,12 @@ where
     let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "data_device_mgr"));
     let action_choice = Rc::new(RefCell::new(action_choice));
     let callback = Rc::new(RefCell::new(callback));
-    display.create_global(3, move |new_ddm, _version| {
-        implement_ddm(
-            new_ddm,
-            callback.clone(),
-            action_choice.clone(),
-            token,
-            log.clone(),
-        );
-    })
+    display.create_global(
+        3,
+        Filter::new(move |(ddm, _version), _, _| {
+            implement_ddm(ddm, callback.clone(), action_choice.clone(), token, log.clone());
+        }),
+    )
 }
 
 /// Set the data device focus to a certain client for a given seat
@@ -384,7 +370,7 @@ pub fn start_dnd<C>(
 }
 
 fn implement_ddm<F, C, R>(
-    new_ddm: NewResource<wl_data_device_manager::WlDataDeviceManager>,
+    ddm: Main<wl_data_device_manager::WlDataDeviceManager>,
     callback: Rc<RefCell<C>>,
     action_choice: Rc<RefCell<F>>,
     token: CompositorToken<R>,
@@ -396,36 +382,34 @@ where
     R: Role<DnDIconRole> + 'static,
 {
     use self::wl_data_device_manager::Request;
-    new_ddm.implement_closure(
-        move |req, _ddm| match req {
-            Request::CreateDataSource { id } => {
-                self::data_source::implement_data_source(id);
+    ddm.quick_assign(move |_ddm, req, _data| match req {
+        Request::CreateDataSource { id } => {
+            self::data_source::implement_data_source(id);
+        }
+        Request::GetDataDevice { id, seat } => match Seat::from_resource(&seat) {
+            Some(seat) => {
+                // ensure the seat user_data is ready
+                seat.user_data()
+                    .insert_if_missing(|| RefCell::new(SeatData::new(log.clone())));
+                let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
+                let data_device = implement_data_device(
+                    id,
+                    seat.clone(),
+                    callback.clone(),
+                    action_choice.clone(),
+                    token,
+                    log.clone(),
+                );
+                seat_data.borrow_mut().known_devices.push(data_device);
             }
-            Request::GetDataDevice { id, seat } => match Seat::from_resource(&seat) {
-                Some(seat) => {
-                    // ensure the seat user_data is ready
-                    seat.user_data()
-                        .insert_if_missing(|| RefCell::new(SeatData::new(log.clone())));
-                    let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
-                    let data_device = implement_data_device(
-                        id,
-                        seat.clone(),
-                        callback.clone(),
-                        action_choice.clone(),
-                        token,
-                        log.clone(),
-                    );
-                    seat_data.borrow_mut().known_devices.push(data_device);
-                }
-                None => {
-                    error!(log, "Unmanaged seat given to a data device.");
-                }
-            },
-            _ => unreachable!(),
+            None => {
+                error!(log, "Unmanaged seat given to a data device.");
+            }
         },
-        None::<fn(_)>,
-        (),
-    )
+        _ => unreachable!(),
+    });
+
+    ddm.deref().clone()
 }
 
 struct DataDeviceData {
@@ -434,7 +418,7 @@ struct DataDeviceData {
 }
 
 fn implement_data_device<F, C, R>(
-    new_dd: NewResource<wl_data_device::WlDataDevice>,
+    dd: Main<wl_data_device::WlDataDevice>,
     seat: Seat,
     callback: Rc<RefCell<C>>,
     action_choice: Rc<RefCell<F>>,
@@ -451,83 +435,82 @@ where
         callback: callback.clone(),
         action_choice,
     };
-    new_dd.implement_closure(
-        move |req, dd| match req {
-            Request::StartDrag {
-                source,
-                origin,
-                icon,
-                serial,
-            } => {
-                /* TODO: handle the icon */
-                if let Some(pointer) = seat.get_pointer() {
-                    if pointer.has_grab(serial) {
-                        if let Some(ref icon) = icon {
-                            if token.give_role::<DnDIconRole>(icon).is_err() {
-                                dd.as_ref().post_error(
-                                    wl_data_device::Error::Role as u32,
-                                    "Given surface already has an other role".into(),
-                                );
-                                return;
-                            }
+    dd.quick_assign(move |dd, req, _| match req {
+        Request::StartDrag {
+            source,
+            origin,
+            icon,
+            serial,
+        } => {
+            /* TODO: handle the icon */
+            if let Some(pointer) = seat.get_pointer() {
+                if pointer.has_grab(serial) {
+                    if let Some(ref icon) = icon {
+                        if token.give_role::<DnDIconRole>(icon).is_err() {
+                            dd.as_ref().post_error(
+                                wl_data_device::Error::Role as u32,
+                                "Given surface already has an other role".into(),
+                            );
+                            return;
                         }
-                        // The StartDrag is in response to a pointer implicit grab, all is good
-                        (&mut *callback.borrow_mut())(DataDeviceEvent::DnDStarted {
-                            source: source.clone(),
-                            icon: icon.clone(),
-                        });
-                        let start_data = pointer.grab_start_data().unwrap();
-                        pointer.set_grab(
-                            dnd_grab::DnDGrab::new(
-                                start_data,
-                                source,
-                                origin,
-                                seat.clone(),
-                                icon,
-                                token,
-                                callback.clone(),
-                            ),
-                            serial,
-                        );
-                        return;
                     }
+                    // The StartDrag is in response to a pointer implicit grab, all is good
+                    (&mut *callback.borrow_mut())(DataDeviceEvent::DnDStarted {
+                        source: source.clone(),
+                        icon: icon.clone(),
+                    });
+                    let start_data = pointer.grab_start_data().unwrap();
+                    pointer.set_grab(
+                        dnd_grab::DnDGrab::new(
+                            start_data,
+                            source,
+                            origin,
+                            seat.clone(),
+                            icon,
+                            token,
+                            callback.clone(),
+                        ),
+                        serial,
+                    );
+                    return;
                 }
-                debug!(log, "denying drag from client without implicit grab");
             }
-            Request::SetSelection { source, .. } => {
-                if let Some(keyboard) = seat.get_keyboard() {
-                    if dd
-                        .as_ref()
-                        .client()
-                        .as_ref()
-                        .map(|c| keyboard.has_focus(c))
-                        .unwrap_or(false)
-                    {
-                        let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
-                        (&mut *callback.borrow_mut())(DataDeviceEvent::NewSelection(source.clone()));
-                        // The client has kbd focus, it can set the selection
-                        seat_data
-                            .borrow_mut()
-                            .set_selection(source.map(Selection::Client).unwrap_or(Selection::Empty));
-                        return;
-                    }
+            debug!(log, "denying drag from client without implicit grab");
+        }
+        Request::SetSelection { source, .. } => {
+            if let Some(keyboard) = seat.get_keyboard() {
+                if dd
+                    .as_ref()
+                    .client()
+                    .as_ref()
+                    .map(|c| keyboard.has_focus(c))
+                    .unwrap_or(false)
+                {
+                    let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
+                    (&mut *callback.borrow_mut())(DataDeviceEvent::NewSelection(source.clone()));
+                    // The client has kbd focus, it can set the selection
+                    seat_data
+                        .borrow_mut()
+                        .set_selection(source.map(Selection::Client).unwrap_or(Selection::Empty));
+                    return;
                 }
-                debug!(log, "denying setting selection by a non-focused client");
             }
-            Request::Release => {
-                // Clean up the known devices
-                seat.user_data()
-                    .get::<RefCell<SeatData>>()
-                    .unwrap()
-                    .borrow_mut()
-                    .known_devices
-                    .retain(|ndd| ndd.as_ref().is_alive() && (!ndd.as_ref().equals(&dd.as_ref())))
-            }
-            _ => unreachable!(),
-        },
-        None::<fn(_)>,
-        dd_data,
-    )
+            debug!(log, "denying setting selection by a non-focused client");
+        }
+        Request::Release => {
+            // Clean up the known devices
+            seat.user_data()
+                .get::<RefCell<SeatData>>()
+                .unwrap()
+                .borrow_mut()
+                .known_devices
+                .retain(|ndd| ndd.as_ref().is_alive() && (!ndd.as_ref().equals(&dd.as_ref())))
+        }
+        _ => unreachable!(),
+    });
+    dd.as_ref().user_data().set(|| dd_data);
+
+    dd.deref().clone()
 }
 
 /// A simple action chooser for DnD negociation

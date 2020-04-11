@@ -35,6 +35,10 @@ use smithay::{
         udev::{primary_gpu, udev_backend_bind, UdevBackend, UdevHandler},
     },
     reexports::{
+        calloop::{
+            generic::{SourceFd, Generic},
+            EventLoop, LoopHandle, Source,
+        },
         drm::control::{
             connector::{Info as ConnectorInfo, State as ConnectorState},
             crtc,
@@ -44,10 +48,6 @@ use smithay::{
         input::Libinput,
         nix::{fcntl::OFlag, sys::stat::dev_t},
         wayland_server::{
-            calloop::{
-                generic::{EventedFd, Generic},
-                EventLoop, LoopHandle, Source,
-            },
             protocol::{wl_output, wl_surface},
             Display,
         },
@@ -65,6 +65,7 @@ use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
 use crate::input_handler::AnvilInputHandler;
 use crate::shell::{init_shell, MyWindowMap, Roles};
+use crate::AnvilState;
 
 pub struct SessionFd(RawFd);
 impl AsRawFd for SessionFd {
@@ -78,7 +79,7 @@ type RenderDevice =
 type RenderSurface =
     EglSurface<EglGbmBackend<LegacyDrmDevice<SessionFd>>, GbmDevice<LegacyDrmDevice<SessionFd>>>;
 
-pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger) -> Result<(), ()> {
+pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log: Logger) -> Result<(), ()> {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
     info!(log, "Listening on wayland socket"; "name" => name.clone());
     ::std::env::set_var("WAYLAND_DISPLAY", name);
@@ -253,14 +254,19 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<()>, log: Logger
     /*
      * And run our loop
      */
+    let mut state = AnvilState::default();
+
     while running.load(Ordering::SeqCst) {
         if event_loop
-            .dispatch(Some(::std::time::Duration::from_millis(16)), &mut ())
+            .dispatch(Some(::std::time::Duration::from_millis(16)), &mut state)
             .is_err()
         {
             running.store(false, Ordering::SeqCst);
         } else {
-            display.borrow_mut().flush_clients();
+            if state.need_wayland_dispatch {
+                display.borrow_mut().dispatch(std::time::Duration::from_millis(0), &mut state);
+            }
+            display.borrow_mut().flush_clients(&mut state);
             window_map.borrow_mut().refresh();
         }
     }
@@ -287,7 +293,7 @@ struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
         dev_t,
         (
             S::Id,
-            Source<Generic<EventedFd<RenderDevice>>>,
+            Source<Generic<SourceFd<RenderDevice>>>,
             Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<RenderSurface>>>>,
         ),
     >,
@@ -317,9 +323,9 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
         let connector_infos: Vec<ConnectorInfo> = res_handles
             .connectors()
             .iter()
-            .map(|conn| device.resource_info::<ConnectorInfo>(*conn).unwrap())
-            .filter(|conn| conn.connection_state() == ConnectorState::Connected)
-            .inspect(|conn| info!(logger, "Connected: {:?}", conn.connector_type()))
+            .map(|conn| device.get_connector_info(*conn).unwrap())
+            .filter(|conn| conn.state() == ConnectorState::Connected)
+            .inspect(|conn| info!(logger, "Connected: {:?}", conn.interface()))
             .collect();
 
         let mut backends = HashMap::new();
@@ -329,7 +335,8 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
             let encoder_infos = connector_info
                 .encoders()
                 .iter()
-                .flat_map(|encoder_handle| device.resource_info::<EncoderInfo>(*encoder_handle))
+                .filter_map(|e| *e)
+                .flat_map(|encoder_handle| device.get_encoder_info(encoder_handle))
                 .collect::<Vec<EncoderInfo>>();
             for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {

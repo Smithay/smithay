@@ -36,8 +36,9 @@
 //!
 
 use drm::{
-    control::{connector, crtc, framebuffer, Device as ControlDevice, Mode, ResourceHandles, ResourceInfo},
+    control::{connector, crtc, encoder, plane, framebuffer, Device as ControlDevice, Mode, ResourceHandles},
     Device as BasicDevice,
+    SystemError as DrmError,
 };
 use nix::libc::dev_t;
 
@@ -46,8 +47,8 @@ use std::iter::IntoIterator;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 
-use calloop::generic::{EventedFd, Generic};
-use calloop::mio::Ready;
+use calloop::generic::{SourceFd, Generic};
+use calloop::mio::Interest;
 use calloop::InsertError;
 use calloop::{LoopHandle, Source};
 
@@ -110,16 +111,15 @@ pub trait Device: AsRawFd + DevPath {
     /// to synchronize your rendering to the vblank events of the open crtc's
     fn process_events(&mut self);
 
-    /// Load the resource from a [`Device`] given its
-    /// [`ResourceHandle`](drm::control::ResourceHandle)
-    fn resource_info<T: ResourceInfo>(
-        &self,
-        handle: T::Handle,
-    ) -> Result<T, <Self::Surface as Surface>::Error>;
-
     /// Attempts to acquire a copy of the [`Device`]'s
     /// [`ResourceHandle`](drm::control::ResourceHandle)
     fn resource_handles(&self) -> Result<ResourceHandles, <Self::Surface as Surface>::Error>;
+
+    fn get_connector_info(&self, conn: connector::Handle) -> Result<connector::Info, DrmError>;
+    fn get_crtc_info(&self, crtc: crtc::Handle) -> Result<crtc::Info, DrmError>;
+    fn get_encoder_info(&self, enc: encoder::Handle) -> Result<encoder::Info, DrmError>;
+    fn get_framebuffer_info(&self, fb: framebuffer::Handle) -> Result<framebuffer::Info, DrmError>;
+    fn get_plane_info(&self, plane: plane::Handle) -> Result<plane::Info, DrmError>;
 }
 
 /// Marker trait for [`Device`]s able to provide [`RawSurface`]s
@@ -229,13 +229,13 @@ impl<A: AsRawFd> DevPath for A {
 pub fn device_bind<D: Device + 'static, Data>(
     handle: &LoopHandle<Data>,
     device: D,
-) -> ::std::result::Result<Source<Generic<EventedFd<D>>>, InsertError<Generic<EventedFd<D>>>>
+) -> ::std::result::Result<Source<Generic<SourceFd<D>>>, InsertError<Generic<SourceFd<D>>>>
 where
     D: Device,
     Data: 'static,
 {
     let mut source = Generic::from_fd_source(device);
-    source.set_interest(Ready::readable());
+    source.set_interest(Interest::READABLE);
 
     handle.insert_source(source, |evt, _| {
         evt.source.borrow_mut().0.process_events();

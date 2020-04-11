@@ -10,7 +10,7 @@ branches:
   only:
     - master
 
-dist: trusty
+dist: bionic
 
 # We cannot cache .vagga, because we actually do not have read permissions
 # without sudo and travis cache script runs not as sudo...

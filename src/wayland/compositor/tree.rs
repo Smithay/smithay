@@ -54,7 +54,11 @@ where
 {
     /// Initializes the surface, must be called at creation for state coherence
     pub fn init(surface: &WlSurface) {
-        let my_data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let my_data_mutex = surface
+            .as_ref()
+            .user_data()
+            .get::<Mutex<SurfaceData<R>>>()
+            .unwrap();
         let mut my_data = my_data_mutex.lock().unwrap();
         debug_assert!(my_data.children.is_empty());
         my_data.children.push(surface.clone());
@@ -62,11 +66,19 @@ where
 
     /// Cleans the `as_ref().user_data` of that surface, must be called when it is destroyed
     pub fn cleanup(surface: &WlSurface) {
-        let my_data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let my_data_mutex = surface
+            .as_ref()
+            .user_data()
+            .get::<Mutex<SurfaceData<R>>>()
+            .unwrap();
         let mut my_data = my_data_mutex.lock().unwrap();
         if let Some(old_parent) = my_data.parent.take() {
             // We had a parent, lets unregister ourselves from it
-            let old_parent_mutex = old_parent.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+            let old_parent_mutex = old_parent
+                .as_ref()
+                .user_data()
+                .get::<Mutex<SurfaceData<R>>>()
+                .unwrap();
             let mut old_parent_guard = old_parent_mutex.lock().unwrap();
             old_parent_guard
                 .children
@@ -74,7 +86,7 @@ where
         }
         // orphan all our children
         for child in &my_data.children {
-            let child_mutex = child.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+            let child_mutex = child.as_ref().user_data().get::<Mutex<SurfaceData<R>>>().unwrap();
             if std::ptr::eq(child_mutex, my_data_mutex) {
                 // This child is ourselves, don't do anything.
                 continue;
@@ -89,7 +101,11 @@ where
 impl<R: RoleType + 'static> SurfaceData<R> {
     pub fn has_a_role(surface: &WlSurface) -> bool {
         debug_assert!(surface.as_ref().is_alive());
-        let data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let data_mutex = surface
+            .as_ref()
+            .user_data()
+            .get::<Mutex<SurfaceData<R>>>()
+            .unwrap();
         let data_guard = data_mutex.lock().unwrap();
         <R as RoleType>::has_role(&data_guard.role)
     }
@@ -100,7 +116,11 @@ impl<R: RoleType + 'static> SurfaceData<R> {
         R: Role<RoleData>,
     {
         debug_assert!(surface.as_ref().is_alive());
-        let data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let data_mutex = surface
+            .as_ref()
+            .user_data()
+            .get::<Mutex<SurfaceData<R>>>()
+            .unwrap();
         let data_guard = data_mutex.lock().unwrap();
         <R as Role<RoleData>>::has(&data_guard.role)
     }
@@ -112,7 +132,11 @@ impl<R: RoleType + 'static> SurfaceData<R> {
         RoleData: Default,
     {
         debug_assert!(surface.as_ref().is_alive());
-        let data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let data_mutex = surface
+            .as_ref()
+            .user_data()
+            .get::<Mutex<SurfaceData<R>>>()
+            .unwrap();
         let mut data_guard = data_mutex.lock().unwrap();
         <R as Role<RoleData>>::set(&mut data_guard.role)
     }
@@ -125,7 +149,11 @@ impl<R: RoleType + 'static> SurfaceData<R> {
         R: Role<RoleData>,
     {
         debug_assert!(surface.as_ref().is_alive());
-        let data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let data_mutex = surface
+            .as_ref()
+            .user_data()
+            .get::<Mutex<SurfaceData<R>>>()
+            .unwrap();
         let mut data_guard = data_mutex.lock().unwrap();
         <R as Role<RoleData>>::set_with(&mut data_guard.role, data)
     }
@@ -139,7 +167,11 @@ impl<R: RoleType + 'static> SurfaceData<R> {
         R: Role<RoleData>,
     {
         debug_assert!(surface.as_ref().is_alive());
-        let data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let data_mutex = surface
+            .as_ref()
+            .user_data()
+            .get::<Mutex<SurfaceData<R>>>()
+            .unwrap();
         let mut data_guard = data_mutex.lock().unwrap();
         <R as Role<RoleData>>::unset(&mut data_guard.role)
     }
@@ -151,7 +183,11 @@ impl<R: RoleType + 'static> SurfaceData<R> {
         F: FnOnce(&mut RoleData) -> T,
     {
         debug_assert!(surface.as_ref().is_alive());
-        let data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let data_mutex = surface
+            .as_ref()
+            .user_data()
+            .get::<Mutex<SurfaceData<R>>>()
+            .unwrap();
         let mut data_guard = data_mutex.lock().unwrap();
         let data = <R as Role<RoleData>>::data_mut(&mut data_guard.role)?;
         Ok(f(data))
@@ -161,7 +197,7 @@ impl<R: RoleType + 'static> SurfaceData<R> {
 impl<R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<R> {
     /// Checks if the first surface is an ancestor of the second
     pub fn is_ancestor(a: &WlSurface, b: &WlSurface) -> bool {
-        let b_mutex = b.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let b_mutex = b.as_ref().user_data().get::<Mutex<SurfaceData<R>>>().unwrap();
         let b_guard = b_mutex.lock().unwrap();
         if let Some(ref parent) = b_guard.parent {
             if parent.as_ref().equals(a.as_ref()) {
@@ -188,7 +224,7 @@ impl<R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<R> {
 
         // change child's parent
         {
-            let child_mutex = child.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+            let child_mutex = child.as_ref().user_data().get::<Mutex<SurfaceData<R>>>().unwrap();
             let mut child_guard = child_mutex.lock().unwrap();
             // if surface already has a role, it cannot become a subsurface
             <R as Role<SubsurfaceRole>>::set(&mut child_guard.role)?;
@@ -197,7 +233,11 @@ impl<R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<R> {
         }
         // register child to new parent
         {
-            let parent_mutex = parent.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+            let parent_mutex = parent
+                .as_ref()
+                .user_data()
+                .get::<Mutex<SurfaceData<R>>>()
+                .unwrap();
             let mut parent_guard = parent_mutex.lock().unwrap();
             parent_guard.children.push(child.clone())
         }
@@ -210,7 +250,7 @@ impl<R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<R> {
     pub fn unset_parent(child: &WlSurface) {
         debug_assert!(child.as_ref().is_alive());
         let old_parent = {
-            let child_mutex = child.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+            let child_mutex = child.as_ref().user_data().get::<Mutex<SurfaceData<R>>>().unwrap();
             let mut child_guard = child_mutex.lock().unwrap();
             let old_parent = child_guard.parent.take();
             if old_parent.is_some() {
@@ -222,7 +262,11 @@ impl<R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<R> {
         };
         // unregister from our parent
         if let Some(old_parent) = old_parent {
-            let parent_mutex = old_parent.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+            let parent_mutex = old_parent
+                .as_ref()
+                .user_data()
+                .get::<Mutex<SurfaceData<R>>>()
+                .unwrap();
             let mut parent_guard = parent_mutex.lock().unwrap();
             parent_guard
                 .children
@@ -232,14 +276,18 @@ impl<R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<R> {
 
     /// Retrieve the parent surface (if any) of this surface
     pub fn get_parent(child: &WlSurface) -> Option<WlSurface> {
-        let child_mutex = child.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let child_mutex = child.as_ref().user_data().get::<Mutex<SurfaceData<R>>>().unwrap();
         let child_guard = child_mutex.lock().unwrap();
         child_guard.parent.as_ref().cloned()
     }
 
     /// Retrieve the children surface (if any) of this surface
     pub fn get_children(parent: &WlSurface) -> Vec<WlSurface> {
-        let parent_mutex = parent.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let parent_mutex = parent
+            .as_ref()
+            .user_data()
+            .get::<Mutex<SurfaceData<R>>>()
+            .unwrap();
         let parent_guard = parent_mutex.lock().unwrap();
         parent_guard
             .children
@@ -254,7 +302,11 @@ impl<R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<R> {
     /// Fails if `relative_to` is not a sibling or parent of `surface`.
     pub fn reorder(surface: &WlSurface, to: Location, relative_to: &WlSurface) -> Result<(), ()> {
         let parent = {
-            let data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+            let data_mutex = surface
+                .as_ref()
+                .user_data()
+                .get::<Mutex<SurfaceData<R>>>()
+                .unwrap();
             let data_guard = data_mutex.lock().unwrap();
             data_guard.parent.as_ref().cloned().unwrap()
         };
@@ -268,7 +320,11 @@ impl<R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<R> {
             None
         }
 
-        let parent_mutex = parent.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let parent_mutex = parent
+            .as_ref()
+            .user_data()
+            .get::<Mutex<SurfaceData<R>>>()
+            .unwrap();
         let mut parent_guard = parent_mutex.lock().unwrap();
         let my_index = index_of(surface, &parent_guard.children).unwrap();
         let mut other_index = match index_of(relative_to, &parent_guard.children) {
@@ -299,7 +355,8 @@ impl<R: 'static> SurfaceData<R> {
     {
         let data_mutex = surface
             .as_ref()
-            .user_data::<Mutex<SurfaceData<R>>>()
+            .user_data()
+            .get::<Mutex<SurfaceData<R>>>()
             .expect("Accessing the data of foreign surfaces is not supported.");
         let mut data_guard = data_mutex.lock().unwrap();
         f(&mut data_guard.attributes)
@@ -354,7 +411,11 @@ impl<R: 'static> SurfaceData<R> {
         F2: FnMut(&WlSurface, &mut SurfaceAttributes, &mut R, &T),
         F3: FnMut(&WlSurface, &mut SurfaceAttributes, &mut R, &T) -> bool,
     {
-        let data_mutex = surface.as_ref().user_data::<Mutex<SurfaceData<R>>>().unwrap();
+        let data_mutex = surface
+            .as_ref()
+            .user_data()
+            .get::<Mutex<SurfaceData<R>>>()
+            .unwrap();
         let mut data_guard = data_mutex.lock().unwrap();
         let data_guard = &mut *data_guard;
         // call the filter on ourselves

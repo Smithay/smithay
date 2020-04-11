@@ -1,7 +1,7 @@
 use super::super::{Device, RawDevice, RawSurface, Surface};
 use super::error::*;
 
-use drm::control::{connector, crtc, framebuffer, Mode, ResourceInfo};
+use drm::control::{connector, crtc, framebuffer, Mode, Device as ControlDevice};
 use gbm::{self, BufferObject, BufferObjectFlags, Format as GbmFormat, SurfaceBufferHandle};
 use image::{ImageBuffer, Rgba};
 
@@ -16,12 +16,12 @@ use crate::backend::graphics::SwapBuffersError;
 
 pub(super) struct GbmSurfaceInternal<D: RawDevice + 'static> {
     pub(super) dev: Rc<RefCell<gbm::Device<D>>>,
-    pub(super) surface: RefCell<gbm::Surface<framebuffer::Info>>,
+    pub(super) surface: RefCell<gbm::Surface<framebuffer::Handle>>,
     pub(super) crtc: <D as Device>::Surface,
     pub(super) cursor: Cell<(BufferObject<()>, (u32, u32))>,
-    pub(super) current_frame_buffer: Cell<Option<framebuffer::Info>>,
-    pub(super) front_buffer: Cell<Option<SurfaceBufferHandle<framebuffer::Info>>>,
-    pub(super) next_buffer: Cell<Option<SurfaceBufferHandle<framebuffer::Info>>>,
+    pub(super) current_frame_buffer: Cell<Option<framebuffer::Handle>>,
+    pub(super) front_buffer: Cell<Option<SurfaceBufferHandle<framebuffer::Handle>>>,
+    pub(super) next_buffer: Cell<Option<SurfaceBufferHandle<framebuffer::Handle>>>,
     pub(super) recreated: Cell<bool>,
     pub(super) logger: ::slog::Logger,
 }
@@ -67,7 +67,8 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         let fb = if let Some(info) = maybe_fb {
             info
         } else {
-            let fb = framebuffer::create(&self.crtc, &*next_bo).map_err(|_| SwapBuffersError::ContextLost)?;
+            let fb = self.crtc.add_planar_framebuffer(&*next_bo, &[0; 4], 0)
+                .map_err(|_| SwapBuffersError::ContextLost)?;
             next_bo.set_userdata(fb).unwrap();
             fb
         };
@@ -76,13 +77,13 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         if self.recreated.get() {
             debug!(self.logger, "Commiting new state");
             self.crtc
-                .commit(fb.handle())
+                .commit(fb)
                 .map_err(|_| SwapBuffersError::ContextLost)?;
             self.recreated.set(false);
         }
 
         trace!(self.logger, "Queueing Page flip");
-        self.crtc.page_flip(fb.handle())?;
+        RawSurface::page_flip(&self.crtc, fb)?;
 
         self.current_frame_buffer.set(Some(fb));
 
@@ -108,7 +109,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
 
         // Clean up buffers
         if let Some(Ok(Some(fb))) = self.next_buffer.take().map(|mut bo| bo.take_userdata()) {
-            if let Err(err) = framebuffer::destroy(&self.crtc, fb.handle()) {
+            if let Err(err) = self.crtc.destroy_framebuffer(fb) {
                 warn!(
                     self.logger,
                     "Error releasing old back_buffer framebuffer: {:?}", err
@@ -117,7 +118,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         }
 
         if let Some(Ok(Some(fb))) = self.front_buffer.take().map(|mut bo| bo.take_userdata()) {
-            if let Err(err) = framebuffer::destroy(&self.crtc, fb.handle()) {
+            if let Err(err) = self.crtc.destroy_framebuffer(fb) {
                 warn!(
                     self.logger,
                     "Error releasing old front_buffer framebuffer: {:?}", err
@@ -264,7 +265,7 @@ impl<D: RawDevice + 'static> Drop for GbmSurfaceInternal<D> {
             }
         } {
             // ignore failure at this point
-            let _ = framebuffer::destroy(&self.crtc, fb.handle());
+            let _ = self.crtc.destroy_framebuffer(fb);
         }
 
         if let Ok(Some(fb)) = {
@@ -275,7 +276,7 @@ impl<D: RawDevice + 'static> Drop for GbmSurfaceInternal<D> {
             }
         } {
             // ignore failure at this point
-            let _ = framebuffer::destroy(&self.crtc, fb.handle());
+            let _ = self.crtc.destroy_framebuffer(fb);
         }
     }
 }

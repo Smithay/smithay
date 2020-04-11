@@ -53,8 +53,8 @@ use std::{
 use systemd::login;
 
 use calloop::{
-    generic::{Event, EventedRawFd, Generic},
-    mio::Ready,
+    generic::{Event, SourceRawFd, Generic},
+    mio::Interest,
     InsertError, LoopHandle, Source,
 };
 
@@ -431,7 +431,7 @@ impl SessionNotifier for LogindSessionNotifier {
 pub struct BoundLogindSession {
     notifier: LogindSessionNotifier,
     _watches: Vec<Watch>,
-    sources: Vec<Source<Generic<EventedRawFd>>>,
+    sources: Vec<Source<Generic<SourceRawFd>>>,
 }
 
 /// Bind a [`LogindSessionNotifier`] to an [`EventLoop`](calloop::EventLoop).
@@ -449,17 +449,21 @@ pub fn logind_session_bind<Data: 'static>(
     let sources = watches
         .clone()
         .into_iter()
-        .map(|watch| {
+        .filter_map(|watch| {
+            let interest = match (watch.writable(), watch.readable()) {
+                (true, true) => Interest::WRITABLE | Interest::READABLE,
+                (true, false) => Interest::WRITABLE,
+                (false, true) => Interest::READABLE,
+                (false, false) => return None
+            };
             let mut source = Generic::from_raw_fd(watch.fd());
-            source.set_interest(
-                if watch.readable() { Ready::readable() } else { Ready::empty() }
-              | if watch.writable() { Ready::writable() } else { Ready::empty() }
-            );
-            handle.insert_source(source, {
+            source.set_interest(interest);
+            let source = handle.insert_source(source, {
                 let mut notifier = notifier.clone();
                 move |evt, _| notifier.event(evt)
-            })
-        }).collect::<::std::result::Result<Vec<Source<Generic<EventedRawFd>>>, InsertError<Generic<EventedRawFd>>>>()
+            });
+            Some(source)
+        }).collect::<::std::result::Result<Vec<Source<Generic<SourceRawFd>>>, InsertError<Generic<SourceRawFd>>>>()
         .map_err(|err| {
             (
                 err.into(),
@@ -502,17 +506,17 @@ impl Drop for LogindSessionNotifier {
 }
 
 impl LogindSessionNotifier {
-    fn event(&mut self, event: Event<EventedRawFd>) {
+    fn event(&mut self, event: Event<SourceRawFd>) {
         let fd = event.source.borrow().0;
         let readiness = event.readiness;
         let conn = self.internal.conn.borrow();
         let items = conn.watch_handle(
             fd,
-            if readiness.is_readable() && readiness.is_writable() {
+            if readiness.readable && readiness.writable {
                 WatchEvent::Readable as u32 | WatchEvent::Writable as u32
-            } else if readiness.is_readable() {
+            } else if readiness.readable {
                 WatchEvent::Readable as u32
-            } else if readiness.is_writable() {
+            } else if readiness.writable {
                 WatchEvent::Writable as u32
             } else {
                 return;

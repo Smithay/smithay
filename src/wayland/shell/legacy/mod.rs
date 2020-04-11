@@ -42,8 +42,7 @@
 //!     [ShellSurface, ShellSurfaceRole]
 //! );
 //!
-//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
-//! # let mut display = wayland_server::Display::new(event_loop.handle());
+//! # let mut display = wayland_server::Display::new();
 //! # let (compositor_token, _, _) = smithay::wayland::compositor::compositor_init::<MyRoles, _, _>(
 //! #     &mut display,
 //! #     |_, _, _| {},
@@ -71,7 +70,7 @@ use crate::wayland::compositor::{roles::Role, CompositorToken};
 
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface},
-    Display, Global,
+    Display, Filter, Global,
 };
 
 mod wl_handlers;
@@ -315,9 +314,9 @@ where
     }));
     let state2 = state.clone();
 
-    let global = display.create_global(1, move |shell, _version| {
+    let global = display.create_global(1, Filter::new(move |(shell, _version), _, _data| {
         self::wl_handlers::implement_shell(shell, ctoken, implementation.clone(), state2.clone());
-    });
+    }));
 
     (state, global)
 }

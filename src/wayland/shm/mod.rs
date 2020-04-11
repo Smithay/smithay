@@ -22,8 +22,7 @@
 //! use smithay::wayland::shm::init_shm_global;
 //! use wayland_server::protocol::wl_shm::Format;
 //!
-//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
-//! # let mut display = wayland_server::Display::new(event_loop.handle());
+//! # let mut display = wayland_server::Display::new();
 //! // Insert the ShmGlobal into your event loop
 //! // Here, we specify that Yuyv and C8 format are supported
 //! // additionally to the standard Argb8888 and Xrgb8888.
@@ -75,10 +74,10 @@
 //! If you are already using an handler for this signal, you probably don't want to use this handler.
 
 use self::pool::{Pool, ResizeError};
-use std::{rc::Rc, sync::Arc};
+use std::{ops::Deref as _, rc::Rc, sync::Arc};
 use wayland_server::{
     protocol::{wl_buffer, wl_shm, wl_shm_pool},
-    Display, Global, NewResource,
+    Display, Filter, Global, Main,
 };
 
 mod pool;
@@ -120,20 +119,20 @@ where
         log: log.new(o!("smithay_module" => "shm_handler")),
     };
 
-    display.create_global::<wl_shm::WlShm, _>(1, move |shm_new: NewResource<_>, _version| {
-        let shm = shm_new.implement_closure(
-            {
+    display.create_global::<wl_shm::WlShm, _>(
+        1,
+        Filter::new(move |(shm, _version): (Main<wl_shm::WlShm>, _), _, _| {
+            shm.quick_assign({
                 let mut data = data.clone();
-                move |req, shm| data.receive_shm_message(req, shm)
-            },
-            None::<fn(_)>,
-            (),
-        );
-        // send the formats
-        for &f in &data.formats[..] {
-            shm.format(f);
-        }
-    })
+                move |shm, req, _| data.receive_shm_message(req, shm.deref().clone())
+            });
+
+            // send the formats
+            for &f in &data.formats[..] {
+                shm.format(f);
+            }
+        }),
+    )
 }
 
 /// Error that can occur when accessing an SHM buffer
@@ -164,7 +163,7 @@ pub fn with_buffer_contents<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<
 where
     F: FnOnce(&[u8], BufferData) -> T,
 {
-    let data = match buffer.as_ref().user_data::<InternalBufferData>() {
+    let data = match buffer.as_ref().user_data().get::<InternalBufferData>() {
         Some(d) => d,
         None => return Err(BufferAccessError::NotManaged),
     };
@@ -207,14 +206,11 @@ impl ShmGlobalData {
             }
         };
         let arc_pool = Arc::new(mmap_pool);
-        pool.implement_closure(
-            {
-                let mut data = self.clone();
-                move |req, pool| data.receive_pool_message(req, pool)
-            },
-            None::<fn(_)>,
-            arc_pool,
-        );
+        pool.quick_assign({
+            let mut data = self.clone();
+            move |pool, req, _| data.receive_pool_message(req, pool.deref().clone())
+        });
+        pool.as_ref().user_data().set(move || arc_pool);
     }
 }
 
@@ -242,7 +238,7 @@ impl ShmGlobalData {
     fn receive_pool_message(&mut self, request: wl_shm_pool::Request, pool: wl_shm_pool::WlShmPool) {
         use self::wl_shm_pool::Request;
 
-        let arc_pool = pool.as_ref().user_data::<Arc<Pool>>().unwrap();
+        let arc_pool = pool.as_ref().user_data().get::<Arc<Pool>>().unwrap();
 
         match request {
             Request::CreateBuffer {
@@ -270,7 +266,8 @@ impl ShmGlobalData {
                         format,
                     },
                 };
-                buffer.implement_closure(|_, _| {}, None::<fn(_)>, data);
+                buffer.quick_assign(|_,_,_| {});
+                buffer.as_ref().user_data().set(|| data);
             }
             Request::Resize { size } => match arc_pool.resize(size) {
                 Ok(()) => {}

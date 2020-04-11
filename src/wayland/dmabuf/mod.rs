@@ -51,8 +51,7 @@
 //!
 //! // Once this is defined, you can in your setup initialize the dmabuf global:
 //!
-//! # let mut event_loop = wayland_server::calloop::EventLoop::<()>::new().unwrap();
-//! # let mut display = wayland_server::Display::new(event_loop.handle());
+//! # let mut display = wayland_server::Display::new();
 //! // define your supported formats
 //! let formats = vec![
 //!     /* ... */
@@ -70,16 +69,16 @@ use std::{cell::RefCell, os::unix::io::RawFd, rc::Rc};
 pub use wayland_protocols::unstable::linux_dmabuf::v1::server::zwp_linux_buffer_params_v1::Flags;
 use wayland_protocols::unstable::linux_dmabuf::v1::server::{
     zwp_linux_buffer_params_v1::{
-        Error as ParamError, RequestHandler as ParamRequestHandler, ZwpLinuxBufferParamsV1 as BufferParams,
+        Error as ParamError, Request as ParamsRequest, ZwpLinuxBufferParamsV1 as BufferParams,
     },
     zwp_linux_dmabuf_v1,
 };
-use wayland_server::{protocol::wl_buffer, Display, Global, NewResource};
+use wayland_server::{protocol::wl_buffer, Display, Global, Main, Filter};
 
 /// Representation of a Dmabuf format, as advertized to the client
 pub struct Format {
     /// The format identifier.
-    pub format: ::drm::buffer::PixelFormat,
+    pub format: ::drm::buffer::format::PixelFormat,
     /// The supported dmabuf layout modifier.
     ///
     /// This is an opaque token. Drivers use this token to express tiling, compression, etc. driver-specific
@@ -161,9 +160,11 @@ pub trait DmabufHandler {
     fn create_buffer(
         &mut self,
         data: Self::BufferData,
-        buffer: NewResource<wl_buffer::WlBuffer>,
+        buffer: Main<wl_buffer::WlBuffer>,
     ) -> wl_buffer::WlBuffer {
-        buffer.implement_closure(|_, _| {}, None::<fn(_)>, data)
+        buffer.quick_assign(|_, _, _| {});
+        buffer.as_ref().user_data().set(|| data);
+        (*buffer).clone()
     }
 }
 
@@ -193,29 +194,35 @@ where
         formats.len()
     );
 
-    display.create_global(3, move |new_dmabuf, version| {
+    display.create_global(3, Filter::new(move |(dmabuf, version): (Main<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1>, u32), _, _| {
         let dma_formats = formats.clone();
         let dma_handler = handler.clone();
         let dma_log = log.clone();
-        let dmabuf: zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1 = new_dmabuf.implement_closure(
-            move |req, _| {
+        dmabuf.quick_assign(
+            move |_, req, _| {
                 if let zwp_linux_dmabuf_v1::Request::CreateParams { params_id } = req {
-                    params_id.implement(
-                        ParamsHandler {
-                            pending_planes: Vec::new(),
-                            max_planes,
-                            used: false,
-                            formats: dma_formats.clone(),
-                            handler: dma_handler.clone(),
-                            log: dma_log.clone(),
+                    let mut handler = ParamsHandler {
+                        pending_planes: Vec::new(),
+                        max_planes,
+                        used: false,
+                        formats: dma_formats.clone(),
+                        handler: dma_handler.clone(),
+                        log: dma_log.clone(),
+                    };
+                    params_id.quick_assign(move |params, req, _| match req {
+                        ParamsRequest::Add { fd, plane_idx, offset, stride, modifier_hi, modifier_lo } => {
+                            handler.add(&*params, fd, plane_idx, offset, stride, modifier_hi, modifier_lo)
                         },
-                        None::<fn(_)>,
-                        (),
-                    );
+                        ParamsRequest::Create { width, height, format, flags } => {
+                            handler.create(&*params, width, height, format, flags)
+                        },
+                        ParamsRequest::CreateImmed { buffer_id, width, height, format, flags } => {
+                            handler.create_immed(&*params, buffer_id, width, height, format, flags)
+                        }
+                        _ => {}
+                    });
                 }
-            },
-            None::<fn(_)>,
-            (),
+            }
         );
 
         // send the supported formats
@@ -225,7 +232,7 @@ where
                 dmabuf.modifier(f.format.as_raw(), (f.modifier >> 32) as u32, f.modifier as u32);
             }
         }
-    })
+    }))
 }
 
 struct ParamsHandler<H: DmabufHandler> {
@@ -237,10 +244,10 @@ struct ParamsHandler<H: DmabufHandler> {
     log: ::slog::Logger,
 }
 
-impl<H: DmabufHandler> ParamRequestHandler for ParamsHandler<H> {
+impl<H: DmabufHandler> ParamsHandler<H> {
     fn add(
         &mut self,
-        params: BufferParams,
+        params: &BufferParams,
         fd: RawFd,
         plane_idx: u32,
         offset: u32,
@@ -284,7 +291,7 @@ impl<H: DmabufHandler> ParamRequestHandler for ParamsHandler<H> {
         });
     }
 
-    fn create(&mut self, params: BufferParams, width: i32, height: i32, format: u32, flags: u32) {
+    fn create(&mut self, params: &BufferParams, width: i32, height: i32, format: u32, flags: u32) {
         // Cannot reuse a params:
         if self.used {
             params.as_ref().post_error(
@@ -331,8 +338,8 @@ impl<H: DmabufHandler> ParamRequestHandler for ParamsHandler<H> {
 
     fn create_immed(
         &mut self,
-        params: BufferParams,
-        buffer_id: NewResource<wl_buffer::WlBuffer>,
+        params: &BufferParams,
+        buffer_id: Main<wl_buffer::WlBuffer>,
         width: i32,
         height: i32,
         format: u32,

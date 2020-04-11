@@ -13,12 +13,12 @@ use smithay::{
     reexports::{
         calloop::EventLoop,
         drm::{
-            buffer::PixelFormat,
+            buffer::format::PixelFormat,
             control::{
                 connector::{self, State as ConnectorState},
                 crtc,
                 dumbbuffer::DumbBuffer,
-                encoder, framebuffer, Device as ControlDevice, ResourceInfo,
+                encoder, framebuffer, Device as ControlDevice,
             },
         },
     },
@@ -50,16 +50,17 @@ fn main() {
     let connector_info = res_handles
         .connectors()
         .iter()
-        .map(|conn| Device::resource_info::<connector::Info>(&device, *conn).unwrap())
-        .find(|conn| conn.connection_state() == ConnectorState::Connected)
+        .map(|conn| device.get_connector_info(*conn).unwrap())
+        .find(|conn| conn.state() == ConnectorState::Connected)
         .unwrap();
 
     // Use the first encoder
-    let encoder_info = Device::resource_info::<encoder::Info>(&device, connector_info.encoders()[0]).unwrap();
+    let encoder = connector_info.encoders().iter().filter_map(|&e| e).next().unwrap();
+    let encoder_info = device.get_encoder_info(encoder).unwrap();
 
     // use the connected crtc if any
     let crtc = encoder_info
-        .current_crtc()
+        .crtc()
         // or use the first one that is compatible with the encoder
         .unwrap_or_else(|| {
             *res_handles
@@ -89,16 +90,14 @@ fn main() {
      * But they are very slow, this is just for demonstration purposes.
      */
     let (w, h) = mode.size();
-    let front_buffer =
-        DumbBuffer::create_from_device(&device, (w as u32, h as u32), PixelFormat::XRGB8888).unwrap();
-    let front_framebuffer = device.create_framebuffer(&front_buffer).unwrap();
-    let back_buffer =
-        DumbBuffer::create_from_device(&device, (w as u32, h as u32), PixelFormat::XRGB8888).unwrap();
-    let back_framebuffer = device.create_framebuffer(&back_buffer).unwrap();
+    let front_buffer = device.create_dumb_buffer((w as u32, h as u32), PixelFormat::XRGB8888).unwrap();
+    let front_framebuffer = device.add_framebuffer(&front_buffer).unwrap();
+    let back_buffer = device.create_dumb_buffer((w as u32, h as u32), PixelFormat::XRGB8888).unwrap();
+    let back_framebuffer = device.add_framebuffer(&back_buffer).unwrap();
 
     device.set_handler(DrmHandlerImpl {
-        current: front_framebuffer.handle(),
-        front: (front_buffer, front_framebuffer.clone()),
+        current: front_framebuffer,
+        front: (front_buffer, front_framebuffer),
         back: (back_buffer, back_framebuffer),
         surface: surface.clone(),
     });
@@ -113,17 +112,17 @@ fn main() {
 
     // Start rendering
     if surface.commit_pending() {
-        surface.commit(front_framebuffer.handle()).unwrap();
+        surface.commit(front_framebuffer).unwrap();
     }
-    surface.page_flip(front_framebuffer.handle()).unwrap();
+    RawSurface::page_flip(&*surface, front_framebuffer).unwrap();
 
     // Run
     event_loop.run(None, &mut (), |_| {}).unwrap();
 }
 
 pub struct DrmHandlerImpl {
-    front: (DumbBuffer, framebuffer::Info),
-    back: (DumbBuffer, framebuffer::Info),
+    front: (DumbBuffer, framebuffer::Handle),
+    back: (DumbBuffer, framebuffer::Handle),
     current: framebuffer::Handle,
     surface: Rc<LegacyDrmSurface<File>>,
 }
@@ -134,12 +133,12 @@ impl DeviceHandler for DrmHandlerImpl {
     fn vblank(&mut self, _crtc: crtc::Handle) {
         {
             // Swap and map buffer
-            let mut mapping = if self.current == self.front.1.handle() {
-                self.current = self.back.1.handle();
-                self.back.0.map(&*self.surface).unwrap()
+            let mut mapping = if self.current == self.front.1 {
+                self.current = self.back.1;
+                self.surface.map_dumb_buffer(&mut self.back.0).unwrap()
             } else {
-                self.current = self.front.1.handle();
-                self.front.0.map(&*self.surface).unwrap()
+                self.current = self.front.1;
+                self.surface.map_dumb_buffer(&mut self.front.0).unwrap()
             };
 
             // now we could render to the mapping via software rendering.
@@ -149,7 +148,7 @@ impl DeviceHandler for DrmHandlerImpl {
                 *x = 128;
             }
         }
-        self.surface.page_flip(self.current).unwrap();
+        RawSurface::page_flip(&*self.surface, self.current).unwrap();
     }
 
     fn error(&mut self, error: Error) {

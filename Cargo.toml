@@ -11,12 +11,12 @@ edition = "2018"
 members = [ "anvil" ]
 
 [dependencies]
-wayland-server = { version = "0.23.4", optional = true }
-wayland-commons = { version = "0.23.4", optional = true }
-wayland-sys = { version = "0.23.4", optional = true }
-calloop = "0.4.2"
+wayland-server = { version = "0.25.0", optional = true }
+wayland-commons = { version = "0.25.0", optional = true }
+wayland-sys = { version = "0.25.0", optional = true }
+calloop = "0.5.1"
 bitflags = "1"
-nix = "0.13"
+nix = "0.15"
 xkbcommon = "0.4.0"
 tempfile = "3.0"
 slog = "2.1.1"
@@ -24,17 +24,18 @@ slog-stdlog = "3.0.2"
 libloading = "0.5.0"
 wayland-client = { version = "0.23.4", features = ["egl"], optional = true }
 winit = { version = "0.22.0", optional = true }
-drm = { version = "^0.3.4", optional = true }
-gbm = { version = "^0.5.0", optional = true, default-features = false, features = ["drm-support"] }
+drm = { version = "^0.4.0", git = "https://github.com/drakulix/drm-rs", branch = "develop", optional = true }
+gbm = { version = "^0.6.0", git = "https://github.com/drakulix/gbm.rs", branch = "develop", optional = true, default-features = false, features = ["drm-support"] }
 glium = { version = "0.23.0", optional = true, default-features = false }
 input = { version = "0.4.1", optional = true }
 udev = { version = "0.2.0", optional = true }
 dbus = { version = "0.8", optional = true }
 systemd = { version = "0.4.0", optional = true }
-wayland-protocols = { version = "0.23.4", features = ["unstable_protocols", "server"], optional = true }
+wayland-protocols = { version = "0.25.0", features = ["unstable_protocols", "server"], optional = true }
 image = { version = "0.21.0", optional = true }
 error-chain = "0.12.0"
 lazy_static = "1.0.0"
+failure = { version = "0.1.5", optional = true }
 
 [dev-dependencies]
 slog-term = "2.3"
@@ -43,9 +44,9 @@ slog-term = "2.3"
 gl_generator = { version = "0.10", optional = true }
 
 [features]
-default = ["backend_winit", "backend_drm_legacy", "backend_drm_gbm", "backend_drm_egl", "backend_libinput", "backend_udev", "backend_session", "renderer_glium", "xwayland", "wayland_frontend"]
-backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen", "backend_egl", "renderer_gl", "native_lib"]
-backend_drm = ["drm"]
+default = ["backend_winit", "backend_drm_legacy", "backend_drm_gbm", "backend_drm_egl", "backend_libinput", "backend_udev", "backend_session_logind", "renderer_glium", "xwayland", "wayland_frontend"]
+backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen", "backend_egl", "renderer_gl", "use_system_lib"]
+backend_drm = ["drm", "failure"]
 backend_drm_legacy = ["backend_drm"]
 backend_drm_gbm = ["backend_drm", "gbm", "image"]
 backend_drm_egl = ["backend_drm", "backend_egl"]
@@ -56,7 +57,7 @@ backend_udev = ["udev"]
 backend_session_logind = ["dbus", "systemd", "backend_session"]
 renderer_gl = ["gl_generator"]
 renderer_glium = ["renderer_gl", "glium"]
-native_lib = ["wayland_frontend", "wayland-sys", "wayland-server/native_lib"]
+use_system_lib = ["wayland_frontend", "wayland-sys", "wayland-server/use_system_lib"]
 wayland_frontend = ["wayland-server", "wayland-commons", "wayland-protocols"]
 xwayland = ["wayland_frontend"]
 
