@@ -15,6 +15,7 @@ glium = { version = "0.23.0", default-features = false }
 wayland-server = "0.25.0"
 xkbcommon = "0.4.0"
 bitflags = "1.2.1"
+input = { version = "0.5.0", features = ["udev"], optional = true }
 
 [dependencies.smithay]
 path = ".."
@@ -28,5 +29,5 @@ gl_generator = "0.10"
 default = [ "winit", "egl", "udev", "logind" ]
 egl = [ "smithay/use_system_lib" ]
 winit = [ "smithay/backend_winit" ]
-udev = [ "smithay/backend_libinput", "smithay/backend_drm_legacy", "smithay/backend_drm_gbm", "smithay/backend_drm_egl", "smithay/backend_udev", "smithay/backend_session" ]
+udev = [ "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_drm_legacy", "smithay/backend_drm_gbm", "smithay/backend_drm_egl", "smithay/backend_session", "input" ]
 logind = [ "smithay/backend_session_logind" ]
