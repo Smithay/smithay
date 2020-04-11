@@ -20,7 +20,7 @@ use std::{
     rc::Rc,
     time::Instant,
 };
-use wayland_client::egl as wegl;
+use wayland_egl as wegl;
 use wayland_server::Display;
 use winit::{
     dpi::{LogicalPosition, LogicalSize, PhysicalSize},

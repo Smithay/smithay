@@ -7,7 +7,7 @@ use crate::backend::graphics::SwapBuffersError;
 use std::ptr;
 
 #[cfg(feature = "backend_winit")]
-use wayland_client::egl as wegl;
+use wayland_egl as wegl;
 #[cfg(feature = "backend_winit")]
 use winit::platform::unix::WindowExtUnix;
 #[cfg(feature = "backend_winit")]
