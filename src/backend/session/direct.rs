@@ -66,7 +66,7 @@ use std::{
     },
 };
 #[cfg(feature = "backend_udev")]
-use udev::Context;
+use udev::Device as UdevDevice;
 
 #[allow(dead_code)]
 mod tty {
@@ -126,12 +126,7 @@ fn is_tty_device(dev: dev_t, _path: Option<&Path>) -> bool {
 fn is_tty_device(dev: dev_t, path: Option<&Path>) -> bool {
     match path {
         Some(path) => {
-            let udev = match Context::new() {
-                Ok(context) => context,
-                Err(_) => return major(dev) == TTY_MAJOR || minor(dev) != 0,
-            };
-
-            let device = match udev.device_from_syspath(path) {
+            let device = match UdevDevice::from_syspath(path) {
                 Ok(device) => device,
                 Err(_) => return major(dev) == TTY_MAJOR || minor(dev) != 0,
             };

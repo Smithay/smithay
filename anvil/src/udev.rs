@@ -118,14 +118,12 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
     /*
      * Initialize the udev backend
      */
-    let context = ::smithay::reexports::udev::Context::new().map_err(|_| ())?;
     let seat = session.seat();
 
-    let primary_gpu = primary_gpu(&context, &seat).unwrap_or_default();
+    let primary_gpu = primary_gpu(&seat).unwrap_or_default();
 
     let bytes = include_bytes!("../resources/cursor2.rgba");
     let udev_backend = UdevBackend::new(
-        &context,
         UdevHandlerImpl {
             compositor_token,
             #[cfg(feature = "egl")]
@@ -223,7 +221,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
      * Initialize libinput backend
      */
     let mut libinput_context =
-        Libinput::new_from_udev::<LibinputSessionInterface<AutoSession>>(session.clone().into(), &context);
+        Libinput::new_with_udev::<LibinputSessionInterface<AutoSession>>(session.clone().into());
     let libinput_session_id = notifier.register(libinput_context.observer());
     libinput_context.udev_assign_seat(&seat).unwrap();
     let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
