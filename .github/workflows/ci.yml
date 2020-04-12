@@ -1,0 +1,141 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+
+jobs:
+  smithay-ci:
+    strategy:
+      fail-fast: false
+      matrix:
+        rust:
+        - stable
+        features:
+        - ''
+        - backend_winit
+        - backend_drm
+        - backend_drm_legacy
+        - backend_drm_gbm
+        - backend_drm_egl
+        - backend_libinput
+        - backend_udev
+        - backend_session
+        - backend_session_logind
+        - renderer_gl
+        - renderer_glium
+        - wayland_frontend
+        - xwayland
+        - default
+        - all
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Cargo cache
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo
+          key: cargo-${{ matrix.rust }}
+
+      - name: Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+      
+      - name: System dependencies
+        run: sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev 
+
+      - name: Test features
+        if: matrix.features != 'all'
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --features "${{ matrix.features }}"
+      
+      - name: Test all
+        if: matrix.features == 'all'
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features
+  
+  anvil-ci:
+    strategy:
+      fail-fast: false
+      matrix:
+        rust:
+        - stable
+        features:
+        - ''
+        - egl
+        - winit
+        - udev
+        - logind
+        - default
+        - all
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Cargo cache
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo
+          key: cargo-${{ matrix.rust }}
+
+      - name: Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+
+      - name: System dependencies
+        run: sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+
+      - name: Test features
+        if: matrix.features != 'all'
+        working-directory: ./anvil
+        run: cargo test --features "${{ matrix.features }}"
+      
+      - name: Test all
+        if: matrix.features == 'all'
+        working-directory: ./anvil
+        run: cargo test --all-features
+
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+
+      - name: System dependencies
+        run: sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+
+      - name: Cargo fmt
+        run: cargo fmt --all -- --check
+      
+      - name: Clippy Smithay
+        run: cargo clippy --all-features -- -D warnings
+
+      - name: Clippy Anvil
+        working-directory: ./anvil
+        run: cargo clippy --all-features -- -D warnings
