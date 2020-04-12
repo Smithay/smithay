@@ -59,6 +59,7 @@ use calloop::{
 };
 
 struct LogindSessionImpl {
+    session_id: String,
     conn: RefCell<Connection>,
     session_path: DbusPath<'static>,
     active: AtomicBool,
@@ -171,6 +172,7 @@ impl LogindSession {
         let conn = RefCell::new(conn);
 
         let internal = Rc::new(LogindSessionImpl {
+            session_id: session_id.clone(),
             conn,
             session_path,
             active: AtomicBool::new(true),
@@ -260,6 +262,7 @@ impl LogindSessionImpl {
             };
             if &*message.interface().unwrap() == "org.freedesktop.login1.Manager"
                 && &*message.member().unwrap() == "SessionRemoved"
+                && message.get1::<String>().unwrap() == self.session_id
             {
                 error!(self.logger, "Session got closed by logind");
                 //Ok... now what?
