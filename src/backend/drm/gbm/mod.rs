@@ -13,18 +13,45 @@ use super::{Device, DeviceHandler, RawDevice, ResourceHandles, Surface};
 
 use drm::control::{connector, crtc, encoder, framebuffer, plane, Device as ControlDevice};
 use drm::SystemError as DrmError;
-use failure::ResultExt as FailureResultExt;
 use gbm::{self, BufferObjectFlags, Format as GbmFormat};
 use nix::libc::dev_t;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use std::sync::Once;
 
-pub mod error;
-use self::error::*;
+/// Errors thrown by the [`GbmDevice`](::backend::drm::gbm::GbmDevice)
+/// and [`GbmSurface`](::backend::drm::gbm::GbmSurface).
+#[derive(thiserror::Error, Debug)]
+pub enum Error<U: std::error::Error + std::fmt::Debug + std::fmt::Display + 'static> {
+    /// Creation of GBM device failed
+    #[error("Creation of GBM device failed")]
+    InitFailed(#[source] io::Error),
+    /// Creation of GBM surface failed
+    #[error("Creation of GBM surface failed")]
+    SurfaceCreationFailed(#[source] io::Error),
+    /// No mode is set, blocking the current operation
+    #[error("No mode is currently set")]
+    NoModeSet,
+    /// Creation of GBM buffer object failed
+    #[error("Creation of GBM buffer object failed")]
+    BufferCreationFailed(#[source] io::Error),
+    /// Writing to GBM buffer failed
+    #[error("Writing to GBM buffer failed")]
+    BufferWriteFailed(#[source] io::Error),
+    /// Lock of GBM surface front buffer failed
+    #[error("Lock of GBM surface font buffer failed")]
+    FrontBufferLockFailed,
+    /// The GBM device was destroyed
+    #[error("The GBM device was destroyed")]
+    DeviceDestroyed,
+    /// Underlying backend error
+    #[error("Underlying error: {0}")]
+    Underlying(#[source] U),
+}
 
 mod surface;
 pub use self::surface::GbmSurface;
@@ -50,7 +77,7 @@ impl<D: RawDevice + ControlDevice + 'static> GbmDevice<D> {
     ///
     /// Returns an error if the file is no valid drm node or context creation was not
     /// successful.
-    pub fn new<L>(mut dev: D, logger: L) -> Result<Self>
+    pub fn new<L>(mut dev: D, logger: L) -> Result<Self, Error<<<D as Device>::Surface as Surface>::Error>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -74,9 +101,7 @@ impl<D: RawDevice + ControlDevice + 'static> GbmDevice<D> {
         debug!(log, "Creating gbm device");
         Ok(GbmDevice {
             // Open the gbm device from the drm device
-            dev: Rc::new(RefCell::new(
-                gbm::Device::new(dev).chain_err(|| ErrorKind::InitFailed)?,
-            )),
+            dev: Rc::new(RefCell::new(gbm::Device::new(dev).map_err(Error::InitFailed)?)),
             backends: Rc::new(RefCell::new(HashMap::new())),
             logger: log,
         })
@@ -108,8 +133,7 @@ impl<D: RawDevice + ControlDevice + 'static> DeviceHandler for InternalDeviceHan
         }
     }
     fn error(&mut self, error: <<D as Device>::Surface as Surface>::Error) {
-        self.handler
-            .error(ResultExt::<()>::chain_err(Err(error), || ErrorKind::UnderlyingBackendError).unwrap_err())
+        self.handler.error(Error::Underlying(error))
     }
 }
 
@@ -132,11 +156,14 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
         self.dev.borrow_mut().clear_handler();
     }
 
-    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<GbmSurface<D>> {
+    fn create_surface(
+        &mut self,
+        crtc: crtc::Handle,
+    ) -> Result<GbmSurface<D>, Error<<<D as Device>::Surface as Surface>::Error>> {
         info!(self.logger, "Initializing GbmSurface");
 
-        let drm_surface = Device::create_surface(&mut **self.dev.borrow_mut(), crtc)
-            .chain_err(|| ErrorKind::UnderlyingBackendError)?;
+        let drm_surface =
+            Device::create_surface(&mut **self.dev.borrow_mut(), crtc).map_err(Error::Underlying)?;
 
         // initialize the surface
         let (w, h) = drm_surface
@@ -152,7 +179,7 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
                 GbmFormat::XRGB8888,
                 BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
             )
-            .chain_err(|| ErrorKind::SurfaceCreationFailed)?;
+            .map_err(Error::SurfaceCreationFailed)?;
 
         // initialize a buffer for the cursor image
         let cursor = Cell::new((
@@ -164,7 +191,7 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
                     GbmFormat::ARGB8888,
                     BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
                 )
-                .chain_err(|| ErrorKind::BufferCreationFailed)?,
+                .map_err(Error::BufferCreationFailed)?,
             (0, 0),
         ));
 
@@ -187,12 +214,8 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
         self.dev.borrow_mut().process_events()
     }
 
-    fn resource_handles(&self) -> Result<ResourceHandles> {
-        self.dev
-            .borrow()
-            .resource_handles()
-            .compat()
-            .chain_err(|| ErrorKind::UnderlyingBackendError)
+    fn resource_handles(&self) -> Result<ResourceHandles, Error<<<D as Device>::Surface as Surface>::Error>> {
+        Device::resource_handles(&**self.dev.borrow()).map_err(Error::Underlying)
     }
 
     fn get_connector_info(&self, conn: connector::Handle) -> std::result::Result<connector::Info, DrmError> {

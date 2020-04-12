@@ -1,5 +1,5 @@
 use super::super::{Device, RawDevice, RawSurface, Surface};
-use super::error::*;
+use super::Error;
 
 use drm::control::{connector, crtc, framebuffer, Device as ControlDevice, Mode};
 use gbm::{self, BufferObject, BufferObjectFlags, Format as GbmFormat, SurfaceBufferHandle};
@@ -90,8 +90,8 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         Ok(())
     }
 
-    pub fn recreate(&self) -> Result<()> {
-        let (w, h) = self.pending_mode().chain_err(|| ErrorKind::NoModeSet)?.size();
+    pub fn recreate(&self) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
+        let (w, h) = self.pending_mode().ok_or(Error::NoModeSet)?.size();
 
         // Recreate the surface and the related resources to match the new
         // resolution.
@@ -105,7 +105,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
                 GbmFormat::XRGB8888,
                 BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
             )
-            .chain_err(|| ErrorKind::SurfaceCreationFailed)?;
+            .map_err(Error::SurfaceCreationFailed)?;
 
         // Clean up buffers
         if let Some(Ok(Some(fb))) = self.next_buffer.take().map(|mut bo| bo.take_userdata()) {
@@ -137,7 +137,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
 
 impl<D: RawDevice + 'static> Surface for GbmSurfaceInternal<D> {
     type Connectors = <<D as Device>::Surface as Surface>::Connectors;
-    type Error = Error;
+    type Error = Error<<<D as Device>::Surface as Surface>::Error>;
 
     fn crtc(&self) -> crtc::Handle {
         self.crtc.crtc()
@@ -151,16 +151,12 @@ impl<D: RawDevice + 'static> Surface for GbmSurfaceInternal<D> {
         self.crtc.pending_connectors()
     }
 
-    fn add_connector(&self, connector: connector::Handle) -> Result<()> {
-        self.crtc
-            .add_connector(connector)
-            .chain_err(|| ErrorKind::UnderlyingBackendError)
+    fn add_connector(&self, connector: connector::Handle) -> Result<(), Self::Error> {
+        self.crtc.add_connector(connector).map_err(Error::Underlying)
     }
 
-    fn remove_connector(&self, connector: connector::Handle) -> Result<()> {
-        self.crtc
-            .remove_connector(connector)
-            .chain_err(|| ErrorKind::UnderlyingBackendError)
+    fn remove_connector(&self, connector: connector::Handle) -> Result<(), Self::Error> {
+        self.crtc.remove_connector(connector).map_err(Error::Underlying)
     }
 
     fn current_mode(&self) -> Option<Mode> {
@@ -171,10 +167,8 @@ impl<D: RawDevice + 'static> Surface for GbmSurfaceInternal<D> {
         self.crtc.pending_mode()
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<()> {
-        self.crtc
-            .use_mode(mode)
-            .chain_err(|| ErrorKind::UnderlyingBackendError)
+    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Self::Error> {
+        self.crtc.use_mode(mode).map_err(Error::Underlying)
     }
 }
 
@@ -205,19 +199,17 @@ where
 #[cfg(feature = "backend_drm_legacy")]
 impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurfaceInternal<LegacyDrmDevice<A>> {
     type CursorFormat = &'a ImageBuffer<Rgba<u8>, Vec<u8>>;
-    type Error = Error;
+    type Error = Error<<<LegacyDrmDevice<A> as Device>::Surface as Surface>::Error>;
 
-    fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
-        ResultExt::chain_err(self.crtc.set_cursor_position(x, y), || {
-            ErrorKind::UnderlyingBackendError
-        })
+    fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Self::Error> {
+        self.crtc.set_cursor_position(x, y).map_err(Error::Underlying)
     }
 
     fn set_cursor_representation<'b>(
         &'b self,
         buffer: &ImageBuffer<Rgba<u8>, Vec<u8>>,
         hotspot: (u32, u32),
-    ) -> Result<()>
+    ) -> Result<(), Self::Error>
     where
         'a: 'b,
     {
@@ -234,18 +226,18 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurfaceInternal<LegacyDr
                 GbmFormat::ARGB8888,
                 BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
             )
-            .chain_err(|| ErrorKind::BufferCreationFailed)?;
+            .map_err(Error::BufferCreationFailed)?;
 
         cursor
             .write(&**buffer)
-            .chain_err(|| ErrorKind::BufferWriteFailed)?
-            .chain_err(|| ErrorKind::BufferWriteFailed)?;
+            .map_err(|_| Error::DeviceDestroyed)?
+            .map_err(Error::BufferWriteFailed)?;
 
         trace!(self.logger, "Setting the new imported cursor");
 
-        ResultExt::chain_err(self.crtc.set_cursor_representation(&cursor, hotspot), || {
-            ErrorKind::UnderlyingBackendError
-        })?;
+        self.crtc
+            .set_cursor_representation(&cursor, hotspot)
+            .map_err(Error::Underlying)?;
 
         // and store it
         self.cursor.set((cursor, hotspot));
@@ -305,7 +297,7 @@ impl<D: RawDevice + 'static> GbmSurface<D> {
     /// calling [`Surface::use_mode`](Surface::use_mode).
     /// You may check if your [`GbmSurface`] needs recreation through
     /// [`needs_recreation`](GbmSurface::needs_recreation).
-    pub fn recreate(&self) -> Result<()> {
+    pub fn recreate(&self) -> Result<(), <Self as Surface>::Error> {
         self.0.recreate()
     }
 
@@ -317,7 +309,7 @@ impl<D: RawDevice + 'static> GbmSurface<D> {
 
 impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
     type Connectors = <<D as Device>::Surface as Surface>::Connectors;
-    type Error = Error;
+    type Error = Error<<<D as Device>::Surface as Surface>::Error>;
 
     fn crtc(&self) -> crtc::Handle {
         self.0.crtc()
@@ -331,11 +323,11 @@ impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
         self.0.pending_connectors()
     }
 
-    fn add_connector(&self, connector: connector::Handle) -> Result<()> {
+    fn add_connector(&self, connector: connector::Handle) -> Result<(), Self::Error> {
         self.0.add_connector(connector)
     }
 
-    fn remove_connector(&self, connector: connector::Handle) -> Result<()> {
+    fn remove_connector(&self, connector: connector::Handle) -> Result<(), Self::Error> {
         self.0.remove_connector(connector)
     }
 
@@ -347,7 +339,7 @@ impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
         self.0.pending_mode()
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<()> {
+    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Self::Error> {
         self.0.use_mode(mode)
     }
 }
@@ -355,9 +347,9 @@ impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
 #[cfg(feature = "backend_drm_legacy")]
 impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurface<LegacyDrmDevice<A>> {
     type CursorFormat = &'a ImageBuffer<Rgba<u8>, Vec<u8>>;
-    type Error = Error;
+    type Error = <Self as Surface>::Error;
 
-    fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
+    fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Self::Error> {
         self.0.set_cursor_position(x, y)
     }
 
@@ -365,7 +357,7 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurface<LegacyDrmDevice<
         &'b self,
         buffer: &ImageBuffer<Rgba<u8>, Vec<u8>>,
         hotspot: (u32, u32),
-    ) -> Result<()>
+    ) -> Result<(), Self::Error>
     where
         'a: 'b,
     {

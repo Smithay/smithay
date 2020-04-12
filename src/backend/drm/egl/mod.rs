@@ -18,20 +18,28 @@ use wayland_server::Display;
 
 use super::{Device, DeviceHandler, Surface};
 use crate::backend::egl::context::GlAttributes;
-use crate::backend::egl::error::Result as EGLResult;
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use crate::backend::egl::EGLContext;
+use crate::backend::egl::Error as EGLError;
 #[cfg(feature = "use_system_lib")]
 use crate::backend::egl::{EGLDisplay, EGLGraphicsBackend};
-
-pub mod error;
-use self::error::*;
 
 mod surface;
 pub use self::surface::*;
 
 #[cfg(feature = "backend_session")]
 pub mod session;
+
+/// Errors for the DRM/EGL module
+#[derive(thiserror::Error, Debug)]
+pub enum Error<U: std::error::Error + std::fmt::Debug + std::fmt::Display + 'static> {
+    /// EGL Error
+    #[error("EGL error: {0:?}")]
+    EGL(#[source] EGLError),
+    /// Underlying backend error
+    #[error("Underlying backend error: {0:?}")]
+    Underlying(#[source] U),
+}
 
 /// Representation of an egl device to create egl rendering surfaces
 pub struct EglDevice<B, D>
@@ -65,7 +73,7 @@ where
     ///
     /// Returns an error if the file is no valid device or context
     /// creation was not successful.
-    pub fn new<L>(dev: D, logger: L) -> Result<Self>
+    pub fn new<L>(dev: D, logger: L) -> Result<Self, Error<<<D as Device>::Surface as Surface>::Error>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -85,7 +93,11 @@ where
     ///
     /// Returns an error if the file is no valid device or context
     /// creation was not successful.
-    pub fn new_with_gl_attr<L>(mut dev: D, attributes: GlAttributes, logger: L) -> Result<Self>
+    pub fn new_with_gl_attr<L>(
+        mut dev: D,
+        attributes: GlAttributes,
+        logger: L,
+    ) -> Result<Self, Error<<<D as Device>::Surface as Surface>::Error>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -97,7 +109,7 @@ where
         Ok(EglDevice {
             // Open the gbm device from the drm device and create a context based on that
             dev: Rc::new(
-                EGLContext::new(dev, attributes, Default::default(), log.clone()).map_err(Error::from)?,
+                EGLContext::new(dev, attributes, Default::default(), log.clone()).map_err(Error::EGL)?,
             ),
             logger: log,
         })
@@ -125,8 +137,7 @@ where
         self.handler.vblank(crtc)
     }
     fn error(&mut self, error: <<D as Device>::Surface as Surface>::Error) {
-        self.handler
-            .error(ResultExt::<()>::chain_err(Err(error), || ErrorKind::UnderlyingBackendError).unwrap_err())
+        self.handler.error(Error::Underlying(error));
     }
 }
 
@@ -152,10 +163,13 @@ where
         self.dev.borrow_mut().clear_handler()
     }
 
-    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<EglSurface<B, D>> {
+    fn create_surface(
+        &mut self,
+        crtc: crtc::Handle,
+    ) -> Result<EglSurface<B, D>, <Self::Surface as Surface>::Error> {
         info!(self.logger, "Initializing EglSurface");
 
-        let surface = self.dev.create_surface(crtc)?;
+        let surface = self.dev.create_surface(crtc).map_err(Error::EGL)?;
 
         Ok(EglSurface {
             dev: self.dev.clone(),
@@ -167,11 +181,8 @@ where
         self.dev.borrow_mut().process_events()
     }
 
-    fn resource_handles(&self) -> Result<ResourceHandles> {
-        self.dev
-            .borrow()
-            .resource_handles()
-            .chain_err(|| ErrorKind::UnderlyingBackendError)
+    fn resource_handles(&self) -> Result<ResourceHandles, <Self::Surface as Surface>::Error> {
+        self.dev.borrow().resource_handles().map_err(Error::Underlying)
     }
 
     fn get_connector_info(&self, conn: connector::Handle) -> std::result::Result<connector::Info, DrmError> {
@@ -201,7 +212,7 @@ where
     D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
     <D as Device>::Surface: NativeSurface,
 {
-    fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
+    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay, EGLError> {
         self.dev.bind_wl_display(display)
     }
 }

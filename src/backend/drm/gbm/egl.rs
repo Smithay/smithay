@@ -4,14 +4,13 @@
 //! [`GbmDevice`](GbmDevice) and [`GbmSurface`](GbmSurface).
 //!
 
-use crate::backend::drm::{Device, RawDevice};
-use crate::backend::egl::error::Result as EglResult;
+use crate::backend::drm::{Device, RawDevice, Surface};
 use crate::backend::egl::ffi;
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
+use crate::backend::egl::Error as EglError;
 use crate::backend::graphics::SwapBuffersError;
 
-use super::error::{Error, Result};
-use super::{GbmDevice, GbmSurface};
+use super::{Error, GbmDevice, GbmSurface};
 
 use drm::control::{crtc, Device as ControlDevice};
 use gbm::AsRaw;
@@ -54,17 +53,17 @@ impl<D: RawDevice + 'static> Backend for Gbm<D> {
 
 unsafe impl<D: RawDevice + ControlDevice + 'static> NativeDisplay<Gbm<D>> for GbmDevice<D> {
     type Arguments = crtc::Handle;
-    type Error = Error;
+    type Error = Error<<<D as Device>::Surface as Surface>::Error>;
 
     fn is_backend(&self) -> bool {
         true
     }
 
-    fn ptr(&self) -> EglResult<ffi::NativeDisplayType> {
+    fn ptr(&self) -> Result<ffi::NativeDisplayType, EglError> {
         Ok(self.dev.borrow().as_raw() as *const _)
     }
 
-    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<GbmSurface<D>> {
+    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<GbmSurface<D>, Self::Error> {
         Device::create_surface(self, crtc)
     }
 }
@@ -80,7 +79,7 @@ unsafe impl<D: RawDevice + 'static> NativeSurface for GbmSurface<D> {
 
     fn recreate(&self) -> bool {
         if let Err(err) = GbmSurface::recreate(self) {
-            error!(self.0.logger, "Failure recreating internal resources: {:?}", err);
+            error!(self.0.logger, "Failure recreating internal resources: {}", err);
             false
         } else {
             true

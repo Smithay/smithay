@@ -4,7 +4,6 @@ use drm::control::{
     PageFlipFlags,
 };
 use drm::Device as BasicDevice;
-use failure::ResultExt as FailureResultExt;
 
 use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -15,7 +14,9 @@ use crate::backend::drm::{DevPath, RawSurface, Surface};
 use crate::backend::graphics::CursorBackend;
 use crate::backend::graphics::SwapBuffersError;
 
-use super::{error::*, Dev};
+use super::{Dev, Error};
+
+use failure::ResultExt;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {
@@ -44,14 +45,22 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurfaceInternal<A>
     type CursorFormat = &'a dyn Buffer;
     type Error = Error;
 
-    fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
+    fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Error> {
         trace!(self.logger, "Move the cursor to {},{}", x, y);
         self.move_cursor(self.crtc, (x as i32, y as i32))
             .compat()
-            .chain_err(|| ErrorKind::DrmDev(format!("Error moving cursor on {:?}", self.dev_path())))
+            .map_err(|source| Error::Access {
+                errmsg: "Error moving cursor",
+                dev: self.dev_path(),
+                source,
+            })
     }
 
-    fn set_cursor_representation<'b>(&'b self, buffer: Self::CursorFormat, hotspot: (u32, u32)) -> Result<()>
+    fn set_cursor_representation<'b>(
+        &'b self,
+        buffer: Self::CursorFormat,
+        hotspot: (u32, u32),
+    ) -> Result<(), Error>
     where
         'a: 'b,
     {
@@ -63,7 +72,11 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurfaceInternal<A>
         {
             self.set_cursor(self.crtc, Some(buffer))
                 .compat()
-                .chain_err(|| ErrorKind::DrmDev(format!("Failed to set cursor on {:?}", self.dev_path())))?;
+                .map_err(|source| Error::Access {
+                    errmsg: "Failed to set cursor",
+                    dev: self.dev_path(),
+                    source,
+                })?;
         }
 
         Ok(())
@@ -94,10 +107,15 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         self.pending.read().unwrap().mode
     }
 
-    fn add_connector(&self, conn: connector::Handle) -> Result<()> {
-        let info = self.get_connector(conn).compat().chain_err(|| {
-            ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
-        })?;
+    fn add_connector(&self, conn: connector::Handle) -> Result<(), Error> {
+        let info = self
+            .get_connector(conn)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Error loading connector info",
+                dev: self.dev_path(),
+                source,
+            })?;
 
         let mut pending = self.pending.write().unwrap();
 
@@ -110,37 +128,46 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
                 .filter(|enc| enc.is_some())
                 .map(|enc| enc.unwrap())
                 .map(|encoder| {
-                    self.get_encoder(encoder).compat().chain_err(|| {
-                        ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", self.dev_path()))
-                    })
+                    self.get_encoder(encoder)
+                        .compat()
+                        .map_err(|source| Error::Access {
+                            errmsg: "Error loading encoder info",
+                            dev: self.dev_path(),
+                            source,
+                        })
                 })
-                .collect::<Result<Vec<encoder::Info>>>()?;
+                .collect::<Result<Vec<encoder::Info>, _>>()?;
 
             // and if any encoder supports the selected crtc
-            let resource_handles = self.resource_handles().compat().chain_err(|| {
-                ErrorKind::DrmDev(format!("Error loading resources on {:?}", self.dev_path()))
+            let resource_handles = self.resource_handles().compat().map_err(|source| Error::Access {
+                errmsg: "Error loading resources",
+                dev: self.dev_path(),
+                source,
             })?;
             if !encoders
                 .iter()
                 .map(|encoder| encoder.possible_crtcs())
                 .all(|crtc_list| resource_handles.filter_crtcs(crtc_list).contains(&self.crtc))
             {
-                bail!(ErrorKind::NoSuitableEncoder(info, self.crtc));
+                return Err(Error::NoSuitableEncoder {
+                    connector: info,
+                    crtc: self.crtc,
+                });
             }
 
             pending.connectors.insert(conn);
             Ok(())
         } else {
-            bail!(ErrorKind::ModeNotSuitable(pending.mode.unwrap()));
+            return Err(Error::ModeNotSuitable(pending.mode.unwrap()));
         }
     }
 
-    fn remove_connector(&self, connector: connector::Handle) -> Result<()> {
+    fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error> {
         self.pending.write().unwrap().connectors.remove(&connector);
         Ok(())
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<()> {
+    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Error> {
         let mut pending = self.pending.write().unwrap();
 
         // check the connectors to see if this mode is supported
@@ -149,13 +176,15 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
                 if !self
                     .get_connector(*connector)
                     .compat()
-                    .chain_err(|| {
-                        ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
+                    .map_err(|source| Error::Access {
+                        errmsg: "Error loading connector info",
+                        dev: self.dev_path(),
+                        source,
                     })?
                     .modes()
                     .contains(&mode)
                 {
-                    bail!(ErrorKind::ModeNotSuitable(mode));
+                    return Err(Error::ModeNotSuitable(mode));
                 }
             }
         }
@@ -171,7 +200,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
 
-    fn commit(&self, framebuffer: framebuffer::Handle) -> Result<()> {
+    fn commit(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
         let mut current = self.state.write().unwrap();
         let pending = self.pending.read().unwrap();
 
@@ -217,12 +246,10 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             pending.mode,
         )
         .compat()
-        .chain_err(|| {
-            ErrorKind::DrmDev(format!(
-                "Error setting crtc {:?} on {:?}",
-                self.crtc,
-                self.dev_path()
-            ))
+        .map_err(|source| Error::Access {
+            errmsg: "Error setting crtc",
+            dev: self.dev_path(),
+            source,
         })?;
 
         *current = pending.clone();
@@ -268,11 +295,15 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurface<A> {
     type CursorFormat = &'a dyn Buffer;
     type Error = Error;
 
-    fn set_cursor_position(&self, x: u32, y: u32) -> Result<()> {
+    fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Error> {
         self.0.set_cursor_position(x, y)
     }
 
-    fn set_cursor_representation<'b>(&'b self, buffer: Self::CursorFormat, hotspot: (u32, u32)) -> Result<()>
+    fn set_cursor_representation<'b>(
+        &'b self,
+        buffer: Self::CursorFormat,
+        hotspot: (u32, u32),
+    ) -> Result<(), Error>
     where
         'a: 'b,
     {
@@ -304,15 +335,15 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurface<A> {
         self.0.pending_mode()
     }
 
-    fn add_connector(&self, connector: connector::Handle) -> Result<()> {
+    fn add_connector(&self, connector: connector::Handle) -> Result<(), Error> {
         self.0.add_connector(connector)
     }
 
-    fn remove_connector(&self, connector: connector::Handle) -> Result<()> {
+    fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error> {
         self.0.remove_connector(connector)
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<()> {
+    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Error> {
         self.0.use_mode(mode)
     }
 }
@@ -322,7 +353,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurface<A> {
         self.0.commit_pending()
     }
 
-    fn commit(&self, framebuffer: framebuffer::Handle) -> Result<()> {
+    fn commit(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
         self.0.commit(framebuffer)
     }
 

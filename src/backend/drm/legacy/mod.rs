@@ -11,29 +11,67 @@
 use super::{DevPath, Device, DeviceHandler, RawDevice};
 
 use drm::control::{
-    connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, ResourceHandles,
+    connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, Mode, ResourceHandles,
 };
 use drm::{Device as BasicDevice, SystemError as DrmError};
-use failure::ResultExt as FailureResultExt;
 use nix::libc::dev_t;
 use nix::sys::stat::fstat;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
+
+use failure::{Fail, ResultExt};
 
 mod surface;
 pub use self::surface::LegacyDrmSurface;
 use self::surface::{LegacyDrmSurfaceInternal, State};
 
-pub mod error;
-use self::error::*;
-
 #[cfg(feature = "backend_session")]
 pub mod session;
+
+/// Errors thrown by the [`LegacyDrmDevice`](::backend::drm::legacy::LegacyDrmDevice)
+/// and [`LegacyDrmSurface`](::backend::drm::legacy::LegacyDrmSurface).
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    /// Unable to acquire DRM master
+    #[error("Failed to aquire DRM master")]
+    DrmMasterFailed,
+    /// The `DrmDevice` encountered an access error
+    #[error("DRM access error: {errmsg} on device `{dev:?}`")]
+    Access {
+        /// Error message associated to the access error
+        errmsg: &'static str,
+        /// Device on which the error was generated
+        dev: Option<PathBuf>,
+        /// Underlying device error
+        source: failure::Compat<drm::SystemError>,
+    },
+    /// Unable to determine device id of drm device
+    #[error("Unable to determine device id of drm device")]
+    UnableToGetDeviceId(#[source] nix::Error),
+    /// Device is currently paused
+    #[error("Device is currently paused, operation rejected")]
+    DeviceInactive,
+    /// Mode is not compatible with all given connectors
+    #[error("Mode `{0:?}` is not compatible with all given connectors")]
+    ModeNotSuitable(Mode),
+    /// The given crtc is already in use by another backend
+    #[error("Crtc `{0:?}` is already in use by another backend")]
+    CrtcAlreadyInUse(crtc::Handle),
+    /// No encoder was found for a given connector on the set crtc
+    #[error("No encoder found for the given connector '{connector:?}' on crtc `{crtc:?}`")]
+    NoSuitableEncoder {
+        /// Connector info
+        connector: connector::Info,
+        /// CRTC
+        crtc: crtc::Handle,
+    },
+}
 
 /// Open raw drm device utilizing legacy mode-setting
 pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
@@ -92,7 +130,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
     ///
     /// Returns an error if the file is no valid drm node or context creation was not
     /// successful.
-    pub fn new<L>(dev: A, logger: L) -> Result<Self>
+    pub fn new<L>(dev: A, logger: L) -> Result<Self, Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -100,7 +138,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
         info!(log, "DrmDevice initializing");
 
         let dev_id = fstat(dev.as_raw_fd())
-            .chain_err(|| ErrorKind::UnableToGetDeviceId)?
+            .map_err(Error::UnableToGetDeviceId)?
             .st_rdev;
 
         let active = Arc::new(AtomicBool::new(true));
@@ -119,20 +157,30 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
         };
 
         // enumerate (and save) the current device state
-        let res_handles = ControlDevice::resource_handles(&dev).compat().chain_err(|| {
-            ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", dev.dev_path()))
-        })?;
+        let res_handles = ControlDevice::resource_handles(&dev)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Error loading drm resources",
+                dev: dev.dev_path(),
+                source,
+            })?;
         for &con in res_handles.connectors() {
-            let con_info = dev.get_connector(con).compat().chain_err(|| {
-                ErrorKind::DrmDev(format!("Error loading connector info on {:?}", dev.dev_path()))
+            let con_info = dev.get_connector(con).compat().map_err(|source| Error::Access {
+                errmsg: "Error loading connector info",
+                dev: dev.dev_path(),
+                source,
             })?;
             if let Some(enc) = con_info.current_encoder() {
-                let enc_info = dev.get_encoder(enc).compat().chain_err(|| {
-                    ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", dev.dev_path()))
+                let enc_info = dev.get_encoder(enc).compat().map_err(|source| Error::Access {
+                    errmsg: "Error loading encoder info",
+                    dev: dev.dev_path(),
+                    source,
                 })?;
                 if let Some(crtc) = enc_info.crtc() {
-                    let info = dev.get_crtc(crtc).compat().chain_err(|| {
-                        ErrorKind::DrmDev(format!("Error loading crtc info on {:?}", dev.dev_path()))
+                    let info = dev.get_crtc(crtc).compat().map_err(|source| Error::Access {
+                        errmsg: "Error loading crtc info",
+                        dev: dev.dev_path(),
+                        source,
                     })?;
                     dev.old_state
                         .entry(crtc)
@@ -178,35 +226,44 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
         let _ = self.handler.take();
     }
 
-    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<LegacyDrmSurface<A>> {
+    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<LegacyDrmSurface<A>, Error> {
         if self.backends.borrow().contains_key(&crtc) {
-            bail!(ErrorKind::CrtcAlreadyInUse(crtc));
+            return Err(Error::CrtcAlreadyInUse(crtc));
         }
 
         if !self.active.load(Ordering::SeqCst) {
-            bail!(ErrorKind::DeviceInactive);
+            return Err(Error::DeviceInactive);
         }
 
         // Try to enumarate the current state to set the initial state variable correctly
 
-        let crtc_info = self
-            .get_crtc(crtc)
-            .compat()
-            .chain_err(|| ErrorKind::DrmDev(format!("Error loading crtc info on {:?}", self.dev_path())))?;
+        let crtc_info = self.get_crtc(crtc).compat().map_err(|source| Error::Access {
+            errmsg: "Error loading crtc info",
+            dev: self.dev_path(),
+            source,
+        })?;
 
         let mode = crtc_info.mode();
 
         let mut connectors = HashSet::new();
-        let res_handles = ControlDevice::resource_handles(self).compat().chain_err(|| {
-            ErrorKind::DrmDev(format!("Error loading drm resources on {:?}", self.dev_path()))
-        })?;
+        let res_handles = ControlDevice::resource_handles(self)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Error loading drm resources",
+                dev: self.dev_path(),
+                source,
+            })?;
         for &con in res_handles.connectors() {
-            let con_info = self.get_connector(con).compat().chain_err(|| {
-                ErrorKind::DrmDev(format!("Error loading connector info on {:?}", self.dev_path()))
+            let con_info = self.get_connector(con).compat().map_err(|source| Error::Access {
+                errmsg: "Error loading connector info",
+                dev: self.dev_path(),
+                source,
             })?;
             if let Some(enc) = con_info.current_encoder() {
-                let enc_info = self.get_encoder(enc).compat().chain_err(|| {
-                    ErrorKind::DrmDev(format!("Error loading encoder info on {:?}", self.dev_path()))
+                let enc_info = self.get_encoder(enc).compat().map_err(|source| Error::Access {
+                    errmsg: "Error loading encoder info",
+                    dev: self.dev_path(),
+                    source,
                 })?;
                 if let Some(current_crtc) = enc_info.crtc() {
                     if crtc == current_crtc {
@@ -255,23 +312,26 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
                     }
                 }
             }
-            Err(err) => {
+            Err(source) => {
                 if let Some(handler) = self.handler.as_ref() {
-                    handler.borrow_mut().error(
-                        ResultExt::<()>::chain_err(Err(err).compat(), || {
-                            ErrorKind::DrmDev(format!("Error processing drm events on {:?}", self.dev_path()))
-                        })
-                        .unwrap_err(),
-                    );
+                    handler.borrow_mut().error(Error::Access {
+                        errmsg: "Error processing drm events",
+                        dev: self.dev_path(),
+                        source: source.compat(),
+                    });
                 }
             }
         }
     }
 
-    fn resource_handles(&self) -> Result<ResourceHandles> {
+    fn resource_handles(&self) -> Result<ResourceHandles, Error> {
         ControlDevice::resource_handles(self)
             .compat()
-            .chain_err(|| ErrorKind::DrmDev(format!("Error loading resource info on {:?}", self.dev_path())))
+            .map_err(|source| Error::Access {
+                errmsg: "Error loading resource info",
+                dev: self.dev_path(),
+                source,
+            })
     }
 
     fn get_connector_info(&self, conn: connector::Handle) -> std::result::Result<connector::Info, DrmError> {

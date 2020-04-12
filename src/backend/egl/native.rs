@@ -1,6 +1,6 @@
 //! Type safe native types for safe context/surface creation
 
-use super::{error::*, ffi};
+use super::{ffi, Error};
 use crate::backend::graphics::SwapBuffersError;
 
 #[cfg(feature = "backend_winit")]
@@ -105,7 +105,7 @@ pub unsafe trait NativeDisplay<B: Backend> {
     /// if the expected [`Backend`] is used at runtime.
     fn is_backend(&self) -> bool;
     /// Return a raw pointer EGL will accept for context creation.
-    fn ptr(&self) -> Result<ffi::NativeDisplayType>;
+    fn ptr(&self) -> Result<ffi::NativeDisplayType, Error>;
     /// Create a surface
     fn create_surface(&mut self, args: Self::Arguments) -> ::std::result::Result<B::Surface, Self::Error>;
 }
@@ -119,16 +119,16 @@ unsafe impl NativeDisplay<X11> for WinitWindow {
         self.xlib_display().is_some()
     }
 
-    fn ptr(&self) -> Result<ffi::NativeDisplayType> {
+    fn ptr(&self) -> Result<ffi::NativeDisplayType, Error> {
         self.xlib_display()
             .map(|ptr| ptr as *const _)
-            .ok_or_else(|| ErrorKind::NonMatchingBackend("X11").into())
+            .ok_or_else(|| Error::NonMatchingBackend("X11"))
     }
 
-    fn create_surface(&mut self, _args: ()) -> Result<XlibWindow> {
+    fn create_surface(&mut self, _args: ()) -> Result<XlibWindow, Error> {
         self.xlib_window()
             .map(XlibWindow)
-            .ok_or_else(|| ErrorKind::NonMatchingBackend("X11").into())
+            .ok_or_else(|| Error::NonMatchingBackend("X11"))
     }
 }
 
@@ -141,20 +141,20 @@ unsafe impl NativeDisplay<Wayland> for WinitWindow {
         self.wayland_display().is_some()
     }
 
-    fn ptr(&self) -> Result<ffi::NativeDisplayType> {
+    fn ptr(&self) -> Result<ffi::NativeDisplayType, Error> {
         self.wayland_display()
             .map(|ptr| ptr as *const _)
-            .ok_or_else(|| ErrorKind::NonMatchingBackend("Wayland").into())
+            .ok_or_else(|| Error::NonMatchingBackend("Wayland"))
     }
 
-    fn create_surface(&mut self, _args: ()) -> Result<wegl::WlEglSurface> {
+    fn create_surface(&mut self, _args: ()) -> Result<wegl::WlEglSurface, Error> {
         if let Some(surface) = self.wayland_surface() {
             let size = self.inner_size();
             Ok(unsafe {
                 wegl::WlEglSurface::new_from_raw(surface as *mut _, size.width as i32, size.height as i32)
             })
         } else {
-            bail!(ErrorKind::NonMatchingBackend("Wayland"))
+            return Err(Error::NonMatchingBackend("Wayland"));
         }
     }
 }

@@ -162,14 +162,14 @@ pub fn auto_session_bind<Data: 'static>(
 impl Session for AutoSession {
     type Error = Error;
 
-    fn open(&mut self, path: &Path, flags: OFlag) -> Result<RawFd> {
+    fn open(&mut self, path: &Path, flags: OFlag) -> Result<RawFd, Error> {
         match *self {
             #[cfg(feature = "backend_session_logind")]
             AutoSession::Logind(ref mut logind) => logind.open(path, flags).map_err(|e| e.into()),
             AutoSession::Direct(ref mut direct) => direct.open(path, flags).map_err(|e| e.into()),
         }
     }
-    fn close(&mut self, fd: RawFd) -> Result<()> {
+    fn close(&mut self, fd: RawFd) -> Result<(), Error> {
         match *self {
             #[cfg(feature = "backend_session_logind")]
             AutoSession::Logind(ref mut logind) => logind.close(fd).map_err(|e| e.into()),
@@ -177,7 +177,7 @@ impl Session for AutoSession {
         }
     }
 
-    fn change_vt(&mut self, vt: i32) -> Result<()> {
+    fn change_vt(&mut self, vt: i32) -> Result<(), Error> {
         match *self {
             #[cfg(feature = "backend_session_logind")]
             AutoSession::Logind(ref mut logind) => logind.change_vt(vt).map_err(|e| e.into()),
@@ -244,21 +244,19 @@ impl BoundAutoSession {
 }
 
 /// Errors related to auto sessions
-pub mod errors {
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
     #[cfg(feature = "backend_session_logind")]
-    use super::logind::errors as logind;
-
-    error_chain! {
-        links {
-            Logind(logind::Error, logind::ErrorKind) #[cfg(feature = "backend_session_logind")] #[doc = "Underlying logind session error"];
-        }
-
-        foreign_links {
-            Direct(::nix::Error) #[doc = "Underlying direct tty session error"];
-        }
-    }
+    /// Logind session error
+    #[error("Logind session error: {0}")]
+    Logind(#[from] logind::Error),
+    /// Direct session error
+    #[error("Direct session error: {0}")]
+    Direct(#[from] direct::Error),
+    /// Nix error
+    #[error("Nix error: {0}")]
+    Nix(#[from] nix::Error),
 }
-use self::errors::*;
 
 impl AsErrno for Error {
     fn as_errno(&self) -> Option<i32> {

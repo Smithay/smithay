@@ -135,7 +135,7 @@ pub trait Surface {
     /// [`pending_connectors`](Surface::pending_connectors)
     type Connectors: IntoIterator<Item = connector::Handle>;
     /// Error type returned by methods of this trait
-    type Error: Error + Send;
+    type Error: Error + Send + 'static;
 
     /// Returns the underlying [`crtc`](drm::control::crtc) of this surface
     fn crtc(&self) -> crtc::Handle;
