@@ -2,7 +2,7 @@ use drm::control::{connector, crtc, Mode};
 use nix::libc::c_void;
 use std::rc::Rc;
 
-use super::error::*;
+use super::Error;
 use crate::backend::drm::{Device, Surface};
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use crate::backend::egl::{EGLContext, EGLSurface};
@@ -29,7 +29,7 @@ where
     D: Device + NativeDisplay<B> + 'static,
     <D as Device>::Surface: NativeSurface,
 {
-    type Error = Error;
+    type Error = Error<<<D as Device>::Surface as Surface>::Error>;
     type Connectors = <<D as Device>::Surface as Surface>::Connectors;
 
     fn crtc(&self) -> crtc::Handle {
@@ -44,16 +44,14 @@ where
         self.surface.pending_connectors()
     }
 
-    fn add_connector(&self, connector: connector::Handle) -> Result<()> {
-        self.surface
-            .add_connector(connector)
-            .chain_err(|| ErrorKind::UnderlyingBackendError)
+    fn add_connector(&self, connector: connector::Handle) -> Result<(), Self::Error> {
+        self.surface.add_connector(connector).map_err(Error::Underlying)
     }
 
-    fn remove_connector(&self, connector: connector::Handle) -> Result<()> {
+    fn remove_connector(&self, connector: connector::Handle) -> Result<(), Self::Error> {
         self.surface
             .remove_connector(connector)
-            .chain_err(|| ErrorKind::UnderlyingBackendError)
+            .map_err(Error::Underlying)
     }
 
     fn current_mode(&self) -> Option<Mode> {
@@ -64,10 +62,8 @@ where
         self.surface.pending_mode()
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<()> {
-        self.surface
-            .use_mode(mode)
-            .chain_err(|| ErrorKind::UnderlyingBackendError)
+    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Self::Error> {
+        self.surface.use_mode(mode).map_err(Error::Underlying)
     }
 }
 

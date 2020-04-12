@@ -169,7 +169,7 @@ impl DirectSession {
     /// Tries to create a new session via the legacy virtual terminal interface.
     ///
     /// If you do not provide a tty device path, it will try to open the currently active tty if any.
-    pub fn new<L>(tty: Option<&Path>, logger: L) -> Result<(DirectSession, DirectSessionNotifier)>
+    pub fn new<L>(tty: Option<&Path>, logger: L) -> Result<(DirectSession, DirectSessionNotifier), Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -183,10 +183,10 @@ impl DirectSession {
                     fcntl::OFlag::O_RDWR | fcntl::OFlag::O_CLOEXEC,
                     Mode::empty(),
                 )
-                .chain_err(|| ErrorKind::FailedToOpenTTY(String::from(path.to_string_lossy())))
+                .map_err(|source| Error::FailedToOpenTTY(String::from(path.to_string_lossy()), source))
             })
             .unwrap_or_else(|| {
-                dup(0 /*stdin*/).chain_err(|| ErrorKind::FailedToOpenTTY(String::from("<stdin>")))
+                dup(0 /*stdin*/).map_err(|source| Error::FailedToOpenTTY(String::from("<stdin>"), source))
             })?;
 
         let active = Arc::new(AtomicBool::new(true));
@@ -215,10 +215,14 @@ impl DirectSession {
         }
     }
 
-    fn setup_tty(path: Option<&Path>, tty: RawFd, logger: ::slog::Logger) -> Result<(i32, i32, Signal)> {
-        let stat = fstat(tty).chain_err(|| ErrorKind::NotRunningFromTTY)?;
+    fn setup_tty(
+        path: Option<&Path>,
+        tty: RawFd,
+        logger: ::slog::Logger,
+    ) -> Result<(i32, i32, Signal), Error> {
+        let stat = fstat(tty).map_err(|_| Error::NotRunningFromTTY)?;
         if !is_tty_device(stat.st_dev, path) {
-            bail!(ErrorKind::NotRunningFromTTY);
+            return Err(Error::NotRunningFromTTY);
         }
 
         let vt_num = minor(stat.st_rdev) as i32;
@@ -226,24 +230,27 @@ impl DirectSession {
 
         let mut mode = 0;
         unsafe {
-            tty::kd_get_mode(tty, &mut mode).chain_err(|| ErrorKind::NotRunningFromTTY)?;
+            tty::kd_get_mode(tty, &mut mode).map_err(|_| Error::NotRunningFromTTY)?;
         }
         if mode != tty::KD_TEXT {
-            bail!(ErrorKind::TTYAlreadyInGraphicsMode);
+            return Err(Error::TTYAlreadyInGraphicsMode);
         }
 
         unsafe {
-            tty::vt_activate(tty, vt_num as c_int).chain_err(|| ErrorKind::FailedToActivateTTY(vt_num))?;
-            tty::vt_wait_active(tty, vt_num as c_int).chain_err(|| ErrorKind::FailedToWaitForTTY(vt_num))?;
+            tty::vt_activate(tty, vt_num as c_int)
+                .map_err(|source| Error::FailedToActivateTTY(vt_num, source))?;
+            tty::vt_wait_active(tty, vt_num as c_int)
+                .map_err(|source| Error::FailedToWaitForTTY(vt_num, source))?;
         }
 
         let mut old_keyboard_mode = 0;
         unsafe {
             tty::kd_get_kb_mode(tty, &mut old_keyboard_mode)
-                .chain_err(|| ErrorKind::FailedToSaveTTYState(vt_num))?;
-            tty::kd_set_kb_mode(tty, tty::K_OFF).chain_err(|| ErrorKind::FailedToSetTTYKbMode(vt_num))?;
+                .map_err(|source| Error::FailedToSaveTTYState(vt_num, source))?;
+            tty::kd_set_kb_mode(tty, tty::K_OFF)
+                .map_err(|source| Error::FailedToSetTTYKbMode(vt_num, source))?;
             tty::kd_set_mode(tty, tty::KD_GRAPHICS as i32)
-                .chain_err(|| ErrorKind::FailedToSetTTYMode(vt_num))?;
+                .map_err(|source| Error::FailedToSetTTYMode(vt_num, source))?;
         }
 
         // TODO: Support realtime signals
@@ -265,7 +272,7 @@ impl DirectSession {
         };
 
         unsafe {
-            tty::vt_set_mode(tty, &mode).chain_err(|| ErrorKind::FailedToTakeControlOfTTY(vt_num))?;
+            tty::vt_set_mode(tty, &mode).map_err(|source| Error::FailedToTakeControlOfTTY(vt_num, source))?;
         }
 
         Ok((vt_num, old_keyboard_mode, Signal::SIGUSR2))
@@ -440,62 +447,33 @@ pub fn direct_session_bind<Data: 'static>(
 }
 
 /// Errors related to direct/tty sessions
-pub mod errors {
-    error_chain! {
-        errors {
-            #[doc = "Failed to open tty"]
-            FailedToOpenTTY(path: String) {
-                description("Failed to open tty"),
-                display("Failed to open tty ({:?})", path),
-            }
-
-            #[doc = "Not running from a tty"]
-            NotRunningFromTTY {
-                description("Not running from a tty"),
-            }
-
-            #[doc = "tty is already in KB_GRAPHICS mode"]
-            TTYAlreadyInGraphicsMode {
-                description("The tty is already in KB_GRAPHICS mode"),
-                display("The tty is already in graphics mode, is already a compositor running?"),
-            }
-
-            #[doc = "Failed to activate open tty"]
-            FailedToActivateTTY(num: i32) {
-                description("Failed to activate open tty"),
-                display("Failed to activate open tty ({:?})", num),
-            }
-
-            #[doc = "Failed to wait for tty to become active"]
-            FailedToWaitForTTY(num: i32) {
-                description("Failed to wait for tty to become active"),
-                display("Failed to wait for tty ({:?}) to become active", num),
-            }
-
-            #[doc = "Failed to save old tty state"]
-            FailedToSaveTTYState(num: i32) {
-                description("Failed to save old tty state"),
-                display("Failed to save old tty ({:?}) state", num),
-            }
-
-            #[doc = "Failed to set tty kb mode"]
-            FailedToSetTTYKbMode(num: i32) {
-                description("Failed to set tty kb mode to K_OFF"),
-                display("Failed to set tty ({:?}) kb mode to K_OFF", num),
-            }
-
-            #[doc = "Failed to set tty mode"]
-            FailedToSetTTYMode(num: i32) {
-                description("Failed to set tty mode to KD_GRAPHICS"),
-                display("Failed to set tty ({:?}) mode into graphics mode", num),
-            }
-
-            #[doc = "Failed to set tty in process mode"]
-            FailedToTakeControlOfTTY(num: i32) {
-                description("Failed to set tty mode to VT_PROCESS"),
-                display("Failed to take control of tty ({:?})", num),
-            }
-        }
-    }
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    /// Failed to open TTY
+    #[error("Failed to open TTY `{0}`")]
+    FailedToOpenTTY(String, #[source] nix::Error),
+    /// Not running from a TTY
+    #[error("Not running from a TTY")]
+    NotRunningFromTTY,
+    /// TTY is already in KB_GRAPHICS mode
+    #[error("The tty is already in graphics mode, is already a compositor running?")]
+    TTYAlreadyInGraphicsMode,
+    /// Failed to activate open tty
+    #[error("Failed to activate open tty ({0})")]
+    FailedToActivateTTY(i32, #[source] nix::Error),
+    /// Failed to wait for tty to become active
+    #[error("Failed to wait for tty {0} to become active")]
+    FailedToWaitForTTY(i32, #[source] nix::Error),
+    /// Failed to save old tty state
+    #[error("Failed to save old tty ({0}) state")]
+    FailedToSaveTTYState(i32, #[source] nix::Error),
+    /// Failed to set tty kb mode
+    #[error("Failed to set tty {0} kb mode to K_OFF")]
+    FailedToSetTTYKbMode(i32, #[source] nix::Error),
+    /// Failed to set tty mode
+    #[error("Failed to set tty {0} mode into graphics mode")]
+    FailedToSetTTYMode(i32, #[source] nix::Error),
+    /// Failed to set tty in process mode
+    #[error("Failed to take control of tty {0}")]
+    FailedToTakeControlOfTTY(i32, #[source] nix::Error),
 }
-use self::errors::*;

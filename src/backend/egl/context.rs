@@ -1,6 +1,6 @@
 //! EGL context related structs
 
-use super::{error::*, ffi, native, EGLSurface};
+use super::{ffi, native, EGLSurface, Error};
 use crate::backend::graphics::PixelFormat;
 use nix::libc::{c_int, c_void};
 use slog;
@@ -33,7 +33,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         attributes: GlAttributes,
         reqs: PixelFormatRequirements,
         logger: L,
-    ) -> Result<EGLContext<B, N>>
+    ) -> Result<EGLContext<B, N>, Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -60,14 +60,17 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         mut attributes: GlAttributes,
         reqs: PixelFormatRequirements,
         log: ::slog::Logger,
-    ) -> Result<(
-        Rc<ffi::egl::types::EGLContext>,
-        Rc<ffi::egl::types::EGLDisplay>,
-        ffi::egl::types::EGLConfig,
-        Vec<c_int>,
-        PixelFormat,
-        bool,
-    )> {
+    ) -> Result<
+        (
+            Rc<ffi::egl::types::EGLContext>,
+            Rc<ffi::egl::types::EGLDisplay>,
+            ffi::egl::types::EGLConfig,
+            Vec<c_int>,
+            PixelFormat,
+            bool,
+        ),
+        Error,
+    > {
         // If no version is given, try OpenGLES 3.0, if available,
         // fallback to 2.0 otherwise
         let version = match attributes.version {
@@ -88,14 +91,14 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             }
             Some((1, x)) => {
                 error!(log, "OpenGLES 1.* is not supported by the EGL renderer backend");
-                bail!(ErrorKind::OpenGlVersionNotSupported((1, x)));
+                return Err(Error::OpenGlVersionNotSupported((1, x)));
             }
             Some(version) => {
                 error!(
                     log,
                     "OpenGLES {:?} is unknown and not supported by the EGL renderer backend", version
                 );
-                bail!(ErrorKind::OpenGlVersionNotSupported(version));
+                return Err(Error::OpenGlVersionNotSupported(version));
             }
         };
 
@@ -146,7 +149,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         let display = B::get_display(ptr, |e: &str| dp_extensions.iter().any(|s| s == e), log.clone());
         if display == ffi::egl::NO_DISPLAY {
             error!(log, "EGL Display is not valid");
-            bail!(ErrorKind::DisplayNotSupported);
+            return Err(Error::DisplayNotSupported);
         }
 
         let egl_version = {
@@ -154,7 +157,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             let mut minor: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
 
             if ffi::egl::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr()) == 0 {
-                bail!(ErrorKind::InitFailed);
+                return Err(Error::InitFailed);
             }
             let major = major.assume_init();
             let minor = minor.assume_init();
@@ -179,7 +182,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
 
         if egl_version >= (1, 2) && ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) == 0 {
             error!(log, "OpenGLES not supported by the underlying EGL implementation");
-            bail!(ErrorKind::OpenGlesNotSupported);
+            return Err(Error::OpenGlesNotSupported);
         }
 
         let descriptor = {
@@ -205,7 +208,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
                             log,
                             "OpenglES 3.* is not supported on EGL Versions lower then 1.3"
                         );
-                        bail!(ErrorKind::NoAvailablePixelFormat);
+                        return Err(Error::NoAvailablePixelFormat);
                     }
                     trace!(log, "Setting RENDERABLE_TYPE to OPENGL_ES3");
                     out.push(ffi::egl::RENDERABLE_TYPE as c_int);
@@ -220,7 +223,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
                             log,
                             "OpenglES 2.* is not supported on EGL Versions lower then 1.3"
                         );
-                        bail!(ErrorKind::NoAvailablePixelFormat);
+                        return Err(Error::NoAvailablePixelFormat);
                     }
                     trace!(log, "Setting RENDERABLE_TYPE to OPENGL_ES2");
                     out.push(ffi::egl::RENDERABLE_TYPE as c_int);
@@ -289,7 +292,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
 
             if reqs.stereoscopy {
                 error!(log, "Stereoscopy is currently unsupported (sorry!)");
-                bail!(ErrorKind::NoAvailablePixelFormat);
+                return Err(Error::NoAvailablePixelFormat);
             }
 
             out.push(ffi::egl::NONE as c_int);
@@ -307,7 +310,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             num_configs.as_mut_ptr(),
         ) == 0
         {
-            bail!(ErrorKind::ConfigFailed);
+            return Err(Error::ConfigFailed);
         }
 
         let config_id = config_id.assume_init();
@@ -315,7 +318,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
 
         if num_configs == 0 {
             error!(log, "No matching color format found");
-            bail!(ErrorKind::NoAvailablePixelFormat);
+            return Err(Error::NoAvailablePixelFormat);
         }
 
         // analyzing each config
@@ -329,7 +332,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
                     value.as_mut_ptr(),
                 );
                 if res == 0 {
-                    bail!(ErrorKind::ConfigFailed);
+                    return Err(Error::ConfigFailed);
                 }
                 value.assume_init()
             }};
@@ -386,8 +389,8 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
 
         if context.is_null() {
             match ffi::egl::GetError() as u32 {
-                ffi::egl::BAD_ATTRIBUTE => bail!(ErrorKind::CreationFailed),
-                err_no => bail!(ErrorKind::Unknown(err_no)),
+                ffi::egl::BAD_ATTRIBUTE => return Err(Error::CreationFailed),
+                err_no => return Err(Error::Unknown(err_no)),
             }
         }
         debug!(log, "EGL context successfully created");
@@ -429,13 +432,12 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
     }
 
     /// Creates a surface for rendering
-    pub fn create_surface(&self, args: N::Arguments) -> Result<EGLSurface<B::Surface>> {
+    pub fn create_surface(&self, args: N::Arguments) -> Result<EGLSurface<B::Surface>, Error> {
         trace!(self.logger, "Creating EGL window surface.");
-        let surface = self
-            .native
-            .borrow_mut()
-            .create_surface(args)
-            .chain_err(|| ErrorKind::SurfaceCreationFailed)?;
+        let surface = self.native.borrow_mut().create_surface(args).map_err(|e| {
+            error!(self.logger, "EGL surface creation failed: {}", e);
+            Error::SurfaceCreationFailed
+        })?;
         EGLSurface::new(self, surface).map(|x| {
             debug!(self.logger, "EGL surface successfully created");
             x

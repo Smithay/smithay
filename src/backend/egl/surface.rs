@@ -1,6 +1,6 @@
 //! EGL surface related structs
 
-use super::{error::*, ffi, native, EGLContext};
+use super::{ffi, native, EGLContext, Error};
 use crate::backend::graphics::SwapBuffersError;
 use nix::libc::c_int;
 use std::{
@@ -36,7 +36,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
     pub(crate) fn new<B: native::Backend<Surface = N>, D: native::NativeDisplay<B>>(
         context: &EGLContext<B, D>,
         native: N,
-    ) -> Result<EGLSurface<N>> {
+    ) -> Result<EGLSurface<N>, Error> {
         let surface = unsafe {
             ffi::egl::CreateWindowSurface(
                 *context.display,
@@ -47,7 +47,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
         };
 
         if surface.is_null() {
-            bail!(ErrorKind::SurfaceCreationFailed);
+            return Err(Error::SurfaceCreationFailed);
         }
 
         Ok(EGLSurface {

@@ -2,8 +2,8 @@
 
 use crate::backend::{
     egl::{
-        context::GlAttributes, error::Result as EGLResult, native, EGLContext, EGLDisplay,
-        EGLGraphicsBackend, EGLSurface,
+        context::GlAttributes, native, EGLContext, EGLDisplay, EGLGraphicsBackend, EGLSurface,
+        Error as EGLError,
     },
     graphics::{gl::GLGraphicsBackend, CursorBackend, PixelFormat, SwapBuffersError},
     input::{
@@ -16,7 +16,7 @@ use crate::backend::{
 use nix::libc::c_void;
 use std::{
     cell::{Ref, RefCell},
-    cmp, fmt,
+    cmp,
     rc::Rc,
     time::Instant,
 };
@@ -34,28 +34,18 @@ use winit::{
 };
 
 /// Errors thrown by the `winit` backends
-pub mod errors {
-    use crate::backend::egl::error as egl_error;
-
-    error_chain! {
-        errors {
-            #[doc = "Failed to initialize a window"]
-            InitFailed {
-                description("Failed to initialize a window")
-            }
-
-            #[doc = "Context creation is not supported on the current window system"]
-            NotSupported {
-                description("Context creation is not supported on the current window system.")
-            }
-        }
-
-        links {
-            EGL(egl_error::Error, egl_error::ErrorKind) #[doc = "EGL error"];
-        }
-    }
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    /// Failed to initialize a window
+    #[error("Failed to initialize a window")]
+    InitFailed(#[from] winit::error::OsError),
+    /// Context creation is not supported on the current window system
+    #[error("Context creation is not supported on the current window system")]
+    NotSupported,
+    /// EGL error
+    #[error("EGL error: {0}")]
+    EGL(#[from] EGLError),
 }
-use self::errors::*;
 
 enum Window {
     Wayland {
@@ -110,7 +100,7 @@ pub struct WinitInputBackend {
 /// Create a new [`WinitGraphicsBackend`], which implements the [`EGLGraphicsBackend`]
 /// and [`GLGraphicsBackend`] graphics backend trait and a corresponding [`WinitInputBackend`],
 /// which implements the [`InputBackend`] trait
-pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitInputBackend)>
+pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitInputBackend), Error>
 where
     L: Into<Option<::slog::Logger>>,
 {
@@ -129,7 +119,7 @@ where
 pub fn init_from_builder<L>(
     builder: WindowBuilder,
     logger: L,
-) -> Result<(WinitGraphicsBackend, WinitInputBackend)>
+) -> Result<(WinitGraphicsBackend, WinitInputBackend), Error>
 where
     L: Into<Option<::slog::Logger>>,
 {
@@ -153,7 +143,7 @@ pub fn init_from_builder_with_gl_attr<L>(
     builder: WindowBuilder,
     attributes: GlAttributes,
     logger: L,
-) -> Result<(WinitGraphicsBackend, WinitInputBackend)>
+) -> Result<(WinitGraphicsBackend, WinitInputBackend), Error>
 where
     L: Into<Option<::slog::Logger>>,
 {
@@ -161,7 +151,7 @@ where
     info!(log, "Initializing a winit backend");
 
     let events_loop = EventLoop::new();
-    let winit_window = builder.build(&events_loop).chain_err(|| ErrorKind::InitFailed)?;
+    let winit_window = builder.build(&events_loop).map_err(Error::InitFailed)?;
 
     debug!(log, "Window created");
 
@@ -178,7 +168,7 @@ where
             let surface = context.create_surface(())?;
             Window::X11 { context, surface }
         } else {
-            bail!(ErrorKind::NotSupported);
+            return Err(Error::NotSupported);
         },
     );
 
@@ -316,7 +306,7 @@ impl GLGraphicsBackend for WinitGraphicsBackend {
 }
 
 impl EGLGraphicsBackend for WinitGraphicsBackend {
-    fn bind_wl_display(&self, display: &Display) -> EGLResult<EGLDisplay> {
+    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay, EGLError> {
         match *self.window {
             Window::Wayland { ref context, .. } => context.bind_wl_display(display),
             Window::X11 { ref context, .. } => context.bind_wl_display(display),
@@ -325,28 +315,15 @@ impl EGLGraphicsBackend for WinitGraphicsBackend {
 }
 
 /// Errors that may happen when driving the event loop of [`WinitInputBackend`]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 pub enum WinitInputError {
     /// The underlying [`WinitWindow`] was closed. No further events can be processed.
     ///
     /// See `dispatch_new_events`.
+    #[error("Winit window was closed")]
     WindowClosed,
 }
 
-impl ::std::error::Error for WinitInputError {
-    fn description(&self) -> &str {
-        match *self {
-            WinitInputError::WindowClosed => "Glutin Window was closed",
-        }
-    }
-}
-
-impl fmt::Display for WinitInputError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use std::error::Error;
-        write!(f, "{}", self.description())
-    }
-}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// Winit-Backend internal event wrapping `winit`'s types into a [`KeyboardKeyEvent`]
 pub struct WinitKeyboardInputEvent {

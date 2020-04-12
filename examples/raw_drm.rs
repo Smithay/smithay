@@ -7,7 +7,7 @@ use slog::Drain;
 use smithay::{
     backend::drm::{
         device_bind,
-        legacy::{error::Error, LegacyDrmDevice, LegacyDrmSurface},
+        legacy::{Error, LegacyDrmDevice, LegacyDrmSurface},
         Device, DeviceHandler, RawSurface, Surface,
     },
     reexports::{
@@ -15,10 +15,8 @@ use smithay::{
         drm::{
             buffer::format::PixelFormat,
             control::{
-                connector::{self, State as ConnectorState},
-                crtc,
-                dumbbuffer::DumbBuffer,
-                encoder, framebuffer, Device as ControlDevice,
+                connector::State as ConnectorState, crtc, dumbbuffer::DumbBuffer, framebuffer,
+                Device as ControlDevice,
             },
         },
     },

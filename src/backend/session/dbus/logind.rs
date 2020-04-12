@@ -83,7 +83,7 @@ pub struct LogindSessionNotifier {
 
 impl LogindSession {
     /// Tries to create a new session via the logind dbus interface.
-    pub fn new<L>(logger: L) -> Result<(LogindSession, LogindSessionNotifier)>
+    pub fn new<L>(logger: L) -> Result<(LogindSession, LogindSessionNotifier), Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -91,12 +91,12 @@ impl LogindSession {
             .new(o!("smithay_module" => "backend_session", "session_type" => "logind"));
 
         // Acquire session_id, seat and vt (if any) via libsystemd
-        let session_id = login::get_session(None).chain_err(|| ErrorKind::FailedToGetSession)?;
-        let seat = login::get_seat(session_id.clone()).chain_err(|| ErrorKind::FailedToGetSeat)?;
+        let session_id = login::get_session(None).map_err(Error::FailedToGetSession)?;
+        let seat = login::get_seat(session_id.clone()).map_err(Error::FailedToGetSeat)?;
         let vt = login::get_vt(session_id.clone()).ok();
 
         // Create dbus connection
-        let conn = Connection::get_private(BusType::System).chain_err(|| ErrorKind::FailedDbusConnection)?;
+        let conn = Connection::get_private(BusType::System).map_err(Error::FailedDbusConnection)?;
         // and get the session path
         let session_path = LogindSessionImpl::blocking_call(
             &conn,
@@ -107,7 +107,7 @@ impl LogindSession {
             Some(vec![session_id.clone().into()]),
         )?
         .get1::<DbusPath<'static>>()
-        .chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
+        .ok_or(Error::UnexpectedMethodReturn)?;
 
         // Match all signals that we want to receive and handle
         let match1 = String::from(
@@ -118,7 +118,7 @@ impl LogindSession {
              path='/org/freedesktop/login1'",
         );
         conn.add_match(&match1)
-            .chain_err(|| ErrorKind::DbusMatchFailed(match1))?;
+            .map_err(|source| Error::DbusMatchFailed(match1, source))?;
         let match2 = format!(
             "type='signal',\
              sender='org.freedesktop.login1',\
@@ -128,7 +128,7 @@ impl LogindSession {
             &session_path
         );
         conn.add_match(&match2)
-            .chain_err(|| ErrorKind::DbusMatchFailed(match2))?;
+            .map_err(|source| Error::DbusMatchFailed(match2, source))?;
         let match3 = format!(
             "type='signal',\
              sender='org.freedesktop.login1',\
@@ -138,7 +138,7 @@ impl LogindSession {
             &session_path
         );
         conn.add_match(&match3)
-            .chain_err(|| ErrorKind::DbusMatchFailed(match3))?;
+            .map_err(|source| Error::DbusMatchFailed(match3, source))?;
         let match4 = format!(
             "type='signal',\
              sender='org.freedesktop.login1',\
@@ -148,7 +148,7 @@ impl LogindSession {
             &session_path
         );
         conn.add_match(&match4)
-            .chain_err(|| ErrorKind::DbusMatchFailed(match4))?;
+            .map_err(|source| Error::DbusMatchFailed(match4, source))?;
 
         // Activate (switch to) the session and take control
         LogindSessionImpl::blocking_call(
@@ -209,7 +209,7 @@ impl LogindSessionImpl {
         interface: I,
         method: M,
         arguments: Option<Vec<MessageItem>>,
-    ) -> Result<Message>
+    ) -> Result<Message, Error>
     where
         D: Into<BusName<'d>>,
         P: Into<DbusPath<'p>>,
@@ -227,30 +227,29 @@ impl LogindSessionImpl {
             message.append_items(&arguments)
         };
 
-        let mut message = conn.send_with_reply_and_block(message, 1000).chain_err(|| {
-            ErrorKind::FailedToSendDbusCall(
-                destination.clone(),
-                path.clone(),
-                interface.clone(),
-                method.clone(),
-            )
-        })?;
+        let mut message =
+            conn.send_with_reply_and_block(message, 1000)
+                .map_err(|source| Error::FailedToSendDbusCall {
+                    bus: destination.clone(),
+                    path: path.clone(),
+                    interface: interface.clone(),
+                    member: method.clone(),
+                    source,
+                })?;
 
         match message.as_result() {
             Ok(_) => Ok(message),
-            Err(err) => Err(Error::with_chain(
-                err,
-                ErrorKind::DbusCallFailed(
-                    destination.clone(),
-                    path.clone(),
-                    interface.clone(),
-                    method.clone(),
-                ),
-            )),
+            Err(err) => Err(Error::DbusCallFailed {
+                bus: destination.clone(),
+                path: path.clone(),
+                interface: interface.clone(),
+                member: method.clone(),
+                source: err,
+            }),
         }
     }
 
-    fn handle_signals<I>(&self, signals: I) -> Result<()>
+    fn handle_signals<I>(&self, signals: I) -> Result<(), Error>
     where
         I: IntoIterator<Item = ConnectionItem>,
     {
@@ -278,9 +277,9 @@ impl LogindSessionImpl {
             } else if &*message.interface().unwrap() == "org.freedesktop.login1.Session" {
                 if &*message.member().unwrap() == "PauseDevice" {
                     let (major, minor, pause_type) = message.get3::<u32, u32, String>();
-                    let major = major.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
-                    let minor = minor.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
-                    let pause_type = pause_type.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
+                    let major = major.ok_or(Error::UnexpectedMethodReturn)?;
+                    let minor = minor.ok_or(Error::UnexpectedMethodReturn)?;
+                    let pause_type = pause_type.ok_or(Error::UnexpectedMethodReturn)?;
                     debug!(
                         self.logger,
                         "Request of type \"{}\" to close device ({},{})", pause_type, major, minor
@@ -306,9 +305,9 @@ impl LogindSessionImpl {
                     }
                 } else if &*message.member().unwrap() == "ResumeDevice" {
                     let (major, minor, fd) = message.get3::<u32, u32, OwnedFd>();
-                    let major = major.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
-                    let minor = minor.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
-                    let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?.into_fd();
+                    let major = major.ok_or(Error::UnexpectedMethodReturn)?;
+                    let minor = minor.ok_or(Error::UnexpectedMethodReturn)?;
+                    let fd = fd.ok_or(Error::UnexpectedMethodReturn)?.into_fd();
                     debug!(self.logger, "Reactivating device ({},{})", major, minor);
                     for signal in &mut *self.signals.borrow_mut() {
                         if let &mut Some(ref mut signal) = signal {
@@ -323,7 +322,7 @@ impl LogindSessionImpl {
 
                 let (_, changed, _) =
                     message.get3::<String, Dict<'_, String, Variant<Iter<'_>>, Iter<'_>>, Array<'_, String, Iter<'_>>>();
-                let mut changed = changed.chain_err(|| ErrorKind::UnexpectedMethodReturn)?;
+                let mut changed = changed.ok_or(Error::UnexpectedMethodReturn)?;
                 if let Some((_, mut value)) = changed.find(|&(ref key, _)| &*key == "Active") {
                     if let Some(active) = Get::get(&mut value.0) {
                         self.active.store(active, Ordering::SeqCst);
@@ -338,9 +337,9 @@ impl LogindSessionImpl {
 impl Session for LogindSession {
     type Error = Error;
 
-    fn open(&mut self, path: &Path, _flags: OFlag) -> Result<RawFd> {
+    fn open(&mut self, path: &Path, _flags: OFlag) -> Result<RawFd, Error> {
         if let Some(session) = self.internal.upgrade() {
-            let stat = stat(path).chain_err(|| ErrorKind::FailedToStatDevice)?;
+            let stat = stat(path).map_err(Error::FailedToStatDevice)?;
             // TODO handle paused
             let (fd, _paused) = LogindSessionImpl::blocking_call(
                 &*session.conn.borrow(),
@@ -354,16 +353,16 @@ impl Session for LogindSession {
                 ]),
             )?
             .get2::<OwnedFd, bool>();
-            let fd = fd.chain_err(|| ErrorKind::UnexpectedMethodReturn)?.into_fd();
+            let fd = fd.ok_or(Error::UnexpectedMethodReturn)?.into_fd();
             Ok(fd)
         } else {
-            bail!(ErrorKind::SessionLost)
+            return Err(Error::SessionLost);
         }
     }
 
-    fn close(&mut self, fd: RawFd) -> Result<()> {
+    fn close(&mut self, fd: RawFd) -> Result<(), Error> {
         if let Some(session) = self.internal.upgrade() {
-            let stat = fstat(fd).chain_err(|| ErrorKind::FailedToStatDevice)?;
+            let stat = fstat(fd).map_err(Error::FailedToStatDevice)?;
             LogindSessionImpl::blocking_call(
                 &*session.conn.borrow(),
                 "org.freedesktop.login1",
@@ -377,7 +376,7 @@ impl Session for LogindSession {
             )
             .map(|_| ())
         } else {
-            bail!(ErrorKind::SessionLost)
+            return Err(Error::SessionLost);
         }
     }
 
@@ -393,7 +392,7 @@ impl Session for LogindSession {
         self.seat.clone()
     }
 
-    fn change_vt(&mut self, vt_num: i32) -> Result<()> {
+    fn change_vt(&mut self, vt_num: i32) -> Result<(), Error> {
         if let Some(session) = self.internal.upgrade() {
             LogindSessionImpl::blocking_call(
                 &*session.conn.borrow_mut(),
@@ -405,7 +404,7 @@ impl Session for LogindSession {
             )
             .map(|_| ())
         } else {
-            bail!(ErrorKind::SessionLost)
+            return Err(Error::SessionLost);
         }
     }
 }
@@ -532,67 +531,53 @@ impl LogindSessionNotifier {
 }
 
 /// Errors related to logind sessions
-pub mod errors {
-    use dbus::strings::{BusName, Interface, Member, Path as DbusPath};
-
-    error_chain! {
-        errors {
-            #[doc = "Failed to connect to dbus system socket"]
-            FailedDbusConnection {
-                description("Failed to connect to dbus system socket"),
-            }
-
-            #[doc = "Failed to get session from logind"]
-            FailedToGetSession {
-                description("Failed to get session from logind")
-            }
-
-            #[doc = "Failed to get seat from logind"]
-            FailedToGetSeat {
-                description("Failed to get seat from logind")
-            }
-
-            #[doc = "Failed to get vt from logind"]
-            FailedToGetVT {
-                description("Failed to get vt from logind")
-            }
-
-            #[doc = "Failed to call dbus method"]
-            FailedToSendDbusCall(bus: BusName<'static>, path: DbusPath<'static>, interface: Interface<'static>, member: Member<'static>) {
-                description("Failed to call dbus method")
-                display("Failed to call dbus method for service: {:?}, path: {:?}, interface: {:?}, member: {:?}", bus, path, interface, member),
-            }
-
-            #[doc = "Dbus method call failed"]
-            DbusCallFailed(bus: BusName<'static>, path: DbusPath<'static>, interface: Interface<'static>, member: Member<'static>) {
-                description("Dbus method call failed")
-                display("Dbus message call failed for service: {:?}, path: {:?}, interface: {:?}, member: {:?}", bus, path, interface, member),
-            }
-
-            #[doc = "Dbus method return had unexpected format"]
-            UnexpectedMethodReturn {
-                description("Dbus method return returned unexpected format")
-            }
-
-            #[doc = "Failed to setup dbus match rule"]
-            DbusMatchFailed(rule: String) {
-                description("Failed to setup dbus match rule"),
-                display("Failed to setup dbus match rule {}", rule),
-            }
-
-            #[doc = "Failed to stat device"]
-            FailedToStatDevice {
-                description("Failed to stat device")
-            }
-
-            #[doc = "Session is already closed"]
-            SessionLost {
-                description("Session is already closed")
-            }
-        }
-    }
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    /// Failed to connect to dbus system socket
+    #[error("Failed to connect to dbus system socket")]
+    FailedDbusConnection(#[source] dbus::Error),
+    /// Failed to get session from logind
+    #[error("Failed to get session from logind")]
+    FailedToGetSession(#[source] IoError),
+    /// Failed to get seat from logind
+    #[error("Failed to get seat from logind")]
+    FailedToGetSeat(#[source] IoError),
+    /// Failed to get vt from logind
+    #[error("Failed to get vt from logind")]
+    FailedToGetVT,
+    /// Failed call to a dbus method
+    #[error("Failed to call dbus method for service: {bus:?}, path: {path:?}, interface: {interface:?}, member: {member:?}")]
+    FailedToSendDbusCall {
+        bus: BusName<'static>,
+        path: DbusPath<'static>,
+        interface: Interface<'static>,
+        member: Member<'static>,
+        #[source]
+        source: dbus::Error,
+    },
+    /// DBus method call failed
+    #[error("Dbus message call failed for service: {bus:?}, path: {path:?}, interface: {interface:?}, member: {member:?}")]
+    DbusCallFailed {
+        bus: BusName<'static>,
+        path: DbusPath<'static>,
+        interface: Interface<'static>,
+        member: Member<'static>,
+        #[source]
+        source: dbus::Error,
+    },
+    /// Dbus method return had unexpected format
+    #[error("Dbus method return had unexpected format")]
+    UnexpectedMethodReturn,
+    /// Failed to setup dbus match rule
+    #[error("Failed to setup dbus match rule {0}")]
+    DbusMatchFailed(String, #[source] dbus::Error),
+    /// Failed to stat device
+    #[error("Failed to stat device")]
+    FailedToStatDevice(#[source] nix::Error),
+    /// Session is already closed,
+    #[error("Session is already closed")]
+    SessionLost,
 }
-use self::errors::*;
 
 impl AsErrno for Error {
     fn as_errno(&self) -> Option<i32> {

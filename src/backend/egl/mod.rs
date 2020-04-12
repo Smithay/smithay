@@ -33,8 +33,8 @@ use wayland_sys::server::wl_display;
 
 pub mod context;
 pub use self::context::EGLContext;
-pub mod error;
-use self::error::*;
+mod error;
+pub use self::error::Error;
 
 #[allow(non_camel_case_types, dead_code, unused_mut, non_upper_case_globals)]
 pub mod ffi;
@@ -59,27 +59,24 @@ impl fmt::Display for EglExtensionNotSupportedError {
     }
 }
 
-impl ::std::error::Error for EglExtensionNotSupportedError {
-    fn description(&self) -> &str {
-        "The required EGL extension is not supported by the underlying EGL implementation"
-    }
-
-    fn cause(&self) -> Option<&dyn ::std::error::Error> {
-        None
-    }
-}
+impl ::std::error::Error for EglExtensionNotSupportedError {}
 
 /// Error that can occur when accessing an EGL buffer
 #[cfg(feature = "wayland_frontend")]
+#[derive(thiserror::Error)]
 pub enum BufferAccessError {
     /// The corresponding Context is not alive anymore
+    #[error("The corresponding context was lost")]
     ContextLost,
     /// This buffer is not managed by the EGL buffer
+    #[error("This buffer is not managed by EGL")]
     NotManaged(WlBuffer),
     /// Failed to create `EGLImages` from the buffer
+    #[error("Failed to create EGLImages from the buffer")]
     EGLImageCreationFailed,
     /// The required EGL extension is not supported by the underlying EGL implementation
-    EglExtensionNotSupported(EglExtensionNotSupportedError),
+    #[error("{0}")]
+    EglExtensionNotSupported(#[from] EglExtensionNotSupportedError),
 }
 
 #[cfg(feature = "wayland_frontend")]
@@ -96,49 +93,11 @@ impl fmt::Debug for BufferAccessError {
     }
 }
 
-#[cfg(feature = "wayland_frontend")]
-impl fmt::Display for BufferAccessError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> ::std::result::Result<(), fmt::Error> {
-        use std::error::Error;
-        match *self {
-            BufferAccessError::ContextLost
-            | BufferAccessError::NotManaged(_)
-            | BufferAccessError::EGLImageCreationFailed => write!(formatter, "{}", self.description()),
-            BufferAccessError::EglExtensionNotSupported(ref err) => err.fmt(formatter),
-        }
-    }
-}
-
-#[cfg(feature = "wayland_frontend")]
-impl ::std::error::Error for BufferAccessError {
-    fn description(&self) -> &str {
-        match *self {
-            BufferAccessError::ContextLost => "The corresponding context was lost",
-            BufferAccessError::NotManaged(_) => "This buffer is not managed by EGL",
-            BufferAccessError::EGLImageCreationFailed => "Failed to create EGLImages from the buffer",
-            BufferAccessError::EglExtensionNotSupported(ref err) => err.description(),
-        }
-    }
-
-    fn cause(&self) -> Option<&dyn ::std::error::Error> {
-        match *self {
-            BufferAccessError::EglExtensionNotSupported(ref err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-#[cfg(feature = "wayland_frontend")]
-impl From<EglExtensionNotSupportedError> for BufferAccessError {
-    fn from(error: EglExtensionNotSupportedError) -> Self {
-        BufferAccessError::EglExtensionNotSupported(error)
-    }
-}
-
 /// Error that might happen when binding an `EGLImage` to a GL texture
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum TextureCreationError {
     /// The given plane index is out of bounds
+    #[error("This buffer is not managed by EGL")]
     PlaneIndexOutOfBounds,
     /// The OpenGL context has been lost and needs to be recreated.
     ///
@@ -151,46 +110,16 @@ pub enum TextureCreationError {
     /// A context loss usually happens on mobile devices when the user puts the
     /// application on sleep and wakes it up later. However any OpenGL implementation
     /// can theoretically lose the context at any time.
+    #[error("The context has been lost, it needs to be recreated")]
     ContextLost,
     /// Required OpenGL Extension for texture creation is missing
+    #[error("Required OpenGL Extension for texture creation is missing: {0}")]
     GLExtensionNotSupported(&'static str),
     /// Failed to bind the `EGLImage` to the given texture
     ///
     /// The given argument is the GL error code
+    #[error("Failed to create EGLImages from the buffer (GL error code {0:x}")]
     TextureBindingFailed(u32),
-}
-
-impl fmt::Display for TextureCreationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> ::std::result::Result<(), fmt::Error> {
-        use std::error::Error;
-        match *self {
-            TextureCreationError::ContextLost => write!(formatter, "{}", self.description()),
-            TextureCreationError::PlaneIndexOutOfBounds => write!(formatter, "{}", self.description()),
-            TextureCreationError::GLExtensionNotSupported(ext) => {
-                write!(formatter, "{}: {:}", self.description(), ext)
-            }
-            TextureCreationError::TextureBindingFailed(code) => {
-                write!(formatter, "{}. Gl error code: {:?}", self.description(), code)
-            }
-        }
-    }
-}
-
-impl ::std::error::Error for TextureCreationError {
-    fn description(&self) -> &str {
-        match *self {
-            TextureCreationError::ContextLost => "The context has been lost, it needs to be recreated",
-            TextureCreationError::PlaneIndexOutOfBounds => "This buffer is not managed by EGL",
-            TextureCreationError::GLExtensionNotSupported(_) => {
-                "Required OpenGL Extension for texture creation is missing"
-            }
-            TextureCreationError::TextureBindingFailed(_) => "Failed to create EGLImages from the buffer",
-        }
-    }
-
-    fn cause(&self) -> Option<&dyn ::std::error::Error> {
-        None
-    }
 }
 
 /// Texture format types
@@ -320,7 +249,7 @@ pub trait EGLGraphicsBackend {
     ///
     /// This might return [`OtherEGLDisplayAlreadyBound`](ErrorKind::OtherEGLDisplayAlreadyBound)
     /// if called for the same [`Display`] multiple times, as only one context may be bound at any given time.
-    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay>;
+    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay, Error>;
 }
 
 /// Type to receive [`EGLImages`] for EGL-based [`WlBuffer`]s.
@@ -525,22 +454,20 @@ impl Drop for EGLDisplay {
 
 #[cfg(feature = "use_system_lib")]
 impl<E: EGLGraphicsBackend> EGLGraphicsBackend for Rc<E> {
-    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay> {
+    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay, Error> {
         (**self).bind_wl_display(display)
     }
 }
 
 #[cfg(feature = "use_system_lib")]
 impl<B: native::Backend, N: native::NativeDisplay<B>> EGLGraphicsBackend for EGLContext<B, N> {
-    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay> {
+    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay, Error> {
         if !self.wl_drm_support {
-            bail!(ErrorKind::EglExtensionNotSupported(&[
-                "EGL_WL_bind_wayland_display"
-            ]));
+            return Err(Error::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
         }
         let res = unsafe { ffi::egl::BindWaylandDisplayWL(*self.display, display.c_ptr() as *mut _) };
         if res == 0 {
-            bail!(ErrorKind::OtherEGLDisplayAlreadyBound);
+            return Err(Error::OtherEGLDisplayAlreadyBound);
         }
         Ok(EGLDisplay::new(self, display.c_ptr()))
     }
