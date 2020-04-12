@@ -36,9 +36,8 @@
 //!
 
 use drm::{
-    control::{connector, crtc, encoder, plane, framebuffer, Device as ControlDevice, Mode, ResourceHandles},
-    Device as BasicDevice,
-    SystemError as DrmError,
+    control::{connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Mode, ResourceHandles},
+    Device as BasicDevice, SystemError as DrmError,
 };
 use nix::libc::dev_t;
 
@@ -47,7 +46,7 @@ use std::iter::IntoIterator;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 
-use calloop::generic::{SourceFd, Generic};
+use calloop::generic::{Generic, SourceFd};
 use calloop::mio::Interest;
 use calloop::InsertError;
 use calloop::{LoopHandle, Source};

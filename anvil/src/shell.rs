@@ -245,7 +245,11 @@ impl PointerGrab for ResizeSurfaceGrab {
 
                 self.ctoken
                     .with_surface_data(self.toplevel.get_surface().unwrap(), |attrs| {
-                        let mut data = attrs.user_data.get::<RefCell<SurfaceData>>().unwrap().borrow_mut();
+                        let mut data = attrs
+                            .user_data
+                            .get::<RefCell<SurfaceData>>()
+                            .unwrap()
+                            .borrow_mut();
                         if let ResizeState::Resizing(resize_data) = data.resize_state {
                             data.resize_state = ResizeState::WaitingForFinalAck(resize_data, serial);
                         } else {
@@ -255,7 +259,11 @@ impl PointerGrab for ResizeSurfaceGrab {
             } else {
                 self.ctoken
                     .with_surface_data(self.toplevel.get_surface().unwrap(), |attrs| {
-                        let mut data = attrs.user_data.get::<RefCell<SurfaceData>>().unwrap().borrow_mut();
+                        let mut data = attrs
+                            .user_data
+                            .get::<RefCell<SurfaceData>>()
+                            .unwrap()
+                            .borrow_mut();
                         if let ResizeState::Resizing(resize_data) = data.resize_state {
                             data.resize_state = ResizeState::WaitingForCommit(resize_data);
                         } else {
@@ -414,12 +422,16 @@ pub fn init_shell(
                 let initial_window_size = (geometry.width, geometry.height);
 
                 compositor_token.with_surface_data(surface.get_surface().unwrap(), move |attrs| {
-                    attrs.user_data.get::<RefCell<SurfaceData>>().unwrap().borrow_mut().resize_state =
-                        ResizeState::Resizing(ResizeData {
-                            edges: edges.into(),
-                            initial_window_location,
-                            initial_window_size,
-                        });
+                    attrs
+                        .user_data
+                        .get::<RefCell<SurfaceData>>()
+                        .unwrap()
+                        .borrow_mut()
+                        .resize_state = ResizeState::Resizing(ResizeData {
+                        edges: edges.into(),
+                        initial_window_location,
+                        initial_window_size,
+                    });
                 });
 
                 let grab = ResizeSurfaceGrab {
@@ -453,7 +465,11 @@ pub fn init_shell(
 
                     if acked {
                         compositor_token.with_surface_data(&surface, |attrs| {
-                            let mut data = attrs.user_data.get::<RefCell<SurfaceData>>().unwrap().borrow_mut();
+                            let mut data = attrs
+                                .user_data
+                                .get::<RefCell<SurfaceData>>()
+                                .unwrap()
+                                .borrow_mut();
                             if let ResizeState::WaitingForFinalAck(resize_data, _) = data.resize_state {
                                 data.resize_state = ResizeState::WaitingForCommit(resize_data);
                             } else {
@@ -566,12 +582,16 @@ pub fn init_shell(
                     let initial_window_size = (geometry.width, geometry.height);
 
                     compositor_token.with_surface_data(surface.get_surface().unwrap(), move |attrs| {
-                        attrs.user_data.get::<RefCell<SurfaceData>>().unwrap().borrow_mut().resize_state =
-                            ResizeState::Resizing(ResizeData {
-                                edges: edges.into(),
-                                initial_window_location,
-                                initial_window_size,
-                            });
+                        attrs
+                            .user_data
+                            .get::<RefCell<SurfaceData>>()
+                            .unwrap()
+                            .borrow_mut()
+                            .resize_state = ResizeState::Resizing(ResizeData {
+                            edges: edges.into(),
+                            initial_window_location,
+                            initial_window_size,
+                        });
                     });
 
                     let grab = ResizeSurfaceGrab {
@@ -698,8 +718,14 @@ fn surface_commit(
     });
 
     let refresh = token.with_surface_data(surface, |attributes| {
-        attributes.user_data.insert_if_missing(|| RefCell::new(SurfaceData::default()));
-        let mut data = attributes.user_data.get::<RefCell<SurfaceData>>().unwrap().borrow_mut();
+        attributes
+            .user_data
+            .insert_if_missing(|| RefCell::new(SurfaceData::default()));
+        let mut data = attributes
+            .user_data
+            .get::<RefCell<SurfaceData>>()
+            .unwrap()
+            .borrow_mut();
 
         data.geometry = geometry;
         data.input_region = attributes.input_region.clone();
@@ -739,7 +765,11 @@ fn surface_commit(
         let Rectangle { width, height, .. } = window_map.geometry(&toplevel).unwrap();
 
         let new_location = token.with_surface_data(surface, |attributes| {
-            let mut data = attributes.user_data.get::<RefCell<SurfaceData>>().unwrap().borrow_mut();
+            let mut data = attributes
+                .user_data
+                .get::<RefCell<SurfaceData>>()
+                .unwrap()
+                .borrow_mut();
 
             let mut new_location = None;
 

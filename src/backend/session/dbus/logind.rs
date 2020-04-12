@@ -53,7 +53,7 @@ use std::{
 use systemd::login;
 
 use calloop::{
-    generic::{Event, SourceRawFd, Generic},
+    generic::{Event, Generic, SourceRawFd},
     mio::Interest,
     InsertError, LoopHandle, Source,
 };

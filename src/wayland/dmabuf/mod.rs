@@ -73,7 +73,7 @@ use wayland_protocols::unstable::linux_dmabuf::v1::server::{
     },
     zwp_linux_dmabuf_v1,
 };
-use wayland_server::{protocol::wl_buffer, Display, Global, Main, Filter};
+use wayland_server::{protocol::wl_buffer, Display, Filter, Global, Main};
 
 /// Representation of a Dmabuf format, as advertized to the client
 pub struct Format {
@@ -194,45 +194,62 @@ where
         formats.len()
     );
 
-    display.create_global(3, Filter::new(move |(dmabuf, version): (Main<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1>, u32), _, _| {
-        let dma_formats = formats.clone();
-        let dma_handler = handler.clone();
-        let dma_log = log.clone();
-        dmabuf.quick_assign(
-            move |_, req, _| {
-                if let zwp_linux_dmabuf_v1::Request::CreateParams { params_id } = req {
-                    let mut handler = ParamsHandler {
-                        pending_planes: Vec::new(),
-                        max_planes,
-                        used: false,
-                        formats: dma_formats.clone(),
-                        handler: dma_handler.clone(),
-                        log: dma_log.clone(),
-                    };
-                    params_id.quick_assign(move |params, req, _| match req {
-                        ParamsRequest::Add { fd, plane_idx, offset, stride, modifier_hi, modifier_lo } => {
-                            handler.add(&*params, fd, plane_idx, offset, stride, modifier_hi, modifier_lo)
-                        },
-                        ParamsRequest::Create { width, height, format, flags } => {
-                            handler.create(&*params, width, height, format, flags)
-                        },
-                        ParamsRequest::CreateImmed { buffer_id, width, height, format, flags } => {
-                            handler.create_immed(&*params, buffer_id, width, height, format, flags)
-                        }
-                        _ => {}
-                    });
-                }
-            }
-        );
+    display.create_global(
+        3,
+        Filter::new(
+            move |(dmabuf, version): (Main<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1>, u32), _, _| {
+                let dma_formats = formats.clone();
+                let dma_handler = handler.clone();
+                let dma_log = log.clone();
+                dmabuf.quick_assign(move |_, req, _| {
+                    if let zwp_linux_dmabuf_v1::Request::CreateParams { params_id } = req {
+                        let mut handler = ParamsHandler {
+                            pending_planes: Vec::new(),
+                            max_planes,
+                            used: false,
+                            formats: dma_formats.clone(),
+                            handler: dma_handler.clone(),
+                            log: dma_log.clone(),
+                        };
+                        params_id.quick_assign(move |params, req, _| match req {
+                            ParamsRequest::Add {
+                                fd,
+                                plane_idx,
+                                offset,
+                                stride,
+                                modifier_hi,
+                                modifier_lo,
+                            } => {
+                                handler.add(&*params, fd, plane_idx, offset, stride, modifier_hi, modifier_lo)
+                            }
+                            ParamsRequest::Create {
+                                width,
+                                height,
+                                format,
+                                flags,
+                            } => handler.create(&*params, width, height, format, flags),
+                            ParamsRequest::CreateImmed {
+                                buffer_id,
+                                width,
+                                height,
+                                format,
+                                flags,
+                            } => handler.create_immed(&*params, buffer_id, width, height, format, flags),
+                            _ => {}
+                        });
+                    }
+                });
 
-        // send the supported formats
-        for f in &*formats {
-            dmabuf.format(f.format.as_raw());
-            if version >= 3 {
-                dmabuf.modifier(f.format.as_raw(), (f.modifier >> 32) as u32, f.modifier as u32);
-            }
-        }
-    }))
+                // send the supported formats
+                for f in &*formats {
+                    dmabuf.format(f.format.as_raw());
+                    if version >= 3 {
+                        dmabuf.modifier(f.format.as_raw(), (f.modifier >> 32) as u32, f.modifier as u32);
+                    }
+                }
+            },
+        ),
+    )
 }
 
 struct ParamsHandler<H: DmabufHandler> {

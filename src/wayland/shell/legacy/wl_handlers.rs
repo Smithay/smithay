@@ -23,36 +23,34 @@ pub(crate) fn implement_shell<R, Impl>(
     R: Role<ShellSurfaceRole> + 'static,
     Impl: FnMut(ShellRequest<R>) + 'static,
 {
-    shell.quick_assign(
-        move |shell, req, _data| {
-            let (id, surface) = match req {
-                wl_shell::Request::GetShellSurface { id, surface } => (id, surface),
-                _ => unreachable!(),
-            };
-            let role_data = ShellSurfaceRole {
-                title: "".into(),
-                class: "".into(),
-                pending_ping: 0,
-            };
-            if ctoken.give_role_with(&surface, role_data).is_err() {
-                shell
-                    .as_ref()
-                    .post_error(wl_shell::Error::Role as u32, "Surface already has a role.".into());
-                return;
-            }
-            let shell_surface =
-                implement_shell_surface(id, surface, implementation.clone(), ctoken, state.clone());
-            state
-                .lock()
-                .unwrap()
-                .known_surfaces
-                .push(make_handle(&shell_surface, ctoken));
-            let mut imp = implementation.borrow_mut();
-            (&mut *imp)(ShellRequest::NewShellSurface {
-                surface: make_handle(&shell_surface, ctoken),
-            });
-        },
-    );
+    shell.quick_assign(move |shell, req, _data| {
+        let (id, surface) = match req {
+            wl_shell::Request::GetShellSurface { id, surface } => (id, surface),
+            _ => unreachable!(),
+        };
+        let role_data = ShellSurfaceRole {
+            title: "".into(),
+            class: "".into(),
+            pending_ping: 0,
+        };
+        if ctoken.give_role_with(&surface, role_data).is_err() {
+            shell
+                .as_ref()
+                .post_error(wl_shell::Error::Role as u32, "Surface already has a role.".into());
+            return;
+        }
+        let shell_surface =
+            implement_shell_surface(id, surface, implementation.clone(), ctoken, state.clone());
+        state
+            .lock()
+            .unwrap()
+            .known_surfaces
+            .push(make_handle(&shell_surface, ctoken));
+        let mut imp = implementation.borrow_mut();
+        (&mut *imp)(ShellRequest::NewShellSurface {
+            surface: make_handle(&shell_surface, ctoken),
+        });
+    });
 }
 
 fn make_handle<R>(
@@ -91,113 +89,116 @@ where
     Impl: FnMut(ShellRequest<R>) + 'static,
 {
     use self::wl_shell_surface::Request;
-    shell_surface.quick_assign(
-        move |shell_surface, req, _data| {
-            let data = shell_surface
-                .as_ref()
-                .user_data()
-                .get::<ShellSurfaceUserData<R>>()
-                .unwrap();
-            let mut user_impl = implementation.borrow_mut();
-            match req {
-                Request::Pong { serial } => {
-                    let valid = ctoken
-                        .with_role_data(&data.surface, |data| {
-                            if data.pending_ping == serial {
-                                data.pending_ping = 0;
-                                true
-                            } else {
-                                false
-                            }
-                        })
-                        .expect("wl_shell_surface exists but surface has not the right role?");
-                    if valid {
-                        (&mut *user_impl)(ShellRequest::Pong {
-                            surface: make_handle(&shell_surface, ctoken),
-                        });
-                    }
-                }
-                Request::Move { seat, serial } => (&mut *user_impl)(ShellRequest::Move {
-                    surface: make_handle(&shell_surface, ctoken),
-                    serial,
-                    seat,
-                }),
-                Request::Resize { seat, serial, edges } => (&mut *user_impl)(ShellRequest::Resize {
-                    surface: make_handle(&shell_surface, ctoken),
-                    serial,
-                    seat,
-                    edges,
-                }),
-                Request::SetToplevel => (&mut *user_impl)(ShellRequest::SetKind {
-                    surface: make_handle(&shell_surface, ctoken),
-                    kind: ShellSurfaceKind::Toplevel,
-                }),
-                Request::SetTransient { parent, x, y, flags } => (&mut *user_impl)(ShellRequest::SetKind {
-                    surface: make_handle(&shell_surface, ctoken),
-                    kind: ShellSurfaceKind::Transient {
-                        parent,
-                        location: (x, y),
-                        inactive: flags.contains(wl_shell_surface::Transient::Inactive),
-                    },
-                }),
-                Request::SetFullscreen {
-                    method,
-                    framerate,
-                    output,
-                } => (&mut *user_impl)(ShellRequest::SetKind {
-                    surface: make_handle(&shell_surface, ctoken),
-                    kind: ShellSurfaceKind::Fullscreen {
-                        method,
-                        framerate,
-                        output,
-                    },
-                }),
-                Request::SetPopup {
-                    seat,
-                    serial,
-                    parent,
-                    x,
-                    y,
-                    flags,
-                } => (&mut *user_impl)(ShellRequest::SetKind {
-                    surface: make_handle(&shell_surface, ctoken),
-                    kind: ShellSurfaceKind::Popup {
-                        parent,
-                        serial,
-                        seat,
-                        location: (x, y),
-                        inactive: flags.contains(wl_shell_surface::Transient::Inactive),
-                    },
-                }),
-                Request::SetMaximized { output } => (&mut *user_impl)(ShellRequest::SetKind {
-                    surface: make_handle(&shell_surface, ctoken),
-                    kind: ShellSurfaceKind::Maximized { output },
-                }),
-                Request::SetTitle { title } => {
-                    ctoken
-                        .with_role_data(&data.surface, |data| data.title = title)
-                        .expect("wl_shell_surface exists but surface has not shell_surface role?!");
-                }
-                Request::SetClass { class_ } => {
-                    ctoken
-                        .with_role_data(&data.surface, |data| data.class = class_)
-                        .expect("wl_shell_surface exists but surface has not shell_surface role?!");
-                }
-                _ => unreachable!(),
-            }
-        },
-    );
-
-    shell_surface.assign_destructor(Filter::new(|shell_surface: wl_shell_surface::WlShellSurface, _, _data| {
+    shell_surface.quick_assign(move |shell_surface, req, _data| {
         let data = shell_surface
             .as_ref()
             .user_data()
             .get::<ShellSurfaceUserData<R>>()
             .unwrap();
-        data.state.lock().unwrap().cleanup_surfaces();
-    }));
+        let mut user_impl = implementation.borrow_mut();
+        match req {
+            Request::Pong { serial } => {
+                let valid = ctoken
+                    .with_role_data(&data.surface, |data| {
+                        if data.pending_ping == serial {
+                            data.pending_ping = 0;
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                    .expect("wl_shell_surface exists but surface has not the right role?");
+                if valid {
+                    (&mut *user_impl)(ShellRequest::Pong {
+                        surface: make_handle(&shell_surface, ctoken),
+                    });
+                }
+            }
+            Request::Move { seat, serial } => (&mut *user_impl)(ShellRequest::Move {
+                surface: make_handle(&shell_surface, ctoken),
+                serial,
+                seat,
+            }),
+            Request::Resize { seat, serial, edges } => (&mut *user_impl)(ShellRequest::Resize {
+                surface: make_handle(&shell_surface, ctoken),
+                serial,
+                seat,
+                edges,
+            }),
+            Request::SetToplevel => (&mut *user_impl)(ShellRequest::SetKind {
+                surface: make_handle(&shell_surface, ctoken),
+                kind: ShellSurfaceKind::Toplevel,
+            }),
+            Request::SetTransient { parent, x, y, flags } => (&mut *user_impl)(ShellRequest::SetKind {
+                surface: make_handle(&shell_surface, ctoken),
+                kind: ShellSurfaceKind::Transient {
+                    parent,
+                    location: (x, y),
+                    inactive: flags.contains(wl_shell_surface::Transient::Inactive),
+                },
+            }),
+            Request::SetFullscreen {
+                method,
+                framerate,
+                output,
+            } => (&mut *user_impl)(ShellRequest::SetKind {
+                surface: make_handle(&shell_surface, ctoken),
+                kind: ShellSurfaceKind::Fullscreen {
+                    method,
+                    framerate,
+                    output,
+                },
+            }),
+            Request::SetPopup {
+                seat,
+                serial,
+                parent,
+                x,
+                y,
+                flags,
+            } => (&mut *user_impl)(ShellRequest::SetKind {
+                surface: make_handle(&shell_surface, ctoken),
+                kind: ShellSurfaceKind::Popup {
+                    parent,
+                    serial,
+                    seat,
+                    location: (x, y),
+                    inactive: flags.contains(wl_shell_surface::Transient::Inactive),
+                },
+            }),
+            Request::SetMaximized { output } => (&mut *user_impl)(ShellRequest::SetKind {
+                surface: make_handle(&shell_surface, ctoken),
+                kind: ShellSurfaceKind::Maximized { output },
+            }),
+            Request::SetTitle { title } => {
+                ctoken
+                    .with_role_data(&data.surface, |data| data.title = title)
+                    .expect("wl_shell_surface exists but surface has not shell_surface role?!");
+            }
+            Request::SetClass { class_ } => {
+                ctoken
+                    .with_role_data(&data.surface, |data| data.class = class_)
+                    .expect("wl_shell_surface exists but surface has not shell_surface role?!");
+            }
+            _ => unreachable!(),
+        }
+    });
 
-    shell_surface.as_ref().user_data().set_threadsafe(|| ShellSurfaceUserData { surface, state });
+    shell_surface.assign_destructor(Filter::new(
+        |shell_surface: wl_shell_surface::WlShellSurface, _, _data| {
+            let data = shell_surface
+                .as_ref()
+                .user_data()
+                .get::<ShellSurfaceUserData<R>>()
+                .unwrap();
+            data.state.lock().unwrap().cleanup_surfaces();
+        },
+    ));
+
+    shell_surface
+        .as_ref()
+        .user_data()
+        .set_threadsafe(|| ShellSurfaceUserData { surface, state });
 
     shell_surface.deref().clone()
 }

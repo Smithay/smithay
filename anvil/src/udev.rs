@@ -36,7 +36,7 @@ use smithay::{
     },
     reexports::{
         calloop::{
-            generic::{SourceFd, Generic},
+            generic::{Generic, SourceFd},
             EventLoop, LoopHandle, Source,
         },
         drm::control::{
@@ -262,7 +262,9 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
             running.store(false, Ordering::SeqCst);
         } else {
             if state.need_wayland_dispatch {
-                display.borrow_mut().dispatch(std::time::Duration::from_millis(0), &mut state);
+                display
+                    .borrow_mut()
+                    .dispatch(std::time::Duration::from_millis(0), &mut state);
             }
             display.borrow_mut().flush_clients(&mut state);
             window_map.borrow_mut().refresh();
@@ -367,9 +369,9 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
         let connector_infos: Vec<ConnectorInfo> = res_handles
             .connectors()
             .iter()
-            .map(|conn| device.resource_info::<ConnectorInfo>(*conn).unwrap())
-            .filter(|conn| conn.connection_state() == ConnectorState::Connected)
-            .inspect(|conn| info!(logger, "Connected: {:?}", conn.connector_type()))
+            .map(|conn| device.get_connector_info(*conn).unwrap())
+            .filter(|conn| conn.state() == ConnectorState::Connected)
+            .inspect(|conn| info!(logger, "Connected: {:?}", conn.interface()))
             .collect();
 
         let mut backends = HashMap::new();
@@ -379,7 +381,8 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
             let encoder_infos = connector_info
                 .encoders()
                 .iter()
-                .flat_map(|encoder_handle| device.resource_info::<EncoderInfo>(*encoder_handle))
+                .filter_map(|e| *e)
+                .flat_map(|encoder_handle| device.get_encoder_info(encoder_handle))
                 .collect::<Vec<EncoderInfo>>();
             for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {

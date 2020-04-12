@@ -25,12 +25,10 @@ where
     R: Role<XdgSurfaceRole> + 'static,
 {
     shell.quick_assign(|shell, req, _data| shell_implementation::<R>(req, shell.deref().clone()));
-    shell.as_ref().user_data().set(||
-        ShellUserData {
-            shell_data: shell_data.clone(),
-            client_data: Mutex::new(make_shell_client_data()),
-        },
-    );
+    shell.as_ref().user_data().set(|| ShellUserData {
+        shell_data: shell_data.clone(),
+        client_data: Mutex::new(make_shell_client_data()),
+    });
     let mut user_impl = shell_data.user_impl.borrow_mut();
     (&mut *user_impl)(XdgRequest::NewClient {
         client: make_shell_client(&shell, shell_data.compositor_token),
@@ -88,15 +86,15 @@ where
                 );
                 return;
             }
-            id.quick_assign(|surface, req, _data| xdg_surface_implementation::<R>(req, surface.deref().clone()));
+            id.quick_assign(|surface, req, _data| {
+                xdg_surface_implementation::<R>(req, surface.deref().clone())
+            });
             id.assign_destructor(Filter::new(|surface, _, _data| destroy_surface::<R>(surface)));
-            id.as_ref().user_data().set(||
-                XdgSurfaceUserData {
-                    shell_data: data.shell_data.clone(),
-                    wl_surface: surface,
-                    shell: shell.clone(),
-                },
-            );
+            id.as_ref().user_data().set(|| XdgSurfaceUserData {
+                shell_data: data.shell_data.clone(),
+                wl_surface: surface,
+                shell: shell.clone(),
+            });
         }
         zxdg_shell_v6::Request::Pong { serial } => {
             let valid = {
@@ -126,75 +124,74 @@ where
 fn implement_positioner(
     positioner: Main<zxdg_positioner_v6::ZxdgPositionerV6>,
 ) -> zxdg_positioner_v6::ZxdgPositionerV6 {
-    positioner.quick_assign(
-        |positioner, request, _data| {
-            let mutex = positioner
-                .as_ref()
-                .user_data()
-                .get::<RefCell<PositionerState>>()
-                .unwrap();
-            let mut state = mutex.borrow_mut();
-            match request {
-                zxdg_positioner_v6::Request::Destroy => {
-                    // handled by destructor
-                }
-                zxdg_positioner_v6::Request::SetSize { width, height } => {
-                    if width < 1 || height < 1 {
-                        positioner.as_ref().post_error(
-                            zxdg_positioner_v6::Error::InvalidInput as u32,
-                            "Invalid size for positioner.".into(),
-                        );
-                    } else {
-                        state.rect_size = (width, height);
-                    }
-                }
-                zxdg_positioner_v6::Request::SetAnchorRect { x, y, width, height } => {
-                    if width < 1 || height < 1 {
-                        positioner.as_ref().post_error(
-                            zxdg_positioner_v6::Error::InvalidInput as u32,
-                            "Invalid size for positioner's anchor rectangle.".into(),
-                        );
-                    } else {
-                        state.anchor_rect = Rectangle { x, y, width, height };
-                    }
-                }
-                zxdg_positioner_v6::Request::SetAnchor { anchor } => {
-                    if let Some(anchor) = zxdg_anchor_to_xdg(anchor) {
-                        state.anchor_edges = anchor;
-                    } else {
-                        positioner.as_ref().post_error(
-                            zxdg_positioner_v6::Error::InvalidInput as u32,
-                            "Invalid anchor for positioner.".into(),
-                        );
-                    }
-                }
-                zxdg_positioner_v6::Request::SetGravity { gravity } => {
-                    if let Some(gravity) = zxdg_gravity_to_xdg(gravity) {
-                        state.gravity = gravity;
-                    } else {
-                        positioner.as_ref().post_error(
-                            zxdg_positioner_v6::Error::InvalidInput as u32,
-                            "Invalid gravity for positioner.".into(),
-                        );
-                    }
-                }
-                zxdg_positioner_v6::Request::SetConstraintAdjustment {
-                    constraint_adjustment,
-                } => {
-                    let constraint_adjustment =
-                        zxdg_positioner_v6::ConstraintAdjustment::from_bits_truncate(constraint_adjustment);
-                    state.constraint_adjustment = zxdg_constraints_adg_to_xdg(constraint_adjustment);
-                }
-                zxdg_positioner_v6::Request::SetOffset { x, y } => {
-                    state.offset = (x, y);
-                }
-                _ => unreachable!(),
+    positioner.quick_assign(|positioner, request, _data| {
+        let mutex = positioner
+            .as_ref()
+            .user_data()
+            .get::<RefCell<PositionerState>>()
+            .unwrap();
+        let mut state = mutex.borrow_mut();
+        match request {
+            zxdg_positioner_v6::Request::Destroy => {
+                // handled by destructor
             }
-        },
-    );
-    positioner.as_ref().user_data().set(||
-        RefCell::new(PositionerState::new()),
-    );
+            zxdg_positioner_v6::Request::SetSize { width, height } => {
+                if width < 1 || height < 1 {
+                    positioner.as_ref().post_error(
+                        zxdg_positioner_v6::Error::InvalidInput as u32,
+                        "Invalid size for positioner.".into(),
+                    );
+                } else {
+                    state.rect_size = (width, height);
+                }
+            }
+            zxdg_positioner_v6::Request::SetAnchorRect { x, y, width, height } => {
+                if width < 1 || height < 1 {
+                    positioner.as_ref().post_error(
+                        zxdg_positioner_v6::Error::InvalidInput as u32,
+                        "Invalid size for positioner's anchor rectangle.".into(),
+                    );
+                } else {
+                    state.anchor_rect = Rectangle { x, y, width, height };
+                }
+            }
+            zxdg_positioner_v6::Request::SetAnchor { anchor } => {
+                if let Some(anchor) = zxdg_anchor_to_xdg(anchor) {
+                    state.anchor_edges = anchor;
+                } else {
+                    positioner.as_ref().post_error(
+                        zxdg_positioner_v6::Error::InvalidInput as u32,
+                        "Invalid anchor for positioner.".into(),
+                    );
+                }
+            }
+            zxdg_positioner_v6::Request::SetGravity { gravity } => {
+                if let Some(gravity) = zxdg_gravity_to_xdg(gravity) {
+                    state.gravity = gravity;
+                } else {
+                    positioner.as_ref().post_error(
+                        zxdg_positioner_v6::Error::InvalidInput as u32,
+                        "Invalid gravity for positioner.".into(),
+                    );
+                }
+            }
+            zxdg_positioner_v6::Request::SetConstraintAdjustment {
+                constraint_adjustment,
+            } => {
+                let constraint_adjustment =
+                    zxdg_positioner_v6::ConstraintAdjustment::from_bits_truncate(constraint_adjustment);
+                state.constraint_adjustment = zxdg_constraints_adg_to_xdg(constraint_adjustment);
+            }
+            zxdg_positioner_v6::Request::SetOffset { x, y } => {
+                state.offset = (x, y);
+            }
+            _ => unreachable!(),
+        }
+    });
+    positioner
+        .as_ref()
+        .user_data()
+        .set(|| RefCell::new(PositionerState::new()));
 
     positioner.deref().clone()
 }
@@ -267,16 +264,16 @@ fn xdg_surface_implementation<R>(
                     });
                 })
                 .expect("xdg_surface exists but surface has not shell_surface role?!");
-            id.quick_assign(|toplevel, req, _data| toplevel_implementation::<R>(req, toplevel.deref().clone()));
+            id.quick_assign(|toplevel, req, _data| {
+                toplevel_implementation::<R>(req, toplevel.deref().clone())
+            });
             id.assign_destructor(Filter::new(|toplevel, _, _data| destroy_toplevel::<R>(toplevel)));
-            id.as_ref().user_data().set(||
-                ShellSurfaceUserData {
-                    shell_data: data.shell_data.clone(),
-                    wl_surface: data.wl_surface.clone(),
-                    shell: data.shell.clone(),
-                    xdg_surface: xdg_surface.clone(),
-                },
-            );
+            id.as_ref().user_data().set(|| ShellSurfaceUserData {
+                shell_data: data.shell_data.clone(),
+                wl_surface: data.wl_surface.clone(),
+                shell: data.shell.clone(),
+                xdg_surface: xdg_surface.clone(),
+            });
 
             data.shell_data
                 .shell_state
@@ -316,14 +313,12 @@ fn xdg_surface_implementation<R>(
                 .expect("xdg_surface exists but surface has not shell_surface role?!");
             id.quick_assign(|popup, req, _data| popup_implementation::<R>(req, popup.deref().clone()));
             id.assign_destructor(Filter::new(|popup, _, _data| destroy_popup::<R>(popup)));
-            id.as_ref().user_data().set(||
-                ShellSurfaceUserData {
-                    shell_data: data.shell_data.clone(),
-                    wl_surface: data.wl_surface.clone(),
-                    shell: data.shell.clone(),
-                    xdg_surface: xdg_surface.clone(),
-                },
-            );
+            id.as_ref().user_data().set(|| ShellSurfaceUserData {
+                shell_data: data.shell_data.clone(),
+                wl_surface: data.wl_surface.clone(),
+                shell: data.shell.clone(),
+                xdg_surface: xdg_surface.clone(),
+            });
 
             data.shell_data
                 .shell_state
