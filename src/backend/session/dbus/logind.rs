@@ -548,20 +548,30 @@ pub enum Error {
     /// Failed call to a dbus method
     #[error("Failed to call dbus method for service: {bus:?}, path: {path:?}, interface: {interface:?}, member: {member:?}")]
     FailedToSendDbusCall {
+        /// Name of the service
         bus: BusName<'static>,
+        /// Object path
         path: DbusPath<'static>,
+        /// Interface
         interface: Interface<'static>,
+        /// Method called
         member: Member<'static>,
+        /// DBus error
         #[source]
         source: dbus::Error,
     },
     /// DBus method call failed
     #[error("Dbus message call failed for service: {bus:?}, path: {path:?}, interface: {interface:?}, member: {member:?}")]
     DbusCallFailed {
+        /// Name of the service
         bus: BusName<'static>,
+        /// Object path
         path: DbusPath<'static>,
+        /// Interface
         interface: Interface<'static>,
+        /// Method called
         member: Member<'static>,
+        /// DBus error
         #[source]
         source: dbus::Error,
     },

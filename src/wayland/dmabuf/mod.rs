@@ -103,6 +103,7 @@ pub struct Plane {
 }
 
 bitflags! {
+    /// Possible flags for a DMA buffer
     pub struct BufferFlags: u32 {
         /// The buffer content is Y-inverted
         const Y_INVERT = 1;
