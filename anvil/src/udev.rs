@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::hash_map::{Entry, HashMap},
     io::Error as IoError,
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
@@ -285,19 +285,18 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
     Ok(())
 }
 
+struct BackendData<S: SessionNotifier> {
+    id: S::Id,
+    event_source: Source<Generic<SourceFd<RenderDevice>>>,
+    surfaces: Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<RenderSurface>>>>,
+}
+
 struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
     compositor_token: CompositorToken<Roles>,
     #[cfg(feature = "egl")]
     active_egl_context: Rc<RefCell<Option<EGLDisplay>>>,
     session: AutoSession,
-    backends: HashMap<
-        dev_t,
-        (
-            S::Id,
-            Source<Generic<SourceFd<RenderDevice>>>,
-            Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<RenderSurface>>>>,
-        ),
-    >,
+    backends: HashMap<dev_t, BackendData<S>>,
     display: Rc<RefCell<Display>>,
     primary_gpu: Option<PathBuf>,
     window_map: Rc<RefCell<MyWindowMap>>,
@@ -341,14 +340,14 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 .collect::<Vec<EncoderInfo>>();
             for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
-                    if !backends.contains_key(&crtc) {
+                    if let Entry::Vacant(entry) = backends.entry(crtc) {
                         let renderer = GliumDrawer::init(
                             device.create_surface(crtc).unwrap(),
                             egl_display.clone(),
                             logger.clone(),
                         );
 
-                        backends.insert(crtc, renderer);
+                        entry.insert(renderer);
                         break;
                     }
                 }
@@ -472,17 +471,23 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
                 }
             }
 
-            self.backends
-                .insert(dev_id, (device_session_id, event_source, backends));
+            self.backends.insert(
+                dev_id,
+                BackendData {
+                    id: device_session_id,
+                    event_source,
+                    surfaces: backends,
+                },
+            );
         }
     }
 
     fn device_changed(&mut self, device: dev_t) {
         //quick and dirty, just re-init all backends
-        if let Some((_, ref mut evt_source, ref backends)) = self.backends.get_mut(&device) {
-            let source = evt_source.clone_inner();
+        if let Some(ref mut backend_data) = self.backends.get_mut(&device) {
+            let source = backend_data.event_source.clone_inner();
             let mut evented = source.borrow_mut();
-            let mut backends = backends.borrow_mut();
+            let mut backends = backend_data.surfaces.borrow_mut();
             #[cfg(feature = "egl")]
             let new_backends = UdevHandlerImpl::<S, Data>::scan_connectors(
                 &mut (*evented).0,
@@ -512,12 +517,12 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
 
     fn device_removed(&mut self, device: dev_t) {
         // drop the backends on this side
-        if let Some((id, evt_source, renderers)) = self.backends.remove(&device) {
+        if let Some(backend_data) = self.backends.remove(&device) {
             // drop surfaces
-            renderers.borrow_mut().clear();
+            backend_data.surfaces.borrow_mut().clear();
             debug!(self.logger, "Surfaces dropped");
 
-            let device = Rc::try_unwrap(evt_source.remove().unwrap())
+            let device = Rc::try_unwrap(backend_data.event_source.remove().unwrap())
                 .map_err(|_| "This should not happend")
                 .unwrap()
                 .into_inner()
@@ -531,7 +536,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
                 }
             }
 
-            self.notifier.unregister(id);
+            self.notifier.unregister(backend_data.id);
             debug!(self.logger, "Dropping device");
         }
     }
