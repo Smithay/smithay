@@ -268,7 +268,7 @@ impl LogindSessionImpl {
                 //This session will never live again, but the user maybe has other sessions open
                 //So lets just put it to sleep.. forever
                 for signal in &mut *self.signals.borrow_mut() {
-                    if let &mut Some(ref mut signal) = signal {
+                    if let Some(ref mut signal) = signal {
                         signal.pause(None);
                     }
                 }
@@ -285,7 +285,7 @@ impl LogindSessionImpl {
                         "Request of type \"{}\" to close device ({},{})", pause_type, major, minor
                     );
                     for signal in &mut *self.signals.borrow_mut() {
-                        if let &mut Some(ref mut signal) = signal {
+                        if let Some(ref mut signal) = signal {
                             signal.pause(Some((major, minor)));
                         }
                     }
@@ -310,7 +310,7 @@ impl LogindSessionImpl {
                     let fd = fd.ok_or(Error::UnexpectedMethodReturn)?.into_fd();
                     debug!(self.logger, "Reactivating device ({},{})", major, minor);
                     for signal in &mut *self.signals.borrow_mut() {
-                        if let &mut Some(ref mut signal) = signal {
+                        if let Some(ref mut signal) = signal {
                             signal.activate(Some((major, minor, Some(fd))));
                         }
                     }
@@ -356,7 +356,7 @@ impl Session for LogindSession {
             let fd = fd.ok_or(Error::UnexpectedMethodReturn)?.into_fd();
             Ok(fd)
         } else {
-            return Err(Error::SessionLost);
+            Err(Error::SessionLost)
         }
     }
 
@@ -376,7 +376,7 @@ impl Session for LogindSession {
             )
             .map(|_| ())
         } else {
-            return Err(Error::SessionLost);
+            Err(Error::SessionLost)
         }
     }
 
@@ -404,7 +404,7 @@ impl Session for LogindSession {
             )
             .map(|_| ())
         } else {
-            return Err(Error::SessionLost);
+            Err(Error::SessionLost)
         }
     }
 }

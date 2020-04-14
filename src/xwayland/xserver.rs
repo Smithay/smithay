@@ -126,10 +126,12 @@ struct XWaylandInstance {
     child_pid: Option<Pid>,
 }
 
+type SourceMaker<WM> = dyn FnMut(Rc<RefCell<Inner<WM>>>) -> Result<Source<Signals>, ()>;
+
 // Inner implementation of the XWayland manager
 struct Inner<WM: XWindowManager> {
     wm: WM,
-    source_maker: Box<dyn FnMut(Rc<RefCell<Inner<WM>>>) -> Result<Source<Signals>, ()>>,
+    source_maker: Box<SourceMaker<WM>>,
     wayland_display: Rc<RefCell<Display>>,
     instance: Option<XWaylandInstance>,
     log: ::slog::Logger,

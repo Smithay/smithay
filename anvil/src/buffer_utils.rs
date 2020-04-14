@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use slog::Logger;
 
 #[cfg(feature = "egl")]
-use smithay::backend::egl::{BufferAccessError, EGLDisplay};
+use smithay::backend::egl::EGLDisplay;
 use smithay::{
     reexports::wayland_server::protocol::wl_buffer::WlBuffer,
     wayland::shm::with_buffer_contents as shm_buffer_contents,

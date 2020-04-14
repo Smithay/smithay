@@ -230,6 +230,9 @@ impl<A: AsRawFd> DevPath for A {
     }
 }
 
+/// calloop source associated with a Device
+pub type DrmSource<D> = Generic<SourceFd<D>>;
+
 /// Bind a `Device` to an [`EventLoop`](calloop::EventLoop),
 ///
 /// This will cause it to recieve events and feed them into a previously
@@ -237,7 +240,7 @@ impl<A: AsRawFd> DevPath for A {
 pub fn device_bind<D: Device + 'static, Data>(
     handle: &LoopHandle<Data>,
     device: D,
-) -> ::std::result::Result<Source<Generic<SourceFd<D>>>, InsertError<Generic<SourceFd<D>>>>
+) -> ::std::result::Result<Source<DrmSource<D>>, InsertError<DrmSource<D>>>
 where
     D: Device,
     Data: 'static,

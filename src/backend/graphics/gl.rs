@@ -19,7 +19,9 @@ pub trait GLGraphicsBackend {
 
     /// Returns the address of an OpenGL function.
     ///
-    /// Supposes that the context has been made current before this function is called.
+    /// # Safety
+    ///
+    /// The context must have been made current before this function is called.
     unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void;
 
     /// Returns the dimensions of the window, or screen, etc in points.
@@ -34,10 +36,9 @@ pub trait GLGraphicsBackend {
 
     /// Makes the OpenGL context the current context in the current thread.
     ///
-    /// # Unsafety
+    /// # Safety
     ///
-    /// This function is marked unsafe, because the context cannot be made current
-    /// on multiple threads.
+    /// The context cannot be made current on multiple threads.
     unsafe fn make_current(&self) -> Result<(), SwapBuffersError>;
 
     /// Returns the pixel format of the main framebuffer of the context.

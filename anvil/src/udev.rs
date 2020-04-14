@@ -264,7 +264,8 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
             if state.need_wayland_dispatch {
                 display
                     .borrow_mut()
-                    .dispatch(std::time::Duration::from_millis(0), &mut state);
+                    .dispatch(std::time::Duration::from_millis(0), &mut state)
+                    .unwrap();
             }
             display.borrow_mut().flush_clients(&mut state);
             window_map.borrow_mut().refresh();

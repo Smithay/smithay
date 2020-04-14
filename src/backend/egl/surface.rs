@@ -100,7 +100,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
 
     /// Makes the OpenGL context the current context in the current thread.
     ///
-    /// # Unsafety
+    /// # Safety
     ///
     /// This function is marked unsafe, because the context cannot be made current
     /// on multiple threads.

@@ -201,7 +201,9 @@ pub fn run_winit(
             running.store(false, Ordering::SeqCst);
         } else {
             if state.need_wayland_dispatch {
-                display.dispatch(std::time::Duration::from_millis(0), &mut state);
+                display
+                    .dispatch(std::time::Duration::from_millis(0), &mut state)
+                    .unwrap();
             }
             display.flush_clients(&mut state);
             window_map.borrow_mut().refresh();

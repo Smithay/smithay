@@ -90,6 +90,9 @@ impl<T: UdevHandler + 'static> Drop for UdevBackend<T> {
     }
 }
 
+/// calloop event source associated with the Udev backend
+pub type UdevSource<T> = Generic<SourceFd<UdevBackend<T>>>;
+
 /// Binds a [`UdevBackend`] to a given [`EventLoop`](calloop::EventLoop).
 ///
 /// Allows the backend to receive kernel events and thus to drive the [`UdevHandler`].
@@ -97,7 +100,7 @@ impl<T: UdevHandler + 'static> Drop for UdevBackend<T> {
 pub fn udev_backend_bind<T: UdevHandler + 'static, Data: 'static>(
     udev: UdevBackend<T>,
     handle: &LoopHandle<Data>,
-) -> Result<Source<Generic<SourceFd<UdevBackend<T>>>>, InsertError<Generic<SourceFd<UdevBackend<T>>>>> {
+) -> Result<Source<UdevSource<T>>, InsertError<UdevSource<T>>> {
     let mut source = Generic::from_fd_source(udev);
     source.set_interest(Interest::READABLE);
 

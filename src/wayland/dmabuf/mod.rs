@@ -220,9 +220,14 @@ where
                                 stride,
                                 modifier_hi,
                                 modifier_lo,
-                            } => {
-                                handler.add(&*params, fd, plane_idx, offset, stride, modifier_hi, modifier_lo)
-                            }
+                            } => handler.add(
+                                &*params,
+                                fd,
+                                plane_idx,
+                                offset,
+                                stride,
+                                (modifier_hi, modifier_lo),
+                            ),
                             ParamsRequest::Create {
                                 width,
                                 height,
@@ -270,8 +275,7 @@ impl<H: DmabufHandler> ParamsHandler<H> {
         plane_idx: u32,
         offset: u32,
         stride: u32,
-        modifier_hi: u32,
-        modifier_lo: u32,
+        modifier: (u32, u32),
     ) {
         // protocol checks:
         // Cannot reuse a params:
@@ -305,7 +309,7 @@ impl<H: DmabufHandler> ParamsHandler<H> {
             plane_idx,
             offset,
             stride,
-            modifier: ((modifier_hi as u64) << 32) + (modifier_lo as u64),
+            modifier: ((modifier.0 as u64) << 32) + (modifier.1 as u64),
         });
     }
 
