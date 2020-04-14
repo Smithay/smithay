@@ -22,7 +22,6 @@ tempfile = "3.0"
 slog = "2.1.1"
 slog-stdlog = "3.0.2"
 libloading = "0.5.0"
-wayland-client = { version = "0.23.4", optional = true }
 wayland-egl = { version = "0.25.0", optional = true }
 winit = { version = "0.22.0", optional = true }
 drm = { version = "^0.4.0", git = "https://github.com/drakulix/drm-rs", branch = "develop", optional = true }
@@ -47,7 +46,7 @@ gl_generator = { version = "0.10", optional = true }
 
 [features]
 default = ["backend_winit", "backend_drm_legacy", "backend_drm_gbm", "backend_drm_egl", "backend_libinput", "backend_udev", "backend_session_logind", "renderer_glium", "xwayland", "wayland_frontend"]
-backend_winit = ["winit", "wayland-server/dlopen", "wayland-client/dlopen", "backend_egl", "wayland-egl", "renderer_gl", "use_system_lib"]
+backend_winit = ["winit", "wayland-server/dlopen", "backend_egl", "wayland-egl", "renderer_gl", "use_system_lib"]
 backend_drm = ["drm", "failure"]
 backend_drm_legacy = ["backend_drm"]
 backend_drm_gbm = ["backend_drm", "gbm", "image"]
