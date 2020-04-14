@@ -106,7 +106,7 @@ struct Marker<R> {
 }
 
 /// New buffer assignation for a surface
-pub enum BufferAssignation {
+pub enum BufferAssignment {
     /// The surface no longer has a buffer attached to it
     Removed,
     /// A new buffer has been attached
@@ -132,7 +132,7 @@ pub struct SurfaceAttributes {
     /// You are free to set this field to `None` to avoid processing it several
     /// times. It'll be set to `Some(...)` if the user attaches a buffer (or `NULL`) to
     /// the surface, and be left to `None` if the user does not attach anything.
-    pub buffer: Option<BufferAssignation>,
+    pub buffer: Option<BufferAssignment>,
     /// Scale of the contents of the buffer, for higher-resolution contents.
     ///
     /// If it matches the one of the output displaying this surface, no change

@@ -7,7 +7,7 @@ use wayland_server::{
 
 use super::{
     tree::{Location, SurfaceData},
-    BufferAssignation, CompositorToken, Damage, Rectangle, RectangleKind, RegionAttributes, Role, RoleType,
+    BufferAssignment, CompositorToken, Damage, Rectangle, RectangleKind, RegionAttributes, Role, RoleType,
     SubsurfaceRole, SurfaceEvent,
 };
 
@@ -68,11 +68,11 @@ where
             wl_surface::Request::Attach { buffer, x, y } => {
                 SurfaceData::<R>::with_data(&surface, |d| {
                     d.buffer = Some(match buffer {
-                        Some(buffer) => BufferAssignation::NewBuffer {
+                        Some(buffer) => BufferAssignment::NewBuffer {
                             buffer,
                             delta: (x, y),
                         },
-                        None => BufferAssignation::Removed,
+                        None => BufferAssignment::Removed,
                     })
                 });
             }

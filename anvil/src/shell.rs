@@ -17,7 +17,7 @@ use smithay::{
     },
     utils::Rectangle,
     wayland::{
-        compositor::{compositor_init, BufferAssignation, CompositorToken, RegionAttributes, SurfaceEvent},
+        compositor::{compositor_init, BufferAssignment, CompositorToken, RegionAttributes, SurfaceEvent},
         data_device::DnDIconRole,
         seat::{AxisFrame, CursorImageRole, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
         shell::{
@@ -733,7 +733,7 @@ fn surface_commit(
 
         // we retrieve the contents of the associated buffer and copy it
         match attributes.buffer.take() {
-            Some(BufferAssignation::NewBuffer { buffer, .. }) => {
+            Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
                 // TODO: handle hotspot coordinates
                 if let Some(old_buffer) = data.buffer.replace(buffer) {
@@ -743,7 +743,7 @@ fn surface_commit(
                 // If this fails, the buffer will be discarded later by the drawing code.
                 data.dimensions = buffer_utils.dimensions(data.buffer.as_ref().unwrap());
             }
-            Some(BufferAssignation::Removed) => {
+            Some(BufferAssignment::Removed) => {
                 // erase the contents
                 if let Some(old_buffer) = data.buffer.take() {
                     old_buffer.release();

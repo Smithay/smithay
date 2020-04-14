@@ -226,7 +226,7 @@ where
                                 plane_idx,
                                 offset,
                                 stride,
-                                (modifier_hi, modifier_lo),
+                                ((modifier_hi as u64) << 32) + (modifier_lo as u64),
                             ),
                             ParamsRequest::Create {
                                 width,
@@ -275,7 +275,7 @@ impl<H: DmabufHandler> ParamsHandler<H> {
         plane_idx: u32,
         offset: u32,
         stride: u32,
-        modifier: (u32, u32),
+        modifier: u64,
     ) {
         // protocol checks:
         // Cannot reuse a params:
@@ -309,7 +309,7 @@ impl<H: DmabufHandler> ParamsHandler<H> {
             plane_idx,
             offset,
             stride,
-            modifier: ((modifier.0 as u64) << 32) + (modifier.1 as u64),
+            modifier,
         });
     }
 

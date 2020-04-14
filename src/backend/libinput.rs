@@ -624,7 +624,7 @@ pub type LibinputSource = Generic<SourceFd<LibinputInputBackend>>;
 pub fn libinput_bind<Data: 'static>(
     backend: LibinputInputBackend,
     handle: LoopHandle<Data>,
-) -> ::std::result::Result<Source<LibinputSource>, InsertError<LibinputSource>> {
+) -> Result<Source<LibinputSource>, InsertError<LibinputSource>> {
     let mut source = Generic::from_fd_source(backend);
     source.set_interest(Interest::READABLE);
 
