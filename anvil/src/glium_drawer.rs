@@ -12,7 +12,7 @@ use glium::{
 use slog::Logger;
 
 #[cfg(feature = "egl")]
-use smithay::backend::egl::display::WaylandEGLDisplay;
+use smithay::backend::egl::display::EGLBufferReader;
 use smithay::{
     backend::{
         egl::{BufferAccessError, EGLImages, Format},
@@ -44,7 +44,7 @@ pub struct GliumDrawer<F: GLGraphicsBackend + 'static> {
     index_buffer: glium::IndexBuffer<u16>,
     programs: [glium::Program; shaders::FRAGMENT_COUNT],
     #[cfg(feature = "egl")]
-    egl_display: Rc<RefCell<Option<WaylandEGLDisplay>>>,
+    egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
     log: Logger,
 }
 
@@ -58,7 +58,7 @@ impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer
     #[cfg(feature = "egl")]
     pub fn init(
         backend: T,
-        egl_display: Rc<RefCell<Option<WaylandEGLDisplay>>>,
+        egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
         log: Logger,
     ) -> GliumDrawer<T> {
         let display = backend.into();
@@ -98,7 +98,7 @@ impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer
             vertex_buffer,
             index_buffer,
             programs,
-            egl_display,
+            egl_buffer_reader,
             log,
         }
     }
@@ -151,7 +151,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     #[cfg(feature = "egl")]
     pub fn texture_from_buffer(&self, buffer: wl_buffer::WlBuffer) -> Result<TextureMetadata, ()> {
         // try to retrieve the egl contents of this buffer
-        let images = if let Some(display) = &self.egl_display.borrow().as_ref() {
+        let images = if let Some(display) = &self.egl_buffer_reader.borrow().as_ref() {
             display.egl_buffer_contents(buffer)
         } else {
             Err(BufferAccessError::NotManaged(buffer))

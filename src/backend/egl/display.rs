@@ -410,7 +410,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLGraphicsBackend for EGL
     ///
     /// This might return [`OtherEGLDisplayAlreadyBound`](ErrorKind::OtherEGLDisplayAlreadyBound)
     /// if called for the same [`Display`] multiple times, as only one egl display may be bound at any given time.
-    fn bind_wl_display(&self, display: &Display) -> Result<WaylandEGLDisplay, Error> {
+    fn bind_wl_display(&self, display: &Display) -> Result<EGLBufferReader, Error> {
         if !self.extensions.iter().any(|s| s == "EGL_WL_bind_wayland_display") {
             return Err(Error::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
         }
@@ -418,7 +418,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLGraphicsBackend for EGL
         if res == 0 {
             return Err(Error::OtherEGLDisplayAlreadyBound);
         }
-        Ok(WaylandEGLDisplay::new(
+        Ok(EGLBufferReader::new(
             Arc::downgrade(&self.display),
             display.c_ptr(),
             &self.extensions,
@@ -430,7 +430,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLGraphicsBackend for EGL
 ///
 /// Can be created by using [`EGLGraphicsBackend::bind_wl_display`].
 #[cfg(feature = "use_system_lib")]
-pub struct WaylandEGLDisplay {
+pub struct EGLBufferReader {
     display: Weak<ffi::egl::types::EGLDisplay>,
     wayland: *mut wl_display,
     #[cfg(feature = "renderer_gl")]
@@ -440,7 +440,7 @@ pub struct WaylandEGLDisplay {
 }
 
 #[cfg(feature = "use_system_lib")]
-impl WaylandEGLDisplay {
+impl EGLBufferReader {
     fn new(
         display: Weak<ffi::egl::types::EGLDisplay>,
         wayland: *mut wl_display,
@@ -609,7 +609,7 @@ impl WaylandEGLDisplay {
 }
 
 #[cfg(feature = "use_system_lib")]
-impl Drop for WaylandEGLDisplay {
+impl Drop for EGLBufferReader {
     fn drop(&mut self) {
         if let Some(display) = self.display.upgrade() {
             if !self.wayland.is_null() {

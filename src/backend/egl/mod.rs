@@ -41,7 +41,7 @@ pub mod native;
 pub mod surface;
 pub use self::surface::EGLSurface;
 #[cfg(feature = "use_system_lib")]
-use crate::backend::egl::display::WaylandEGLDisplay;
+use crate::backend::egl::display::EGLBufferReader;
 use std::ffi::CString;
 use std::sync::Weak;
 
@@ -246,7 +246,7 @@ impl Drop for EGLImages {
 }
 
 /// Trait any backend type may implement that allows binding a [`Display`](wayland_server::Display)
-/// to create an [`WaylandDisplay`](display::WaylandDisplay) for EGL-based [`WlBuffer`]s.
+/// to create an [`EGLBufferReader`](display::EGLBufferReader) for EGL-based [`WlBuffer`]s.
 #[cfg(feature = "use_system_lib")]
 pub trait EGLGraphicsBackend {
     /// Binds this EGL context to the given Wayland display.
@@ -261,5 +261,5 @@ pub trait EGLGraphicsBackend {
     ///
     /// This might return [`OtherEGLDisplayAlreadyBound`](ErrorKind::OtherEGLDisplayAlreadyBound)
     /// if called for the same [`Display`] multiple times, as only one context may be bound at any given time.
-    fn bind_wl_display(&self, display: &Display) -> Result<WaylandEGLDisplay, Error>;
+    fn bind_wl_display(&self, display: &Display) -> Result<EGLBufferReader, Error>;
 }

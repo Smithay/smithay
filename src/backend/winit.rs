@@ -33,7 +33,7 @@ use winit::{
 };
 
 #[cfg(feature = "use_system_lib")]
-use crate::backend::egl::{display::WaylandEGLDisplay, EGLGraphicsBackend};
+use crate::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
 
 /// Errors thrown by the `winit` backends
 #[derive(thiserror::Error, Debug)]
@@ -336,7 +336,7 @@ impl GLGraphicsBackend for WinitGraphicsBackend {
 
 #[cfg(feature = "use_system_lib")]
 impl EGLGraphicsBackend for WinitGraphicsBackend {
-    fn bind_wl_display(&self, wl_display: &Display) -> Result<WaylandEGLDisplay, EGLError> {
+    fn bind_wl_display(&self, wl_display: &Display) -> Result<EGLBufferReader, EGLError> {
         match *self.window {
             Window::Wayland { ref display, .. } => display.bind_wl_display(wl_display),
             Window::X11 { ref display, .. } => display.bind_wl_display(wl_display),

@@ -19,7 +19,7 @@ use super::{Device, DeviceHandler, Surface};
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use crate::backend::egl::Error as EGLError;
 #[cfg(feature = "use_system_lib")]
-use crate::backend::egl::{display::WaylandEGLDisplay, EGLGraphicsBackend};
+use crate::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
 
 mod surface;
 pub use self::surface::*;
@@ -199,7 +199,7 @@ where
     D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
     <D as Device>::Surface: NativeSurface,
 {
-    fn bind_wl_display(&self, display: &Display) -> Result<WaylandEGLDisplay, EGLError> {
+    fn bind_wl_display(&self, display: &Display) -> Result<EGLBufferReader, EGLError> {
         self.dev.bind_wl_display(display)
     }
 }

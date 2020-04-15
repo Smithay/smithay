@@ -37,10 +37,10 @@ pub fn run_winit(
     let (renderer, mut input) = winit::init(log.clone()).map_err(|_| ())?;
 
     #[cfg(feature = "egl")]
-    let egl_display = Rc::new(RefCell::new(
-        if let Ok(egl_display) = renderer.bind_wl_display(&display) {
+    let egl_buffer_reader = Rc::new(RefCell::new(
+        if let Ok(egl_buffer_reader) = renderer.bind_wl_display(&display) {
             info!(log, "EGL hardware-acceleration enabled");
-            Some(egl_display)
+            Some(egl_buffer_reader)
         } else {
             None
         },
@@ -48,12 +48,12 @@ pub fn run_winit(
 
     let (w, h) = renderer.get_framebuffer_dimensions();
     #[cfg(feature = "egl")]
-    let drawer = GliumDrawer::init(renderer, egl_display.clone(), log.clone());
+    let drawer = GliumDrawer::init(renderer, egl_buffer_reader.clone(), log.clone());
     #[cfg(not(feature = "egl"))]
     let drawer = GliumDrawer::init(renderer, log.clone());
 
     #[cfg(feature = "egl")]
-    let buffer_utils = BufferUtils::new(egl_display, log.clone());
+    let buffer_utils = BufferUtils::new(egl_buffer_reader, log.clone());
     #[cfg(not(feature = "egl"))]
     let buffer_utils = BufferUtils::new(log.clone());
 

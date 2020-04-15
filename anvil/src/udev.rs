@@ -15,7 +15,7 @@ use glium::Surface as GliumSurface;
 use slog::Logger;
 
 #[cfg(feature = "egl")]
-use smithay::backend::egl::{display::WaylandEGLDisplay, EGLGraphicsBackend};
+use smithay::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
 use smithay::{
     backend::{
         drm::{
@@ -85,10 +85,10 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
     ::std::env::set_var("WAYLAND_DISPLAY", name);
 
     #[cfg(feature = "egl")]
-    let active_egl_context = Rc::new(RefCell::new(None));
+    let egl_buffer_reader = Rc::new(RefCell::new(None));
 
     #[cfg(feature = "egl")]
-    let buffer_utils = BufferUtils::new(active_egl_context.clone(), log.clone());
+    let buffer_utils = BufferUtils::new(egl_buffer_reader.clone(), log.clone());
     #[cfg(not(feature = "egl"))]
     let buffer_utils = BufferUtils::new(log.clone());
 
@@ -127,7 +127,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
         UdevHandlerImpl {
             compositor_token,
             #[cfg(feature = "egl")]
-            active_egl_context,
+            egl_buffer_reader,
             session: session.clone(),
             backends: HashMap::new(),
             display: display.clone(),
@@ -294,7 +294,7 @@ struct BackendData<S: SessionNotifier> {
 struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
     compositor_token: CompositorToken<Roles>,
     #[cfg(feature = "egl")]
-    active_egl_context: Rc<RefCell<Option<WaylandEGLDisplay>>>,
+    egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
     session: AutoSession,
     backends: HashMap<dev_t, BackendData<S>>,
     display: Rc<RefCell<Display>>,
@@ -313,7 +313,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
     #[cfg(feature = "egl")]
     pub fn scan_connectors(
         device: &mut RenderDevice,
-        egl_display: Rc<RefCell<Option<WaylandEGLDisplay>>>,
+        egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
         logger: &::slog::Logger,
     ) -> HashMap<crtc::Handle, GliumDrawer<RenderSurface>> {
         // Get a set of all modesetting resource handles (excluding planes):
@@ -343,7 +343,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                     if let Entry::Vacant(entry) = backends.entry(crtc) {
                         let renderer = GliumDrawer::init(
                             device.create_surface(crtc).unwrap(),
-                            egl_display.clone(),
+                            egl_buffer_reader.clone(),
                             logger.clone(),
                         );
 
@@ -419,7 +419,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             #[cfg(feature = "egl")]
             {
                 if path.canonicalize().ok() == self.primary_gpu {
-                    *self.active_egl_context.borrow_mut() =
+                    *self.egl_buffer_reader.borrow_mut() =
                         device.bind_wl_display(&*self.display.borrow()).ok();
                 }
             }
@@ -427,7 +427,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             #[cfg(feature = "egl")]
             let backends = Rc::new(RefCell::new(UdevHandlerImpl::<S, Data>::scan_connectors(
                 &mut device,
-                self.active_egl_context.clone(),
+                self.egl_buffer_reader.clone(),
                 &self.logger,
             )));
 
@@ -491,7 +491,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             #[cfg(feature = "egl")]
             let new_backends = UdevHandlerImpl::<S, Data>::scan_connectors(
                 &mut (*evented).0,
-                self.active_egl_context.clone(),
+                self.egl_buffer_reader.clone(),
                 &self.logger,
             );
             #[cfg(not(feature = "egl"))]
@@ -532,7 +532,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             #[cfg(feature = "egl")]
             {
                 if device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
-                    *self.active_egl_context.borrow_mut() = None;
+                    *self.egl_buffer_reader.borrow_mut() = None;
                 }
             }
 
