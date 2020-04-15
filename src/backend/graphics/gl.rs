@@ -47,5 +47,5 @@ pub trait GLGraphicsBackend {
 /// and may only be used in combination with the backend. Using this with any
 /// other gl context or after the backend was dropped *may* cause undefined behavior.
 pub fn load_raw_gl<B: GLGraphicsBackend>(backend: &B) -> Gles2 {
-    Gles2::load_with(|s| { backend.get_proc_address(s) as *const _ })
+    Gles2::load_with(|s| backend.get_proc_address(s) as *const _)
 }
