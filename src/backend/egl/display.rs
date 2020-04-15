@@ -135,7 +135,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
     }
 
     /// Finds a compatible [`EGLConfig`] for a given set of requirements
-    pub unsafe fn choose_config(
+    pub fn choose_config(
         &self,
         version: (u8, u8),
         reqs: PixelFormatRequirements,
@@ -257,19 +257,21 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         // calling `eglChooseConfig`
         let mut config_id = MaybeUninit::uninit();
         let mut num_configs = MaybeUninit::uninit();
-        if ffi::egl::ChooseConfig(
-            *self.display,
-            descriptor.as_ptr(),
-            config_id.as_mut_ptr(),
-            1,
-            num_configs.as_mut_ptr(),
-        ) == 0
+        if unsafe {
+            ffi::egl::ChooseConfig(
+                *self.display,
+                descriptor.as_ptr(),
+                config_id.as_mut_ptr(),
+                1,
+                num_configs.as_mut_ptr(),
+            )
+        } == 0
         {
             return Err(Error::ConfigFailed);
         }
 
-        let config_id = config_id.assume_init();
-        let num_configs = num_configs.assume_init();
+        let config_id = unsafe { config_id.assume_init() };
+        let num_configs = unsafe { num_configs.assume_init() };
 
         if num_configs == 0 {
             error!(self.logger, "No matching color format found");
@@ -295,21 +297,23 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             }};
         };
 
-        let desc = PixelFormat {
-            hardware_accelerated: attrib!(self.display, config_id, ffi::egl::CONFIG_CAVEAT)
-                != ffi::egl::SLOW_CONFIG as i32,
-            color_bits: attrib!(self.display, config_id, ffi::egl::RED_SIZE) as u8
-                + attrib!(self.display, config_id, ffi::egl::BLUE_SIZE) as u8
-                + attrib!(self.display, config_id, ffi::egl::GREEN_SIZE) as u8,
-            alpha_bits: attrib!(self.display, config_id, ffi::egl::ALPHA_SIZE) as u8,
-            depth_bits: attrib!(self.display, config_id, ffi::egl::DEPTH_SIZE) as u8,
-            stencil_bits: attrib!(self.display, config_id, ffi::egl::STENCIL_SIZE) as u8,
-            stereoscopy: false,
-            multisampling: match attrib!(self.display, config_id, ffi::egl::SAMPLES) {
-                0 | 1 => None,
-                a => Some(a as u16),
-            },
-            srgb: false, // TODO: use EGL_KHR_gl_colorspace to know that
+        let desc = unsafe {
+            PixelFormat {
+                hardware_accelerated: attrib!(self.display, config_id, ffi::egl::CONFIG_CAVEAT)
+                    != ffi::egl::SLOW_CONFIG as i32,
+                color_bits: attrib!(self.display, config_id, ffi::egl::RED_SIZE) as u8
+                    + attrib!(self.display, config_id, ffi::egl::BLUE_SIZE) as u8
+                    + attrib!(self.display, config_id, ffi::egl::GREEN_SIZE) as u8,
+                alpha_bits: attrib!(self.display, config_id, ffi::egl::ALPHA_SIZE) as u8,
+                depth_bits: attrib!(self.display, config_id, ffi::egl::DEPTH_SIZE) as u8,
+                stencil_bits: attrib!(self.display, config_id, ffi::egl::STENCIL_SIZE) as u8,
+                stereoscopy: false,
+                multisampling: match attrib!(self.display, config_id, ffi::egl::SAMPLES) {
+                    0 | 1 => None,
+                    a => Some(a as u16),
+                },
+                srgb: false, // TODO: use EGL_KHR_gl_colorspace to know that
+            }
         };
 
         info!(self.logger, "Selected color format: {:?}", desc);
@@ -443,7 +447,7 @@ impl WaylandEGLDisplay {
         extensions: &Vec<String>,
     ) -> Self {
         #[cfg(feature = "renderer_gl")]
-        let gl = gl_ffi::Gles2::load_with(|s| unsafe { get_proc_address(s) as *const _ });
+        let gl = gl_ffi::Gles2::load_with(|s| get_proc_address(s) as *const _);
 
         Self {
             display,

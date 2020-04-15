@@ -64,7 +64,7 @@ impl EGLContext {
             }
         };
 
-        let (pixel_format, config_id) = unsafe { display.choose_config(version, reqs)? };
+        let (pixel_format, config_id) = display.choose_config(version, reqs)?;
 
         let mut context_attributes = Vec::with_capacity(10);
 

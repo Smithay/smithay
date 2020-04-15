@@ -65,10 +65,12 @@ impl ::std::error::Error for EglExtensionNotSupportedError {}
 /// Returns the address of an OpenGL function.
 ///
 /// Result is independent of displays and does not guarantee an extension is actually supported at runtime.
-pub unsafe fn get_proc_address(symbol: &str) -> *const c_void {
-    let addr = CString::new(symbol.as_bytes()).unwrap();
-    let addr = addr.as_ptr();
-    ffi::egl::GetProcAddress(addr) as *const _
+pub fn get_proc_address(symbol: &str) -> *const c_void {
+    unsafe {
+        let addr = CString::new(symbol.as_bytes()).unwrap();
+        let addr = addr.as_ptr();
+        ffi::egl::GetProcAddress(addr) as *const _
+    }
 }
 
 /// Error that can occur when accessing an EGL buffer

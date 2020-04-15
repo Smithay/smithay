@@ -285,7 +285,7 @@ impl GLGraphicsBackend for WinitGraphicsBackend {
         }
     }
 
-    unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
+    fn get_proc_address(&self, symbol: &str) -> *const c_void {
         trace!(self.logger, "Getting symbol for {:?}", symbol);
         get_proc_address(symbol)
     }

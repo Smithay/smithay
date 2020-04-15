@@ -94,7 +94,7 @@ where
         self.surface.swap_buffers()
     }
 
-    unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
+    fn get_proc_address(&self, symbol: &str) -> *const c_void {
         get_proc_address(symbol)
     }
 
