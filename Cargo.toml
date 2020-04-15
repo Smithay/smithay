@@ -63,5 +63,5 @@ wayland_frontend = ["wayland-server", "wayland-commons", "wayland-protocols"]
 xwayland = ["wayland_frontend"]
 
 [[example]]
-name = "raw_drm"
+name = "raw_legacy_drm"
 required-features = ["backend_drm_legacy"]

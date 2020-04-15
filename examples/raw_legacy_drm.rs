@@ -6,8 +6,9 @@ extern crate slog;
 use slog::Drain;
 use smithay::{
     backend::drm::{
+        common::Error,
         device_bind,
-        legacy::{Error, LegacyDrmDevice, LegacyDrmSurface},
+        legacy::{LegacyDrmDevice, LegacyDrmSurface},
         Device, DeviceHandler, RawSurface, Surface,
     },
     reexports::{
