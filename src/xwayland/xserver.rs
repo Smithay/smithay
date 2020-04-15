@@ -392,7 +392,10 @@ fn exec_xwayland(
     }
 
     // run it
-    let ret = ::nix::unistd::execvp(&CString::new("Xwayland").unwrap(), &args)?;
+    let ret = ::nix::unistd::execvp(
+        &CString::new("Xwayland").unwrap(),
+        &args.iter().map(AsRef::as_ref).collect::<Vec<_>>(),
+    )?;
     // small dance to actually return Void
     match ret {}
 }
