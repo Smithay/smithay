@@ -5,7 +5,6 @@ use crate::backend::egl::display::EGLDisplay;
 use crate::backend::egl::native::NativeSurface;
 use crate::backend::egl::{native, EGLSurface};
 use crate::backend::graphics::{PixelFormat, SwapBuffersError};
-use slog;
 use std::ptr;
 use std::sync::{Arc, Weak};
 
@@ -15,7 +14,6 @@ pub struct EGLContext {
     display: Weak<ffi::egl::types::EGLDisplay>,
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: PixelFormat,
-    logger: slog::Logger,
 }
 
 impl EGLContext {
@@ -117,7 +115,6 @@ impl EGLContext {
             display: Arc::downgrade(&display.display),
             config_id,
             pixel_format,
-            logger: log,
         })
     }
 

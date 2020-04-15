@@ -444,7 +444,7 @@ impl WaylandEGLDisplay {
     fn new(
         display: Weak<ffi::egl::types::EGLDisplay>,
         wayland: *mut wl_display,
-        extensions: &Vec<String>,
+        extensions: &[String],
     ) -> Self {
         #[cfg(feature = "renderer_gl")]
         let gl = gl_ffi::Gles2::load_with(|s| get_proc_address(s) as *const _);
