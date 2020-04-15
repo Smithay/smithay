@@ -22,6 +22,8 @@ pub mod utils;
 #[cfg(feature = "wayland_frontend")]
 pub mod wayland;
 
+pub mod signaling;
+
 #[cfg(feature = "xwayland")]
 pub mod xwayland;
 
