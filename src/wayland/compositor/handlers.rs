@@ -7,8 +7,8 @@ use wayland_server::{
 
 use super::{
     tree::{Location, SurfaceData},
-    CompositorToken, Damage, Rectangle, RectangleKind, RegionAttributes, Role, RoleType, SubsurfaceRole,
-    SurfaceEvent,
+    BufferAssignment, CompositorToken, Damage, Rectangle, RectangleKind, RegionAttributes, Role, RoleType,
+    SubsurfaceRole, SurfaceEvent,
 };
 
 /*
@@ -42,10 +42,12 @@ where
  * wl_surface
  */
 
+type SurfaceImplemFn<R> = dyn FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>);
+
 // Internal implementation data of surfaces
 pub(crate) struct SurfaceImplem<R> {
     log: ::slog::Logger,
-    implem: Rc<RefCell<dyn FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>)>>,
+    implem: Rc<RefCell<SurfaceImplemFn<R>>>,
 }
 
 impl<R> SurfaceImplem<R> {
@@ -64,7 +66,15 @@ where
     fn receive_surface_request(&mut self, req: wl_surface::Request, surface: wl_surface::WlSurface) {
         match req {
             wl_surface::Request::Attach { buffer, x, y } => {
-                SurfaceData::<R>::with_data(&surface, |d| d.buffer = Some(buffer.map(|b| (b, (x, y)))));
+                SurfaceData::<R>::with_data(&surface, |d| {
+                    d.buffer = Some(match buffer {
+                        Some(buffer) => BufferAssignment::NewBuffer {
+                            buffer,
+                            delta: (x, y),
+                        },
+                        None => BufferAssignment::Removed,
+                    })
+                });
             }
             wl_surface::Request::Damage { x, y, width, height } => {
                 SurfaceData::<R>::with_data(&surface, |d| {
@@ -128,10 +138,7 @@ where
         move |surface, req, _| implem.receive_surface_request(req, surface.deref().clone())
     });
     surface.assign_destructor(Filter::new(|surface, _, _| SurfaceData::<R>::cleanup(&surface)));
-    surface
-        .as_ref()
-        .user_data()
-        .set_threadsafe(|| SurfaceData::<R>::new());
+    surface.as_ref().user_data().set_threadsafe(SurfaceData::<R>::new);
     SurfaceData::<R>::init(&surface);
     surface.deref().clone()
 }

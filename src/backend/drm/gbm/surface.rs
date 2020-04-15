@@ -287,6 +287,11 @@ impl<D: RawDevice + 'static> GbmSurface<D> {
     /// *Note*: This might trigger a full modeset on the underlying device,
     /// potentially causing some flickering. In that case this operation is
     /// blocking until the crtc is in the desired state.
+    ///
+    /// # Safety
+    ///
+    /// When used in conjunction with an EGL context, this must be called exactly once
+    /// after page-flipping the associated context.
     pub unsafe fn page_flip(&self) -> ::std::result::Result<(), SwapBuffersError> {
         self.0.page_flip()
     }

@@ -103,6 +103,7 @@ pub struct Plane {
 }
 
 bitflags! {
+    /// Possible flags for a DMA buffer
     pub struct BufferFlags: u32 {
         /// The buffer content is Y-inverted
         const Y_INVERT = 1;
@@ -219,9 +220,14 @@ where
                                 stride,
                                 modifier_hi,
                                 modifier_lo,
-                            } => {
-                                handler.add(&*params, fd, plane_idx, offset, stride, modifier_hi, modifier_lo)
-                            }
+                            } => handler.add(
+                                &*params,
+                                fd,
+                                plane_idx,
+                                offset,
+                                stride,
+                                ((modifier_hi as u64) << 32) + (modifier_lo as u64),
+                            ),
                             ParamsRequest::Create {
                                 width,
                                 height,
@@ -269,8 +275,7 @@ impl<H: DmabufHandler> ParamsHandler<H> {
         plane_idx: u32,
         offset: u32,
         stride: u32,
-        modifier_hi: u32,
-        modifier_lo: u32,
+        modifier: u64,
     ) {
         // protocol checks:
         // Cannot reuse a params:
@@ -304,7 +309,7 @@ impl<H: DmabufHandler> ParamsHandler<H> {
             plane_idx,
             offset,
             stride,
-            modifier: ((modifier_hi as u64) << 32) + (modifier_lo as u64),
+            modifier,
         });
     }
 

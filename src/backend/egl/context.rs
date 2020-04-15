@@ -446,7 +446,9 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
 
     /// Returns the address of an OpenGL function.
     ///
-    /// Supposes that the context has been made current before this function is called.
+    /// # Safety
+    ///
+    /// The context must have been made current before this function is called.
     pub unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
         let addr = CString::new(symbol.as_bytes()).unwrap();
         let addr = addr.as_ptr();

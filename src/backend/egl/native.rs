@@ -20,7 +20,7 @@ pub trait Backend {
 
     /// Return an [`EGLDisplay`](ffi::egl::types::EGLDisplay) based on this backend
     ///
-    /// # Unsafety
+    /// # Safety
     ///
     /// The returned [`EGLDisplay`](ffi::egl::types::EGLDisplay) needs to be a valid pointer for EGL,
     /// but there is no way to test that.
@@ -154,7 +154,7 @@ unsafe impl NativeDisplay<Wayland> for WinitWindow {
                 wegl::WlEglSurface::new_from_raw(surface as *mut _, size.width as i32, size.height as i32)
             })
         } else {
-            return Err(Error::NonMatchingBackend("Wayland"));
+            Err(Error::NonMatchingBackend("Wayland"))
         }
     }
 }

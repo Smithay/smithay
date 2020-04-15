@@ -66,8 +66,8 @@ pub enum Error {
     /// No encoder was found for a given connector on the set crtc
     #[error("No encoder found for the given connector '{connector:?}' on crtc `{crtc:?}`")]
     NoSuitableEncoder {
-        /// Connector info
-        connector: connector::Info,
+        /// Connector
+        connector: connector::Handle,
         /// CRTC
         crtc: crtc::Handle,
     },

@@ -614,6 +614,9 @@ impl AsRawFd for LibinputInputBackend {
     }
 }
 
+/// calloop source associated with the libinput backend
+pub type LibinputSource = Generic<SourceFd<LibinputInputBackend>>;
+
 /// Binds a [`LibinputInputBackend`] to a given [`LoopHandle`].
 ///
 /// Automatically feeds the backend with incoming events without any manual calls to
@@ -621,10 +624,7 @@ impl AsRawFd for LibinputInputBackend {
 pub fn libinput_bind<Data: 'static>(
     backend: LibinputInputBackend,
     handle: LoopHandle<Data>,
-) -> ::std::result::Result<
-    Source<Generic<SourceFd<LibinputInputBackend>>>,
-    InsertError<Generic<SourceFd<LibinputInputBackend>>>,
-> {
+) -> Result<Source<LibinputSource>, InsertError<LibinputSource>> {
     let mut source = Generic::from_fd_source(backend);
     source.set_interest(Interest::READABLE);
 

@@ -105,6 +105,19 @@ struct Marker<R> {
     _r: ::std::marker::PhantomData<R>,
 }
 
+/// New buffer assignation for a surface
+pub enum BufferAssignment {
+    /// The surface no longer has a buffer attached to it
+    Removed,
+    /// A new buffer has been attached
+    NewBuffer {
+        /// The buffer object
+        buffer: wl_buffer::WlBuffer,
+        /// location of the new buffer relative to the previous one
+        delta: (i32, i32),
+    },
+}
+
 /// Data associated with a surface, aggregated by the handlers
 ///
 /// Most of the fields of this struct represent a double-buffered state, which
@@ -116,16 +129,10 @@ struct Marker<R> {
 pub struct SurfaceAttributes {
     /// Buffer defining the contents of the surface
     ///
-    /// The tuple represent the coordinates of this buffer
-    /// relative to the location of the current buffer.
-    ///
-    /// If set to `Some(None)`, it means the user specifically asked for the
-    /// surface to be unmapped.
-    ///
     /// You are free to set this field to `None` to avoid processing it several
     /// times. It'll be set to `Some(...)` if the user attaches a buffer (or `NULL`) to
-    /// the surface.
-    pub buffer: Option<Option<(wl_buffer::WlBuffer, (i32, i32))>>,
+    /// the surface, and be left to `None` if the user does not attach anything.
+    pub buffer: Option<BufferAssignment>,
     /// Scale of the contents of the buffer, for higher-resolution contents.
     ///
     /// If it matches the one of the output displaying this surface, no change

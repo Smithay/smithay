@@ -153,6 +153,10 @@ pub trait Role<R>: RoleType {
     fn unset(&mut self) -> Result<R, WrongRole>;
 }
 
+/// The roles defining macro
+///
+/// See the docs of the [`wayland::compositor::roles`](wayland/compositor/roles/index.html) module
+/// for an explanation of its use.
 #[macro_export]
 macro_rules! define_roles(
     ($enum_name: ident) => {

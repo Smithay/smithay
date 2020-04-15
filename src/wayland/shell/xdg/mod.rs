@@ -499,7 +499,7 @@ impl<R> Clone for ToplevelSurface<R> {
         Self {
             wl_surface: self.wl_surface.clone(),
             shell_surface: self.shell_surface.clone(),
-            token: self.token.clone(),
+            token: self.token,
         }
     }
 }

@@ -150,7 +150,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
                 .all(|crtc_list| resource_handles.filter_crtcs(crtc_list).contains(&self.crtc))
             {
                 return Err(Error::NoSuitableEncoder {
-                    connector: info,
+                    connector: info.handle(),
                     crtc: self.crtc,
                 });
             }
@@ -158,7 +158,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
             pending.connectors.insert(conn);
             Ok(())
         } else {
-            return Err(Error::ModeNotSuitable(pending.mode.unwrap()));
+            Err(Error::ModeNotSuitable(pending.mode.unwrap()))
         }
     }
 

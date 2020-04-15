@@ -183,7 +183,7 @@ impl EGLImages {
     ///
     /// This does only temporarily modify the OpenGL state any changes are reverted before returning.
     ///
-    /// # Unsafety
+    /// # Safety
     ///
     /// The given `tex_id` needs to be a valid GL texture otherwise undefined behavior might occur.
     #[cfg(feature = "renderer_gl")]

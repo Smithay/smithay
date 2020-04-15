@@ -361,7 +361,7 @@ where
                     // same as pointer, should error but cannot
                 }
             }
-            wl_seat::Request::GetTouch { id: _ } => {
+            wl_seat::Request::GetTouch { .. } => {
                 // TODO
             }
             wl_seat::Request::Release => {

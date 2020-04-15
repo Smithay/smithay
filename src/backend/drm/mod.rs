@@ -114,10 +114,19 @@ pub trait Device: AsRawFd + DevPath {
     /// [`ResourceHandle`](drm::control::ResourceHandle)
     fn resource_handles(&self) -> Result<ResourceHandles, <Self::Surface as Surface>::Error>;
 
+    /// Retrieve the information for a connector
     fn get_connector_info(&self, conn: connector::Handle) -> Result<connector::Info, DrmError>;
+
+    /// Retrieve the information for a crtc
     fn get_crtc_info(&self, crtc: crtc::Handle) -> Result<crtc::Info, DrmError>;
+
+    /// Retrieve the information for an encoder
     fn get_encoder_info(&self, enc: encoder::Handle) -> Result<encoder::Info, DrmError>;
+
+    /// Retrieve the information for a framebuffer
     fn get_framebuffer_info(&self, fb: framebuffer::Handle) -> Result<framebuffer::Info, DrmError>;
+
+    /// Retrieve the information for a plane
     fn get_plane_info(&self, plane: plane::Handle) -> Result<plane::Info, DrmError>;
 }
 
@@ -221,6 +230,9 @@ impl<A: AsRawFd> DevPath for A {
     }
 }
 
+/// calloop source associated with a Device
+pub type DrmSource<D> = Generic<SourceFd<D>>;
+
 /// Bind a `Device` to an [`EventLoop`](calloop::EventLoop),
 ///
 /// This will cause it to recieve events and feed them into a previously
@@ -228,7 +240,7 @@ impl<A: AsRawFd> DevPath for A {
 pub fn device_bind<D: Device + 'static, Data>(
     handle: &LoopHandle<Data>,
     device: D,
-) -> ::std::result::Result<Source<Generic<SourceFd<D>>>, InsertError<Generic<SourceFd<D>>>>
+) -> ::std::result::Result<Source<DrmSource<D>>, InsertError<DrmSource<D>>>
 where
     D: Device,
     Data: 'static,

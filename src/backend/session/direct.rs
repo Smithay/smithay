@@ -403,10 +403,9 @@ impl BoundDirectSession {
     pub fn unbind(self) -> DirectSessionNotifier {
         let BoundDirectSession { source, notifier } = self;
         source.remove();
-        match Rc::try_unwrap(notifier) {
-            Ok(notifier) => notifier.into_inner(),
-            Err(_) => panic!("Notifier should have been freed from the event loop!"),
-        }
+        Rc::try_unwrap(notifier)
+            .map(RefCell::into_inner)
+            .unwrap_or_else(|_| panic!("Notifier should have been freed from the event loop!"))
     }
 }
 
