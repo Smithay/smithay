@@ -15,7 +15,7 @@ use glium::Surface as GliumSurface;
 use slog::Logger;
 
 #[cfg(feature = "egl")]
-use smithay::backend::egl::{EGLDisplay, EGLGraphicsBackend};
+use smithay::backend::egl::{display::WaylandEGLDisplay, EGLGraphicsBackend};
 use smithay::{
     backend::{
         drm::{
@@ -66,6 +66,7 @@ use crate::glium_drawer::GliumDrawer;
 use crate::input_handler::AnvilInputHandler;
 use crate::shell::{init_shell, MyWindowMap, Roles};
 use crate::AnvilState;
+use smithay::backend::drm::gbm::GbmSurface;
 
 pub struct SessionFd(RawFd);
 impl AsRawFd for SessionFd {
@@ -76,8 +77,7 @@ impl AsRawFd for SessionFd {
 
 type RenderDevice =
     EglDevice<EglGbmBackend<LegacyDrmDevice<SessionFd>>, GbmDevice<LegacyDrmDevice<SessionFd>>>;
-type RenderSurface =
-    EglSurface<EglGbmBackend<LegacyDrmDevice<SessionFd>>, GbmDevice<LegacyDrmDevice<SessionFd>>>;
+type RenderSurface = EglSurface<GbmSurface<LegacyDrmDevice<SessionFd>>>;
 
 pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log: Logger) -> Result<(), ()> {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
@@ -294,7 +294,7 @@ struct BackendData<S: SessionNotifier> {
 struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
     compositor_token: CompositorToken<Roles>,
     #[cfg(feature = "egl")]
-    active_egl_context: Rc<RefCell<Option<EGLDisplay>>>,
+    active_egl_context: Rc<RefCell<Option<WaylandEGLDisplay>>>,
     session: AutoSession,
     backends: HashMap<dev_t, BackendData<S>>,
     display: Rc<RefCell<Display>>,
@@ -313,7 +313,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
     #[cfg(feature = "egl")]
     pub fn scan_connectors(
         device: &mut RenderDevice,
-        egl_display: Rc<RefCell<Option<EGLDisplay>>>,
+        egl_display: Rc<RefCell<Option<WaylandEGLDisplay>>>,
         logger: &::slog::Logger,
     ) -> HashMap<crtc::Handle, GliumDrawer<RenderSurface>> {
         // Get a set of all modesetting resource handles (excluding planes):

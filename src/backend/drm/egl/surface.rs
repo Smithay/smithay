@@ -1,11 +1,10 @@
 use drm::control::{connector, crtc, Mode};
 use nix::libc::c_void;
-use std::rc::Rc;
 
 use super::Error;
-use crate::backend::drm::{Device, Surface};
-use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
-use crate::backend::egl::{EGLContext, EGLSurface};
+use crate::backend::drm::Surface;
+use crate::backend::egl::native::NativeSurface;
+use crate::backend::egl::{get_proc_address, native, EGLContext, EGLSurface};
 #[cfg(feature = "renderer_gl")]
 use crate::backend::graphics::gl::GLGraphicsBackend;
 #[cfg(feature = "renderer_gl")]
@@ -13,24 +12,20 @@ use crate::backend::graphics::PixelFormat;
 use crate::backend::graphics::{CursorBackend, SwapBuffersError};
 
 /// Egl surface for rendering
-pub struct EglSurface<B, D>
+pub struct EglSurface<N>
 where
-    B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B> + 'static,
-    <D as Device>::Surface: NativeSurface,
+    N: native::NativeSurface + Surface,
 {
-    pub(super) dev: Rc<EGLContext<B, D>>,
-    pub(super) surface: EGLSurface<B::Surface>,
+    pub(super) context: EGLContext,
+    pub(super) surface: EGLSurface<N>,
 }
 
-impl<B, D> Surface for EglSurface<B, D>
+impl<N> Surface for EglSurface<N>
 where
-    B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B> + 'static,
-    <D as Device>::Surface: NativeSurface,
+    N: NativeSurface + Surface,
 {
-    type Error = Error<<<D as Device>::Surface as Surface>::Error>;
-    type Connectors = <<D as Device>::Surface as Surface>::Connectors;
+    type Connectors = <N as Surface>::Connectors;
+    type Error = Error<<N as Surface>::Error>;
 
     fn crtc(&self) -> crtc::Handle {
         (*self.surface).crtc()
@@ -67,14 +62,12 @@ where
     }
 }
 
-impl<'a, B, D> CursorBackend<'a> for EglSurface<B, D>
+impl<'a, N> CursorBackend<'a> for EglSurface<N>
 where
-    B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B> + 'static,
-    <D as Device>::Surface: NativeSurface + CursorBackend<'a>,
+    N: NativeSurface + Surface + CursorBackend<'a>,
 {
-    type CursorFormat = <D::Surface as CursorBackend<'a>>::CursorFormat;
-    type Error = <D::Surface as CursorBackend<'a>>::Error;
+    type CursorFormat = <N as CursorBackend<'a>>::CursorFormat;
+    type Error = <N as CursorBackend<'a>>::Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> ::std::result::Result<(), Self::Error> {
         self.surface.set_cursor_position(x, y)
@@ -93,18 +86,16 @@ where
 }
 
 #[cfg(feature = "renderer_gl")]
-impl<B, D> GLGraphicsBackend for EglSurface<B, D>
+impl<N> GLGraphicsBackend for EglSurface<N>
 where
-    B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B> + 'static,
-    <D as Device>::Surface: NativeSurface,
+    N: native::NativeSurface + Surface,
 {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         self.surface.swap_buffers()
     }
 
     unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        self.dev.get_proc_address(symbol)
+        get_proc_address(symbol)
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
@@ -113,14 +104,14 @@ where
     }
 
     fn is_current(&self) -> bool {
-        self.dev.is_current() && self.surface.is_current()
+        self.context.is_current() && self.surface.is_current()
     }
 
     unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        self.surface.make_current()
+        self.context.make_current_with_surface(&self.surface)
     }
 
     fn get_pixel_format(&self) -> PixelFormat {
-        self.dev.get_pixel_format()
+        self.surface.get_pixel_format()
     }
 }

@@ -12,7 +12,7 @@ use glium::{
 use slog::Logger;
 
 #[cfg(feature = "egl")]
-use smithay::backend::egl::EGLDisplay;
+use smithay::backend::egl::display::WaylandEGLDisplay;
 use smithay::{
     backend::{
         egl::{BufferAccessError, EGLImages, Format},
@@ -44,7 +44,7 @@ pub struct GliumDrawer<F: GLGraphicsBackend + 'static> {
     index_buffer: glium::IndexBuffer<u16>,
     programs: [glium::Program; shaders::FRAGMENT_COUNT],
     #[cfg(feature = "egl")]
-    egl_display: Rc<RefCell<Option<EGLDisplay>>>,
+    egl_display: Rc<RefCell<Option<WaylandEGLDisplay>>>,
     log: Logger,
 }
 
@@ -56,7 +56,11 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
 
 impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer<T> {
     #[cfg(feature = "egl")]
-    pub fn init(backend: T, egl_display: Rc<RefCell<Option<EGLDisplay>>>, log: Logger) -> GliumDrawer<T> {
+    pub fn init(
+        backend: T,
+        egl_display: Rc<RefCell<Option<WaylandEGLDisplay>>>,
+        log: Logger,
+    ) -> GliumDrawer<T> {
         let display = backend.into();
 
         // building the vertex buffer, which contains all the vertices that we will draw

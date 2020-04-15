@@ -12,20 +12,19 @@ use drm::control::{connector, crtc, encoder, framebuffer, plane, ResourceHandles
 use drm::SystemError as DrmError;
 use nix::libc::dev_t;
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::rc::Rc;
 #[cfg(feature = "use_system_lib")]
 use wayland_server::Display;
 
 use super::{Device, DeviceHandler, Surface};
-use crate::backend::egl::context::GlAttributes;
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
-use crate::backend::egl::EGLContext;
 use crate::backend::egl::Error as EGLError;
 #[cfg(feature = "use_system_lib")]
-use crate::backend::egl::{EGLDisplay, EGLGraphicsBackend};
+use crate::backend::egl::{display::WaylandEGLDisplay, EGLGraphicsBackend};
 
 mod surface;
 pub use self::surface::*;
+use crate::backend::egl::context::GlAttributes;
+use crate::backend::egl::display::EGLDisplay;
 
 #[cfg(feature = "backend_session")]
 pub mod session;
@@ -48,7 +47,7 @@ where
     D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
     <D as Device>::Surface: NativeSurface,
 {
-    dev: Rc<EGLContext<B, D>>,
+    dev: EGLDisplay<B, D>,
     logger: ::slog::Logger,
 }
 
@@ -73,31 +72,7 @@ where
     ///
     /// Returns an error if the file is no valid device or context
     /// creation was not successful.
-    pub fn new<L>(dev: D, logger: L) -> Result<Self, Error<<<D as Device>::Surface as Surface>::Error>>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        EglDevice::new_with_gl_attr(
-            dev,
-            GlAttributes {
-                version: None,
-                profile: None,
-                debug: cfg!(debug_assertions),
-                vsync: true,
-            },
-            logger,
-        )
-    }
-
-    /// Create a new [`EglDevice`] from an open device and given [`GlAttributes`]
-    ///
-    /// Returns an error if the file is no valid device or context
-    /// creation was not successful.
-    pub fn new_with_gl_attr<L>(
-        mut dev: D,
-        attributes: GlAttributes,
-        logger: L,
-    ) -> Result<Self, Error<<<D as Device>::Surface as Surface>::Error>>
+    pub fn new<L>(mut dev: D, logger: L) -> Result<Self, Error<<<D as Device>::Surface as Surface>::Error>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -107,10 +82,7 @@ where
 
         debug!(log, "Creating egl context from device");
         Ok(EglDevice {
-            // Open the gbm device from the drm device and create a context based on that
-            dev: Rc::new(
-                EGLContext::new(dev, attributes, Default::default(), log.clone()).map_err(Error::EGL)?,
-            ),
+            dev: EGLDisplay::new(dev, log.clone()).map_err(Error::EGL)?,
             logger: log,
         })
     }
@@ -147,7 +119,7 @@ where
     D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
     <D as Device>::Surface: NativeSurface,
 {
-    type Surface = EglSurface<B, D>;
+    type Surface = EglSurface<<D as Device>::Surface>;
 
     fn device_id(&self) -> dev_t {
         self.dev.borrow().device_id()
@@ -166,15 +138,30 @@ where
     fn create_surface(
         &mut self,
         crtc: crtc::Handle,
-    ) -> Result<EglSurface<B, D>, <Self::Surface as Surface>::Error> {
+    ) -> Result<Self::Surface, <Self::Surface as Surface>::Error> {
         info!(self.logger, "Initializing EglSurface");
 
-        let surface = self.dev.create_surface(crtc).map_err(Error::EGL)?;
+        // Device trait is unaware of opengl, so using sensible defaults
+        let attributes = GlAttributes {
+            version: None,
+            profile: None,
+            debug: cfg!(debug_assertions),
+            vsync: true,
+        };
+        let reqs = Default::default();
 
-        Ok(EglSurface {
-            dev: self.dev.clone(),
-            surface,
-        })
+        let context = self.dev.create_context(attributes, reqs).map_err(Error::EGL)?;
+        let surface = self
+            .dev
+            .create_surface(
+                context.get_pixel_format(),
+                reqs.double_buffer,
+                context.get_config_id(),
+                crtc,
+            )
+            .map_err(Error::EGL)?;
+
+        Ok(EglSurface { context, surface })
     }
 
     fn process_events(&mut self) {
@@ -212,7 +199,7 @@ where
     D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
     <D as Device>::Surface: NativeSurface,
 {
-    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay, EGLError> {
+    fn bind_wl_display(&self, display: &Display) -> Result<WaylandEGLDisplay, EGLError> {
         self.dev.bind_wl_display(display)
     }
 }

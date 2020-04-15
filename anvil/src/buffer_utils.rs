@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use slog::Logger;
 
 #[cfg(feature = "egl")]
-use smithay::backend::egl::EGLDisplay;
+use smithay::backend::egl::display::WaylandEGLDisplay;
 use smithay::{
     reexports::wayland_server::protocol::wl_buffer::WlBuffer,
     wayland::shm::with_buffer_contents as shm_buffer_contents,
@@ -13,14 +13,14 @@ use smithay::{
 #[derive(Clone)]
 pub struct BufferUtils {
     #[cfg(feature = "egl")]
-    egl_display: Rc<RefCell<Option<EGLDisplay>>>,
+    egl_display: Rc<RefCell<Option<WaylandEGLDisplay>>>,
     log: Logger,
 }
 
 impl BufferUtils {
     /// Creates a new `BufferUtils`.
     #[cfg(feature = "egl")]
-    pub fn new(egl_display: Rc<RefCell<Option<EGLDisplay>>>, log: Logger) -> Self {
+    pub fn new(egl_display: Rc<RefCell<Option<WaylandEGLDisplay>>>, log: Logger) -> Self {
         Self { egl_display, log }
     }
 

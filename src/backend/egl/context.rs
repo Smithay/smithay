@@ -1,76 +1,38 @@
 //! EGL context related structs
 
-use super::{ffi, native, EGLSurface, Error};
-use crate::backend::graphics::PixelFormat;
-use nix::libc::{c_int, c_void};
+use super::{ffi, Error};
+use crate::backend::egl::display::EGLDisplay;
+use crate::backend::egl::native::NativeSurface;
+use crate::backend::egl::{native, EGLSurface};
+use crate::backend::graphics::{PixelFormat, SwapBuffersError};
 use slog;
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    ffi::{CStr, CString},
-    marker::PhantomData,
-    mem::MaybeUninit,
-    ptr,
-    rc::Rc,
-};
+use std::ptr;
+use std::sync::{Arc, Weak};
 
 /// EGL context for rendering
-pub struct EGLContext<B: native::Backend, N: native::NativeDisplay<B>> {
-    native: RefCell<N>,
-    pub(crate) context: Rc<ffi::egl::types::EGLContext>,
-    pub(crate) display: Rc<ffi::egl::types::EGLDisplay>,
-    pub(crate) config_id: ffi::egl::types::EGLConfig,
-    pub(crate) surface_attributes: Vec<c_int>,
+pub struct EGLContext {
+    context: Arc<ffi::egl::types::EGLContext>,
+    display: Weak<ffi::egl::types::EGLDisplay>,
+    config_id: ffi::egl::types::EGLConfig,
     pixel_format: PixelFormat,
-    pub(crate) wl_drm_support: bool,
     logger: slog::Logger,
-    _backend: PhantomData<B>,
 }
 
-impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
+impl EGLContext {
     /// Create a new [`EGLContext`] from a given [`NativeDisplay`](native::NativeDisplay)
-    pub fn new<L>(
-        native: N,
-        attributes: GlAttributes,
-        reqs: PixelFormatRequirements,
-        logger: L,
-    ) -> Result<EGLContext<B, N>, Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = crate::slog_or_stdlog(logger.into()).new(o!("smithay_module" => "renderer_egl"));
-        let ptr = native.ptr()?;
-        let (context, display, config_id, surface_attributes, pixel_format, wl_drm_support) =
-            unsafe { EGLContext::<B, N>::new_internal(ptr, attributes, reqs, log.clone()) }?;
-
-        Ok(EGLContext {
-            native: RefCell::new(native),
-            context,
-            display,
-            config_id,
-            surface_attributes,
-            pixel_format,
-            wl_drm_support,
-            logger: log,
-            _backend: PhantomData,
-        })
-    }
-
-    unsafe fn new_internal(
-        ptr: ffi::NativeDisplayType,
+    pub(crate) fn new<B, N, L>(
+        display: &EGLDisplay<B, N>,
         mut attributes: GlAttributes,
         reqs: PixelFormatRequirements,
-        log: ::slog::Logger,
-    ) -> Result<
-        (
-            Rc<ffi::egl::types::EGLContext>,
-            Rc<ffi::egl::types::EGLDisplay>,
-            ffi::egl::types::EGLConfig,
-            Vec<c_int>,
-            PixelFormat,
-            bool,
-        ),
-        Error,
-    > {
+        log: L,
+    ) -> Result<EGLContext, Error>
+    where
+        L: Into<Option<::slog::Logger>>,
+        B: native::Backend,
+        N: native::NativeDisplay<B>,
+    {
+        let log = crate::slog_or_stdlog(log.into()).new(o!("smithay_module" => "renderer_egl"));
+
         // If no version is given, try OpenGLES 3.0, if available,
         // fallback to 2.0 otherwise
         let version = match attributes.version {
@@ -79,13 +41,13 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             None => {
                 debug!(log, "Trying to initialize EGL with OpenGLES 3.0");
                 attributes.version = Some((3, 0));
-                match EGLContext::<B, N>::new_internal(ptr, attributes, reqs, log.clone()) {
+                match EGLContext::new(display, attributes, reqs, log.clone()) {
                     Ok(x) => return Ok(x),
                     Err(err) => {
                         warn!(log, "EGL OpenGLES 3.0 Initialization failed with {}", err);
                         debug!(log, "Trying to initialize EGL with OpenGLES 2.0");
                         attributes.version = Some((2, 0));
-                        return EGLContext::<B, N>::new_internal(ptr, attributes, reqs, log);
+                        return EGLContext::new(display, attributes, reqs, log.clone());
                     }
                 }
             }
@@ -102,265 +64,11 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             }
         };
 
-        ffi::egl::LOAD.call_once(|| {
-            fn constrain<F>(f: F) -> F
-            where
-                F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
-            {
-                f
-            };
-
-            ffi::egl::load_with(|sym| {
-                let name = CString::new(sym).unwrap();
-                let symbol = ffi::egl::LIB.get::<*mut c_void>(name.as_bytes());
-                match symbol {
-                    Ok(x) => *x as *const _,
-                    Err(_) => ptr::null(),
-                }
-            });
-            let proc_address = constrain(|sym| {
-                let addr = CString::new(sym).unwrap();
-                let addr = addr.as_ptr();
-                ffi::egl::GetProcAddress(addr) as *const _
-            });
-            ffi::egl::load_with(&proc_address);
-            ffi::egl::BindWaylandDisplayWL::load_with(&proc_address);
-            ffi::egl::UnbindWaylandDisplayWL::load_with(&proc_address);
-            ffi::egl::QueryWaylandBufferWL::load_with(&proc_address);
-        });
-
-        // the first step is to query the list of extensions without any display, if supported
-        let dp_extensions = {
-            let p = ffi::egl::QueryString(ffi::egl::NO_DISPLAY, ffi::egl::EXTENSIONS as i32);
-
-            // this possibility is available only with EGL 1.5 or EGL_EXT_platform_base, otherwise
-            // `eglQueryString` returns an error
-            if p.is_null() {
-                vec![]
-            } else {
-                let p = CStr::from_ptr(p);
-                let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
-                list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
-            }
-        };
-
-        debug!(log, "EGL No-Display Extensions: {:?}", dp_extensions);
-
-        let display = B::get_display(ptr, |e: &str| dp_extensions.iter().any(|s| s == e), log.clone());
-        if display == ffi::egl::NO_DISPLAY {
-            error!(log, "EGL Display is not valid");
-            return Err(Error::DisplayNotSupported);
-        }
-
-        let egl_version = {
-            let mut major: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
-            let mut minor: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
-
-            if ffi::egl::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr()) == 0 {
-                return Err(Error::InitFailed);
-            }
-            let major = major.assume_init();
-            let minor = minor.assume_init();
-
-            info!(log, "EGL Initialized");
-            info!(log, "EGL Version: {:?}", (major, minor));
-
-            (major, minor)
-        };
-
-        // the list of extensions supported by the client once initialized is different from the
-        // list of extensions obtained earlier
-        let extensions = if egl_version >= (1, 2) {
-            let p = CStr::from_ptr(ffi::egl::QueryString(display, ffi::egl::EXTENSIONS as i32));
-            let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
-            list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
-        } else {
-            vec![]
-        };
-
-        info!(log, "EGL Extensions: {:?}", extensions);
-
-        if egl_version >= (1, 2) && ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) == 0 {
-            error!(log, "OpenGLES not supported by the underlying EGL implementation");
-            return Err(Error::OpenGlesNotSupported);
-        }
-
-        let descriptor = {
-            let mut out: Vec<c_int> = Vec::with_capacity(37);
-
-            if egl_version >= (1, 2) {
-                trace!(log, "Setting COLOR_BUFFER_TYPE to RGB_BUFFER");
-                out.push(ffi::egl::COLOR_BUFFER_TYPE as c_int);
-                out.push(ffi::egl::RGB_BUFFER as c_int);
-            }
-
-            trace!(log, "Setting SURFACE_TYPE to WINDOW");
-
-            out.push(ffi::egl::SURFACE_TYPE as c_int);
-            // TODO: Some versions of Mesa report a BAD_ATTRIBUTE error
-            // if we ask for PBUFFER_BIT as well as WINDOW_BIT
-            out.push((ffi::egl::WINDOW_BIT) as c_int);
-
-            match version {
-                (3, _) => {
-                    if egl_version < (1, 3) {
-                        error!(
-                            log,
-                            "OpenglES 3.* is not supported on EGL Versions lower then 1.3"
-                        );
-                        return Err(Error::NoAvailablePixelFormat);
-                    }
-                    trace!(log, "Setting RENDERABLE_TYPE to OPENGL_ES3");
-                    out.push(ffi::egl::RENDERABLE_TYPE as c_int);
-                    out.push(ffi::egl::OPENGL_ES3_BIT as c_int);
-                    trace!(log, "Setting CONFORMANT to OPENGL_ES3");
-                    out.push(ffi::egl::CONFORMANT as c_int);
-                    out.push(ffi::egl::OPENGL_ES3_BIT as c_int);
-                }
-                (2, _) => {
-                    if egl_version < (1, 3) {
-                        error!(
-                            log,
-                            "OpenglES 2.* is not supported on EGL Versions lower then 1.3"
-                        );
-                        return Err(Error::NoAvailablePixelFormat);
-                    }
-                    trace!(log, "Setting RENDERABLE_TYPE to OPENGL_ES2");
-                    out.push(ffi::egl::RENDERABLE_TYPE as c_int);
-                    out.push(ffi::egl::OPENGL_ES2_BIT as c_int);
-                    trace!(log, "Setting CONFORMANT to OPENGL_ES2");
-                    out.push(ffi::egl::CONFORMANT as c_int);
-                    out.push(ffi::egl::OPENGL_ES2_BIT as c_int);
-                }
-                (_, _) => unreachable!(),
-            };
-
-            if let Some(hardware_accelerated) = reqs.hardware_accelerated {
-                out.push(ffi::egl::CONFIG_CAVEAT as c_int);
-                out.push(if hardware_accelerated {
-                    trace!(log, "Setting CONFIG_CAVEAT to NONE");
-                    ffi::egl::NONE as c_int
-                } else {
-                    trace!(log, "Setting CONFIG_CAVEAT to SLOW_CONFIG");
-                    ffi::egl::SLOW_CONFIG as c_int
-                });
-            }
-
-            if let Some(color) = reqs.color_bits {
-                trace!(log, "Setting RED_SIZE to {}", color / 3);
-                out.push(ffi::egl::RED_SIZE as c_int);
-                out.push((color / 3) as c_int);
-                trace!(
-                    log,
-                    "Setting GREEN_SIZE to {}",
-                    color / 3 + if color % 3 != 0 { 1 } else { 0 }
-                );
-                out.push(ffi::egl::GREEN_SIZE as c_int);
-                out.push((color / 3 + if color % 3 != 0 { 1 } else { 0 }) as c_int);
-                trace!(
-                    log,
-                    "Setting BLUE_SIZE to {}",
-                    color / 3 + if color % 3 == 2 { 1 } else { 0 }
-                );
-                out.push(ffi::egl::BLUE_SIZE as c_int);
-                out.push((color / 3 + if color % 3 == 2 { 1 } else { 0 }) as c_int);
-            }
-
-            if let Some(alpha) = reqs.alpha_bits {
-                trace!(log, "Setting ALPHA_SIZE to {}", alpha);
-                out.push(ffi::egl::ALPHA_SIZE as c_int);
-                out.push(alpha as c_int);
-            }
-
-            if let Some(depth) = reqs.depth_bits {
-                trace!(log, "Setting DEPTH_SIZE to {}", depth);
-                out.push(ffi::egl::DEPTH_SIZE as c_int);
-                out.push(depth as c_int);
-            }
-
-            if let Some(stencil) = reqs.stencil_bits {
-                trace!(log, "Setting STENCIL_SIZE to {}", stencil);
-                out.push(ffi::egl::STENCIL_SIZE as c_int);
-                out.push(stencil as c_int);
-            }
-
-            if let Some(multisampling) = reqs.multisampling {
-                trace!(log, "Setting SAMPLES to {}", multisampling);
-                out.push(ffi::egl::SAMPLES as c_int);
-                out.push(multisampling as c_int);
-            }
-
-            if reqs.stereoscopy {
-                error!(log, "Stereoscopy is currently unsupported (sorry!)");
-                return Err(Error::NoAvailablePixelFormat);
-            }
-
-            out.push(ffi::egl::NONE as c_int);
-            out
-        };
-
-        // calling `eglChooseConfig`
-        let mut config_id = MaybeUninit::uninit();
-        let mut num_configs = MaybeUninit::uninit();
-        if ffi::egl::ChooseConfig(
-            display,
-            descriptor.as_ptr(),
-            config_id.as_mut_ptr(),
-            1,
-            num_configs.as_mut_ptr(),
-        ) == 0
-        {
-            return Err(Error::ConfigFailed);
-        }
-
-        let config_id = config_id.assume_init();
-        let num_configs = num_configs.assume_init();
-
-        if num_configs == 0 {
-            error!(log, "No matching color format found");
-            return Err(Error::NoAvailablePixelFormat);
-        }
-
-        // analyzing each config
-        macro_rules! attrib {
-            ($display:expr, $config:expr, $attr:expr) => {{
-                let mut value = MaybeUninit::uninit();
-                let res = ffi::egl::GetConfigAttrib(
-                    $display,
-                    $config,
-                    $attr as ffi::egl::types::EGLint,
-                    value.as_mut_ptr(),
-                );
-                if res == 0 {
-                    return Err(Error::ConfigFailed);
-                }
-                value.assume_init()
-            }};
-        };
-
-        let desc = PixelFormat {
-            hardware_accelerated: attrib!(display, config_id, ffi::egl::CONFIG_CAVEAT)
-                != ffi::egl::SLOW_CONFIG as i32,
-            color_bits: attrib!(display, config_id, ffi::egl::RED_SIZE) as u8
-                + attrib!(display, config_id, ffi::egl::BLUE_SIZE) as u8
-                + attrib!(display, config_id, ffi::egl::GREEN_SIZE) as u8,
-            alpha_bits: attrib!(display, config_id, ffi::egl::ALPHA_SIZE) as u8,
-            depth_bits: attrib!(display, config_id, ffi::egl::DEPTH_SIZE) as u8,
-            stencil_bits: attrib!(display, config_id, ffi::egl::STENCIL_SIZE) as u8,
-            stereoscopy: false,
-            double_buffer: true,
-            multisampling: match attrib!(display, config_id, ffi::egl::SAMPLES) {
-                0 | 1 => None,
-                a => Some(a as u16),
-            },
-            srgb: false, // TODO: use EGL_KHR_gl_colorspace to know that
-        };
-
-        info!(log, "Selected color format: {:?}", desc);
+        let (pixel_format, config_id) = unsafe { display.choose_config(version, reqs)? };
 
         let mut context_attributes = Vec::with_capacity(10);
 
-        if egl_version >= (1, 5) || extensions.iter().any(|s| *s == "EGL_KHR_create_context") {
+        if display.egl_version >= (1, 5) || display.extensions.iter().any(|s| s == "EGL_KHR_create_context") {
             trace!(log, "Setting CONTEXT_MAJOR_VERSION to {}", version.0);
             context_attributes.push(ffi::egl::CONTEXT_MAJOR_VERSION as i32);
             context_attributes.push(version.0 as i32);
@@ -368,7 +76,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
             context_attributes.push(ffi::egl::CONTEXT_MINOR_VERSION as i32);
             context_attributes.push(version.1 as i32);
 
-            if attributes.debug && egl_version >= (1, 5) {
+            if attributes.debug && display.egl_version >= (1, 5) {
                 trace!(log, "Setting CONTEXT_OPENGL_DEBUG to TRUE");
                 context_attributes.push(ffi::egl::CONTEXT_OPENGL_DEBUG as i32);
                 context_attributes.push(ffi::egl::TRUE as i32);
@@ -376,7 +84,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
 
             context_attributes.push(ffi::egl::CONTEXT_FLAGS_KHR as i32);
             context_attributes.push(0);
-        } else if egl_version >= (1, 3) {
+        } else if display.egl_version >= (1, 3) {
             trace!(log, "Setting CONTEXT_CLIENT_VERSION to {}", version.0);
             context_attributes.push(ffi::egl::CONTEXT_CLIENT_VERSION as i32);
             context_attributes.push(version.0 as i32);
@@ -385,74 +93,99 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         context_attributes.push(ffi::egl::NONE as i32);
 
         trace!(log, "Creating EGL context...");
-        let context = ffi::egl::CreateContext(display, config_id, ptr::null(), context_attributes.as_ptr());
+        // TODO: Support shared contexts
+        let context = unsafe {
+            ffi::egl::CreateContext(
+                *display.display,
+                config_id,
+                ptr::null(),
+                context_attributes.as_ptr(),
+            )
+        };
 
         if context.is_null() {
-            match ffi::egl::GetError() as u32 {
+            match unsafe { ffi::egl::GetError() } as u32 {
                 ffi::egl::BAD_ATTRIBUTE => return Err(Error::CreationFailed),
                 err_no => return Err(Error::Unknown(err_no)),
             }
         }
-        debug!(log, "EGL context successfully created");
-
-        let surface_attributes = {
-            let mut out: Vec<c_int> = Vec::with_capacity(3);
-
-            match reqs.double_buffer {
-                Some(true) => {
-                    trace!(log, "Setting RENDER_BUFFER to BACK_BUFFER");
-                    out.push(ffi::egl::RENDER_BUFFER as c_int);
-                    out.push(ffi::egl::BACK_BUFFER as c_int);
-                }
-                Some(false) => {
-                    trace!(log, "Setting RENDER_BUFFER to SINGLE_BUFFER");
-                    out.push(ffi::egl::RENDER_BUFFER as c_int);
-                    out.push(ffi::egl::SINGLE_BUFFER as c_int);
-                }
-                None => {}
-            }
-
-            out.push(ffi::egl::NONE as i32);
-            out
-        };
 
         info!(log, "EGL context created");
 
-        // make current and get list of gl extensions
-        ffi::egl::MakeCurrent(display as *const _, ptr::null(), ptr::null(), context as *const _);
-
-        Ok((
-            Rc::new(context as *const _),
-            Rc::new(display as *const _),
+        Ok(EGLContext {
+            context: Arc::new(context as _),
+            display: Arc::downgrade(&display.display),
             config_id,
-            surface_attributes,
-            desc,
-            extensions.iter().any(|s| *s == "EGL_WL_bind_wayland_display"),
-        ))
-    }
-
-    /// Creates a surface for rendering
-    pub fn create_surface(&self, args: N::Arguments) -> Result<EGLSurface<B::Surface>, Error> {
-        trace!(self.logger, "Creating EGL window surface.");
-        let surface = self.native.borrow_mut().create_surface(args).map_err(|e| {
-            error!(self.logger, "EGL surface creation failed: {}", e);
-            Error::SurfaceCreationFailed
-        })?;
-        EGLSurface::new(self, surface).map(|x| {
-            debug!(self.logger, "EGL surface successfully created");
-            x
+            pixel_format,
+            logger: log,
         })
     }
 
-    /// Returns the address of an OpenGL function.
+    /// Makes the OpenGL context the current context in the current thread with a surface to
+    /// read/write to.
     ///
     /// # Safety
     ///
-    /// The context must have been made current before this function is called.
-    pub unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        let addr = CString::new(symbol.as_bytes()).unwrap();
-        let addr = addr.as_ptr();
-        ffi::egl::GetProcAddress(addr) as *const _
+    /// This function is marked unsafe, because the context cannot be made current
+    /// on multiple threads.
+    pub unsafe fn make_current_with_surface<N>(
+        &self,
+        surface: &EGLSurface<N>,
+    ) -> ::std::result::Result<(), SwapBuffersError>
+    where
+        N: NativeSurface,
+    {
+        if let Some(display) = self.display.upgrade() {
+            let surface_ptr = surface.surface.get();
+
+            let ret = ffi::egl::MakeCurrent(
+                (*display) as *const _,
+                surface_ptr as *const _,
+                surface_ptr as *const _,
+                (*self.context) as *const _,
+            );
+
+            if ret == 0 {
+                match ffi::egl::GetError() as u32 {
+                    ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
+                    err => panic!("eglMakeCurrent failed (eglGetError returned 0x{:x})", err),
+                }
+            } else {
+                Ok(())
+            }
+        } else {
+            Err(SwapBuffersError::ContextLost)
+        }
+    }
+
+    /// Makes the OpenGL context the current context in the current thread with no surface bound.
+    ///
+    /// # Safety
+    ///
+    /// This function is marked unsafe, because the context cannot be made current
+    /// on multiple threads.
+    pub unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
+        if let Some(display) = self.display.upgrade() {
+            let surface_ptr = ptr::null();
+
+            let ret = ffi::egl::MakeCurrent(
+                (*display) as *const _,
+                surface_ptr as *const _,
+                surface_ptr as *const _,
+                (*self.context) as *const _,
+            );
+
+            if ret == 0 {
+                match ffi::egl::GetError() as u32 {
+                    ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
+                    err => panic!("eglMakeCurrent failed (eglGetError returned 0x{:x})", err),
+                }
+            } else {
+                Ok(())
+            }
+        } else {
+            Err(SwapBuffersError::ContextLost)
+        }
     }
 
     /// Returns true if the OpenGL context is the current one in the thread.
@@ -460,41 +193,25 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLContext<B, N> {
         unsafe { ffi::egl::GetCurrentContext() == (*self.context) as *const _ }
     }
 
+    /// Returns the egl config for this context
+    pub fn get_config_id(&self) -> ffi::egl::types::EGLConfig {
+        self.config_id
+    }
+
     /// Returns the pixel format of the main framebuffer of the context.
     pub fn get_pixel_format(&self) -> PixelFormat {
         self.pixel_format
     }
-
-    /// Borrow the underlying native display.
-    ///
-    /// This follows the same semantics as [`std::cell:RefCell`](std::cell::RefCell).
-    /// Multiple read-only borrows are possible. Borrowing the
-    /// backend while there is a mutable reference will panic.
-    pub fn borrow(&self) -> Ref<'_, N> {
-        self.native.borrow()
-    }
-
-    /// Borrow the underlying native display mutably.
-    ///
-    /// This follows the same semantics as [`std::cell:RefCell`](std::cell::RefCell).
-    /// Holding any other borrow while trying to borrow the backend
-    /// mutably will panic. Note that EGL will borrow the display
-    /// mutably during surface creation.
-    pub fn borrow_mut(&self) -> RefMut<'_, N> {
-        self.native.borrow_mut()
-    }
 }
 
-unsafe impl<B: native::Backend, N: native::NativeDisplay<B> + Send> Send for EGLContext<B, N> {}
-unsafe impl<B: native::Backend, N: native::NativeDisplay<B> + Sync> Sync for EGLContext<B, N> {}
-
-impl<B: native::Backend, N: native::NativeDisplay<B>> Drop for EGLContext<B, N> {
+impl Drop for EGLContext {
     fn drop(&mut self) {
         unsafe {
             // we don't call MakeCurrent(0, 0) because we are not sure that the context
             // is still the current one
-            ffi::egl::DestroyContext((*self.display) as *const _, (*self.context) as *const _);
-            ffi::egl::Terminate((*self.display) as *const _);
+            if let Some(display) = self.display.upgrade() {
+                ffi::egl::DestroyContext((*display) as *const _, (*self.context) as *const _);
+            }
         }
     }
 }
