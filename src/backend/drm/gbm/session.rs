@@ -56,13 +56,23 @@ impl<
             for (crtc, backend) in backends.borrow().iter() {
                 if let Some(backend) = backend.upgrade() {
                     // restart rendering loop, if it was previously running
-                    if let Some(Err(err)) = backend
-                        .current_frame_buffer
-                        .get()
-                        .map(|fb| backend.crtc.page_flip(fb))
-                    {
-                        warn!(self.logger, "Failed to restart rendering loop. Error: {}", err);
+                    if let Some(fb) = backend.current_frame_buffer.get() {
+                        if let Err(_) = backend.crtc.page_flip(fb) {
+                            // Try more!
+                            if let Err(err) = backend.recreate() {
+                                error!(
+                                    self.logger,
+                                    "Failed to re-create gbm surface, is the device gone?\n\t{}", err
+                                );
+                            }
+                            if let Err(err) = unsafe { backend.page_flip() } {
+                                warn!(self.logger, "Failed to restart rendering loop. Error: {}", err);
+                                // TODO bubble this up the user somehow
+                                //      maybe expose a "running" state from a surface?
+                            }
+                        }
                     }
+
                     // reset cursor
                     {
                         use ::drm::control::Device;

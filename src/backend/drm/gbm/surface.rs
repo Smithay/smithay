@@ -91,11 +91,15 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
     }
 
     pub fn recreate(&self) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
-        let (w, h) = self.pending_mode().ok_or(Error::NoModeSet)?.size();
+        let (w, h) = self
+            .pending_mode()
+            .or(self.current_mode())
+            .ok_or(Error::NoModeSet)?
+            .size();
 
         // Recreate the surface and the related resources to match the new
         // resolution.
-        debug!(self.logger, "(Re-)Initializing surface for mode: {}:{}", w, h);
+        debug!(self.logger, "(Re-)Initializing surface (with mode: {}:{})", w, h);
         let surface = self
             .dev
             .borrow_mut()
