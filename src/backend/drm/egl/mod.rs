@@ -23,7 +23,7 @@ use crate::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
 
 mod surface;
 pub use self::surface::*;
-use crate::backend::egl::context::GlAttributes;
+use crate::backend::egl::context::{GlAttributes, PixelFormatRequirements};
 use crate::backend::egl::display::EGLDisplay;
 
 #[cfg(feature = "backend_session")]
@@ -49,6 +49,8 @@ where
 {
     dev: EGLDisplay<B, D>,
     logger: ::slog::Logger,
+    default_attributes: GlAttributes,
+    default_requirements: PixelFormatRequirements,
 }
 
 impl<B, D> AsRawFd for EglDevice<B, D>
@@ -72,7 +74,34 @@ where
     ///
     /// Returns an error if the file is no valid device or context
     /// creation was not successful.
-    pub fn new<L>(mut dev: D, logger: L) -> Result<Self, Error<<<D as Device>::Surface as Surface>::Error>>
+    pub fn new<L>(dev: D, logger: L) -> Result<Self, Error<<<D as Device>::Surface as Surface>::Error>>
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
+        EglDevice::new_with_defaults(
+            dev,
+            GlAttributes {
+                version: None,
+                profile: None,
+                debug: cfg!(debug_assertions),
+                vsync: true,
+            },
+            Default::default(),
+            logger,
+        )
+    }
+
+    /// Try to create a new [`EglDevice`] from an open device with the given attributes and
+    /// requirements as defaults for new surfaces.
+    ///
+    /// Returns an error if the file is no valid device or context
+    /// creation was not successful.
+    pub fn new_with_defaults<L>(
+        mut dev: D,
+        default_attributes: GlAttributes,
+        default_requirements: PixelFormatRequirements,
+        logger: L,
+    ) -> Result<Self, Error<<<D as Device>::Surface as Surface>::Error>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -83,6 +112,8 @@ where
         debug!(log, "Creating egl context from device");
         Ok(EglDevice {
             dev: EGLDisplay::new(dev, log.clone()).map_err(Error::EGL)?,
+            default_attributes,
+            default_requirements,
             logger: log,
         })
     }
@@ -141,21 +172,15 @@ where
     ) -> Result<Self::Surface, <Self::Surface as Surface>::Error> {
         info!(self.logger, "Initializing EglSurface");
 
-        // Device trait is unaware of opengl, so using sensible defaults
-        let attributes = GlAttributes {
-            version: None,
-            profile: None,
-            debug: cfg!(debug_assertions),
-            vsync: true,
-        };
-        let reqs = Default::default();
-
-        let context = self.dev.create_context(attributes, reqs).map_err(Error::EGL)?;
+        let context = self
+            .dev
+            .create_context(self.default_attributes, self.default_requirements)
+            .map_err(Error::EGL)?;
         let surface = self
             .dev
             .create_surface(
                 context.get_pixel_format(),
-                reqs.double_buffer,
+                self.default_requirements.double_buffer,
                 context.get_config_id(),
                 crtc,
             )
