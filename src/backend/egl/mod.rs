@@ -42,8 +42,9 @@ pub mod surface;
 pub use self::surface::EGLSurface;
 #[cfg(feature = "use_system_lib")]
 use crate::backend::egl::display::EGLBufferReader;
+use crate::backend::egl::display::EGLDisplayHandle;
 use std::ffi::CString;
-use std::sync::Weak;
+use std::sync::Arc;
 
 /// Error that can happen on optional EGL features
 #[derive(Debug, Clone, PartialEq)]
@@ -167,7 +168,7 @@ impl Format {
 /// Images of the EGL-based [`WlBuffer`].
 #[cfg(feature = "wayland_frontend")]
 pub struct EGLImages {
-    display: Weak<ffi::egl::types::EGLDisplay>,
+    display: Arc<EGLDisplayHandle>,
     /// Width in pixels
     pub width: u32,
     /// Height in pixels
@@ -204,41 +205,35 @@ impl EGLImages {
         plane: usize,
         tex_id: c_uint,
     ) -> ::std::result::Result<(), TextureCreationError> {
-        if self.display.upgrade().is_some() {
-            if !self.egl_to_texture_support {
-                return Err(TextureCreationError::GLExtensionNotSupported("GL_OES_EGL_image"));
-            }
-
-            let mut old_tex_id: i32 = 0;
-            self.gl.GetIntegerv(gl_ffi::TEXTURE_BINDING_2D, &mut old_tex_id);
-            self.gl.BindTexture(gl_ffi::TEXTURE_2D, tex_id);
-            self.gl.EGLImageTargetTexture2DOES(
-                gl_ffi::TEXTURE_2D,
-                *self
-                    .images
-                    .get(plane)
-                    .ok_or(TextureCreationError::PlaneIndexOutOfBounds)?,
-            );
-            let res = match ffi::egl::GetError() as u32 {
-                ffi::egl::SUCCESS => Ok(()),
-                err => Err(TextureCreationError::TextureBindingFailed(err)),
-            };
-            self.gl.BindTexture(gl_ffi::TEXTURE_2D, old_tex_id as u32);
-            res
-        } else {
-            Err(TextureCreationError::ContextLost)
+        if !self.egl_to_texture_support {
+            return Err(TextureCreationError::GLExtensionNotSupported("GL_OES_EGL_image"));
         }
+
+        let mut old_tex_id: i32 = 0;
+        self.gl.GetIntegerv(gl_ffi::TEXTURE_BINDING_2D, &mut old_tex_id);
+        self.gl.BindTexture(gl_ffi::TEXTURE_2D, tex_id);
+        self.gl.EGLImageTargetTexture2DOES(
+            gl_ffi::TEXTURE_2D,
+            *self
+                .images
+                .get(plane)
+                .ok_or(TextureCreationError::PlaneIndexOutOfBounds)?,
+        );
+        let res = match ffi::egl::GetError() as u32 {
+            ffi::egl::SUCCESS => Ok(()),
+            err => Err(TextureCreationError::TextureBindingFailed(err)),
+        };
+        self.gl.BindTexture(gl_ffi::TEXTURE_2D, old_tex_id as u32);
+        res
     }
 }
 
 #[cfg(feature = "wayland_frontend")]
 impl Drop for EGLImages {
     fn drop(&mut self) {
-        if let Some(display) = self.display.upgrade() {
-            for image in self.images.drain(..) {
-                unsafe {
-                    ffi::egl::DestroyImageKHR(*display, image);
-                }
+        for image in self.images.drain(..) {
+            unsafe {
+                ffi::egl::DestroyImageKHR(**self.display, image);
             }
         }
         self.buffer.release();

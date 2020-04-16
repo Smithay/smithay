@@ -1,9 +1,10 @@
 //! EGL surface related structs
 
 use super::{ffi, native, Error};
+use crate::backend::egl::display::EGLDisplayHandle;
 use crate::backend::graphics::{PixelFormat, SwapBuffersError};
 use nix::libc::c_int;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::{
     cell::Cell,
     ops::{Deref, DerefMut},
@@ -11,7 +12,7 @@ use std::{
 
 /// EGL surface of a given EGL context for rendering
 pub struct EGLSurface<N: native::NativeSurface> {
-    display: Weak<ffi::egl::types::EGLDisplay>,
+    display: Arc<EGLDisplayHandle>,
     native: N,
     pub(crate) surface: Cell<ffi::egl::types::EGLSurface>,
     config_id: ffi::egl::types::EGLConfig,
@@ -34,7 +35,7 @@ impl<N: native::NativeSurface> DerefMut for EGLSurface<N> {
 
 impl<N: native::NativeSurface> EGLSurface<N> {
     pub(crate) fn new<L>(
-        display: &Arc<ffi::egl::types::EGLDisplay>,
+        display: Arc<EGLDisplayHandle>,
         pixel_format: PixelFormat,
         double_buffered: Option<bool>,
         config: ffi::egl::types::EGLConfig,
@@ -76,7 +77,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
         }
 
         Ok(EGLSurface {
-            display: Arc::downgrade(display),
+            display,
             native,
             surface: Cell::new(surface),
             config_id: config,
@@ -90,34 +91,28 @@ impl<N: native::NativeSurface> EGLSurface<N> {
         let surface = self.surface.get();
 
         if !surface.is_null() {
-            if let Some(display) = self.display.upgrade() {
-                let ret = unsafe { ffi::egl::SwapBuffers((*display) as *const _, surface as *const _) };
+            let ret = unsafe { ffi::egl::SwapBuffers(**self.display, surface as *const _) };
 
-                if ret == 0 {
-                    match unsafe { ffi::egl::GetError() } as u32 {
-                        ffi::egl::CONTEXT_LOST => return Err(SwapBuffersError::ContextLost),
-                        err => return Err(SwapBuffersError::Unknown(err)),
-                    };
-                } else {
-                    self.native.swap_buffers()?;
-                }
+            if ret == 0 {
+                match unsafe { ffi::egl::GetError() } as u32 {
+                    ffi::egl::CONTEXT_LOST => return Err(SwapBuffersError::ContextLost),
+                    err => return Err(SwapBuffersError::Unknown(err)),
+                };
             } else {
-                return Err(SwapBuffersError::ContextLost);
+                self.native.swap_buffers()?;
             }
         };
 
         if self.native.needs_recreation() || surface.is_null() {
-            if let Some(display) = self.display.upgrade() {
-                self.native.recreate();
-                self.surface.set(unsafe {
-                    ffi::egl::CreateWindowSurface(
-                        *display,
-                        self.config_id,
-                        self.native.ptr(),
-                        self.surface_attributes.as_ptr(),
-                    )
-                });
-            }
+            self.native.recreate();
+            self.surface.set(unsafe {
+                ffi::egl::CreateWindowSurface(
+                    **self.display,
+                    self.config_id,
+                    self.native.ptr(),
+                    self.surface_attributes.as_ptr(),
+                )
+            });
         }
 
         Ok(())
@@ -144,10 +139,8 @@ impl<N: native::NativeSurface> EGLSurface<N> {
 
 impl<N: native::NativeSurface> Drop for EGLSurface<N> {
     fn drop(&mut self) {
-        if let Some(display) = self.display.upgrade() {
-            unsafe {
-                ffi::egl::DestroySurface((*display) as *const _, self.surface.get() as *const _);
-            }
+        unsafe {
+            ffi::egl::DestroySurface(**self.display, self.surface.get() as *const _);
         }
     }
 }

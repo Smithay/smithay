@@ -1,17 +1,17 @@
 //! EGL context related structs
 
 use super::{ffi, Error};
-use crate::backend::egl::display::EGLDisplay;
+use crate::backend::egl::display::{EGLDisplay, EGLDisplayHandle};
 use crate::backend::egl::native::NativeSurface;
 use crate::backend::egl::{native, EGLSurface};
 use crate::backend::graphics::{PixelFormat, SwapBuffersError};
 use std::ptr;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 /// EGL context for rendering
 pub struct EGLContext {
-    context: Arc<ffi::egl::types::EGLContext>,
-    display: Weak<ffi::egl::types::EGLDisplay>,
+    context: ffi::egl::types::EGLContext,
+    display: Arc<EGLDisplayHandle>,
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: PixelFormat,
 }
@@ -94,7 +94,7 @@ impl EGLContext {
         // TODO: Support shared contexts
         let context = unsafe {
             ffi::egl::CreateContext(
-                *display.display,
+                **display.display,
                 config_id,
                 ptr::null(),
                 context_attributes.as_ptr(),
@@ -111,8 +111,8 @@ impl EGLContext {
         info!(log, "EGL context created");
 
         Ok(EGLContext {
-            context: Arc::new(context as _),
-            display: Arc::downgrade(&display.display),
+            context,
+            display: display.display.clone(),
             config_id,
             pixel_format,
         })
@@ -132,26 +132,17 @@ impl EGLContext {
     where
         N: NativeSurface,
     {
-        if let Some(display) = self.display.upgrade() {
-            let surface_ptr = surface.surface.get();
+        let surface_ptr = surface.surface.get();
 
-            let ret = ffi::egl::MakeCurrent(
-                (*display) as *const _,
-                surface_ptr as *const _,
-                surface_ptr as *const _,
-                (*self.context) as *const _,
-            );
+        let ret = ffi::egl::MakeCurrent(**self.display, surface_ptr, surface_ptr, self.context);
 
-            if ret == 0 {
-                match ffi::egl::GetError() as u32 {
-                    ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
-                    err => panic!("eglMakeCurrent failed (eglGetError returned 0x{:x})", err),
-                }
-            } else {
-                Ok(())
+        if ret == 0 {
+            match ffi::egl::GetError() as u32 {
+                ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
+                err => panic!("eglMakeCurrent failed (eglGetError returned 0x{:x})", err),
             }
         } else {
-            Err(SwapBuffersError::ContextLost)
+            Ok(())
         }
     }
 
@@ -162,32 +153,21 @@ impl EGLContext {
     /// This function is marked unsafe, because the context cannot be made current
     /// on multiple threads.
     pub unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        if let Some(display) = self.display.upgrade() {
-            let surface_ptr = ptr::null();
+        let ret = ffi::egl::MakeCurrent(**self.display, ptr::null(), ptr::null(), self.context);
 
-            let ret = ffi::egl::MakeCurrent(
-                (*display) as *const _,
-                surface_ptr as *const _,
-                surface_ptr as *const _,
-                (*self.context) as *const _,
-            );
-
-            if ret == 0 {
-                match ffi::egl::GetError() as u32 {
-                    ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
-                    err => panic!("eglMakeCurrent failed (eglGetError returned 0x{:x})", err),
-                }
-            } else {
-                Ok(())
+        if ret == 0 {
+            match ffi::egl::GetError() as u32 {
+                ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
+                err => panic!("eglMakeCurrent failed (eglGetError returned 0x{:x})", err),
             }
         } else {
-            Err(SwapBuffersError::ContextLost)
+            Ok(())
         }
     }
 
     /// Returns true if the OpenGL context is the current one in the thread.
     pub fn is_current(&self) -> bool {
-        unsafe { ffi::egl::GetCurrentContext() == (*self.context) as *const _ }
+        unsafe { ffi::egl::GetCurrentContext() == self.context as *const _ }
     }
 
     /// Returns the egl config for this context
@@ -204,11 +184,12 @@ impl EGLContext {
 impl Drop for EGLContext {
     fn drop(&mut self) {
         unsafe {
-            // we don't call MakeCurrent(0, 0) because we are not sure that the context
-            // is still the current one
-            if let Some(display) = self.display.upgrade() {
-                ffi::egl::DestroyContext((*display) as *const _, (*self.context) as *const _);
+            // We need to ensure the context is unbound, otherwise it egl stalls the destroy call
+            if ffi::egl::GetCurrentContext() == self.context as *const _ {
+                ffi::egl::MakeCurrent(ptr::null(), ptr::null(), ptr::null(), ptr::null());
             }
+
+            ffi::egl::DestroyContext(**self.display, self.context);
         }
     }
 }
