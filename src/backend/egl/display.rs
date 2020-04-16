@@ -161,7 +161,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
     /// Finds a compatible [`EGLConfig`] for a given set of requirements
     pub fn choose_config(
         &self,
-        version: (u8, u8),
+        attributes: GlAttributes,
         reqs: PixelFormatRequirements,
     ) -> Result<(PixelFormat, ffi::egl::types::EGLConfig), Error> {
         let descriptor = {
@@ -180,8 +180,8 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             // if we ask for PBUFFER_BIT as well as WINDOW_BIT
             out.push((ffi::egl::WINDOW_BIT) as c_int);
 
-            match version {
-                (3, _) => {
+            match attributes.version {
+                Some((3, _)) => {
                     if self.egl_version < (1, 3) {
                         error!(
                             self.logger,
@@ -196,7 +196,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                     out.push(ffi::egl::CONFORMANT as c_int);
                     out.push(ffi::egl::OPENGL_ES3_BIT as c_int);
                 }
-                (2, _) => {
+                Some((2, _)) => {
                     if self.egl_version < (1, 3) {
                         error!(
                             self.logger,
@@ -211,7 +211,12 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                     out.push(ffi::egl::CONFORMANT as c_int);
                     out.push(ffi::egl::OPENGL_ES2_BIT as c_int);
                 }
-                (_, _) => unreachable!(),
+                Some(ver) => {
+                    return Err(Error::OpenGlVersionNotSupported(ver));
+                }
+                None => {
+                    return Err(Error::OpenGlVersionNotSupported((0, 0)));
+                }
             };
 
             reqs.create_attributes(&mut out, &self.logger)?;
@@ -221,30 +226,79 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         };
 
         // calling `eglChooseConfig`
-        let mut config_id = MaybeUninit::uninit();
-        let mut num_configs = MaybeUninit::uninit();
+        let mut num_configs = unsafe { std::mem::zeroed() };
         if unsafe {
             ffi::egl::ChooseConfig(
                 **self.display,
                 descriptor.as_ptr(),
-                config_id.as_mut_ptr(),
-                1,
-                num_configs.as_mut_ptr(),
+                std::ptr::null_mut(),
+                0,
+                &mut num_configs,
             )
         } == 0
         {
             return Err(Error::ConfigFailed);
         }
 
-        let config_id = unsafe { config_id.assume_init() };
-        let num_configs = unsafe { num_configs.assume_init() };
-
         if num_configs == 0 {
-            error!(self.logger, "No matching color format found");
             return Err(Error::NoAvailablePixelFormat);
         }
 
-        // TODO: Filter configs for matching vsync property
+        let mut config_ids = Vec::with_capacity(num_configs as usize);
+        config_ids.resize_with(num_configs as usize, || unsafe { std::mem::zeroed() });
+        if unsafe {
+            ffi::egl::ChooseConfig(
+                **self.display,
+                descriptor.as_ptr(),
+                config_ids.as_mut_ptr(),
+                num_configs,
+                &mut num_configs,
+            )
+        } == 0
+        {
+            return Err(Error::ConfigFailed);
+        }
+
+        // TODO: Deeper swap intervals might have some uses
+        let desired_swap_interval = if attributes.vsync { 1 } else { 0 };
+
+        let config_ids = config_ids
+            .into_iter()
+            .filter(|&config| unsafe {
+                let mut min_swap_interval = 0;
+                ffi::egl::GetConfigAttrib(
+                    **self.display,
+                    config,
+                    ffi::egl::MIN_SWAP_INTERVAL as ffi::egl::types::EGLint,
+                    &mut min_swap_interval,
+                );
+
+                if desired_swap_interval < min_swap_interval {
+                    return false;
+                }
+
+                let mut max_swap_interval = 0;
+                ffi::egl::GetConfigAttrib(
+                    **self.display,
+                    config,
+                    ffi::egl::MAX_SWAP_INTERVAL as ffi::egl::types::EGLint,
+                    &mut max_swap_interval,
+                );
+
+                if desired_swap_interval > max_swap_interval {
+                    return false;
+                }
+
+                true
+            })
+            .collect::<Vec<_>>();
+
+        if config_ids.is_empty() {
+            return Err(Error::NoAvailablePixelFormat);
+        }
+
+        // TODO: Improve config selection
+        let config_id = config_ids[0];
 
         // analyzing each config
         macro_rules! attrib {
