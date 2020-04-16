@@ -5,6 +5,7 @@ use crate::backend::egl::display::{EGLDisplay, EGLDisplayHandle};
 use crate::backend::egl::native::NativeSurface;
 use crate::backend::egl::{native, EGLSurface};
 use crate::backend::graphics::{PixelFormat, SwapBuffersError};
+use std::os::raw::c_int;
 use std::ptr;
 use std::sync::Arc;
 
@@ -264,5 +265,72 @@ impl Default for PixelFormatRequirements {
             multisampling: None,
             stereoscopy: false,
         }
+    }
+}
+
+impl PixelFormatRequirements {
+    /// Append the  requirements to the given attribute list
+    pub fn create_attributes(&self, out: &mut Vec<c_int>, logger: &slog::Logger) -> Result<(), Error> {
+        if let Some(hardware_accelerated) = self.hardware_accelerated {
+            out.push(ffi::egl::CONFIG_CAVEAT as c_int);
+            out.push(if hardware_accelerated {
+                trace!(logger, "Setting CONFIG_CAVEAT to NONE");
+                ffi::egl::NONE as c_int
+            } else {
+                trace!(logger, "Setting CONFIG_CAVEAT to SLOW_CONFIG");
+                ffi::egl::SLOW_CONFIG as c_int
+            });
+        }
+
+        if let Some(color) = self.color_bits {
+            trace!(logger, "Setting RED_SIZE to {}", color / 3);
+            out.push(ffi::egl::RED_SIZE as c_int);
+            out.push((color / 3) as c_int);
+            trace!(
+                logger,
+                "Setting GREEN_SIZE to {}",
+                color / 3 + if color % 3 != 0 { 1 } else { 0 }
+            );
+            out.push(ffi::egl::GREEN_SIZE as c_int);
+            out.push((color / 3 + if color % 3 != 0 { 1 } else { 0 }) as c_int);
+            trace!(
+                logger,
+                "Setting BLUE_SIZE to {}",
+                color / 3 + if color % 3 == 2 { 1 } else { 0 }
+            );
+            out.push(ffi::egl::BLUE_SIZE as c_int);
+            out.push((color / 3 + if color % 3 == 2 { 1 } else { 0 }) as c_int);
+        }
+
+        if let Some(alpha) = self.alpha_bits {
+            trace!(logger, "Setting ALPHA_SIZE to {}", alpha);
+            out.push(ffi::egl::ALPHA_SIZE as c_int);
+            out.push(alpha as c_int);
+        }
+
+        if let Some(depth) = self.depth_bits {
+            trace!(logger, "Setting DEPTH_SIZE to {}", depth);
+            out.push(ffi::egl::DEPTH_SIZE as c_int);
+            out.push(depth as c_int);
+        }
+
+        if let Some(stencil) = self.stencil_bits {
+            trace!(logger, "Setting STENCIL_SIZE to {}", stencil);
+            out.push(ffi::egl::STENCIL_SIZE as c_int);
+            out.push(stencil as c_int);
+        }
+
+        if let Some(multisampling) = self.multisampling {
+            trace!(logger, "Setting SAMPLES to {}", multisampling);
+            out.push(ffi::egl::SAMPLES as c_int);
+            out.push(multisampling as c_int);
+        }
+
+        if self.stereoscopy {
+            error!(logger, "Stereoscopy is currently unsupported (sorry!)");
+            return Err(Error::NoAvailablePixelFormat);
+        }
+
+        Ok(())
     }
 }

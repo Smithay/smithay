@@ -214,65 +214,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                 (_, _) => unreachable!(),
             };
 
-            if let Some(hardware_accelerated) = reqs.hardware_accelerated {
-                out.push(ffi::egl::CONFIG_CAVEAT as c_int);
-                out.push(if hardware_accelerated {
-                    trace!(self.logger, "Setting CONFIG_CAVEAT to NONE");
-                    ffi::egl::NONE as c_int
-                } else {
-                    trace!(self.logger, "Setting CONFIG_CAVEAT to SLOW_CONFIG");
-                    ffi::egl::SLOW_CONFIG as c_int
-                });
-            }
-
-            if let Some(color) = reqs.color_bits {
-                trace!(self.logger, "Setting RED_SIZE to {}", color / 3);
-                out.push(ffi::egl::RED_SIZE as c_int);
-                out.push((color / 3) as c_int);
-                trace!(
-                    self.logger,
-                    "Setting GREEN_SIZE to {}",
-                    color / 3 + if color % 3 != 0 { 1 } else { 0 }
-                );
-                out.push(ffi::egl::GREEN_SIZE as c_int);
-                out.push((color / 3 + if color % 3 != 0 { 1 } else { 0 }) as c_int);
-                trace!(
-                    self.logger,
-                    "Setting BLUE_SIZE to {}",
-                    color / 3 + if color % 3 == 2 { 1 } else { 0 }
-                );
-                out.push(ffi::egl::BLUE_SIZE as c_int);
-                out.push((color / 3 + if color % 3 == 2 { 1 } else { 0 }) as c_int);
-            }
-
-            if let Some(alpha) = reqs.alpha_bits {
-                trace!(self.logger, "Setting ALPHA_SIZE to {}", alpha);
-                out.push(ffi::egl::ALPHA_SIZE as c_int);
-                out.push(alpha as c_int);
-            }
-
-            if let Some(depth) = reqs.depth_bits {
-                trace!(self.logger, "Setting DEPTH_SIZE to {}", depth);
-                out.push(ffi::egl::DEPTH_SIZE as c_int);
-                out.push(depth as c_int);
-            }
-
-            if let Some(stencil) = reqs.stencil_bits {
-                trace!(self.logger, "Setting STENCIL_SIZE to {}", stencil);
-                out.push(ffi::egl::STENCIL_SIZE as c_int);
-                out.push(stencil as c_int);
-            }
-
-            if let Some(multisampling) = reqs.multisampling {
-                trace!(self.logger, "Setting SAMPLES to {}", multisampling);
-                out.push(ffi::egl::SAMPLES as c_int);
-                out.push(multisampling as c_int);
-            }
-
-            if reqs.stereoscopy {
-                error!(self.logger, "Stereoscopy is currently unsupported (sorry!)");
-                return Err(Error::NoAvailablePixelFormat);
-            }
+            reqs.create_attributes(&mut out, &self.logger)?;
 
             out.push(ffi::egl::NONE as c_int);
             out
