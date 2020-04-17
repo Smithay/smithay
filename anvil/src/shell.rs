@@ -11,7 +11,7 @@ use smithay::{
     reexports::{
         wayland_protocols::xdg_shell::server::xdg_toplevel,
         wayland_server::{
-            protocol::{wl_buffer, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
+            protocol::{wl_buffer, wl_callback, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
             Display,
         },
     },
@@ -29,6 +29,7 @@ use smithay::{
                 XdgSurfacePendingState, XdgSurfaceRole,
             },
         },
+        SERIAL_COUNTER as SCOUNTER,
     },
 };
 
@@ -304,10 +305,6 @@ pub fn init_shell(
                 let window_map = almost_window_map_compositor.borrow();
                 let window_map = window_map.as_ref().unwrap();
                 surface_commit(&surface, ctoken, &buffer_utils, &*window_map)
-            }
-            SurfaceEvent::Frame { callback } => {
-                callback.quick_assign(|_, _, _| unreachable!());
-                callback.done(0)
             }
         },
         log.clone(),
@@ -659,6 +656,7 @@ pub struct SurfaceData {
     ///
     /// `0` means unlimited.
     pub max_size: (i32, i32),
+    pub frame_callback: Option<wl_callback::WlCallback>,
 }
 
 impl SurfaceData {
@@ -752,6 +750,15 @@ fn surface_commit(
                 data.dimensions = None;
             }
             None => {}
+        }
+
+        // process the frame callback if any
+        if let Some(callback) = attributes.frame_callback.take() {
+            if let Some(old_callback) = data.frame_callback.take() {
+                // fire the old unfired callback to clean it up
+                old_callback.done(SCOUNTER.next_serial());
+            }
+            data.frame_callback = Some(callback);
         }
 
         window_map.borrow().find(surface)

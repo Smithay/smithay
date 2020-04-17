@@ -84,7 +84,7 @@ use wayland_server::{
     protocol::{
         wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor, wl_surface::WlSurface,
     },
-    Display, Filter, Global, Main, UserDataMap,
+    Display, Filter, Global, UserDataMap,
 };
 
 /// Description of which part of a surface
@@ -156,6 +156,14 @@ pub struct SurfaceAttributes {
     /// Hint provided by the client to suggest that only this part
     /// of the surface was changed and needs to be redrawn
     pub damage: Damage,
+    /// The frame callback associated with this surface for the commit
+    ///
+    /// The be triggered to notify the client about when it would be a
+    /// good time to start drawing its next frame.
+    ///
+    /// An example possibility would be to trigger it once the frame
+    /// associated with this commit has been displayed on the screen.
+    pub frame_callback: Option<wl_callback::WlCallback>,
     /// User-controlled data
     ///
     /// This is your field to host whatever you need.
@@ -171,6 +179,7 @@ impl Default for SurfaceAttributes {
             opaque_region: None,
             input_region: None,
             damage: Damage::Full,
+            frame_callback: None,
             user_data: UserDataMap::new(),
         }
     }
@@ -511,22 +520,8 @@ pub enum SurfaceEvent {
     /// The double-buffered state has been validated by the client
     ///
     /// At this point, the pending state that has been accumulated in the [`SurfaceAttributes`] associated
-    /// to this surface should be integrated into the current state of the surface.
-    ///
-    /// See [`wayland_server::protocol::wl_surface::Implementation::commit`](https://docs.rs/wayland-server/0.10.1/wayland_server/protocol/wl_surface/struct.Implementation.html#structfield.commit)
-    /// for more details
+    /// to this surface should be atomically integrated into the current state of the surface.
     Commit,
-    /// The client asks to be notified when would be a good time to update the contents of this surface
-    ///
-    /// You must keep the provided [`WlCallback`](wayland_server::protocol::wl_callback::WlCallback)
-    /// and trigger it at the appropriate time by calling its `done()` method.
-    ///
-    /// See [`wayland_server::protocol::wl_surface::Implementation::frame`](https://docs.rs/wayland-server/0.10.1/wayland_server/protocol/wl_surface/struct.Implementation.html#structfield.frame)
-    /// for more details
-    Frame {
-        /// The created `WlCallback`
-        callback: Main<wl_callback::WlCallback>,
-    },
 }
 
 #[cfg(test)]
