@@ -5,10 +5,7 @@ use std::{
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
     rc::Rc,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
+    sync::{atomic::Ordering, Arc, Mutex},
 };
 
 use glium::Surface as GliumSurface;
@@ -85,8 +82,17 @@ type RenderDevice = EglDevice<
 type RenderSurface =
     EglSurface<GbmSurface<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>>;
 
-pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log: Logger) -> Result<(), ()> {
-    let name = display.add_socket_auto().unwrap().into_string().unwrap();
+pub fn run_udev(
+    display: Rc<RefCell<Display>>,
+    mut event_loop: EventLoop<AnvilState>,
+    log: Logger,
+) -> Result<(), ()> {
+    let name = display
+        .borrow_mut()
+        .add_socket_auto()
+        .unwrap()
+        .into_string()
+        .unwrap();
     info!(log, "Listening on wayland socket"; "name" => name.clone());
     ::std::env::set_var("WAYLAND_DISPLAY", name);
 
@@ -97,8 +103,6 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
     let buffer_utils = BufferUtils::new(egl_buffer_reader.clone(), log.clone());
     #[cfg(not(feature = "egl"))]
     let buffer_utils = BufferUtils::new(log.clone());
-
-    let display = Rc::new(RefCell::new(display));
 
     /*
      * Initialize the compositor
@@ -115,7 +119,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
     let (udev_observer, udev_notifier) = notify_multiplexer();
     let udev_session_id = notifier.register(udev_observer);
 
-    let running = Arc::new(AtomicBool::new(true));
+    let mut state = AnvilState::default();
 
     let pointer_location = Rc::new(RefCell::new((0.0, 0.0)));
     let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
@@ -237,7 +241,7 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
         keyboard,
         window_map.clone(),
         (w, h),
-        running.clone(),
+        state.running.clone(),
         pointer_location,
         session,
     ));
@@ -258,21 +262,14 @@ pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log
     /*
      * And run our loop
      */
-    let mut state = AnvilState::default();
 
-    while running.load(Ordering::SeqCst) {
+    while state.running.load(Ordering::SeqCst) {
         if event_loop
             .dispatch(Some(::std::time::Duration::from_millis(16)), &mut state)
             .is_err()
         {
-            running.store(false, Ordering::SeqCst);
+            state.running.store(false, Ordering::SeqCst);
         } else {
-            if state.need_wayland_dispatch {
-                display
-                    .borrow_mut()
-                    .dispatch(std::time::Duration::from_millis(0), &mut state)
-                    .unwrap();
-            }
             display.borrow_mut().flush_clients(&mut state);
             window_map.borrow_mut().refresh();
         }
