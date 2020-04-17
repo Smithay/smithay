@@ -1,10 +1,7 @@
 use std::{
     cell::RefCell,
     rc::Rc,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
+    sync::{atomic::Ordering, Arc, Mutex},
 };
 
 use smithay::{
@@ -30,15 +27,15 @@ use crate::shell::init_shell;
 use crate::AnvilState;
 
 pub fn run_winit(
-    display: &mut Display,
-    event_loop: &mut EventLoop<AnvilState>,
+    display: Rc<RefCell<Display>>,
+    mut event_loop: EventLoop<AnvilState>,
     log: Logger,
 ) -> Result<(), ()> {
     let (renderer, mut input) = winit::init(log.clone()).map_err(|_| ())?;
 
     #[cfg(feature = "egl")]
     let egl_buffer_reader = Rc::new(RefCell::new(
-        if let Ok(egl_buffer_reader) = renderer.bind_wl_display(&display) {
+        if let Ok(egl_buffer_reader) = renderer.bind_wl_display(&display.borrow()) {
             info!(log, "EGL hardware-acceleration enabled");
             Some(egl_buffer_reader)
         } else {
@@ -57,25 +54,31 @@ pub fn run_winit(
     #[cfg(not(feature = "egl"))]
     let buffer_utils = BufferUtils::new(log.clone());
 
-    let name = display.add_socket_auto().unwrap().into_string().unwrap();
+    let name = display
+        .borrow_mut()
+        .add_socket_auto()
+        .unwrap()
+        .into_string()
+        .unwrap();
     info!(log, "Listening on wayland socket"; "name" => name.clone());
     ::std::env::set_var("WAYLAND_DISPLAY", name);
 
-    let running = Arc::new(AtomicBool::new(true));
+    let mut state = AnvilState::default();
 
     /*
      * Initialize the globals
      */
 
-    init_shm_global(display, vec![], log.clone());
+    init_shm_global(&mut display.borrow_mut(), vec![], log.clone());
 
-    let (compositor_token, _, _, window_map) = init_shell(display, buffer_utils, log.clone());
+    let (compositor_token, _, _, window_map) =
+        init_shell(&mut display.borrow_mut(), buffer_utils, log.clone());
 
     let dnd_icon = Arc::new(Mutex::new(None));
 
     let dnd_icon2 = dnd_icon.clone();
     init_data_device(
-        display,
+        &mut display.borrow_mut(),
         move |event| match event {
             DataDeviceEvent::DnDStarted { icon, .. } => {
                 *dnd_icon2.lock().unwrap() = icon;
@@ -90,7 +93,12 @@ pub fn run_winit(
         log.clone(),
     );
 
-    let (mut seat, _) = Seat::new(display, "winit".into(), compositor_token, log.clone());
+    let (mut seat, _) = Seat::new(
+        &mut display.borrow_mut(),
+        "winit".into(),
+        compositor_token,
+        log.clone(),
+    );
 
     let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
 
@@ -107,7 +115,7 @@ pub fn run_winit(
         .expect("Failed to initialize the keyboard");
 
     let (output, _) = Output::new(
-        display,
+        &mut display.borrow_mut(),
         "Winit".into(),
         PhysicalProperties {
             width: 0,
@@ -142,13 +150,13 @@ pub fn run_winit(
         keyboard,
         window_map.clone(),
         (0, 0),
-        running.clone(),
+        state.running.clone(),
         pointer_location.clone(),
     ));
 
     info!(log, "Initialization completed, starting the main loop.");
 
-    while running.load(Ordering::SeqCst) {
+    while state.running.load(Ordering::SeqCst) {
         input.dispatch_new_events().unwrap();
 
         // drawing logic
@@ -192,20 +200,13 @@ pub fn run_winit(
             }
         }
 
-        let mut state = AnvilState::default();
-
         if event_loop
             .dispatch(Some(::std::time::Duration::from_millis(16)), &mut state)
             .is_err()
         {
-            running.store(false, Ordering::SeqCst);
+            state.running.store(false, Ordering::SeqCst);
         } else {
-            if state.need_wayland_dispatch {
-                display
-                    .dispatch(std::time::Duration::from_millis(0), &mut state)
-                    .unwrap();
-            }
-            display.flush_clients(&mut state);
+            display.borrow_mut().flush_clients(&mut state);
             window_map.borrow_mut().refresh();
         }
     }

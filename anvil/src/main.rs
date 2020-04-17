@@ -7,6 +7,15 @@ extern crate slog;
 #[macro_use(define_roles)]
 extern crate smithay;
 
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
+
 use slog::Drain;
 use smithay::reexports::{
     calloop::{generic::Generic, mio::Interest, EventLoop},
@@ -34,15 +43,13 @@ static POSSIBLE_BACKENDS: &[&str] = &[
 ];
 
 pub struct AnvilState {
-    pub need_wayland_dispatch: bool,
-    pub running: bool,
+    pub running: Arc<AtomicBool>,
 }
 
 impl Default for AnvilState {
     fn default() -> AnvilState {
         AnvilState {
-            need_wayland_dispatch: false,
-            running: true,
+            running: Arc::new(AtomicBool::new(true)),
         }
     }
 }
@@ -54,25 +61,33 @@ fn main() {
         o!(),
     );
 
-    let mut event_loop = EventLoop::<AnvilState>::new().unwrap();
-    let mut display = Display::new();
+    let event_loop = EventLoop::<AnvilState>::new().unwrap();
+    let display = Rc::new(RefCell::new(Display::new()));
 
     // Glue for event dispatching
-    let mut wayland_event_source = Generic::from_raw_fd(display.get_poll_fd());
+    let mut wayland_event_source = Generic::from_raw_fd(display.borrow().get_poll_fd());
     wayland_event_source.set_interest(Interest::READABLE);
-    let _wayland_source =
-        event_loop
-            .handle()
-            .insert_source(wayland_event_source, |_, state: &mut AnvilState| {
-                state.need_wayland_dispatch = true;
-            });
+    let _wayland_source = event_loop.handle().insert_source(wayland_event_source, {
+        let display = display.clone();
+        let log = log.clone();
+        move |_, state: &mut AnvilState| {
+            let mut display = display.borrow_mut();
+            match display.dispatch(std::time::Duration::from_millis(0), state) {
+                Ok(_) => {}
+                Err(e) => {
+                    error!(log, "I/O error on the Wayland display: {}", e);
+                    state.running.store(false, Ordering::SeqCst);
+                }
+            }
+        }
+    });
 
     let arg = ::std::env::args().nth(1);
     match arg.as_ref().map(|s| &s[..]) {
         #[cfg(feature = "winit")]
         Some("--winit") => {
             info!(log, "Starting anvil with winit backend");
-            if let Err(()) = winit::run_winit(&mut display, &mut event_loop, log.clone()) {
+            if let Err(()) = winit::run_winit(display, event_loop, log.clone()) {
                 crit!(log, "Failed to initialize winit backend.");
             }
         }
