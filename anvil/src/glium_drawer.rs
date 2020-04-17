@@ -24,6 +24,7 @@ use smithay::{
         data_device::DnDIconRole,
         seat::CursorImageRole,
         shm::with_buffer_contents as shm_buffer_contents,
+        SERIAL_COUNTER as SCOUNTER,
     },
 };
 
@@ -379,6 +380,11 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                                 ..Default::default()
                             },
                         );
+                    }
+
+                    // send a frame event to the surface if applicable
+                    if let Some(callback) = data.borrow_mut().frame_callback.take() {
+                        callback.done(SCOUNTER.next_serial());
                     }
                 }
             },

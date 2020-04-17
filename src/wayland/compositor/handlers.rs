@@ -82,9 +82,9 @@ where
                 });
             }
             wl_surface::Request::Frame { callback } => {
-                let mut user_impl = self.implem.borrow_mut();
-                trace!(self.log, "Calling user implementation for wl_surface.frame");
-                (&mut *user_impl)(SurfaceEvent::Frame { callback }, surface, CompositorToken::make());
+                SurfaceData::<R>::with_data(&surface, move |d| {
+                    d.frame_callback = Some((*callback).clone());
+                });
             }
             wl_surface::Request::SetOpaqueRegion { region } => {
                 let attributes = region.map(|r| {
