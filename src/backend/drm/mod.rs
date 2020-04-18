@@ -172,6 +172,13 @@ pub trait Surface {
     /// Tries to mark a [`connector`](drm::control::connector)
     /// for removal on the next commit.
     fn remove_connector(&self, connector: connector::Handle) -> Result<(), Self::Error>;
+    /// Tries to replace the current connector set with the newly provided one on the next commit.
+    ///
+    /// Fails if one new `connector` is not compatible with the underlying [`crtc`](drm::control::crtc)
+    /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
+    /// or is not compatible with the currently pending
+    /// [`Mode`](drm::control::Mode).
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error>;
     /// Returns the currently active [`Mode`](drm::control::Mode)
     /// of the underlying [`crtc`](drm::control::crtc)
     /// if any.

@@ -49,7 +49,9 @@ impl<A: AsRawFd + 'static> SessionObserver for AtomicDrmDeviceObserver<A> {
                 return;
             }
         }
+
         // TODO: Clear overlay planes (if we ever use them)
+
         if let Some(backends) = self.backends.upgrade() {
             for surface in backends.borrow().values().filter_map(Weak::upgrade) {
                 // other ttys that use no cursor, might not clear it themselves.

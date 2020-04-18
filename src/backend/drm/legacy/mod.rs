@@ -233,6 +233,9 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
             }
         }
 
+        // Now try to do the least possible amount of changes to set this to the state the users requested
+        // TODO!
+        
         let state = State { mode, connectors };
         let backend = Rc::new(LegacyDrmSurfaceInternal {
             dev: self.dev.clone(),

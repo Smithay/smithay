@@ -163,6 +163,10 @@ impl<D: RawDevice + 'static> Surface for GbmSurfaceInternal<D> {
         self.crtc.remove_connector(connector).map_err(Error::Underlying)
     }
 
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
+        self.crtc.set_connectors(connectors).map_err(Error::Underlying)
+    }
+
     fn current_mode(&self) -> Option<Mode> {
         self.crtc.current_mode()
     }
@@ -315,6 +319,10 @@ impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
 
     fn remove_connector(&self, connector: connector::Handle) -> Result<(), Self::Error> {
         self.0.remove_connector(connector)
+    }
+
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
+        self.0.set_connectors(connectors)
     }
 
     fn current_mode(&self) -> Option<Mode> {

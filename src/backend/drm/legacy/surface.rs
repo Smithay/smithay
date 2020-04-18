@@ -105,62 +105,32 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
     }
 
     fn add_connector(&self, conn: connector::Handle) -> Result<(), Error> {
-        let info = self
-            .get_connector(conn)
-            .compat()
-            .map_err(|source| Error::Access {
-                errmsg: "Error loading connector info",
-                dev: self.dev_path(),
-                source,
-            })?;
-
         let mut pending = self.pending.write().unwrap();
 
-        // check if the connector can handle the current mode
-        if info.modes().contains(pending.mode.as_ref().unwrap()) {
-            // check if there is a valid encoder
-            let encoders = info
-                .encoders()
-                .iter()
-                .filter(|enc| enc.is_some())
-                .map(|enc| enc.unwrap())
-                .map(|encoder| {
-                    self.get_encoder(encoder)
-                        .compat()
-                        .map_err(|source| Error::Access {
-                            errmsg: "Error loading encoder info",
-                            dev: self.dev_path(),
-                            source,
-                        })
-                })
-                .collect::<Result<Vec<encoder::Info>, _>>()?;
-
-            // and if any encoder supports the selected crtc
-            let resource_handles = self.resource_handles().compat().map_err(|source| Error::Access {
-                errmsg: "Error loading resources",
-                dev: self.dev_path(),
-                source,
-            })?;
-            if !encoders
-                .iter()
-                .map(|encoder| encoder.possible_crtcs())
-                .all(|crtc_list| resource_handles.filter_crtcs(crtc_list).contains(&self.crtc))
-            {
-                return Err(Error::NoSuitableEncoder {
-                    connector: info.handle(),
-                    crtc: self.crtc,
-                });
-            }
-
+        if self.check_connector(conn, pending.mode.as_ref().unwrap())? {
             pending.connectors.insert(conn);
-            Ok(())
-        } else {
-            Err(Error::ModeNotSuitable(pending.mode.unwrap()))
         }
+
+        Ok(())
     }
 
     fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error> {
         self.pending.write().unwrap().connectors.remove(&connector);
+        Ok(())
+    }
+    
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
+        let mut pending = self.pending.write().unwrap();
+        
+        if connectors
+            .iter()
+            .map(|conn| self.check_connector(*conn, pending.mode.as_ref().unwrap()))
+            .collect::<Result<Vec<bool>, _>>()?
+            .iter().all(|v| *v)
+        {
+            pending.connectors = connectors.into_iter().cloned().collect();
+        }
+
         Ok(())
     }
 
@@ -279,6 +249,57 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
     }
 }
 
+impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
+    fn check_connector(&self, conn: connector::Handle, mode: &Mode) -> Result<bool, Error> {
+        let info = self
+            .get_connector(conn)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Error loading connector info",
+                dev: self.dev_path(),
+                source,
+            })?;
+
+        // check if the connector can handle the current mode
+        if info.modes().contains(mode) {
+            // check if there is a valid encoder
+            let encoders = info
+                .encoders()
+                .iter()
+                .filter(|enc| enc.is_some())
+                .map(|enc| enc.unwrap())
+                .map(|encoder| {
+                    self.get_encoder(encoder)
+                        .compat()
+                        .map_err(|source| Error::Access {
+                            errmsg: "Error loading encoder info",
+                            dev: self.dev_path(),
+                            source,
+                        })
+                })
+                .collect::<Result<Vec<encoder::Info>, _>>()?;
+
+            // and if any encoder supports the selected crtc
+            let resource_handles = self.resource_handles().compat().map_err(|source| Error::Access {
+                errmsg: "Error loading resources",
+                dev: self.dev_path(),
+                source,
+            })?;
+            if !encoders
+                .iter()
+                .map(|encoder| encoder.possible_crtcs())
+                .all(|crtc_list| resource_handles.filter_crtcs(crtc_list).contains(&self.crtc))
+            {
+                Ok(false)
+            } else {
+                Ok(true)
+            }
+        } else {
+            Ok(false)
+        }
+    }
+}
+
 impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
     fn drop(&mut self) {
         // ignore failure at this point
@@ -345,6 +366,10 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurface<A> {
 
     fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error> {
         self.0.remove_connector(connector)
+    }
+
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
+        self.0.set_connectors(connectors)
     }
 
     fn use_mode(&self, mode: Option<Mode>) -> Result<(), Error> {

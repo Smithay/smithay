@@ -181,11 +181,15 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
 
         // check if the connector can handle the current mode
         if info.modes().contains(pending.mode.as_ref().unwrap()) {
-            let mut conns = pending.connectors.clone();
-            conns.insert(conn);
-
             // check if config is supported
-            let req = self.build_request(&conns, &self.planes, None, pending.mode, pending.blob)?;
+            let req = self.build_request(
+                &mut [conn].iter(),
+                &mut [].iter(),
+                &self.planes,
+                None,
+                pending.mode,
+                pending.blob,
+            )?;
             self.atomic_commit(
                 &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
                 req,
@@ -194,7 +198,7 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
             .map_err(|_| Error::TestFailed(self.crtc))?;
 
             // seems to be, lets add the connector
-            pending.connectors = conns;
+            pending.connectors.insert(conn);
 
             Ok(())
         } else {
@@ -202,15 +206,18 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
         }
     }
 
-    fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error> {
+    fn remove_connector(&self, conn: connector::Handle) -> Result<(), Error> {
         let mut pending = self.pending.write().unwrap();
 
-        // remove it temporary
-        let mut conns = pending.connectors.clone();
-        conns.remove(&connector);
-
         // check if new config is supported (should be)
-        let req = self.build_request(&conns, &self.planes, None, pending.mode, pending.blob)?;
+        let req = self.build_request(
+            &mut [].iter(),
+            &mut [conn].iter(),
+            &self.planes,
+            None,
+            pending.mode,
+            pending.blob,
+        )?;
         self.atomic_commit(
             &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
             req,
@@ -219,37 +226,37 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
         .map_err(|_| Error::TestFailed(self.crtc))?;
 
         // seems to be, lets remove the connector
+        pending.connectors.remove(&conn);
+
+        Ok(())
+    }
+
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error> {
+        let current = self.state.write().unwrap();
+        let mut pending = self.pending.write().unwrap();
+
+        let conns = connectors.iter().cloned().collect::<HashSet<_>>();
+        let mut added = conns.difference(&current.connectors);
+        let mut removed = current.connectors.difference(&conns);
+
+        let req = self.build_request(
+            &mut added,
+            &mut removed,
+            &self.planes,
+            None,
+            pending.mode,
+            pending.blob,
+        )?;
+
+        self.atomic_commit(
+            &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+            req,
+        )
+        .map_err(|_| Error::TestFailed(self.crtc))?;
+
         pending.connectors = conns;
 
-        // try to disable it
-        let mut req = AtomicModeReq::new();
-
-        req.add_property(
-            connector,
-            self.conn_prop_handle(connector, "CRTC_ID")?,
-            property::Value::CRTC(None),
-        );
-
-        if let Err(err) = self
-            .atomic_commit(&[AtomicCommitFlags::TestOnly], req.clone())
-            .compat()
-            .map_err(|_| Error::TestFailed(self.crtc))
-        {
-            warn!(
-                self.logger,
-                "Could not disable connector ({:?}) (but rendering will be stopped): {}", connector, err
-            );
-            Ok(())
-        } else {
-            // should succeed, any error is serious
-            self.atomic_commit(&[AtomicCommitFlags::Nonblock], req.clone())
-                .compat()
-                .map_err(|source| Error::Access {
-                    errmsg: "Failed to commit disable connector",
-                    dev: self.dev_path(),
-                    source,
-                })
-        }
+        Ok(())
     }
 
     fn use_mode(&self, mode: Option<Mode>) -> Result<(), Error> {
@@ -269,7 +276,14 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
             None => property::Value::Unknown(0),
         });
 
-        let req = self.build_request(&pending.connectors, &self.planes, None, mode, new_blob)?;
+        let req = self.build_request(
+            &mut pending.connectors.iter(),
+            &mut [].iter(),
+            &self.planes,
+            None,
+            mode,
+            new_blob,
+        )?;
         if let Err(err) = self
             .atomic_commit(
                 &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
@@ -304,41 +318,41 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
             "Preparing Commit.\n\tCurrent: {:?}\n\tPending: {:?}\n", *current, *pending
         );
 
-        {
-            let current_conns = current.connectors.clone();
-            let pending_conns = pending.connectors.clone();
-            let removed = current_conns.difference(&pending_conns);
-            let added = pending_conns.difference(&current_conns);
+        let current_conns = current.connectors.clone();
+        let pending_conns = pending.connectors.clone();
+        let mut removed = current_conns.difference(&pending_conns);
+        let mut added = pending_conns.difference(&current_conns);
 
-            for conn in removed {
-                if let Ok(info) = self.get_connector(*conn) {
-                    info!(self.logger, "Removing connector: {:?}", info.interface());
-                } else {
-                    info!(self.logger, "Removing unknown connector");
-                }
-            }
-
-            for conn in added {
-                if let Ok(info) = self.get_connector(*conn) {
-                    info!(self.logger, "Adding connector: {:?}", info.interface());
-                } else {
-                    info!(self.logger, "Adding unknown connector");
-                }
-            }
-
-            if current.mode != pending.mode {
-                info!(
-                    self.logger,
-                    "Setting new mode: {:?}",
-                    pending.mode.as_ref().unwrap().name()
-                );
+        for conn in removed.clone() {
+            if let Ok(info) = self.get_connector(*conn) {
+                info!(self.logger, "Removing connector: {:?}", info.interface());
+            } else {
+                info!(self.logger, "Removing unknown connector");
             }
         }
 
+        for conn in added.clone() {
+            if let Ok(info) = self.get_connector(*conn) {
+                info!(self.logger, "Adding connector: {:?}", info.interface());
+            } else {
+                info!(self.logger, "Adding unknown connector");
+            }
+        }
+
+        if current.mode != pending.mode {
+            info!(
+                self.logger,
+                "Setting new mode: {:?}",
+                pending.mode.as_ref().unwrap().name()
+            );
+        }
+
         trace!(self.logger, "Testing screen config");
-        {
+
+        let req = {
             let req = self.build_request(
-                &pending.connectors,
+                &mut added,
+                &mut removed,
                 &self.planes,
                 Some(framebuffer),
                 pending.mode,
@@ -360,6 +374,15 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
                 info!(self.logger, "Reverting back to last know good state");
 
                 *pending = current.clone();
+
+                self.build_request(
+                    &mut [].iter(),
+                    &mut [].iter(),
+                    &self.planes,
+                    Some(framebuffer),
+                    current.mode,
+                    current.blob,
+                )?
             } else {
                 if current.mode != pending.mode {
                     if let Some(blob) = current.blob {
@@ -369,16 +392,12 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
                     }
                 }
                 *current = pending.clone();
-            }
-        }
 
-        let req = self.build_request(
-            &current.connectors,
-            &self.planes,
-            Some(framebuffer),
-            current.mode,
-            current.blob,
-        )?;
+                // new config
+                req
+            }
+        };
+
         debug!(self.logger, "Setting screen: {:#?}", req);
         self.atomic_commit(
             &[
@@ -399,9 +418,15 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
     }
 
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), SwapBuffersError> {
-        let current = self.state.read().unwrap();
         let req = self
-            .build_request(&current.connectors, &self.planes, Some(framebuffer), None, None) //current.mode)
+            .build_request(
+                &mut [].iter(),
+                &mut [].iter(),
+                &self.planes,
+                Some(framebuffer),
+                None,
+                None,
+            ) //current.mode)
             .map_err(|_| SwapBuffersError::ContextLost)?;
         trace!(self.logger, "Queueing page flip: {:#?}", req);
         self.atomic_commit(
@@ -530,7 +555,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
     // If a mode is set a matching blob needs to be set (the inverse is not true)
     fn build_request(
         &self,
-        connectors: &HashSet<connector::Handle>,
+        new_connectors: &mut dyn Iterator<Item = &connector::Handle>,
+        removed_connectors: &mut dyn Iterator<Item = &connector::Handle>,
         planes: &Planes,
         framebuffer: Option<framebuffer::Handle>,
         mode: Option<Mode>,
@@ -538,11 +564,19 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
     ) -> Result<AtomicModeReq, Error> {
         let mut req = AtomicModeReq::new();
 
-        for conn in connectors.iter() {
+        for conn in new_connectors {
             req.add_property(
                 *conn,
                 self.conn_prop_handle(*conn, "CRTC_ID")?,
                 property::Value::CRTC(Some(self.crtc)),
+            );
+        }
+
+        for conn in removed_connectors {
+            req.add_property(
+                *conn,
+                self.conn_prop_handle(*conn, "CRTC_ID")?,
+                property::Value::CRTC(None),
             );
         }
 
@@ -814,6 +848,10 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurface<A> {
 
     fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error> {
         self.0.remove_connector(connector)
+    }
+
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error> {
+        self.0.set_connectors(connectors)
     }
 
     fn use_mode(&self, mode: Option<Mode>) -> Result<(), Error> {

@@ -49,6 +49,10 @@ where
             .map_err(Error::Underlying)
     }
 
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
+        self.surface.set_connectors(connectors).map_err(Error::Underlying)
+    }
+
     fn current_mode(&self) -> Option<Mode> {
         self.surface.current_mode()
     }
