@@ -197,22 +197,19 @@ where
 // But for now got to do this:
 
 #[cfg(feature = "backend_drm_legacy")]
-impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurfaceInternal<LegacyDrmDevice<A>> {
-    type CursorFormat = &'a ImageBuffer<Rgba<u8>, Vec<u8>>;
-    type Error = Error<<<LegacyDrmDevice<A> as Device>::Surface as Surface>::Error>;
+impl<A: AsRawFd + 'static> CursorBackend for GbmSurfaceInternal<LegacyDrmDevice<A>> {
+    type CursorFormat = ImageBuffer<Rgba<u8>, Vec<u8>>;
+    type Error = Error<<<D as Device>::Surface as CursorBackend>::Error>;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Self::Error> {
         self.crtc.set_cursor_position(x, y).map_err(Error::Underlying)
     }
 
-    fn set_cursor_representation<'b>(
-        &'b self,
+    fn set_cursor_representation(
+        &self,
         buffer: &ImageBuffer<Rgba<u8>, Vec<u8>>,
         hotspot: (u32, u32),
-    ) -> Result<(), Self::Error>
-    where
-        'a: 'b,
-    {
+    ) -> Result<(), Self::Error> {
         let (w, h) = buffer.dimensions();
         debug!(self.logger, "Importing cursor");
 
@@ -350,22 +347,19 @@ impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
 }
 
 #[cfg(feature = "backend_drm_legacy")]
-impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurface<LegacyDrmDevice<A>> {
-    type CursorFormat = &'a ImageBuffer<Rgba<u8>, Vec<u8>>;
+impl<A: AsRawFd + 'static> CursorBackend for GbmSurface<LegacyDrmDevice<A>> {
+    type CursorFormat = ImageBuffer<Rgba<u8>, Vec<u8>>;
     type Error = <Self as Surface>::Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Self::Error> {
         self.0.set_cursor_position(x, y)
     }
 
-    fn set_cursor_representation<'b>(
-        &'b self,
+    fn set_cursor_representation(
+        &self,
         buffer: &ImageBuffer<Rgba<u8>, Vec<u8>>,
         hotspot: (u32, u32),
-    ) -> Result<(), Self::Error>
-    where
-        'a: 'b,
-    {
+    ) -> Result<(), Self::Error> {
         self.0.set_cursor_representation(buffer, hotspot)
     }
 }

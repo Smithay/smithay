@@ -4,18 +4,18 @@
 /// where possible. This may however be quite restrictive in terms of supported formats.
 ///
 /// For those reasons you may always choose to render your cursor(s) (partially) in software instead.
-pub trait CursorBackend<'a> {
+pub trait CursorBackend {
     /// Format representing the image drawn for the cursor.
-    type CursorFormat: 'a;
+    type CursorFormat: ?Sized;
 
     /// Error the underlying backend throws if operations fail
-    type Error;
+    type Error: 'static;
 
     /// Sets the cursor position and therefore updates the drawn cursors position.
     /// Useful as well for e.g. pointer wrapping.
     ///
     /// Not guaranteed to be supported on every backend. The result usually
-    /// depends on the backend, the cursor might be "owned" by another more priviledged
+    /// depends on the backend, the cursor might be "owned" by another more privileged
     /// compositor (running nested).
     ///
     /// In these cases setting the position is actually not required, as movement is done
@@ -29,11 +29,9 @@ pub trait CursorBackend<'a> {
     /// The format is entirely dictated by the concrete implementation and might range
     /// from raw image buffers over a fixed list of possible cursor types to simply the
     /// void type () to represent no possible customization of the cursor itself.
-    fn set_cursor_representation<'b>(
-        &'b self,
-        cursor: Self::CursorFormat,
+    fn set_cursor_representation(
+        &self,
+        cursor: &Self::CursorFormat,
         hotspot: (u32, u32),
-    ) -> Result<(), Self::Error>
-    where
-        'a: 'b;
+    ) -> Result<(), Self::Error>;
 }

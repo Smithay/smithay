@@ -41,8 +41,8 @@ impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurfaceInternal<A> {
 impl<A: AsRawFd + 'static> BasicDevice for LegacyDrmSurfaceInternal<A> {}
 impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmSurfaceInternal<A> {}
 
-impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurfaceInternal<A> {
-    type CursorFormat = &'a dyn Buffer;
+impl<A: AsRawFd + 'static> CursorBackend for LegacyDrmSurfaceInternal<A> {
+    type CursorFormat = dyn Buffer;
     type Error = Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Error> {
@@ -56,14 +56,11 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurfaceInternal<A>
             })
     }
 
-    fn set_cursor_representation<'b>(
-        &'b self,
-        buffer: Self::CursorFormat,
+    fn set_cursor_representation(
+        &self,
+        buffer: &Self::CursorFormat,
         hotspot: (u32, u32),
-    ) -> Result<(), Error>
-    where
-        'a: 'b,
-    {
+    ) -> Result<(), Error> {
         trace!(self.logger, "Setting the new imported cursor");
 
         if self
@@ -291,22 +288,19 @@ impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurface<A> {
 impl<A: AsRawFd + 'static> BasicDevice for LegacyDrmSurface<A> {}
 impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmSurface<A> {}
 
-impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurface<A> {
-    type CursorFormat = &'a dyn Buffer;
+impl<A: AsRawFd + 'static> CursorBackend for LegacyDrmSurface<A> {
+    type CursorFormat = dyn Buffer;
     type Error = Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Error> {
         self.0.set_cursor_position(x, y)
     }
 
-    fn set_cursor_representation<'b>(
-        &'b self,
-        buffer: Self::CursorFormat,
+    fn set_cursor_representation(
+        &self,
+        buffer: &Self::CursorFormat,
         hotspot: (u32, u32),
-    ) -> Result<(), Error>
-    where
-        'a: 'b,
-    {
+    ) -> Result<(), Error> {
         self.0.set_cursor_representation(buffer, hotspot)
     }
 }
