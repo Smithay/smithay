@@ -53,6 +53,8 @@ use calloop::{LoopHandle, Source};
 
 use super::graphics::SwapBuffersError;
 
+#[cfg(feature = "backend_drm")]
+pub mod common;
 #[cfg(feature = "backend_drm_egl")]
 pub mod egl;
 #[cfg(feature = "backend_drm_gbm")]

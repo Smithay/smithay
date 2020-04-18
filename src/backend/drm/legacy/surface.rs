@@ -10,13 +10,13 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::sync::RwLock;
 
-use crate::backend::drm::{DevPath, RawSurface, Surface};
+use crate::backend::drm::{common::Error, DevPath, RawSurface, Surface};
 use crate::backend::graphics::CursorBackend;
 use crate::backend::graphics::SwapBuffersError;
 
-use super::{Dev, Error};
+use super::Dev;
 
-use failure::ResultExt;
+use failure::{Fail, ResultExt};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {

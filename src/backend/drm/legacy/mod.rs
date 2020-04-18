@@ -5,13 +5,13 @@
 //! Usually this implementation will be wrapped into a [`GbmDevice`](::backend::drm::gbm::GbmDevice).
 //! Take a look at `anvil`s source code for an example of this.
 //!
-//! For an example how to use this standalone, take a look at the `raw_drm` example.
+//! For an example how to use this standalone, take a look at the `raw_legacy_drm` example.
 //!
 
-use super::{DevPath, Device, DeviceHandler, RawDevice};
+use super::{common::Error, DevPath, Device, DeviceHandler, RawDevice};
 
 use drm::control::{
-    connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, Mode, ResourceHandles,
+    connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, ResourceHandles,
 };
 use drm::{Device as BasicDevice, SystemError as DrmError};
 use nix::libc::dev_t;
@@ -20,7 +20,6 @@ use nix::sys::stat::fstat;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
@@ -33,45 +32,6 @@ use self::surface::{LegacyDrmSurfaceInternal, State};
 
 #[cfg(feature = "backend_session")]
 pub mod session;
-
-/// Errors thrown by the [`LegacyDrmDevice`](::backend::drm::legacy::LegacyDrmDevice)
-/// and [`LegacyDrmSurface`](::backend::drm::legacy::LegacyDrmSurface).
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    /// Unable to acquire DRM master
-    #[error("Failed to aquire DRM master")]
-    DrmMasterFailed,
-    /// The `DrmDevice` encountered an access error
-    #[error("DRM access error: {errmsg} on device `{dev:?}`")]
-    Access {
-        /// Error message associated to the access error
-        errmsg: &'static str,
-        /// Device on which the error was generated
-        dev: Option<PathBuf>,
-        /// Underlying device error
-        source: failure::Compat<drm::SystemError>,
-    },
-    /// Unable to determine device id of drm device
-    #[error("Unable to determine device id of drm device")]
-    UnableToGetDeviceId(#[source] nix::Error),
-    /// Device is currently paused
-    #[error("Device is currently paused, operation rejected")]
-    DeviceInactive,
-    /// Mode is not compatible with all given connectors
-    #[error("Mode `{0:?}` is not compatible with all given connectors")]
-    ModeNotSuitable(Mode),
-    /// The given crtc is already in use by another backend
-    #[error("Crtc `{0:?}` is already in use by another backend")]
-    CrtcAlreadyInUse(crtc::Handle),
-    /// No encoder was found for a given connector on the set crtc
-    #[error("No encoder found for the given connector '{connector:?}' on crtc `{crtc:?}`")]
-    NoSuitableEncoder {
-        /// Connector
-        connector: connector::Handle,
-        /// CRTC
-        crtc: crtc::Handle,
-    },
-}
 
 /// Open raw drm device utilizing legacy mode-setting
 pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
