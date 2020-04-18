@@ -430,11 +430,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLGraphicsBackend for EGL
         if res == 0 {
             return Err(Error::OtherEGLDisplayAlreadyBound);
         }
-        Ok(EGLBufferReader::new(
-            self.display.clone(),
-            display.c_ptr(),
-            &self.extensions,
-        ))
+        Ok(EGLBufferReader::new(self.display.clone(), display.c_ptr()))
     }
 }
 
@@ -447,23 +443,17 @@ pub struct EGLBufferReader {
     wayland: *mut wl_display,
     #[cfg(feature = "renderer_gl")]
     gl: gl_ffi::Gles2,
-    #[cfg(feature = "renderer_gl")]
-    egl_to_texture_support: bool,
 }
 
 #[cfg(feature = "use_system_lib")]
 impl EGLBufferReader {
-    fn new(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display, extensions: &[String]) -> Self {
+    fn new(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display) -> Self {
         #[cfg(feature = "renderer_gl")]
         let gl = gl_ffi::Gles2::load_with(|s| get_proc_address(s) as *const _);
 
         Self {
             display,
             wayland,
-            #[cfg(feature = "renderer_gl")]
-            egl_to_texture_support: extensions
-                .iter()
-                .any(|s| s == "GL_OES_EGL_image" || s == "GL_OES_EGL_image_base"),
             #[cfg(feature = "renderer_gl")]
             gl,
         }
@@ -570,8 +560,6 @@ impl EGLBufferReader {
             buffer,
             #[cfg(feature = "renderer_gl")]
             gl: self.gl.clone(),
-            #[cfg(feature = "renderer_gl")]
-            egl_to_texture_support: self.egl_to_texture_support,
         })
     }
 

@@ -177,7 +177,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                 .unwrap();
                 unsafe {
                     images
-                        .bind_to_texture(0, opengl_texture.get_id())
+                        .bind_to_texture(0, opengl_texture.get_id(), &*self.display.borrow())
                         .expect("Failed to bind to texture");
                 }
                 Ok(TextureMetadata {
