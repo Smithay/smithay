@@ -118,15 +118,16 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         self.pending.write().unwrap().connectors.remove(&connector);
         Ok(())
     }
-    
+
     fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
         let mut pending = self.pending.write().unwrap();
-        
+
         if connectors
             .iter()
             .map(|conn| self.check_connector(*conn, pending.mode.as_ref().unwrap()))
             .collect::<Result<Vec<bool>, _>>()?
-            .iter().all(|v| *v)
+            .iter()
+            .all(|v| *v)
         {
             pending.connectors = connectors.into_iter().cloned().collect();
         }
@@ -175,12 +176,27 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             let removed = current.connectors.difference(&pending.connectors);
             let added = pending.connectors.difference(&current.connectors);
 
+            let mut conn_removed = false;
             for conn in removed {
                 if let Ok(info) = self.get_connector(*conn) {
                     info!(self.logger, "Removing connector: {:?}", info.interface());
                 } else {
                     info!(self.logger, "Removing unknown connector");
                 }
+                // if the connector was mapped to our crtc, we need to ack the disconnect.
+                // the graphics pipeline will not be freed otherwise
+                conn_removed = true;
+            }
+
+            if conn_removed {
+                // We need to do a null commit to free graphics pipelines
+                self.set_crtc(self.crtc, None, (0, 0), &[], None)
+                    .compat()
+                    .map_err(|source| Error::Access {
+                        errmsg: "Error setting crtc",
+                        dev: self.dev_path(),
+                        source,
+                    })?;
             }
 
             for conn in added {
