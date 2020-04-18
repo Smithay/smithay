@@ -1,3 +1,13 @@
+//!
+//! [`RawDevice`](RawDevice) and [`RawSurface`](RawSurface)
+//! implementations using the atomic mode-setting infrastructure.
+//!
+//! Usually this implementation will wrapped into a [`GbmDevice`](::backend::drm::gbm::GbmDevice).
+//! Take a look at `anvil`s source code for an example of this.
+//!
+//! For an example how to use this standalone, take a look at the raw_atomic_drm example.
+//!
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -26,6 +36,7 @@ use self::surface::AtomicDrmSurfaceInternal;
 #[cfg(feature = "backend_session")]
 pub mod session;
 
+/// Open raw drm device utilizing atomic mode-setting
 pub struct AtomicDrmDevice<A: AsRawFd + 'static> {
     dev: Rc<Dev<A>>,
     dev_id: dev_t,

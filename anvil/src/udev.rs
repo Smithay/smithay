@@ -22,8 +22,12 @@ use smithay::{
             device_bind,
             egl::{EglDevice, EglSurface},
             gbm::{egl::Gbm as EglGbmBackend, GbmDevice},
-            legacy::LegacyDrmDevice,
-            DevPath, Device, DeviceHandler, Surface,
+            atomic::AtomicDrmDevice,
+            //legacy::LegacyDrmDevice,
+            DevPath,
+            Device,
+            DeviceHandler,
+            Surface,
         },
         graphics::CursorBackend,
         input::InputBackend,
@@ -76,8 +80,9 @@ impl AsRawFd for SessionFd {
 }
 
 type RenderDevice =
-    EglDevice<EglGbmBackend<LegacyDrmDevice<SessionFd>>, GbmDevice<LegacyDrmDevice<SessionFd>>>;
-type RenderSurface = EglSurface<GbmSurface<LegacyDrmDevice<SessionFd>>>;
+    EglDevice<EglGbmBackend<AtomicDrmDevice<SessionFd>>, GbmDevice<AtomicDrmDevice<SessionFd>>>;
+type RenderSurface =
+    EglSurface<GbmSurface<AtomicDrmDevice<SessionFd>>>;
 
 pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log: Logger) -> Result<(), ()> {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
@@ -412,7 +417,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             )
             .ok()
             .and_then(
-                |fd| match LegacyDrmDevice::new(SessionFd(fd), self.logger.clone()) {
+                |fd| match AtomicDrmDevice::new(SessionFd(fd), self.logger.clone()) {
                     Ok(drm) => Some(drm),
                     Err(err) => {
                         error!(self.logger, "Skipping drm device, because of error: {}", err);

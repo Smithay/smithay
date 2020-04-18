@@ -1,3 +1,8 @@
+//!
+//! Support to register an open [`AtomicDrmDevice`](AtomicDrmDevice)
+//! to an open [`Session`](::backend::session::Session).
+//!
+
 use drm::control::crtc;
 use drm::Device as BasicDevice;
 use nix::libc::dev_t;
@@ -12,6 +17,9 @@ use std::sync::Arc;
 use super::{AtomicDrmDevice, AtomicDrmSurfaceInternal, Dev};
 use crate::backend::session::{AsSessionObserver, SessionObserver};
 
+/// [`SessionObserver`](SessionObserver)
+/// linked to the [`AtomicDrmDevice`](AtomicDrmDevice)
+/// it was created from.
 pub struct AtomicDrmDeviceObserver<A: AsRawFd + 'static> {
     dev: Weak<Dev<A>>,
     dev_id: dev_t,
