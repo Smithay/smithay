@@ -251,7 +251,18 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
 
         *current = pending.clone();
 
-        Ok(())
+        ControlDevice::page_flip(
+            self,
+            self.crtc,
+            framebuffer,
+            &[PageFlipFlags::PageFlipEvent],
+            None,
+        )
+        .map_err(|source| Error::Access {
+            errmsg: "Failed to queue page flip",
+            dev: self.dev_path(),
+            source: source.compat(),
+        })
     }
 
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> ::std::result::Result<(), SwapBuffersError> {

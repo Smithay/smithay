@@ -75,12 +75,15 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
 
         if self.recreated.get() {
             debug!(self.logger, "Commiting new state");
-            self.crtc.commit(fb).map_err(|_| SwapBuffersError::ContextLost)?;
+            if let Err(err) = self.crtc.commit(fb) {
+                error!(self.logger, "Error commiting crtc: {}", err);
+                return Err(SwapBuffersError::ContextLost);
+            }
             self.recreated.set(false);
+        } else {
+            trace!(self.logger, "Queueing Page flip");
+            RawSurface::page_flip(&self.crtc, fb)?;
         }
-
-        trace!(self.logger, "Queueing Page flip");
-        RawSurface::page_flip(&self.crtc, fb)?;
 
         self.current_frame_buffer.set(Some(fb));
 

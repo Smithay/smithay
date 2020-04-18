@@ -205,7 +205,10 @@ pub trait RawSurface: Surface + ControlDevice + BasicDevice {
     /// potentially causing some flickering. Check before performing this
     /// operation if a commit really is necessary using [`commit_pending`](RawSurface::commit_pending).
     ///
-    /// This operation is blocking until the crtc is in the desired state.
+    /// This operation is not necessarily blocking until the crtc is in the desired state,
+    /// but will trigger a `vblank` event once done.
+    /// Make sure to [set a `DeviceHandler`](Device::set_handler) and
+    /// [register the belonging `Device`](device_bind) before to receive the event in time.
     fn commit(&self, framebuffer: framebuffer::Handle) -> Result<(), <Self as Surface>::Error>;
     /// Page-flip the underlying [`crtc`](drm::control::crtc)
     /// to a new given [`framebuffer`].
