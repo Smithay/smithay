@@ -6,11 +6,8 @@ use gbm::{self, BufferObject, BufferObjectFlags, Format as GbmFormat, SurfaceBuf
 use image::{ImageBuffer, Rgba};
 
 use std::cell::{Cell, RefCell};
-use std::os::unix::io::AsRawFd;
 use std::rc::Rc;
 
-#[cfg(feature = "backend_drm_legacy")]
-use crate::backend::drm::legacy::LegacyDrmDevice;
 use crate::backend::graphics::CursorBackend;
 use crate::backend::graphics::SwapBuffersError;
 
@@ -172,32 +169,12 @@ impl<D: RawDevice + 'static> Surface for GbmSurfaceInternal<D> {
     }
 }
 
-// FIXME:
-//
-// Option 1: When there is GAT support, impl `GraphicsBackend` for `LegacyDrmBackend`
-//           using a new generic `B: Buffer` and use this:
-/*
-impl<'a, D: RawDevice + 'static> CursorBackend<'a> for GbmSurfaceInternal<D>
+#[cfg(feature = "backend_drm")]
+impl<D: RawDevice + 'static> CursorBackend for GbmSurfaceInternal<D>
 where
-    <D as RawDevice>::Surface: CursorBackend<'a>,
-    <<D as RawDevice>::Surface as CursorBackend<'a>>::CursorFormat: Buffer,
-    <<D as RawDevice>::Surface as CursorBackend<'a>>::Error: ::std::error::Error + Send
+    <D as RawDevice>::Surface: CursorBackend<CursorFormat = dyn drm::buffer::Buffer>,
+    <<D as RawDevice>::Surface as CursorBackend>::Error: ::std::error::Error + Send,
 {
-*/
-//
-// Option 2: When equality checks in where clauses are supported, we could at least do this:
-/*
-impl<'a, D: RawDevice + 'static> GraphicsBackend<'a> for GbmSurfaceInternal<D>
-where
-    <D as RawDevice>::Surface: CursorBackend<'a>,
-    <<D as RawDevice>::Surface as CursorBackend<'a>>::CursorFormat=&'a Buffer,
-    <<D as RawDevice>::Surface as CursorBackend<'a>>::Error: ::std::error::Error + Send
-{
-*/
-// But for now got to do this:
-
-#[cfg(feature = "backend_drm_legacy")]
-impl<A: AsRawFd + 'static> CursorBackend for GbmSurfaceInternal<LegacyDrmDevice<A>> {
     type CursorFormat = ImageBuffer<Rgba<u8>, Vec<u8>>;
     type Error = Error<<<D as Device>::Surface as CursorBackend>::Error>;
 
@@ -346,10 +323,14 @@ impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
     }
 }
 
-#[cfg(feature = "backend_drm_legacy")]
-impl<A: AsRawFd + 'static> CursorBackend for GbmSurface<LegacyDrmDevice<A>> {
+#[cfg(feature = "backend_drm")]
+impl<D: RawDevice + 'static> CursorBackend for GbmSurface<D>
+where
+    <D as RawDevice>::Surface: CursorBackend<CursorFormat = dyn drm::buffer::Buffer>,
+    <<D as RawDevice>::Surface as CursorBackend>::Error: ::std::error::Error + Send,
+{
     type CursorFormat = ImageBuffer<Rgba<u8>, Vec<u8>>;
-    type Error = <Self as Surface>::Error;
+    type Error = Error<<<D as Device>::Surface as CursorBackend>::Error>;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Self::Error> {
         self.0.set_cursor_position(x, y)
