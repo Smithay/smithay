@@ -174,26 +174,32 @@ pub fn primary_gpu<S: AsRef<str>>(seat: S) -> IoResult<Option<PathBuf>> {
     enumerator.match_subsystem("drm")?;
     enumerator.match_sysname("card[0-9]*")?;
 
-    let mut result = None;
-    for device in enumerator.scan_devices()? {
-        if device
-            .property_value("ID_SEAT")
-            .map(|x| x.to_os_string())
-            .unwrap_or_else(|| OsString::from("seat0"))
-            == *seat.as_ref()
-        {
-            if let Some(pci) = device.parent_with_subsystem(Path::new("pci"))? {
-                if let Some(id) = pci.attribute_value("boot_vga") {
-                    if id == "1" {
-                        result = Some(device);
+    if let Some(path) = enumerator
+        .scan_devices()?
+        .filter_map(|device| {
+            if device
+                .property_value("ID_SEAT")
+                .map(|x| x.to_os_string())
+                .unwrap_or_else(|| OsString::from("seat0"))
+                == *seat.as_ref()
+            {
+                if let Ok(Some(pci)) = device.parent_with_subsystem(Path::new("pci")) {
+                    if let Some(id) = pci.attribute_value("boot_vga") {
+                        if id == "1" {
+                            return Some(device);
+                        }
                     }
                 }
-            } else if result.is_none() {
-                result = Some(device);
-            }
-        }
+            };
+            None
+        })
+        .flat_map(|device| device.devnode().map(PathBuf::from))
+        .next()
+    {
+        Ok(Some(path))
+    } else {
+        all_gpus(seat).map(|all| all.into_iter().next())
     }
-    Ok(result.and_then(|device| device.devnode().map(PathBuf::from)))
 }
 
 /// Returns the paths of all available GPU devices
