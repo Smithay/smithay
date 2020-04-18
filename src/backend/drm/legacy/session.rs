@@ -23,7 +23,7 @@ use crate::backend::session::{AsSessionObserver, SessionObserver};
 pub struct LegacyDrmDeviceObserver<A: AsRawFd + 'static> {
     dev: Weak<Dev<A>>,
     dev_id: dev_t,
-    priviledged: bool,
+    privileged: bool,
     active: Arc<AtomicBool>,
     backends: Weak<RefCell<HashMap<crtc::Handle, Weak<LegacyDrmSurfaceInternal<A>>>>>,
     logger: ::slog::Logger,
@@ -35,7 +35,7 @@ impl<A: AsRawFd + 'static> AsSessionObserver<LegacyDrmDeviceObserver<A>> for Leg
             dev: Rc::downgrade(&self.dev),
             dev_id: self.dev_id,
             active: self.active.clone(),
-            priviledged: self.dev.priviledged,
+            privileged: self.dev.privileged,
             backends: Rc::downgrade(&self.backends),
             logger: self.logger.clone(),
         }
@@ -62,7 +62,7 @@ impl<A: AsRawFd + 'static> SessionObserver for LegacyDrmDeviceObserver<A> {
             }
         }
         self.active.store(false, Ordering::SeqCst);
-        if self.priviledged {
+        if self.privileged {
             if let Some(device) = self.dev.upgrade() {
                 if let Err(err) = device.release_master_lock() {
                     error!(self.logger, "Failed to drop drm master state. Error: {}", err);
@@ -84,7 +84,7 @@ impl<A: AsRawFd + 'static> SessionObserver for LegacyDrmDeviceObserver<A> {
             }
         }
         self.active.store(true, Ordering::SeqCst);
-        if self.priviledged {
+        if self.privileged {
             if let Some(device) = self.dev.upgrade() {
                 if let Err(err) = device.acquire_master_lock() {
                     crit!(self.logger, "Failed to acquire drm master again. Error: {}", err);

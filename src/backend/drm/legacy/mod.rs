@@ -45,7 +45,7 @@ pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
 
 pub(in crate::backend::drm) struct Dev<A: AsRawFd + 'static> {
     fd: A,
-    priviledged: bool,
+    privileged: bool,
     active: Arc<AtomicBool>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     logger: ::slog::Logger,
@@ -77,7 +77,7 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
                 }
             }
         }
-        if self.priviledged {
+        if self.privileged {
             if let Err(err) = self.release_master_lock() {
                 error!(self.logger, "Failed to drop drm master state. Error: {}", err);
             }
@@ -104,7 +104,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
         let active = Arc::new(AtomicBool::new(true));
         let mut dev = Dev {
             fd: dev,
-            priviledged: true,
+            privileged: true,
             old_state: HashMap::new(),
             active: active.clone(),
             logger: log.clone(),
@@ -112,8 +112,8 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
 
         // we want to modeset, so we better be the master, if we run via a tty session
         if dev.acquire_master_lock().is_err() {
-            warn!(log, "Unable to become drm master, assuming unpriviledged mode");
-            dev.priviledged = false;
+            warn!(log, "Unable to become drm master, assuming unprivileged mode");
+            dev.privileged = false;
         };
 
         // enumerate (and save) the current device state
