@@ -275,7 +275,6 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             &[PageFlipFlags::PageFlipEvent],
             None,
         )
-        .map_err(|x| dbg!(x))
         .map_err(|_| SwapBuffersError::ContextLost)
     }
 }

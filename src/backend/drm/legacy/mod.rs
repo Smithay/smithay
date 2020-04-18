@@ -95,7 +95,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
         L: Into<Option<::slog::Logger>>,
     {
         let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm"));
-        info!(log, "DrmDevice initializing");
+        info!(log, "LegacyDrmDevice initializing");
 
         let dev_id = fstat(dev.as_raw_fd())
             .map_err(Error::UnableToGetDeviceId)?
@@ -268,7 +268,11 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
                             } else {
                                 self.backends.borrow_mut().remove(&event.crtc);
                             }
+                        } else {
+                            debug!(self.logger, "Device not active. Ignoring PageFlip");
                         }
+                    } else {
+                        trace!(self.logger, "Unrelated event");
                     }
                 }
             }
@@ -294,22 +298,19 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
             })
     }
 
-    fn get_connector_info(&self, conn: connector::Handle) -> std::result::Result<connector::Info, DrmError> {
+    fn get_connector_info(&self, conn: connector::Handle) -> Result<connector::Info, DrmError> {
         self.get_connector(conn)
     }
-    fn get_crtc_info(&self, crtc: crtc::Handle) -> std::result::Result<crtc::Info, DrmError> {
+    fn get_crtc_info(&self, crtc: crtc::Handle) -> Result<crtc::Info, DrmError> {
         self.get_crtc(crtc)
     }
-    fn get_encoder_info(&self, enc: encoder::Handle) -> std::result::Result<encoder::Info, DrmError> {
+    fn get_encoder_info(&self, enc: encoder::Handle) -> Result<encoder::Info, DrmError> {
         self.get_encoder(enc)
     }
-    fn get_framebuffer_info(
-        &self,
-        fb: framebuffer::Handle,
-    ) -> std::result::Result<framebuffer::Info, DrmError> {
+    fn get_framebuffer_info(&self, fb: framebuffer::Handle) -> Result<framebuffer::Info, DrmError> {
         self.get_framebuffer(fb)
     }
-    fn get_plane_info(&self, plane: plane::Handle) -> std::result::Result<plane::Info, DrmError> {
+    fn get_plane_info(&self, plane: plane::Handle) -> Result<plane::Info, DrmError> {
         self.get_plane(plane)
     }
 }
