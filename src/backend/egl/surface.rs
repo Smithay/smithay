@@ -1,21 +1,22 @@
 //! EGL surface related structs
 
-use super::{ffi, native, EGLContext, Error};
-use crate::backend::graphics::SwapBuffersError;
+use super::{ffi, native, Error};
+use crate::backend::egl::display::EGLDisplayHandle;
+use crate::backend::graphics::{PixelFormat, SwapBuffersError};
 use nix::libc::c_int;
+use std::sync::Arc;
 use std::{
     cell::Cell,
     ops::{Deref, DerefMut},
-    rc::{Rc, Weak},
 };
 
 /// EGL surface of a given EGL context for rendering
 pub struct EGLSurface<N: native::NativeSurface> {
-    context: Weak<ffi::egl::types::EGLContext>,
-    display: Weak<ffi::egl::types::EGLDisplay>,
+    display: Arc<EGLDisplayHandle>,
     native: N,
-    surface: Cell<ffi::egl::types::EGLSurface>,
+    pub(crate) surface: Cell<ffi::egl::types::EGLSurface>,
     config_id: ffi::egl::types::EGLConfig,
+    pixel_format: PixelFormat,
     surface_attributes: Vec<c_int>,
 }
 
@@ -33,17 +34,42 @@ impl<N: native::NativeSurface> DerefMut for EGLSurface<N> {
 }
 
 impl<N: native::NativeSurface> EGLSurface<N> {
-    pub(crate) fn new<B: native::Backend<Surface = N>, D: native::NativeDisplay<B>>(
-        context: &EGLContext<B, D>,
+    pub(crate) fn new<L>(
+        display: Arc<EGLDisplayHandle>,
+        pixel_format: PixelFormat,
+        double_buffered: Option<bool>,
+        config: ffi::egl::types::EGLConfig,
         native: N,
-    ) -> Result<EGLSurface<N>, Error> {
+        log: L,
+    ) -> Result<EGLSurface<N>, Error>
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
+        let log = crate::slog_or_stdlog(log.into()).new(o!("smithay_module" => "renderer_egl"));
+
+        let surface_attributes = {
+            let mut out: Vec<c_int> = Vec::with_capacity(3);
+
+            match double_buffered {
+                Some(true) => {
+                    trace!(log, "Setting RENDER_BUFFER to BACK_BUFFER");
+                    out.push(ffi::egl::RENDER_BUFFER as c_int);
+                    out.push(ffi::egl::BACK_BUFFER as c_int);
+                }
+                Some(false) => {
+                    trace!(log, "Setting RENDER_BUFFER to SINGLE_BUFFER");
+                    out.push(ffi::egl::RENDER_BUFFER as c_int);
+                    out.push(ffi::egl::SINGLE_BUFFER as c_int);
+                }
+                None => {}
+            }
+
+            out.push(ffi::egl::NONE as i32);
+            out
+        };
+
         let surface = unsafe {
-            ffi::egl::CreateWindowSurface(
-                *context.display,
-                context.config_id,
-                native.ptr(),
-                context.surface_attributes.as_ptr(),
-            )
+            ffi::egl::CreateWindowSurface(**display, config, native.ptr(), surface_attributes.as_ptr())
         };
 
         if surface.is_null() {
@@ -51,12 +77,12 @@ impl<N: native::NativeSurface> EGLSurface<N> {
         }
 
         Ok(EGLSurface {
-            context: Rc::downgrade(&context.context),
-            display: Rc::downgrade(&context.display),
+            display,
             native,
             surface: Cell::new(surface),
-            config_id: context.config_id,
-            surface_attributes: context.surface_attributes.clone(),
+            config_id: config,
+            pixel_format,
+            surface_attributes,
         })
     }
 
@@ -65,86 +91,56 @@ impl<N: native::NativeSurface> EGLSurface<N> {
         let surface = self.surface.get();
 
         if !surface.is_null() {
-            if let Some(display) = self.display.upgrade() {
-                let ret = unsafe { ffi::egl::SwapBuffers((*display) as *const _, surface as *const _) };
+            let ret = unsafe { ffi::egl::SwapBuffers(**self.display, surface as *const _) };
 
-                if ret == 0 {
-                    match unsafe { ffi::egl::GetError() } as u32 {
-                        ffi::egl::CONTEXT_LOST => return Err(SwapBuffersError::ContextLost),
-                        err => return Err(SwapBuffersError::Unknown(err)),
-                    };
-                } else {
-                    self.native.swap_buffers()?;
-                }
+            if ret == 0 {
+                match unsafe { ffi::egl::GetError() } as u32 {
+                    ffi::egl::CONTEXT_LOST => return Err(SwapBuffersError::ContextLost),
+                    err => return Err(SwapBuffersError::Unknown(err)),
+                };
             } else {
-                return Err(SwapBuffersError::ContextLost);
+                self.native.swap_buffers()?;
             }
         };
 
         if self.native.needs_recreation() || surface.is_null() {
-            if let Some(display) = self.display.upgrade() {
-                self.native.recreate();
-                self.surface.set(unsafe {
-                    ffi::egl::CreateWindowSurface(
-                        *display,
-                        self.config_id,
-                        self.native.ptr(),
-                        self.surface_attributes.as_ptr(),
-                    )
-                });
-            }
+            self.native.recreate();
+            self.surface.set(unsafe {
+                ffi::egl::CreateWindowSurface(
+                    **self.display,
+                    self.config_id,
+                    self.native.ptr(),
+                    self.surface_attributes.as_ptr(),
+                )
+            });
         }
 
         Ok(())
     }
 
-    /// Makes the OpenGL context the current context in the current thread.
-    ///
-    /// # Safety
-    ///
-    /// This function is marked unsafe, because the context cannot be made current
-    /// on multiple threads.
-    pub unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        if let (Some(display), Some(context)) = (self.display.upgrade(), self.context.upgrade()) {
-            let ret = ffi::egl::MakeCurrent(
-                (*display) as *const _,
-                self.surface.get() as *const _,
-                self.surface.get() as *const _,
-                (*context) as *const _,
-            );
-
-            if ret == 0 {
-                match ffi::egl::GetError() as u32 {
-                    ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
-                    err => panic!("eglMakeCurrent failed (eglGetError returned 0x{:x})", err),
-                }
-            } else {
-                Ok(())
-            }
-        } else {
-            Err(SwapBuffersError::ContextLost)
+    /// Returns true if the OpenGL surface is the current one in the thread.
+    pub fn is_current(&self) -> bool {
+        unsafe {
+            ffi::egl::GetCurrentSurface(ffi::egl::DRAW as _) == self.surface.get() as *const _
+                && ffi::egl::GetCurrentSurface(ffi::egl::READ as _) == self.surface.get() as *const _
         }
     }
 
-    /// Returns true if the OpenGL surface is the current one in the thread.
-    pub fn is_current(&self) -> bool {
-        if self.context.upgrade().is_some() {
-            unsafe {
-                ffi::egl::GetCurrentSurface(ffi::egl::DRAW as _) == self.surface.get() as *const _
-                    && ffi::egl::GetCurrentSurface(ffi::egl::READ as _) == self.surface.get() as *const _
-            }
-        } else {
-            false
-        }
+    /// Returns the egl config for this context
+    pub fn get_config_id(&self) -> ffi::egl::types::EGLConfig {
+        self.config_id
+    }
+
+    /// Returns the pixel format of the main framebuffer of the context.
+    pub fn get_pixel_format(&self) -> PixelFormat {
+        self.pixel_format
     }
 }
 
 impl<N: native::NativeSurface> Drop for EGLSurface<N> {
     fn drop(&mut self) {
-        if let Some(display) = self.display.upgrade() {
-            unsafe {
-                ffi::egl::DestroySurface((*display) as *const _, self.surface.get() as *const _);
-            }
+        unsafe {
+            ffi::egl::DestroySurface(**self.display, self.surface.get() as *const _);
         }
     }
 }

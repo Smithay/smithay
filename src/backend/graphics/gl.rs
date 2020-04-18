@@ -18,11 +18,7 @@ pub trait GLGraphicsBackend {
     fn swap_buffers(&self) -> Result<(), SwapBuffersError>;
 
     /// Returns the address of an OpenGL function.
-    ///
-    /// # Safety
-    ///
-    /// The context must have been made current before this function is called.
-    unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void;
+    fn get_proc_address(&self, symbol: &str) -> *const c_void;
 
     /// Returns the dimensions of the window, or screen, etc in points.
     ///
@@ -51,5 +47,5 @@ pub trait GLGraphicsBackend {
 /// and may only be used in combination with the backend. Using this with any
 /// other gl context or after the backend was dropped *may* cause undefined behavior.
 pub fn load_raw_gl<B: GLGraphicsBackend>(backend: &B) -> Gles2 {
-    Gles2::load_with(|s| unsafe { backend.get_proc_address(s) as *const _ })
+    Gles2::load_with(|s| backend.get_proc_address(s) as *const _)
 }

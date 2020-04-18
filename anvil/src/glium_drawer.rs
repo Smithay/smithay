@@ -12,7 +12,7 @@ use glium::{
 use slog::Logger;
 
 #[cfg(feature = "egl")]
-use smithay::backend::egl::EGLDisplay;
+use smithay::backend::egl::display::EGLBufferReader;
 use smithay::{
     backend::{
         egl::{BufferAccessError, EGLImages, Format},
@@ -44,7 +44,7 @@ pub struct GliumDrawer<F: GLGraphicsBackend + 'static> {
     index_buffer: glium::IndexBuffer<u16>,
     programs: [glium::Program; shaders::FRAGMENT_COUNT],
     #[cfg(feature = "egl")]
-    egl_display: Rc<RefCell<Option<EGLDisplay>>>,
+    egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
     log: Logger,
 }
 
@@ -56,7 +56,11 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
 
 impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer<T> {
     #[cfg(feature = "egl")]
-    pub fn init(backend: T, egl_display: Rc<RefCell<Option<EGLDisplay>>>, log: Logger) -> GliumDrawer<T> {
+    pub fn init(
+        backend: T,
+        egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
+        log: Logger,
+    ) -> GliumDrawer<T> {
         let display = backend.into();
 
         // building the vertex buffer, which contains all the vertices that we will draw
@@ -94,7 +98,7 @@ impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer
             vertex_buffer,
             index_buffer,
             programs,
-            egl_display,
+            egl_buffer_reader,
             log,
         }
     }
@@ -147,7 +151,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     #[cfg(feature = "egl")]
     pub fn texture_from_buffer(&self, buffer: wl_buffer::WlBuffer) -> Result<TextureMetadata, ()> {
         // try to retrieve the egl contents of this buffer
-        let images = if let Some(display) = &self.egl_display.borrow().as_ref() {
+        let images = if let Some(display) = &self.egl_buffer_reader.borrow().as_ref() {
             display.egl_buffer_contents(buffer)
         } else {
             Err(BufferAccessError::NotManaged(buffer))

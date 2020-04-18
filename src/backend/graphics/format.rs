@@ -13,8 +13,6 @@ pub struct PixelFormat {
     pub stencil_bits: u8,
     /// is stereoscopy enabled
     pub stereoscopy: bool,
-    /// is double buffering enabled
-    pub double_buffer: bool,
     /// number of samples used for multisampling if enabled
     pub multisampling: Option<u16>,
     /// is srgb enabled

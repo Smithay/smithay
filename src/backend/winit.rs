@@ -1,10 +1,9 @@
 //! Implementation of backend traits for types provided by `winit`
 
+use crate::backend::egl::display::EGLDisplay;
+use crate::backend::egl::get_proc_address;
 use crate::backend::{
-    egl::{
-        context::GlAttributes, native, EGLContext, EGLDisplay, EGLGraphicsBackend, EGLSurface,
-        Error as EGLError,
-    },
+    egl::{context::GlAttributes, native, EGLContext, EGLSurface, Error as EGLError},
     graphics::{gl::GLGraphicsBackend, CursorBackend, PixelFormat, SwapBuffersError},
     input::{
         Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState, KeyboardKeyEvent,
@@ -33,6 +32,9 @@ use winit::{
     window::{CursorIcon, Window as WinitWindow, WindowBuilder},
 };
 
+#[cfg(feature = "use_system_lib")]
+use crate::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
+
 /// Errors thrown by the `winit` backends
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -49,11 +51,13 @@ pub enum Error {
 
 enum Window {
     Wayland {
-        context: EGLContext<native::Wayland, WinitWindow>,
+        display: EGLDisplay<native::Wayland, WinitWindow>,
+        context: EGLContext,
         surface: EGLSurface<wegl::WlEglSurface>,
     },
     X11 {
-        context: EGLContext<native::X11, WinitWindow>,
+        display: EGLDisplay<native::X11, WinitWindow>,
+        context: EGLContext,
         surface: EGLSurface<native::XlibWindow>,
     },
 }
@@ -61,8 +65,8 @@ enum Window {
 impl Window {
     fn window(&self) -> Ref<'_, WinitWindow> {
         match *self {
-            Window::Wayland { ref context, .. } => context.borrow(),
-            Window::X11 { ref context, .. } => context.borrow(),
+            Window::Wayland { ref display, .. } => display.borrow(),
+            Window::X11 { ref display, .. } => display.borrow(),
         }
     }
 }
@@ -158,15 +162,33 @@ where
     let reqs = Default::default();
     let window = Rc::new(
         if native::NativeDisplay::<native::Wayland>::is_backend(&winit_window) {
-            let context =
-                EGLContext::<native::Wayland, WinitWindow>::new(winit_window, attributes, reqs, log.clone())?;
-            let surface = context.create_surface(())?;
-            Window::Wayland { context, surface }
+            let display = EGLDisplay::<native::Wayland, WinitWindow>::new(winit_window, log.clone())?;
+            let context = display.create_context(attributes, reqs)?;
+            let surface = display.create_surface(
+                context.get_pixel_format(),
+                reqs.double_buffer,
+                context.get_config_id(),
+                (),
+            )?;
+            Window::Wayland {
+                display,
+                context,
+                surface,
+            }
         } else if native::NativeDisplay::<native::X11>::is_backend(&winit_window) {
-            let context =
-                EGLContext::<native::X11, WinitWindow>::new(winit_window, attributes, reqs, log.clone())?;
-            let surface = context.create_surface(())?;
-            Window::X11 { context, surface }
+            let display = EGLDisplay::<native::X11, WinitWindow>::new(winit_window, log.clone())?;
+            let context = display.create_context(attributes, reqs)?;
+            let surface = display.create_surface(
+                context.get_pixel_format(),
+                reqs.double_buffer,
+                context.get_config_id(),
+                (),
+            )?;
+            Window::X11 {
+                display,
+                context,
+                surface,
+            }
         } else {
             return Err(Error::NotSupported);
         },
@@ -263,12 +285,9 @@ impl GLGraphicsBackend for WinitGraphicsBackend {
         }
     }
 
-    unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
+    fn get_proc_address(&self, symbol: &str) -> *const c_void {
         trace!(self.logger, "Getting symbol for {:?}", symbol);
-        match *self.window {
-            Window::Wayland { ref context, .. } => context.get_proc_address(symbol),
-            Window::X11 { ref context, .. } => context.get_proc_address(symbol),
-        }
+        get_proc_address(symbol)
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
@@ -281,10 +300,12 @@ impl GLGraphicsBackend for WinitGraphicsBackend {
             Window::Wayland {
                 ref context,
                 ref surface,
+                ..
             } => context.is_current() && surface.is_current(),
             Window::X11 {
                 ref context,
                 ref surface,
+                ..
             } => context.is_current() && surface.is_current(),
         }
     }
@@ -292,24 +313,33 @@ impl GLGraphicsBackend for WinitGraphicsBackend {
     unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
         trace!(self.logger, "Setting EGL context to be the current context");
         match *self.window {
-            Window::Wayland { ref surface, .. } => surface.make_current(),
-            Window::X11 { ref surface, .. } => surface.make_current(),
+            Window::Wayland {
+                ref surface,
+                ref context,
+                ..
+            } => context.make_current_with_surface(surface),
+            Window::X11 {
+                ref surface,
+                ref context,
+                ..
+            } => context.make_current_with_surface(surface),
         }
     }
 
     fn get_pixel_format(&self) -> PixelFormat {
         match *self.window {
-            Window::Wayland { ref context, .. } => context.get_pixel_format(),
-            Window::X11 { ref context, .. } => context.get_pixel_format(),
+            Window::Wayland { ref surface, .. } => surface.get_pixel_format(),
+            Window::X11 { ref surface, .. } => surface.get_pixel_format(),
         }
     }
 }
 
+#[cfg(feature = "use_system_lib")]
 impl EGLGraphicsBackend for WinitGraphicsBackend {
-    fn bind_wl_display(&self, display: &Display) -> Result<EGLDisplay, EGLError> {
+    fn bind_wl_display(&self, wl_display: &Display) -> Result<EGLBufferReader, EGLError> {
         match *self.window {
-            Window::Wayland { ref context, .. } => context.bind_wl_display(display),
-            Window::X11 { ref context, .. } => context.bind_wl_display(display),
+            Window::Wayland { ref display, .. } => display.bind_wl_display(wl_display),
+            Window::X11 { ref display, .. } => display.bind_wl_display(wl_display),
         }
     }
 }
