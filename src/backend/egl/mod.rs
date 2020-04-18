@@ -19,7 +19,7 @@
 //! of an EGL-based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer) for rendering.
 
 #[cfg(feature = "renderer_gl")]
-use crate::backend::graphics::gl::ffi as gl_ffi;
+use crate::backend::graphics::gl::{ffi as gl_ffi, GLGraphicsBackend};
 use nix::libc::c_uint;
 use std::fmt;
 #[cfg(feature = "wayland_frontend")]
@@ -43,6 +43,8 @@ pub use self::surface::EGLSurface;
 #[cfg(feature = "use_system_lib")]
 use crate::backend::egl::display::EGLBufferReader;
 use crate::backend::egl::display::EGLDisplayHandle;
+#[cfg(feature = "renderer_gl")]
+use std::ffi::CStr;
 use std::ffi::CString;
 use std::sync::Arc;
 
@@ -181,8 +183,6 @@ pub struct EGLImages {
     buffer: WlBuffer,
     #[cfg(feature = "renderer_gl")]
     gl: gl_ffi::Gles2,
-    #[cfg(feature = "renderer_gl")]
-    egl_to_texture_support: bool,
 }
 
 #[cfg(feature = "wayland_frontend")]
@@ -195,17 +195,34 @@ impl EGLImages {
     /// Bind plane to an OpenGL texture id
     ///
     /// This does only temporarily modify the OpenGL state any changes are reverted before returning.
+    /// The given `GLGraphicsBackend` must be the one belonging to the `tex_id` and will be the current
+    /// context (and surface if applicable) after this function returns.
     ///
     /// # Safety
     ///
-    /// The given `tex_id` needs to be a valid GL texture otherwise undefined behavior might occur.
+    /// The given `tex_id` needs to be a valid GL texture in the given context otherwise undefined behavior might occur.
     #[cfg(feature = "renderer_gl")]
     pub unsafe fn bind_to_texture(
         &self,
         plane: usize,
         tex_id: c_uint,
+        backend: &dyn GLGraphicsBackend,
     ) -> ::std::result::Result<(), TextureCreationError> {
-        if !self.egl_to_texture_support {
+        // receive the list of extensions for *this* context
+        backend
+            .make_current()
+            .map_err(|_| TextureCreationError::ContextLost)?;
+
+        let egl_to_texture_support = {
+            // the list of gl extensions supported by the context
+            let data = CStr::from_ptr(self.gl.GetString(gl_ffi::EXTENSIONS) as *const _)
+                .to_bytes()
+                .to_vec();
+            let list = String::from_utf8(data).unwrap();
+            list.split(' ')
+                .any(|s| s == "GL_OES_EGL_image" || s == "GL_OES_EGL_image_base")
+        };
+        if !egl_to_texture_support {
             return Err(TextureCreationError::GLExtensionNotSupported("GL_OES_EGL_image"));
         }
 
