@@ -103,7 +103,7 @@ pub trait Device: AsRawFd + DevPath {
     /// The number of crtc's represent the number of independant output devices the hardware may handle.
     fn create_surface(
         &mut self,
-        ctrc: crtc::Handle,
+        crtc: crtc::Handle,
     ) -> Result<Self::Surface, <Self::Surface as Surface>::Error>;
 
     /// Processes any open events of the underlying file descriptor.
