@@ -1,11 +1,13 @@
 //!
 //! Module for common/shared types of the various [`Device`](::backend::drm::Device)
 //! and [`Surface`](::backend::drm::Surface) implementations of the `backend::drm` module.
-//! 
+//!
 
 use drm::control::{connector, crtc, Mode, RawResourceHandle};
 
 use std::path::PathBuf;
+
+pub mod fallback;
 
 /// Errors thrown by the [`LegacyDrmDevice`](::backend::drm::legacy::LegacyDrmDevice),
 /// [`AtomicDrmDevice`](::backend::drm::atomic::AtomicDrmDevice)
