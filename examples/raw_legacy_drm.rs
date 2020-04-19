@@ -81,13 +81,7 @@ fn main() {
     let surface = Rc::new(device.create_surface(crtc).unwrap());
 
     surface.use_mode(Some(mode)).unwrap();
-    for conn in surface.current_connectors().into_iter() {
-        if conn != connector_info.handle() {
-            surface.remove_connector(conn).unwrap();
-        }
-    }
-    surface.add_connector(connector_info.handle()).unwrap();
-
+    surface.set_connectors(&[connector_info.handle()]).unwrap();
     /*
      * Lets create buffers and framebuffers.
      * We use drm-rs DumbBuffers, because they always work and require little to no setup.
