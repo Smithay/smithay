@@ -19,15 +19,13 @@ use smithay::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
 use smithay::{
     backend::{
         drm::{
+            atomic::AtomicDrmDevice,
+            common::fallback::FallbackDevice,
             device_bind,
             egl::{EglDevice, EglSurface},
             gbm::{egl::Gbm as EglGbmBackend, GbmDevice},
-            atomic::AtomicDrmDevice,
-            //legacy::LegacyDrmDevice,
-            DevPath,
-            Device,
-            DeviceHandler,
-            Surface,
+            legacy::LegacyDrmDevice,
+            DevPath, Device, DeviceHandler, Surface,
         },
         graphics::CursorBackend,
         input::InputBackend,
@@ -72,6 +70,7 @@ use crate::shell::{init_shell, MyWindowMap, Roles};
 use crate::AnvilState;
 use smithay::backend::drm::gbm::GbmSurface;
 
+#[derive(Clone)]
 pub struct SessionFd(RawFd);
 impl AsRawFd for SessionFd {
     fn as_raw_fd(&self) -> RawFd {
@@ -79,10 +78,12 @@ impl AsRawFd for SessionFd {
     }
 }
 
-type RenderDevice =
-    EglDevice<EglGbmBackend<AtomicDrmDevice<SessionFd>>, GbmDevice<AtomicDrmDevice<SessionFd>>>;
+type RenderDevice = EglDevice<
+    EglGbmBackend<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
+    GbmDevice<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
+>;
 type RenderSurface =
-    EglSurface<GbmSurface<AtomicDrmDevice<SessionFd>>>;
+    EglSurface<GbmSurface<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>>;
 
 pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log: Logger) -> Result<(), ()> {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
@@ -417,7 +418,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             )
             .ok()
             .and_then(
-                |fd| match AtomicDrmDevice::new(SessionFd(fd), self.logger.clone()) {
+                |fd| match FallbackDevice::new(SessionFd(fd), self.logger.clone()) {
                     Ok(drm) => Some(drm),
                     Err(err) => {
                         error!(self.logger, "Skipping drm device, because of error: {}", err);
