@@ -122,7 +122,6 @@ fn main() {
     if surface.commit_pending() {
         surface.commit(front_framebuffer).unwrap();
     }
-    RawSurface::page_flip(&*surface, front_framebuffer).unwrap();
 
     // Run
     event_loop.run(None, &mut (), |_| {}).unwrap();
