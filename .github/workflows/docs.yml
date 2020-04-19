@@ -36,7 +36,7 @@ jobs:
           args: --no-deps --all-features
 
       - name: Setup index
-        run: cp ./doc_index.html ./target/doc/
+        run: cp ./doc_index.html ./target/doc/index.html
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
