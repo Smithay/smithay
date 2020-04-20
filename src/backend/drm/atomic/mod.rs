@@ -115,6 +115,75 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
     }
 }
 
+impl<A: AsRawFd + 'static> Dev<A> {
+    // Add all properties of given handles to a given drm resource type to state.
+    // You may use this to snapshot the current state of the drm device (fully or partially).
+    fn add_props<T>(&self, handles: &[T], state: &mut Vec<(T, PropertyValueSet)>) -> Result<(), Error>
+    where
+        A: AsRawFd + 'static,
+        T: ResourceHandle,
+    {
+        let iter = handles.iter().map(|x| (x, self.get_properties(*x)));
+        if let Some(len) = iter.size_hint().1 {
+            state.reserve_exact(len)
+        }
+
+        iter.map(|(x, y)| (*x, y))
+            .try_for_each(|(x, y)| match y {
+                Ok(y) => {
+                    state.push((x, y));
+                    Ok(())
+                }
+                Err(err) => Err(err),
+            })
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Error reading properties",
+                dev: self.dev_path(),
+                source,
+            })
+    }
+
+    /// Create a mapping of property names and handles for given handles of a given drm resource type.
+    /// You may use this to easily lookup properties by name instead of going through this procedure manually.
+    fn map_props<T>(
+        &self,
+        handles: &[T],
+        mapping: &mut HashMap<T, HashMap<String, property::Handle>>,
+    ) -> Result<(), Error>
+    where
+        A: AsRawFd + 'static,
+        T: ResourceHandle + Eq + std::hash::Hash,
+    {
+        handles
+            .iter()
+            .map(|x| (x, self.get_properties(*x)))
+            .try_for_each(|(handle, props)| {
+                let mut map = HashMap::new();
+                match props {
+                    Ok(props) => {
+                        let (prop_handles, _) = props.as_props_and_values();
+                        for prop in prop_handles {
+                            if let Ok(info) = self.get_property(*prop) {
+                                let name = info.name().to_string_lossy().into_owned();
+                                map.insert(name, *prop);
+                            }
+                        }
+                        mapping.insert(*handle, map);
+                        Ok(())
+                    }
+                    Err(err) => Err(err),
+                }
+            })
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Error reading properties on {:?}",
+                dev: self.dev_path(),
+                source,
+            })
+    }
+}
+
 impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
     /// Create a new [`AtomicDrmDevice`] from an open drm node
     ///
@@ -179,86 +248,18 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         })?;
         let planes = plane_handles.planes();
 
-        fn add_props<A, T>(
-            dev: &Dev<A>,
-            handles: &[T],
-            state: &mut Vec<(T, PropertyValueSet)>,
-        ) -> Result<(), Error>
-        where
-            A: AsRawFd + 'static,
-            T: ResourceHandle,
-        {
-            let iter = handles.iter().map(|x| (x, dev.get_properties(*x)));
-            if let Some(len) = iter.size_hint().1 {
-                state.reserve_exact(len)
-            }
-
-            iter.map(|(x, y)| (*x, y))
-                .try_for_each(|(x, y)| match y {
-                    Ok(y) => {
-                        state.push((x, y));
-                        Ok(())
-                    }
-                    Err(err) => Err(err),
-                })
-                .compat()
-                .map_err(|source| Error::Access {
-                    errmsg: "Error reading properties",
-                    dev: dev.dev_path(),
-                    source,
-                })
-        }
-
-        fn map_props<A, T>(
-            dev: &Dev<A>,
-            handles: &[T],
-            mapping: &mut HashMap<T, HashMap<String, property::Handle>>,
-        ) -> Result<(), Error>
-        where
-            A: AsRawFd + 'static,
-            T: ResourceHandle + Eq + std::hash::Hash,
-        {
-            handles
-                .iter()
-                .map(|x| (x, dev.get_properties(*x)))
-                .try_for_each(|(handle, props)| {
-                    let mut map = HashMap::new();
-                    //let prop_handles: PropertyValueSet = props.compat()?;
-                    match props {
-                        Ok(props) => {
-                            let (prop_handles, _) = props.as_props_and_values();
-                            for prop in prop_handles {
-                                if let Ok(info) = dev.get_property(*prop) {
-                                    let name = info.name().to_string_lossy().into_owned();
-                                    map.insert(name, *prop);
-                                }
-                            }
-                            mapping.insert(*handle, map);
-                            Ok(())
-                        }
-                        Err(err) => Err(err),
-                    }
-                })
-                .compat()
-                .map_err(|source| Error::Access {
-                    errmsg: "Error reading properties on {:?}",
-                    dev: dev.dev_path(),
-                    source,
-                })
-        }
-
         let mut old_state = dev.old_state.clone();
         let mut mapping = dev.prop_mapping.clone();
 
-        add_props(&dev, res_handles.connectors(), &mut old_state.0)?;
-        add_props(&dev, res_handles.crtcs(), &mut old_state.1)?;
-        add_props(&dev, res_handles.framebuffers(), &mut old_state.2)?;
-        add_props(&dev, planes, &mut old_state.3)?;
+        dev.add_props(res_handles.connectors(), &mut old_state.0)?;
+        dev.add_props(res_handles.crtcs(), &mut old_state.1)?;
+        dev.add_props(res_handles.framebuffers(), &mut old_state.2)?;
+        dev.add_props(planes, &mut old_state.3)?;
 
-        map_props(&dev, res_handles.connectors(), &mut mapping.0)?;
-        map_props(&dev, res_handles.crtcs(), &mut mapping.1)?;
-        map_props(&dev, res_handles.framebuffers(), &mut mapping.2)?;
-        map_props(&dev, planes, &mut mapping.3)?;
+        dev.map_props(res_handles.connectors(), &mut mapping.0)?;
+        dev.map_props(res_handles.crtcs(), &mut mapping.1)?;
+        dev.map_props(res_handles.framebuffers(), &mut mapping.2)?;
+        dev.map_props(planes, &mut mapping.3)?;
 
         dev.old_state = old_state;
         dev.prop_mapping = mapping;
