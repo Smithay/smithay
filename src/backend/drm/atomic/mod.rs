@@ -324,7 +324,7 @@ impl<A: AsRawFd + 'static> Device for AtomicDrmDevice<A> {
             Ok(events) => {
                 for event in events {
                     if let Event::PageFlip(event) = event {
-                        trace!(self.logger, "Got event!");
+                        trace!(self.logger, "Got a page-flip event for crtc ({:?})", event.crtc);
                         if self.active.load(Ordering::SeqCst) {
                             if self
                                 .backends
@@ -343,10 +343,18 @@ impl<A: AsRawFd + 'static> Device for AtomicDrmDevice<A> {
                                 self.backends.borrow_mut().remove(&event.crtc);
                             }
                         } else {
-                            debug!(self.logger, "Device not active. Ignoring PageFlip");
+                            debug!(
+                                self.logger,
+                                "Device ({:?}) not active. Ignoring PageFlip",
+                                self.dev_path()
+                            );
                         }
                     } else {
-                        trace!(self.logger, "Unrelated event");
+                        trace!(
+                            self.logger,
+                            "Got a non-page-flip event of device '{:?}'.",
+                            self.dev_path()
+                        );
                     }
                 }
             }
