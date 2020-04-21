@@ -311,7 +311,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                 if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
                     let mut data = data.borrow_mut();
                     if data.texture.is_none() {
-                        if let Some(buffer) = data.buffer.take() {
+                        if let Some(buffer) = data.current_state.buffer.take() {
                             if let Ok(m) = self.texture_from_buffer(buffer.clone()) {
                                 // release the buffer if it was an SHM buffer
                                 #[cfg(feature = "egl")]
@@ -336,9 +336,9 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                     // Now, should we be drawn ?
                     if data.texture.is_some() {
                         // if yes, also process the children
-                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                            x += subdata.location.0;
-                            y += subdata.location.1;
+                        if Role::<SubsurfaceRole>::has(role) {
+                            x += data.current_state.sub_location.0;
+                            y += data.current_state.sub_location.1;
                         }
                         TraversalAction::DoChildren((x, y))
                     } else {
@@ -352,12 +352,13 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
             },
             |_surface, attributes, role, &(mut x, mut y)| {
                 if let Some(ref data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
-                    if let Some(ref metadata) = data.borrow().texture {
+                    let data = data.borrow();
+                    if let Some(ref metadata) = data.texture {
                         // we need to re-extract the subsurface offset, as the previous closure
                         // only passes it to our children
-                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                            x += subdata.location.0;
-                            y += subdata.location.1;
+                        if Role::<SubsurfaceRole>::has(role) {
+                            x += data.current_state.sub_location.0;
+                            y += data.current_state.sub_location.1;
                         }
                         self.render_texture(
                             frame,
