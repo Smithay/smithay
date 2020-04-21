@@ -1,7 +1,7 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
 mod helpers;
-use helpers::{on_device_event, on_touch_event, on_keyboard_event, on_pointer_event};
+use helpers::{on_device_event, on_keyboard_event, on_pointer_event, on_touch_event};
 
 use crate::backend::input::{self as backend, Axis, InputBackend};
 #[cfg(feature = "backend_session")]

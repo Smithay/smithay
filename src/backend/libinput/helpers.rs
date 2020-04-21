@@ -1,20 +1,15 @@
-
 use crate::backend::input::{self as backend};
 use input as libinput;
 use input::event::{
-    device::DeviceEvent,
-    keyboard::KeyboardEvent,
-    pointer::PointerEvent,
-    touch::TouchEvent,
-    EventTrait,
+    device::DeviceEvent, keyboard::KeyboardEvent, pointer::PointerEvent, touch::TouchEvent, EventTrait,
 };
 use slog::Logger;
 
+use super::LibinputInputBackend;
 use std::{
     collections::hash_map::{DefaultHasher, Entry, HashMap},
     hash::{Hash, Hasher},
 };
-use super::LibinputInputBackend;
 
 #[inline(always)]
 pub fn on_device_event<H>(
