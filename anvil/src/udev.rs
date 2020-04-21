@@ -6,6 +6,7 @@ use std::{
     path::PathBuf,
     rc::Rc,
     sync::{atomic::Ordering, Arc, Mutex},
+    time::Duration,
 };
 
 use glium::Surface as GliumSurface;
@@ -20,7 +21,7 @@ use smithay::{
             common::fallback::FallbackDevice,
             device_bind,
             egl::{EglDevice, EglSurface},
-            gbm::{egl::Gbm as EglGbmBackend, GbmDevice},
+            gbm::{egl::Gbm as EglGbmBackend, GbmDevice, GbmSurface},
             legacy::LegacyDrmDevice,
             DevPath, Device, DeviceHandler, Surface,
         },
@@ -56,6 +57,7 @@ use smithay::{
         data_device::set_data_device_focus,
         output::{Mode, Output, PhysicalProperties},
         seat::{CursorImageStatus, Seat, XkbConfig},
+        SERIAL_COUNTER as SCOUNTER,
     },
 };
 
@@ -63,8 +65,7 @@ use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
 use crate::input_handler::AnvilInputHandler;
 use crate::shell::{MyWindowMap, Roles};
-use crate::AnvilState;
-use smithay::backend::drm::gbm::GbmSurface;
+use crate::state::AnvilState;
 
 #[derive(Clone)]
 pub struct SessionFd(RawFd);
@@ -238,7 +239,7 @@ pub fn run_udev(
 
     while state.running.load(Ordering::SeqCst) {
         if event_loop
-            .dispatch(Some(::std::time::Duration::from_millis(16)), &mut state)
+            .dispatch(Some(Duration::from_millis(16)), &mut state)
             .is_err()
         {
             state.running.store(false, Ordering::SeqCst);
@@ -599,6 +600,9 @@ impl DeviceHandler for DrmHandlerImpl {
             if let Err(err) = frame.finish() {
                 error!(self.logger, "Error during rendering: {:?}", err);
             }
+
+            // Send frame events so that client start drawing their next frame
+            self.window_map.borrow().send_frames(SCOUNTER.next_serial());
         }
     }
 

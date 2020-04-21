@@ -694,6 +694,13 @@ impl SurfaceData {
 
         self.input_region.as_ref().unwrap().contains(point)
     }
+
+    /// Send the frame callback if it had been requested
+    pub fn send_frame(&mut self, serial: u32) {
+        if let Some(callback) = self.frame_callback.take() {
+            callback.done(serial);
+        }
+    }
 }
 
 fn surface_commit(
