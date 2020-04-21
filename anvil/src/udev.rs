@@ -53,17 +53,16 @@ use smithay::{
     },
     wayland::{
         compositor::CompositorToken,
-        data_device::{default_action_chooser, init_data_device, set_data_device_focus, DataDeviceEvent},
+        data_device::set_data_device_focus,
         output::{Mode, Output, PhysicalProperties},
         seat::{CursorImageStatus, Seat, XkbConfig},
-        shm::init_shm_global,
     },
 };
 
 use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
 use crate::input_handler::AnvilInputHandler;
-use crate::shell::{init_shell, MyWindowMap, Roles};
+use crate::shell::{MyWindowMap, Roles};
 use crate::AnvilState;
 use smithay::backend::drm::gbm::GbmSurface;
 
@@ -84,7 +83,7 @@ type RenderSurface =
 
 pub fn run_udev(
     display: Rc<RefCell<Display>>,
-    mut event_loop: EventLoop<AnvilState>,
+    event_loop: &mut EventLoop<AnvilState>,
     log: Logger,
 ) -> Result<(), ()> {
     let name = display
@@ -107,10 +106,7 @@ pub fn run_udev(
     /*
      * Initialize the compositor
      */
-    init_shm_global(&mut display.borrow_mut(), vec![], log.clone());
-
-    let (compositor_token, _, _, window_map) =
-        init_shell(&mut display.borrow_mut(), buffer_utils, log.clone());
+    let mut state = AnvilState::init(display.clone(), event_loop.handle(), buffer_utils, log.clone());
 
     /*
      * Initialize session
@@ -119,11 +115,8 @@ pub fn run_udev(
     let (udev_observer, udev_notifier) = notify_multiplexer();
     let udev_session_id = notifier.register(udev_observer);
 
-    let mut state = AnvilState::default();
-
     let pointer_location = Rc::new(RefCell::new((0.0, 0.0)));
     let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
-    let dnd_icon = Arc::new(Mutex::new(None));
 
     /*
      * Initialize the udev backend
@@ -135,18 +128,18 @@ pub fn run_udev(
     let bytes = include_bytes!("../resources/cursor2.rgba");
     let udev_backend = UdevBackend::new(
         UdevHandlerImpl {
-            compositor_token,
+            compositor_token: state.ctoken,
             #[cfg(feature = "egl")]
             egl_buffer_reader,
             session: session.clone(),
             backends: HashMap::new(),
             display: display.clone(),
             primary_gpu,
-            window_map: window_map.clone(),
+            window_map: state.window_map.clone(),
             pointer_location: pointer_location.clone(),
             pointer_image: ImageBuffer::from_raw(64, 64, bytes.to_vec()).unwrap(),
             cursor_status: cursor_status.clone(),
-            dnd_icon: dnd_icon.clone(),
+            dnd_icon: state.dnd_icon.clone(),
             loop_handle: event_loop.handle(),
             notifier: udev_notifier,
             logger: log.clone(),
@@ -157,36 +150,16 @@ pub fn run_udev(
     .map_err(|_| ())?;
 
     /*
-     * Initialize wayland clipboard
-     */
-
-    init_data_device(
-        &mut display.borrow_mut(),
-        move |event| match event {
-            DataDeviceEvent::DnDStarted { icon, .. } => {
-                *dnd_icon.lock().unwrap() = icon;
-            }
-            DataDeviceEvent::DnDDropped => {
-                *dnd_icon.lock().unwrap() = None;
-            }
-            _ => {}
-        },
-        default_action_chooser,
-        compositor_token,
-        log.clone(),
-    );
-
-    /*
      * Initialize wayland input object
      */
     let (mut w_seat, _) = Seat::new(
         &mut display.borrow_mut(),
         session.seat(),
-        compositor_token,
+        state.ctoken,
         log.clone(),
     );
 
-    let pointer = w_seat.add_pointer(compositor_token.clone(), move |new_status| {
+    let pointer = w_seat.add_pointer(state.ctoken.clone(), move |new_status| {
         *cursor_status.lock().unwrap() = new_status;
     });
     let keyboard = w_seat
@@ -239,7 +212,7 @@ pub fn run_udev(
         log.clone(),
         pointer,
         keyboard,
-        window_map.clone(),
+        state.window_map.clone(),
         (w, h),
         state.running.clone(),
         pointer_location,
@@ -271,12 +244,12 @@ pub fn run_udev(
             state.running.store(false, Ordering::SeqCst);
         } else {
             display.borrow_mut().flush_clients(&mut state);
-            window_map.borrow_mut().refresh();
+            state.window_map.borrow_mut().refresh();
         }
     }
 
     // Cleanup stuff
-    window_map.borrow_mut().clear();
+    state.window_map.borrow_mut().clear();
 
     let mut notifier = session_event_source.unbind();
     notifier.unregister(libinput_session_id);
