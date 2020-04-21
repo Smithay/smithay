@@ -10,13 +10,13 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::sync::RwLock;
 
-use crate::backend::drm::{DevPath, RawSurface, Surface};
+use crate::backend::drm::{common::Error, DevPath, RawSurface, Surface};
 use crate::backend::graphics::CursorBackend;
 use crate::backend::graphics::SwapBuffersError;
 
-use super::{Dev, Error};
+use super::Dev;
 
-use failure::ResultExt;
+use failure::{Fail, ResultExt};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {
@@ -41,8 +41,8 @@ impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurfaceInternal<A> {
 impl<A: AsRawFd + 'static> BasicDevice for LegacyDrmSurfaceInternal<A> {}
 impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmSurfaceInternal<A> {}
 
-impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurfaceInternal<A> {
-    type CursorFormat = &'a dyn Buffer;
+impl<A: AsRawFd + 'static> CursorBackend for LegacyDrmSurfaceInternal<A> {
+    type CursorFormat = dyn Buffer;
     type Error = Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Error> {
@@ -56,14 +56,11 @@ impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurfaceInternal<A>
             })
     }
 
-    fn set_cursor_representation<'b>(
-        &'b self,
-        buffer: Self::CursorFormat,
+    fn set_cursor_representation(
+        &self,
+        buffer: &Self::CursorFormat,
         hotspot: (u32, u32),
-    ) -> Result<(), Error>
-    where
-        'a: 'b,
-    {
+    ) -> Result<(), Error> {
         trace!(self.logger, "Setting the new imported cursor");
 
         if self
@@ -108,62 +105,33 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
     }
 
     fn add_connector(&self, conn: connector::Handle) -> Result<(), Error> {
-        let info = self
-            .get_connector(conn)
-            .compat()
-            .map_err(|source| Error::Access {
-                errmsg: "Error loading connector info",
-                dev: self.dev_path(),
-                source,
-            })?;
-
         let mut pending = self.pending.write().unwrap();
 
-        // check if the connector can handle the current mode
-        if info.modes().contains(pending.mode.as_ref().unwrap()) {
-            // check if there is a valid encoder
-            let encoders = info
-                .encoders()
-                .iter()
-                .filter(|enc| enc.is_some())
-                .map(|enc| enc.unwrap())
-                .map(|encoder| {
-                    self.get_encoder(encoder)
-                        .compat()
-                        .map_err(|source| Error::Access {
-                            errmsg: "Error loading encoder info",
-                            dev: self.dev_path(),
-                            source,
-                        })
-                })
-                .collect::<Result<Vec<encoder::Info>, _>>()?;
-
-            // and if any encoder supports the selected crtc
-            let resource_handles = self.resource_handles().compat().map_err(|source| Error::Access {
-                errmsg: "Error loading resources",
-                dev: self.dev_path(),
-                source,
-            })?;
-            if !encoders
-                .iter()
-                .map(|encoder| encoder.possible_crtcs())
-                .all(|crtc_list| resource_handles.filter_crtcs(crtc_list).contains(&self.crtc))
-            {
-                return Err(Error::NoSuitableEncoder {
-                    connector: info.handle(),
-                    crtc: self.crtc,
-                });
-            }
-
+        if self.check_connector(conn, pending.mode.as_ref().unwrap())? {
             pending.connectors.insert(conn);
-            Ok(())
-        } else {
-            Err(Error::ModeNotSuitable(pending.mode.unwrap()))
         }
+
+        Ok(())
     }
 
     fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error> {
         self.pending.write().unwrap().connectors.remove(&connector);
+        Ok(())
+    }
+
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
+        let mut pending = self.pending.write().unwrap();
+
+        if connectors
+            .iter()
+            .map(|conn| self.check_connector(*conn, pending.mode.as_ref().unwrap()))
+            .collect::<Result<Vec<bool>, _>>()?
+            .iter()
+            .all(|v| *v)
+        {
+            pending.connectors = connectors.iter().cloned().collect();
+        }
+
         Ok(())
     }
 
@@ -208,12 +176,27 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             let removed = current.connectors.difference(&pending.connectors);
             let added = pending.connectors.difference(&current.connectors);
 
+            let mut conn_removed = false;
             for conn in removed {
                 if let Ok(info) = self.get_connector(*conn) {
                     info!(self.logger, "Removing connector: {:?}", info.interface());
                 } else {
                     info!(self.logger, "Removing unknown connector");
                 }
+                // if the connector was mapped to our crtc, we need to ack the disconnect.
+                // the graphics pipeline will not be freed otherwise
+                conn_removed = true;
+            }
+
+            if conn_removed {
+                // We need to do a null commit to free graphics pipelines
+                self.set_crtc(self.crtc, None, (0, 0), &[], None)
+                    .compat()
+                    .map_err(|source| Error::Access {
+                        errmsg: "Error setting crtc",
+                        dev: self.dev_path(),
+                        source,
+                    })?;
             }
 
             for conn in added {
@@ -254,7 +237,18 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
 
         *current = pending.clone();
 
-        Ok(())
+        ControlDevice::page_flip(
+            self,
+            self.crtc,
+            framebuffer,
+            &[PageFlipFlags::PageFlipEvent],
+            None,
+        )
+        .map_err(|source| Error::Access {
+            errmsg: "Failed to queue page flip",
+            dev: self.dev_path(),
+            source: source.compat(),
+        })
     }
 
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> ::std::result::Result<(), SwapBuffersError> {
@@ -267,8 +261,58 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             &[PageFlipFlags::PageFlipEvent],
             None,
         )
-        .map_err(|x| dbg!(x))
         .map_err(|_| SwapBuffersError::ContextLost)
+    }
+}
+
+impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
+    fn check_connector(&self, conn: connector::Handle, mode: &Mode) -> Result<bool, Error> {
+        let info = self
+            .get_connector(conn)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Error loading connector info",
+                dev: self.dev_path(),
+                source,
+            })?;
+
+        // check if the connector can handle the current mode
+        if info.modes().contains(mode) {
+            // check if there is a valid encoder
+            let encoders = info
+                .encoders()
+                .iter()
+                .filter(|enc| enc.is_some())
+                .map(|enc| enc.unwrap())
+                .map(|encoder| {
+                    self.get_encoder(encoder)
+                        .compat()
+                        .map_err(|source| Error::Access {
+                            errmsg: "Error loading encoder info",
+                            dev: self.dev_path(),
+                            source,
+                        })
+                })
+                .collect::<Result<Vec<encoder::Info>, _>>()?;
+
+            // and if any encoder supports the selected crtc
+            let resource_handles = self.resource_handles().compat().map_err(|source| Error::Access {
+                errmsg: "Error loading resources",
+                dev: self.dev_path(),
+                source,
+            })?;
+            if !encoders
+                .iter()
+                .map(|encoder| encoder.possible_crtcs())
+                .all(|crtc_list| resource_handles.filter_crtcs(crtc_list).contains(&self.crtc))
+            {
+                Ok(false)
+            } else {
+                Ok(true)
+            }
+        } else {
+            Ok(false)
+        }
     }
 }
 
@@ -291,22 +335,19 @@ impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurface<A> {
 impl<A: AsRawFd + 'static> BasicDevice for LegacyDrmSurface<A> {}
 impl<A: AsRawFd + 'static> ControlDevice for LegacyDrmSurface<A> {}
 
-impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for LegacyDrmSurface<A> {
-    type CursorFormat = &'a dyn Buffer;
+impl<A: AsRawFd + 'static> CursorBackend for LegacyDrmSurface<A> {
+    type CursorFormat = dyn Buffer;
     type Error = Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Error> {
         self.0.set_cursor_position(x, y)
     }
 
-    fn set_cursor_representation<'b>(
-        &'b self,
-        buffer: Self::CursorFormat,
+    fn set_cursor_representation(
+        &self,
+        buffer: &Self::CursorFormat,
         hotspot: (u32, u32),
-    ) -> Result<(), Error>
-    where
-        'a: 'b,
-    {
+    ) -> Result<(), Error> {
         self.0.set_cursor_representation(buffer, hotspot)
     }
 }
@@ -341,6 +382,10 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurface<A> {
 
     fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error> {
         self.0.remove_connector(connector)
+    }
+
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
+        self.0.set_connectors(connectors)
     }
 
     fn use_mode(&self, mode: Option<Mode>) -> Result<(), Error> {

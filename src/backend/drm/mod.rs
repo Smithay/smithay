@@ -53,6 +53,10 @@ use calloop::{LoopHandle, Source};
 
 use super::graphics::SwapBuffersError;
 
+#[cfg(feature = "backend_drm_atomic")]
+pub mod atomic;
+#[cfg(feature = "backend_drm")]
+pub mod common;
 #[cfg(feature = "backend_drm_egl")]
 pub mod egl;
 #[cfg(feature = "backend_drm_gbm")]
@@ -99,7 +103,7 @@ pub trait Device: AsRawFd + DevPath {
     /// The number of crtc's represent the number of independant output devices the hardware may handle.
     fn create_surface(
         &mut self,
-        ctrc: crtc::Handle,
+        crtc: crtc::Handle,
     ) -> Result<Self::Surface, <Self::Surface as Surface>::Error>;
 
     /// Processes any open events of the underlying file descriptor.
@@ -168,6 +172,13 @@ pub trait Surface {
     /// Tries to mark a [`connector`](drm::control::connector)
     /// for removal on the next commit.
     fn remove_connector(&self, connector: connector::Handle) -> Result<(), Self::Error>;
+    /// Tries to replace the current connector set with the newly provided one on the next commit.
+    ///
+    /// Fails if one new `connector` is not compatible with the underlying [`crtc`](drm::control::crtc)
+    /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
+    /// or is not compatible with the currently pending
+    /// [`Mode`](drm::control::Mode).
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error>;
     /// Returns the currently active [`Mode`](drm::control::Mode)
     /// of the underlying [`crtc`](drm::control::crtc)
     /// if any.
@@ -203,7 +214,10 @@ pub trait RawSurface: Surface + ControlDevice + BasicDevice {
     /// potentially causing some flickering. Check before performing this
     /// operation if a commit really is necessary using [`commit_pending`](RawSurface::commit_pending).
     ///
-    /// This operation is blocking until the crtc is in the desired state.
+    /// This operation is not necessarily blocking until the crtc is in the desired state,
+    /// but will trigger a `vblank` event once done.
+    /// Make sure to [set a `DeviceHandler`](Device::set_handler) and
+    /// [register the belonging `Device`](device_bind) before to receive the event in time.
     fn commit(&self, framebuffer: framebuffer::Handle) -> Result<(), <Self as Surface>::Error>;
     /// Page-flip the underlying [`crtc`](drm::control::crtc)
     /// to a new given [`framebuffer`].

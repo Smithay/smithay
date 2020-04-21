@@ -6,8 +6,9 @@ extern crate slog;
 use slog::Drain;
 use smithay::{
     backend::drm::{
+        common::Error,
         device_bind,
-        legacy::{Error, LegacyDrmDevice, LegacyDrmSurface},
+        legacy::{LegacyDrmDevice, LegacyDrmSurface},
         Device, DeviceHandler, RawSurface, Surface,
     },
     reexports::{
@@ -80,13 +81,7 @@ fn main() {
     let surface = Rc::new(device.create_surface(crtc).unwrap());
 
     surface.use_mode(Some(mode)).unwrap();
-    for conn in surface.current_connectors().into_iter() {
-        if conn != connector_info.handle() {
-            surface.remove_connector(conn).unwrap();
-        }
-    }
-    surface.add_connector(connector_info.handle()).unwrap();
-
+    surface.set_connectors(&[connector_info.handle()]).unwrap();
     /*
      * Lets create buffers and framebuffers.
      * We use drm-rs DumbBuffers, because they always work and require little to no setup.
@@ -121,7 +116,6 @@ fn main() {
     if surface.commit_pending() {
         surface.commit(front_framebuffer).unwrap();
     }
-    RawSurface::page_flip(&*surface, front_framebuffer).unwrap();
 
     // Run
     event_loop.run(None, &mut (), |_| {}).unwrap();

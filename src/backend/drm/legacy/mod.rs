@@ -5,13 +5,13 @@
 //! Usually this implementation will be wrapped into a [`GbmDevice`](::backend::drm::gbm::GbmDevice).
 //! Take a look at `anvil`s source code for an example of this.
 //!
-//! For an example how to use this standalone, take a look at the `raw_drm` example.
+//! For an example how to use this standalone, take a look at the `raw_legacy_drm` example.
 //!
 
-use super::{DevPath, Device, DeviceHandler, RawDevice};
+use super::{common::Error, DevPath, Device, DeviceHandler, RawDevice};
 
 use drm::control::{
-    connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, Mode, ResourceHandles,
+    connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, ResourceHandles,
 };
 use drm::{Device as BasicDevice, SystemError as DrmError};
 use nix::libc::dev_t;
@@ -20,7 +20,6 @@ use nix::sys::stat::fstat;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
@@ -34,45 +33,6 @@ use self::surface::{LegacyDrmSurfaceInternal, State};
 #[cfg(feature = "backend_session")]
 pub mod session;
 
-/// Errors thrown by the [`LegacyDrmDevice`](::backend::drm::legacy::LegacyDrmDevice)
-/// and [`LegacyDrmSurface`](::backend::drm::legacy::LegacyDrmSurface).
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    /// Unable to acquire DRM master
-    #[error("Failed to aquire DRM master")]
-    DrmMasterFailed,
-    /// The `DrmDevice` encountered an access error
-    #[error("DRM access error: {errmsg} on device `{dev:?}`")]
-    Access {
-        /// Error message associated to the access error
-        errmsg: &'static str,
-        /// Device on which the error was generated
-        dev: Option<PathBuf>,
-        /// Underlying device error
-        source: failure::Compat<drm::SystemError>,
-    },
-    /// Unable to determine device id of drm device
-    #[error("Unable to determine device id of drm device")]
-    UnableToGetDeviceId(#[source] nix::Error),
-    /// Device is currently paused
-    #[error("Device is currently paused, operation rejected")]
-    DeviceInactive,
-    /// Mode is not compatible with all given connectors
-    #[error("Mode `{0:?}` is not compatible with all given connectors")]
-    ModeNotSuitable(Mode),
-    /// The given crtc is already in use by another backend
-    #[error("Crtc `{0:?}` is already in use by another backend")]
-    CrtcAlreadyInUse(crtc::Handle),
-    /// No encoder was found for a given connector on the set crtc
-    #[error("No encoder found for the given connector '{connector:?}' on crtc `{crtc:?}`")]
-    NoSuitableEncoder {
-        /// Connector
-        connector: connector::Handle,
-        /// CRTC
-        crtc: crtc::Handle,
-    },
-}
-
 /// Open raw drm device utilizing legacy mode-setting
 pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
     dev: Rc<Dev<A>>,
@@ -85,7 +45,7 @@ pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
 
 pub(in crate::backend::drm) struct Dev<A: AsRawFd + 'static> {
     fd: A,
-    priviledged: bool,
+    privileged: bool,
     active: Arc<AtomicBool>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     logger: ::slog::Logger,
@@ -117,7 +77,7 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
                 }
             }
         }
-        if self.priviledged {
+        if self.privileged {
             if let Err(err) = self.release_master_lock() {
                 error!(self.logger, "Failed to drop drm master state. Error: {}", err);
             }
@@ -135,7 +95,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
         L: Into<Option<::slog::Logger>>,
     {
         let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm"));
-        info!(log, "DrmDevice initializing");
+        info!(log, "LegacyDrmDevice initializing");
 
         let dev_id = fstat(dev.as_raw_fd())
             .map_err(Error::UnableToGetDeviceId)?
@@ -144,7 +104,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
         let active = Arc::new(AtomicBool::new(true));
         let mut dev = Dev {
             fd: dev,
-            priviledged: true,
+            privileged: true,
             old_state: HashMap::new(),
             active: active.clone(),
             logger: log.clone(),
@@ -152,8 +112,8 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
 
         // we want to modeset, so we better be the master, if we run via a tty session
         if dev.acquire_master_lock().is_err() {
-            warn!(log, "Unable to become drm master, assuming unpriviledged mode");
-            dev.priviledged = false;
+            warn!(log, "Unable to become drm master, assuming unprivileged mode");
+            dev.privileged = false;
         };
 
         // enumerate (and save) the current device state
@@ -308,7 +268,11 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
                             } else {
                                 self.backends.borrow_mut().remove(&event.crtc);
                             }
+                        } else {
+                            debug!(self.logger, "Device not active. Ignoring PageFlip");
                         }
+                    } else {
+                        trace!(self.logger, "Unrelated event");
                     }
                 }
             }
@@ -334,22 +298,19 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
             })
     }
 
-    fn get_connector_info(&self, conn: connector::Handle) -> std::result::Result<connector::Info, DrmError> {
+    fn get_connector_info(&self, conn: connector::Handle) -> Result<connector::Info, DrmError> {
         self.get_connector(conn)
     }
-    fn get_crtc_info(&self, crtc: crtc::Handle) -> std::result::Result<crtc::Info, DrmError> {
+    fn get_crtc_info(&self, crtc: crtc::Handle) -> Result<crtc::Info, DrmError> {
         self.get_crtc(crtc)
     }
-    fn get_encoder_info(&self, enc: encoder::Handle) -> std::result::Result<encoder::Info, DrmError> {
+    fn get_encoder_info(&self, enc: encoder::Handle) -> Result<encoder::Info, DrmError> {
         self.get_encoder(enc)
     }
-    fn get_framebuffer_info(
-        &self,
-        fb: framebuffer::Handle,
-    ) -> std::result::Result<framebuffer::Info, DrmError> {
+    fn get_framebuffer_info(&self, fb: framebuffer::Handle) -> Result<framebuffer::Info, DrmError> {
         self.get_framebuffer(fb)
     }
-    fn get_plane_info(&self, plane: plane::Handle) -> std::result::Result<plane::Info, DrmError> {
+    fn get_plane_info(&self, plane: plane::Handle) -> Result<plane::Info, DrmError> {
         self.get_plane(plane)
     }
 }

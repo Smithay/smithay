@@ -6,11 +6,8 @@ use gbm::{self, BufferObject, BufferObjectFlags, Format as GbmFormat, SurfaceBuf
 use image::{ImageBuffer, Rgba};
 
 use std::cell::{Cell, RefCell};
-use std::os::unix::io::AsRawFd;
 use std::rc::Rc;
 
-#[cfg(feature = "backend_drm_legacy")]
-use crate::backend::drm::legacy::LegacyDrmDevice;
 use crate::backend::graphics::CursorBackend;
 use crate::backend::graphics::SwapBuffersError;
 
@@ -78,12 +75,15 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
 
         if self.recreated.get() {
             debug!(self.logger, "Commiting new state");
-            self.crtc.commit(fb).map_err(|_| SwapBuffersError::ContextLost)?;
+            if let Err(err) = self.crtc.commit(fb) {
+                error!(self.logger, "Error commiting crtc: {}", err);
+                return Err(SwapBuffersError::ContextLost);
+            }
             self.recreated.set(false);
+        } else {
+            trace!(self.logger, "Queueing Page flip");
+            RawSurface::page_flip(&self.crtc, fb)?;
         }
-
-        trace!(self.logger, "Queueing Page flip");
-        RawSurface::page_flip(&self.crtc, fb)?;
 
         self.current_frame_buffer.set(Some(fb));
 
@@ -91,11 +91,15 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
     }
 
     pub fn recreate(&self) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
-        let (w, h) = self.pending_mode().ok_or(Error::NoModeSet)?.size();
+        let (w, h) = self
+            .pending_mode()
+            .or_else(|| self.current_mode())
+            .ok_or(Error::NoModeSet)?
+            .size();
 
         // Recreate the surface and the related resources to match the new
         // resolution.
-        debug!(self.logger, "(Re-)Initializing surface for mode: {}:{}", w, h);
+        debug!(self.logger, "(Re-)Initializing surface (with mode: {}:{})", w, h);
         let surface = self
             .dev
             .borrow_mut()
@@ -159,6 +163,10 @@ impl<D: RawDevice + 'static> Surface for GbmSurfaceInternal<D> {
         self.crtc.remove_connector(connector).map_err(Error::Underlying)
     }
 
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
+        self.crtc.set_connectors(connectors).map_err(Error::Underlying)
+    }
+
     fn current_mode(&self) -> Option<Mode> {
         self.crtc.current_mode()
     }
@@ -172,47 +180,24 @@ impl<D: RawDevice + 'static> Surface for GbmSurfaceInternal<D> {
     }
 }
 
-// FIXME:
-//
-// Option 1: When there is GAT support, impl `GraphicsBackend` for `LegacyDrmBackend`
-//           using a new generic `B: Buffer` and use this:
-/*
-impl<'a, D: RawDevice + 'static> CursorBackend<'a> for GbmSurfaceInternal<D>
+#[cfg(feature = "backend_drm")]
+impl<D: RawDevice + 'static> CursorBackend for GbmSurfaceInternal<D>
 where
-    <D as RawDevice>::Surface: CursorBackend<'a>,
-    <<D as RawDevice>::Surface as CursorBackend<'a>>::CursorFormat: Buffer,
-    <<D as RawDevice>::Surface as CursorBackend<'a>>::Error: ::std::error::Error + Send
+    <D as RawDevice>::Surface: CursorBackend<CursorFormat = dyn drm::buffer::Buffer>,
+    <<D as RawDevice>::Surface as CursorBackend>::Error: ::std::error::Error + Send,
 {
-*/
-//
-// Option 2: When equality checks in where clauses are supported, we could at least do this:
-/*
-impl<'a, D: RawDevice + 'static> GraphicsBackend<'a> for GbmSurfaceInternal<D>
-where
-    <D as RawDevice>::Surface: CursorBackend<'a>,
-    <<D as RawDevice>::Surface as CursorBackend<'a>>::CursorFormat=&'a Buffer,
-    <<D as RawDevice>::Surface as CursorBackend<'a>>::Error: ::std::error::Error + Send
-{
-*/
-// But for now got to do this:
-
-#[cfg(feature = "backend_drm_legacy")]
-impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurfaceInternal<LegacyDrmDevice<A>> {
-    type CursorFormat = &'a ImageBuffer<Rgba<u8>, Vec<u8>>;
-    type Error = Error<<<LegacyDrmDevice<A> as Device>::Surface as Surface>::Error>;
+    type CursorFormat = ImageBuffer<Rgba<u8>, Vec<u8>>;
+    type Error = Error<<<D as Device>::Surface as CursorBackend>::Error>;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Self::Error> {
         self.crtc.set_cursor_position(x, y).map_err(Error::Underlying)
     }
 
-    fn set_cursor_representation<'b>(
-        &'b self,
+    fn set_cursor_representation(
+        &self,
         buffer: &ImageBuffer<Rgba<u8>, Vec<u8>>,
         hotspot: (u32, u32),
-    ) -> Result<(), Self::Error>
-    where
-        'a: 'b,
-    {
+    ) -> Result<(), Self::Error> {
         let (w, h) = buffer.dimensions();
         debug!(self.logger, "Importing cursor");
 
@@ -336,6 +321,10 @@ impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
         self.0.remove_connector(connector)
     }
 
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
+        self.0.set_connectors(connectors)
+    }
+
     fn current_mode(&self) -> Option<Mode> {
         self.0.current_mode()
     }
@@ -349,23 +338,24 @@ impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
     }
 }
 
-#[cfg(feature = "backend_drm_legacy")]
-impl<'a, A: AsRawFd + 'static> CursorBackend<'a> for GbmSurface<LegacyDrmDevice<A>> {
-    type CursorFormat = &'a ImageBuffer<Rgba<u8>, Vec<u8>>;
-    type Error = <Self as Surface>::Error;
+#[cfg(feature = "backend_drm")]
+impl<D: RawDevice + 'static> CursorBackend for GbmSurface<D>
+where
+    <D as RawDevice>::Surface: CursorBackend<CursorFormat = dyn drm::buffer::Buffer>,
+    <<D as RawDevice>::Surface as CursorBackend>::Error: ::std::error::Error + Send,
+{
+    type CursorFormat = ImageBuffer<Rgba<u8>, Vec<u8>>;
+    type Error = Error<<<D as Device>::Surface as CursorBackend>::Error>;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Self::Error> {
         self.0.set_cursor_position(x, y)
     }
 
-    fn set_cursor_representation<'b>(
-        &'b self,
+    fn set_cursor_representation(
+        &self,
         buffer: &ImageBuffer<Rgba<u8>, Vec<u8>>,
         hotspot: (u32, u32),
-    ) -> Result<(), Self::Error>
-    where
-        'a: 'b,
-    {
+    ) -> Result<(), Self::Error> {
         self.0.set_cursor_representation(buffer, hotspot)
     }
 }

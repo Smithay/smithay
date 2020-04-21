@@ -49,6 +49,10 @@ where
             .map_err(Error::Underlying)
     }
 
+    fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
+        self.surface.set_connectors(connectors).map_err(Error::Underlying)
+    }
+
     fn current_mode(&self) -> Option<Mode> {
         self.surface.current_mode()
     }
@@ -62,25 +66,22 @@ where
     }
 }
 
-impl<'a, N> CursorBackend<'a> for EglSurface<N>
+impl<N> CursorBackend for EglSurface<N>
 where
-    N: NativeSurface + Surface + CursorBackend<'a>,
+    N: NativeSurface + Surface + CursorBackend,
 {
-    type CursorFormat = <N as CursorBackend<'a>>::CursorFormat;
-    type Error = <N as CursorBackend<'a>>::Error;
+    type CursorFormat = <N as CursorBackend>::CursorFormat;
+    type Error = <N as CursorBackend>::Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> ::std::result::Result<(), Self::Error> {
         self.surface.set_cursor_position(x, y)
     }
 
-    fn set_cursor_representation<'b>(
-        &'b self,
-        buffer: Self::CursorFormat,
+    fn set_cursor_representation(
+        &self,
+        buffer: &Self::CursorFormat,
         hotspot: (u32, u32),
-    ) -> ::std::result::Result<(), Self::Error>
-    where
-        'a: 'b,
-    {
+    ) -> ::std::result::Result<(), Self::Error> {
         self.surface.set_cursor_representation(buffer, hotspot)
     }
 }

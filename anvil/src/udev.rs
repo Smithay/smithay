@@ -19,6 +19,8 @@ use smithay::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
 use smithay::{
     backend::{
         drm::{
+            atomic::AtomicDrmDevice,
+            common::fallback::FallbackDevice,
             device_bind,
             egl::{EglDevice, EglSurface},
             gbm::{egl::Gbm as EglGbmBackend, GbmDevice},
@@ -68,6 +70,7 @@ use crate::shell::{init_shell, MyWindowMap, Roles};
 use crate::AnvilState;
 use smithay::backend::drm::gbm::GbmSurface;
 
+#[derive(Clone)]
 pub struct SessionFd(RawFd);
 impl AsRawFd for SessionFd {
     fn as_raw_fd(&self) -> RawFd {
@@ -75,9 +78,12 @@ impl AsRawFd for SessionFd {
     }
 }
 
-type RenderDevice =
-    EglDevice<EglGbmBackend<LegacyDrmDevice<SessionFd>>, GbmDevice<LegacyDrmDevice<SessionFd>>>;
-type RenderSurface = EglSurface<GbmSurface<LegacyDrmDevice<SessionFd>>>;
+type RenderDevice = EglDevice<
+    EglGbmBackend<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
+    GbmDevice<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
+>;
+type RenderSurface =
+    EglSurface<GbmSurface<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>>;
 
 pub fn run_udev(mut display: Display, mut event_loop: EventLoop<AnvilState>, log: Logger) -> Result<(), ()> {
     let name = display.add_socket_auto().unwrap().into_string().unwrap();
@@ -411,9 +417,29 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
                 OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK,
             )
             .ok()
-            .and_then(|fd| LegacyDrmDevice::new(SessionFd(fd), self.logger.clone()).ok())
-            .and_then(|drm| GbmDevice::new(drm, self.logger.clone()).ok())
-            .and_then(|gbm| EglDevice::new(gbm, self.logger.clone()).ok())
+            .and_then(
+                |fd| match FallbackDevice::new(SessionFd(fd), self.logger.clone()) {
+                    Ok(drm) => Some(drm),
+                    Err(err) => {
+                        error!(self.logger, "Skipping drm device, because of error: {}", err);
+                        None
+                    }
+                },
+            )
+            .and_then(|drm| match GbmDevice::new(drm, self.logger.clone()) {
+                Ok(gbm) => Some(gbm),
+                Err(err) => {
+                    error!(self.logger, "Skipping gbm device, because of error: {}", err);
+                    None
+                }
+            })
+            .and_then(|gbm| match EglDevice::new(gbm, self.logger.clone()) {
+                Ok(egl) => Some(egl),
+                Err(err) => {
+                    error!(self.logger, "Skipping egl device, because of error: {}", err);
+                    None
+                }
+            })
         {
             // init hardware acceleration on the primary gpu.
             #[cfg(feature = "egl")]
