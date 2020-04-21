@@ -11,10 +11,9 @@ use smithay::{
         wayland_server::{protocol::wl_output, Display},
     },
     wayland::{
-        data_device::{default_action_chooser, init_data_device, set_data_device_focus, DataDeviceEvent},
+        data_device::set_data_device_focus,
         output::{Mode, Output, PhysicalProperties},
         seat::{CursorImageStatus, Seat, XkbConfig},
-        shm::init_shm_global,
     },
 };
 
@@ -23,12 +22,11 @@ use slog::Logger;
 use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
 use crate::input_handler::AnvilInputHandler;
-use crate::shell::init_shell;
 use crate::AnvilState;
 
 pub fn run_winit(
     display: Rc<RefCell<Display>>,
-    mut event_loop: EventLoop<AnvilState>,
+    event_loop: &mut EventLoop<AnvilState>,
     log: Logger,
 ) -> Result<(), ()> {
     let (renderer, mut input) = winit::init(log.clone()).map_err(|_| ())?;
@@ -54,56 +52,23 @@ pub fn run_winit(
     #[cfg(not(feature = "egl"))]
     let buffer_utils = BufferUtils::new(log.clone());
 
-    let name = display
-        .borrow_mut()
-        .add_socket_auto()
-        .unwrap()
-        .into_string()
-        .unwrap();
-    info!(log, "Listening on wayland socket"; "name" => name.clone());
-    ::std::env::set_var("WAYLAND_DISPLAY", name);
-
-    let mut state = AnvilState::default();
-
     /*
      * Initialize the globals
      */
 
-    init_shm_global(&mut display.borrow_mut(), vec![], log.clone());
-
-    let (compositor_token, _, _, window_map) =
-        init_shell(&mut display.borrow_mut(), buffer_utils, log.clone());
-
-    let dnd_icon = Arc::new(Mutex::new(None));
-
-    let dnd_icon2 = dnd_icon.clone();
-    init_data_device(
-        &mut display.borrow_mut(),
-        move |event| match event {
-            DataDeviceEvent::DnDStarted { icon, .. } => {
-                *dnd_icon2.lock().unwrap() = icon;
-            }
-            DataDeviceEvent::DnDDropped => {
-                *dnd_icon2.lock().unwrap() = None;
-            }
-            _ => {}
-        },
-        default_action_chooser,
-        compositor_token,
-        log.clone(),
-    );
+    let mut state = AnvilState::init(display.clone(), event_loop.handle(), buffer_utils, log.clone());
 
     let (mut seat, _) = Seat::new(
         &mut display.borrow_mut(),
         "winit".into(),
-        compositor_token,
+        state.ctoken,
         log.clone(),
     );
 
     let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
 
     let cursor_status2 = cursor_status.clone();
-    let pointer = seat.add_pointer(compositor_token.clone(), move |new_status| {
+    let pointer = seat.add_pointer(state.ctoken.clone(), move |new_status| {
         // TODO: hide winit system cursor when relevant
         *cursor_status2.lock().unwrap() = new_status
     });
@@ -148,7 +113,7 @@ pub fn run_winit(
         log.clone(),
         pointer,
         keyboard,
-        window_map.clone(),
+        state.window_map.clone(),
         (0, 0),
         state.running.clone(),
         pointer_location.clone(),
@@ -166,15 +131,15 @@ pub fn run_winit(
             frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
 
             // draw the windows
-            drawer.draw_windows(&mut frame, &*window_map.borrow(), compositor_token);
+            drawer.draw_windows(&mut frame, &*state.window_map.borrow(), state.ctoken);
 
             let (x, y) = *pointer_location.borrow();
             // draw the dnd icon if any
             {
-                let guard = dnd_icon.lock().unwrap();
+                let guard = state.dnd_icon.lock().unwrap();
                 if let Some(ref surface) = *guard {
                     if surface.as_ref().is_alive() {
-                        drawer.draw_dnd_icon(&mut frame, surface, (x as i32, y as i32), compositor_token);
+                        drawer.draw_dnd_icon(&mut frame, surface, (x as i32, y as i32), state.ctoken);
                     }
                 }
             }
@@ -191,7 +156,7 @@ pub fn run_winit(
                 }
                 // draw as relevant
                 if let CursorImageStatus::Image(ref surface) = *guard {
-                    drawer.draw_cursor(&mut frame, surface, (x as i32, y as i32), compositor_token);
+                    drawer.draw_cursor(&mut frame, surface, (x as i32, y as i32), state.ctoken);
                 }
             }
 
@@ -207,12 +172,12 @@ pub fn run_winit(
             state.running.store(false, Ordering::SeqCst);
         } else {
             display.borrow_mut().flush_clients(&mut state);
-            window_map.borrow_mut().refresh();
+            state.window_map.borrow_mut().refresh();
         }
     }
 
     // Cleanup stuff
-    window_map.borrow_mut().clear();
+    state.window_map.borrow_mut().clear();
 
     Ok(())
 }
