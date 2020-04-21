@@ -101,7 +101,7 @@ pub fn run_winit(
     });
 
     let keyboard = seat
-        .add_keyboard(XkbConfig::default(), 1000, 500, |seat, focus| {
+        .add_keyboard(XkbConfig::default(), 200, 25, |seat, focus| {
             set_data_device_focus(seat, focus.and_then(|s| s.as_ref().client()))
         })
         .expect("Failed to initialize the keyboard");
