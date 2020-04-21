@@ -17,7 +17,10 @@ use smithay::{
     },
     utils::Rectangle,
     wayland::{
-        compositor::{compositor_init, BufferAssignment, CompositorToken, RegionAttributes, SurfaceEvent},
+        compositor::{
+            compositor_init, roles::Role, BufferAssignment, CompositorToken, RegionAttributes,
+            SubsurfaceRole, SurfaceEvent, TraversalAction,
+        },
         data_device::DnDIconRole,
         seat::{AxisFrame, CursorImageRole, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
         shell::{
@@ -29,7 +32,6 @@ use smithay::{
                 XdgSurfacePendingState, XdgSurfaceRole,
             },
         },
-        SERIAL_COUNTER as SCOUNTER,
     },
 };
 
@@ -640,13 +642,19 @@ impl Default for ResizeState {
     }
 }
 
+#[derive(Default, Clone)]
+pub struct CommitedState {
+    pub buffer: Option<wl_buffer::WlBuffer>,
+    pub input_region: Option<RegionAttributes>,
+    pub dimensions: Option<(i32, i32)>,
+    pub frame_callback: Option<wl_callback::WlCallback>,
+    pub sub_location: (i32, i32),
+}
+
 #[derive(Default)]
 pub struct SurfaceData {
-    pub buffer: Option<wl_buffer::WlBuffer>,
     pub texture: Option<crate::glium_drawer::TextureMetadata>,
-    pub dimensions: Option<(i32, i32)>,
     pub geometry: Option<Rectangle>,
-    pub input_region: Option<RegionAttributes>,
     pub resize_state: ResizeState,
     /// Minimum width and height, as requested by the surface.
     ///
@@ -656,13 +664,63 @@ pub struct SurfaceData {
     ///
     /// `0` means unlimited.
     pub max_size: (i32, i32),
-    pub frame_callback: Option<wl_callback::WlCallback>,
+    pub current_state: CommitedState,
+    pub cached_state: Option<CommitedState>,
+}
+
+impl SurfaceData {
+    /// Apply a next state into the surface current state
+    pub fn apply_state(&mut self, next_state: CommitedState) {
+        if Self::merge_state(&mut self.current_state, next_state) {
+            self.texture = None;
+        }
+    }
+
+    /// Apply a next state into the cached state
+    pub fn apply_cache(&mut self, next_state: CommitedState) {
+        match self.cached_state {
+            Some(ref mut cached) => {
+                Self::merge_state(cached, next_state);
+            }
+            None => self.cached_state = Some(next_state),
+        }
+    }
+
+    /// Apply the current cached state if any
+    pub fn apply_from_cache(&mut self) {
+        if let Some(cached) = self.cached_state.take() {
+            self.apply_state(cached);
+        }
+    }
+
+    // merge the "next" state into the "into" state
+    //
+    // returns true if the texture cache should be invalidated
+    fn merge_state(into: &mut CommitedState, next: CommitedState) -> bool {
+        let mut new_buffer = false;
+        // release the previous buffer if relevant
+        if into.buffer != next.buffer {
+            if let Some(buffer) = into.buffer.take() {
+                buffer.release();
+            }
+            new_buffer = true;
+        }
+        // ping the previous callback if relevant
+        if into.frame_callback != next.frame_callback {
+            if let Some(callback) = into.frame_callback.take() {
+                callback.done(0);
+            }
+        }
+
+        *into = next;
+        new_buffer
+    }
 }
 
 impl SurfaceData {
     /// Returns the size of the surface.
     pub fn size(&self) -> Option<(i32, i32)> {
-        self.dimensions
+        self.current_state.dimensions
     }
 
     /// Checks if the surface's input region contains the point.
@@ -688,16 +746,16 @@ impl SurfaceData {
         }
 
         // If there's no input region, we're done.
-        if self.input_region.is_none() {
+        if self.current_state.input_region.is_none() {
             return true;
         }
 
-        self.input_region.as_ref().unwrap().contains(point)
+        self.current_state.input_region.as_ref().unwrap().contains(point)
     }
 
     /// Send the frame callback if it had been requested
     pub fn send_frame(&mut self, serial: u32) {
-        if let Some(callback) = self.frame_callback.take() {
+        if let Some(callback) = self.current_state.frame_callback.take() {
             callback.done(serial);
         }
     }
@@ -721,7 +779,13 @@ fn surface_commit(
         geometry = role.window_geometry;
     });
 
-    let refresh = token.with_surface_data(surface, |attributes| {
+    let sub_data = token
+        .with_role_data(surface, |role: &mut SubsurfaceRole| role.clone())
+        .ok();
+
+    let mut next_state = CommitedState::default();
+
+    let (refresh, apply_children) = token.with_surface_data(surface, |attributes| {
         attributes
             .user_data
             .insert_if_missing(|| RefCell::new(SurfaceData::default()));
@@ -731,8 +795,20 @@ fn surface_commit(
             .unwrap()
             .borrow_mut();
 
+        if let Some(ref cached_state) = data.cached_state {
+            // There is a pending state, accumulate into it
+            next_state = cached_state.clone();
+        } else {
+            // start from the current state
+            next_state = data.current_state.clone();
+        }
+
+        if let Some(ref data) = sub_data {
+            next_state.sub_location = data.location;
+        }
+
         data.geometry = geometry;
-        data.input_region = attributes.input_region.clone();
+        next_state.input_region = attributes.input_region.clone();
         data.min_size = min_size;
         data.max_size = max_size;
 
@@ -740,36 +816,71 @@ fn surface_commit(
         match attributes.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
-                // TODO: handle hotspot coordinates
-                if let Some(old_buffer) = data.buffer.replace(buffer) {
-                    old_buffer.release();
-                }
-                data.texture = None;
-                // If this fails, the buffer will be discarded later by the drawing code.
-                data.dimensions = buffer_utils.dimensions(data.buffer.as_ref().unwrap());
+                next_state.dimensions = buffer_utils.dimensions(&buffer);
+                next_state.buffer = Some(buffer);
             }
             Some(BufferAssignment::Removed) => {
-                // erase the contents
-                if let Some(old_buffer) = data.buffer.take() {
-                    old_buffer.release();
-                }
-                data.texture = None;
-                data.dimensions = None;
+                // remove the contents
+                next_state.buffer = None;
+                next_state.dimensions = None;
             }
             None => {}
         }
 
-        // process the frame callback if any
-        if let Some(callback) = attributes.frame_callback.take() {
-            if let Some(old_callback) = data.frame_callback.take() {
-                // fire the old unfired callback to clean it up
-                old_callback.done(SCOUNTER.next_serial());
+        if let Some(frame_cb) = attributes.frame_callback.take() {
+            if let Some(old_cb) = next_state.frame_callback.take() {
+                old_cb.done(0);
             }
-            data.frame_callback = Some(callback);
+            next_state.frame_callback = Some(frame_cb);
         }
 
-        window_map.borrow().find(surface)
+        data.apply_cache(next_state);
+
+        let apply_children = if let Some(SubsurfaceRole { sync: true, .. }) = sub_data {
+            false
+        } else {
+            data.apply_from_cache();
+            true
+        };
+
+        (window_map.borrow().find(surface), apply_children)
     });
+
+    // Apply the cached state of all sync children
+    if apply_children {
+        token.with_surface_tree_upward(
+            surface,
+            true,
+            |_, _, role, &is_root| {
+                // only process children if the surface is sync or we are the root
+                if is_root {
+                    // we are the root
+                    TraversalAction::DoChildren(false)
+                } else if let Ok(sub_data) = Role::<SubsurfaceRole>::data(role) {
+                    if sub_data.sync || is_root {
+                        TraversalAction::DoChildren(false)
+                    } else {
+                        // if we are not sync, we won't apply from cache and don't process
+                        // the children
+                        TraversalAction::SkipChildren
+                    }
+                } else {
+                    unreachable!();
+                }
+            },
+            |_, attributes, role, _| {
+                // only apply from cache if we are a sync subsurface
+                if let Ok(sub_data) = Role::<SubsurfaceRole>::data(role) {
+                    if sub_data.sync {
+                        if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
+                            data.borrow_mut().apply_from_cache();
+                        }
+                    }
+                }
+            },
+            |_, _, _, _| true,
+        )
+    }
 
     if let Some(toplevel) = refresh {
         let mut window_map = window_map.borrow_mut();
