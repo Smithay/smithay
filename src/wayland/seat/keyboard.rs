@@ -8,6 +8,7 @@ use std::{
     rc::Rc,
 };
 use tempfile::tempfile;
+use thiserror::Error;
 use wayland_server::{
     protocol::{
         wl_keyboard::{KeyState as WlKeyState, KeymapFormat, Request, WlKeyboard},
@@ -220,11 +221,13 @@ impl KbdInternal {
 }
 
 /// Errors that can be encountered when creating a keyboard handler
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
     /// libxkbcommon could not load the specified keymap
+    #[error("Libxkbcommon could not load the specified keymap")]
     BadKeymap,
     /// Smithay could not create a tempfile to share the keymap with clients
+    #[error("Failed to create tempfile to share the keymap: {0}")]
     IoError(IoError),
 }
 
