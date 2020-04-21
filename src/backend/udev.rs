@@ -176,22 +176,19 @@ pub fn primary_gpu<S: AsRef<str>>(seat: S) -> IoResult<Option<PathBuf>> {
 
     if let Some(path) = enumerator
         .scan_devices()?
-        .filter_map(|device| {
-            if device
+        .filter(|device| {
+            let seat_name = device
                 .property_value("ID_SEAT")
                 .map(|x| x.to_os_string())
-                .unwrap_or_else(|| OsString::from("seat0"))
-                == *seat.as_ref()
-            {
+                .unwrap_or_else(|| OsString::from("seat0"));
+            if seat_name == *seat.as_ref() {
                 if let Ok(Some(pci)) = device.parent_with_subsystem(Path::new("pci")) {
                     if let Some(id) = pci.attribute_value("boot_vga") {
-                        if id == "1" {
-                            return Some(device);
-                        }
+                        return id == "1";
                     }
-                }
-            };
-            None
+                }              
+            }
+            false
         })
         .flat_map(|device| device.devnode().map(PathBuf::from))
         .next()
