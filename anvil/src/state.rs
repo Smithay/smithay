@@ -70,6 +70,8 @@ impl AnvilState {
             )
             .expect("Failed to init the wayland event source.");
 
+        // Init the basic compositor globals
+
         init_shm_global(&mut display.borrow_mut(), vec![], log.clone());
 
         let (ctoken, _, _, window_map) = init_shell(&mut display.borrow_mut(), buffer_utils, log.clone());
@@ -82,6 +84,8 @@ impl AnvilState {
             .unwrap();
         info!(log, "Listening on wayland socket"; "name" => socket_name.clone());
         ::std::env::set_var("WAYLAND_DISPLAY", &socket_name);
+
+        // init data device
 
         let dnd_icon = Arc::new(Mutex::new(None));
 

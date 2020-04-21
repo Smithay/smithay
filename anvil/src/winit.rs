@@ -2,6 +2,7 @@ use std::{
     cell::RefCell,
     rc::Rc,
     sync::{atomic::Ordering, Arc, Mutex},
+    time::Duration,
 };
 
 use smithay::{
@@ -14,6 +15,7 @@ use smithay::{
         data_device::set_data_device_focus,
         output::{Mode, Output, PhysicalProperties},
         seat::{CursorImageStatus, Seat, XkbConfig},
+        SERIAL_COUNTER as SCOUNTER,
     },
 };
 
@@ -22,7 +24,7 @@ use slog::Logger;
 use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
 use crate::input_handler::AnvilInputHandler;
-use crate::AnvilState;
+use crate::state::AnvilState;
 
 pub fn run_winit(
     display: Rc<RefCell<Display>>,
@@ -164,9 +166,11 @@ pub fn run_winit(
                 error!(log, "Error during rendering: {:?}", err);
             }
         }
+        // Send frame events so that client start drawing their next frame
+        state.window_map.borrow().send_frames(SCOUNTER.next_serial());
 
         if event_loop
-            .dispatch(Some(::std::time::Duration::from_millis(16)), &mut state)
+            .dispatch(Some(Duration::from_millis(16)), &mut state)
             .is_err()
         {
             state.running.store(false, Ordering::SeqCst);

@@ -169,6 +169,26 @@ where
             })
             .unwrap_or(self.bbox)
     }
+
+    /// Sends the frame callback to all the subsurfaces in this
+    /// window that requested it
+    pub fn send_frame(&self, serial: u32, ctoken: CompositorToken<R>) {
+        if let Some(wl_surface) = self.toplevel.get_surface() {
+            ctoken.with_surface_tree_downward(
+                wl_surface,
+                (),
+                |_, _, _, &()| TraversalAction::DoChildren(()),
+                |_, attributes, _, &()| {
+                    // the surface may not have any user_data if it is a subsurface and has not
+                    // yet been commited
+                    if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
+                        data.borrow_mut().send_frame(serial)
+                    }
+                },
+                |_, _, _, &()| true,
+            );
+        }
+    }
 }
 
 pub struct WindowMap<R> {
@@ -290,5 +310,11 @@ where
             .iter()
             .find(|w| w.toplevel.equals(toplevel))
             .map(|w| w.geometry(self.ctoken))
+    }
+
+    pub fn send_frames(&self, serial: u32) {
+        for window in &self.windows {
+            window.send_frame(serial, self.ctoken);
+        }
     }
 }
