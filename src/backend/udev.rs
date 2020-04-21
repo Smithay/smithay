@@ -186,7 +186,7 @@ pub fn primary_gpu<S: AsRef<str>>(seat: S) -> IoResult<Option<PathBuf>> {
                     if let Some(id) = pci.attribute_value("boot_vga") {
                         return id == "1";
                     }
-                }              
+                }
             }
             false
         })
