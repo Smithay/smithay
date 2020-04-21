@@ -263,8 +263,8 @@ impl Seat {
     ///             variant: "nodeadkeys",
     ///             ..XkbConfig::default()
     ///         },
-    ///         1000,
-    ///         500,
+    ///         200,
+    ///         25,
     ///         |seat, focus| {
     ///             /* This closure is called whenever the keyboard focus
     ///              * changes, with the new focus as argument */
