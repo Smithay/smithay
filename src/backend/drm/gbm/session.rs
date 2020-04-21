@@ -57,7 +57,7 @@ impl<
                 if let Some(backend) = backend.upgrade() {
                     // restart rendering loop, if it was previously running
                     if let Some(fb) = backend.current_frame_buffer.get() {
-                        if let Err(_) = backend.crtc.page_flip(fb) {
+                        if backend.crtc.page_flip(fb).is_err() {
                             // Try more!
                             if let Err(err) = backend.recreate() {
                                 error!(

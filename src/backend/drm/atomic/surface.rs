@@ -160,11 +160,11 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
     }
 
     fn current_mode(&self) -> Option<Mode> {
-        self.state.read().unwrap().mode.clone()
+        self.state.read().unwrap().mode
     }
 
     fn pending_mode(&self) -> Option<Mode> {
-        self.pending.read().unwrap().mode.clone()
+        self.pending.read().unwrap().mode
     }
 
     fn add_connector(&self, conn: connector::Handle) -> Result<(), Error> {
@@ -713,7 +713,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         let vec: Vec<(PlaneType, plane::Handle)> = planes
             .planes()
             .iter()
-            .map(|x| *x)
+            .copied()
             .filter(|plane| {
                 card.get_plane(*plane)
                     .map(|plane_info| {
@@ -779,7 +779,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
             .compat()
             .map_err(|_| Error::TestFailed(self.crtc))?;
 
-        self.atomic_commit(&[AtomicCommitFlags::Nonblock], req.clone())
+        self.atomic_commit(&[AtomicCommitFlags::Nonblock], req)
             .compat()
             .map_err(|source| Error::Access {
                 errmsg: "Failed to commit on clear_plane",

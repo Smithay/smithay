@@ -93,7 +93,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
     pub fn recreate(&self) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
         let (w, h) = self
             .pending_mode()
-            .or(self.current_mode())
+            .or_else(|| self.current_mode())
             .ok_or(Error::NoModeSet)?
             .size();
 

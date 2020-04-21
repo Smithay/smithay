@@ -196,9 +196,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm"));
         info!(log, "AtomicDrmDevice initializing");
 
-        let dev_id = fstat(fd.as_raw_fd())
-            .map_err(|source| Error::UnableToGetDeviceId(source))?
-            .st_rdev;
+        let dev_id = fstat(fd.as_raw_fd()).map_err(Error::UnableToGetDeviceId)?.st_rdev;
 
         let active = Arc::new(AtomicBool::new(true));
         let mut dev = Dev {

@@ -129,7 +129,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
             .iter()
             .all(|v| *v)
         {
-            pending.connectors = connectors.into_iter().cloned().collect();
+            pending.connectors = connectors.iter().cloned().collect();
         }
 
         Ok(())
