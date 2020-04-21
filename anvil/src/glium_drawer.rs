@@ -36,7 +36,12 @@ struct Vertex {
     tex_coords: [f32; 2],
 }
 
-implement_vertex!(Vertex, position, tex_coords);
+mod implement_vertex {
+    #![allow(clippy::unneeded_field_pattern)]
+    // Module to scope the clippy lint disabling
+    use super::Vertex;
+    implement_vertex!(Vertex, position, tex_coords);
+}
 
 pub struct GliumDrawer<F: GLGraphicsBackend + 'static> {
     display: GliumGraphicsBackend<F>,
