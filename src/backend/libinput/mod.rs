@@ -1,5 +1,8 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
+mod helpers;
+use helpers::{on_device_event, on_keyboard_event, on_pointer_event, on_touch_event};
+
 use crate::backend::input::{self as backend, Axis, InputBackend};
 #[cfg(feature = "backend_session")]
 use crate::backend::session::{AsErrno, Session, SessionObserver};
@@ -9,8 +12,7 @@ use input::event;
 #[cfg(feature = "backend_session")]
 use std::path::Path;
 use std::{
-    collections::hash_map::{DefaultHasher, Entry, HashMap},
-    hash::{Hash, Hasher},
+    collections::hash_map::HashMap,
     io::Error as IoError,
     os::unix::io::{AsRawFd, RawFd},
 };
@@ -296,218 +298,27 @@ impl InputBackend for LibinputInputBackend {
     }
 
     fn dispatch_new_events(&mut self) -> Result<(), IoError> {
-        use input::event::EventTrait;
-
         self.context.dispatch()?;
 
         for event in &mut self.context {
             match event {
                 libinput::Event::Device(device_event) => {
-                    use input::event::device::*;
-                    match device_event {
-                        DeviceEvent::Added(device_added_event) => {
-                            let added = device_added_event.device();
-
-                            let new_caps = backend::SeatCapabilities {
-                                pointer: added.has_capability(libinput::DeviceCapability::Pointer),
-                                keyboard: added.has_capability(libinput::DeviceCapability::Keyboard),
-                                touch: added.has_capability(libinput::DeviceCapability::Touch),
-                            };
-
-                            let device_seat = added.seat();
-                            info!(
-                                self.logger,
-                                "New device {:?} on seat {:?}",
-                                added.sysname(),
-                                device_seat.logical_name()
-                            );
-                            self.devices.push(added);
-
-                            match self.seats.entry(device_seat.clone()) {
-                                Entry::Occupied(mut seat_entry) => {
-                                    let old_seat = seat_entry.get_mut();
-                                    {
-                                        let caps = old_seat.capabilities_mut();
-                                        caps.pointer = new_caps.pointer || caps.pointer;
-                                        caps.keyboard = new_caps.keyboard || caps.keyboard;
-                                        caps.touch = new_caps.touch || caps.touch;
-                                    }
-                                    if let Some(ref mut handler) = self.handler {
-                                        trace!(self.logger, "Calling on_seat_changed with {:?}", old_seat);
-                                        handler.on_seat_changed(old_seat);
-                                    }
-                                }
-                                Entry::Vacant(seat_entry) => {
-                                    let mut hasher = DefaultHasher::default();
-                                    seat_entry.key().hash(&mut hasher);
-                                    let seat = seat_entry.insert(backend::Seat::new(
-                                        hasher.finish(),
-                                        format!(
-                                            "{}:{}",
-                                            device_seat.physical_name(),
-                                            device_seat.logical_name()
-                                        ),
-                                        new_caps,
-                                    ));
-                                    if let Some(ref mut handler) = self.handler {
-                                        trace!(self.logger, "Calling on_seat_created with {:?}", seat);
-                                        handler.on_seat_created(seat);
-                                    }
-                                }
-                            }
-                        }
-                        DeviceEvent::Removed(device_removed_event) => {
-                            let removed = device_removed_event.device();
-
-                            // remove device
-                            self.devices.retain(|dev| *dev != removed);
-
-                            let device_seat = removed.seat();
-                            info!(
-                                self.logger,
-                                "Removed device {:?} on seat {:?}",
-                                removed.sysname(),
-                                device_seat.logical_name()
-                            );
-
-                            // update capabilities, so they appear correctly on `on_seat_changed` and `on_seat_destroyed`.
-                            if let Some(seat) = self.seats.get_mut(&device_seat) {
-                                let caps = seat.capabilities_mut();
-                                caps.pointer = self
-                                    .devices
-                                    .iter()
-                                    .filter(|x| x.seat() == device_seat)
-                                    .any(|x| x.has_capability(libinput::DeviceCapability::Pointer));
-                                caps.keyboard = self
-                                    .devices
-                                    .iter()
-                                    .filter(|x| x.seat() == device_seat)
-                                    .any(|x| x.has_capability(libinput::DeviceCapability::Keyboard));
-                                caps.touch = self
-                                    .devices
-                                    .iter()
-                                    .filter(|x| x.seat() == device_seat)
-                                    .any(|x| x.has_capability(libinput::DeviceCapability::Touch));
-                            } else {
-                                warn!(self.logger, "Seat changed that was never created");
-                                continue;
-                            }
-
-                            // check if the seat has any other devices
-                            if !self.devices.iter().any(|x| x.seat() == device_seat) {
-                                // it has not, lets destroy it
-                                if let Some(seat) = self.seats.remove(&device_seat) {
-                                    info!(
-                                        self.logger,
-                                        "Removing seat {} which no longer has any device",
-                                        device_seat.logical_name()
-                                    );
-                                    if let Some(ref mut handler) = self.handler {
-                                        trace!(self.logger, "Calling on_seat_destroyed with {:?}", seat);
-                                        handler.on_seat_destroyed(&seat);
-                                    }
-                                } else {
-                                    warn!(self.logger, "Seat destroyed that was never created");
-                                    continue;
-                                }
-                            // it has, notify about updates
-                            } else if let Some(ref mut handler) = self.handler {
-                                if let Some(seat) = self.seats.get(&device_seat) {
-                                    trace!(self.logger, "Calling on_seat_changed with {:?}", seat);
-                                    handler.on_seat_changed(&seat);
-                                } else {
-                                    warn!(self.logger, "Seat changed that was never created");
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                    if let Some(ref mut handler) = self.handler {
-                        handler.on_input_config_changed(&mut self.devices);
-                    }
+                    on_device_event(
+                        &mut self.handler,
+                        &mut self.seats,
+                        &mut self.devices,
+                        device_event,
+                        &self.logger,
+                    );
                 }
                 libinput::Event::Touch(touch_event) => {
-                    use input::event::touch::*;
-                    if let Some(ref mut handler) = self.handler {
-                        let device_seat = touch_event.device().seat();
-                        if let Some(ref seat) = self.seats.get(&device_seat) {
-                            match touch_event {
-                                TouchEvent::Down(down_event) => {
-                                    trace!(self.logger, "Calling on_touch_down with {:?}", down_event);
-                                    handler.on_touch_down(seat, down_event)
-                                }
-                                TouchEvent::Motion(motion_event) => {
-                                    trace!(self.logger, "Calling on_touch_motion with {:?}", motion_event);
-                                    handler.on_touch_motion(seat, motion_event)
-                                }
-                                TouchEvent::Up(up_event) => {
-                                    trace!(self.logger, "Calling on_touch_up with {:?}", up_event);
-                                    handler.on_touch_up(seat, up_event)
-                                }
-                                TouchEvent::Cancel(cancel_event) => {
-                                    trace!(self.logger, "Calling on_touch_cancel with {:?}", cancel_event);
-                                    handler.on_touch_cancel(seat, cancel_event)
-                                }
-                                TouchEvent::Frame(frame_event) => {
-                                    trace!(self.logger, "Calling on_touch_frame with {:?}", frame_event);
-                                    handler.on_touch_frame(seat, frame_event)
-                                }
-                            }
-                        } else {
-                            warn!(self.logger, "Received touch event of non existing Seat");
-                            continue;
-                        }
-                    }
+                    on_touch_event(&mut self.handler, &self.seats, touch_event, &self.logger);
                 }
                 libinput::Event::Keyboard(keyboard_event) => {
-                    use input::event::keyboard::*;
-                    match keyboard_event {
-                        KeyboardEvent::Key(key_event) => {
-                            if let Some(ref mut handler) = self.handler {
-                                let device_seat = key_event.device().seat();
-                                if let Some(ref seat) = self.seats.get(&device_seat) {
-                                    trace!(self.logger, "Calling on_keyboard_key with {:?}", key_event);
-                                    handler.on_keyboard_key(seat, key_event);
-                                } else {
-                                    warn!(self.logger, "Received key event of non existing Seat");
-                                    continue;
-                                }
-                            }
-                        }
-                    }
+                    on_keyboard_event(&mut self.handler, &self.seats, keyboard_event, &self.logger);
                 }
                 libinput::Event::Pointer(pointer_event) => {
-                    use input::event::pointer::*;
-                    if let Some(ref mut handler) = self.handler {
-                        let device_seat = pointer_event.device().seat();
-                        if let Some(ref seat) = self.seats.get(&device_seat) {
-                            match pointer_event {
-                                PointerEvent::Motion(motion_event) => {
-                                    trace!(self.logger, "Calling on_pointer_move with {:?}", motion_event);
-                                    handler.on_pointer_move(seat, motion_event);
-                                }
-                                PointerEvent::MotionAbsolute(motion_abs_event) => {
-                                    trace!(
-                                        self.logger,
-                                        "Calling on_pointer_move_absolute with {:?}",
-                                        motion_abs_event
-                                    );
-                                    handler.on_pointer_move_absolute(seat, motion_abs_event);
-                                }
-                                PointerEvent::Axis(axis_event) => {
-                                    trace!(self.logger, "Calling on_pointer_axis with {:?}", axis_event);
-                                    handler.on_pointer_axis(seat, axis_event);
-                                }
-                                PointerEvent::Button(button_event) => {
-                                    trace!(self.logger, "Calling on_pointer_button with {:?}", button_event);
-                                    handler.on_pointer_button(seat, button_event);
-                                }
-                            }
-                        } else {
-                            warn!(self.logger, "Received pointer event of non existing Seat");
-                            continue;
-                        }
-                    }
+                    on_pointer_event(&mut self.handler, &self.seats, pointer_event, &self.logger);
                 }
                 _ => {} //FIXME: What to do with the rest.
             }
