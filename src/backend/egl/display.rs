@@ -8,9 +8,7 @@ use crate::backend::egl::{
 };
 use std::sync::Arc;
 
-use std::ptr;
-
-use nix::libc::{c_int, c_void};
+use nix::libc::c_int;
 
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
@@ -22,7 +20,7 @@ use crate::backend::egl::context::{GlAttributes, PixelFormatRequirements};
 use crate::backend::graphics::gl::ffi as gl_ffi;
 use crate::backend::graphics::PixelFormat;
 use std::cell::{Ref, RefCell, RefMut};
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
@@ -72,28 +70,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         let ptr = native.ptr()?;
         let egl_attribs = native.attributes();
 
-        ffi::egl::LOAD.call_once(|| unsafe {
-            fn constrain<F>(f: F) -> F
-            where
-                F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
-            {
-                f
-            };
-
-            ffi::egl::load_with(|sym| {
-                let name = CString::new(sym).unwrap();
-                let symbol = ffi::egl::LIB.get::<*mut c_void>(name.as_bytes());
-                match symbol {
-                    Ok(x) => *x as *const _,
-                    Err(_) => ptr::null(),
-                }
-            });
-            let proc_address = constrain(|sym| get_proc_address(sym));
-            ffi::egl::load_with(&proc_address);
-            ffi::egl::BindWaylandDisplayWL::load_with(&proc_address);
-            ffi::egl::UnbindWaylandDisplayWL::load_with(&proc_address);
-            ffi::egl::QueryWaylandBufferWL::load_with(&proc_address);
-        });
+        ffi::make_sure_egl_is_loaded();
 
         // the first step is to query the list of extensions without any display, if supported
         let dp_extensions = unsafe {

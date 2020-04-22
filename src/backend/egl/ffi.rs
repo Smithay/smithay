@@ -13,6 +13,33 @@ pub type NativeDisplayType = *const c_void;
 pub type NativePixmapType = *const c_void;
 pub type NativeWindowType = *const c_void;
 
+pub fn make_sure_egl_is_loaded() {
+    use std::{ffi::CString, ptr};
+
+    egl::LOAD.call_once(|| unsafe {
+        fn constrain<F>(f: F) -> F
+        where
+            F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
+        {
+            f
+        };
+
+        egl::load_with(|sym| {
+            let name = CString::new(sym).unwrap();
+            let symbol = egl::LIB.get::<*mut c_void>(name.as_bytes());
+            match symbol {
+                Ok(x) => *x as *const _,
+                Err(_) => ptr::null(),
+            }
+        });
+        let proc_address = constrain(|sym| super::get_proc_address(sym));
+        egl::load_with(&proc_address);
+        egl::BindWaylandDisplayWL::load_with(&proc_address);
+        egl::UnbindWaylandDisplayWL::load_with(&proc_address);
+        egl::QueryWaylandBufferWL::load_with(&proc_address);
+    });
+}
+
 #[allow(clippy::all, rust_2018_idioms)]
 pub mod egl {
     use super::*;
