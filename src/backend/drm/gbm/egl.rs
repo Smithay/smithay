@@ -14,7 +14,6 @@ use super::{Error, GbmDevice, GbmSurface};
 use drm::control::{connector, crtc, Device as ControlDevice, Mode};
 use gbm::AsRaw;
 use std::marker::PhantomData;
-use std::ptr;
 
 /// Egl Gbm backend type
 ///
@@ -28,6 +27,7 @@ impl<D: RawDevice + 'static> Backend for Gbm<D> {
 
     unsafe fn get_display<F>(
         display: ffi::NativeDisplayType,
+        attribs: &[ffi::EGLint],
         has_dp_extension: F,
         log: ::slog::Logger,
     ) -> Result<ffi::egl::types::EGLDisplay, EGLError>
@@ -36,18 +36,24 @@ impl<D: RawDevice + 'static> Backend for Gbm<D> {
     {
         if has_dp_extension("EGL_KHR_platform_gbm") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_KHR_platform_gbm");
+            let attribs = attribs.iter().map(|x| *x as isize).collect::<Vec<_>>();
             wrap_egl_call(|| {
-                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null())
+                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, attribs.as_ptr())
             })
         } else if has_dp_extension("EGL_MESA_platform_gbm") && ffi::egl::GetPlatformDisplayEXT::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
             wrap_egl_call(|| {
-                ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
+                ffi::egl::GetPlatformDisplayEXT(
+                    ffi::egl::PLATFORM_GBM_MESA,
+                    display as *mut _,
+                    attribs.as_ptr(),
+                )
             })
         } else if has_dp_extension("EGL_MESA_platform_gbm") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
+            let attribs = attribs.iter().map(|x| *x as isize).collect::<Vec<_>>();
             wrap_egl_call(|| {
-                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
+                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, attribs.as_ptr())
             })
         } else {
             trace!(log, "Default EGL Display Initialization via GetDisplay");

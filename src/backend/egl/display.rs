@@ -69,6 +69,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
     {
         let log = crate::slog_or_stdlog(logger.into()).new(o!("smithay_module" => "renderer_egl"));
         let ptr = native.ptr()?;
+        let egl_attribs = native.attributes();
 
         ffi::egl::LOAD.call_once(|| unsafe {
             fn constrain<F>(f: F) -> F
@@ -112,8 +113,13 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         debug!(log, "EGL No-Display Extensions: {:?}", dp_extensions);
 
         let display = unsafe {
-            B::get_display(ptr, |e: &str| dp_extensions.iter().any(|s| s == e), log.clone())
-                .map_err(Error::DisplayNotSupported)?
+            B::get_display(
+                ptr,
+                &egl_attribs,
+                |e: &str| dp_extensions.iter().any(|s| s == e),
+                log.clone(),
+            )
+            .map_err(Error::DisplayNotSupported)?
         };
 
         let egl_version = {

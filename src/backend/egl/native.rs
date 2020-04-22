@@ -3,9 +3,6 @@
 use super::{ffi, wrap_egl_call, EGLError, Error};
 
 #[cfg(feature = "backend_winit")]
-use std::ptr;
-
-#[cfg(feature = "backend_winit")]
 use wayland_egl as wegl;
 #[cfg(feature = "backend_winit")]
 use winit::platform::unix::WindowExtUnix;
@@ -25,6 +22,7 @@ pub trait Backend {
     /// but there is no way to test that.
     unsafe fn get_display<F: Fn(&str) -> bool>(
         display: ffi::NativeDisplayType,
+        attribs: &[ffi::EGLint],
         has_dp_extension: F,
         log: ::slog::Logger,
     ) -> Result<ffi::egl::types::EGLDisplay, EGLError>;
@@ -39,6 +37,7 @@ impl Backend for Wayland {
 
     unsafe fn get_display<F>(
         display: ffi::NativeDisplayType,
+        attribs: &[ffi::EGLint],
         has_dp_extension: F,
         log: ::slog::Logger,
     ) -> Result<ffi::egl::types::EGLDisplay, EGLError>
@@ -47,8 +46,13 @@ impl Backend for Wayland {
     {
         if has_dp_extension("EGL_KHR_platform_wayland") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_KHR_platform_wayland");
+            let attribs = attribs.iter().map(|x| *x as isize).collect::<Vec<_>>();
             wrap_egl_call(|| {
-                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_WAYLAND_KHR, display as *mut _, ptr::null())
+                ffi::egl::GetPlatformDisplay(
+                    ffi::egl::PLATFORM_WAYLAND_KHR,
+                    display as *mut _,
+                    attribs.as_ptr(),
+                )
             })
         } else if has_dp_extension("EGL_EXT_platform_wayland") && ffi::egl::GetPlatformDisplayEXT::is_loaded()
         {
@@ -57,7 +61,7 @@ impl Backend for Wayland {
                 ffi::egl::GetPlatformDisplayEXT(
                     ffi::egl::PLATFORM_WAYLAND_EXT,
                     display as *mut _,
-                    ptr::null(),
+                    attribs.as_ptr(),
                 )
             })
         } else {
@@ -79,6 +83,7 @@ impl Backend for X11 {
 
     unsafe fn get_display<F>(
         display: ffi::NativeDisplayType,
+        attribs: &[ffi::EGLint],
         has_dp_extension: F,
         log: ::slog::Logger,
     ) -> Result<ffi::egl::types::EGLDisplay, EGLError>
@@ -87,13 +92,18 @@ impl Backend for X11 {
     {
         if has_dp_extension("EGL_KHR_platform_x11") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_KHR_platform_x11");
+            let attribs = attribs.iter().map(|x| *x as isize).collect::<Vec<_>>();
             wrap_egl_call(|| {
-                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, ptr::null())
+                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, attribs.as_ptr())
             })
         } else if has_dp_extension("EGL_EXT_platform_x11") && ffi::egl::GetPlatformDisplayEXT::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_EXT_platform_x11");
             wrap_egl_call(|| {
-                ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_X11_EXT, display as *mut _, ptr::null())
+                ffi::egl::GetPlatformDisplayEXT(
+                    ffi::egl::PLATFORM_X11_EXT,
+                    display as *mut _,
+                    attribs.as_ptr(),
+                )
             })
         } else {
             trace!(log, "Default EGL Display Initialization via GetDisplay");
@@ -117,6 +127,12 @@ pub unsafe trait NativeDisplay<B: Backend> {
     fn is_backend(&self) -> bool;
     /// Return a raw pointer EGL will accept for context creation.
     fn ptr(&self) -> Result<ffi::NativeDisplayType, Error>;
+    /// Return attributes that might be used by `B::get_display`
+    ///
+    /// Default implementation returns an empty list
+    fn attributes(&self) -> Vec<ffi::EGLint> {
+        vec![ffi::egl::NONE as ffi::EGLint]
+    }
     /// Create a surface
     fn create_surface(&mut self, args: Self::Arguments) -> Result<B::Surface, Self::Error>;
 }
