@@ -13,7 +13,9 @@ use winit::window::Window as WinitWindow;
 /// Trait for typed backend variants (X11/Wayland/GBM)
 pub trait Backend {
     /// Surface type created by this backend
-    type Surface: NativeSurface;
+    type Surface: NativeSurface<Error = Self::Error>;
+    /// Error type thrown by the surface creation in case of failure.
+    type Error: ::std::error::Error + Send + 'static;
 
     /// Return an [`EGLDisplay`](ffi::egl::types::EGLDisplay) based on this backend
     ///
@@ -35,6 +37,7 @@ pub enum Wayland {}
 #[cfg(feature = "backend_winit")]
 impl Backend for Wayland {
     type Surface = wegl::WlEglSurface;
+    type Error = Error;
 
     unsafe fn get_display<F>(
         display: ffi::NativeDisplayType,
@@ -81,6 +84,7 @@ pub enum X11 {}
 #[cfg(feature = "backend_winit")]
 impl Backend for X11 {
     type Surface = XlibWindow;
+    type Error = Error;
 
     unsafe fn get_display<F>(
         display: ffi::NativeDisplayType,
@@ -121,8 +125,6 @@ impl Backend for X11 {
 pub unsafe trait NativeDisplay<B: Backend> {
     /// Arguments used to surface creation.
     type Arguments;
-    /// Error type thrown by the surface creation in case of failure.
-    type Error: ::std::error::Error + Send + 'static;
     /// Because one type might implement multiple [`Backend`]s this function must be called to check
     /// if the expected [`Backend`] is used at runtime.
     fn is_backend(&self) -> bool;
@@ -139,13 +141,12 @@ pub unsafe trait NativeDisplay<B: Backend> {
         ffi::egl::WINDOW_BIT as ffi::EGLint
     }
     /// Create a surface
-    fn create_surface(&mut self, args: Self::Arguments) -> Result<B::Surface, Self::Error>;
+    fn create_surface(&mut self, args: Self::Arguments) -> Result<B::Surface, B::Error>;
 }
 
 #[cfg(feature = "backend_winit")]
 unsafe impl NativeDisplay<X11> for WinitWindow {
     type Arguments = ();
-    type Error = Error;
 
     fn is_backend(&self) -> bool {
         self.xlib_display().is_some()
@@ -167,7 +168,6 @@ unsafe impl NativeDisplay<X11> for WinitWindow {
 #[cfg(feature = "backend_winit")]
 unsafe impl NativeDisplay<Wayland> for WinitWindow {
     type Arguments = ();
-    type Error = Error;
 
     fn is_backend(&self) -> bool {
         self.wayland_display().is_some()
@@ -198,10 +198,15 @@ unsafe impl NativeDisplay<Wayland> for WinitWindow {
 /// The returned [`NativeWindowType`](ffi::NativeWindowType) must be valid for EGL
 /// and there is no way to test that.
 pub unsafe trait NativeSurface {
-    /// Error of the underlying surface
-    type Error: std::error::Error;
-
-    /// Create an EGLSurface from the internal native type
+    /// Error type thrown by the surface creation in case of failure.
+    type Error: ::std::error::Error + Send + 'static;
+    /// Create an EGLSurface from the internal native type.
+    ///
+    /// Must be able to deal with re-creation of existing resources,
+    /// if `needs_recreation` can return `true`.
+    ///
+    /// # Safety
+    /// This is usually an unsafe operation returning a raw pointer.
     unsafe fn create(
         &self,
         display: &EGLDisplayHandle,
@@ -210,22 +215,13 @@ pub unsafe trait NativeSurface {
     ) -> Result<*const c_void, SurfaceCreationError<Self::Error>>;
 
     /// Will be called to check if any internal resources will need
-    /// to be recreated. Old resources must be used until `recreate`
-    /// was called.
+    /// to be recreated. Old resources must be used until `create`
+    /// was called again and a new surface was optained.
     ///
-    /// Only needs to be recreated, if this shall sometimes return true.
+    /// Only needs to be recreated, if this may return true.
     /// The default implementation always returns false.
     fn needs_recreation(&self) -> bool {
         false
-    }
-
-    /// Instructs the surface to recreate internal resources
-    ///
-    /// Must only be implemented if `needs_recreation` can return `true`.
-    /// Returns true on success.
-    /// If this call was successful `ptr()` *should* return something different.
-    fn recreate(&self) -> Result<(), Self::Error> {
-        Ok(())
     }
 
     /// Adds additional semantics when calling
@@ -237,28 +233,16 @@ pub unsafe trait NativeSurface {
     }
 }
 
-/// Hack until ! gets stablized
-#[derive(Debug)]
-pub enum Never {}
-impl std::fmt::Display for Never {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        unreachable!()
-    }
-}
-impl std::error::Error for Never {}
-
 #[cfg(feature = "backend_winit")]
 unsafe impl NativeSurface for XlibWindow {
-    // this would really be a case for this:
-    // type Error = !; (https://github.com/rust-lang/rust/issues/35121)
-    type Error = Never;
+    type Error = Error;
 
     unsafe fn create(
         &self,
         display: &EGLDisplayHandle,
         config_id: ffi::egl::types::EGLConfig,
         surface_attributes: &[c_int],
-    ) -> Result<*const c_void, SurfaceCreationError<Never>> {
+    ) -> Result<*const c_void, SurfaceCreationError<Error>> {
         wrap_egl_call(|| {
             ffi::egl::CreateWindowSurface(
                 display.handle,
@@ -273,15 +257,14 @@ unsafe impl NativeSurface for XlibWindow {
 
 #[cfg(feature = "backend_winit")]
 unsafe impl NativeSurface for wegl::WlEglSurface {
-    // type Error = !;
-    type Error = Never;
+    type Error = Error;
 
     unsafe fn create(
         &self,
         display: &EGLDisplayHandle,
         config_id: ffi::egl::types::EGLConfig,
         surface_attributes: &[c_int],
-    ) -> Result<*const c_void, SurfaceCreationError<Never>> {
+    ) -> Result<*const c_void, SurfaceCreationError<Error>> {
         wrap_egl_call(|| {
             ffi::egl::CreateWindowSurface(
                 display.handle,

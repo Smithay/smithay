@@ -379,7 +379,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         double_buffer: Option<bool>,
         config: ffi::egl::types::EGLConfig,
         args: N::Arguments,
-    ) -> Result<EGLSurface<B::Surface>, SurfaceCreationError<N::Error>> {
+    ) -> Result<EGLSurface<B::Surface>, SurfaceCreationError<B::Error>> {
         trace!(self.logger, "Creating EGL window surface.");
         let surface = self
             .native
@@ -399,7 +399,6 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             debug!(self.logger, "EGL surface successfully created");
             x
         })
-        .map_err(SurfaceCreationError::EGLSurfaceCreationFailed)
     }
 
     /// Returns the runtime egl version of this display

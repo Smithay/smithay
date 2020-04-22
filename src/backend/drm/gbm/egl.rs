@@ -7,7 +7,7 @@
 use crate::backend::drm::{Device, RawDevice, Surface};
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use crate::backend::egl::{display::EGLDisplayHandle, ffi};
-use crate::backend::egl::{wrap_egl_call, EGLError, Error as EglBackendError};
+use crate::backend::egl::{wrap_egl_call, EGLError, Error as EglBackendError, SurfaceCreationError};
 
 use super::{Error, GbmDevice, GbmSurface};
 
@@ -15,7 +15,6 @@ use drm::control::{connector, crtc, Device as ControlDevice, Mode};
 use gbm::AsRaw;
 use nix::libc::{c_int, c_void};
 use std::marker::PhantomData;
-use std::ptr;
 
 /// Egl Gbm backend type
 ///
@@ -26,6 +25,7 @@ pub struct Gbm<D: RawDevice + 'static> {
 
 impl<D: RawDevice + 'static> Backend for Gbm<D> {
     type Surface = GbmSurface<D>;
+    type Error = Error<<<D as Device>::Surface as Surface>::Error>;
 
     unsafe fn get_display<F>(
         display: ffi::NativeDisplayType,
@@ -66,7 +66,6 @@ impl<D: RawDevice + 'static> Backend for Gbm<D> {
 
 unsafe impl<D: RawDevice + ControlDevice + 'static> NativeDisplay<Gbm<D>> for GbmDevice<D> {
     type Arguments = (crtc::Handle, Mode, Vec<connector::Handle>);
-    type Error = Error<<<D as Device>::Surface as Surface>::Error>;
 
     fn is_backend(&self) -> bool {
         true
@@ -76,32 +75,38 @@ unsafe impl<D: RawDevice + ControlDevice + 'static> NativeDisplay<Gbm<D>> for Gb
         Ok(self.dev.borrow().as_raw() as *const _)
     }
 
-    fn create_surface(&mut self, args: Self::Arguments) -> Result<GbmSurface<D>, Self::Error> {
+    fn create_surface(
+        &mut self,
+        args: Self::Arguments,
+    ) -> Result<GbmSurface<D>, Error<<<D as Device>::Surface as Surface>::Error>> {
         Device::create_surface(self, args.0, args.1, &args.2)
     }
 }
 
 unsafe impl<D: RawDevice + 'static> NativeSurface for GbmSurface<D> {
+    type Error = Error<<<D as Device>::Surface as Surface>::Error>;
+
     unsafe fn create(
         &self,
         display: &EGLDisplayHandle,
         config_id: ffi::egl::types::EGLConfig,
         surface_attributes: &[c_int],
-    ) -> *const c_void {
-        ffi::egl::CreateWindowSurface(
-            display.handle,
-            config_id,
-            self.0.surface.borrow().as_raw() as *const _,
-            surface_attributes.as_ptr(),
-        )
+    ) -> Result<*const c_void, SurfaceCreationError<Self::Error>> {
+        GbmSurface::recreate(self).map_err(SurfaceCreationError::NativeSurfaceCreationFailed)?;
+
+        wrap_egl_call(|| {
+            ffi::egl::CreateWindowSurface(
+                display.handle,
+                config_id,
+                self.0.surface.borrow().as_raw() as *const _,
+                surface_attributes.as_ptr(),
+            )
+        })
+        .map_err(SurfaceCreationError::EGLSurfaceCreationFailed)
     }
 
     fn needs_recreation(&self) -> bool {
         self.needs_recreation()
-    }
-
-    fn recreate(&self) -> Result<(), Self::Error> {
-        GbmSurface::recreate(self)
     }
 
     fn swap_buffers(&self) -> Result<(), Self::Error> {
