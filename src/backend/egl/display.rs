@@ -180,6 +180,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
     ) -> Result<(PixelFormat, ffi::egl::types::EGLConfig), Error> {
         let descriptor = {
             let mut out: Vec<c_int> = Vec::with_capacity(37);
+            let surface_type = self.native.borrow().surface_type();
 
             if self.egl_version >= (1, 2) {
                 trace!(self.logger, "Setting COLOR_BUFFER_TYPE to RGB_BUFFER");
@@ -187,12 +188,12 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                 out.push(ffi::egl::RGB_BUFFER as c_int);
             }
 
-            trace!(self.logger, "Setting SURFACE_TYPE to WINDOW");
+            trace!(self.logger, "Setting SURFACE_TYPE to {}", surface_type);
 
             out.push(ffi::egl::SURFACE_TYPE as c_int);
             // TODO: Some versions of Mesa report a BAD_ATTRIBUTE error
             // if we ask for PBUFFER_BIT as well as WINDOW_BIT
-            out.push((ffi::egl::WINDOW_BIT) as c_int);
+            out.push(surface_type);
 
             match attributes.version {
                 Some((3, _)) => {
