@@ -30,8 +30,9 @@ use std::ops::Deref;
 
 /// Wrapper around [`ffi::EGLDisplay`](ffi::egl::types::EGLDisplay) to ensure display is only destroyed
 /// once all resources bound to it have been dropped.
-pub(crate) struct EGLDisplayHandle {
-    handle: ffi::egl::types::EGLDisplay,
+pub struct EGLDisplayHandle {
+    /// ffi EGLDisplay ptr
+    pub handle: ffi::egl::types::EGLDisplay,
 }
 
 impl Deref for EGLDisplayHandle {

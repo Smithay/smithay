@@ -5,15 +5,17 @@
 //!
 
 use crate::backend::drm::{Device, RawDevice, Surface};
-use crate::backend::egl::ffi;
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
+use crate::backend::egl::{display::EGLDisplayHandle, ffi};
 use crate::backend::egl::{wrap_egl_call, EGLError, Error as EglBackendError};
 
 use super::{Error, GbmDevice, GbmSurface};
 
 use drm::control::{connector, crtc, Device as ControlDevice, Mode};
 use gbm::AsRaw;
+use nix::libc::{c_int, c_void};
 use std::marker::PhantomData;
+use std::ptr;
 
 /// Egl Gbm backend type
 ///
@@ -80,10 +82,18 @@ unsafe impl<D: RawDevice + ControlDevice + 'static> NativeDisplay<Gbm<D>> for Gb
 }
 
 unsafe impl<D: RawDevice + 'static> NativeSurface for GbmSurface<D> {
-    type Error = Error<<<D as RawDevice>::Surface as Surface>::Error>;
-
-    fn ptr(&self) -> ffi::NativeWindowType {
-        self.0.surface.borrow().as_raw() as *const _
+    unsafe fn create(
+        &self,
+        display: &EGLDisplayHandle,
+        config_id: ffi::egl::types::EGLConfig,
+        surface_attributes: &[c_int],
+    ) -> *const c_void {
+        ffi::egl::CreateWindowSurface(
+            display.handle,
+            config_id,
+            self.0.surface.borrow().as_raw() as *const _,
+            surface_attributes.as_ptr(),
+        )
     }
 
     fn needs_recreation(&self) -> bool {

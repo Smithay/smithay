@@ -69,9 +69,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
             out
         };
 
-        let surface = wrap_egl_call(|| unsafe {
-            ffi::egl::CreateWindowSurface(**display, config, native.ptr(), surface_attributes.as_ptr())
-        })?;
+        let surface = unsafe { native.create(&*display, config, &surface_attributes)? };
 
         if surface == ffi::egl::NO_SURFACE {
             return Err(EGLError::BadSurface);
@@ -112,16 +110,12 @@ impl<N: native::NativeSurface> EGLSurface<N> {
             if !surface.is_null() {
                 let _ = unsafe { ffi::egl::DestroySurface(**self.display, surface as *const _) };
             }
+            //TODO remove recreate
+            self.native.recreate();
             self.surface.set(unsafe {
-                wrap_egl_call(|| {
-                    ffi::egl::CreateWindowSurface(
-                        **self.display,
-                        self.config_id,
-                        self.native.ptr(),
-                        self.surface_attributes.as_ptr(),
-                    )
-                })
-                .map_err(SwapBuffersError::EGLCreateWindowSurface)?
+                self.native
+                    .create(&*self.display, self.config_id, &self.surface_attributes)
+                    .map_err(SwapBuffersError::EGLCreateWindowSurface)?
             });
 
             result.map_err(|err| {
