@@ -187,9 +187,21 @@ impl<A: AsRawFd + 'static> Dev<A> {
 impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
     /// Create a new [`AtomicDrmDevice`] from an open drm node
     ///
-    /// Returns an error if the file is no valid drm node or context creation was not
-    /// successful.
-    pub fn new<L>(fd: A, logger: L) -> Result<Self, Error>
+    /// # Arguments
+    ///
+    /// - `fd` - Open drm node
+    /// - `disable_connectors` - Setting this to true will initialize all connectors \
+    ///     as disabled on device creation. smithay enables connectors, when attached \
+    ///     to a surface, and disables them, when detached. Setting this to `false` \
+    ///     requires usage of `drm-rs` to disable unused connectors to prevent them \
+    ///     showing garbage, but will also prevent flickering of already turned on \
+    ///     connectors (assuming you won't change the resolution).
+    /// - `logger` - Optional [`slog::Logger`] to be used by this device.
+    ///
+    /// # Return
+    /// 
+    /// Returns an error if the file is no valid drm node or the device is not accessible.
+    pub fn new<L>(fd: A, disable_connectors: bool, logger: L) -> Result<Self, Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -262,6 +274,35 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         dev.old_state = old_state;
         dev.prop_mapping = mapping;
         debug!(log, "Mapping: {:#?}", dev.prop_mapping);
+
+        if disable_connectors {
+            // Disable all connectors as initial state
+            let mut req = AtomicModeReq::new();
+            for conn in res_handles.connectors() {
+                let prop = dev.prop_mapping.0.get(&conn)
+                    .expect("Unknown handle").get("CRTC_ID")
+                    .expect("Unknown property CRTC_ID");
+                req.add_property(*conn, *prop, property::Value::CRTC(None));
+            }
+            // A crtc without a connector has no mode, we also need to reset that.
+            // Otherwise the commit will not be accepted.
+            for crtc in res_handles.crtcs() {
+                let active_prop = dev.prop_mapping.1.get(&crtc)
+                    .expect("Unknown handle").get("ACTIVE")
+                    .expect("Unknown property ACTIVE");
+                let mode_prop = dev.prop_mapping.1.get(&crtc)
+                    .expect("Unknown handle").get("MODE_ID")
+                    .expect("Unknown property MODE_ID");
+                req.add_property(*crtc, *mode_prop, property::Value::Unknown(0));
+                req.add_property(*crtc, *active_prop, property::Value::Boolean(false));
+            }
+            dev.atomic_commit(&[AtomicCommitFlags::AllowModeset], req)
+                .compat().map_err(|source| Error::Access {
+                    errmsg: "Failed to disable connectors",
+                    dev: dev.dev_path(),
+                    source,
+                })?;
+        }
 
         Ok(AtomicDrmDevice {
             dev: Rc::new(dev),
