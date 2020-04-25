@@ -53,9 +53,8 @@ use std::{
 use systemd::login;
 
 use calloop::{
-    generic::{Event, Generic, SourceRawFd},
-    mio::Interest,
-    InsertError, LoopHandle, Source,
+    generic::{Fd, Generic},
+    InsertError, Interest, LoopHandle, Readiness, Source,
 };
 
 struct LogindSessionImpl {
@@ -433,7 +432,8 @@ impl SessionNotifier for LogindSessionNotifier {
 pub struct BoundLogindSession {
     notifier: LogindSessionNotifier,
     _watches: Vec<Watch>,
-    sources: Vec<Source<Generic<SourceRawFd>>>,
+    sources: Vec<Source<Generic<Fd>>>,
+    kill_source: Box<dyn Fn(Source<Generic<Fd>>)>,
 }
 
 /// Bind a [`LogindSessionNotifier`] to an [`EventLoop`](calloop::EventLoop).
@@ -443,7 +443,7 @@ pub struct BoundLogindSession {
 /// session state and call it's [`SessionObserver`]s.
 pub fn logind_session_bind<Data: 'static>(
     notifier: LogindSessionNotifier,
-    handle: &LoopHandle<Data>,
+    handle: LoopHandle<Data>,
 ) -> ::std::result::Result<BoundLogindSession, (IoError, LogindSessionNotifier)> {
     let watches = notifier.internal.conn.borrow().watch_fds();
 
@@ -453,19 +453,22 @@ pub fn logind_session_bind<Data: 'static>(
         .into_iter()
         .filter_map(|watch| {
             let interest = match (watch.writable(), watch.readable()) {
-                (true, true) => Interest::WRITABLE | Interest::READABLE,
-                (true, false) => Interest::WRITABLE,
-                (false, true) => Interest::READABLE,
-                (false, false) => return None
+                (true, true) => Interest::Both,
+                (true, false) => Interest::Writable,
+                (false, true) => Interest::Readable,
+                (false, false) => return None,
             };
-            let mut source = Generic::from_raw_fd(watch.fd());
-            source.set_interest(interest);
+            let source = Generic::from_fd(watch.fd(), interest, calloop::Mode::Level);
             let source = handle.insert_source(source, {
                 let mut notifier = notifier.clone();
-                move |evt, _| notifier.event(evt)
+                move |readiness, fd, _| {
+                    notifier.event(readiness, fd.0);
+                    Ok(())
+                }
             });
             Some(source)
-        }).collect::<::std::result::Result<Vec<Source<Generic<SourceRawFd>>>, InsertError<Generic<SourceRawFd>>>>()
+        })
+        .collect::<::std::result::Result<Vec<Source<Generic<Fd>>>, InsertError<Generic<Fd>>>>()
         .map_err(|err| {
             (
                 err.into(),
@@ -479,6 +482,7 @@ pub fn logind_session_bind<Data: 'static>(
         notifier,
         _watches: watches,
         sources,
+        kill_source: Box::new(move |source| handle.kill(source)),
     })
 }
 
@@ -486,7 +490,7 @@ impl BoundLogindSession {
     /// Unbind the logind session from the [`EventLoop`](calloop::EventLoop)
     pub fn unbind(self) -> LogindSessionNotifier {
         for source in self.sources {
-            source.remove();
+            (self.kill_source)(source);
         }
         self.notifier
     }
@@ -508,9 +512,7 @@ impl Drop for LogindSessionNotifier {
 }
 
 impl LogindSessionNotifier {
-    fn event(&mut self, event: Event<SourceRawFd>) {
-        let fd = event.source.borrow().0;
-        let readiness = event.readiness;
+    fn event(&mut self, readiness: Readiness, fd: RawFd) {
         let conn = self.internal.conn.borrow();
         let items = conn.watch_handle(
             fd,

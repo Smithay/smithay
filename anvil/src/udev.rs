@@ -35,10 +35,7 @@ use smithay::{
         udev::{primary_gpu, udev_backend_bind, UdevBackend, UdevHandler},
     },
     reexports::{
-        calloop::{
-            generic::{Generic, SourceFd},
-            EventLoop, LoopHandle, Source,
-        },
+        calloop::{generic::Generic, EventLoop, LoopHandle, Source},
         drm::control::{
             connector::{Info as ConnectorInfo, State as ConnectorState},
             crtc,
@@ -226,7 +223,7 @@ pub fn run_udev(
     let libinput_event_source = libinput_bind(libinput_backend, event_loop.handle())
         .map_err(|e| -> IoError { e.into() })
         .unwrap();
-    let session_event_source = auto_session_bind(notifier, &event_loop.handle())
+    let session_event_source = auto_session_bind(notifier, event_loop.handle())
         .map_err(|(e, _)| e)
         .unwrap();
     let udev_event_source = udev_backend_bind(udev_backend, &event_loop.handle())
@@ -256,15 +253,15 @@ pub fn run_udev(
     notifier.unregister(libinput_session_id);
     notifier.unregister(udev_session_id);
 
-    libinput_event_source.remove();
-    udev_event_source.remove();
+    event_loop.handle().remove(libinput_event_source);
+    event_loop.handle().remove(udev_event_source);
 
     Ok(())
 }
 
 struct BackendData<S: SessionNotifier> {
     id: S::Id,
-    event_source: Source<Generic<SourceFd<RenderDevice>>>,
+    event_source: Source<Generic<RenderDevice>>,
     surfaces: Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<RenderSurface>>>>,
 }
 
@@ -482,33 +479,37 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
     fn device_changed(&mut self, device: dev_t) {
         //quick and dirty, just re-init all backends
         if let Some(ref mut backend_data) = self.backends.get_mut(&device) {
-            let source = backend_data.event_source.clone_inner();
-            let mut evented = source.borrow_mut();
-            let mut backends = backend_data.surfaces.borrow_mut();
-            #[cfg(feature = "egl")]
-            let new_backends = UdevHandlerImpl::<S, Data>::scan_connectors(
-                &mut (*evented).0,
-                self.egl_buffer_reader.clone(),
-                &self.logger,
-            );
-            #[cfg(not(feature = "egl"))]
-            let new_backends = UdevHandlerImpl::<S, Data>::scan_connectors(&mut (*evented).0, &self.logger);
-            *backends = new_backends;
+            let logger = &self.logger;
+            let pointer_image = &self.pointer_image;
+            let egl_buffer_reader = self.egl_buffer_reader.clone();
+            self.loop_handle
+                .with_source(&backend_data.event_source, |source| {
+                    let mut backends = backend_data.surfaces.borrow_mut();
+                    #[cfg(feature = "egl")]
+                    let new_backends = UdevHandlerImpl::<S, Data>::scan_connectors(
+                        &mut source.file,
+                        egl_buffer_reader,
+                        logger,
+                    );
+                    #[cfg(not(feature = "egl"))]
+                    let new_backends = UdevHandlerImpl::<S, Data>::scan_connectors(&mut source.file, logger);
+                    *backends = new_backends;
 
-            for renderer in backends.values() {
-                // create cursor
-                renderer
-                    .borrow()
-                    .set_cursor_representation(&self.pointer_image, (2, 2))
-                    .unwrap();
+                    for renderer in backends.values() {
+                        // create cursor
+                        renderer
+                            .borrow()
+                            .set_cursor_representation(pointer_image, (2, 2))
+                            .unwrap();
 
-                // render first frame
-                {
-                    let mut frame = renderer.draw();
-                    frame.clear_color(0.8, 0.8, 0.9, 1.0);
-                    frame.finish().unwrap();
-                }
-            }
+                        // render first frame
+                        {
+                            let mut frame = renderer.draw();
+                            frame.clear_color(0.8, 0.8, 0.9, 1.0);
+                            frame.finish().unwrap();
+                        }
+                    }
+                });
         }
     }
 
@@ -519,11 +520,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             backend_data.surfaces.borrow_mut().clear();
             debug!(self.logger, "Surfaces dropped");
 
-            let device = Rc::try_unwrap(backend_data.event_source.remove().unwrap())
-                .map_err(|_| "This should not happend")
-                .unwrap()
-                .into_inner()
-                .0;
+            let device = self.loop_handle.remove(backend_data.event_source).unwrap();
 
             // don't use hardware acceleration anymore, if this was the primary gpu
             #[cfg(feature = "egl")]

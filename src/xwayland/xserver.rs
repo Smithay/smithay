@@ -91,11 +91,15 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
         let log = crate::slog_or_stdlog(logger);
         let inner = Rc::new(RefCell::new(Inner {
             wm,
+            kill_source: {
+                let handle = handle.clone();
+                Box::new(move |source| handle.kill(source))
+            },
             source_maker: Box::new(move |inner| {
                 handle
                     .insert_source(
                         Signals::new(&[Signal::SIGUSR1]).map_err(|_| ())?,
-                        move |evt, _| {
+                        move |evt, _, _| {
                             debug_assert!(evt.signal() == Signal::SIGUSR1);
                             xwayland_ready(&inner);
                         },
@@ -134,6 +138,7 @@ struct Inner<WM: XWindowManager> {
     source_maker: Box<SourceMaker<WM>>,
     wayland_display: Rc<RefCell<Display>>,
     instance: Option<XWaylandInstance>,
+    kill_source: Box<dyn Fn(Source<Signals>)>,
     log: ::slog::Logger,
 }
 
@@ -252,7 +257,7 @@ impl<WM: XWindowManager> Inner<WM> {
             instance.wayland_client.kill();
             // remove the event source
             if let Some(s) = instance.sigusr1_handler.take() {
-                s.remove();
+                (self.kill_source)(s);
             }
             // All connections and lockfiles are cleaned by their destructors
 
@@ -336,7 +341,7 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
 
     // in all cases, cleanup
     if let Some(s) = instance.sigusr1_handler.take() {
-        s.remove();
+        (inner.kill_source)(s);
     }
 }
 

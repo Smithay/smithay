@@ -10,9 +10,8 @@ use std::{
 use smithay::{
     reexports::{
         calloop::{
-            generic::{Generic, SourceRawFd},
-            mio::Interest,
-            LoopHandle, Source,
+            generic::{Fd, Generic},
+            Interest, LoopHandle, Mode, Source,
         },
         wayland_server::{protocol::wl_surface::WlSurface, Display},
     },
@@ -35,7 +34,7 @@ pub struct AnvilState {
     pub dnd_icon: Arc<Mutex<Option<WlSurface>>>,
     pub log: slog::Logger,
     // things we must keep alive
-    _wayland_event_source: Source<Generic<SourceRawFd>>,
+    _wayland_event_source: Source<Generic<Fd>>,
 }
 
 impl AnvilState {
@@ -48,21 +47,18 @@ impl AnvilState {
         // init the wayland connection
         let _wayland_event_source = handle
             .insert_source(
-                {
-                    let mut source = Generic::from_raw_fd(display.borrow().get_poll_fd());
-                    source.set_interest(Interest::READABLE);
-                    source
-                },
+                Generic::from_fd(display.borrow().get_poll_fd(), Interest::Readable, Mode::Level),
                 {
                     let display = display.clone();
                     let log = log.clone();
-                    move |_, state: &mut AnvilState| {
+                    move |_, _, state: &mut AnvilState| {
                         let mut display = display.borrow_mut();
                         match display.dispatch(std::time::Duration::from_millis(0), state) {
-                            Ok(_) => {}
+                            Ok(_) => Ok(()),
                             Err(e) => {
                                 error!(log, "I/O error on the Wayland display: {}", e);
                                 state.running.store(false, Ordering::SeqCst);
+                                Err(e)
                             }
                         }
                     }

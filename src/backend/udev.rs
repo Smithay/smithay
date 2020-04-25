@@ -19,11 +19,7 @@ use std::{
 };
 use udev::{Enumerator, EventType, MonitorBuilder, MonitorSocket};
 
-use calloop::{
-    generic::{Generic, SourceFd},
-    mio::Interest,
-    InsertError, LoopHandle, Source,
-};
+use calloop::{generic::Generic, InsertError, LoopHandle, Source};
 
 /// Backend to monitor available drm devices.
 ///
@@ -91,7 +87,7 @@ impl<T: UdevHandler + 'static> Drop for UdevBackend<T> {
 }
 
 /// calloop event source associated with the Udev backend
-pub type UdevSource<T> = Generic<SourceFd<UdevBackend<T>>>;
+pub type UdevSource<T> = Generic<UdevBackend<T>>;
 
 /// Binds a [`UdevBackend`] to a given [`EventLoop`](calloop::EventLoop).
 ///
@@ -101,11 +97,11 @@ pub fn udev_backend_bind<T: UdevHandler + 'static, Data: 'static>(
     udev: UdevBackend<T>,
     handle: &LoopHandle<Data>,
 ) -> Result<Source<UdevSource<T>>, InsertError<UdevSource<T>>> {
-    let mut source = Generic::from_fd_source(udev);
-    source.set_interest(Interest::READABLE);
+    let source = Generic::new(udev, calloop::Interest::Readable, calloop::Mode::Level);
 
-    handle.insert_source(source, |evt, _| {
-        evt.source.borrow_mut().0.process_events();
+    handle.insert_source(source, |_, backend, _| {
+        backend.process_events();
+        Ok(())
     })
 }
 

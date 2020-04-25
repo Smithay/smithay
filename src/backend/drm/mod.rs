@@ -46,10 +46,7 @@ use std::iter::IntoIterator;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 
-use calloop::generic::{Generic, SourceFd};
-use calloop::mio::Interest;
-use calloop::InsertError;
-use calloop::{LoopHandle, Source};
+use calloop::{generic::Generic, InsertError, LoopHandle, Source};
 
 use super::graphics::SwapBuffersError;
 
@@ -245,7 +242,7 @@ impl<A: AsRawFd> DevPath for A {
 }
 
 /// calloop source associated with a Device
-pub type DrmSource<D> = Generic<SourceFd<D>>;
+pub type DrmSource<D> = Generic<D>;
 
 /// Bind a `Device` to an [`EventLoop`](calloop::EventLoop),
 ///
@@ -259,10 +256,10 @@ where
     D: Device,
     Data: 'static,
 {
-    let mut source = Generic::from_fd_source(device);
-    source.set_interest(Interest::READABLE);
+    let source = Generic::new(device, calloop::Interest::Readable, calloop::Mode::Level);
 
-    handle.insert_source(source, |evt, _| {
-        evt.source.borrow_mut().0.process_events();
+    handle.insert_source(source, |_, source, _| {
+        source.process_events();
+        Ok(())
     })
 }

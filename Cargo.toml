@@ -12,7 +12,7 @@ members = [ "anvil" ]
 
 [dependencies]
 bitflags = "1"
-calloop = "0.5.1"
+calloop = "0.6.2"
 dbus = { version = "0.8", optional = true }
 drm = { version = "^0.4.0", git = "https://github.com/drakulix/drm-rs", branch = "develop", optional = true }
 gbm = { version = "^0.6.0", git = "https://github.com/drakulix/gbm.rs", branch = "develop", optional = true, default-features = false, features = ["drm-support"] }

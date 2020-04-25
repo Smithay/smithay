@@ -396,13 +396,18 @@ impl DirectSessionNotifier {
 pub struct BoundDirectSession {
     source: Source<Signals>,
     notifier: Rc<RefCell<DirectSessionNotifier>>,
+    kill_source: Box<dyn Fn(Source<Signals>)>,
 }
 
 impl BoundDirectSession {
     /// Unbind the direct session from the [`EventLoop`](calloop::EventLoop)
     pub fn unbind(self) -> DirectSessionNotifier {
-        let BoundDirectSession { source, notifier } = self;
-        source.remove();
+        let BoundDirectSession {
+            source,
+            notifier,
+            kill_source,
+        } = self;
+        kill_source(source);
         Rc::try_unwrap(notifier)
             .map(RefCell::into_inner)
             .unwrap_or_else(|_| panic!("Notifier should have been freed from the event loop!"))
@@ -416,7 +421,7 @@ impl BoundDirectSession {
 /// session state and call it's [`SessionObserver`]s.
 pub fn direct_session_bind<Data: 'static>(
     notifier: DirectSessionNotifier,
-    handle: &LoopHandle<Data>,
+    handle: LoopHandle<Data>,
 ) -> ::std::result::Result<BoundDirectSession, (IoError, DirectSessionNotifier)> {
     let signal = notifier.signal;
     let source = match Signals::new(&[signal]) {
@@ -428,7 +433,7 @@ pub fn direct_session_bind<Data: 'static>(
     let source = handle
         .insert_source(source, {
             let notifier = notifier.clone();
-            move |_, _| notifier.borrow_mut().signal_received()
+            move |_, _, _| notifier.borrow_mut().signal_received()
         })
         .map_err(move |e| {
             // the backend in the closure should already have been dropped
@@ -437,7 +442,12 @@ pub fn direct_session_bind<Data: 'static>(
                 .into_inner();
             (e.into(), notifier)
         })?;
-    Ok(BoundDirectSession { source, notifier })
+    let kill_source = Box::new(move |source| handle.kill(source));
+    Ok(BoundDirectSession {
+        source,
+        notifier,
+        kill_source,
+    })
 }
 
 /// Errors related to direct/tty sessions
