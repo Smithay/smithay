@@ -7,15 +7,15 @@ publish = false
 edition = "2018"
 
 [dependencies]
+bitflags = "1.2.1"
+glium = { version = "0.27.0", default-features = false }
+input = { version = "0.5.0", features = ["udev"], optional = true }
+rand = "0.7"
 slog = { version = "2.1.1" }
 slog-term = "2.3"
 slog-async = "2.2"
-rand = "0.7"
-glium = { version = "0.27.0", default-features = false }
 wayland-server = "0.25.0"
 xkbcommon = "0.4.0"
-bitflags = "1.2.1"
-input = { version = "0.5.0", features = ["udev"], optional = true }
 
 [dependencies.smithay]
 path = ".."
