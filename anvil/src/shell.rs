@@ -697,13 +697,12 @@ impl SurfaceData {
     //
     // returns true if the texture cache should be invalidated
     fn merge_state(into: &mut CommitedState, next: CommitedState) -> bool {
-        let mut new_buffer = false;
         // release the previous buffer if relevant
-        if into.buffer != next.buffer {
+        let new_buffer = into.buffer != next.buffer;
+        if new_buffer {
             if let Some(buffer) = into.buffer.take() {
                 buffer.release();
             }
-            new_buffer = true;
         }
         // ping the previous callback if relevant
         if into.frame_callback != next.frame_callback {
@@ -780,7 +779,7 @@ fn surface_commit(
     });
 
     let sub_data = token
-        .with_role_data(surface, |role: &mut SubsurfaceRole| role.clone())
+        .with_role_data(surface, |&mut role: &mut SubsurfaceRole| role)
         .ok();
 
     let mut next_state = CommitedState::default();
