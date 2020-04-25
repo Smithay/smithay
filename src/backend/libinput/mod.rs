@@ -17,11 +17,7 @@ use std::{
     os::unix::io::{AsRawFd, RawFd},
 };
 
-use calloop::{
-    generic::{Generic, SourceFd},
-    mio::Interest,
-    InsertError, LoopHandle, Source,
-};
+use calloop::{generic::Generic, InsertError, LoopHandle, Source};
 
 // No idea if this is the same across unix platforms
 // Lets make this linux exclusive for now, once someone tries to build it for
@@ -426,7 +422,7 @@ impl AsRawFd for LibinputInputBackend {
 }
 
 /// calloop source associated with the libinput backend
-pub type LibinputSource = Generic<SourceFd<LibinputInputBackend>>;
+pub type LibinputSource = Generic<LibinputInputBackend>;
 
 /// Binds a [`LibinputInputBackend`] to a given [`LoopHandle`].
 ///
@@ -436,13 +432,13 @@ pub fn libinput_bind<Data: 'static>(
     backend: LibinputInputBackend,
     handle: LoopHandle<Data>,
 ) -> Result<Source<LibinputSource>, InsertError<LibinputSource>> {
-    let mut source = Generic::from_fd_source(backend);
-    source.set_interest(Interest::READABLE);
+    let source = Generic::new(backend, calloop::Interest::Readable, calloop::Mode::Level);
 
-    handle.insert_source(source, move |evt, _| {
-        let mut backend = evt.source.borrow_mut();
-        if let Err(error) = backend.0.dispatch_new_events() {
-            warn!(backend.0.logger, "Libinput errored: {}", error);
+    handle.insert_source(source, move |_, backend, _| {
+        if let Err(error) = backend.dispatch_new_events() {
+            warn!(backend.logger, "Libinput errored: {}", error);
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, Box::new(error)));
         }
+        Ok(())
     })
 }

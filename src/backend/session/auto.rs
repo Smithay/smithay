@@ -146,7 +146,7 @@ impl AutoSession {
 /// session state and call its [`SessionObserver`]s.
 pub fn auto_session_bind<Data: 'static>(
     notifier: AutoSessionNotifier,
-    handle: &LoopHandle<Data>,
+    handle: LoopHandle<Data>,
 ) -> ::std::result::Result<BoundAutoSession, (IoError, AutoSessionNotifier)> {
     Ok(match notifier {
         #[cfg(feature = "backend_session_logind")]
