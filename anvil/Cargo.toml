@@ -14,7 +14,7 @@ rand = "0.7"
 slog = { version = "2.1.1" }
 slog-term = "2.3"
 slog-async = "2.2"
-wayland-server = "0.25.0"
+wayland-server = "0.26"
 xkbcommon = "0.4.0"
 
 [dependencies.smithay]

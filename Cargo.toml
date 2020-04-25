@@ -28,11 +28,11 @@ systemd = { version = "0.4.0", optional = true }
 tempfile = "3.0"
 thiserror = "1"
 udev = { version = "0.4", optional = true }
-wayland-commons = { version = "0.25.0", optional = true }
-wayland-egl = { version = "0.25.0", optional = true }
-wayland-protocols = { version = "0.25.0", features = ["unstable_protocols", "server"], optional = true }
-wayland-server = { version = "0.25.0", optional = true }
-wayland-sys = { version = "0.25.0", optional = true }
+wayland-commons = { version = "0.26", optional = true }
+wayland-egl = { version = "0.26", optional = true }
+wayland-protocols = { version = "0.26", features = ["unstable_protocols", "server"], optional = true }
+wayland-server = { version = "0.26", optional = true }
+wayland-sys = { version = "0.26", optional = true }
 winit = { version = "0.22.0", optional = true }
 xkbcommon = "0.4.0"
 # TODO: remove as soon as drm-rs provides an error implementing Error
