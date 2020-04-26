@@ -488,7 +488,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
             }
         };
 
-        debug!(self.logger, "Setting screen: {:#?}", req);
+        debug!(self.logger, "Setting screen: {:?}", req);
         self.atomic_commit(
             &[
                 AtomicCommitFlags::PageFlipEvent,
