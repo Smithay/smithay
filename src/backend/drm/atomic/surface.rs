@@ -236,6 +236,10 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
     }
 
     fn add_connector(&self, conn: connector::Handle) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let info = self
             .get_connector(conn)
             .compat()
@@ -275,6 +279,10 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
     }
 
     fn remove_connector(&self, conn: connector::Handle) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let mut pending = self.pending.write().unwrap();
 
         // check if new config is supported (should be)
@@ -300,6 +308,10 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
     }
 
     fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let current = self.state.write().unwrap();
         let mut pending = self.pending.write().unwrap();
 
@@ -328,6 +340,10 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
     }
 
     fn use_mode(&self, mode: Mode) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let mut pending = self.pending.write().unwrap();
 
         // check if new config is supported
@@ -374,6 +390,10 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
     }
 
     fn commit(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let mut current = self.state.write().unwrap();
         let mut pending = self.pending.write().unwrap();
 
@@ -480,6 +500,10 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
     }
 
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), SwapBuffersError> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(SwapBuffersError::AlreadySwapped);
+        }
+
         let req = self
             .build_request(
                 &mut [].iter(),
@@ -506,6 +530,10 @@ impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurfaceInternal<A> {
     type Error = Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         trace!(self.logger, "New cursor position ({},{}) pending", x, y);
         self.cursor.position.set(Some((x, y)));
         Ok(())
@@ -516,6 +544,10 @@ impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurfaceInternal<A> {
         buffer: &Self::CursorFormat,
         hotspot: (u32, u32),
     ) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         trace!(self.logger, "Setting the new imported cursor");
 
         if let Some(fb) = self.cursor.framebuffer.get().take() {
