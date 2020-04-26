@@ -12,6 +12,7 @@ use std::rc::{Rc, Weak};
 
 use super::{GbmDevice, GbmSurfaceInternal};
 use crate::backend::drm::{RawDevice, RawSurface};
+use crate::backend::graphics::CursorBackend;
 use crate::backend::session::{AsSessionObserver, SessionObserver};
 
 /// [`SessionObserver`](SessionObserver)
@@ -27,11 +28,12 @@ pub struct GbmDeviceObserver<
 }
 
 impl<
-        S: SessionObserver + 'static,
-        D: RawDevice + ::drm::control::Device + AsSessionObserver<S> + 'static,
-    > AsSessionObserver<GbmDeviceObserver<S, D>> for GbmDevice<D>
+        O: SessionObserver + 'static,
+        S: CursorBackend<CursorFormat=dyn drm::buffer::Buffer> + RawSurface + 'static,
+        D: RawDevice<Surface=S> + drm::control::Device + AsSessionObserver<O> + 'static,
+    > AsSessionObserver<GbmDeviceObserver<O, D>> for GbmDevice<D>
 {
-    fn observer(&mut self) -> GbmDeviceObserver<S, D> {
+    fn observer(&mut self) -> GbmDeviceObserver<O, D> {
         GbmDeviceObserver {
             observer: (**self.dev.borrow_mut()).observer(),
             backends: Rc::downgrade(&self.backends),
@@ -41,9 +43,10 @@ impl<
 }
 
 impl<
-        S: SessionObserver + 'static,
-        D: RawDevice + ::drm::control::Device + AsSessionObserver<S> + 'static,
-    > SessionObserver for GbmDeviceObserver<S, D>
+        O: SessionObserver + 'static,
+        S: CursorBackend<CursorFormat=dyn drm::buffer::Buffer> + RawSurface + 'static,
+        D: RawDevice<Surface=S> + drm::control::Device + AsSessionObserver<O> + 'static,
+    > SessionObserver for GbmDeviceObserver<O, D>
 {
     fn pause(&mut self, devnum: Option<(u32, u32)>) {
         self.observer.pause(devnum);
@@ -56,20 +59,19 @@ impl<
             for (crtc, backend) in backends.borrow().iter() {
                 if let Some(backend) = backend.upgrade() {
                     // restart rendering loop, if it was previously running
-                    if let Some(fb) = backend.current_frame_buffer.get() {
-                        if backend.crtc.page_flip(fb).is_err() {
-                            // Try more!
-                            if let Err(err) = backend.recreate() {
-                                error!(
-                                    self.logger,
-                                    "Failed to re-create gbm surface, is the device gone?\n\t{}", err
-                                );
-                            }
-                            if let Err(err) = unsafe { backend.page_flip() } {
-                                warn!(self.logger, "Failed to restart rendering loop. Error: {}", err);
-                                // TODO bubble this up the user somehow
-                                //      maybe expose a "running" state from a surface?
-                            }
+                    if let Some(current_fb) = backend.current_frame_buffer.get() {
+                        let result = if backend.crtc.commit_pending() {
+                            backend.crtc.commit(current_fb)
+                        } else {
+                            RawSurface::page_flip(&backend.crtc, current_fb)
+                        };
+
+                        if let Err(err) = result {
+                            warn!(
+                                self.logger,
+                                "Failed to restart rendering loop. Re-creating resources. Error: {}", err
+                            );
+                            // TODO bubble up
                         }
                     }
 
@@ -79,10 +81,7 @@ impl<
 
                         let &(ref cursor, ref hotspot): &(BufferObject<()>, (u32, u32)) =
                             unsafe { &*backend.cursor.as_ptr() };
-                        if backend
-                            .dev
-                            .borrow()
-                            .set_cursor2(*crtc, Some(cursor), ((*hotspot).0 as i32, (*hotspot).1 as i32))
+                        if backend.crtc.set_cursor_representation(cursor, *hotspot)
                             .is_err()
                         {
                             if let Err(err) = backend.dev.borrow().set_cursor(*crtc, Some(cursor)) {
