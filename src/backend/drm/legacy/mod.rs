@@ -164,36 +164,8 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
         }
 
         if disable_connectors {
-            for conn in res_handles.connectors() {
-                let info = dev.get_connector(*conn).compat().map_err(|source| Error::Access {
-                        errmsg: "Failed to get connector infos",
-                        dev: dev.dev_path(),
-                        source
-                    })?;
-                if info.state() == connector::State::Connected {
-                    let props = dev.get_properties(*conn).compat().map_err(|source| Error::Access {
-                        errmsg: "Failed to get properties for connector",
-                        dev: dev.dev_path(),
-                        source
-                    })?;
-                    let (handles, _) = props.as_props_and_values();
-                    for handle in handles {
-                        let info = dev.get_property(*handle).compat().map_err(|source| Error::Access {
-                        errmsg: "Failed to get property of connector",
-                        dev: dev.dev_path(),
-                        source
-                    })?;
-                        if info.name().to_str().map(|x| x == "DPMS").unwrap_or(false) {
-                            dev.set_property(*conn, *handle, 3/*DRM_MODE_DPMS_OFF*/)
-                                .compat().map_err(|source| Error::Access {
-                                    errmsg: "Failed to set property of connector",
-                                    dev: dev.dev_path(),
-                                    source
-                                })?;
-                        }
-                    }
-                }
-            }
+            dev.set_connector_state(res_handles.connectors().iter().copied(), false)?;
+
             for crtc in res_handles.crtcs() {
                 // null commit
                 dev.set_crtc(*crtc, None, (0, 0), &[], None)
@@ -214,6 +186,42 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
             handler: None,
             logger: log.clone(),
         })
+    }
+}
+
+impl<A: AsRawFd + 'static> Dev<A> {
+    pub(in crate::backend::drm::legacy) fn set_connector_state(&self, connectors: impl Iterator<Item=connector::Handle>, enabled: bool) -> Result<(), Error> {
+        for conn in connectors {
+            let info = self.get_connector(conn).compat().map_err(|source| Error::Access {
+                    errmsg: "Failed to get connector infos",
+                    dev: self.dev_path(),
+                    source
+                })?;
+            if info.state() == connector::State::Connected {
+                let props = self.get_properties(conn).compat().map_err(|source| Error::Access {
+                    errmsg: "Failed to get properties for connector",
+                    dev: self.dev_path(),
+                    source
+                })?;
+                let (handles, _) = props.as_props_and_values();
+                for handle in handles {
+                    let info = self.get_property(*handle).compat().map_err(|source| Error::Access {
+                    errmsg: "Failed to get property of connector",
+                    dev: self.dev_path(),
+                    source
+                })?;
+                    if info.name().to_str().map(|x| x == "DPMS").unwrap_or(false) {
+                        self.set_property(conn, *handle, if enabled { 0 /*DRM_MODE_DPMS_ON*/} else { 3 /*DRM_MODE_DPMS_OFF*/})
+                            .compat().map_err(|source| Error::Access {
+                                errmsg: "Failed to set property of connector",
+                                dev: self.dev_path(),
+                                source
+                            })?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 

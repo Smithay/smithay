@@ -201,7 +201,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             let added = pending.connectors.difference(&current.connectors);
 
             let mut conn_removed = false;
-            for conn in removed {
+            for conn in removed.clone() {
                 if let Ok(info) = self.get_connector(*conn) {
                     info!(self.logger, "Removing connector: {:?}", info.interface());
                 } else {
@@ -211,6 +211,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
                 // the graphics pipeline will not be freed otherwise
                 conn_removed = true;
             }
+            self.dev.set_connector_state(removed.copied(), false)?;
 
             if conn_removed {
                 // We need to do a null commit to free graphics pipelines
@@ -223,13 +224,14 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
                     })?;
             }
 
-            for conn in added {
+            for conn in added.clone() {
                 if let Ok(info) = self.get_connector(*conn) {
                     info!(self.logger, "Adding connector: {:?}", info.interface());
                 } else {
                     info!(self.logger, "Adding unknown connector");
                 }
             }
+            self.dev.set_connector_state(added.copied(), true)?;
 
             if current.mode != pending.mode {
                 info!(
@@ -420,25 +422,10 @@ impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
         let _ = self.set_cursor(self.crtc, Option::<&DumbBuffer>::None);
         // disable connectors again
         let current = self.state.read().unwrap();
-        for conn in current.connectors.iter() {
-            if let Ok(info) = self.get_connector(*conn) {
-                if info.state() == connector::State::Connected {
-                    if let Ok(props) = self.get_properties(*conn) {
-                        let (handles, _) = props.as_props_and_values();
-                        for handle in handles {
-                            if let Ok(info) = self.get_property(*handle) {
-                                if info.name().to_str().map(|x| x == "DPMS").unwrap_or(false) {
-                                    let _ = self.set_property(*conn, *handle, 3/*DRM_MODE_DPMS_OFF*/);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if let Ok(_) = self.dev.set_connector_state(current.connectors.iter().copied(), false) {
+            // null commit
+            let _ = self.set_crtc(self.crtc, None, (0, 0), &[], None);
         }
-
-        // null commit
-        let _ = self.set_crtc(self.crtc, None, (0, 0), &[], None);
     }
 }
 
