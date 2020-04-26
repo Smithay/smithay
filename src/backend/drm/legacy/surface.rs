@@ -9,7 +9,7 @@ use std::cell::Cell;
 use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
-use std::sync::RwLock;
+use std::sync::{RwLock, atomic::Ordering};
 
 use crate::backend::drm::{common::Error, DevPath, RawSurface, Surface};
 use crate::backend::graphics::CursorBackend;
@@ -376,11 +376,41 @@ impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
 impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
     fn drop(&mut self) {
         // ignore failure at this point
-        let _ = self.set_cursor(self.crtc, Option::<&DumbBuffer>::None);
         if let Some((db, fb)) = self.init_buffer.take() {
             let _ = self.destroy_framebuffer(fb);
             let _ = self.destroy_dumb_buffer(db);
         }
+
+        if !self.dev.active.load(Ordering::SeqCst) {
+            // the device is gone or we are on another tty
+            // old state has been restored, we shouldn't touch it.
+            // if we are on another tty the connectors will get disabled
+            // by the device, when switching back
+            return;
+        }
+
+        let _ = self.set_cursor(self.crtc, Option::<&DumbBuffer>::None);
+        // disable connectors again
+        let current = self.state.read().unwrap();
+        for conn in current.connectors.iter() {
+            if let Ok(info) = self.get_connector(*conn) {
+                if info.state() == connector::State::Connected {
+                    if let Ok(props) = self.get_properties(*conn) {
+                        let (handles, _) = props.as_props_and_values();
+                        for handle in handles {
+                            if let Ok(info) = self.get_property(*handle) {
+                                if info.name().to_str().map(|x| x == "DPMS").unwrap_or(false) {
+                                    let _ = self.set_property(*conn, *handle, 3/*DRM_MODE_DPMS_OFF*/);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // null commit
+        let _ = self.set_crtc(self.crtc, None, (0, 0), &[], None);
     }
 }
 
