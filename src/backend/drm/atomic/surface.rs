@@ -44,7 +44,7 @@ pub(super) struct AtomicDrmSurfaceInternal<A: AsRawFd + 'static> {
     pub(super) state: RwLock<State>,
     pub(super) pending: RwLock<State>,
     pub(super) logger: ::slog::Logger,
-    init_buffer: Cell<Option<(DumbBuffer, framebuffer::Handle)>>,
+    pub(super) init_buffer: Cell<Option<(DumbBuffer, framebuffer::Handle)>>,
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for AtomicDrmSurfaceInternal<A> {

@@ -3,7 +3,7 @@
 //! to an open [`Session`](::backend::session::Session).
 //!
 
-use drm::control::crtc;
+use drm::control::{crtc, property, Device as ControlDevice, AtomicCommitFlags, atomic::AtomicModeReq};
 use drm::Device as BasicDevice;
 use nix::libc::dev_t;
 use nix::sys::stat;
@@ -13,8 +13,10 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use failure::ResultExt;
 
 use super::{AtomicDrmDevice, AtomicDrmSurfaceInternal, Dev};
+use crate::backend::drm::{common::Error, DevPath};
 use crate::backend::session::{AsSessionObserver, SessionObserver};
 
 /// [`SessionObserver`](SessionObserver)
@@ -95,5 +97,63 @@ impl<A: AsRawFd + 'static> SessionObserver for AtomicDrmDeviceObserver<A> {
             }
         }
         self.active.store(true, Ordering::SeqCst);
+        // okay, the previous session/whatever might left the drm devices in any state...
+        // lets fix that
+        if let Err(err) = self.reset_state() {
+            warn!(self.logger, "Unable to reset state after tty switch: {}", err);
+            // TODO call drm-handler::error
+        }
+    }
+}
+
+impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
+    fn reset_state(&mut self) -> Result<(), Error> {
+        if let Some(dev) = self.dev.upgrade() {
+            let res_handles = ControlDevice::resource_handles(&*dev)
+                .compat()
+                .map_err(|source| Error::Access {
+                    errmsg: "Error loading drm resources",
+                    dev: dev.dev_path(),
+                    source
+                })?;
+
+            // Disable all connectors (otherwise we might run into conflicting commits when restarting the rendering loop)
+            let mut req = AtomicModeReq::new();
+            for conn in res_handles.connectors() {
+                let prop = dev.prop_mapping.0.get(&conn)
+                    .expect("Unknown handle").get("CRTC_ID")
+                    .expect("Unknown property CRTC_ID");
+                req.add_property(*conn, *prop, property::Value::CRTC(None));
+            }
+            // A crtc without a connector has no mode, we also need to reset that.
+            // Otherwise the commit will not be accepted.
+            for crtc in res_handles.crtcs() {
+                let mode_prop = dev.prop_mapping.1.get(&crtc)
+                    .expect("Unknown handle").get("MODE_ID")
+                    .expect("Unknown property MODE_ID");
+                let active_prop = dev.prop_mapping.1.get(&crtc)
+                    .expect("Unknown handle").get("ACTIVE")
+                    .expect("Unknown property ACTIVE");
+                req.add_property(*crtc, *active_prop, property::Value::Boolean(false));
+                req.add_property(*crtc, *mode_prop, property::Value::Unknown(0));
+            }
+            dev.atomic_commit(&[AtomicCommitFlags::AllowModeset], req)
+                .compat().map_err(|source| Error::Access {
+                    errmsg: "Failed to disable connectors",
+                    dev: dev.dev_path(),
+                    source,
+                })?;
+
+            if let Some(backends) = self.backends.upgrade() {
+                for surface in backends.borrow().values().filter_map(Weak::upgrade) {
+                    let mut current = surface.state.write().unwrap();
+
+                    // lets force a non matching state
+                    current.connectors.clear();
+                    current.mode = unsafe { std::mem::zeroed() };
+                }
+            }
+        }
+        Ok(())
     }
 }
