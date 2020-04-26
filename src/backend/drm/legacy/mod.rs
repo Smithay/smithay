@@ -88,9 +88,21 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
 impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
     /// Create a new [`LegacyDrmDevice`] from an open drm node
     ///
-    /// Returns an error if the file is no valid drm node or context creation was not
-    /// successful.
-    pub fn new<L>(dev: A, logger: L) -> Result<Self, Error>
+    /// # Arguments
+    ///
+    /// - `fd` - Open drm node
+    /// - `disable_connectors` - Setting this to true will initialize all connectors \
+    ///     as disabled on device creation. smithay enables connectors, when attached \
+    ///     to a surface, and disables them, when detached. Setting this to `false` \
+    ///     requires usage of `drm-rs` to disable unused connectors to prevent them \
+    ///     showing garbage, but will also prevent flickering of already turned on \
+    ///     connectors (assuming you won't change the resolution).
+    /// - `logger` - Optional [`slog::Logger`] to be used by this device.
+    ///
+    /// # Return
+    /// 
+    /// Returns an error if the file is no valid drm node or the device is not accessible.
+    pub fn new<L>(dev: A, disable_connectors: bool, logger: L) -> Result<Self, Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -148,6 +160,49 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
                         .1
                         .push(con);
                 }
+            }
+        }
+
+        if disable_connectors {
+            for conn in res_handles.connectors() {
+                let info = dev.get_connector(*conn).compat().map_err(|source| Error::Access {
+                        errmsg: "Failed to get connector infos",
+                        dev: dev.dev_path(),
+                        source
+                    })?;
+                if info.state() == connector::State::Connected {
+                    let props = dev.get_properties(*conn).compat().map_err(|source| Error::Access {
+                        errmsg: "Failed to get properties for connector",
+                        dev: dev.dev_path(),
+                        source
+                    })?;
+                    let (handles, _) = props.as_props_and_values();
+                    for handle in handles {
+                        let info = dev.get_property(*handle).compat().map_err(|source| Error::Access {
+                        errmsg: "Failed to get property of connector",
+                        dev: dev.dev_path(),
+                        source
+                    })?;
+                        if info.name().to_str().map(|x| x == "DPMS").unwrap_or(false) {
+                            dev.set_property(*conn, *handle, 3/*DRM_MODE_DPMS_OFF*/)
+                                .compat().map_err(|source| Error::Access {
+                                    errmsg: "Failed to set property of connector",
+                                    dev: dev.dev_path(),
+                                    source
+                                })?;
+                        }
+                    }
+                }
+            }
+            for crtc in res_handles.crtcs() {
+                // null commit
+                dev.set_crtc(*crtc, None, (0, 0), &[], None)
+                    .compat()
+                    .map_err(|source| Error::Access {
+                        errmsg: "Error setting crtc",
+                        dev: dev.dev_path(),
+                        source,
+                    })?;
             }
         }
 
