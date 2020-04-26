@@ -56,7 +56,7 @@ fn main() {
     let mut options = OpenOptions::new();
     options.read(true);
     options.write(true);
-    let mut device = AtomicDrmDevice::new(options.open("/dev/dri/card0").unwrap(), log.clone()).unwrap();
+    let mut device = AtomicDrmDevice::new(options.open("/dev/dri/card0").unwrap(), true, log.clone()).unwrap();
 
     // Get a set of all modesetting resource handles (excluding planes):
     let res_handles = Device::resource_handles(&device).unwrap();

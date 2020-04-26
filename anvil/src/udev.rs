@@ -389,7 +389,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data>
             )
             .ok()
             .and_then(
-                |fd| match FallbackDevice::new(SessionFd(fd), self.logger.clone()) {
+                |fd| match FallbackDevice::new(SessionFd(fd), true, self.logger.clone()) {
                     Ok(drm) => Some(drm),
                     Err(err) => {
                         error!(self.logger, "Skipping drm device, because of error: {}", err);
