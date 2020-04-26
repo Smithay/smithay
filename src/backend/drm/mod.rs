@@ -169,6 +169,11 @@ pub trait Surface {
     /// Tries to add a new [`connector`](drm::control::connector)
     /// to be used after the next commit.
     ///
+    /// **Warning**: You need to make sure, that the connector is not used with another surface
+    /// or was properly removed via `remove_connector` + `commit` before adding it to another surface.
+    /// Behavior if failing to do so is undefined, but might result in rendering errors or the connector
+    /// getting removed from the other surface without updating it's internal state.
+    ///
     /// Fails if the `connector` is not compatible with the underlying [`crtc`](drm::control::crtc)
     /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
     /// or is not compatible with the currently pending
