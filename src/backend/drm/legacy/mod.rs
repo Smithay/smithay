@@ -76,9 +76,6 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
                     error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
                 }
             }
-            // turn it off, so that remaining surfaces (if any) will not change
-            // the state on drop
-            self.active.store(false, Ordering::SeqCst);
         }
         if self.privileged {
             if let Err(err) = self.release_master_lock() {

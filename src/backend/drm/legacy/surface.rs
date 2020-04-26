@@ -48,6 +48,10 @@ impl<A: AsRawFd + 'static> CursorBackend for LegacyDrmSurfaceInternal<A> {
     type Error = Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         trace!(self.logger, "Move the cursor to {},{}", x, y);
         self.move_cursor(self.crtc, (x as i32, y as i32))
             .compat()
@@ -63,6 +67,10 @@ impl<A: AsRawFd + 'static> CursorBackend for LegacyDrmSurfaceInternal<A> {
         buffer: &Self::CursorFormat,
         hotspot: (u32, u32),
     ) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         trace!(self.logger, "Setting the new imported cursor");
 
         if self
@@ -107,6 +115,10 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
     }
 
     fn add_connector(&self, conn: connector::Handle) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+        
         let mut pending = self.pending.write().unwrap();
 
         if self.check_connector(conn, &pending.mode)? {
@@ -122,6 +134,10 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
     }
 
     fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let mut pending = self.pending.write().unwrap();
 
         if connectors
@@ -138,6 +154,10 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
     }
 
     fn use_mode(&self, mode: Mode) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let mut pending = self.pending.write().unwrap();
 
         // check the connectors to see if this mode is supported
@@ -169,6 +189,10 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
     }
 
     fn commit(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let mut current = self.state.write().unwrap();
         let pending = self.pending.read().unwrap();
 
@@ -253,6 +277,10 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
 
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> ::std::result::Result<(), SwapBuffersError> {
         trace!(self.logger, "Queueing Page flip");
+        
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(SwapBuffersError::AlreadySwapped);
+        }
 
         ControlDevice::page_flip(
             self,
@@ -388,7 +416,7 @@ impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
             // by the device, when switching back
             return;
         }
-
+        
         let _ = self.set_cursor(self.crtc, Option::<&DumbBuffer>::None);
         // disable connectors again
         let current = self.state.read().unwrap();
