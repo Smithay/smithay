@@ -285,6 +285,11 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
 
         let mut pending = self.pending.write().unwrap();
 
+        // the test would also prevent this, but the error message is far less helpful
+        if pending.connectors.contains(&conn) && pending.connectors.len() == 1 {
+            return Err(Error::SurfaceWithoutConnectors(self.crtc));
+        }
+
         // check if new config is supported (should be)
         let req = self.build_request(
             &mut [].iter(),
@@ -308,6 +313,10 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
     }
 
     fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error> {
+        if connectors.is_empty() {
+            return Err(Error::SurfaceWithoutConnectors(self.crtc));
+        }
+ 
         if !self.dev.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
