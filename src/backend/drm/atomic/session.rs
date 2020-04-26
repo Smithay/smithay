@@ -59,7 +59,7 @@ impl<A: AsRawFd + 'static> SessionObserver for AtomicDrmDeviceObserver<A> {
                 if let Err(err) = surface.clear_plane(surface.planes.cursor) {
                     warn!(
                         self.logger,
-                        "Failed to clear cursor on {:?}: {}", surface.crtc, err
+                        "Failed to clear cursor on {:?}: {}", surface.planes.cursor, err
                     );
                 }
             }

@@ -8,7 +8,7 @@ use std::cell::Cell;
 use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
-use std::sync::RwLock;
+use std::sync::{RwLock, atomic::Ordering};
 
 use failure::ResultExt as FailureResultExt;
 
@@ -168,6 +168,45 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmSurfaceInternal<A> {
         if let Some((db, fb)) = self.init_buffer.take() {
             let _ = self.destroy_framebuffer(fb);
             let _ = self.destroy_dumb_buffer(db);
+        }
+
+        if !self.dev.active.load(Ordering::SeqCst) {
+            // the device is gone or we are on another tty
+            // old state has been restored, we shouldn't touch it.
+            // if we are on another tty the connectors will get disabled
+            // by the device, when switching back
+            return;
+        }
+
+        // other ttys that use no cursor, might not clear it themselves.
+        // This makes sure our cursor won't stay visible.
+        if let Err(err) = self.clear_plane(self.planes.cursor) {
+            warn!(
+                self.logger,
+                "Failed to clear cursor on {:?}: {}", self.planes.cursor, err
+            );
+        }
+
+        // disable connectors again
+        let current = self.state.read().unwrap();
+        let mut req = AtomicModeReq::new();
+        for conn in current.connectors.iter() {
+            let prop = self.dev.prop_mapping.0.get(&conn)
+                .expect("Unknown Handle").get("CRTC_ID")
+                .expect("Unknown property CRTC_ID");
+            req.add_property(*conn, *prop, property::Value::CRTC(None));
+        }
+        let active_prop = self.dev.prop_mapping.1.get(&self.crtc)
+                .expect("Unknown Handle").get("ACTIVE")
+                .expect("Unknown property ACTIVE");
+        let mode_prop = self.dev.prop_mapping.1.get(&self.crtc)
+                .expect("Unknown Handle").get("MODE_ID")
+                .expect("Unknown property MODE_ID");
+
+        req.add_property(self.crtc, *active_prop, property::Value::Boolean(false));
+        req.add_property(self.crtc, *mode_prop, property::Value::Unknown(0));
+        if let Err(err) = self.atomic_commit(&[AtomicCommitFlags::AllowModeset], req) {
+            warn!(self.logger, "Unable to disable connectors: {}", err);
         }
     }
 }
