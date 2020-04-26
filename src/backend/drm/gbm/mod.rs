@@ -11,7 +11,7 @@
 
 use super::{Device, DeviceHandler, RawDevice, ResourceHandles, Surface};
 
-use drm::control::{connector, crtc, encoder, framebuffer, plane, Device as ControlDevice};
+use drm::control::{connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Mode};
 use drm::SystemError as DrmError;
 use gbm::{self, BufferObjectFlags, Format as GbmFormat};
 use nix::libc::dev_t;
@@ -33,9 +33,6 @@ pub enum Error<U: std::error::Error + std::fmt::Debug + std::fmt::Display + 'sta
     /// Creation of GBM surface failed
     #[error("Creation of GBM surface failed")]
     SurfaceCreationFailed(#[source] io::Error),
-    /// No mode is set, blocking the current operation
-    #[error("No mode is currently set")]
-    NoModeSet,
     /// Creation of GBM buffer object failed
     #[error("Creation of GBM buffer object failed")]
     BufferCreationFailed(#[source] io::Error),
@@ -159,17 +156,18 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
     fn create_surface(
         &mut self,
         crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
     ) -> Result<GbmSurface<D>, Error<<<D as Device>::Surface as Surface>::Error>> {
         info!(self.logger, "Initializing GbmSurface");
 
         let drm_surface =
-            Device::create_surface(&mut **self.dev.borrow_mut(), crtc).map_err(Error::Underlying)?;
+            Device::create_surface(&mut **self.dev.borrow_mut(), crtc, mode, connectors).map_err(Error::Underlying)?;
 
         // initialize the surface
         let (w, h) = drm_surface
             .pending_mode()
-            .map(|mode| mode.size())
-            .unwrap_or((1, 1));
+            .size();
         let surface = self
             .dev
             .borrow()

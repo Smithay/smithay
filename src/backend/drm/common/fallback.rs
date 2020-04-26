@@ -244,10 +244,10 @@ where
         }
     }
     fallback_device_impl!(clear_handler, &mut Self);
-    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<Self::Surface, E> {
+    fn create_surface(&mut self, crtc: crtc::Handle, mode: Mode, connectors: &[connector::Handle]) -> Result<Self::Surface, E> {
         match self {
-            FallbackDevice::Preference(dev) => Ok(FallbackSurface::Preference(dev.create_surface(crtc)?)),
-            FallbackDevice::Fallback(dev) => Ok(FallbackSurface::Fallback(dev.create_surface(crtc)?)),
+            FallbackDevice::Preference(dev) => Ok(FallbackSurface::Preference(dev.create_surface(crtc, mode, connectors)?)),
+            FallbackDevice::Fallback(dev) => Ok(FallbackSurface::Fallback(dev.create_surface(crtc, mode, connectors)?)),
         }
     }
     fallback_device_impl!(process_events, &mut Self);
@@ -297,9 +297,9 @@ where
     fallback_surface_impl!(add_connector, &Self, Result<(), E>, conn: connector::Handle);
     fallback_surface_impl!(remove_connector, &Self, Result<(), E>, conn: connector::Handle);
     fallback_surface_impl!(set_connectors, &Self, Result<(), E>, conns: &[connector::Handle]);
-    fallback_surface_impl!(current_mode, &Self, Option<Mode>);
-    fallback_surface_impl!(pending_mode, &Self, Option<Mode>);
-    fallback_surface_impl!(use_mode, &Self, Result<(), E>, mode: Option<Mode>);
+    fallback_surface_impl!(current_mode, &Self, Mode);
+    fallback_surface_impl!(pending_mode, &Self, Mode);
+    fallback_surface_impl!(use_mode, &Self, Result<(), E>, mode: Mode);
 }
 
 impl<E, C, S1, S2> RawSurface for FallbackSurface<S1, S2>

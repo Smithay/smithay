@@ -12,7 +12,7 @@ use crate::backend::graphics::SwapBuffersError;
 
 use super::{Error, GbmDevice, GbmSurface};
 
-use drm::control::{crtc, Device as ControlDevice};
+use drm::control::{crtc, connector, Device as ControlDevice, Mode};
 use gbm::AsRaw;
 use std::marker::PhantomData;
 use std::ptr;
@@ -52,7 +52,7 @@ impl<D: RawDevice + 'static> Backend for Gbm<D> {
 }
 
 unsafe impl<D: RawDevice + ControlDevice + 'static> NativeDisplay<Gbm<D>> for GbmDevice<D> {
-    type Arguments = crtc::Handle;
+    type Arguments = (crtc::Handle, Mode, Vec<connector::Handle>);
     type Error = Error<<<D as Device>::Surface as Surface>::Error>;
 
     fn is_backend(&self) -> bool {
@@ -63,8 +63,8 @@ unsafe impl<D: RawDevice + ControlDevice + 'static> NativeDisplay<Gbm<D>> for Gb
         Ok(self.dev.borrow().as_raw() as *const _)
     }
 
-    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<GbmSurface<D>, Self::Error> {
-        Device::create_surface(self, crtc)
+    fn create_surface(&mut self, args: Self::Arguments) -> Result<GbmSurface<D>, Self::Error> {
+        Device::create_surface(self, args.0, args.1, &args.2)
     }
 }
 

@@ -94,16 +94,23 @@ pub trait Device: AsRawFd + DevPath {
 
     /// Creates a new rendering surface.
     ///
+    /// # Arguments
+    ///
     /// Initialization of surfaces happens through the types provided by
     /// [`drm-rs`](drm).
     ///
-    /// [`crtc`](drm::control::crtc)s represent scanout engines
-    /// of the device pointer to one framebuffer.
-    /// Their responsibility is to read the data of the framebuffer and export it into an "Encoder".
-    /// The number of crtc's represent the number of independant output devices the hardware may handle.
+    /// - [`crtc`](drm::control::crtc)s represent scanout engines of the device pointing to one framebuffer. \
+    ///     Their responsibility is to read the data of the framebuffer and export it into an "Encoder". \
+    ///     The number of crtc's represent the number of independant output devices the hardware may handle.
+    /// - [`mode`](drm::control::Mode) describes the resolution and rate of images produced by the crtc and \
+    ///     has to be compatible with the provided `connectors`.
+    /// - [`connectors`] - List of connectors driven by the crtc. At least one(!) connector needs to be \
+    ///     attached to a crtc in smithay.
     fn create_surface(
         &mut self,
         crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle]
     ) -> Result<Self::Surface, <Self::Surface as Surface>::Error>;
 
     /// Processes any open events of the underlying file descriptor.
@@ -181,11 +188,10 @@ pub trait Surface {
     fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error>;
     /// Returns the currently active [`Mode`](drm::control::Mode)
     /// of the underlying [`crtc`](drm::control::crtc)
-    /// if any.
-    fn current_mode(&self) -> Option<Mode>;
+    fn current_mode(&self) -> Mode;
     /// Returns the currently pending [`Mode`](drm::control::Mode)
-    /// to be used after the next commit, if any.
-    fn pending_mode(&self) -> Option<Mode>;
+    /// to be used after the next commit.
+    fn pending_mode(&self) -> Mode;
     /// Tries to set a new [`Mode`](drm::control::Mode)
     /// to be used after the next commit.
     ///
@@ -196,7 +202,7 @@ pub trait Surface {
     /// *Note*: Only on a [`RawSurface`] you may directly trigger
     /// a [`commit`](RawSurface::commit). Other [`Surface`]s provide their
     /// own methods that *may* trigger a commit, you will need to read their docs.
-    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Self::Error>;
+    fn use_mode(&self, mode: Mode) -> Result<(), Self::Error>;
 }
 
 /// An open bare crtc without any rendering abstractions

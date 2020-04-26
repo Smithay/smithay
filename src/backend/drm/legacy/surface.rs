@@ -5,6 +5,7 @@ use drm::control::{
 };
 use drm::Device as BasicDevice;
 
+use std::cell::Cell;
 use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
@@ -20,7 +21,7 @@ use failure::{Fail, ResultExt};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {
-    pub mode: Option<Mode>,
+    pub mode: Mode,
     pub connectors: HashSet<connector::Handle>,
 }
 
@@ -30,6 +31,7 @@ pub(super) struct LegacyDrmSurfaceInternal<A: AsRawFd + 'static> {
     pub(super) state: RwLock<State>,
     pub(super) pending: RwLock<State>,
     pub(super) logger: ::slog::Logger,
+    init_buffer: Cell<Option<(DumbBuffer, framebuffer::Handle)>>,
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurfaceInternal<A> {
@@ -96,18 +98,18 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         self.pending.read().unwrap().connectors.clone()
     }
 
-    fn current_mode(&self) -> Option<Mode> {
+    fn current_mode(&self) -> Mode {
         self.state.read().unwrap().mode
     }
 
-    fn pending_mode(&self) -> Option<Mode> {
+    fn pending_mode(&self) -> Mode {
         self.pending.read().unwrap().mode
     }
 
     fn add_connector(&self, conn: connector::Handle) -> Result<(), Error> {
         let mut pending = self.pending.write().unwrap();
 
-        if self.check_connector(conn, pending.mode.as_ref().unwrap())? {
+        if self.check_connector(conn, &pending.mode)? {
             pending.connectors.insert(conn);
         }
 
@@ -124,7 +126,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
 
         if connectors
             .iter()
-            .map(|conn| self.check_connector(*conn, pending.mode.as_ref().unwrap()))
+            .map(|conn| self.check_connector(*conn, &pending.mode))
             .collect::<Result<Vec<bool>, _>>()?
             .iter()
             .all(|v| *v)
@@ -135,25 +137,23 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         Ok(())
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Error> {
+    fn use_mode(&self, mode: Mode) -> Result<(), Error> {
         let mut pending = self.pending.write().unwrap();
 
         // check the connectors to see if this mode is supported
-        if let Some(mode) = mode {
-            for connector in &pending.connectors {
-                if !self
-                    .get_connector(*connector)
-                    .compat()
-                    .map_err(|source| Error::Access {
-                        errmsg: "Error loading connector info",
-                        dev: self.dev_path(),
-                        source,
-                    })?
-                    .modes()
-                    .contains(&mode)
-                {
-                    return Err(Error::ModeNotSuitable(mode));
-                }
+        for connector in &pending.connectors {
+            if !self
+                .get_connector(*connector)
+                .compat()
+                .map_err(|source| Error::Access {
+                    errmsg: "Error loading connector info",
+                    dev: self.dev_path(),
+                    source,
+                })?
+                .modes()
+                .contains(&mode)
+            {
+                return Err(Error::ModeNotSuitable(mode));
             }
         }
 
@@ -211,7 +211,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
                 info!(
                     self.logger,
                     "Setting new mode: {:?}",
-                    pending.mode.as_ref().unwrap().name()
+                    pending.mode.name()
                 );
             }
         }
@@ -226,7 +226,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
                 .iter()
                 .copied()
                 .collect::<Vec<connector::Handle>>(),
-            pending.mode,
+            Some(pending.mode),
         )
         .compat()
         .map_err(|source| Error::Access {
@@ -266,7 +266,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
 }
 
 impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
-    pub(crate) fn new(dev: Rc<Dev<A>>, crtc: crtc::Handle, logger: ::slog::Logger) -> Result<LegacyDrmSurfaceInternal<A>, Error> {
+    pub(crate) fn new(dev: Rc<Dev<A>>, crtc: crtc::Handle, mode: Mode, connectors: &[connector::Handle], logger: ::slog::Logger) -> Result<LegacyDrmSurfaceInternal<A>, Error> {
         // Try to enumarate the current state to set the initial state variable correctly
         let crtc_info = dev.get_crtc(crtc).compat().map_err(|source| Error::Access {
             errmsg: "Error loading crtc info",
@@ -304,14 +304,20 @@ impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
             }
         }
 
-        let state = State { current_mode, current_connectors };
+        // If we have no current mode, we create a fake one, which will not match (and thus gets overriden on the commit below).
+        // A better fix would probably be making mode an `Option`, but that would mean
+        // we need to be sure, we require a mode to always be set without relying on the compiler.
+        // So we cheat, because it works and is easier to handle later.
+        let state = State { mode: current_mode.unwrap_or_else(|| unsafe { std::mem::zeroed() }), connectors: current_connectors };
+        let pending = State { mode, connectors: connectors.into_iter().copied().collect() };
         
         let surface = LegacyDrmSurfaceInternal {
             dev,
             crtc,
             state: RwLock::new(state),
-            pending: RwLock::new(state.clone()),
+            pending: RwLock::new(pending),
             logger,
+            init_buffer: Cell::new(None),
         };
 
         Ok(surface)
@@ -371,6 +377,10 @@ impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
     fn drop(&mut self) {
         // ignore failure at this point
         let _ = self.set_cursor(self.crtc, Option::<&DumbBuffer>::None);
+        if let Some((db, fb)) = self.init_buffer.take() {
+            let _ = self.destroy_framebuffer(fb);
+            let _ = self.destroy_dumb_buffer(db);
+        }
     }
 }
 
@@ -419,11 +429,11 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurface<A> {
         self.0.pending_connectors()
     }
 
-    fn current_mode(&self) -> Option<Mode> {
+    fn current_mode(&self) -> Mode {
         self.0.current_mode()
     }
 
-    fn pending_mode(&self) -> Option<Mode> {
+    fn pending_mode(&self) -> Mode {
         self.0.pending_mode()
     }
 
@@ -439,7 +449,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurface<A> {
         self.0.set_connectors(connectors)
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Error> {
+    fn use_mode(&self, mode: Mode) -> Result<(), Error> {
         self.0.use_mode(mode)
     }
 }

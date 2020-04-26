@@ -93,8 +93,6 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
     pub fn recreate(&self) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
         let (w, h) = self
             .pending_mode()
-            .or_else(|| self.current_mode())
-            .ok_or(Error::NoModeSet)?
             .size();
 
         // Recreate the surface and the related resources to match the new
@@ -167,15 +165,15 @@ impl<D: RawDevice + 'static> Surface for GbmSurfaceInternal<D> {
         self.crtc.set_connectors(connectors).map_err(Error::Underlying)
     }
 
-    fn current_mode(&self) -> Option<Mode> {
+    fn current_mode(&self) -> Mode {
         self.crtc.current_mode()
     }
 
-    fn pending_mode(&self) -> Option<Mode> {
+    fn pending_mode(&self) -> Mode {
         self.crtc.pending_mode()
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Self::Error> {
+    fn use_mode(&self, mode: Mode) -> Result<(), Self::Error> {
         self.crtc.use_mode(mode).map_err(Error::Underlying)
     }
 }
@@ -325,15 +323,15 @@ impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
         self.0.set_connectors(connectors)
     }
 
-    fn current_mode(&self) -> Option<Mode> {
+    fn current_mode(&self) -> Mode {
         self.0.current_mode()
     }
 
-    fn pending_mode(&self) -> Option<Mode> {
+    fn pending_mode(&self) -> Mode {
         self.0.pending_mode()
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Self::Error> {
+    fn use_mode(&self, mode: Mode) -> Result<(), Self::Error> {
         self.0.use_mode(mode)
     }
 }

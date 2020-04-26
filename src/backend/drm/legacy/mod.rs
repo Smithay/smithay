@@ -11,24 +11,24 @@
 use super::{common::Error, DevPath, Device, DeviceHandler, RawDevice};
 
 use drm::control::{
-    connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, ResourceHandles,
+    connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, Mode, ResourceHandles,
 };
 use drm::{Device as BasicDevice, SystemError as DrmError};
 use nix::libc::dev_t;
 use nix::sys::stat::fstat;
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use failure::{Fail, ResultExt};
 
 mod surface;
 pub use self::surface::LegacyDrmSurface;
-use self::surface::{LegacyDrmSurfaceInternal, State};
+use self::surface::LegacyDrmSurfaceInternal;
 
 #[cfg(feature = "backend_session")]
 pub mod session;
@@ -241,7 +241,7 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
         let _ = self.handler.take();
     }
 
-    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<LegacyDrmSurface<A>, Error> {
+    fn create_surface(&mut self, crtc: crtc::Handle, mode: Mode, connectors: &[connector::Handle]) -> Result<LegacyDrmSurface<A>, Error> {
         if self.backends.borrow().contains_key(&crtc) {
             return Err(Error::CrtcAlreadyInUse(crtc));
         }
@@ -250,8 +250,12 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
             return Err(Error::DeviceInactive);
         }
 
+        if connectors.is_empty() {
+            return Err(Error::SurfaceWithoutConnectors(crtc));
+        }
+
         let backend = Rc::new(LegacyDrmSurfaceInternal::new(
-            self.dev.clone(), crtc,
+            self.dev.clone(), crtc, mode, connectors,
             self.logger.new(o!("crtc" => format!("{:?}", crtc))),
         )?);
 

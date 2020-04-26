@@ -19,7 +19,7 @@ use std::sync::{
 
 use drm::control::{atomic::AtomicModeReq, AtomicCommitFlags, Device as ControlDevice, Event};
 use drm::control::{
-    connector, crtc, encoder, framebuffer, plane, property, PropertyValueSet, ResourceHandle, ResourceHandles,
+    connector, crtc, encoder, framebuffer, plane, property, Mode, PropertyValueSet, ResourceHandle, ResourceHandles,
 };
 use drm::SystemError as DrmError;
 use drm::{ClientCapability, Device as BasicDevice};
@@ -339,7 +339,7 @@ impl<A: AsRawFd + 'static> Device for AtomicDrmDevice<A> {
         let _ = self.handler.take();
     }
 
-    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<AtomicDrmSurface<A>, Error> {
+    fn create_surface(&mut self, crtc: crtc::Handle, mode: Mode, connectors: &[connector::Handle]) -> Result<AtomicDrmSurface<A>, Error> {
         if self.backends.borrow().contains_key(&crtc) {
             return Err(Error::CrtcAlreadyInUse(crtc));
         }
@@ -348,9 +348,15 @@ impl<A: AsRawFd + 'static> Device for AtomicDrmDevice<A> {
             return Err(Error::DeviceInactive);
         }
 
+        if connectors.is_empty() {
+            return Err(Error::SurfaceWithoutConnectors(crtc));
+        }
+
         let backend = Rc::new(AtomicDrmSurfaceInternal::new(
             self.dev.clone(),
             crtc,
+            mode,
+            connectors,
             self.logger.new(o!("crtc" => format!("{:?}", crtc))),
         )?);
 

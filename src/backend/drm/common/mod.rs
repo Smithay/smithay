@@ -40,6 +40,9 @@ pub enum Error {
     /// The given crtc is already in use by another backend
     #[error("Crtc `{0:?}` is already in use by another backend")]
     CrtcAlreadyInUse(crtc::Handle),
+    /// This operation would result in a surface without connectors.
+    #[error("Surface of crtc `{0:?}` would have no connectors, which is not accepted")]
+    SurfaceWithoutConnectors(crtc::Handle),
     /// No encoder was found for a given connector on the set crtc
     #[error("No encoder found for the given connector '{connector:?}' on crtc `{crtc:?}`")]
     NoSuitableEncoder {

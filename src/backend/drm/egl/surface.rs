@@ -53,15 +53,15 @@ where
         self.surface.set_connectors(connectors).map_err(Error::Underlying)
     }
 
-    fn current_mode(&self) -> Option<Mode> {
+    fn current_mode(&self) -> Mode {
         self.surface.current_mode()
     }
 
-    fn pending_mode(&self) -> Option<Mode> {
+    fn pending_mode(&self) -> Mode {
         self.surface.pending_mode()
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Self::Error> {
+    fn use_mode(&self, mode: Mode) -> Result<(), Self::Error> {
         self.surface.use_mode(mode).map_err(Error::Underlying)
     }
 }
@@ -100,7 +100,7 @@ where
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
-        let (w, h) = self.pending_mode().map(|mode| mode.size()).unwrap_or((1, 1));
+        let (w, h) = self.pending_mode().size();
         (w as u32, h as u32)
     }
 
