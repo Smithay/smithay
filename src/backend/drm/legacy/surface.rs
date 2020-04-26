@@ -266,6 +266,57 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
 }
 
 impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
+    pub(crate) fn new(dev: Rc<Dev<A>>, crtc: crtc::Handle, logger: ::slog::Logger) -> Result<LegacyDrmSurfaceInternal<A>, Error> {
+        // Try to enumarate the current state to set the initial state variable correctly
+        let crtc_info = dev.get_crtc(crtc).compat().map_err(|source| Error::Access {
+            errmsg: "Error loading crtc info",
+            dev: dev.dev_path(),
+            source,
+        })?;
+
+        let current_mode = crtc_info.mode();
+
+        let mut current_connectors = HashSet::new();
+        let res_handles = ControlDevice::resource_handles(&*dev)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Error loading drm resources",
+                dev: dev.dev_path(),
+                source,
+            })?;
+        for &con in res_handles.connectors() {
+            let con_info = dev.get_connector(con).compat().map_err(|source| Error::Access {
+                errmsg: "Error loading connector info",
+                dev: dev.dev_path(),
+                source,
+            })?;
+            if let Some(enc) = con_info.current_encoder() {
+                let enc_info = dev.get_encoder(enc).compat().map_err(|source| Error::Access {
+                    errmsg: "Error loading encoder info",
+                    dev: dev.dev_path(),
+                    source,
+                })?;
+                if let Some(current_crtc) = enc_info.crtc() {
+                    if crtc == current_crtc {
+                        current_connectors.insert(con);
+                    }
+                }
+            }
+        }
+
+        let state = State { current_mode, current_connectors };
+        
+        let surface = LegacyDrmSurfaceInternal {
+            dev,
+            crtc,
+            state: RwLock::new(state),
+            pending: RwLock::new(state.clone()),
+            logger,
+        };
+
+        Ok(surface)
+    }
+
     fn check_connector(&self, conn: connector::Handle, mode: &Mode) -> Result<bool, Error> {
         let info = self
             .get_connector(conn)

@@ -250,52 +250,10 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
             return Err(Error::DeviceInactive);
         }
 
-        // Try to enumarate the current state to set the initial state variable correctly
-
-        let crtc_info = self.get_crtc(crtc).compat().map_err(|source| Error::Access {
-            errmsg: "Error loading crtc info",
-            dev: self.dev_path(),
-            source,
-        })?;
-
-        let mode = crtc_info.mode();
-
-        let mut connectors = HashSet::new();
-        let res_handles = ControlDevice::resource_handles(self)
-            .compat()
-            .map_err(|source| Error::Access {
-                errmsg: "Error loading drm resources",
-                dev: self.dev_path(),
-                source,
-            })?;
-        for &con in res_handles.connectors() {
-            let con_info = self.get_connector(con).compat().map_err(|source| Error::Access {
-                errmsg: "Error loading connector info",
-                dev: self.dev_path(),
-                source,
-            })?;
-            if let Some(enc) = con_info.current_encoder() {
-                let enc_info = self.get_encoder(enc).compat().map_err(|source| Error::Access {
-                    errmsg: "Error loading encoder info",
-                    dev: self.dev_path(),
-                    source,
-                })?;
-                if let Some(current_crtc) = enc_info.crtc() {
-                    if crtc == current_crtc {
-                        connectors.insert(con);
-                    }
-                }
-            }
-        }
-
-        let state = State { mode, connectors };
-        let backend = Rc::new(LegacyDrmSurfaceInternal {
-            dev: self.dev.clone(),
-            crtc,
-            state: RwLock::new(state.clone()),
-            pending: RwLock::new(state),
-            logger: self.logger.new(o!("crtc" => format!("{:?}", crtc))),
-        });
+        let backend = Rc::new(LegacyDrmSurfaceInternal::new(
+            self.dev.clone(), crtc,
+            self.logger.new(o!("crtc" => format!("{:?}", crtc))),
+        )?);
 
         self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));
         Ok(LegacyDrmSurface(backend))
