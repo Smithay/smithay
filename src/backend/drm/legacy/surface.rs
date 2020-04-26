@@ -5,7 +5,6 @@ use drm::control::{
 };
 use drm::Device as BasicDevice;
 
-use std::cell::Cell;
 use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
@@ -31,7 +30,6 @@ pub(super) struct LegacyDrmSurfaceInternal<A: AsRawFd + 'static> {
     pub(super) state: RwLock<State>,
     pub(super) pending: RwLock<State>,
     pub(super) logger: ::slog::Logger,
-    init_buffer: Cell<Option<(DumbBuffer, framebuffer::Handle)>>,
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurfaceInternal<A> {
@@ -357,7 +355,6 @@ impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
             state: RwLock::new(state),
             pending: RwLock::new(pending),
             logger,
-            init_buffer: Cell::new(None),
         };
 
         Ok(surface)
@@ -416,10 +413,6 @@ impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
 impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
     fn drop(&mut self) {
         // ignore failure at this point
-        if let Some((db, fb)) = self.init_buffer.take() {
-            let _ = self.destroy_framebuffer(fb);
-            let _ = self.destroy_dumb_buffer(db);
-        }
 
         if !self.dev.active.load(Ordering::SeqCst) {
             // the device is gone or we are on another tty
