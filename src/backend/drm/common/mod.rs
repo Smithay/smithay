@@ -19,7 +19,7 @@ pub enum Error {
     #[error("Failed to aquire DRM master")]
     DrmMasterFailed,
     /// The `DrmDevice` encountered an access error
-    #[error("DRM access error: {errmsg} on device `{dev:?}`")]
+    #[error("DRM access error: {errmsg} on device `{dev:?}` ({source:})")]
     Access {
         /// Error message associated to the access error
         errmsg: &'static str,
