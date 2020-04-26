@@ -150,19 +150,35 @@ pub enum FallbackSurface<S1: Surface, S2: Surface> {
 impl<A: AsRawFd + Clone + 'static> FallbackDevice<AtomicDrmDevice<A>, LegacyDrmDevice<A>> {
     /// Try to initialize an [`AtomicDrmDevice`](::backend::drm:;atomic::AtomicDrmDevice)
     /// and fall back to a [`LegacyDrmDevice`] if atomic-modesetting is not supported.
-    pub fn new<L>(fd: A, logger: L) -> Result<Self, Error>
+    ///
+    /// # Arguments
+    ///
+    /// - `fd` - Open drm node (needs to be clonable to be passed to multiple initializers)
+    /// - `disable_connectors` - Setting this to true will initialize all connectors \
+    ///     as disabled on device creation. smithay enables connectors, when attached \
+    ///     to a surface, and disables them, when detached. Setting this to `false` \
+    ///     requires usage of `drm-rs` to disable unused connectors to prevent them \
+    ///     showing garbage, but will also prevent flickering of already turned on \
+    ///     connectors (assuming you won't change the resolution).
+    /// - `logger` - Optional [`slog::Logger`] to be used by the resulting device.
+    ///
+    /// # Return
+    ///
+    /// Returns an error, if both devices fail to initialize due to `fd` being no valid
+    /// drm node or the device being not accessible.
+    pub fn new<L>(fd: A, disable_connectors: bool, logger: L) -> Result<Self, Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
         let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm_fallback"));
         info!(log, "Trying to initialize AtomicDrmDevice");
 
-        match AtomicDrmDevice::new(fd.clone(), log.clone()) {
+        match AtomicDrmDevice::new(fd.clone(), disable_connectors, log.clone()) {
             Ok(dev) => Ok(FallbackDevice::Preference(dev)),
             Err(err) => {
                 error!(log, "Failed to initialize preferred AtomicDrmDevice: {}", err);
                 info!(log, "Falling back to fallback LegacyyDrmDevice");
-                Ok(FallbackDevice::Fallback(LegacyDrmDevice::new(fd, log)?))
+                Ok(FallbackDevice::Fallback(LegacyDrmDevice::new(fd, disable_connectors, log)?))
             }
         }
     }
