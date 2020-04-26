@@ -12,7 +12,6 @@ use std::sync::{RwLock, atomic::Ordering};
 
 use crate::backend::drm::{common::Error, DevPath, RawSurface, Surface};
 use crate::backend::graphics::CursorBackend;
-use crate::backend::graphics::SwapBuffersError;
 
 use super::Dev;
 
@@ -285,11 +284,11 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
         })
     }
 
-    fn page_flip(&self, framebuffer: framebuffer::Handle) -> ::std::result::Result<(), SwapBuffersError> {
+    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
         trace!(self.logger, "Queueing Page flip");
         
         if !self.dev.active.load(Ordering::SeqCst) {
-            return Err(SwapBuffersError::AlreadySwapped);
+            return Err(Error::DeviceInactive);
         }
 
         ControlDevice::page_flip(
@@ -298,8 +297,12 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             framebuffer,
             &[PageFlipFlags::PageFlipEvent],
             None,
-        )
-        .map_err(|_| SwapBuffersError::ContextLost)
+        ).compat()
+        .map_err(|source| Error::Access {
+            errmsg: "Failed to page flip",
+            dev: self.dev_path(),
+            source,
+        })
     }
 }
 
@@ -511,7 +514,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurface<A> {
         self.0.commit(framebuffer)
     }
 
-    fn page_flip(&self, framebuffer: framebuffer::Handle) -> ::std::result::Result<(), SwapBuffersError> {
+    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
         RawSurface::page_flip(&*self.0, framebuffer)
     }
 }

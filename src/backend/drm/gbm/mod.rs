@@ -39,9 +39,18 @@ pub enum Error<U: std::error::Error + std::fmt::Debug + std::fmt::Display + 'sta
     /// Writing to GBM buffer failed
     #[error("Writing to GBM buffer failed")]
     BufferWriteFailed(#[source] io::Error),
+    /// Creation of drm framebuffer failed
+    #[error("Creation of drm framebuffer failed")]
+    FramebufferCreationFailed(#[source] failure::Compat<drm::SystemError>),
     /// Lock of GBM surface front buffer failed
     #[error("Lock of GBM surface font buffer failed")]
     FrontBufferLockFailed,
+    /// No additional buffers are available
+    #[error("No additional buffers are available. Did you swap twice?")]
+    FrontBuffersExhausted,
+    /// Internal state was modified
+    #[error("Internal state was modified. Did you change gbm userdata?")]
+    InvalidInternalState,
     /// The GBM device was destroyed
     #[error("The GBM device was destroyed")]
     DeviceDestroyed,

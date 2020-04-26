@@ -15,7 +15,6 @@ use failure::ResultExt as FailureResultExt;
 use super::Dev;
 use crate::backend::drm::{common::Error, DevPath, RawSurface, Surface};
 use crate::backend::graphics::CursorBackend;
-use crate::backend::graphics::SwapBuffersError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CursorState {
@@ -508,9 +507,9 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
         Ok(())
     }
 
-    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), SwapBuffersError> {
+    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
         if !self.dev.active.load(Ordering::SeqCst) {
-            return Err(SwapBuffersError::AlreadySwapped);
+            return Err(Error::DeviceInactive);
         }
 
         let req = self
@@ -521,14 +520,18 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
                 Some(framebuffer),
                 None,
                 None,
-            ) //current.mode)
-            .map_err(|_| SwapBuffersError::ContextLost)?;
+            )?;
+
         trace!(self.logger, "Queueing page flip: {:#?}", req);
         self.atomic_commit(
             &[AtomicCommitFlags::PageFlipEvent, AtomicCommitFlags::Nonblock],
             req,
         )
-        .map_err(|_| SwapBuffersError::ContextLost)?;
+        .compat().map_err(|source| Error::Access {
+            errmsg: "Page flip commit failed",
+            dev: self.dev_path(),
+            source
+        })?;
 
         Ok(())
     }
@@ -971,7 +974,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurface<A> {
         self.0.commit(framebuffer)
     }
 
-    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), SwapBuffersError> {
+    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
         RawSurface::page_flip(&*self.0, framebuffer)
     }
 }

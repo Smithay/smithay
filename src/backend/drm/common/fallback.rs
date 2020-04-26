@@ -311,7 +311,7 @@ where
 {
     fallback_surface_impl!(commit_pending, &Self, bool);
     fallback_surface_impl!(commit, &Self, Result<(), E>, fb: framebuffer::Handle);
-    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), SwapBuffersError> {
+    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), E> {
         match self {
             FallbackSurface::Preference(dev) => RawSurface::page_flip(dev, framebuffer),
             FallbackSurface::Fallback(dev) => RawSurface::page_flip(dev, framebuffer),

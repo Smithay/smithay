@@ -89,6 +89,13 @@ unsafe impl<D: RawDevice + 'static> NativeSurface for GbmSurface<D> {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         // this is safe since `eglSwapBuffers` will have been called exactly once
         // if this is used by our egl module, which is why this trait is unsafe.
-        unsafe { self.page_flip() }
+        match unsafe { self.page_flip() } {
+            Ok(()) => Ok(()),
+            Err(Error::FrontBuffersExhausted) => Err(SwapBuffersError::AlreadySwapped),
+            Err(err) => {
+                warn!(self.0.logger, "Page flip failed: {}", err);
+                Err(SwapBuffersError::Unknown(0))
+            }
+        }
     }
 }

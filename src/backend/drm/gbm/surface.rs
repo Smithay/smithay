@@ -4,12 +4,12 @@ use super::Error;
 use drm::control::{connector, crtc, framebuffer, Device as ControlDevice, Mode};
 use gbm::{self, BufferObject, BufferObjectFlags, Format as GbmFormat, SurfaceBufferHandle};
 use image::{ImageBuffer, Rgba};
+use failure::ResultExt;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::backend::graphics::CursorBackend;
-use crate::backend::graphics::SwapBuffersError;
 
 pub(super) struct GbmSurfaceInternal<D: RawDevice + 'static> {
     pub(super) dev: Rc<RefCell<gbm::Device<D>>>,
@@ -32,7 +32,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         // drop and release the old buffer
     }
 
-    pub unsafe fn page_flip(&self) -> ::std::result::Result<(), SwapBuffersError> {
+    pub unsafe fn page_flip(&self) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
         let res = {
             let nb = self.next_buffer.take();
             let res = nb.is_some();
@@ -42,7 +42,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         if res {
             // We cannot call lock_front_buffer anymore without releasing the previous buffer, which will happen when the page flip is done
             warn!(self.logger, "Tried to swap with an already queued flip");
-            return Err(SwapBuffersError::AlreadySwapped);
+            return Err(Error::FrontBuffersExhausted);
         }
 
         // supporting only one buffer would cause a lot of inconvinience and
@@ -53,13 +53,13 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
             .surface
             .borrow()
             .lock_front_buffer()
-            .expect("Surface only has one front buffer. Not supported by smithay");
+            .map_err(|_| Error::FrontBufferLockFailed)?;
 
         // create a framebuffer if the front buffer does not have one already
         // (they are reused by gbm)
         let maybe_fb = next_bo
             .userdata()
-            .map_err(|_| SwapBuffersError::ContextLost)?
+            .map_err(|_| Error::InvalidInternalState)?
             .cloned();
         let fb = if let Some(info) = maybe_fb {
             info
@@ -67,7 +67,8 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
             let fb = self
                 .crtc
                 .add_planar_framebuffer(&*next_bo, &[0; 4], 0)
-                .map_err(|_| SwapBuffersError::ContextLost)?;
+                .compat()
+                .map_err(Error::FramebufferCreationFailed)?;
             next_bo.set_userdata(fb).unwrap();
             fb
         };
@@ -75,14 +76,11 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
 
         if self.recreated.get() {
             debug!(self.logger, "Commiting new state");
-            if let Err(err) = self.crtc.commit(fb) {
-                error!(self.logger, "Error commiting crtc: {}", err);
-                return Err(SwapBuffersError::ContextLost);
-            }
+            self.crtc.commit(fb).map_err(Error::Underlying)?;
             self.recreated.set(false);
         } else {
             trace!(self.logger, "Queueing Page flip");
-            RawSurface::page_flip(&self.crtc, fb)?;
+            RawSurface::page_flip(&self.crtc, fb).map_err(Error::Underlying)?;
         }
 
         self.current_frame_buffer.set(Some(fb));
@@ -275,7 +273,7 @@ impl<D: RawDevice + 'static> GbmSurface<D> {
     ///
     /// When used in conjunction with an EGL context, this must be called exactly once
     /// after page-flipping the associated context.
-    pub unsafe fn page_flip(&self) -> ::std::result::Result<(), SwapBuffersError> {
+    pub unsafe fn page_flip(&self) -> ::std::result::Result<(), <Self as Surface>::Error> {
         self.0.page_flip()
     }
 

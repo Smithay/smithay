@@ -51,8 +51,6 @@ use calloop::mio::Interest;
 use calloop::InsertError;
 use calloop::{LoopHandle, Source};
 
-use super::graphics::SwapBuffersError;
-
 #[cfg(feature = "backend_drm_atomic")]
 pub mod atomic;
 #[cfg(feature = "backend_drm")]
@@ -233,7 +231,7 @@ pub trait RawSurface: Surface + ControlDevice + BasicDevice {
     /// This operation is not blocking and will produce a `vblank` event once swapping is done.
     /// Make sure to [set a `DeviceHandler`](Device::set_handler) and
     /// [register the belonging `Device`](device_bind) before to receive the event in time.
-    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), SwapBuffersError>;
+    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), <Self as Surface>::Error>;
 }
 
 /// Trait representing open devices that *may* return a `Path`
