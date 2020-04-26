@@ -129,11 +129,21 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
     }
 
     fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error> {
-        self.pending.write().unwrap().connectors.remove(&connector);
+        let mut pending = self.pending.write().unwrap();
+
+        if pending.connectors.contains(&connector) && pending.connectors.len() == 1 {
+            return Err(Error::SurfaceWithoutConnectors(self.crtc));
+        }
+
+        pending.connectors.remove(&connector);
         Ok(())
     }
 
     fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
+        if connectors.is_empty() {
+            return Err(Error::SurfaceWithoutConnectors(self.crtc));
+        }
+        
         if !self.dev.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
