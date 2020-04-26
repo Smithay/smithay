@@ -273,7 +273,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
 
         dev.old_state = old_state;
         dev.prop_mapping = mapping;
-        debug!(log, "Mapping: {:#?}", dev.prop_mapping);
+        trace!(log, "Mapping: {:#?}", dev.prop_mapping);
 
         if disable_connectors {
             // Disable all connectors as initial state
