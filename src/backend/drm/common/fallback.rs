@@ -23,6 +23,7 @@ use drm::{
 use nix::libc::c_void;
 use nix::libc::dev_t;
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::env;
 #[cfg(feature = "use_system_lib")]
 use wayland_server::Display;
 
@@ -173,11 +174,23 @@ impl<A: AsRawFd + Clone + 'static> FallbackDevice<AtomicDrmDevice<A>, LegacyDrmD
         let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm_fallback"));
         info!(log, "Trying to initialize AtomicDrmDevice");
 
+        if env::var("SMITHAY_USE_LEGACY")
+            .map(|x| 
+                   x == "1"
+                || x.to_lowercase() == "true"
+                || x.to_lowercase() == "yes"
+                || x.to_lowercase() == "y"
+            ).unwrap_or(false)
+        {
+            info!(log, "SMITHAY_USE_LEGACY is set. Forcing LegacyDrmDevice.");
+            return Ok(FallbackDevice::Fallback(LegacyDrmDevice::new(fd, disable_connectors, log)?)); 
+        }
+
         match AtomicDrmDevice::new(fd.clone(), disable_connectors, log.clone()) {
             Ok(dev) => Ok(FallbackDevice::Preference(dev)),
             Err(err) => {
                 error!(log, "Failed to initialize preferred AtomicDrmDevice: {}", err);
-                info!(log, "Falling back to fallback LegacyyDrmDevice");
+                info!(log, "Falling back to fallback LegacyDrmDevice");
                 Ok(FallbackDevice::Fallback(LegacyDrmDevice::new(fd, disable_connectors, log)?))
             }
         }
