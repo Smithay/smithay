@@ -32,7 +32,7 @@ use smithay::{
             auto::{auto_session_bind, AutoSession},
             notify_multiplexer, AsSessionObserver, Session, SessionNotifier,
         },
-        udev::{primary_gpu, udev_backend_bind, UdevBackend, UdevHandler},
+        udev::{primary_gpu, UdevBackend, UdevEvent},
     },
     reexports::{
         calloop::{generic::Generic, EventLoop, LoopHandle, Source},
@@ -124,28 +124,25 @@ pub fn run_udev(
     let primary_gpu = primary_gpu(&seat).unwrap_or_default();
 
     let bytes = include_bytes!("../resources/cursor2.rgba");
-    let udev_backend = UdevBackend::new(
-        UdevHandlerImpl {
-            compositor_token: state.ctoken,
-            #[cfg(feature = "egl")]
-            egl_buffer_reader,
-            session: session.clone(),
-            backends: HashMap::new(),
-            display: display.clone(),
-            primary_gpu,
-            window_map: state.window_map.clone(),
-            pointer_location: pointer_location.clone(),
-            pointer_image: ImageBuffer::from_raw(64, 64, bytes.to_vec()).unwrap(),
-            cursor_status: cursor_status.clone(),
-            dnd_icon: state.dnd_icon.clone(),
-            loop_handle: event_loop.handle(),
-            notifier: udev_notifier,
-            logger: log.clone(),
-        },
-        seat.clone(),
-        log.clone(),
-    )
-    .map_err(|_| ())?;
+    let udev_backend = UdevBackend::new(seat.clone(), log.clone()).map_err(|_| ())?;
+
+    let mut udev_handler = UdevHandlerImpl {
+        compositor_token: state.ctoken,
+        #[cfg(feature = "egl")]
+        egl_buffer_reader,
+        session: session.clone(),
+        backends: HashMap::new(),
+        display: display.clone(),
+        primary_gpu,
+        window_map: state.window_map.clone(),
+        pointer_location: pointer_location.clone(),
+        pointer_image: ImageBuffer::from_raw(64, 64, bytes.to_vec()).unwrap(),
+        cursor_status: cursor_status.clone(),
+        dnd_icon: state.dnd_icon.clone(),
+        loop_handle: event_loop.handle(),
+        notifier: udev_notifier,
+        logger: log.clone(),
+    };
 
     /*
      * Initialize wayland input object
@@ -226,7 +223,18 @@ pub fn run_udev(
     let session_event_source = auto_session_bind(notifier, event_loop.handle())
         .map_err(|(e, _)| e)
         .unwrap();
-    let udev_event_source = udev_backend_bind(udev_backend, &event_loop.handle())
+
+    for (dev, path) in udev_backend.device_list() {
+        udev_handler.device_added(dev, path.into())
+    }
+
+    let udev_event_source = event_loop
+        .handle()
+        .insert_source(udev_backend, move |event, _, _state| match event {
+            UdevEvent::Added { device_id, path } => udev_handler.device_added(device_id, path),
+            UdevEvent::Changed { device_id } => udev_handler.device_changed(device_id),
+            UdevEvent::Removed { device_id } => udev_handler.device_removed(device_id),
+        })
         .map_err(|e| -> IoError { e.into() })
         .unwrap();
 
@@ -375,7 +383,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
     }
 }
 
-impl<S: SessionNotifier, Data: 'static> UdevHandler for UdevHandlerImpl<S, Data> {
+impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
     fn device_added(&mut self, _device: dev_t, path: PathBuf) {
         // Try to open the device
         if let Some(mut device) = self
