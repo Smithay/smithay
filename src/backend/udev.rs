@@ -1,8 +1,38 @@
 //!
 //! Provides `udev` related functionality for automated device scanning.
 //!
-//! This module mainly provides the [`UdevBackend`](::backend::udev::UdevBackend), which constantly monitors available DRM devices
-//! and notifies a user supplied [`UdevHandler`](::backend::udev::UdevHandler) of any changes.
+//! This module mainly provides the [`UdevBackend`](::backend::udev::UdevBackend), which
+//! monitors available DRM devices and acts as an event source, generating events whenever these
+//! devices change.
+//!
+//! *Note:* Once inserted into the event loop, the [`UdevBackend`](::backend::udev::UdevBackend) will
+//! only notify you about *changes* in the device list. To get an initial snapshot of the state during
+//! your initialization, you need to call its `device_list` method.
+//!
+//! ```no_run
+//! use smithay::backend::udev::{UdevBackend, UdevEvent};
+//!
+//! let udev = UdevBackend::new("seat0", None).expect("Failed to monitor udev.");
+//!
+//! for (dev_id, node_path) in udev.device_list() {
+//!     // process the initial list of devices
+//! }
+//!
+//! # let event_loop = smithay::reexports::calloop::EventLoop::<()>::new().unwrap();
+//! # let loop_handle = event_loop.handle();
+//! // setup the event source for long-term monitoring
+//! loop_handle.insert_source(udev, |event, _, _dispatch_data| match event {
+//!     UdevEvent::Added { device_id, path } => {
+//!         // a new device has been added
+//!     },
+//!     UdevEvent::Changed { device_id } => {
+//!         // a device has been changed
+//!     },
+//!     UdevEvent::Removed { device_id } => {
+//!         // a device has been removed
+//!     }
+//! }).expect("Failed to insert the udev source into the event loop");
+//! ```
 //!
 //! Additionally this contains some utility functions related to scanning.
 //!
@@ -11,7 +41,7 @@
 
 use nix::sys::stat::{dev_t, stat};
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     ffi::OsString,
     io::Result as IoResult,
     os::unix::io::{AsRawFd, RawFd},
@@ -19,34 +49,32 @@ use std::{
 };
 use udev::{Enumerator, EventType, MonitorBuilder, MonitorSocket};
 
-use calloop::{generic::Generic, InsertError, LoopHandle, Source};
+use calloop::{EventSource, Interest, Mode, Poll, Readiness, Token};
 
 /// Backend to monitor available drm devices.
 ///
 /// Provides a way to automatically scan for available gpus and notifies the
 /// given handler of any changes. Can be used to provide hot-plug functionality for gpus and
 /// attached monitors.
-pub struct UdevBackend<T: UdevHandler + 'static> {
-    devices: HashSet<dev_t>,
+pub struct UdevBackend {
+    devices: HashMap<dev_t, PathBuf>,
     monitor: MonitorSocket,
-    handler: T,
     logger: ::slog::Logger,
 }
 
-impl<T: UdevHandler + 'static> AsRawFd for UdevBackend<T> {
+impl AsRawFd for UdevBackend {
     fn as_raw_fd(&self) -> RawFd {
         self.monitor.as_raw_fd()
     }
 }
 
-impl<T: UdevHandler + 'static> UdevBackend<T> {
+impl UdevBackend {
     /// Creates a new [`UdevBackend`]
     ///
     /// ## Arguments
-    /// `handler` - User-provided handler to respond to any detected changes
-    /// `seat`    -
+    /// `seat`    - system seat which should be bound
     /// `logger`  - slog Logger to be used by the backend and its `DrmDevices`.
-    pub fn new<L, S: AsRef<str>>(mut handler: T, seat: S, logger: L) -> IoResult<UdevBackend<T>>
+    pub fn new<L, S: AsRef<str>>(seat: S, logger: L) -> IoResult<UdevBackend>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -56,10 +84,7 @@ impl<T: UdevHandler + 'static> UdevBackend<T> {
             .into_iter()
             // Create devices
             .flat_map(|path| match stat(&path) {
-                Ok(stat) => {
-                    handler.device_added(stat.st_rdev, path);
-                    Some(stat.st_rdev)
-                }
+                Ok(stat) => Some((stat.st_rdev, path)),
                 Err(err) => {
                     warn!(log, "Unable to get id of {:?}, Error: {:?}. Skipping", path, err);
                     None
@@ -72,93 +97,109 @@ impl<T: UdevHandler + 'static> UdevBackend<T> {
         Ok(UdevBackend {
             devices,
             monitor,
-            handler,
             logger: log,
         })
     }
-}
 
-impl<T: UdevHandler + 'static> Drop for UdevBackend<T> {
-    fn drop(&mut self) {
-        for device in &self.devices {
-            self.handler.device_removed(*device);
-        }
+    /// Get a list of DRM devices currently known to the backend
+    ///
+    /// You should call this once before inserting the event source into your
+    /// event loop, to get an initial snapshot of the device state.
+    pub fn device_list(&self) -> impl Iterator<Item = (dev_t, &Path)> {
+        self.devices.iter().map(|(&id, path)| (id, path.as_ref()))
     }
 }
 
-/// calloop event source associated with the Udev backend
-pub type UdevSource<T> = Generic<UdevBackend<T>>;
+impl EventSource for UdevBackend {
+    type Event = UdevEvent;
+    type Metadata = ();
+    type Ret = ();
 
-/// Binds a [`UdevBackend`] to a given [`EventLoop`](calloop::EventLoop).
-///
-/// Allows the backend to receive kernel events and thus to drive the [`UdevHandler`].
-/// No runtime functionality can be provided without using this function.
-pub fn udev_backend_bind<T: UdevHandler + 'static, Data: 'static>(
-    udev: UdevBackend<T>,
-    handle: &LoopHandle<Data>,
-) -> Result<Source<UdevSource<T>>, InsertError<UdevSource<T>>> {
-    let source = Generic::new(udev, calloop::Interest::Readable, calloop::Mode::Level);
-
-    handle.insert_source(source, |_, backend, _| {
-        backend.process_events();
-        Ok(())
-    })
-}
-
-impl<T: UdevHandler + 'static> UdevBackend<T> {
-    fn process_events(&mut self) {
+    fn process_events<F>(&mut self, _: Readiness, _: Token, mut callback: F) -> std::io::Result<()>
+    where
+        F: FnMut(UdevEvent, &mut ()),
+    {
         let monitor = self.monitor.clone();
         for event in monitor {
+            debug!(
+                self.logger,
+                "Udev event: type={}, devnum={:?} devnode={:?}",
+                event.event_type(),
+                event.devnum(),
+                event.devnode()
+            );
             match event.event_type() {
                 // New device
                 EventType::Add => {
-                    info!(self.logger, "Device Added");
                     if let (Some(path), Some(devnum)) = (event.devnode(), event.devnum()) {
-                        if self.devices.insert(devnum) {
-                            self.handler.device_added(devnum, path.to_path_buf());
+                        info!(self.logger, "New device: #{} at {}", devnum, path.display());
+                        if self.devices.insert(devnum, path.to_path_buf()).is_none() {
+                            callback(
+                                UdevEvent::Added {
+                                    device_id: devnum,
+                                    path: path.to_path_buf(),
+                                },
+                                &mut (),
+                            );
                         }
                     }
                 }
                 // Device removed
                 EventType::Remove => {
-                    info!(self.logger, "Device Remove");
                     if let Some(devnum) = event.devnum() {
-                        if self.devices.remove(&devnum) {
-                            self.handler.device_removed(devnum);
+                        info!(self.logger, "Device removed: #{}", devnum);
+                        if self.devices.remove(&devnum).is_some() {
+                            callback(UdevEvent::Removed { device_id: devnum }, &mut ());
                         }
                     }
                 }
                 // New connector
                 EventType::Change => {
-                    info!(self.logger, "Device Changed");
                     if let Some(devnum) = event.devnum() {
-                        info!(self.logger, "Devnum: {:b}", devnum);
-                        if self.devices.contains(&devnum) {
-                            self.handler.device_changed(devnum);
-                        } else {
-                            info!(self.logger, "changed, but device not tracked by backend");
-                        };
-                    } else {
-                        info!(self.logger, "changed, but no devnum");
+                        info!(self.logger, "Device changed: #{}", devnum);
+                        if self.devices.contains_key(&devnum) {
+                            callback(UdevEvent::Changed { device_id: devnum }, &mut ());
+                        }
                     }
                 }
                 _ => {}
             }
         }
+        Ok(())
+    }
+
+    fn register(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
+        poll.register(self.as_raw_fd(), Interest::Readable, Mode::Level, token)
+    }
+
+    fn reregister(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
+        poll.reregister(self.as_raw_fd(), Interest::Readable, Mode::Level, token)
+    }
+
+    fn unregister(&mut self, poll: &mut Poll) -> std::io::Result<()> {
+        poll.unregister(self.as_raw_fd())
     }
 }
 
-/// Handler for the [`UdevBackend`], allows to open, close and update drm devices as they change during runtime.
-pub trait UdevHandler {
-    /// Called when a new device is detected.
-    fn device_added(&mut self, device: dev_t, path: PathBuf);
-    /// Called when an open device is changed.
-    ///
-    /// This usually indicates that some connectors did become available or were unplugged. The handler
-    /// should scan again for connected monitors and mode switch accordingly.
-    fn device_changed(&mut self, device: dev_t);
-    /// Called when a device was removed.
-    fn device_removed(&mut self, device: dev_t);
+/// Events generated by the [`UdevBackend`], notifying you of changes in system devices
+pub enum UdevEvent {
+    /// A new device has been detected
+    Added {
+        /// ID of the new device
+        device_id: dev_t,
+        /// Path of the new device
+        path: PathBuf,
+    },
+    /// A device has changed
+    Changed {
+        /// ID of the changed device
+        device_id: dev_t,
+    },
+    /// A device has been removed
+    Removed {
+        /// ID of the removed device
+        device_id: dev_t,
+    },
 }
 
 /// Returns the path of the primary GPU device if any
