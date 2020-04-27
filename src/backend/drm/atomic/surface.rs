@@ -44,7 +44,7 @@ pub(super) struct AtomicDrmSurfaceInternal<A: AsRawFd + 'static> {
     pub(super) state: RwLock<State>,
     pub(super) pending: RwLock<State>,
     pub(super) logger: ::slog::Logger,
-    pub(super) init_buffer: Cell<Option<(DumbBuffer, framebuffer::Handle)>>,
+    pub(super) test_buffer: Cell<Option<(DumbBuffer, framebuffer::Handle)>>,
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for AtomicDrmSurfaceInternal<A> {
@@ -155,16 +155,36 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
             state: RwLock::new(state),
             pending: RwLock::new(pending),
             logger,
-            init_buffer: Cell::new(None),
+            test_buffer: Cell::new(None),
         };
 
         Ok(surface)
+    }
+
+    fn create_test_buffer(&self, mode: &Mode) -> Result<framebuffer::Handle, Error> {
+        let (w, h) = mode.size();
+        let db = self.create_dumb_buffer((w as u32, h as u32), drm::buffer::format::PixelFormat::ARGB8888).compat().map_err(|source| Error::Access {
+            errmsg: "Failed to create dumb buffer",
+            dev: self.dev_path(),
+            source
+        })?;
+        let fb = self.add_framebuffer(&db).compat().map_err(|source| Error::Access {
+            errmsg: "Failed to create framebuffer",
+            dev: self.dev_path(),
+            source
+        })?;
+        if let Some((old_db, old_fb)) = self.test_buffer.replace(Some((db, fb))) {
+            let _ = self.destroy_framebuffer(old_fb);
+            let _ = self.destroy_dumb_buffer(old_db);
+        };
+
+        Ok(fb)
     }
 }
 
 impl<A: AsRawFd + 'static> Drop for AtomicDrmSurfaceInternal<A> {
     fn drop(&mut self) {
-        if let Some((db, fb)) = self.init_buffer.take() {
+        if let Some((db, fb)) = self.test_buffer.take() {
             let _ = self.destroy_framebuffer(fb);
             let _ = self.destroy_dumb_buffer(db);
         }
@@ -257,7 +277,7 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
                 &mut [conn].iter(),
                 &mut [].iter(),
                 &self.planes,
-                None,
+                Some(self.create_test_buffer(&pending.mode)?),
                 Some(pending.mode),
                 Some(pending.blob),
             )?;
@@ -294,7 +314,7 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
             &mut [].iter(),
             &mut [conn].iter(),
             &self.planes,
-            None,
+            Some(self.create_test_buffer(&pending.mode)?),
             Some(pending.mode),
             Some(pending.blob),
         )?;
@@ -331,7 +351,7 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
             &mut added,
             &mut removed,
             &self.planes,
-            None,
+            Some(self.create_test_buffer(&pending.mode)?),
             Some(pending.mode),
             Some(pending.blob),
         )?;
@@ -363,12 +383,13 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
                     dev: self.dev_path(),
                     source,
                 })?;
-
+        
+        let test_fb = Some(self.create_test_buffer(&pending.mode)?);
         let req = self.build_request(
             &mut pending.connectors.iter(),
             &mut [].iter(),
             &self.planes,
-            None,
+            test_fb,
             Some(mode),
             Some(new_blob),
         )?;
