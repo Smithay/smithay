@@ -12,8 +12,12 @@ use crate::backend::graphics::gl::GLGraphicsBackend;
 use crate::backend::graphics::PixelFormat;
 use crate::backend::graphics::{CursorBackend, SwapBuffersError};
 
+use std::rc::Rc;
+
 /// Egl surface for rendering
-pub struct EglSurface<N>
+pub struct EglSurface<N: native::NativeSurface + Surface>(pub(super) Rc<EglSurfaceInternal<N>>);
+
+pub(super) struct EglSurfaceInternal<N>
 where
     N: native::NativeSurface + Surface,
 {
@@ -29,41 +33,45 @@ where
     type Error = Error<<N as Surface>::Error>;
 
     fn crtc(&self) -> crtc::Handle {
-        (*self.surface).crtc()
+        (*self.0.surface).crtc()
     }
 
     fn current_connectors(&self) -> Self::Connectors {
-        self.surface.current_connectors()
+        self.0.surface.current_connectors()
     }
 
     fn pending_connectors(&self) -> Self::Connectors {
-        self.surface.pending_connectors()
+        self.0.surface.pending_connectors()
     }
 
     fn add_connector(&self, connector: connector::Handle) -> Result<(), Self::Error> {
-        self.surface.add_connector(connector).map_err(Error::Underlying)
+        self.0.surface.add_connector(connector).map_err(Error::Underlying)
     }
 
     fn remove_connector(&self, connector: connector::Handle) -> Result<(), Self::Error> {
-        self.surface
+        self.0
+            .surface
             .remove_connector(connector)
             .map_err(Error::Underlying)
     }
 
     fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error> {
-        self.surface.set_connectors(connectors).map_err(Error::Underlying)
+        self.0
+            .surface
+            .set_connectors(connectors)
+            .map_err(Error::Underlying)
     }
 
     fn current_mode(&self) -> Mode {
-        self.surface.current_mode()
+        self.0.surface.current_mode()
     }
 
     fn pending_mode(&self) -> Mode {
-        self.surface.pending_mode()
+        self.0.surface.pending_mode()
     }
 
     fn use_mode(&self, mode: Mode) -> Result<(), Self::Error> {
-        self.surface.use_mode(mode).map_err(Error::Underlying)
+        self.0.surface.use_mode(mode).map_err(Error::Underlying)
     }
 }
 
@@ -75,7 +83,7 @@ where
     type Error = <N as CursorBackend>::Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> ::std::result::Result<(), Self::Error> {
-        self.surface.set_cursor_position(x, y)
+        self.0.surface.set_cursor_position(x, y)
     }
 
     fn set_cursor_representation(
@@ -83,7 +91,7 @@ where
         buffer: &Self::CursorFormat,
         hotspot: (u32, u32),
     ) -> ::std::result::Result<(), Self::Error> {
-        self.surface.set_cursor_representation(buffer, hotspot)
+        self.0.surface.set_cursor_representation(buffer, hotspot)
     }
 }
 
@@ -94,7 +102,7 @@ where
     <N as NativeSurface>::Error: Into<SwapBuffersError> + 'static,
 {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        if let Err(err) = self.surface.swap_buffers() {
+        if let Err(err) = self.0.surface.swap_buffers() {
             Err(match err.try_into() {
                 Ok(x) => x,
                 Err(x) => x.into(),
@@ -114,16 +122,17 @@ where
     }
 
     fn is_current(&self) -> bool {
-        self.context.is_current() && self.surface.is_current()
+        self.0.context.is_current() && self.0.surface.is_current()
     }
 
     unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        self.context
-            .make_current_with_surface(&self.surface)
+        self.0
+            .context
+            .make_current_with_surface(&self.0.surface)
             .map_err(Into::into)
     }
 
     fn get_pixel_format(&self) -> PixelFormat {
-        self.surface.get_pixel_format()
+        self.0.surface.get_pixel_format()
     }
 }

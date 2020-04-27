@@ -11,7 +11,10 @@
 use drm::control::{connector, crtc, encoder, framebuffer, plane, Mode, ResourceHandles};
 use drm::SystemError as DrmError;
 use nix::libc::dev_t;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::rc::{Rc, Weak};
 #[cfg(feature = "use_system_lib")]
 use wayland_server::Display;
 
@@ -58,6 +61,7 @@ where
     logger: ::slog::Logger,
     default_attributes: GlAttributes,
     default_requirements: PixelFormatRequirements,
+    backends: Rc<RefCell<HashMap<crtc::Handle, Weak<EglSurfaceInternal<<D as Device>::Surface>>>>>,
 }
 
 impl<B, D> AsRawFd for EglDevice<B, D>
@@ -125,6 +129,7 @@ where
             dev: EGLDisplay::new(dev, log.clone()).map_err(Error::EGL)?,
             default_attributes,
             default_requirements,
+            backends: Rc::new(RefCell::new(HashMap::new())),
             logger: log,
         })
     }
@@ -208,7 +213,9 @@ where
                 SurfaceCreationError::NativeSurfaceCreationFailed(err) => Error::Underlying(err),
             })?;
 
-        Ok(EglSurface { context, surface })
+        let backend = Rc::new(EglSurfaceInternal { context, surface });
+        self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));
+        Ok(EglSurface(backend))
     }
 
     fn process_events(&mut self) {
