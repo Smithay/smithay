@@ -7,7 +7,7 @@ use drm::control::{crtc, connector, Mode};
 use std::os::unix::io::RawFd;
 
 use super::EglDevice;
-use crate::backend::drm::Device;
+use crate::backend::drm::{Device, Surface};
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use crate::backend::session::{AsSessionObserver, SessionObserver};
 
@@ -22,7 +22,7 @@ impl<S, B, D> AsSessionObserver<EglDeviceObserver<S>> for EglDevice<B, D>
 where
     S: SessionObserver + 'static,
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = (crtc::Handle, Mode, Vec<connector::Handle>)> + AsSessionObserver<S> + 'static,
+    D: Device + NativeDisplay<B, Arguments = (crtc::Handle, Mode, Vec<connector::Handle>), Error=<<D as Device>::Surface as Surface>::Error> + AsSessionObserver<S> + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     fn observer(&mut self) -> EglDeviceObserver<S> {

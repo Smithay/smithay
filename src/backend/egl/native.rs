@@ -1,7 +1,6 @@
 //! Type safe native types for safe context/surface creation
 
-use super::{ffi, Error};
-use crate::backend::graphics::SwapBuffersError;
+use super::{ffi, Error, EGLError, wrap_egl_call};
 
 #[cfg(feature = "backend_winit")]
 use std::ptr;
@@ -28,7 +27,7 @@ pub trait Backend {
         display: ffi::NativeDisplayType,
         has_dp_extension: F,
         log: ::slog::Logger,
-    ) -> ffi::egl::types::EGLDisplay;
+    ) -> Result<ffi::egl::types::EGLDisplay, EGLError>;
 }
 
 #[cfg(feature = "backend_winit")]
@@ -42,20 +41,20 @@ impl Backend for Wayland {
         display: ffi::NativeDisplayType,
         has_dp_extension: F,
         log: ::slog::Logger,
-    ) -> ffi::egl::types::EGLDisplay
+    ) -> Result<ffi::egl::types::EGLDisplay, EGLError>
     where
         F: Fn(&str) -> bool,
     {
         if has_dp_extension("EGL_KHR_platform_wayland") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_KHR_platform_wayland");
-            ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_WAYLAND_KHR, display as *mut _, ptr::null())
+            wrap_egl_call(|| ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_WAYLAND_KHR, display as *mut _, ptr::null()))
         } else if has_dp_extension("EGL_EXT_platform_wayland") && ffi::egl::GetPlatformDisplayEXT::is_loaded()
         {
             trace!(log, "EGL Display Initialization via EGL_EXT_platform_wayland");
-            ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_WAYLAND_EXT, display as *mut _, ptr::null())
+            wrap_egl_call(|| ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_WAYLAND_EXT, display as *mut _, ptr::null()))
         } else {
             trace!(log, "Default EGL Display Initialization via GetDisplay");
-            ffi::egl::GetDisplay(display as *mut _)
+            wrap_egl_call(|| ffi::egl::GetDisplay(display as *mut _))
         }
     }
 }
@@ -74,19 +73,19 @@ impl Backend for X11 {
         display: ffi::NativeDisplayType,
         has_dp_extension: F,
         log: ::slog::Logger,
-    ) -> ffi::egl::types::EGLDisplay
+    ) -> Result<ffi::egl::types::EGLDisplay, EGLError>
     where
         F: Fn(&str) -> bool,
     {
         if has_dp_extension("EGL_KHR_platform_x11") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_KHR_platform_x11");
-            ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, ptr::null())
+            wrap_egl_call(|| ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, ptr::null()))
         } else if has_dp_extension("EGL_EXT_platform_x11") && ffi::egl::GetPlatformDisplayEXT::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_EXT_platform_x11");
-            ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_X11_EXT, display as *mut _, ptr::null())
+            wrap_egl_call(|| ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_X11_EXT, display as *mut _, ptr::null()))
         } else {
             trace!(log, "Default EGL Display Initialization via GetDisplay");
-            ffi::egl::GetDisplay(display as *mut _)
+            wrap_egl_call(|| ffi::egl::GetDisplay(display as *mut _))
         }
     }
 }
@@ -107,7 +106,7 @@ pub unsafe trait NativeDisplay<B: Backend> {
     /// Return a raw pointer EGL will accept for context creation.
     fn ptr(&self) -> Result<ffi::NativeDisplayType, Error>;
     /// Create a surface
-    fn create_surface(&mut self, args: Self::Arguments) -> ::std::result::Result<B::Surface, Self::Error>;
+    fn create_surface(&mut self, args: Self::Arguments) -> Result<B::Surface, Self::Error>;
 }
 
 #[cfg(feature = "backend_winit")]
@@ -166,6 +165,9 @@ unsafe impl NativeDisplay<Wayland> for WinitWindow {
 /// The returned [`NativeWindowType`](ffi::NativeWindowType) must be valid for EGL
 /// and there is no way to test that.
 pub unsafe trait NativeSurface {
+    /// Error of the underlying surface
+    type Error: std::error::Error;
+
     /// Return a raw pointer egl will accept for surface creation.
     fn ptr(&self) -> ffi::NativeWindowType;
 
@@ -184,21 +186,33 @@ pub unsafe trait NativeSurface {
     /// Must only be implemented if `needs_recreation` can return `true`.
     /// Returns true on success.
     /// If this call was successful `ptr()` *should* return something different.
-    fn recreate(&self) -> bool {
-        true
+    fn recreate(&self) -> Result<(), Self::Error> {
+        Ok(())
     }
 
     /// Adds additional semantics when calling
     /// [EGLSurface::swap_buffers](::backend::egl::surface::EGLSurface::swap_buffers)
     ///
     /// Only implement if required by the backend.
-    fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
+    fn swap_buffers(&self) -> Result<(), Self::Error> {
         Ok(())
     }
 }
 
+/// Hack until ! gets stablized
+#[derive(Debug)]
+pub enum Never {}
+impl std::fmt::Display for Never {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unreachable!() }
+}
+impl std::error::Error for Never {}
+
 #[cfg(feature = "backend_winit")]
 unsafe impl NativeSurface for XlibWindow {
+    // this would really be a case for this:
+    // type Error = !; (https://github.com/rust-lang/rust/issues/35121)
+    type Error = Never;
+
     fn ptr(&self) -> ffi::NativeWindowType {
         self.0 as *const _
     }
@@ -206,6 +220,9 @@ unsafe impl NativeSurface for XlibWindow {
 
 #[cfg(feature = "backend_winit")]
 unsafe impl NativeSurface for wegl::WlEglSurface {
+    // type Error = !;
+    type Error = Never;
+    
     fn ptr(&self) -> ffi::NativeWindowType {
         self.ptr() as *const _
     }

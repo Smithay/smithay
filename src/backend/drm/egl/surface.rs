@@ -1,5 +1,6 @@
 use drm::control::{connector, crtc, Mode};
 use nix::libc::c_void;
+use std::convert::TryInto;
 
 use super::Error;
 use crate::backend::drm::Surface;
@@ -21,8 +22,8 @@ where
 }
 
 impl<N> Surface for EglSurface<N>
-where
-    N: NativeSurface + Surface,
+where 
+    N: native::NativeSurface + Surface,
 {
     type Connectors = <N as Surface>::Connectors;
     type Error = Error<<N as Surface>::Error>;
@@ -90,9 +91,15 @@ where
 impl<N> GLGraphicsBackend for EglSurface<N>
 where
     N: native::NativeSurface + Surface,
+    <N as NativeSurface>::Error: Into<SwapBuffersError> + 'static,
 {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        self.surface.swap_buffers()
+        if let Err(err) = self.surface.swap_buffers() {
+            Err(match err.try_into() {
+                Ok(x) => x,
+                Err(x) => x.into(),
+            })
+        } else { Ok(()) }
     }
 
     fn get_proc_address(&self, symbol: &str) -> *const c_void {
@@ -109,7 +116,7 @@ where
     }
 
     unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        self.context.make_current_with_surface(&self.surface)
+        self.context.make_current_with_surface(&self.surface).map_err(Into::into)
     }
 
     fn get_pixel_format(&self) -> PixelFormat {

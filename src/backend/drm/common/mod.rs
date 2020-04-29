@@ -4,8 +4,8 @@
 //!
 
 use drm::control::{connector, crtc, Mode, RawResourceHandle};
-
 use std::path::PathBuf;
+use crate::backend::graphics::SwapBuffersError;
 
 pub mod fallback;
 
@@ -70,4 +70,22 @@ pub enum Error {
     /// Atomic Test failed for new properties
     #[error("Atomic Test failed for new properties on crtc ({0:?})")]
     TestFailed(crtc::Handle),
+}
+
+impl Into<SwapBuffersError> for Error {
+    fn into(self) -> SwapBuffersError {
+        match self {
+            x @ Error::DeviceInactive => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            Error::Access {
+                errmsg: _,
+                dev: _,
+                source,
+            } if match source.get_ref() {
+                drm::SystemError::Unknown { errno: nix::errno::Errno::EBUSY } => true,
+                drm::SystemError::Unknown { errno: nix::errno::Errno::EINTR } => true,
+                _ => false,
+            } => SwapBuffersError::TemporaryFailure(Box::new(source)),
+            x => SwapBuffersError::ContextLost(Box::new(x)),
+        }
+    }
 }

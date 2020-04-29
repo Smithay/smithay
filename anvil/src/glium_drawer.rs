@@ -7,7 +7,7 @@ use glium::{
     self,
     index::PrimitiveType,
     texture::{MipmapsOption, Texture2d, UncompressedFloatFormat},
-    Frame, GlObject, Surface,
+    GlObject, Surface,
 };
 use slog::Logger;
 
@@ -16,7 +16,7 @@ use smithay::backend::egl::display::EGLBufferReader;
 use smithay::{
     backend::{
         egl::{BufferAccessError, EGLImages, Format},
-        graphics::{gl::GLGraphicsBackend, glium::GliumGraphicsBackend},
+        graphics::{gl::GLGraphicsBackend, glium::{GliumGraphicsBackend, Frame}},
     },
     reexports::wayland_server::protocol::{wl_buffer, wl_surface},
     wayland::{
@@ -159,7 +159,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
         let images = if let Some(display) = &self.egl_buffer_reader.borrow().as_ref() {
             display.egl_buffer_contents(buffer)
         } else {
-            Err(BufferAccessError::NotManaged(buffer))
+            Err(BufferAccessError::NotManaged(buffer, smithay::backend::egl::EGLError::BadDisplay))
         };
         match images {
             Ok(images) => {
@@ -193,7 +193,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                     images: Some(images), // I guess we need to keep this alive ?
                 })
             }
-            Err(BufferAccessError::NotManaged(buffer)) => {
+            Err(BufferAccessError::NotManaged(buffer, _)) => {
                 // this is not an EGL buffer, try SHM
                 self.texture_from_shm_buffer(buffer)
             }
@@ -235,7 +235,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
 
     pub fn render_texture(
         &self,
-        target: &mut glium::Frame,
+        target: &mut Frame,
         texture: &Texture2d,
         texture_kind: usize,
         y_inverted: bool,

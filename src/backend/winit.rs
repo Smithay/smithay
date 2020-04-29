@@ -3,7 +3,7 @@
 use crate::backend::egl::display::EGLDisplay;
 use crate::backend::egl::get_proc_address;
 use crate::backend::{
-    egl::{context::GlAttributes, native, EGLContext, EGLSurface, Error as EGLError},
+    egl::{context::GlAttributes, native, EGLContext, EGLSurface, Error as EGLError, SurfaceCreationError},
     graphics::{gl::GLGraphicsBackend, CursorBackend, PixelFormat, SwapBuffersError},
     input::{
         Axis, AxisSource, Event as BackendEvent, InputBackend, InputHandler, KeyState, KeyboardKeyEvent,
@@ -16,6 +16,7 @@ use nix::libc::c_void;
 use std::{
     cell::{Ref, RefCell},
     cmp,
+    convert::TryInto,
     rc::Rc,
     time::Instant,
 };
@@ -47,6 +48,9 @@ pub enum Error {
     /// EGL error
     #[error("EGL error: {0}")]
     EGL(#[from] EGLError),
+    /// Surface Creation failed
+    #[error("Surface creation failed: {0}")]
+    SurfaceCreationError(#[from] SurfaceCreationError<EGLError>)
 }
 
 enum Window {
@@ -277,8 +281,8 @@ impl GLGraphicsBackend for WinitGraphicsBackend {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         trace!(self.logger, "Swapping buffers");
         match *self.window {
-            Window::Wayland { ref surface, .. } => surface.swap_buffers(),
-            Window::X11 { ref surface, .. } => surface.swap_buffers(),
+            Window::Wayland { ref surface, .. } => surface.swap_buffers().map_err(|err| err.try_into().unwrap()),
+            Window::X11 { ref surface, .. } => surface.swap_buffers().map_err(|err| err.try_into().unwrap()),
         }
     }
 
@@ -314,12 +318,12 @@ impl GLGraphicsBackend for WinitGraphicsBackend {
                 ref surface,
                 ref context,
                 ..
-            } => context.make_current_with_surface(surface),
+            } => context.make_current_with_surface(surface).map_err(Into::into),
             Window::X11 {
                 ref surface,
                 ref context,
                 ..
-            } => context.make_current_with_surface(surface),
+            } => context.make_current_with_surface(surface).map_err(Into::into),
         }
     }
 

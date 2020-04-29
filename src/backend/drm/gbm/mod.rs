@@ -10,6 +10,7 @@
 //!
 
 use super::{Device, DeviceHandler, RawDevice, ResourceHandles, Surface};
+use crate::backend::graphics::SwapBuffersError;
 
 use drm::control::{connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Mode};
 use drm::SystemError as DrmError;
@@ -26,7 +27,7 @@ use std::sync::Once;
 /// Errors thrown by the [`GbmDevice`](::backend::drm::gbm::GbmDevice)
 /// and [`GbmSurface`](::backend::drm::gbm::GbmSurface).
 #[derive(thiserror::Error, Debug)]
-pub enum Error<U: std::error::Error + std::fmt::Debug + std::fmt::Display + 'static> {
+pub enum Error<U: std::error::Error + 'static> {
     /// Creation of GBM device failed
     #[error("Creation of GBM device failed")]
     InitFailed(#[source] io::Error),
@@ -254,5 +255,23 @@ impl<D: RawDevice + ControlDevice + 'static> AsRawFd for GbmDevice<D> {
 impl<D: RawDevice + ControlDevice + 'static> Drop for GbmDevice<D> {
     fn drop(&mut self) {
         self.clear_handler();
+    }
+}
+
+impl<E> Into<SwapBuffersError> for Error<E>
+where
+    E: std::error::Error + Into<SwapBuffersError> + 'static
+{
+    fn into(self) -> SwapBuffersError {
+        match self {
+            Error::FrontBuffersExhausted => SwapBuffersError::AlreadySwapped,
+            Error::FramebufferCreationFailed(x) if match x.get_ref() {
+                &drm::SystemError::Unknown { errno: nix::errno::Errno::EBUSY } => true,
+                &drm::SystemError::Unknown { errno: nix::errno::Errno::EINTR } => true,
+                _ => false
+            } => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            Error::Underlying(x) => x.into(),
+            x => SwapBuffersError::ContextLost(Box::new(x)),
+        }
     }
 }

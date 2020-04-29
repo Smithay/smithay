@@ -9,7 +9,7 @@ use smithay::{
         common::Error,
         device_bind,
         legacy::{LegacyDrmDevice, LegacyDrmSurface},
-        Device, DeviceHandler, RawSurface, Surface,
+        Device, DeviceHandler, RawSurface,
     },
     reexports::{
         calloop::EventLoop,

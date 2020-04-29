@@ -1,8 +1,8 @@
 //! EGL surface related structs
 
-use super::{ffi, native, Error};
+use super::{ffi, native, EGLError, SwapBuffersError, wrap_egl_call};
 use crate::backend::egl::display::EGLDisplayHandle;
-use crate::backend::graphics::{PixelFormat, SwapBuffersError};
+use crate::backend::graphics::PixelFormat;
 use nix::libc::c_int;
 use std::sync::Arc;
 use std::{
@@ -41,7 +41,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
         config: ffi::egl::types::EGLConfig,
         native: N,
         log: L,
-    ) -> Result<EGLSurface<N>, Error>
+    ) -> Result<EGLSurface<N>, EGLError>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -68,13 +68,9 @@ impl<N: native::NativeSurface> EGLSurface<N> {
             out
         };
 
-        let surface = unsafe {
+        let surface = wrap_egl_call(|| unsafe {
             ffi::egl::CreateWindowSurface(**display, config, native.ptr(), surface_attributes.as_ptr())
-        };
-
-        if surface.is_null() {
-            return Err(Error::SurfaceCreationFailed);
-        }
+        })?;
 
         Ok(EGLSurface {
             display,
@@ -87,35 +83,34 @@ impl<N: native::NativeSurface> EGLSurface<N> {
     }
 
     /// Swaps buffers at the end of a frame.
-    pub fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
+    pub fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError<N::Error>> {
         let surface = self.surface.get();
 
-        if !surface.is_null() {
-            let ret = unsafe { ffi::egl::SwapBuffers(**self.display, surface as *const _) };
+        let result = if !surface.is_null() {
+            wrap_egl_call(|| unsafe { ffi::egl::SwapBuffers(**self.display, surface as *const _) })
+                .map_err(SwapBuffersError::EGLSwapBuffers)
+                .and_then(|_| self.native.swap_buffers().map_err(SwapBuffersError::Underlying))
+        } else { Ok(()) };
 
-            if ret == 0 {
-                match unsafe { ffi::egl::GetError() } as u32 {
-                    ffi::egl::CONTEXT_LOST => return Err(SwapBuffersError::ContextLost),
-                    err => return Err(SwapBuffersError::Unknown(err)),
-                };
-            } else {
-                self.native.swap_buffers()?;
+        // workaround for missing `PartialEq` impl
+        let is_bad_surface = if let Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface)) = result { true } else { false }; 
+        
+        if self.native.needs_recreation() || surface.is_null() || is_bad_surface {
+            self.native.recreate().map_err(SwapBuffersError::Underlying)?;
+            if !surface.is_null() {
+                let _ = unsafe { ffi::egl::DestroySurface(**self.display, surface as *const _) };
             }
-        };
-
-        if self.native.needs_recreation() || surface.is_null() {
-            self.native.recreate();
             self.surface.set(unsafe {
-                ffi::egl::CreateWindowSurface(
+                wrap_egl_call(|| ffi::egl::CreateWindowSurface(
                     **self.display,
                     self.config_id,
                     self.native.ptr(),
                     self.surface_attributes.as_ptr(),
-                )
+                )).map_err(SwapBuffersError::EGLCreateWindowSurface)?
             });
         }
 
-        Ok(())
+        result
     }
 
     /// Returns true if the OpenGL surface is the current one in the thread.
