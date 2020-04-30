@@ -25,21 +25,25 @@ use smithay::{
             legacy::LegacyDrmDevice,
             DevPath, Device, DeviceHandler, Surface,
         },
-        graphics::CursorBackend,
+        graphics::{CursorBackend, SwapBuffersError},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         session::{
             auto::{auto_session_bind, AutoSession},
-            notify_multiplexer, AsSessionObserver, Session, SessionNotifier,
+            notify_multiplexer, AsSessionObserver, Session, SessionNotifier, SessionObserver,
         },
         udev::{primary_gpu, UdevBackend, UdevEvent},
     },
     reexports::{
-        calloop::{generic::Generic, EventLoop, LoopHandle, Source},
-        drm::control::{
+        calloop::{
+            generic::Generic,
+            timer::{Timer, TimerHandle},
+            EventLoop, LoopHandle, Source,
+        },
+        drm::{self, control::{
             connector::{Info as ConnectorInfo, State as ConnectorState},
             crtc,
             encoder::Info as EncoderInfo,
-        },
+        }},
         image::{ImageBuffer, Rgba},
         input::Libinput,
         nix::{fcntl::OFlag, sys::stat::dev_t},
@@ -57,7 +61,7 @@ use smithay::{
 };
 
 use crate::buffer_utils::BufferUtils;
-use crate::glium_drawer::GliumDrawer;
+use crate::glium_drawer::{GliumDrawer, schedule_initial_render};
 use crate::shell::{MyWindowMap, Roles};
 use crate::state::AnvilState;
 
@@ -242,8 +246,9 @@ pub fn run_udev(
 
 struct BackendData<S: SessionNotifier> {
     id: S::Id,
+    restart_id: S::Id,
     event_source: Source<Generic<RenderDevice>>,
-    surfaces: Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<RenderSurface>>>>,
+    surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<GliumDrawer<RenderSurface>>>>>,
 }
 
 struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
@@ -270,7 +275,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
         device: &mut RenderDevice,
         egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
         logger: &::slog::Logger,
-    ) -> HashMap<crtc::Handle, GliumDrawer<RenderSurface>> {
+    ) -> HashMap<crtc::Handle, Rc<GliumDrawer<RenderSurface>>> {
         // Get a set of all modesetting resource handles (excluding planes):
         let res_handles = device.resource_handles().unwrap();
 
@@ -304,7 +309,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                             logger.clone(),
                         );
 
-                        entry.insert(renderer);
+                        entry.insert(Rc::new(renderer));
                         break;
                     }
                 }
@@ -318,7 +323,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
     pub fn scan_connectors(
         device: &mut RenderDevice,
         logger: &::slog::Logger,
-    ) -> HashMap<crtc::Handle, GliumDrawer<RenderSurface>> {
+    ) -> HashMap<crtc::Handle, Rc<GliumDrawer<RenderSurface>>> {
         // Get a set of all modesetting resource handles (excluding planes):
         let res_handles = device.resource_handles().unwrap();
 
@@ -347,7 +352,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                         let renderer =
                             GliumDrawer::init(device.create_surface(crtc).unwrap(), logger.clone());
 
-                        backends.insert(crtc, renderer);
+                        backends.insert(crtc, Rc::new(renderer));
                         break;
                     }
                 }
@@ -417,7 +422,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
             // Set the handler.
             // Note: if you replicate this (very simple) structure, it is rather easy
             // to introduce reference cycles with Rc. Be sure about your drop order
-            device.set_handler(DrmHandlerImpl {
+            let renderer = Rc::new(DrmRenderer {
                 compositor_token: self.compositor_token,
                 backends: backends.clone(),
                 window_map: self.window_map.clone(),
@@ -426,6 +431,8 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 dnd_icon: self.dnd_icon.clone(),
                 logger: self.logger.clone(),
             });
+            let restart_id = self.notifier.register(DrmRendererSessionListener { renderer: renderer.clone(), loop_handle: self.loop_handle.clone() });
+            device.set_handler(DrmHandlerImpl { renderer, loop_handle: self.loop_handle.clone() });
 
             let device_session_id = self.notifier.register(device.observer());
             let dev_id = device.device_id();
@@ -441,17 +448,14 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                     .unwrap();
 
                 // render first frame
-                {
-                    let mut frame = renderer.draw();
-                    frame.clear_color(0.8, 0.8, 0.9, 1.0);
-                    frame.finish().unwrap();
-                }
+                schedule_initial_render(renderer.clone(), &self.loop_handle);
             }
 
             self.backends.insert(
                 dev_id,
                 BackendData {
                     id: device_session_id,
+                    restart_id,
                     event_source,
                     surfaces: backends,
                 },
@@ -465,6 +469,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
             let logger = &self.logger;
             let pointer_image = &self.pointer_image;
             let egl_buffer_reader = self.egl_buffer_reader.clone();
+            let loop_handle = self.loop_handle.clone();
             self.loop_handle
                 .with_source(&backend_data.event_source, |source| {
                     let mut backends = backend_data.surfaces.borrow_mut();
@@ -486,11 +491,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                             .unwrap();
 
                         // render first frame
-                        {
-                            let mut frame = renderer.draw();
-                            frame.clear_color(0.8, 0.8, 0.9, 1.0);
-                            frame.finish().unwrap();
-                        }
+                        schedule_initial_render(renderer.clone(), &loop_handle);
                     }
                 });
         }
@@ -514,14 +515,48 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
             }
 
             self.notifier.unregister(backend_data.id);
+            self.notifier.unregister(backend_data.restart_id);
             debug!(self.logger, "Dropping device");
         }
     }
 }
 
-pub struct DrmHandlerImpl {
+pub struct DrmHandlerImpl<Data: 'static> {
+    renderer: Rc<DrmRenderer>,
+    loop_handle: LoopHandle<Data>,
+}
+
+impl<Data: 'static> DeviceHandler for DrmHandlerImpl<Data> {
+    type Device = RenderDevice;
+
+    fn vblank(&mut self, crtc: crtc::Handle) {
+        self.renderer.clone().render(crtc, None, Some(&self.loop_handle))
+    }
+    
+    fn error(&mut self, error: <RenderSurface as Surface>::Error) {
+        error!(self.renderer.logger, "{:?}", error);
+    }
+}
+
+pub struct DrmRendererSessionListener<Data: 'static> {
+    renderer: Rc<DrmRenderer>,
+    loop_handle: LoopHandle<Data>,
+}
+
+impl<Data: 'static> SessionObserver for DrmRendererSessionListener<Data> {
+    fn pause(&mut self, _device: Option<(u32, u32)>) {}
+    fn activate(&mut self, _device: Option<(u32, u32, Option<RawFd>)>) {
+        // we want to be called, after all session handling is done (TODO this is not so nice)
+        let renderer = self.renderer.clone();
+        let handle = self.loop_handle.clone();
+        self.loop_handle.insert_idle(move |_| renderer.render_all(Some(&handle)));
+    }
+}
+
+
+pub struct DrmRenderer {
     compositor_token: CompositorToken<Roles>,
-    backends: Rc<RefCell<HashMap<crtc::Handle, GliumDrawer<RenderSurface>>>>,
+    backends: Rc<RefCell<HashMap<crtc::Handle, Rc<GliumDrawer<RenderSurface>>>>>,
     window_map: Rc<RefCell<MyWindowMap>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
     cursor_status: Arc<Mutex<CursorImageStatus>>,
@@ -529,10 +564,13 @@ pub struct DrmHandlerImpl {
     logger: ::slog::Logger,
 }
 
-impl DeviceHandler for DrmHandlerImpl {
-    type Device = RenderDevice;
-
-    fn vblank(&mut self, crtc: crtc::Handle) {
+impl DrmRenderer {
+    fn render_all<Data: 'static>(self: Rc<Self>, evt_handle: Option<&LoopHandle<Data>>) {
+        for crtc in self.backends.borrow().keys() {
+            self.clone().render(*crtc, None, evt_handle);
+        }
+    }
+    fn render<Data: 'static>(self: Rc<Self>, crtc: crtc::Handle, timer: Option<TimerHandle<(std::rc::Weak<DrmRenderer>, crtc::Handle)>>, evt_handle: Option<&LoopHandle<Data>>) {
         if let Some(drawer) = self.backends.borrow().get(&crtc) {
             {
                 let (x, y) = *self.pointer_location.borrow();
@@ -577,16 +615,49 @@ impl DeviceHandler for DrmHandlerImpl {
                 }
             }
 
-            if let Err(err) = frame.finish() {
-                error!(self.logger, "Error during rendering: {:?}", err);
+            let result = frame.finish();
+            if result.is_ok() {
+                // Send frame events so that client start drawing their next frame
+                self.window_map.borrow().send_frames(SCOUNTER.next_serial());
             }
 
-            // Send frame events so that client start drawing their next frame
-            self.window_map.borrow().send_frames(SCOUNTER.next_serial());
-        }
-    }
+            if let Err(err) = result {
+                error!(self.logger, "Error during rendering: {:?}", err);
+                let reschedule = match err {
+                    SwapBuffersError::AlreadySwapped => false,
+                    SwapBuffersError::TemporaryFailure(err) => match err.downcast_ref::<smithay::backend::drm::common::Error>() { 
+                        Some(&smithay::backend::drm::common::Error::DeviceInactive) => false,
+                        Some(&smithay::backend::drm::common::Error::Access { ref source, .. }) if match source.get_ref() {
+                            drm::SystemError::PermissionDenied => true,
+                            _ => false,
+                        } => false,
+                        _ => true
+                    },
+                    SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
+                };
 
-    fn error(&mut self, error: <RenderSurface as Surface>::Error) {
-        error!(self.logger, "{:?}", error);
+                if reschedule {
+                    match (timer, evt_handle) {
+                        (Some(handle), _) => {
+                            let _ = handle.add_timeout(Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/), (Rc::downgrade(&self), crtc));
+                        },
+                        (None, Some(evt_handle)) => {
+                            let timer = Timer::new().unwrap();
+                            let handle = timer.handle();
+                            let _ = handle.add_timeout(Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/), (Rc::downgrade(&self), crtc));
+                            evt_handle.insert_source(timer, |(renderer, crtc), handle, _data| {
+                                if let Some(renderer) = renderer.upgrade() {
+                                    renderer.render(crtc, Some(handle.clone()), Option::<&LoopHandle<Data>>::None);
+                                }
+                            }).unwrap();
+                        },
+                        _ => unreachable!(),
+                    }
+                }
+            } else {
+                // Send frame events so that client start drawing their next frame
+                self.window_map.borrow().send_frames(SCOUNTER.next_serial());
+            }
+        }
     }
 }
