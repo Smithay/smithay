@@ -358,7 +358,7 @@ impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
         };
         let pending = State {
             mode,
-            connectors: connectors.into_iter().copied().collect(),
+            connectors: connectors.iter().copied().collect(),
         };
 
         let surface = LegacyDrmSurfaceInternal {
@@ -437,9 +437,10 @@ impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
         let _ = self.set_cursor(self.crtc, Option::<&DumbBuffer>::None);
         // disable connectors again
         let current = self.state.read().unwrap();
-        if let Ok(_) = self
+        if self
             .dev
             .set_connector_state(current.connectors.iter().copied(), false)
+            .is_ok()
         {
             // null commit
             let _ = self.set_crtc(self.crtc, None, (0, 0), &[], None);

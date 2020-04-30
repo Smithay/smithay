@@ -174,12 +174,12 @@ impl<A: AsRawFd + Clone + 'static> FallbackDevice<AtomicDrmDevice<A>, LegacyDrmD
         let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm_fallback"));
         info!(log, "Trying to initialize AtomicDrmDevice");
 
-        if env::var("SMITHAY_USE_LEGACY")
+        let force_legacy = env::var("SMITHAY_USE_LEGACY")
             .map(|x| {
                 x == "1" || x.to_lowercase() == "true" || x.to_lowercase() == "yes" || x.to_lowercase() == "y"
             })
-            .unwrap_or(false)
-        {
+            .unwrap_or(false);
+        if force_legacy {
             info!(log, "SMITHAY_USE_LEGACY is set. Forcing LegacyDrmDevice.");
             return Ok(FallbackDevice::Fallback(LegacyDrmDevice::new(
                 fd,

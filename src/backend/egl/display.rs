@@ -304,7 +304,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             .collect::<Result<Vec<Option<ffi::egl::types::EGLConfig>>, EGLError>>()
             .map_err(Error::ConfigFailed)?
             .into_iter()
-            .flat_map(|x| x)
+            .flatten()
             .collect::<Vec<_>>();
 
         if config_ids.is_empty() {
@@ -546,7 +546,7 @@ impl EGLBufferReader {
             out.push(ffi::egl::NONE as i32);
 
             images.push({
-                let image = wrap_egl_call(|| unsafe {
+                wrap_egl_call(|| unsafe {
                     ffi::egl::CreateImageKHR(
                         **self.display,
                         ffi::egl::NO_CONTEXT,
@@ -555,8 +555,7 @@ impl EGLBufferReader {
                         out.as_ptr(),
                     )
                 })
-                .map_err(BufferAccessError::EGLImageCreationFailed)?;
-                image
+                .map_err(BufferAccessError::EGLImageCreationFailed)?
             });
         }
 

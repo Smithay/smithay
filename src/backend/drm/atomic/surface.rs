@@ -144,7 +144,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         let pending = State {
             mode,
             blob,
-            connectors: connectors.into_iter().copied().collect(),
+            connectors: connectors.iter().copied().collect(),
         };
 
         let (primary, cursor) =

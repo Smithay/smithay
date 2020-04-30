@@ -76,19 +76,16 @@ impl Into<SwapBuffersError> for Error {
     fn into(self) -> SwapBuffersError {
         match self {
             x @ Error::DeviceInactive => SwapBuffersError::TemporaryFailure(Box::new(x)),
-            Error::Access {
-                errmsg: _,
-                dev: _,
-                source,
-            } if match source.get_ref() {
-                drm::SystemError::Unknown {
-                    errno: nix::errno::Errno::EBUSY,
-                } => true,
-                drm::SystemError::Unknown {
-                    errno: nix::errno::Errno::EINTR,
-                } => true,
-                _ => false,
-            } =>
+            Error::Access { source, .. }
+                if match source.get_ref() {
+                    drm::SystemError::Unknown {
+                        errno: nix::errno::Errno::EBUSY,
+                    } => true,
+                    drm::SystemError::Unknown {
+                        errno: nix::errno::Errno::EINTR,
+                    } => true,
+                    _ => false,
+                } =>
             {
                 SwapBuffersError::TemporaryFailure(Box::new(source))
             }

@@ -265,10 +265,10 @@ where
             Error::FrontBuffersExhausted => SwapBuffersError::AlreadySwapped,
             Error::FramebufferCreationFailed(x)
                 if match x.get_ref() {
-                    &drm::SystemError::Unknown {
+                    drm::SystemError::Unknown {
                         errno: nix::errno::Errno::EBUSY,
                     } => true,
-                    &drm::SystemError::Unknown {
+                    drm::SystemError::Unknown {
                         errno: nix::errno::Errno::EINTR,
                     } => true,
                     _ => false,
