@@ -2,9 +2,9 @@ use super::super::{Device, RawDevice, RawSurface, Surface};
 use super::Error;
 
 use drm::control::{connector, crtc, framebuffer, Device as ControlDevice, Mode};
+use failure::ResultExt;
 use gbm::{self, BufferObject, BufferObjectFlags, Format as GbmFormat, SurfaceBufferHandle};
 use image::{ImageBuffer, Rgba};
-use failure::ResultExt;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -89,9 +89,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
     }
 
     pub fn recreate(&self) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
-        let (w, h) = self
-            .pending_mode()
-            .size();
+        let (w, h) = self.pending_mode().size();
 
         // Recreate the surface and the related resources to match the new
         // resolution.

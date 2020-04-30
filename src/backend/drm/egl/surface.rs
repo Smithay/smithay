@@ -22,7 +22,7 @@ where
 }
 
 impl<N> Surface for EglSurface<N>
-where 
+where
     N: native::NativeSurface + Surface,
 {
     type Connectors = <N as Surface>::Connectors;
@@ -99,7 +99,9 @@ where
                 Ok(x) => x,
                 Err(x) => x.into(),
             })
-        } else { Ok(()) }
+        } else {
+            Ok(())
+        }
     }
 
     fn get_proc_address(&self, symbol: &str) -> *const c_void {
@@ -116,7 +118,9 @@ where
     }
 
     unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        self.context.make_current_with_surface(&self.surface).map_err(Into::into)
+        self.context
+            .make_current_with_surface(&self.surface)
+            .map_err(Into::into)
     }
 
     fn get_pixel_format(&self) -> PixelFormat {

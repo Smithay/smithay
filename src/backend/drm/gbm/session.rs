@@ -29,8 +29,8 @@ pub struct GbmDeviceObserver<
 
 impl<
         O: SessionObserver + 'static,
-        S: CursorBackend<CursorFormat=dyn drm::buffer::Buffer> + RawSurface + 'static,
-        D: RawDevice<Surface=S> + drm::control::Device + AsSessionObserver<O> + 'static,
+        S: CursorBackend<CursorFormat = dyn drm::buffer::Buffer> + RawSurface + 'static,
+        D: RawDevice<Surface = S> + drm::control::Device + AsSessionObserver<O> + 'static,
     > AsSessionObserver<GbmDeviceObserver<O, D>> for GbmDevice<D>
 {
     fn observer(&mut self) -> GbmDeviceObserver<O, D> {
@@ -44,8 +44,8 @@ impl<
 
 impl<
         O: SessionObserver + 'static,
-        S: CursorBackend<CursorFormat=dyn drm::buffer::Buffer> + RawSurface + 'static,
-        D: RawDevice<Surface=S> + drm::control::Device + AsSessionObserver<O> + 'static,
+        S: CursorBackend<CursorFormat = dyn drm::buffer::Buffer> + RawSurface + 'static,
+        D: RawDevice<Surface = S> + drm::control::Device + AsSessionObserver<O> + 'static,
     > SessionObserver for GbmDeviceObserver<O, D>
 {
     fn pause(&mut self, devnum: Option<(u32, u32)>) {
@@ -81,9 +81,7 @@ impl<
 
                         let &(ref cursor, ref hotspot): &(BufferObject<()>, (u32, u32)) =
                             unsafe { &*backend.cursor.as_ptr() };
-                        if backend.crtc.set_cursor_representation(cursor, *hotspot)
-                            .is_err()
-                        {
+                        if backend.crtc.set_cursor_representation(cursor, *hotspot).is_err() {
                             if let Err(err) = backend.dev.borrow().set_cursor(*crtc, Some(cursor)) {
                                 error!(self.logger, "Failed to reset cursor. Error: {}", err);
                             }

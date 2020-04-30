@@ -50,7 +50,7 @@ pub enum Error {
     EGL(#[from] EGLError),
     /// Surface Creation failed
     #[error("Surface creation failed: {0}")]
-    SurfaceCreationError(#[from] SurfaceCreationError<EGLError>)
+    SurfaceCreationError(#[from] SurfaceCreationError<EGLError>),
 }
 
 enum Window {
@@ -281,7 +281,9 @@ impl GLGraphicsBackend for WinitGraphicsBackend {
     fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         trace!(self.logger, "Swapping buffers");
         match *self.window {
-            Window::Wayland { ref surface, .. } => surface.swap_buffers().map_err(|err| err.try_into().unwrap()),
+            Window::Wayland { ref surface, .. } => {
+                surface.swap_buffers().map_err(|err| err.try_into().unwrap())
+            }
             Window::X11 { ref surface, .. } => surface.swap_buffers().map_err(|err| err.try_into().unwrap()),
         }
     }

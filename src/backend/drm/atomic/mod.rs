@@ -19,7 +19,8 @@ use std::sync::{
 
 use drm::control::{atomic::AtomicModeReq, AtomicCommitFlags, Device as ControlDevice, Event};
 use drm::control::{
-    connector, crtc, encoder, framebuffer, plane, property, Mode, PropertyValueSet, ResourceHandle, ResourceHandles,
+    connector, crtc, encoder, framebuffer, plane, property, Mode, PropertyValueSet, ResourceHandle,
+    ResourceHandles,
 };
 use drm::SystemError as DrmError;
 use drm::{ClientCapability, Device as BasicDevice};
@@ -199,7 +200,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
     /// - `logger` - Optional [`slog::Logger`] to be used by this device.
     ///
     /// # Return
-    /// 
+    ///
     /// Returns an error if the file is no valid drm node or the device is not accessible.
     pub fn new<L>(fd: A, disable_connectors: bool, logger: L) -> Result<Self, Error>
     where
@@ -279,25 +280,38 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             // Disable all connectors as initial state
             let mut req = AtomicModeReq::new();
             for conn in res_handles.connectors() {
-                let prop = dev.prop_mapping.0.get(&conn)
-                    .expect("Unknown handle").get("CRTC_ID")
+                let prop = dev
+                    .prop_mapping
+                    .0
+                    .get(&conn)
+                    .expect("Unknown handle")
+                    .get("CRTC_ID")
                     .expect("Unknown property CRTC_ID");
                 req.add_property(*conn, *prop, property::Value::CRTC(None));
             }
             // A crtc without a connector has no mode, we also need to reset that.
             // Otherwise the commit will not be accepted.
             for crtc in res_handles.crtcs() {
-                let active_prop = dev.prop_mapping.1.get(&crtc)
-                    .expect("Unknown handle").get("ACTIVE")
+                let active_prop = dev
+                    .prop_mapping
+                    .1
+                    .get(&crtc)
+                    .expect("Unknown handle")
+                    .get("ACTIVE")
                     .expect("Unknown property ACTIVE");
-                let mode_prop = dev.prop_mapping.1.get(&crtc)
-                    .expect("Unknown handle").get("MODE_ID")
+                let mode_prop = dev
+                    .prop_mapping
+                    .1
+                    .get(&crtc)
+                    .expect("Unknown handle")
+                    .get("MODE_ID")
                     .expect("Unknown property MODE_ID");
                 req.add_property(*crtc, *mode_prop, property::Value::Unknown(0));
                 req.add_property(*crtc, *active_prop, property::Value::Boolean(false));
             }
             dev.atomic_commit(&[AtomicCommitFlags::AllowModeset], req)
-                .compat().map_err(|source| Error::Access {
+                .compat()
+                .map_err(|source| Error::Access {
                     errmsg: "Failed to disable connectors",
                     dev: dev.dev_path(),
                     source,
@@ -339,7 +353,12 @@ impl<A: AsRawFd + 'static> Device for AtomicDrmDevice<A> {
         let _ = self.handler.take();
     }
 
-    fn create_surface(&mut self, crtc: crtc::Handle, mode: Mode, connectors: &[connector::Handle]) -> Result<AtomicDrmSurface<A>, Error> {
+    fn create_surface(
+        &mut self,
+        crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
+    ) -> Result<AtomicDrmSurface<A>, Error> {
         if self.backends.borrow().contains_key(&crtc) {
             return Err(Error::CrtcAlreadyInUse(crtc));
         }

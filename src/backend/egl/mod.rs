@@ -19,7 +19,10 @@
 //! of an EGL-based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer) for rendering.
 
 #[cfg(feature = "renderer_gl")]
-use crate::backend::graphics::{SwapBuffersError as GraphicsSwapBuffersError, gl::{ffi as gl_ffi, GLGraphicsBackend}};
+use crate::backend::graphics::{
+    gl::{ffi as gl_ffi, GLGraphicsBackend},
+    SwapBuffersError as GraphicsSwapBuffersError,
+};
 use nix::libc::c_uint;
 use std::fmt;
 #[cfg(feature = "wayland_frontend")]
@@ -116,7 +119,7 @@ pub enum SurfaceCreationError<E: std::error::Error + 'static> {
     NativeSurfaceCreationFailed(#[source] E),
     /// EGL surface creation failed
     #[error("EGL surface creation failed. Err: {0:}")]
-    EGLSurfaceCreationFailed(#[source] EGLError)
+    EGLSurfaceCreationFailed(#[source] EGLError),
 }
 
 /// Error that can happen when swapping buffers.
@@ -134,14 +137,18 @@ pub enum SwapBuffersError<E: std::error::Error + 'static> {
 }
 
 impl<E: std::error::Error> std::convert::TryFrom<SwapBuffersError<E>> for GraphicsSwapBuffersError {
-    type Error=E;
+    type Error = E;
     fn try_from(value: SwapBuffersError<E>) -> Result<Self, Self::Error> {
         match value {
             // bad surface is answered with a surface recreation in `swap_buffers`
-            x @ SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface) => Ok(GraphicsSwapBuffersError::TemporaryFailure(Box::new(x))),
+            x @ SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface) => {
+                Ok(GraphicsSwapBuffersError::TemporaryFailure(Box::new(x)))
+            }
             // the rest is either never happening or are unrecoverable
             x @ SwapBuffersError::EGLSwapBuffers(_) => Ok(GraphicsSwapBuffersError::ContextLost(Box::new(x))),
-            x @ SwapBuffersError::EGLCreateWindowSurface(_) => Ok(GraphicsSwapBuffersError::ContextLost(Box::new(x))),
+            x @ SwapBuffersError::EGLCreateWindowSurface(_) => {
+                Ok(GraphicsSwapBuffersError::ContextLost(Box::new(x)))
+            }
             SwapBuffersError::Underlying(e) => Err(e),
         }
     }
@@ -164,16 +171,22 @@ impl From<MakeCurrentError> for GraphicsSwapBuffersError {
 
             Except for the first case all of these recoverable. This conversation is mostly used in winit & EglSurface, where compatible context and surfaces are build.
             */
-            x @ MakeCurrentError(EGLError::BadAccess) => GraphicsSwapBuffersError::TemporaryFailure(Box::new(x)),
+            x @ MakeCurrentError(EGLError::BadAccess) => {
+                GraphicsSwapBuffersError::TemporaryFailure(Box::new(x))
+            }
             // BadSurface would result in a recreation in `eglSwapBuffers` -> recoverable
-            x @ MakeCurrentError(EGLError::BadSurface) => GraphicsSwapBuffersError::TemporaryFailure(Box::new(x)),
+            x @ MakeCurrentError(EGLError::BadSurface) => {
+                GraphicsSwapBuffersError::TemporaryFailure(Box::new(x))
+            }
             /*
             From khronos docs:
                 If the previous context of the calling thread has unflushed commands, and the previous surface is no longer valid, an EGL_BAD_CURRENT_SURFACE error is generated.
-            
+
             This does not consern this or future `makeCurrent`-calls.
             */
-            x @ MakeCurrentError(EGLError::BadCurrentSurface) => GraphicsSwapBuffersError::TemporaryFailure(Box::new(x)),
+            x @ MakeCurrentError(EGLError::BadCurrentSurface) => {
+                GraphicsSwapBuffersError::TemporaryFailure(Box::new(x))
+            }
             // the rest is either never happening or are unrecoverable
             x => GraphicsSwapBuffersError::ContextLost(Box::new(x)),
         }

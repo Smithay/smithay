@@ -1,14 +1,16 @@
 use drm::buffer::Buffer;
 use drm::control::atomic::AtomicModeReq;
 use drm::control::Device as ControlDevice;
-use drm::control::{connector, crtc, dumbbuffer::DumbBuffer, framebuffer, plane, property, AtomicCommitFlags, Mode, PlaneType};
+use drm::control::{
+    connector, crtc, dumbbuffer::DumbBuffer, framebuffer, plane, property, AtomicCommitFlags, Mode, PlaneType,
+};
 use drm::Device as BasicDevice;
 
 use std::cell::Cell;
 use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
-use std::sync::{RwLock, atomic::Ordering};
+use std::sync::{atomic::Ordering, RwLock};
 
 use failure::ResultExt as FailureResultExt;
 
@@ -57,20 +59,27 @@ impl<A: AsRawFd + 'static> BasicDevice for AtomicDrmSurfaceInternal<A> {}
 impl<A: AsRawFd + 'static> ControlDevice for AtomicDrmSurfaceInternal<A> {}
 
 impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
-    pub(crate) fn new(dev: Rc<Dev<A>>, crtc: crtc::Handle, mode: Mode, connectors: &[connector::Handle], logger: ::slog::Logger) -> Result<Self, Error> {
+    pub(crate) fn new(
+        dev: Rc<Dev<A>>,
+        crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
+        logger: ::slog::Logger,
+    ) -> Result<Self, Error> {
         let crtc_info = dev.get_crtc(crtc).compat().map_err(|source| Error::Access {
             errmsg: "Error loading crtc info",
             dev: dev.dev_path(),
             source,
         })?;
-        
+
         // If we have no current mode, we create a fake one, which will not match (and thus gets overriden on the commit below).
         // A better fix would probably be making mode an `Option`, but that would mean
         // we need to be sure, we require a mode to always be set without relying on the compiler.
         // So we cheat, because it works and is easier to handle later.
         let current_mode = crtc_info.mode().unwrap_or_else(|| unsafe { std::mem::zeroed() });
         let current_blob = match crtc_info.mode() {
-            Some(mode) => dev.create_property_blob(mode)
+            Some(mode) => dev
+                .create_property_blob(mode)
                 .compat()
                 .map_err(|source| Error::Access {
                     errmsg: "Failed to create Property Blob for mode",
@@ -79,8 +88,9 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                 })?,
             None => property::Value::Unknown(0),
         };
-                
-        let blob = dev.create_property_blob(mode)
+
+        let blob = dev
+            .create_property_blob(mode)
             .compat()
             .map_err(|source| Error::Access {
                 errmsg: "Failed to create Property Blob for mode",
@@ -95,7 +105,6 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                 dev: dev.dev_path(),
                 source,
             })?;
-
 
         let mut current_connectors = HashSet::new();
         for conn in res_handles.connectors() {
@@ -163,16 +172,22 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
 
     fn create_test_buffer(&self, mode: &Mode) -> Result<framebuffer::Handle, Error> {
         let (w, h) = mode.size();
-        let db = self.create_dumb_buffer((w as u32, h as u32), drm::buffer::format::PixelFormat::ARGB8888).compat().map_err(|source| Error::Access {
-            errmsg: "Failed to create dumb buffer",
-            dev: self.dev_path(),
-            source
-        })?;
-        let fb = self.add_framebuffer(&db).compat().map_err(|source| Error::Access {
-            errmsg: "Failed to create framebuffer",
-            dev: self.dev_path(),
-            source
-        })?;
+        let db = self
+            .create_dumb_buffer((w as u32, h as u32), drm::buffer::format::PixelFormat::ARGB8888)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Failed to create dumb buffer",
+                dev: self.dev_path(),
+                source,
+            })?;
+        let fb = self
+            .add_framebuffer(&db)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Failed to create framebuffer",
+                dev: self.dev_path(),
+                source,
+            })?;
         if let Some((old_db, old_fb)) = self.test_buffer.replace(Some((db, fb))) {
             let _ = self.destroy_framebuffer(old_fb);
             let _ = self.destroy_dumb_buffer(old_db);
@@ -210,17 +225,32 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmSurfaceInternal<A> {
         let current = self.state.read().unwrap();
         let mut req = AtomicModeReq::new();
         for conn in current.connectors.iter() {
-            let prop = self.dev.prop_mapping.0.get(&conn)
-                .expect("Unknown Handle").get("CRTC_ID")
+            let prop = self
+                .dev
+                .prop_mapping
+                .0
+                .get(&conn)
+                .expect("Unknown Handle")
+                .get("CRTC_ID")
                 .expect("Unknown property CRTC_ID");
             req.add_property(*conn, *prop, property::Value::CRTC(None));
         }
-        let active_prop = self.dev.prop_mapping.1.get(&self.crtc)
-                .expect("Unknown Handle").get("ACTIVE")
-                .expect("Unknown property ACTIVE");
-        let mode_prop = self.dev.prop_mapping.1.get(&self.crtc)
-                .expect("Unknown Handle").get("MODE_ID")
-                .expect("Unknown property MODE_ID");
+        let active_prop = self
+            .dev
+            .prop_mapping
+            .1
+            .get(&self.crtc)
+            .expect("Unknown Handle")
+            .get("ACTIVE")
+            .expect("Unknown property ACTIVE");
+        let mode_prop = self
+            .dev
+            .prop_mapping
+            .1
+            .get(&self.crtc)
+            .expect("Unknown Handle")
+            .get("MODE_ID")
+            .expect("Unknown property MODE_ID");
 
         req.add_property(self.crtc, *active_prop, property::Value::Boolean(false));
         req.add_property(self.crtc, *mode_prop, property::Value::Unknown(0));
@@ -335,7 +365,7 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
         if connectors.is_empty() {
             return Err(Error::SurfaceWithoutConnectors(self.crtc));
         }
- 
+
         if !self.dev.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -376,14 +406,14 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
 
         // check if new config is supported
         let new_blob = self
-                .create_property_blob(mode)
-                .compat()
-                .map_err(|source| Error::Access {
-                    errmsg: "Failed to create Property Blob for mode",
-                    dev: self.dev_path(),
-                    source,
-                })?;
-        
+            .create_property_blob(mode)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Failed to create Property Blob for mode",
+                dev: self.dev_path(),
+                source,
+            })?;
+
         let test_fb = Some(self.create_test_buffer(&pending.mode)?);
         let req = self.build_request(
             &mut pending.connectors.iter(),
@@ -453,11 +483,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
         }
 
         if current.mode != pending.mode {
-            info!(
-                self.logger,
-                "Setting new mode: {:?}",
-                pending.mode.name()
-            );
+            info!(self.logger, "Setting new mode: {:?}", pending.mode.name());
         }
 
         trace!(self.logger, "Testing screen config");
@@ -533,25 +559,25 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
             return Err(Error::DeviceInactive);
         }
 
-        let req = self
-            .build_request(
-                &mut [].iter(),
-                &mut [].iter(),
-                &self.planes,
-                Some(framebuffer),
-                None,
-                None,
-            )?;
+        let req = self.build_request(
+            &mut [].iter(),
+            &mut [].iter(),
+            &self.planes,
+            Some(framebuffer),
+            None,
+            None,
+        )?;
 
         trace!(self.logger, "Queueing page flip: {:#?}", req);
         self.atomic_commit(
             &[AtomicCommitFlags::PageFlipEvent, AtomicCommitFlags::Nonblock],
             req,
         )
-        .compat().map_err(|source| Error::Access {
+        .compat()
+        .map_err(|source| Error::Access {
             errmsg: "Page flip commit failed",
             dev: self.dev_path(),
-            source
+            source,
         })?;
 
         Ok(())

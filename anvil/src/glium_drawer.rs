@@ -16,7 +16,10 @@ use smithay::backend::egl::display::EGLBufferReader;
 use smithay::{
     backend::{
         egl::{BufferAccessError, EGLImages, Format},
-        graphics::{gl::GLGraphicsBackend, glium::{GliumGraphicsBackend, Frame}},
+        graphics::{
+            gl::GLGraphicsBackend,
+            glium::{Frame, GliumGraphicsBackend},
+        },
     },
     reexports::wayland_server::protocol::{wl_buffer, wl_surface},
     wayland::{
@@ -159,7 +162,10 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
         let images = if let Some(display) = &self.egl_buffer_reader.borrow().as_ref() {
             display.egl_buffer_contents(buffer)
         } else {
-            Err(BufferAccessError::NotManaged(buffer, smithay::backend::egl::EGLError::BadDisplay))
+            Err(BufferAccessError::NotManaged(
+                buffer,
+                smithay::backend::egl::EGLError::BadDisplay,
+            ))
         };
         match images {
             Ok(images) => {

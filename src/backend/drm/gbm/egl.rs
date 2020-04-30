@@ -7,11 +7,11 @@
 use crate::backend::drm::{Device, RawDevice, Surface};
 use crate::backend::egl::ffi;
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
-use crate::backend::egl::{Error as EglBackendError, EGLError, wrap_egl_call};
+use crate::backend::egl::{wrap_egl_call, EGLError, Error as EglBackendError};
 
 use super::{Error, GbmDevice, GbmSurface};
 
-use drm::control::{crtc, connector, Device as ControlDevice, Mode};
+use drm::control::{connector, crtc, Device as ControlDevice, Mode};
 use gbm::AsRaw;
 use std::marker::PhantomData;
 use std::ptr;
@@ -36,13 +36,19 @@ impl<D: RawDevice + 'static> Backend for Gbm<D> {
     {
         if has_dp_extension("EGL_KHR_platform_gbm") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_KHR_platform_gbm");
-            wrap_egl_call(|| ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null()))
+            wrap_egl_call(|| {
+                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, ptr::null())
+            })
         } else if has_dp_extension("EGL_MESA_platform_gbm") && ffi::egl::GetPlatformDisplayEXT::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
-            wrap_egl_call(|| ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null()))
+            wrap_egl_call(|| {
+                ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
+            })
         } else if has_dp_extension("EGL_MESA_platform_gbm") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_MESA_platform_gbm");
-            wrap_egl_call(|| ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null()))
+            wrap_egl_call(|| {
+                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, ptr::null())
+            })
         } else {
             trace!(log, "Default EGL Display Initialization via GetDisplay");
             wrap_egl_call(|| ffi::egl::GetDisplay(display as *mut _))

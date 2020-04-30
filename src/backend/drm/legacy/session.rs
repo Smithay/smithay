@@ -5,6 +5,7 @@
 
 use drm::control::{crtc, Device as ControlDevice};
 use drm::Device as BasicDevice;
+use failure::ResultExt;
 use nix::libc::dev_t;
 use nix::sys::stat;
 use std::cell::RefCell;
@@ -13,9 +14,8 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use failure::ResultExt;
 
-use super::{Dev, LegacyDrmDevice, LegacyDrmSurfaceInternal, Error, DevPath};
+use super::{Dev, DevPath, Error, LegacyDrmDevice, LegacyDrmSurfaceInternal};
 use crate::backend::session::{AsSessionObserver, SessionObserver};
 
 /// [`SessionObserver`](SessionObserver)
@@ -112,24 +112,27 @@ impl<A: AsRawFd + 'static> LegacyDrmDeviceObserver<A> {
                     dev: dev.dev_path(),
                     source,
                 })?;
-            
+
             let mut used_connectors = HashSet::new();
             if let Some(backends) = self.backends.upgrade() {
                 for surface in backends.borrow().values().filter_map(Weak::upgrade) {
                     let mut current = surface.state.write().unwrap();
                     let pending = surface.pending.read().unwrap();
-                    
+
                     // store (soon to be) used connectors
                     used_connectors.extend(pending.connectors.clone());
-                    
+
                     // set current connectors
                     current.connectors.clear();
                     for conn in res_handles.connectors() {
-                        let conn_info = dev.get_connector(*conn).compat().map_err(|source| Error::Access {
-                            errmsg: "Could not load connector info",
-                            dev: dev.dev_path(),
-                            source,
-                        })?;
+                        let conn_info =
+                            dev.get_connector(*conn)
+                                .compat()
+                                .map_err(|source| Error::Access {
+                                    errmsg: "Could not load connector info",
+                                    dev: dev.dev_path(),
+                                    source,
+                                })?;
                         if let Some(enc) = conn_info.current_encoder() {
                             let enc_info = dev.get_encoder(enc).compat().map_err(|source| Error::Access {
                                 errmsg: "Could not load encoder info",
@@ -143,11 +146,14 @@ impl<A: AsRawFd + 'static> LegacyDrmDeviceObserver<A> {
                     }
 
                     // set current mode
-                    let crtc_info = dev.get_crtc(surface.crtc).compat().map_err(|source| Error::Access {
-                        errmsg: "Could not load crtc info",
-                        dev: dev.dev_path(),
-                        source,
-                    })?;
+                    let crtc_info = dev
+                        .get_crtc(surface.crtc)
+                        .compat()
+                        .map_err(|source| Error::Access {
+                            errmsg: "Could not load crtc info",
+                            dev: dev.dev_path(),
+                            source,
+                        })?;
 
                     // If we have no current mode, we create a fake one, which will not match (and thus gets overriden on the commit below).
                     // A better fix would probably be making mode an `Option`, but that would mean
@@ -162,7 +168,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDeviceObserver<A> {
             let unused = used_connectors.difference(&all_set);
             dev.set_connector_state(unused.copied(), false)?;
         }
-        
+
         Ok(())
     }
-} 
+}

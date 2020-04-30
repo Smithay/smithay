@@ -17,9 +17,9 @@ use wayland_server::Display;
 
 use super::{Device, DeviceHandler, Surface};
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
-use crate::backend::egl::{Error as EGLError, EGLError as RawEGLError, SurfaceCreationError};
 #[cfg(feature = "use_system_lib")]
 use crate::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
+use crate::backend::egl::{EGLError as RawEGLError, Error as EGLError, SurfaceCreationError};
 
 mod surface;
 pub use self::surface::*;
@@ -49,7 +49,9 @@ type Arguments = (crtc::Handle, Mode, Vec<connector::Handle>);
 pub struct EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = Arguments, Error=<<D as Device>::Surface as Surface>::Error> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     dev: EGLDisplay<B, D>,
@@ -61,7 +63,9 @@ where
 impl<B, D> AsRawFd for EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = Arguments, Error=<<D as Device>::Surface as Surface>::Error> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     fn as_raw_fd(&self) -> RawFd {
@@ -72,7 +76,9 @@ where
 impl<B, D> EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = Arguments, Error=<<D as Device>::Surface as Surface>::Error> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     /// Try to create a new [`EglDevice`] from an open device.
@@ -127,7 +133,9 @@ where
 struct InternalDeviceHandler<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = Arguments, Error=<<D as Device>::Surface as Surface>::Error> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     handler: Box<dyn DeviceHandler<Device = EglDevice<B, D>> + 'static>,
@@ -136,7 +144,9 @@ where
 impl<B, D> DeviceHandler for InternalDeviceHandler<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = Arguments, Error=<<D as Device>::Surface as Surface>::Error> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     type Device = D;
@@ -152,7 +162,9 @@ where
 impl<B, D> Device for EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = Arguments, Error=<<D as Device>::Surface as Surface>::Error> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     type Surface = EglSurface<<D as Device>::Surface>;
@@ -231,7 +243,9 @@ where
 impl<B, D> EGLGraphicsBackend for EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = Arguments, Error=<<D as Device>::Surface as Surface>::Error> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     fn bind_wl_display(&self, display: &Display) -> Result<EGLBufferReader, EGLError> {
@@ -242,7 +256,9 @@ where
 impl<B, D> Drop for EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = Arguments, Error=<<D as Device>::Surface as Surface>::Error> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     fn drop(&mut self) {

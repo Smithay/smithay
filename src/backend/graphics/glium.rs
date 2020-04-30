@@ -47,7 +47,10 @@ impl<T: GLGraphicsBackend + 'static> GliumGraphicsBackend<T> {
     /// Note that destroying a [`Frame`] is immediate, even if vsync is enabled.
     #[inline]
     pub fn draw(&self) -> Frame {
-        Frame(glium::Frame::new(self.context.clone(), self.backend.get_framebuffer_dimensions()), self.error_channel.clone())
+        Frame(
+            glium::Frame::new(self.context.clone(), self.backend.get_framebuffer_dimensions()),
+            self.error_channel.clone(),
+        )
     }
 
     /// Borrow the underlying backend.
@@ -89,7 +92,7 @@ unsafe impl<T: GLGraphicsBackend> Backend for InternalBackend<T> {
                 SwapBuffersError::ContextLost(err) => {
                     self.1.set(Some(err));
                     GliumSwapBuffersError::ContextLost
-                },
+                }
                 SwapBuffersError::TemporaryFailure(err) => {
                     self.1.set(Some(err));
                     GliumSwapBuffersError::AlreadySwapped
@@ -97,7 +100,9 @@ unsafe impl<T: GLGraphicsBackend> Backend for InternalBackend<T> {
                 // I do not think, this may happen, but why not
                 SwapBuffersError::AlreadySwapped => GliumSwapBuffersError::AlreadySwapped,
             })
-        } else { Ok(()) }
+        } else {
+            Ok(())
+        }
     }
 
     unsafe fn get_proc_address(&self, symbol: &str) -> *const c_void {
@@ -121,15 +126,15 @@ unsafe impl<T: GLGraphicsBackend> Backend for InternalBackend<T> {
 }
 
 /// Omplementation of `glium::Surface`, targeting the default framebuffer.
-/// 
+///
 /// The back- and front-buffers are swapped when you call `finish`.
-/// 
+///
 /// You **must** call either `finish` or `set_finish` or else the destructor will panic.
 pub struct Frame(glium::Frame, Rc<Cell<Option<Box<dyn std::error::Error>>>>);
 
 impl Frame {
     /// Stop drawing, swap the buffers, and consume the Frame.
-    /// 
+    ///
     /// See the documentation of [`SwapBuffersError`] about what is being returned.
     pub fn finish(mut self) -> Result<(), SwapBuffersError> {
         self.set_finish()
@@ -143,21 +148,28 @@ impl Frame {
         let err = self.1.take();
         match (res, err) {
             (Ok(()), _) => Ok(()),
-            (Err(GliumSwapBuffersError::AlreadySwapped), Some(err)) => Err(SwapBuffersError::TemporaryFailure(err)),
+            (Err(GliumSwapBuffersError::AlreadySwapped), Some(err)) => {
+                Err(SwapBuffersError::TemporaryFailure(err))
+            }
             (Err(GliumSwapBuffersError::AlreadySwapped), None) => Err(SwapBuffersError::AlreadySwapped),
-            (Err(GliumSwapBuffersError::ContextLost), Some(err)) => Err(SwapBuffersError::ContextLost(err)), 
+            (Err(GliumSwapBuffersError::ContextLost), Some(err)) => Err(SwapBuffersError::ContextLost(err)),
             _ => unreachable!(),
         }
     }
 }
 
 impl glium::Surface for Frame {
-    fn clear(&mut self, rect: Option<&glium::Rect>, color: Option<(f32, f32, f32, f32)>, color_srgb: bool,
-             depth: Option<f32>, stencil: Option<i32>)
-    {
+    fn clear(
+        &mut self,
+        rect: Option<&glium::Rect>,
+        color: Option<(f32, f32, f32, f32)>,
+        color_srgb: bool,
+        depth: Option<f32>,
+        stencil: Option<i32>,
+    ) {
         self.0.clear(rect, color, color_srgb, depth, stencil)
     }
-    
+
     fn get_dimensions(&self) -> (u32, u32) {
         self.0.get_dimensions()
     }
@@ -170,36 +182,61 @@ impl glium::Surface for Frame {
         self.0.get_stencil_buffer_bits()
     }
 
-    fn draw<'a, 'b, V, I, U>(&mut self, v: V, i: I, program: &glium::Program, uniforms: &U,
-        draw_parameters: &glium::draw_parameters::DrawParameters<'_>) -> Result<(), glium::DrawError> where
-        V: glium::vertex::MultiVerticesSource<'b>, I: Into<glium::index::IndicesSource<'a>>,
-        U: glium::uniforms::Uniforms
+    fn draw<'a, 'b, V, I, U>(
+        &mut self,
+        v: V,
+        i: I,
+        program: &glium::Program,
+        uniforms: &U,
+        draw_parameters: &glium::draw_parameters::DrawParameters<'_>,
+    ) -> Result<(), glium::DrawError>
+    where
+        V: glium::vertex::MultiVerticesSource<'b>,
+        I: Into<glium::index::IndicesSource<'a>>,
+        U: glium::uniforms::Uniforms,
     {
         self.0.draw(v, i, program, uniforms, draw_parameters)
     }
 
-    fn blit_from_frame(&self, source_rect: &glium::Rect, target_rect: &glium::BlitTarget,
-                       filter: glium::uniforms::MagnifySamplerFilter)
-    {
+    fn blit_from_frame(
+        &self,
+        source_rect: &glium::Rect,
+        target_rect: &glium::BlitTarget,
+        filter: glium::uniforms::MagnifySamplerFilter,
+    ) {
         self.0.blit_from_frame(source_rect, target_rect, filter);
     }
 
-    fn blit_from_simple_framebuffer(&self, source: &glium::framebuffer::SimpleFrameBuffer<'_>,
-                                    source_rect: &glium::Rect, target_rect: &glium::BlitTarget,
-                                    filter: glium::uniforms::MagnifySamplerFilter)
-    {
-        self.0.blit_from_simple_framebuffer(source, source_rect, target_rect, filter)
+    fn blit_from_simple_framebuffer(
+        &self,
+        source: &glium::framebuffer::SimpleFrameBuffer<'_>,
+        source_rect: &glium::Rect,
+        target_rect: &glium::BlitTarget,
+        filter: glium::uniforms::MagnifySamplerFilter,
+    ) {
+        self.0
+            .blit_from_simple_framebuffer(source, source_rect, target_rect, filter)
     }
 
-    fn blit_from_multioutput_framebuffer(&self, source: &glium::framebuffer::MultiOutputFrameBuffer<'_>,
-                                         source_rect: &glium::Rect, target_rect: &glium::BlitTarget,
-                                         filter: glium::uniforms::MagnifySamplerFilter)
-    {
-        self.0.blit_from_multioutput_framebuffer(source, source_rect, target_rect, filter)
+    fn blit_from_multioutput_framebuffer(
+        &self,
+        source: &glium::framebuffer::MultiOutputFrameBuffer<'_>,
+        source_rect: &glium::Rect,
+        target_rect: &glium::BlitTarget,
+        filter: glium::uniforms::MagnifySamplerFilter,
+    ) {
+        self.0
+            .blit_from_multioutput_framebuffer(source, source_rect, target_rect, filter)
     }
 
-    fn blit_color<S>(&self, source_rect: &glium::Rect, target: &S, target_rect: &glium::BlitTarget,
-                     filter: glium::uniforms::MagnifySamplerFilter) where S: glium::Surface
+    fn blit_color<S>(
+        &self,
+        source_rect: &glium::Rect,
+        target: &S,
+        target_rect: &glium::BlitTarget,
+        filter: glium::uniforms::MagnifySamplerFilter,
+    ) where
+        S: glium::Surface,
     {
         self.0.blit_color(source_rect, target, target_rect, filter)
     }

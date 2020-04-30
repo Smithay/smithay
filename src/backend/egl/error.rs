@@ -48,7 +48,9 @@ pub enum Error {
 #[derive(thiserror::Error, Debug)]
 pub enum EGLError {
     /// EGL is not initialized, or could not be initialized, for the specified EGL display connection.
-    #[error("EGL is not initialized, or could not be initialized, for the specified EGL display connection.")]
+    #[error(
+        "EGL is not initialized, or could not be initialized, for the specified EGL display connection."
+    )]
     NotInitialized,
     /// EGL cannot access a requested resource (for example a context is bound in another thread).
     #[error("EGL cannot access a requested resource (for example a context is bound in another thread).")]
@@ -90,7 +92,7 @@ pub enum EGLError {
     #[error("A power management event has occurred. The application must destroy all contexts and reinitialise OpenGL ES state and objects to continue rendering.")]
     ContextLost,
     /// An unknown error
-    #[error("An unknown error ({0:x})")]    
+    #[error("An unknown error ({0:x})")]
     Unknown(u32),
 }
 

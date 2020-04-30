@@ -1,6 +1,6 @@
 //! EGL surface related structs
 
-use super::{ffi, native, EGLError, SwapBuffersError, wrap_egl_call};
+use super::{ffi, native, wrap_egl_call, EGLError, SwapBuffersError};
 use crate::backend::egl::display::EGLDisplayHandle;
 use crate::backend::graphics::PixelFormat;
 use nix::libc::c_int;
@@ -90,23 +90,32 @@ impl<N: native::NativeSurface> EGLSurface<N> {
             wrap_egl_call(|| unsafe { ffi::egl::SwapBuffers(**self.display, surface as *const _) })
                 .map_err(SwapBuffersError::EGLSwapBuffers)
                 .and_then(|_| self.native.swap_buffers().map_err(SwapBuffersError::Underlying))
-        } else { Ok(()) };
+        } else {
+            Ok(())
+        };
 
         // workaround for missing `PartialEq` impl
-        let is_bad_surface = if let Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface)) = result { true } else { false }; 
-        
+        let is_bad_surface = if let Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface)) = result {
+            true
+        } else {
+            false
+        };
+
         if self.native.needs_recreation() || surface.is_null() || is_bad_surface {
             self.native.recreate().map_err(SwapBuffersError::Underlying)?;
             if !surface.is_null() {
                 let _ = unsafe { ffi::egl::DestroySurface(**self.display, surface as *const _) };
             }
             self.surface.set(unsafe {
-                wrap_egl_call(|| ffi::egl::CreateWindowSurface(
-                    **self.display,
-                    self.config_id,
-                    self.native.ptr(),
-                    self.surface_attributes.as_ptr(),
-                )).map_err(SwapBuffersError::EGLCreateWindowSurface)?
+                wrap_egl_call(|| {
+                    ffi::egl::CreateWindowSurface(
+                        **self.display,
+                        self.config_id,
+                        self.native.ptr(),
+                        self.surface_attributes.as_ptr(),
+                    )
+                })
+                .map_err(SwapBuffersError::EGLCreateWindowSurface)?
             });
         }
 

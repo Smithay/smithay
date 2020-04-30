@@ -1,6 +1,6 @@
 //! Type safe native types for safe context/surface creation
 
-use super::{ffi, Error, EGLError, wrap_egl_call};
+use super::{ffi, wrap_egl_call, EGLError, Error};
 
 #[cfg(feature = "backend_winit")]
 use std::ptr;
@@ -47,11 +47,19 @@ impl Backend for Wayland {
     {
         if has_dp_extension("EGL_KHR_platform_wayland") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_KHR_platform_wayland");
-            wrap_egl_call(|| ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_WAYLAND_KHR, display as *mut _, ptr::null()))
+            wrap_egl_call(|| {
+                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_WAYLAND_KHR, display as *mut _, ptr::null())
+            })
         } else if has_dp_extension("EGL_EXT_platform_wayland") && ffi::egl::GetPlatformDisplayEXT::is_loaded()
         {
             trace!(log, "EGL Display Initialization via EGL_EXT_platform_wayland");
-            wrap_egl_call(|| ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_WAYLAND_EXT, display as *mut _, ptr::null()))
+            wrap_egl_call(|| {
+                ffi::egl::GetPlatformDisplayEXT(
+                    ffi::egl::PLATFORM_WAYLAND_EXT,
+                    display as *mut _,
+                    ptr::null(),
+                )
+            })
         } else {
             trace!(log, "Default EGL Display Initialization via GetDisplay");
             wrap_egl_call(|| ffi::egl::GetDisplay(display as *mut _))
@@ -79,10 +87,14 @@ impl Backend for X11 {
     {
         if has_dp_extension("EGL_KHR_platform_x11") && ffi::egl::GetPlatformDisplay::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_KHR_platform_x11");
-            wrap_egl_call(|| ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, ptr::null()))
+            wrap_egl_call(|| {
+                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, ptr::null())
+            })
         } else if has_dp_extension("EGL_EXT_platform_x11") && ffi::egl::GetPlatformDisplayEXT::is_loaded() {
             trace!(log, "EGL Display Initialization via EGL_EXT_platform_x11");
-            wrap_egl_call(|| ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_X11_EXT, display as *mut _, ptr::null()))
+            wrap_egl_call(|| {
+                ffi::egl::GetPlatformDisplayEXT(ffi::egl::PLATFORM_X11_EXT, display as *mut _, ptr::null())
+            })
         } else {
             trace!(log, "Default EGL Display Initialization via GetDisplay");
             wrap_egl_call(|| ffi::egl::GetDisplay(display as *mut _))
@@ -203,7 +215,9 @@ pub unsafe trait NativeSurface {
 #[derive(Debug)]
 pub enum Never {}
 impl std::fmt::Display for Never {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unreachable!() }
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unreachable!()
+    }
 }
 impl std::error::Error for Never {}
 
@@ -222,7 +236,7 @@ unsafe impl NativeSurface for XlibWindow {
 unsafe impl NativeSurface for wegl::WlEglSurface {
     // type Error = !;
     type Error = Never;
-    
+
     fn ptr(&self) -> ffi::NativeWindowType {
         self.ptr() as *const _
     }

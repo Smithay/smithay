@@ -100,7 +100,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
     /// - `logger` - Optional [`slog::Logger`] to be used by this device.
     ///
     /// # Return
-    /// 
+    ///
     /// Returns an error if the file is no valid drm node or the device is not accessible.
     pub fn new<L>(dev: A, disable_connectors: bool, logger: L) -> Result<Self, Error>
     where
@@ -190,33 +190,55 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
 }
 
 impl<A: AsRawFd + 'static> Dev<A> {
-    pub(in crate::backend::drm::legacy) fn set_connector_state(&self, connectors: impl Iterator<Item=connector::Handle>, enabled: bool) -> Result<(), Error> {
+    pub(in crate::backend::drm::legacy) fn set_connector_state(
+        &self,
+        connectors: impl Iterator<Item = connector::Handle>,
+        enabled: bool,
+    ) -> Result<(), Error> {
         for conn in connectors {
-            let info = self.get_connector(conn).compat().map_err(|source| Error::Access {
+            let info = self
+                .get_connector(conn)
+                .compat()
+                .map_err(|source| Error::Access {
                     errmsg: "Failed to get connector infos",
                     dev: self.dev_path(),
-                    source
+                    source,
                 })?;
             if info.state() == connector::State::Connected {
-                let props = self.get_properties(conn).compat().map_err(|source| Error::Access {
-                    errmsg: "Failed to get properties for connector",
-                    dev: self.dev_path(),
-                    source
-                })?;
+                let props = self
+                    .get_properties(conn)
+                    .compat()
+                    .map_err(|source| Error::Access {
+                        errmsg: "Failed to get properties for connector",
+                        dev: self.dev_path(),
+                        source,
+                    })?;
                 let (handles, _) = props.as_props_and_values();
                 for handle in handles {
-                    let info = self.get_property(*handle).compat().map_err(|source| Error::Access {
-                    errmsg: "Failed to get property of connector",
-                    dev: self.dev_path(),
-                    source
-                })?;
+                    let info = self
+                        .get_property(*handle)
+                        .compat()
+                        .map_err(|source| Error::Access {
+                            errmsg: "Failed to get property of connector",
+                            dev: self.dev_path(),
+                            source,
+                        })?;
                     if info.name().to_str().map(|x| x == "DPMS").unwrap_or(false) {
-                        self.set_property(conn, *handle, if enabled { 0 /*DRM_MODE_DPMS_ON*/} else { 3 /*DRM_MODE_DPMS_OFF*/})
-                            .compat().map_err(|source| Error::Access {
-                                errmsg: "Failed to set property of connector",
-                                dev: self.dev_path(),
-                                source
-                            })?;
+                        self.set_property(
+                            conn,
+                            *handle,
+                            if enabled {
+                                0 /*DRM_MODE_DPMS_ON*/
+                            } else {
+                                3 /*DRM_MODE_DPMS_OFF*/
+                            },
+                        )
+                        .compat()
+                        .map_err(|source| Error::Access {
+                            errmsg: "Failed to set property of connector",
+                            dev: self.dev_path(),
+                            source,
+                        })?;
                     }
                 }
             }
@@ -249,7 +271,12 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
         let _ = self.handler.take();
     }
 
-    fn create_surface(&mut self, crtc: crtc::Handle, mode: Mode, connectors: &[connector::Handle]) -> Result<LegacyDrmSurface<A>, Error> {
+    fn create_surface(
+        &mut self,
+        crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
+    ) -> Result<LegacyDrmSurface<A>, Error> {
         if self.backends.borrow().contains_key(&crtc) {
             return Err(Error::CrtcAlreadyInUse(crtc));
         }
@@ -263,7 +290,10 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
         }
 
         let backend = Rc::new(LegacyDrmSurfaceInternal::new(
-            self.dev.clone(), crtc, mode, connectors,
+            self.dev.clone(),
+            crtc,
+            mode,
+            connectors,
             self.logger.new(o!("crtc" => format!("{:?}", crtc))),
         )?);
 

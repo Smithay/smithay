@@ -8,7 +8,7 @@ use drm::Device as BasicDevice;
 use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
-use std::sync::{RwLock, atomic::Ordering};
+use std::sync::{atomic::Ordering, RwLock};
 
 use crate::backend::drm::{common::Error, DevPath, RawSurface, Surface};
 use crate::backend::graphics::CursorBackend;
@@ -115,7 +115,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         if !self.dev.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
-        
+
         let mut pending = self.pending.write().unwrap();
 
         if self.check_connector(conn, &pending.mode)? {
@@ -140,7 +140,7 @@ impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
         if connectors.is_empty() {
             return Err(Error::SurfaceWithoutConnectors(self.crtc));
         }
-        
+
         if !self.dev.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -241,11 +241,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             self.dev.set_connector_state(added.copied(), true)?;
 
             if current.mode != pending.mode {
-                info!(
-                    self.logger,
-                    "Setting new mode: {:?}",
-                    pending.mode.name()
-                );
+                info!(self.logger, "Setting new mode: {:?}", pending.mode.name());
             }
         }
 
@@ -286,7 +282,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
 
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
         trace!(self.logger, "Queueing Page flip");
-        
+
         if !self.dev.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -297,7 +293,8 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             framebuffer,
             &[PageFlipFlags::PageFlipEvent],
             None,
-        ).compat()
+        )
+        .compat()
         .map_err(|source| Error::Access {
             errmsg: "Failed to page flip",
             dev: self.dev_path(),
@@ -307,7 +304,13 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
 }
 
 impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
-    pub(crate) fn new(dev: Rc<Dev<A>>, crtc: crtc::Handle, mode: Mode, connectors: &[connector::Handle], logger: ::slog::Logger) -> Result<LegacyDrmSurfaceInternal<A>, Error> {
+    pub(crate) fn new(
+        dev: Rc<Dev<A>>,
+        crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
+        logger: ::slog::Logger,
+    ) -> Result<LegacyDrmSurfaceInternal<A>, Error> {
         // Try to enumarate the current state to set the initial state variable correctly
         let crtc_info = dev.get_crtc(crtc).compat().map_err(|source| Error::Access {
             errmsg: "Error loading crtc info",
@@ -349,9 +352,15 @@ impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
         // A better fix would probably be making mode an `Option`, but that would mean
         // we need to be sure, we require a mode to always be set without relying on the compiler.
         // So we cheat, because it works and is easier to handle later.
-        let state = State { mode: current_mode.unwrap_or_else(|| unsafe { std::mem::zeroed() }), connectors: current_connectors };
-        let pending = State { mode, connectors: connectors.into_iter().copied().collect() };
-        
+        let state = State {
+            mode: current_mode.unwrap_or_else(|| unsafe { std::mem::zeroed() }),
+            connectors: current_connectors,
+        };
+        let pending = State {
+            mode,
+            connectors: connectors.into_iter().copied().collect(),
+        };
+
         let surface = LegacyDrmSurfaceInternal {
             dev,
             crtc,
@@ -424,11 +433,14 @@ impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
             // by the device, when switching back
             return;
         }
-        
+
         let _ = self.set_cursor(self.crtc, Option::<&DumbBuffer>::None);
         // disable connectors again
         let current = self.state.read().unwrap();
-        if let Ok(_) = self.dev.set_connector_state(current.connectors.iter().copied(), false) {
+        if let Ok(_) = self
+            .dev
+            .set_connector_state(current.connectors.iter().copied(), false)
+        {
             // null commit
             let _ = self.set_crtc(self.crtc, None, (0, 0), &[], None);
         }

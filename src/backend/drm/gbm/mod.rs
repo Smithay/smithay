@@ -171,13 +171,11 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
     ) -> Result<GbmSurface<D>, Error<<<D as Device>::Surface as Surface>::Error>> {
         info!(self.logger, "Initializing GbmSurface");
 
-        let drm_surface =
-            Device::create_surface(&mut **self.dev.borrow_mut(), crtc, mode, connectors).map_err(Error::Underlying)?;
+        let drm_surface = Device::create_surface(&mut **self.dev.borrow_mut(), crtc, mode, connectors)
+            .map_err(Error::Underlying)?;
 
         // initialize the surface
-        let (w, h) = drm_surface
-            .pending_mode()
-            .size();
+        let (w, h) = drm_surface.pending_mode().size();
         let surface = self
             .dev
             .borrow()
@@ -260,16 +258,24 @@ impl<D: RawDevice + ControlDevice + 'static> Drop for GbmDevice<D> {
 
 impl<E> Into<SwapBuffersError> for Error<E>
 where
-    E: std::error::Error + Into<SwapBuffersError> + 'static
+    E: std::error::Error + Into<SwapBuffersError> + 'static,
 {
     fn into(self) -> SwapBuffersError {
         match self {
             Error::FrontBuffersExhausted => SwapBuffersError::AlreadySwapped,
-            Error::FramebufferCreationFailed(x) if match x.get_ref() {
-                &drm::SystemError::Unknown { errno: nix::errno::Errno::EBUSY } => true,
-                &drm::SystemError::Unknown { errno: nix::errno::Errno::EINTR } => true,
-                _ => false
-            } => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            Error::FramebufferCreationFailed(x)
+                if match x.get_ref() {
+                    &drm::SystemError::Unknown {
+                        errno: nix::errno::Errno::EBUSY,
+                    } => true,
+                    &drm::SystemError::Unknown {
+                        errno: nix::errno::Errno::EINTR,
+                    } => true,
+                    _ => false,
+                } =>
+            {
+                SwapBuffersError::TemporaryFailure(Box::new(x))
+            }
             Error::Underlying(x) => x.into(),
             x => SwapBuffersError::ContextLost(Box::new(x)),
         }

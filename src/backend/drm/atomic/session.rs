@@ -3,8 +3,9 @@
 //! to an open [`Session`](::backend::session::Session).
 //!
 
-use drm::control::{crtc, property, Device as ControlDevice, AtomicCommitFlags, atomic::AtomicModeReq};
+use drm::control::{atomic::AtomicModeReq, crtc, property, AtomicCommitFlags, Device as ControlDevice};
 use drm::Device as BasicDevice;
+use failure::ResultExt;
 use nix::libc::dev_t;
 use nix::sys::stat;
 use std::cell::RefCell;
@@ -13,7 +14,6 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use failure::ResultExt;
 
 use super::{AtomicDrmDevice, AtomicDrmSurfaceInternal, Dev};
 use crate::backend::drm::{common::Error, DevPath};
@@ -114,31 +114,44 @@ impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
                 .map_err(|source| Error::Access {
                     errmsg: "Error loading drm resources",
                     dev: dev.dev_path(),
-                    source
+                    source,
                 })?;
 
             // Disable all connectors (otherwise we might run into conflicting commits when restarting the rendering loop)
             let mut req = AtomicModeReq::new();
             for conn in res_handles.connectors() {
-                let prop = dev.prop_mapping.0.get(&conn)
-                    .expect("Unknown handle").get("CRTC_ID")
+                let prop = dev
+                    .prop_mapping
+                    .0
+                    .get(&conn)
+                    .expect("Unknown handle")
+                    .get("CRTC_ID")
                     .expect("Unknown property CRTC_ID");
                 req.add_property(*conn, *prop, property::Value::CRTC(None));
             }
             // A crtc without a connector has no mode, we also need to reset that.
             // Otherwise the commit will not be accepted.
             for crtc in res_handles.crtcs() {
-                let mode_prop = dev.prop_mapping.1.get(&crtc)
-                    .expect("Unknown handle").get("MODE_ID")
+                let mode_prop = dev
+                    .prop_mapping
+                    .1
+                    .get(&crtc)
+                    .expect("Unknown handle")
+                    .get("MODE_ID")
                     .expect("Unknown property MODE_ID");
-                let active_prop = dev.prop_mapping.1.get(&crtc)
-                    .expect("Unknown handle").get("ACTIVE")
+                let active_prop = dev
+                    .prop_mapping
+                    .1
+                    .get(&crtc)
+                    .expect("Unknown handle")
+                    .get("ACTIVE")
                     .expect("Unknown property ACTIVE");
                 req.add_property(*crtc, *active_prop, property::Value::Boolean(false));
                 req.add_property(*crtc, *mode_prop, property::Value::Unknown(0));
             }
             dev.atomic_commit(&[AtomicCommitFlags::AllowModeset], req)
-                .compat().map_err(|source| Error::Access {
+                .compat()
+                .map_err(|source| Error::Access {
                     errmsg: "Failed to disable connectors",
                     dev: dev.dev_path(),
                     source,

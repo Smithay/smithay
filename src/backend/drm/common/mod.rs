@@ -3,9 +3,9 @@
 //! and [`Surface`](::backend::drm::Surface) implementations of the `backend::drm` module.
 //!
 
+use crate::backend::graphics::SwapBuffersError;
 use drm::control::{connector, crtc, Mode, RawResourceHandle};
 use std::path::PathBuf;
-use crate::backend::graphics::SwapBuffersError;
 
 pub mod fallback;
 
@@ -81,10 +81,17 @@ impl Into<SwapBuffersError> for Error {
                 dev: _,
                 source,
             } if match source.get_ref() {
-                drm::SystemError::Unknown { errno: nix::errno::Errno::EBUSY } => true,
-                drm::SystemError::Unknown { errno: nix::errno::Errno::EINTR } => true,
+                drm::SystemError::Unknown {
+                    errno: nix::errno::Errno::EBUSY,
+                } => true,
+                drm::SystemError::Unknown {
+                    errno: nix::errno::Errno::EINTR,
+                } => true,
                 _ => false,
-            } => SwapBuffersError::TemporaryFailure(Box::new(source)),
+            } =>
+            {
+                SwapBuffersError::TemporaryFailure(Box::new(source))
+            }
             x => SwapBuffersError::ContextLost(Box::new(x)),
         }
     }

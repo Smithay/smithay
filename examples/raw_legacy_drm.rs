@@ -40,7 +40,8 @@ fn main() {
     let mut options = OpenOptions::new();
     options.read(true);
     options.write(true);
-    let mut device = LegacyDrmDevice::new(options.open("/dev/dri/card0").unwrap(), true, log.clone()).unwrap();
+    let mut device =
+        LegacyDrmDevice::new(options.open("/dev/dri/card0").unwrap(), true, log.clone()).unwrap();
 
     // Get a set of all modesetting resource handles (excluding planes):
     let res_handles = Device::resource_handles(&device).unwrap();
@@ -78,7 +79,11 @@ fn main() {
     let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
 
     // Initialize the hardware backend
-    let surface = Rc::new(device.create_surface(crtc, mode, &[connector_info.handle()]).unwrap());
+    let surface = Rc::new(
+        device
+            .create_surface(crtc, mode, &[connector_info.handle()])
+            .unwrap(),
+    );
 
     /*
      * Lets create buffers and framebuffers.

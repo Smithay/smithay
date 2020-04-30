@@ -108,7 +108,7 @@ pub trait Device: AsRawFd + DevPath {
         &mut self,
         crtc: crtc::Handle,
         mode: Mode,
-        connectors: &[connector::Handle]
+        connectors: &[connector::Handle],
     ) -> Result<Self::Surface, <Self::Surface as Surface>::Error>;
 
     /// Processes any open events of the underlying file descriptor.
