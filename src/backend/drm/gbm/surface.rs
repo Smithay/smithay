@@ -2,6 +2,7 @@ use super::super::{Device, RawDevice, RawSurface, Surface};
 use super::Error;
 
 use drm::control::{connector, crtc, framebuffer, Device as ControlDevice, Mode};
+use failure::ResultExt;
 use gbm::{self, BufferObject, BufferObjectFlags, Format as GbmFormat, SurfaceBufferHandle};
 use image::{ImageBuffer, Rgba};
 
@@ -9,7 +10,6 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::backend::graphics::CursorBackend;
-use crate::backend::graphics::SwapBuffersError;
 
 pub(super) struct GbmSurfaceInternal<D: RawDevice + 'static> {
     pub(super) dev: Rc<RefCell<gbm::Device<D>>>,
@@ -32,7 +32,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         // drop and release the old buffer
     }
 
-    pub unsafe fn page_flip(&self) -> ::std::result::Result<(), SwapBuffersError> {
+    pub unsafe fn page_flip(&self) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
         let res = {
             let nb = self.next_buffer.take();
             let res = nb.is_some();
@@ -42,7 +42,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         if res {
             // We cannot call lock_front_buffer anymore without releasing the previous buffer, which will happen when the page flip is done
             warn!(self.logger, "Tried to swap with an already queued flip");
-            return Err(SwapBuffersError::AlreadySwapped);
+            return Err(Error::FrontBuffersExhausted);
         }
 
         // supporting only one buffer would cause a lot of inconvinience and
@@ -53,13 +53,13 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
             .surface
             .borrow()
             .lock_front_buffer()
-            .expect("Surface only has one front buffer. Not supported by smithay");
+            .map_err(|_| Error::FrontBufferLockFailed)?;
 
         // create a framebuffer if the front buffer does not have one already
         // (they are reused by gbm)
         let maybe_fb = next_bo
             .userdata()
-            .map_err(|_| SwapBuffersError::ContextLost)?
+            .map_err(|_| Error::InvalidInternalState)?
             .cloned();
         let fb = if let Some(info) = maybe_fb {
             info
@@ -67,7 +67,8 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
             let fb = self
                 .crtc
                 .add_planar_framebuffer(&*next_bo, &[0; 4], 0)
-                .map_err(|_| SwapBuffersError::ContextLost)?;
+                .compat()
+                .map_err(Error::FramebufferCreationFailed)?;
             next_bo.set_userdata(fb).unwrap();
             fb
         };
@@ -75,14 +76,11 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
 
         if self.recreated.get() {
             debug!(self.logger, "Commiting new state");
-            if let Err(err) = self.crtc.commit(fb) {
-                error!(self.logger, "Error commiting crtc: {}", err);
-                return Err(SwapBuffersError::ContextLost);
-            }
+            self.crtc.commit(fb).map_err(Error::Underlying)?;
             self.recreated.set(false);
         } else {
             trace!(self.logger, "Queueing Page flip");
-            RawSurface::page_flip(&self.crtc, fb)?;
+            RawSurface::page_flip(&self.crtc, fb).map_err(Error::Underlying)?;
         }
 
         self.current_frame_buffer.set(Some(fb));
@@ -91,11 +89,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
     }
 
     pub fn recreate(&self) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
-        let (w, h) = self
-            .pending_mode()
-            .or_else(|| self.current_mode())
-            .ok_or(Error::NoModeSet)?
-            .size();
+        let (w, h) = self.pending_mode().size();
 
         // Recreate the surface and the related resources to match the new
         // resolution.
@@ -167,15 +161,15 @@ impl<D: RawDevice + 'static> Surface for GbmSurfaceInternal<D> {
         self.crtc.set_connectors(connectors).map_err(Error::Underlying)
     }
 
-    fn current_mode(&self) -> Option<Mode> {
+    fn current_mode(&self) -> Mode {
         self.crtc.current_mode()
     }
 
-    fn pending_mode(&self) -> Option<Mode> {
+    fn pending_mode(&self) -> Mode {
         self.crtc.pending_mode()
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Self::Error> {
+    fn use_mode(&self, mode: Mode) -> Result<(), Self::Error> {
         self.crtc.use_mode(mode).map_err(Error::Underlying)
     }
 }
@@ -277,7 +271,7 @@ impl<D: RawDevice + 'static> GbmSurface<D> {
     ///
     /// When used in conjunction with an EGL context, this must be called exactly once
     /// after page-flipping the associated context.
-    pub unsafe fn page_flip(&self) -> ::std::result::Result<(), SwapBuffersError> {
+    pub unsafe fn page_flip(&self) -> ::std::result::Result<(), <Self as Surface>::Error> {
         self.0.page_flip()
     }
 
@@ -325,15 +319,15 @@ impl<D: RawDevice + 'static> Surface for GbmSurface<D> {
         self.0.set_connectors(connectors)
     }
 
-    fn current_mode(&self) -> Option<Mode> {
+    fn current_mode(&self) -> Mode {
         self.0.current_mode()
     }
 
-    fn pending_mode(&self) -> Option<Mode> {
+    fn pending_mode(&self) -> Mode {
         self.0.pending_mode()
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Self::Error> {
+    fn use_mode(&self, mode: Mode) -> Result<(), Self::Error> {
         self.0.use_mode(mode)
     }
 }

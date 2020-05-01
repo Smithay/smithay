@@ -324,7 +324,9 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
                     if let Entry::Vacant(entry) = backends.entry(crtc) {
                         let renderer = GliumDrawer::init(
-                            device.create_surface(crtc).unwrap(),
+                            device
+                                .create_surface(crtc, connector_info.modes()[0], &[connector_info.handle()])
+                                .unwrap(),
                             egl_buffer_reader.clone(),
                             logger.clone(),
                         );
@@ -394,7 +396,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
             )
             .ok()
             .and_then(
-                |fd| match FallbackDevice::new(SessionFd(fd), self.logger.clone()) {
+                |fd| match FallbackDevice::new(SessionFd(fd), true, self.logger.clone()) {
                     Ok(drm) => Some(drm),
                     Err(err) => {
                         error!(self.logger, "Skipping drm device, because of error: {}", err);

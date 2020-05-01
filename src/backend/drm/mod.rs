@@ -48,8 +48,6 @@ use std::path::PathBuf;
 
 use calloop::{generic::Generic, InsertError, LoopHandle, Source};
 
-use super::graphics::SwapBuffersError;
-
 #[cfg(feature = "backend_drm_atomic")]
 pub mod atomic;
 #[cfg(feature = "backend_drm")]
@@ -91,16 +89,23 @@ pub trait Device: AsRawFd + DevPath {
 
     /// Creates a new rendering surface.
     ///
+    /// # Arguments
+    ///
     /// Initialization of surfaces happens through the types provided by
     /// [`drm-rs`](drm).
     ///
-    /// [`crtc`](drm::control::crtc)s represent scanout engines
-    /// of the device pointer to one framebuffer.
-    /// Their responsibility is to read the data of the framebuffer and export it into an "Encoder".
-    /// The number of crtc's represent the number of independant output devices the hardware may handle.
+    /// - [`crtc`](drm::control::crtc)s represent scanout engines of the device pointing to one framebuffer. \
+    ///     Their responsibility is to read the data of the framebuffer and export it into an "Encoder". \
+    ///     The number of crtc's represent the number of independant output devices the hardware may handle.
+    /// - [`mode`](drm::control::Mode) describes the resolution and rate of images produced by the crtc and \
+    ///     has to be compatible with the provided `connectors`.
+    /// - [`connectors`] - List of connectors driven by the crtc. At least one(!) connector needs to be \
+    ///     attached to a crtc in smithay.
     fn create_surface(
         &mut self,
         crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
     ) -> Result<Self::Surface, <Self::Surface as Surface>::Error>;
 
     /// Processes any open events of the underlying file descriptor.
@@ -161,6 +166,11 @@ pub trait Surface {
     /// Tries to add a new [`connector`](drm::control::connector)
     /// to be used after the next commit.
     ///
+    /// **Warning**: You need to make sure, that the connector is not used with another surface
+    /// or was properly removed via `remove_connector` + `commit` before adding it to another surface.
+    /// Behavior if failing to do so is undefined, but might result in rendering errors or the connector
+    /// getting removed from the other surface without updating it's internal state.
+    ///
     /// Fails if the `connector` is not compatible with the underlying [`crtc`](drm::control::crtc)
     /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
     /// or is not compatible with the currently pending
@@ -178,11 +188,10 @@ pub trait Surface {
     fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Self::Error>;
     /// Returns the currently active [`Mode`](drm::control::Mode)
     /// of the underlying [`crtc`](drm::control::crtc)
-    /// if any.
-    fn current_mode(&self) -> Option<Mode>;
+    fn current_mode(&self) -> Mode;
     /// Returns the currently pending [`Mode`](drm::control::Mode)
-    /// to be used after the next commit, if any.
-    fn pending_mode(&self) -> Option<Mode>;
+    /// to be used after the next commit.
+    fn pending_mode(&self) -> Mode;
     /// Tries to set a new [`Mode`](drm::control::Mode)
     /// to be used after the next commit.
     ///
@@ -193,7 +202,7 @@ pub trait Surface {
     /// *Note*: Only on a [`RawSurface`] you may directly trigger
     /// a [`commit`](RawSurface::commit). Other [`Surface`]s provide their
     /// own methods that *may* trigger a commit, you will need to read their docs.
-    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Self::Error>;
+    fn use_mode(&self, mode: Mode) -> Result<(), Self::Error>;
 }
 
 /// An open bare crtc without any rendering abstractions
@@ -224,7 +233,7 @@ pub trait RawSurface: Surface + ControlDevice + BasicDevice {
     /// This operation is not blocking and will produce a `vblank` event once swapping is done.
     /// Make sure to [set a `DeviceHandler`](Device::set_handler) and
     /// [register the belonging `Device`](device_bind) before to receive the event in time.
-    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), SwapBuffersError>;
+    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), <Self as Surface>::Error>;
 }
 
 /// Trait representing open devices that *may* return a `Path`

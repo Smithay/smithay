@@ -1,21 +1,22 @@
 use drm::buffer::Buffer;
 use drm::control::atomic::AtomicModeReq;
 use drm::control::Device as ControlDevice;
-use drm::control::{connector, crtc, framebuffer, plane, property, AtomicCommitFlags, Mode, PlaneType};
+use drm::control::{
+    connector, crtc, dumbbuffer::DumbBuffer, framebuffer, plane, property, AtomicCommitFlags, Mode, PlaneType,
+};
 use drm::Device as BasicDevice;
 
 use std::cell::Cell;
 use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
-use std::sync::RwLock;
+use std::sync::{atomic::Ordering, RwLock};
 
 use failure::ResultExt as FailureResultExt;
 
 use super::Dev;
 use crate::backend::drm::{common::Error, DevPath, RawSurface, Surface};
 use crate::backend::graphics::CursorBackend;
-use crate::backend::graphics::SwapBuffersError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CursorState {
@@ -26,8 +27,8 @@ pub struct CursorState {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {
-    pub mode: Option<Mode>,
-    pub blob: Option<property::Value<'static>>,
+    pub mode: Mode,
+    pub blob: property::Value<'static>,
     pub connectors: HashSet<connector::Handle>,
 }
 
@@ -45,6 +46,7 @@ pub(super) struct AtomicDrmSurfaceInternal<A: AsRawFd + 'static> {
     pub(super) state: RwLock<State>,
     pub(super) pending: RwLock<State>,
     pub(super) logger: ::slog::Logger,
+    pub(super) test_buffer: Cell<Option<(DumbBuffer, framebuffer::Handle)>>,
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for AtomicDrmSurfaceInternal<A> {
@@ -57,26 +59,44 @@ impl<A: AsRawFd + 'static> BasicDevice for AtomicDrmSurfaceInternal<A> {}
 impl<A: AsRawFd + 'static> ControlDevice for AtomicDrmSurfaceInternal<A> {}
 
 impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
-    pub(crate) fn new(dev: Rc<Dev<A>>, crtc: crtc::Handle, logger: ::slog::Logger) -> Result<Self, Error> {
+    pub(crate) fn new(
+        dev: Rc<Dev<A>>,
+        crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
+        logger: ::slog::Logger,
+    ) -> Result<Self, Error> {
         let crtc_info = dev.get_crtc(crtc).compat().map_err(|source| Error::Access {
             errmsg: "Error loading crtc info",
             dev: dev.dev_path(),
             source,
         })?;
 
-        let mode = crtc_info.mode();
-        let blob = match mode {
-            Some(mode) => Some(
-                dev.create_property_blob(mode)
-                    .compat()
-                    .map_err(|source| Error::Access {
-                        errmsg: "Failed to create Property Blob for mode",
-                        dev: dev.dev_path(),
-                        source,
-                    })?,
-            ),
-            None => None,
+        // If we have no current mode, we create a fake one, which will not match (and thus gets overriden on the commit below).
+        // A better fix would probably be making mode an `Option`, but that would mean
+        // we need to be sure, we require a mode to always be set without relying on the compiler.
+        // So we cheat, because it works and is easier to handle later.
+        let current_mode = crtc_info.mode().unwrap_or_else(|| unsafe { std::mem::zeroed() });
+        let current_blob = match crtc_info.mode() {
+            Some(mode) => dev
+                .create_property_blob(mode)
+                .compat()
+                .map_err(|source| Error::Access {
+                    errmsg: "Failed to create Property Blob for mode",
+                    dev: dev.dev_path(),
+                    source,
+                })?,
+            None => property::Value::Unknown(0),
         };
+
+        let blob = dev
+            .create_property_blob(mode)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Failed to create Property Blob for mode",
+                dev: dev.dev_path(),
+                source,
+            })?;
 
         let res_handles = ControlDevice::resource_handles(&*dev)
             .compat()
@@ -86,12 +106,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                 source,
             })?;
 
-        let mut state = State {
-            mode,
-            blob,
-            connectors: HashSet::new(),
-        };
-
+        let mut current_connectors = HashSet::new();
         for conn in res_handles.connectors() {
             let crtc_prop = dev
                 .prop_mapping
@@ -113,7 +128,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                             crtc_prop_info.value_type().convert_value(val)
                         {
                             if conn_crtc == crtc {
-                                state.connectors.insert(*conn);
+                                current_connectors.insert(*conn);
                             }
                         }
                         break;
@@ -121,13 +136,23 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                 }
             }
         }
+        let state = State {
+            mode: current_mode,
+            blob: current_blob,
+            connectors: current_connectors,
+        };
+        let pending = State {
+            mode,
+            blob,
+            connectors: connectors.iter().copied().collect(),
+        };
 
         let (primary, cursor) =
             AtomicDrmSurfaceInternal::find_planes(&dev, crtc).ok_or(Error::NoSuitablePlanes {
                 crtc,
                 dev: dev.dev_path(),
             })?;
-        Ok(AtomicDrmSurfaceInternal {
+        let surface = AtomicDrmSurfaceInternal {
             dev,
             crtc,
             cursor: CursorState {
@@ -136,10 +161,102 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                 hotspot: Cell::new((0, 0)),
             },
             planes: Planes { primary, cursor },
-            state: RwLock::new(state.clone()),
-            pending: RwLock::new(state),
+            state: RwLock::new(state),
+            pending: RwLock::new(pending),
             logger,
-        })
+            test_buffer: Cell::new(None),
+        };
+
+        Ok(surface)
+    }
+
+    fn create_test_buffer(&self, mode: &Mode) -> Result<framebuffer::Handle, Error> {
+        let (w, h) = mode.size();
+        let db = self
+            .create_dumb_buffer((w as u32, h as u32), drm::buffer::format::PixelFormat::ARGB8888)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Failed to create dumb buffer",
+                dev: self.dev_path(),
+                source,
+            })?;
+        let fb = self
+            .add_framebuffer(&db)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Failed to create framebuffer",
+                dev: self.dev_path(),
+                source,
+            })?;
+        if let Some((old_db, old_fb)) = self.test_buffer.replace(Some((db, fb))) {
+            let _ = self.destroy_framebuffer(old_fb);
+            let _ = self.destroy_dumb_buffer(old_db);
+        };
+
+        Ok(fb)
+    }
+}
+
+impl<A: AsRawFd + 'static> Drop for AtomicDrmSurfaceInternal<A> {
+    fn drop(&mut self) {
+        if let Some((db, fb)) = self.test_buffer.take() {
+            let _ = self.destroy_framebuffer(fb);
+            let _ = self.destroy_dumb_buffer(db);
+        }
+
+        if !self.dev.active.load(Ordering::SeqCst) {
+            // the device is gone or we are on another tty
+            // old state has been restored, we shouldn't touch it.
+            // if we are on another tty the connectors will get disabled
+            // by the device, when switching back
+            return;
+        }
+
+        // other ttys that use no cursor, might not clear it themselves.
+        // This makes sure our cursor won't stay visible.
+        if let Err(err) = self.clear_plane(self.planes.cursor) {
+            warn!(
+                self.logger,
+                "Failed to clear cursor on {:?}: {}", self.planes.cursor, err
+            );
+        }
+
+        // disable connectors again
+        let current = self.state.read().unwrap();
+        let mut req = AtomicModeReq::new();
+        for conn in current.connectors.iter() {
+            let prop = self
+                .dev
+                .prop_mapping
+                .0
+                .get(&conn)
+                .expect("Unknown Handle")
+                .get("CRTC_ID")
+                .expect("Unknown property CRTC_ID");
+            req.add_property(*conn, *prop, property::Value::CRTC(None));
+        }
+        let active_prop = self
+            .dev
+            .prop_mapping
+            .1
+            .get(&self.crtc)
+            .expect("Unknown Handle")
+            .get("ACTIVE")
+            .expect("Unknown property ACTIVE");
+        let mode_prop = self
+            .dev
+            .prop_mapping
+            .1
+            .get(&self.crtc)
+            .expect("Unknown Handle")
+            .get("MODE_ID")
+            .expect("Unknown property MODE_ID");
+
+        req.add_property(self.crtc, *active_prop, property::Value::Boolean(false));
+        req.add_property(self.crtc, *mode_prop, property::Value::Unknown(0));
+        if let Err(err) = self.atomic_commit(&[AtomicCommitFlags::AllowModeset], req) {
+            warn!(self.logger, "Unable to disable connectors: {}", err);
+        }
     }
 }
 
@@ -159,15 +276,19 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
         self.pending.read().unwrap().connectors.clone()
     }
 
-    fn current_mode(&self) -> Option<Mode> {
+    fn current_mode(&self) -> Mode {
         self.state.read().unwrap().mode
     }
 
-    fn pending_mode(&self) -> Option<Mode> {
+    fn pending_mode(&self) -> Mode {
         self.pending.read().unwrap().mode
     }
 
     fn add_connector(&self, conn: connector::Handle) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let info = self
             .get_connector(conn)
             .compat()
@@ -180,15 +301,15 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
         let mut pending = self.pending.write().unwrap();
 
         // check if the connector can handle the current mode
-        if info.modes().contains(pending.mode.as_ref().unwrap()) {
+        if info.modes().contains(&pending.mode) {
             // check if config is supported
             let req = self.build_request(
                 &mut [conn].iter(),
                 &mut [].iter(),
                 &self.planes,
-                None,
-                pending.mode,
-                pending.blob,
+                Some(self.create_test_buffer(&pending.mode)?),
+                Some(pending.mode),
+                Some(pending.blob),
             )?;
             self.atomic_commit(
                 &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
@@ -202,21 +323,30 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
 
             Ok(())
         } else {
-            Err(Error::ModeNotSuitable(pending.mode.unwrap()))
+            Err(Error::ModeNotSuitable(pending.mode))
         }
     }
 
     fn remove_connector(&self, conn: connector::Handle) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let mut pending = self.pending.write().unwrap();
+
+        // the test would also prevent this, but the error message is far less helpful
+        if pending.connectors.contains(&conn) && pending.connectors.len() == 1 {
+            return Err(Error::SurfaceWithoutConnectors(self.crtc));
+        }
 
         // check if new config is supported (should be)
         let req = self.build_request(
             &mut [].iter(),
             &mut [conn].iter(),
             &self.planes,
-            None,
-            pending.mode,
-            pending.blob,
+            Some(self.create_test_buffer(&pending.mode)?),
+            Some(pending.mode),
+            Some(pending.blob),
         )?;
         self.atomic_commit(
             &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
@@ -232,6 +362,14 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
     }
 
     fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error> {
+        if connectors.is_empty() {
+            return Err(Error::SurfaceWithoutConnectors(self.crtc));
+        }
+
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let current = self.state.write().unwrap();
         let mut pending = self.pending.write().unwrap();
 
@@ -243,9 +381,9 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
             &mut added,
             &mut removed,
             &self.planes,
-            None,
-            pending.mode,
-            pending.blob,
+            Some(self.create_test_buffer(&pending.mode)?),
+            Some(pending.mode),
+            Some(pending.blob),
         )?;
 
         self.atomic_commit(
@@ -259,30 +397,31 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
         Ok(())
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Error> {
+    fn use_mode(&self, mode: Mode) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let mut pending = self.pending.write().unwrap();
 
         // check if new config is supported
-        let new_blob = Some(match mode {
-            Some(mode) => self
-                .dev
-                .create_property_blob(mode)
-                .compat()
-                .map_err(|source| Error::Access {
-                    errmsg: "Failed to create Property Blob for mode",
-                    dev: self.dev_path(),
-                    source,
-                })?,
-            None => property::Value::Unknown(0),
-        });
+        let new_blob = self
+            .create_property_blob(mode)
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Failed to create Property Blob for mode",
+                dev: self.dev_path(),
+                source,
+            })?;
 
+        let test_fb = Some(self.create_test_buffer(&pending.mode)?);
         let req = self.build_request(
             &mut pending.connectors.iter(),
             &mut [].iter(),
             &self.planes,
-            None,
-            mode,
-            new_blob,
+            test_fb,
+            Some(mode),
+            Some(new_blob),
         )?;
         if let Err(err) = self
             .atomic_commit(
@@ -292,7 +431,7 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
             .compat()
             .map_err(|_| Error::TestFailed(self.crtc))
         {
-            let _ = self.dev.destroy_property_blob(new_blob.unwrap().into());
+            let _ = self.dev.destroy_property_blob(new_blob.into());
             return Err(err);
         }
 
@@ -310,6 +449,10 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
     }
 
     fn commit(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let mut current = self.state.write().unwrap();
         let mut pending = self.pending.write().unwrap();
 
@@ -340,11 +483,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
         }
 
         if current.mode != pending.mode {
-            info!(
-                self.logger,
-                "Setting new mode: {:?}",
-                pending.mode.as_ref().unwrap().name()
-            );
+            info!(self.logger, "Setting new mode: {:?}", pending.mode.name());
         }
 
         trace!(self.logger, "Testing screen config");
@@ -355,8 +494,8 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
                 &mut removed,
                 &self.planes,
                 Some(framebuffer),
-                pending.mode,
-                pending.blob,
+                Some(pending.mode),
+                Some(pending.blob),
             )?;
 
             if let Err(err) = self
@@ -380,15 +519,13 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
                     &mut [].iter(),
                     &self.planes,
                     Some(framebuffer),
-                    current.mode,
-                    current.blob,
+                    Some(current.mode),
+                    Some(current.blob),
                 )?
             } else {
                 if current.mode != pending.mode {
-                    if let Some(blob) = current.blob {
-                        if let Err(err) = self.dev.destroy_property_blob(blob.into()) {
-                            warn!(self.logger, "Failed to destory old mode property blob: {}", err);
-                        }
+                    if let Err(err) = self.dev.destroy_property_blob(current.blob.into()) {
+                        warn!(self.logger, "Failed to destory old mode property blob: {}", err);
                     }
                 }
                 *current = pending.clone();
@@ -398,7 +535,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
             }
         };
 
-        debug!(self.logger, "Setting screen: {:#?}", req);
+        debug!(self.logger, "Setting screen: {:?}", req);
         self.atomic_commit(
             &[
                 AtomicCommitFlags::PageFlipEvent,
@@ -417,23 +554,31 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
         Ok(())
     }
 
-    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), SwapBuffersError> {
-        let req = self
-            .build_request(
-                &mut [].iter(),
-                &mut [].iter(),
-                &self.planes,
-                Some(framebuffer),
-                None,
-                None,
-            ) //current.mode)
-            .map_err(|_| SwapBuffersError::ContextLost)?;
+    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
+        let req = self.build_request(
+            &mut [].iter(),
+            &mut [].iter(),
+            &self.planes,
+            Some(framebuffer),
+            None,
+            None,
+        )?;
+
         trace!(self.logger, "Queueing page flip: {:#?}", req);
         self.atomic_commit(
             &[AtomicCommitFlags::PageFlipEvent, AtomicCommitFlags::Nonblock],
             req,
         )
-        .map_err(|_| SwapBuffersError::ContextLost)?;
+        .compat()
+        .map_err(|source| Error::Access {
+            errmsg: "Page flip commit failed",
+            dev: self.dev_path(),
+            source,
+        })?;
 
         Ok(())
     }
@@ -444,6 +589,10 @@ impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurfaceInternal<A> {
     type Error = Error;
 
     fn set_cursor_position(&self, x: u32, y: u32) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         trace!(self.logger, "New cursor position ({},{}) pending", x, y);
         self.cursor.position.set(Some((x, y)));
         Ok(())
@@ -454,6 +603,10 @@ impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurfaceInternal<A> {
         buffer: &Self::CursorFormat,
         hotspot: (u32, u32),
     ) -> Result<(), Error> {
+        if !self.dev.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         trace!(self.logger, "Setting the new imported cursor");
 
         if let Some(fb) = self.cursor.framebuffer.get().take() {
@@ -834,11 +987,11 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurface<A> {
         self.0.pending_connectors()
     }
 
-    fn current_mode(&self) -> Option<Mode> {
+    fn current_mode(&self) -> Mode {
         self.0.current_mode()
     }
 
-    fn pending_mode(&self) -> Option<Mode> {
+    fn pending_mode(&self) -> Mode {
         self.0.pending_mode()
     }
 
@@ -854,7 +1007,7 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurface<A> {
         self.0.set_connectors(connectors)
     }
 
-    fn use_mode(&self, mode: Option<Mode>) -> Result<(), Error> {
+    fn use_mode(&self, mode: Mode) -> Result<(), Error> {
         self.0.use_mode(mode)
     }
 }
@@ -868,7 +1021,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurface<A> {
         self.0.commit(framebuffer)
     }
 
-    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), SwapBuffersError> {
+    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
         RawSurface::page_flip(&*self.0, framebuffer)
     }
 }

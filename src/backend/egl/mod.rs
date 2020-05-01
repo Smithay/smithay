@@ -19,7 +19,10 @@
 //! of an EGL-based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer) for rendering.
 
 #[cfg(feature = "renderer_gl")]
-use crate::backend::graphics::gl::{ffi as gl_ffi, GLGraphicsBackend};
+use crate::backend::graphics::{
+    gl::{ffi as gl_ffi, GLGraphicsBackend},
+    SwapBuffersError as GraphicsSwapBuffersError,
+};
 use nix::libc::c_uint;
 use std::fmt;
 #[cfg(feature = "wayland_frontend")]
@@ -28,7 +31,7 @@ use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
 pub mod context;
 pub use self::context::EGLContext;
 mod error;
-pub use self::error::Error;
+pub use self::error::*;
 
 use nix::libc::c_void;
 
@@ -84,11 +87,11 @@ pub enum BufferAccessError {
     #[error("The corresponding context was lost")]
     ContextLost,
     /// This buffer is not managed by the EGL buffer
-    #[error("This buffer is not managed by EGL")]
-    NotManaged(WlBuffer),
+    #[error("This buffer is not managed by EGL. Err: {1:}")]
+    NotManaged(WlBuffer, #[source] EGLError),
     /// Failed to create `EGLImages` from the buffer
-    #[error("Failed to create EGLImages from the buffer")]
-    EGLImageCreationFailed,
+    #[error("Failed to create EGLImages from the buffer. Err: {0:}")]
+    EGLImageCreationFailed(#[source] EGLError),
     /// The required EGL extension is not supported by the underlying EGL implementation
     #[error("{0}")]
     EglExtensionNotSupported(#[from] EglExtensionNotSupportedError),
@@ -99,11 +102,93 @@ impl fmt::Debug for BufferAccessError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> ::std::result::Result<(), fmt::Error> {
         match *self {
             BufferAccessError::ContextLost => write!(formatter, "BufferAccessError::ContextLost"),
-            BufferAccessError::NotManaged(_) => write!(formatter, "BufferAccessError::NotManaged"),
-            BufferAccessError::EGLImageCreationFailed => {
+            BufferAccessError::NotManaged(_, _) => write!(formatter, "BufferAccessError::NotManaged"),
+            BufferAccessError::EGLImageCreationFailed(_) => {
                 write!(formatter, "BufferAccessError::EGLImageCreationFailed")
             }
             BufferAccessError::EglExtensionNotSupported(ref err) => write!(formatter, "{:?}", err),
+        }
+    }
+}
+
+/// Error that can occur when creating a surface.
+#[derive(Debug, thiserror::Error)]
+pub enum SurfaceCreationError<E: std::error::Error + 'static> {
+    /// Native Surface creation failed
+    #[error("Surface creation failed. Err: {0:}")]
+    NativeSurfaceCreationFailed(#[source] E),
+    /// EGL surface creation failed
+    #[error("EGL surface creation failed. Err: {0:}")]
+    EGLSurfaceCreationFailed(#[source] EGLError),
+}
+
+/// Error that can happen when swapping buffers.
+#[derive(Debug, thiserror::Error)]
+pub enum SwapBuffersError<E: std::error::Error + 'static> {
+    /// Error of the underlying native surface
+    #[error("Underlying error: {0:?}")]
+    Underlying(#[source] E),
+    /// EGL error during `eglSwapBuffers`
+    #[error("{0:}")]
+    EGLSwapBuffers(#[source] EGLError),
+    /// EGL error during `eglCreateWindowSurface`
+    #[error("{0:}")]
+    EGLCreateWindowSurface(#[source] EGLError),
+}
+
+impl<E: std::error::Error> std::convert::TryFrom<SwapBuffersError<E>> for GraphicsSwapBuffersError {
+    type Error = E;
+    fn try_from(value: SwapBuffersError<E>) -> Result<Self, Self::Error> {
+        match value {
+            // bad surface is answered with a surface recreation in `swap_buffers`
+            x @ SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface) => {
+                Ok(GraphicsSwapBuffersError::TemporaryFailure(Box::new(x)))
+            }
+            // the rest is either never happening or are unrecoverable
+            x @ SwapBuffersError::EGLSwapBuffers(_) => Ok(GraphicsSwapBuffersError::ContextLost(Box::new(x))),
+            x @ SwapBuffersError::EGLCreateWindowSurface(_) => {
+                Ok(GraphicsSwapBuffersError::ContextLost(Box::new(x)))
+            }
+            SwapBuffersError::Underlying(e) => Err(e),
+        }
+    }
+}
+
+/// Error that can happen when making a context (and surface) current on the active thread.
+#[derive(thiserror::Error, Debug)]
+#[error("`eglMakeCurrent` failed: {0}")]
+pub struct MakeCurrentError(#[from] EGLError);
+
+impl From<MakeCurrentError> for GraphicsSwapBuffersError {
+    fn from(err: MakeCurrentError) -> GraphicsSwapBuffersError {
+        match err {
+            /*
+            From khronos docs:
+                If draw or read are not compatible with context, then an EGL_BAD_MATCH error is generated.
+                If context is current to some other thread, or if either draw or read are bound to contexts in another thread, an EGL_BAD_ACCESS error is generated.
+                If binding context would exceed the number of current contexts of that client API type supported by the implementation, an EGL_BAD_ACCESS error is generated.
+                If either draw or read are pbuffers created with eglCreatePbufferFromClientBuffer, and the underlying bound client API buffers are in use by the client API that created them, an EGL_BAD_ACCESS error is generated.
+
+            Except for the first case all of these recoverable. This conversation is mostly used in winit & EglSurface, where compatible context and surfaces are build.
+            */
+            x @ MakeCurrentError(EGLError::BadAccess) => {
+                GraphicsSwapBuffersError::TemporaryFailure(Box::new(x))
+            }
+            // BadSurface would result in a recreation in `eglSwapBuffers` -> recoverable
+            x @ MakeCurrentError(EGLError::BadSurface) => {
+                GraphicsSwapBuffersError::TemporaryFailure(Box::new(x))
+            }
+            /*
+            From khronos docs:
+                If the previous context of the calling thread has unflushed commands, and the previous surface is no longer valid, an EGL_BAD_CURRENT_SURFACE error is generated.
+
+            This does not consern this or future `makeCurrent`-calls.
+            */
+            x @ MakeCurrentError(EGLError::BadCurrentSurface) => {
+                GraphicsSwapBuffersError::TemporaryFailure(Box::new(x))
+            }
+            // the rest is either never happening or are unrecoverable
+            x => GraphicsSwapBuffersError::ContextLost(Box::new(x)),
         }
     }
 }
@@ -249,6 +334,7 @@ impl EGLImages {
 impl Drop for EGLImages {
     fn drop(&mut self) {
         for image in self.images.drain(..) {
+            // ignore result on drop
             unsafe {
                 ffi::egl::DestroyImageKHR(**self.display, image);
             }

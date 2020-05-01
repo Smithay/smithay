@@ -22,6 +22,7 @@ use drm::{
 #[cfg(feature = "renderer_gl")]
 use nix::libc::c_void;
 use nix::libc::dev_t;
+use std::env;
 use std::os::unix::io::{AsRawFd, RawFd};
 #[cfg(feature = "use_system_lib")]
 use wayland_server::Display;
@@ -150,19 +151,53 @@ pub enum FallbackSurface<S1: Surface, S2: Surface> {
 impl<A: AsRawFd + Clone + 'static> FallbackDevice<AtomicDrmDevice<A>, LegacyDrmDevice<A>> {
     /// Try to initialize an [`AtomicDrmDevice`](::backend::drm:;atomic::AtomicDrmDevice)
     /// and fall back to a [`LegacyDrmDevice`] if atomic-modesetting is not supported.
-    pub fn new<L>(fd: A, logger: L) -> Result<Self, Error>
+    ///
+    /// # Arguments
+    ///
+    /// - `fd` - Open drm node (needs to be clonable to be passed to multiple initializers)
+    /// - `disable_connectors` - Setting this to true will initialize all connectors \
+    ///     as disabled on device creation. smithay enables connectors, when attached \
+    ///     to a surface, and disables them, when detached. Setting this to `false` \
+    ///     requires usage of `drm-rs` to disable unused connectors to prevent them \
+    ///     showing garbage, but will also prevent flickering of already turned on \
+    ///     connectors (assuming you won't change the resolution).
+    /// - `logger` - Optional [`slog::Logger`] to be used by the resulting device.
+    ///
+    /// # Return
+    ///
+    /// Returns an error, if both devices fail to initialize due to `fd` being no valid
+    /// drm node or the device being not accessible.
+    pub fn new<L>(fd: A, disable_connectors: bool, logger: L) -> Result<Self, Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
         let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm_fallback"));
         info!(log, "Trying to initialize AtomicDrmDevice");
 
-        match AtomicDrmDevice::new(fd.clone(), log.clone()) {
+        let force_legacy = env::var("SMITHAY_USE_LEGACY")
+            .map(|x| {
+                x == "1" || x.to_lowercase() == "true" || x.to_lowercase() == "yes" || x.to_lowercase() == "y"
+            })
+            .unwrap_or(false);
+        if force_legacy {
+            info!(log, "SMITHAY_USE_LEGACY is set. Forcing LegacyDrmDevice.");
+            return Ok(FallbackDevice::Fallback(LegacyDrmDevice::new(
+                fd,
+                disable_connectors,
+                log,
+            )?));
+        }
+
+        match AtomicDrmDevice::new(fd.clone(), disable_connectors, log.clone()) {
             Ok(dev) => Ok(FallbackDevice::Preference(dev)),
             Err(err) => {
                 error!(log, "Failed to initialize preferred AtomicDrmDevice: {}", err);
-                info!(log, "Falling back to fallback LegacyyDrmDevice");
-                Ok(FallbackDevice::Fallback(LegacyDrmDevice::new(fd, log)?))
+                info!(log, "Falling back to fallback LegacyDrmDevice");
+                Ok(FallbackDevice::Fallback(LegacyDrmDevice::new(
+                    fd,
+                    disable_connectors,
+                    log,
+                )?))
             }
         }
     }
@@ -228,10 +263,19 @@ where
         }
     }
     fallback_device_impl!(clear_handler, &mut Self);
-    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<Self::Surface, E> {
+    fn create_surface(
+        &mut self,
+        crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
+    ) -> Result<Self::Surface, E> {
         match self {
-            FallbackDevice::Preference(dev) => Ok(FallbackSurface::Preference(dev.create_surface(crtc)?)),
-            FallbackDevice::Fallback(dev) => Ok(FallbackSurface::Fallback(dev.create_surface(crtc)?)),
+            FallbackDevice::Preference(dev) => Ok(FallbackSurface::Preference(
+                dev.create_surface(crtc, mode, connectors)?,
+            )),
+            FallbackDevice::Fallback(dev) => Ok(FallbackSurface::Fallback(
+                dev.create_surface(crtc, mode, connectors)?,
+            )),
         }
     }
     fallback_device_impl!(process_events, &mut Self);
@@ -281,9 +325,9 @@ where
     fallback_surface_impl!(add_connector, &Self, Result<(), E>, conn: connector::Handle);
     fallback_surface_impl!(remove_connector, &Self, Result<(), E>, conn: connector::Handle);
     fallback_surface_impl!(set_connectors, &Self, Result<(), E>, conns: &[connector::Handle]);
-    fallback_surface_impl!(current_mode, &Self, Option<Mode>);
-    fallback_surface_impl!(pending_mode, &Self, Option<Mode>);
-    fallback_surface_impl!(use_mode, &Self, Result<(), E>, mode: Option<Mode>);
+    fallback_surface_impl!(current_mode, &Self, Mode);
+    fallback_surface_impl!(pending_mode, &Self, Mode);
+    fallback_surface_impl!(use_mode, &Self, Result<(), E>, mode: Mode);
 }
 
 impl<E, C, S1, S2> RawSurface for FallbackSurface<S1, S2>
@@ -295,7 +339,7 @@ where
 {
     fallback_surface_impl!(commit_pending, &Self, bool);
     fallback_surface_impl!(commit, &Self, Result<(), E>, fb: framebuffer::Handle);
-    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), SwapBuffersError> {
+    fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), E> {
         match self {
             FallbackSurface::Preference(dev) => RawSurface::page_flip(dev, framebuffer),
             FallbackSurface::Fallback(dev) => RawSurface::page_flip(dev, framebuffer),

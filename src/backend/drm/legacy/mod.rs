@@ -11,24 +11,24 @@
 use super::{common::Error, DevPath, Device, DeviceHandler, RawDevice};
 
 use drm::control::{
-    connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, ResourceHandles,
+    connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Event, Mode, ResourceHandles,
 };
 use drm::{Device as BasicDevice, SystemError as DrmError};
 use nix::libc::dev_t;
 use nix::sys::stat::fstat;
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use failure::{Fail, ResultExt};
 
 mod surface;
 pub use self::surface::LegacyDrmSurface;
-use self::surface::{LegacyDrmSurfaceInternal, State};
+use self::surface::LegacyDrmSurfaceInternal;
 
 #[cfg(feature = "backend_session")]
 pub mod session;
@@ -88,9 +88,21 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
 impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
     /// Create a new [`LegacyDrmDevice`] from an open drm node
     ///
-    /// Returns an error if the file is no valid drm node or context creation was not
-    /// successful.
-    pub fn new<L>(dev: A, logger: L) -> Result<Self, Error>
+    /// # Arguments
+    ///
+    /// - `fd` - Open drm node
+    /// - `disable_connectors` - Setting this to true will initialize all connectors \
+    ///     as disabled on device creation. smithay enables connectors, when attached \
+    ///     to a surface, and disables them, when detached. Setting this to `false` \
+    ///     requires usage of `drm-rs` to disable unused connectors to prevent them \
+    ///     showing garbage, but will also prevent flickering of already turned on \
+    ///     connectors (assuming you won't change the resolution).
+    /// - `logger` - Optional [`slog::Logger`] to be used by this device.
+    ///
+    /// # Return
+    ///
+    /// Returns an error if the file is no valid drm node or the device is not accessible.
+    pub fn new<L>(dev: A, disable_connectors: bool, logger: L) -> Result<Self, Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -151,6 +163,21 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
             }
         }
 
+        if disable_connectors {
+            dev.set_connector_state(res_handles.connectors().iter().copied(), false)?;
+
+            for crtc in res_handles.crtcs() {
+                // null commit
+                dev.set_crtc(*crtc, None, (0, 0), &[], None)
+                    .compat()
+                    .map_err(|source| Error::Access {
+                        errmsg: "Error setting crtc",
+                        dev: dev.dev_path(),
+                        source,
+                    })?;
+            }
+        }
+
         Ok(LegacyDrmDevice {
             dev: Rc::new(dev),
             dev_id,
@@ -159,6 +186,64 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
             handler: None,
             logger: log.clone(),
         })
+    }
+}
+
+impl<A: AsRawFd + 'static> Dev<A> {
+    pub(in crate::backend::drm::legacy) fn set_connector_state(
+        &self,
+        connectors: impl Iterator<Item = connector::Handle>,
+        enabled: bool,
+    ) -> Result<(), Error> {
+        for conn in connectors {
+            let info = self
+                .get_connector(conn)
+                .compat()
+                .map_err(|source| Error::Access {
+                    errmsg: "Failed to get connector infos",
+                    dev: self.dev_path(),
+                    source,
+                })?;
+            if info.state() == connector::State::Connected {
+                let props = self
+                    .get_properties(conn)
+                    .compat()
+                    .map_err(|source| Error::Access {
+                        errmsg: "Failed to get properties for connector",
+                        dev: self.dev_path(),
+                        source,
+                    })?;
+                let (handles, _) = props.as_props_and_values();
+                for handle in handles {
+                    let info = self
+                        .get_property(*handle)
+                        .compat()
+                        .map_err(|source| Error::Access {
+                            errmsg: "Failed to get property of connector",
+                            dev: self.dev_path(),
+                            source,
+                        })?;
+                    if info.name().to_str().map(|x| x == "DPMS").unwrap_or(false) {
+                        self.set_property(
+                            conn,
+                            *handle,
+                            if enabled {
+                                0 /*DRM_MODE_DPMS_ON*/
+                            } else {
+                                3 /*DRM_MODE_DPMS_OFF*/
+                            },
+                        )
+                        .compat()
+                        .map_err(|source| Error::Access {
+                            errmsg: "Failed to set property of connector",
+                            dev: self.dev_path(),
+                            source,
+                        })?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -186,7 +271,12 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
         let _ = self.handler.take();
     }
 
-    fn create_surface(&mut self, crtc: crtc::Handle) -> Result<LegacyDrmSurface<A>, Error> {
+    fn create_surface(
+        &mut self,
+        crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
+    ) -> Result<LegacyDrmSurface<A>, Error> {
         if self.backends.borrow().contains_key(&crtc) {
             return Err(Error::CrtcAlreadyInUse(crtc));
         }
@@ -195,52 +285,17 @@ impl<A: AsRawFd + 'static> Device for LegacyDrmDevice<A> {
             return Err(Error::DeviceInactive);
         }
 
-        // Try to enumarate the current state to set the initial state variable correctly
-
-        let crtc_info = self.get_crtc(crtc).compat().map_err(|source| Error::Access {
-            errmsg: "Error loading crtc info",
-            dev: self.dev_path(),
-            source,
-        })?;
-
-        let mode = crtc_info.mode();
-
-        let mut connectors = HashSet::new();
-        let res_handles = ControlDevice::resource_handles(self)
-            .compat()
-            .map_err(|source| Error::Access {
-                errmsg: "Error loading drm resources",
-                dev: self.dev_path(),
-                source,
-            })?;
-        for &con in res_handles.connectors() {
-            let con_info = self.get_connector(con).compat().map_err(|source| Error::Access {
-                errmsg: "Error loading connector info",
-                dev: self.dev_path(),
-                source,
-            })?;
-            if let Some(enc) = con_info.current_encoder() {
-                let enc_info = self.get_encoder(enc).compat().map_err(|source| Error::Access {
-                    errmsg: "Error loading encoder info",
-                    dev: self.dev_path(),
-                    source,
-                })?;
-                if let Some(current_crtc) = enc_info.crtc() {
-                    if crtc == current_crtc {
-                        connectors.insert(con);
-                    }
-                }
-            }
+        if connectors.is_empty() {
+            return Err(Error::SurfaceWithoutConnectors(crtc));
         }
 
-        let state = State { mode, connectors };
-        let backend = Rc::new(LegacyDrmSurfaceInternal {
-            dev: self.dev.clone(),
+        let backend = Rc::new(LegacyDrmSurfaceInternal::new(
+            self.dev.clone(),
             crtc,
-            state: RwLock::new(state.clone()),
-            pending: RwLock::new(state),
-            logger: self.logger.new(o!("crtc" => format!("{:?}", crtc))),
-        });
+            mode,
+            connectors,
+            self.logger.new(o!("crtc" => format!("{:?}", crtc))),
+        )?);
 
         self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));
         Ok(LegacyDrmSurface(backend))

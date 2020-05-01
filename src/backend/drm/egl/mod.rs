@@ -8,7 +8,7 @@
 //! Take a look at `anvil`s source code for an example of this.
 //!
 
-use drm::control::{connector, crtc, encoder, framebuffer, plane, ResourceHandles};
+use drm::control::{connector, crtc, encoder, framebuffer, plane, Mode, ResourceHandles};
 use drm::SystemError as DrmError;
 use nix::libc::dev_t;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -17,9 +17,9 @@ use wayland_server::Display;
 
 use super::{Device, DeviceHandler, Surface};
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
-use crate::backend::egl::Error as EGLError;
 #[cfg(feature = "use_system_lib")]
 use crate::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
+use crate::backend::egl::{EGLError as RawEGLError, Error as EGLError, SurfaceCreationError};
 
 mod surface;
 pub use self::surface::*;
@@ -33,18 +33,25 @@ pub mod session;
 #[derive(thiserror::Error, Debug)]
 pub enum Error<U: std::error::Error + std::fmt::Debug + std::fmt::Display + 'static> {
     /// EGL Error
-    #[error("EGL error: {0:?}")]
+    #[error("EGL error: {0:}")]
     EGL(#[source] EGLError),
+    /// EGL Error
+    #[error("EGL error: {0:}")]
+    RawEGL(#[source] RawEGLError),
     /// Underlying backend error
     #[error("Underlying backend error: {0:?}")]
     Underlying(#[source] U),
 }
 
+type Arguments = (crtc::Handle, Mode, Vec<connector::Handle>);
+
 /// Representation of an egl device to create egl rendering surfaces
 pub struct EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     dev: EGLDisplay<B, D>,
@@ -56,7 +63,9 @@ where
 impl<B, D> AsRawFd for EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     fn as_raw_fd(&self) -> RawFd {
@@ -67,7 +76,9 @@ where
 impl<B, D> EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     /// Try to create a new [`EglDevice`] from an open device.
@@ -122,7 +133,9 @@ where
 struct InternalDeviceHandler<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     handler: Box<dyn DeviceHandler<Device = EglDevice<B, D>> + 'static>,
@@ -131,7 +144,9 @@ where
 impl<B, D> DeviceHandler for InternalDeviceHandler<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     type Device = D;
@@ -147,7 +162,9 @@ where
 impl<B, D> Device for EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     type Surface = EglSurface<<D as Device>::Surface>;
@@ -169,6 +186,8 @@ where
     fn create_surface(
         &mut self,
         crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
     ) -> Result<Self::Surface, <Self::Surface as Surface>::Error> {
         info!(self.logger, "Initializing EglSurface");
 
@@ -182,9 +201,12 @@ where
                 context.get_pixel_format(),
                 self.default_requirements.double_buffer,
                 context.get_config_id(),
-                crtc,
+                (crtc, mode, Vec::from(connectors)),
             )
-            .map_err(Error::EGL)?;
+            .map_err(|err| match err {
+                SurfaceCreationError::EGLSurfaceCreationFailed(err) => Error::RawEGL(err),
+                SurfaceCreationError::NativeSurfaceCreationFailed(err) => Error::Underlying(err),
+            })?;
 
         Ok(EglSurface { context, surface })
     }
@@ -221,7 +243,9 @@ where
 impl<B, D> EGLGraphicsBackend for EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     fn bind_wl_display(&self, display: &Display) -> Result<EGLBufferReader, EGLError> {
@@ -232,7 +256,9 @@ where
 impl<B, D> Drop for EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface> + 'static,
-    D: Device + NativeDisplay<B, Arguments = crtc::Handle> + 'static,
+    D: Device
+        + NativeDisplay<B, Arguments = Arguments, Error = <<D as Device>::Surface as Surface>::Error>
+        + 'static,
     <D as Device>::Surface: NativeSurface,
 {
     fn drop(&mut self) {

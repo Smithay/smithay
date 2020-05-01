@@ -3,8 +3,8 @@
 //! and [`Surface`](::backend::drm::Surface) implementations of the `backend::drm` module.
 //!
 
+use crate::backend::graphics::SwapBuffersError;
 use drm::control::{connector, crtc, Mode, RawResourceHandle};
-
 use std::path::PathBuf;
 
 pub mod fallback;
@@ -19,7 +19,7 @@ pub enum Error {
     #[error("Failed to aquire DRM master")]
     DrmMasterFailed,
     /// The `DrmDevice` encountered an access error
-    #[error("DRM access error: {errmsg} on device `{dev:?}`")]
+    #[error("DRM access error: {errmsg} on device `{dev:?}` ({source:})")]
     Access {
         /// Error message associated to the access error
         errmsg: &'static str,
@@ -40,6 +40,9 @@ pub enum Error {
     /// The given crtc is already in use by another backend
     #[error("Crtc `{0:?}` is already in use by another backend")]
     CrtcAlreadyInUse(crtc::Handle),
+    /// This operation would result in a surface without connectors.
+    #[error("Surface of crtc `{0:?}` would have no connectors, which is not accepted")]
+    SurfaceWithoutConnectors(crtc::Handle),
     /// No encoder was found for a given connector on the set crtc
     #[error("No encoder found for the given connector '{connector:?}' on crtc `{crtc:?}`")]
     NoSuitableEncoder {
@@ -67,4 +70,26 @@ pub enum Error {
     /// Atomic Test failed for new properties
     #[error("Atomic Test failed for new properties on crtc ({0:?})")]
     TestFailed(crtc::Handle),
+}
+
+impl Into<SwapBuffersError> for Error {
+    fn into(self) -> SwapBuffersError {
+        match self {
+            x @ Error::DeviceInactive => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            Error::Access { source, .. }
+                if match source.get_ref() {
+                    drm::SystemError::Unknown {
+                        errno: nix::errno::Errno::EBUSY,
+                    } => true,
+                    drm::SystemError::Unknown {
+                        errno: nix::errno::Errno::EINTR,
+                    } => true,
+                    _ => false,
+                } =>
+            {
+                SwapBuffersError::TemporaryFailure(Box::new(source))
+            }
+            x => SwapBuffersError::ContextLost(Box::new(x)),
+        }
+    }
 }

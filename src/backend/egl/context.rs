@@ -1,10 +1,10 @@
 //! EGL context related structs
 
-use super::{ffi, Error};
+use super::{ffi, wrap_egl_call, Error, MakeCurrentError};
 use crate::backend::egl::display::{EGLDisplay, EGLDisplayHandle};
 use crate::backend::egl::native::NativeSurface;
 use crate::backend::egl::{native, EGLSurface};
-use crate::backend::graphics::{PixelFormat, SwapBuffersError};
+use crate::backend::graphics::PixelFormat;
 use std::os::raw::c_int;
 use std::ptr;
 use std::sync::Arc;
@@ -93,21 +93,15 @@ impl EGLContext {
 
         trace!(log, "Creating EGL context...");
         // TODO: Support shared contexts
-        let context = unsafe {
+        let context = wrap_egl_call(|| unsafe {
             ffi::egl::CreateContext(
                 **display.display,
                 config_id,
                 ptr::null(),
                 context_attributes.as_ptr(),
             )
-        };
-
-        if context.is_null() {
-            match unsafe { ffi::egl::GetError() } as u32 {
-                ffi::egl::BAD_ATTRIBUTE => return Err(Error::CreationFailed),
-                err_no => return Err(Error::Unknown(err_no)),
-            }
-        }
+        })
+        .map_err(Error::CreationFailed)?;
 
         info!(log, "EGL context created");
 
@@ -126,25 +120,15 @@ impl EGLContext {
     ///
     /// This function is marked unsafe, because the context cannot be made current
     /// on multiple threads.
-    pub unsafe fn make_current_with_surface<N>(
-        &self,
-        surface: &EGLSurface<N>,
-    ) -> ::std::result::Result<(), SwapBuffersError>
+    pub unsafe fn make_current_with_surface<N>(&self, surface: &EGLSurface<N>) -> Result<(), MakeCurrentError>
     where
         N: NativeSurface,
     {
         let surface_ptr = surface.surface.get();
 
-        let ret = ffi::egl::MakeCurrent(**self.display, surface_ptr, surface_ptr, self.context);
-
-        if ret == 0 {
-            match ffi::egl::GetError() as u32 {
-                ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
-                err => panic!("eglMakeCurrent failed (eglGetError returned 0x{:x})", err),
-            }
-        } else {
-            Ok(())
-        }
+        wrap_egl_call(|| ffi::egl::MakeCurrent(**self.display, surface_ptr, surface_ptr, self.context))
+            .map(|_| ())
+            .map_err(Into::into)
     }
 
     /// Makes the OpenGL context the current context in the current thread with no surface bound.
@@ -152,18 +136,18 @@ impl EGLContext {
     /// # Safety
     ///
     /// This function is marked unsafe, because the context cannot be made current
-    /// on multiple threads.
-    pub unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        let ret = ffi::egl::MakeCurrent(**self.display, ptr::null(), ptr::null(), self.context);
-
-        if ret == 0 {
-            match ffi::egl::GetError() as u32 {
-                ffi::egl::CONTEXT_LOST => Err(SwapBuffersError::ContextLost),
-                err => panic!("eglMakeCurrent failed (eglGetError returned 0x{:x})", err),
-            }
-        } else {
-            Ok(())
-        }
+    /// on multiple threads without being unbound again (see `unbind`)
+    pub unsafe fn make_current(&self) -> Result<(), MakeCurrentError> {
+        wrap_egl_call(|| {
+            ffi::egl::MakeCurrent(
+                **self.display,
+                ffi::egl::NO_SURFACE,
+                ffi::egl::NO_SURFACE,
+                self.context,
+            )
+        })
+        .map(|_| ())
+        .map_err(Into::into)
     }
 
     /// Returns true if the OpenGL context is the current one in the thread.
@@ -180,16 +164,31 @@ impl EGLContext {
     pub fn get_pixel_format(&self) -> PixelFormat {
         self.pixel_format
     }
+
+    /// Unbinds this context from the current thread, if set.
+    ///
+    /// This does nothing if this context is not the current context
+    pub fn unbind(&self) -> Result<(), MakeCurrentError> {
+        if self.is_current() {
+            wrap_egl_call(|| unsafe {
+                ffi::egl::MakeCurrent(
+                    **self.display,
+                    ffi::egl::NO_SURFACE,
+                    ffi::egl::NO_SURFACE,
+                    ffi::egl::NO_CONTEXT,
+                )
+            })?;
+        }
+        Ok(())
+    }
 }
 
 impl Drop for EGLContext {
     fn drop(&mut self) {
         unsafe {
             // We need to ensure the context is unbound, otherwise it egl stalls the destroy call
-            if ffi::egl::GetCurrentContext() == self.context as *const _ {
-                ffi::egl::MakeCurrent(ptr::null(), ptr::null(), ptr::null(), ptr::null());
-            }
-
+            // ignore failures at this point
+            let _ = self.unbind();
             ffi::egl::DestroyContext(**self.display, self.context);
         }
     }
@@ -270,7 +269,7 @@ impl Default for PixelFormatRequirements {
 
 impl PixelFormatRequirements {
     /// Append the  requirements to the given attribute list
-    pub fn create_attributes(&self, out: &mut Vec<c_int>, logger: &slog::Logger) -> Result<(), Error> {
+    pub fn create_attributes(&self, out: &mut Vec<c_int>, logger: &slog::Logger) -> Result<(), ()> {
         if let Some(hardware_accelerated) = self.hardware_accelerated {
             out.push(ffi::egl::CONFIG_CAVEAT as c_int);
             out.push(if hardware_accelerated {
@@ -328,7 +327,7 @@ impl PixelFormatRequirements {
 
         if self.stereoscopy {
             error!(logger, "Stereoscopy is currently unsupported (sorry!)");
-            return Err(Error::NoAvailablePixelFormat);
+            return Err(());
         }
 
         Ok(())

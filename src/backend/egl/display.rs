@@ -3,7 +3,8 @@
 #[cfg(feature = "use_system_lib")]
 use crate::backend::egl::EGLGraphicsBackend;
 use crate::backend::egl::{
-    ffi, get_proc_address, native, BufferAccessError, EGLContext, EGLImages, EGLSurface, Error, Format,
+    ffi, get_proc_address, native, wrap_egl_call, BufferAccessError, EGLContext, EGLError, EGLImages,
+    EGLSurface, Error, Format, SurfaceCreationError,
 };
 use std::sync::Arc;
 
@@ -44,6 +45,7 @@ impl Deref for EGLDisplayHandle {
 impl Drop for EGLDisplayHandle {
     fn drop(&mut self) {
         unsafe {
+            // ignore errors on drop
             ffi::egl::Terminate(self.handle);
         }
     }
@@ -93,7 +95,9 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
 
         // the first step is to query the list of extensions without any display, if supported
         let dp_extensions = unsafe {
-            let p = ffi::egl::QueryString(ffi::egl::NO_DISPLAY, ffi::egl::EXTENSIONS as i32);
+            let p =
+                wrap_egl_call(|| ffi::egl::QueryString(ffi::egl::NO_DISPLAY, ffi::egl::EXTENSIONS as i32))
+                    .map_err(Error::InitFailed)?;
 
             // this possibility is available only with EGL 1.5 or EGL_EXT_platform_base, otherwise
             // `eglQueryString` returns an error
@@ -105,23 +109,22 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                 list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
             }
         };
-
         debug!(log, "EGL No-Display Extensions: {:?}", dp_extensions);
 
-        let display =
-            unsafe { B::get_display(ptr, |e: &str| dp_extensions.iter().any(|s| s == e), log.clone()) };
-        if display == ffi::egl::NO_DISPLAY {
-            error!(log, "EGL Display is not valid");
-            return Err(Error::DisplayNotSupported);
-        }
+        let display = unsafe {
+            B::get_display(ptr, |e: &str| dp_extensions.iter().any(|s| s == e), log.clone())
+                .map_err(Error::DisplayNotSupported)?
+        };
 
         let egl_version = {
             let mut major: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
             let mut minor: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
 
-            if unsafe { ffi::egl::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr()) } == 0 {
-                return Err(Error::InitFailed);
-            }
+            wrap_egl_call(|| unsafe {
+                ffi::egl::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr())
+            })
+            .map_err(Error::InitFailed)?;
+
             let major = unsafe { major.assume_init() };
             let minor = unsafe { minor.assume_init() };
 
@@ -134,19 +137,24 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         // the list of extensions supported by the client once initialized is different from the
         // list of extensions obtained earlier
         let extensions = if egl_version >= (1, 2) {
-            let p = unsafe { CStr::from_ptr(ffi::egl::QueryString(display, ffi::egl::EXTENSIONS as i32)) };
+            let p = unsafe {
+                CStr::from_ptr(
+                    wrap_egl_call(|| ffi::egl::QueryString(display, ffi::egl::EXTENSIONS as i32))
+                        .map_err(Error::InitFailed)?,
+                )
+            };
             let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
             list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
         } else {
             vec![]
         };
-
         info!(log, "EGL Extensions: {:?}", extensions);
 
-        if egl_version >= (1, 2) && unsafe { ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) } == 0 {
-            error!(log, "OpenGLES not supported by the underlying EGL implementation");
-            return Err(Error::OpenGlesNotSupported);
+        if egl_version >= (1, 2) {
+            return Err(Error::OpenGlesNotSupported(None));
         }
+        wrap_egl_call(|| unsafe { ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) })
+            .map_err(|source| Error::OpenGlesNotSupported(Some(source)))?;
 
         Ok(EGLDisplay {
             native: RefCell::new(native),
@@ -219,15 +227,16 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                 }
             };
 
-            reqs.create_attributes(&mut out, &self.logger)?;
+            reqs.create_attributes(&mut out, &self.logger)
+                .map_err(|()| Error::NoAvailablePixelFormat)?;
 
             out.push(ffi::egl::NONE as c_int);
             out
         };
 
         // calling `eglChooseConfig`
-        let mut num_configs = unsafe { std::mem::zeroed() };
-        if unsafe {
+        let mut num_configs = 0;
+        wrap_egl_call(|| unsafe {
             ffi::egl::ChooseConfig(
                 **self.display,
                 descriptor.as_ptr(),
@@ -235,18 +244,14 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                 0,
                 &mut num_configs,
             )
-        } == 0
-        {
-            return Err(Error::ConfigFailed);
-        }
-
+        })
+        .map_err(Error::ConfigFailed)?;
         if num_configs == 0 {
             return Err(Error::NoAvailablePixelFormat);
         }
 
-        let mut config_ids = Vec::with_capacity(num_configs as usize);
-        config_ids.resize_with(num_configs as usize, || unsafe { std::mem::zeroed() });
-        if unsafe {
+        let mut config_ids: Vec<ffi::egl::types::EGLConfig> = Vec::with_capacity(num_configs as usize);
+        wrap_egl_call(|| unsafe {
             ffi::egl::ChooseConfig(
                 **self.display,
                 descriptor.as_ptr(),
@@ -254,9 +259,10 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                 num_configs,
                 &mut num_configs,
             )
-        } == 0
-        {
-            return Err(Error::ConfigFailed);
+        })
+        .map_err(Error::ConfigFailed)?;
+        unsafe {
+            config_ids.set_len(num_configs as usize);
         }
 
         // TODO: Deeper swap intervals might have some uses
@@ -264,33 +270,41 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
 
         let config_ids = config_ids
             .into_iter()
-            .filter(|&config| unsafe {
+            .map(|config| unsafe {
                 let mut min_swap_interval = 0;
-                ffi::egl::GetConfigAttrib(
-                    **self.display,
-                    config,
-                    ffi::egl::MIN_SWAP_INTERVAL as ffi::egl::types::EGLint,
-                    &mut min_swap_interval,
-                );
+                wrap_egl_call(|| {
+                    ffi::egl::GetConfigAttrib(
+                        **self.display,
+                        config,
+                        ffi::egl::MIN_SWAP_INTERVAL as ffi::egl::types::EGLint,
+                        &mut min_swap_interval,
+                    )
+                })?;
 
                 if desired_swap_interval < min_swap_interval {
-                    return false;
+                    return Ok(None);
                 }
 
                 let mut max_swap_interval = 0;
-                ffi::egl::GetConfigAttrib(
-                    **self.display,
-                    config,
-                    ffi::egl::MAX_SWAP_INTERVAL as ffi::egl::types::EGLint,
-                    &mut max_swap_interval,
-                );
+                wrap_egl_call(|| {
+                    ffi::egl::GetConfigAttrib(
+                        **self.display,
+                        config,
+                        ffi::egl::MAX_SWAP_INTERVAL as ffi::egl::types::EGLint,
+                        &mut max_swap_interval,
+                    )
+                })?;
 
                 if desired_swap_interval > max_swap_interval {
-                    return false;
+                    return Ok(None);
                 }
 
-                true
+                Ok(Some(config))
             })
+            .collect::<Result<Vec<Option<ffi::egl::types::EGLConfig>>, EGLError>>()
+            .map_err(Error::ConfigFailed)?
+            .into_iter()
+            .flatten()
             .collect::<Vec<_>>();
 
         if config_ids.is_empty() {
@@ -304,15 +318,15 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         macro_rules! attrib {
             ($display:expr, $config:expr, $attr:expr) => {{
                 let mut value = MaybeUninit::uninit();
-                let res = ffi::egl::GetConfigAttrib(
-                    **$display,
-                    $config,
-                    $attr as ffi::egl::types::EGLint,
-                    value.as_mut_ptr(),
-                );
-                if res == 0 {
-                    return Err(Error::ConfigFailed);
-                }
+                wrap_egl_call(|| {
+                    ffi::egl::GetConfigAttrib(
+                        **$display,
+                        $config,
+                        $attr as ffi::egl::types::EGLint,
+                        value.as_mut_ptr(),
+                    )
+                })
+                .map_err(Error::ConfigFailed)?;
                 value.assume_init()
             }};
         };
@@ -357,12 +371,13 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         double_buffer: Option<bool>,
         config: ffi::egl::types::EGLConfig,
         args: N::Arguments,
-    ) -> Result<EGLSurface<B::Surface>, Error> {
+    ) -> Result<EGLSurface<B::Surface>, SurfaceCreationError<N::Error>> {
         trace!(self.logger, "Creating EGL window surface.");
-        let surface = self.native.borrow_mut().create_surface(args).map_err(|e| {
-            error!(self.logger, "EGL surface creation failed: {}", e);
-            Error::SurfaceCreationFailed
-        })?;
+        let surface = self
+            .native
+            .borrow_mut()
+            .create_surface(args)
+            .map_err(SurfaceCreationError::NativeSurfaceCreationFailed)?;
 
         EGLSurface::new(
             self.display.clone(),
@@ -376,6 +391,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             debug!(self.logger, "EGL surface successfully created");
             x
         })
+        .map_err(SurfaceCreationError::EGLSurfaceCreationFailed)
     }
 
     /// Returns the runtime egl version of this display
@@ -426,10 +442,10 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLGraphicsBackend for EGL
         if !self.extensions.iter().any(|s| s == "EGL_WL_bind_wayland_display") {
             return Err(Error::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
         }
-        let res = unsafe { ffi::egl::BindWaylandDisplayWL(**self.display, display.c_ptr() as *mut _) };
-        if res == 0 {
-            return Err(Error::OtherEGLDisplayAlreadyBound);
-        }
+        wrap_egl_call(|| unsafe {
+            ffi::egl::BindWaylandDisplayWL(**self.display, display.c_ptr() as *mut _)
+        })
+        .map_err(Error::OtherEGLDisplayAlreadyBound)?;
         Ok(EGLBufferReader::new(self.display.clone(), display.c_ptr()))
     }
 }
@@ -469,16 +485,16 @@ impl EGLBufferReader {
         buffer: WlBuffer,
     ) -> ::std::result::Result<EGLImages, BufferAccessError> {
         let mut format: i32 = 0;
-        if unsafe {
+        wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
                 buffer.as_ref().c_ptr() as _,
                 ffi::egl::EGL_TEXTURE_FORMAT,
                 &mut format,
-            ) == 0
-        } {
-            return Err(BufferAccessError::NotManaged(buffer));
-        }
+            )
+        })
+        .map_err(|source| BufferAccessError::NotManaged(buffer.clone(), source))?;
+
         let format = match format {
             x if x == ffi::egl::TEXTURE_RGB as i32 => Format::RGB,
             x if x == ffi::egl::TEXTURE_RGBA as i32 => Format::RGBA,
@@ -490,40 +506,37 @@ impl EGLBufferReader {
         };
 
         let mut width: i32 = 0;
-        if unsafe {
+        wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
                 buffer.as_ref().c_ptr() as _,
                 ffi::egl::WIDTH as i32,
                 &mut width,
-            ) == 0
-        } {
-            return Err(BufferAccessError::NotManaged(buffer));
-        }
+            )
+        })
+        .map_err(|source| BufferAccessError::NotManaged(buffer.clone(), source))?;
 
         let mut height: i32 = 0;
-        if unsafe {
+        wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
                 buffer.as_ref().c_ptr() as _,
                 ffi::egl::HEIGHT as i32,
                 &mut height,
-            ) == 0
-        } {
-            return Err(BufferAccessError::NotManaged(buffer));
-        }
+            )
+        })
+        .map_err(|source| BufferAccessError::NotManaged(buffer.clone(), source))?;
 
         let mut inverted: i32 = 0;
-        if unsafe {
+        wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
                 buffer.as_ref().c_ptr() as _,
                 ffi::egl::WAYLAND_Y_INVERTED_WL,
                 &mut inverted,
-            ) != 0
-        } {
-            inverted = 1;
-        }
+            )
+        })
+        .map_err(|source| BufferAccessError::NotManaged(buffer.clone(), source))?;
 
         let mut images = Vec::with_capacity(format.num_planes());
         for i in 0..format.num_planes() {
@@ -533,7 +546,7 @@ impl EGLBufferReader {
             out.push(ffi::egl::NONE as i32);
 
             images.push({
-                let image = unsafe {
+                wrap_egl_call(|| unsafe {
                     ffi::egl::CreateImageKHR(
                         **self.display,
                         ffi::egl::NO_CONTEXT,
@@ -541,12 +554,8 @@ impl EGLBufferReader {
                         buffer.as_ref().c_ptr() as *mut _,
                         out.as_ptr(),
                     )
-                };
-                if image == ffi::egl::NO_IMAGE_KHR {
-                    return Err(BufferAccessError::EGLImageCreationFailed);
-                } else {
-                    image
-                }
+                })
+                .map_err(BufferAccessError::EGLImageCreationFailed)?
             });
         }
 
@@ -601,6 +610,7 @@ impl Drop for EGLBufferReader {
     fn drop(&mut self) {
         if !self.wayland.is_null() {
             unsafe {
+                // ignore errors on drop
                 ffi::egl::UnbindWaylandDisplayWL(**self.display, self.wayland as _);
             }
         }

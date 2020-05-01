@@ -10,8 +10,9 @@
 //!
 
 use super::{Device, DeviceHandler, RawDevice, ResourceHandles, Surface};
+use crate::backend::graphics::SwapBuffersError;
 
-use drm::control::{connector, crtc, encoder, framebuffer, plane, Device as ControlDevice};
+use drm::control::{connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Mode};
 use drm::SystemError as DrmError;
 use gbm::{self, BufferObjectFlags, Format as GbmFormat};
 use nix::libc::dev_t;
@@ -26,25 +27,31 @@ use std::sync::Once;
 /// Errors thrown by the [`GbmDevice`](::backend::drm::gbm::GbmDevice)
 /// and [`GbmSurface`](::backend::drm::gbm::GbmSurface).
 #[derive(thiserror::Error, Debug)]
-pub enum Error<U: std::error::Error + std::fmt::Debug + std::fmt::Display + 'static> {
+pub enum Error<U: std::error::Error + 'static> {
     /// Creation of GBM device failed
     #[error("Creation of GBM device failed")]
     InitFailed(#[source] io::Error),
     /// Creation of GBM surface failed
     #[error("Creation of GBM surface failed")]
     SurfaceCreationFailed(#[source] io::Error),
-    /// No mode is set, blocking the current operation
-    #[error("No mode is currently set")]
-    NoModeSet,
     /// Creation of GBM buffer object failed
     #[error("Creation of GBM buffer object failed")]
     BufferCreationFailed(#[source] io::Error),
     /// Writing to GBM buffer failed
     #[error("Writing to GBM buffer failed")]
     BufferWriteFailed(#[source] io::Error),
+    /// Creation of drm framebuffer failed
+    #[error("Creation of drm framebuffer failed")]
+    FramebufferCreationFailed(#[source] failure::Compat<drm::SystemError>),
     /// Lock of GBM surface front buffer failed
     #[error("Lock of GBM surface font buffer failed")]
     FrontBufferLockFailed,
+    /// No additional buffers are available
+    #[error("No additional buffers are available. Did you swap twice?")]
+    FrontBuffersExhausted,
+    /// Internal state was modified
+    #[error("Internal state was modified. Did you change gbm userdata?")]
+    InvalidInternalState,
     /// The GBM device was destroyed
     #[error("The GBM device was destroyed")]
     DeviceDestroyed,
@@ -159,17 +166,16 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
     fn create_surface(
         &mut self,
         crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
     ) -> Result<GbmSurface<D>, Error<<<D as Device>::Surface as Surface>::Error>> {
         info!(self.logger, "Initializing GbmSurface");
 
-        let drm_surface =
-            Device::create_surface(&mut **self.dev.borrow_mut(), crtc).map_err(Error::Underlying)?;
+        let drm_surface = Device::create_surface(&mut **self.dev.borrow_mut(), crtc, mode, connectors)
+            .map_err(Error::Underlying)?;
 
         // initialize the surface
-        let (w, h) = drm_surface
-            .pending_mode()
-            .map(|mode| mode.size())
-            .unwrap_or((1, 1));
+        let (w, h) = drm_surface.pending_mode().size();
         let surface = self
             .dev
             .borrow()
@@ -247,5 +253,31 @@ impl<D: RawDevice + ControlDevice + 'static> AsRawFd for GbmDevice<D> {
 impl<D: RawDevice + ControlDevice + 'static> Drop for GbmDevice<D> {
     fn drop(&mut self) {
         self.clear_handler();
+    }
+}
+
+impl<E> Into<SwapBuffersError> for Error<E>
+where
+    E: std::error::Error + Into<SwapBuffersError> + 'static,
+{
+    fn into(self) -> SwapBuffersError {
+        match self {
+            Error::FrontBuffersExhausted => SwapBuffersError::AlreadySwapped,
+            Error::FramebufferCreationFailed(x)
+                if match x.get_ref() {
+                    drm::SystemError::Unknown {
+                        errno: nix::errno::Errno::EBUSY,
+                    } => true,
+                    drm::SystemError::Unknown {
+                        errno: nix::errno::Errno::EINTR,
+                    } => true,
+                    _ => false,
+                } =>
+            {
+                SwapBuffersError::TemporaryFailure(Box::new(x))
+            }
+            Error::Underlying(x) => x.into(),
+            x => SwapBuffersError::ContextLost(Box::new(x)),
+        }
     }
 }
