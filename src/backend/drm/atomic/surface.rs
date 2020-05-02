@@ -22,7 +22,7 @@ use crate::backend::graphics::CursorBackend;
 pub struct CursorState {
     position: Cell<Option<(u32, u32)>>,
     hotspot: Cell<(u32, u32)>,
-    framebuffer: Cell<Option<framebuffer::Info>>,
+    framebuffer: Cell<Option<framebuffer::Handle>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -610,23 +610,17 @@ impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurfaceInternal<A> {
         trace!(self.logger, "Setting the new imported cursor");
 
         if let Some(fb) = self.cursor.framebuffer.get().take() {
-            let _ = self.destroy_framebuffer(fb.handle());
+            let _ = self.destroy_framebuffer(fb);
         }
 
         self.cursor.framebuffer.set(Some(
-            self.get_framebuffer(self.add_planar_framebuffer(buffer, &[0; 4], 0).compat().map_err(
+            self.add_planar_framebuffer(buffer, &[0; 4], 0).compat().map_err(
                 |source| Error::Access {
                     errmsg: "Failed to import cursor",
                     dev: self.dev_path(),
                     source,
                 },
-            )?)
-            .compat()
-            .map_err(|source| Error::Access {
-                errmsg: "Failed to get framebuffer info",
-                dev: self.dev_path(),
-                source,
-            })?,
+            )?,
         ));
 
         self.cursor.hotspot.set(hotspot);
@@ -803,58 +797,69 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         let cursor_fb = self.cursor.framebuffer.get();
 
         if let (Some(pos), Some(fb)) = (cursor_pos, cursor_fb) {
-            let hotspot = self.cursor.hotspot.get();
+            match self.get_framebuffer(fb).compat().map_err(|source| Error::Access {
+                errmsg: "Error getting cursor fb",
+                dev: self.dev_path(),
+                source,
+            }) {
+                Ok(cursor_info) => {
+                    let hotspot = self.cursor.hotspot.get();
 
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "CRTC_ID")?,
-                property::Value::CRTC(Some(self.crtc)),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "SRC_X")?,
-                property::Value::UnsignedRange(0),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "SRC_Y")?,
-                property::Value::UnsignedRange(0),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "SRC_W")?,
-                property::Value::UnsignedRange((fb.size().0 as u64) << 16),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "SRC_H")?,
-                property::Value::UnsignedRange((fb.size().1 as u64) << 16),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "CRTC_X")?,
-                property::Value::SignedRange(pos.0 as i64 - (hotspot.0 as i64)),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "CRTC_Y")?,
-                property::Value::SignedRange(pos.1 as i64 - (hotspot.1 as i64)),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "CRTC_W")?,
-                property::Value::UnsignedRange(fb.size().0 as u64),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "CRTC_H")?,
-                property::Value::UnsignedRange(fb.size().1 as u64),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "FB_ID")?,
-                property::Value::Framebuffer(Some(fb.handle())),
-            );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "CRTC_ID")?,
+                        property::Value::CRTC(Some(self.crtc)),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "SRC_X")?,
+                        property::Value::UnsignedRange(0),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "SRC_Y")?,
+                        property::Value::UnsignedRange(0),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "SRC_W")?,
+                        property::Value::UnsignedRange((cursor_info.size().0 as u64) << 16),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "SRC_H")?,
+                        property::Value::UnsignedRange((cursor_info.size().1 as u64) << 16),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "CRTC_X")?,
+                        property::Value::SignedRange(pos.0 as i64 - (hotspot.0 as i64)),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "CRTC_Y")?,
+                        property::Value::SignedRange(pos.1 as i64 - (hotspot.1 as i64)),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "CRTC_W")?,
+                        property::Value::UnsignedRange(cursor_info.size().0 as u64),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "CRTC_H")?,
+                        property::Value::UnsignedRange(cursor_info.size().1 as u64),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "FB_ID")?,
+                        property::Value::Framebuffer(Some(fb)),
+                    );
+                },
+                Err(err) => {
+                    warn!(self.logger, "Cursor FB invalid: {}. Skipping.", err);
+                }
+            }
         }
 
         Ok(req)
