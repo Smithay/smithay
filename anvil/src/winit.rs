@@ -23,7 +23,7 @@ use slog::Logger;
 
 use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
-use crate::input_handler::AnvilInputHandler;
+use crate::input_handler::{AnvilInputHandler, InputInitData};
 use crate::state::AnvilState;
 
 pub fn run_winit(
@@ -113,12 +113,14 @@ pub fn run_winit(
 
     input.set_handler(AnvilInputHandler::new(
         log.clone(),
-        pointer,
-        keyboard,
-        state.window_map.clone(),
-        (0, 0),
-        state.running.clone(),
-        pointer_location.clone(),
+        InputInitData {
+            pointer,
+            keyboard,
+            window_map: state.window_map.clone(),
+            screen_size: (0, 0),
+            running: state.running.clone(),
+            pointer_location: pointer_location.clone(),
+        },
     ));
 
     info!(log, "Initialization completed, starting the main loop.");
