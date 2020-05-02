@@ -282,16 +282,15 @@ impl PointerGrab for ResizeSurfaceGrab {
     }
 }
 
-pub fn init_shell(
-    display: &mut Display,
-    buffer_utils: BufferUtils,
-    log: ::slog::Logger,
-) -> (
-    CompositorToken<Roles>,
-    Arc<Mutex<XdgShellState<Roles>>>,
-    Arc<Mutex<WlShellState<Roles>>>,
-    Rc<RefCell<MyWindowMap>>,
-) {
+#[derive(Clone)]
+pub struct ShellHandles {
+    pub token: CompositorToken<Roles>,
+    pub xdg_state: Arc<Mutex<XdgShellState<Roles>>>,
+    pub wl_state: Arc<Mutex<WlShellState<Roles>>>,
+    pub window_map: Rc<RefCell<MyWindowMap>>,
+}
+
+pub fn init_shell(display: &mut Display, buffer_utils: BufferUtils, log: ::slog::Logger) -> ShellHandles {
     // TODO: this is awkward...
     let almost_window_map = Rc::new(RefCell::new(None::<Rc<RefCell<MyWindowMap>>>));
     let almost_window_map_compositor = almost_window_map.clone();
@@ -606,7 +605,12 @@ pub fn init_shell(
         log.clone(),
     );
 
-    (compositor_token, xdg_shell_state, wl_shell_state, window_map)
+    ShellHandles {
+        token: compositor_token,
+        xdg_state: xdg_shell_state,
+        wl_state: wl_shell_state,
+        window_map,
+    }
 }
 
 /// Information about the resize operation.

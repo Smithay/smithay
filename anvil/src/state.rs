@@ -70,7 +70,7 @@ impl AnvilState {
 
         init_shm_global(&mut display.borrow_mut(), vec![], log.clone());
 
-        let (ctoken, _, _, window_map) = init_shell(&mut display.borrow_mut(), buffer_utils, log.clone());
+        let shell_handles = init_shell(&mut display.borrow_mut(), buffer_utils, log.clone());
 
         let socket_name = display
             .borrow_mut()
@@ -98,7 +98,7 @@ impl AnvilState {
                 _ => {}
             },
             default_action_chooser,
-            ctoken,
+            shell_handles.token,
             log.clone(),
         );
 
@@ -106,8 +106,8 @@ impl AnvilState {
             running: Arc::new(AtomicBool::new(true)),
             display,
             handle,
-            ctoken,
-            window_map,
+            ctoken: shell_handles.token,
+            window_map: shell_handles.window_map,
             dnd_icon,
             log,
             socket_name,
