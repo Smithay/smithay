@@ -4,9 +4,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bitflags::bitflags;
-use rand;
-
 use smithay::{
     reexports::{
         wayland_protocols::xdg_shell::server::xdg_toplevel,
@@ -101,7 +98,7 @@ impl PointerGrab for MoveSurfaceGrab {
     }
 }
 
-bitflags! {
+bitflags::bitflags! {
     struct ResizeEdge: u32 {
         const NONE = 0;
         const TOP = 1;
