@@ -239,26 +239,16 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
         }
     }
 
-    pub fn render_texture(
-        &self,
-        target: &mut Frame,
-        texture: &Texture2d,
-        texture_kind: usize,
-        y_inverted: bool,
-        surface_dimensions: (u32, u32),
-        surface_location: (i32, i32),
-        screen_size: (u32, u32),
-        blending: glium::Blend,
-    ) {
-        let xscale = 2.0 * (surface_dimensions.0 as f32) / (screen_size.0 as f32);
-        let mut yscale = -2.0 * (surface_dimensions.1 as f32) / (screen_size.1 as f32);
+    pub fn render_texture(&self, target: &mut Frame, spec: RenderTextureSpec<'_>) {
+        let xscale = 2.0 * (spec.surface_dimensions.0 as f32) / (spec.screen_size.0 as f32);
+        let mut yscale = -2.0 * (spec.surface_dimensions.1 as f32) / (spec.screen_size.1 as f32);
 
-        let x = 2.0 * (surface_location.0 as f32) / (screen_size.0 as f32) - 1.0;
-        let mut y = 1.0 - 2.0 * (surface_location.1 as f32) / (screen_size.1 as f32);
+        let x = 2.0 * (spec.surface_location.0 as f32) / (spec.screen_size.0 as f32) - 1.0;
+        let mut y = 1.0 - 2.0 * (spec.surface_location.1 as f32) / (spec.screen_size.1 as f32);
 
-        if y_inverted {
+        if spec.y_inverted {
             yscale = -yscale;
-            y -= surface_dimensions.1 as f32;
+            y -= spec.surface_dimensions.1 as f32;
         }
 
         let uniforms = uniform! {
@@ -268,17 +258,17 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                 [  0.0 ,   0.0  , 1.0, 0.0],
                 [   x  ,    y   , 0.0, 1.0]
             ],
-            tex: texture,
+            tex: spec.texture,
         };
 
         target
             .draw(
                 &self.vertex_buffer,
                 &self.index_buffer,
-                &self.programs[texture_kind],
+                &self.programs[spec.texture_kind],
                 &uniforms,
                 &glium::DrawParameters {
-                    blend: blending,
+                    blend: spec.blending,
                     ..Default::default()
                 },
             )
@@ -289,6 +279,16 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     pub fn draw(&self) -> Frame {
         self.display.draw()
     }
+}
+
+pub struct RenderTextureSpec<'a> {
+    texture: &'a Texture2d,
+    texture_kind: usize,
+    y_inverted: bool,
+    surface_dimensions: (u32, u32),
+    surface_location: (i32, i32),
+    screen_size: (u32, u32),
+    blending: glium::Blend,
 }
 
 pub struct TextureMetadata {
@@ -368,22 +368,24 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                         }
                         self.render_texture(
                             frame,
-                            &metadata.texture,
-                            metadata.fragment,
-                            metadata.y_inverted,
-                            metadata.dimensions,
-                            (x, y),
-                            screen_dimensions,
-                            ::glium::Blend {
-                                color: ::glium::BlendingFunction::Addition {
-                                    source: ::glium::LinearBlendingFactor::One,
-                                    destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                            RenderTextureSpec {
+                                texture: &metadata.texture,
+                                texture_kind: metadata.fragment,
+                                y_inverted: metadata.y_inverted,
+                                surface_dimensions: metadata.dimensions,
+                                surface_location: (x, y),
+                                screen_size: screen_dimensions,
+                                blending: ::glium::Blend {
+                                    color: ::glium::BlendingFunction::Addition {
+                                        source: ::glium::LinearBlendingFactor::One,
+                                        destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                    },
+                                    alpha: ::glium::BlendingFunction::Addition {
+                                        source: ::glium::LinearBlendingFactor::One,
+                                        destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                    },
+                                    ..Default::default()
                                 },
-                                alpha: ::glium::BlendingFunction::Addition {
-                                    source: ::glium::LinearBlendingFactor::One,
-                                    destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
-                                },
-                                ..Default::default()
                             },
                         );
                     }
