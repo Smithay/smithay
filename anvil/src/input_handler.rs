@@ -38,48 +38,40 @@ pub struct AnvilInputHandler {
     running: Arc<AtomicBool>,
 }
 
+pub struct InputInitData {
+    pub pointer: PointerHandle,
+    pub keyboard: KeyboardHandle,
+    pub window_map: Rc<RefCell<MyWindowMap>>,
+    pub screen_size: (u32, u32),
+    pub running: Arc<AtomicBool>,
+    pub pointer_location: Rc<RefCell<(f64, f64)>>,
+}
+
 impl AnvilInputHandler {
-    pub fn new(
-        log: Logger,
-        pointer: PointerHandle,
-        keyboard: KeyboardHandle,
-        window_map: Rc<RefCell<MyWindowMap>>,
-        screen_size: (u32, u32),
-        running: Arc<AtomicBool>,
-        pointer_location: Rc<RefCell<(f64, f64)>>,
-    ) -> AnvilInputHandler {
+    pub fn new(log: Logger, data: InputInitData) -> AnvilInputHandler {
         AnvilInputHandler {
             log,
-            pointer,
-            keyboard,
-            window_map,
-            screen_size,
-            running,
-            pointer_location,
+            pointer: data.pointer,
+            keyboard: data.keyboard,
+            window_map: data.window_map,
+            screen_size: data.screen_size,
+            running: data.running,
+            pointer_location: data.pointer_location,
             #[cfg(feature = "udev")]
             session: None,
         }
     }
 
     #[cfg(feature = "udev")]
-    pub fn new_with_session(
-        log: Logger,
-        pointer: PointerHandle,
-        keyboard: KeyboardHandle,
-        window_map: Rc<RefCell<MyWindowMap>>,
-        screen_size: (u32, u32),
-        running: Arc<AtomicBool>,
-        pointer_location: Rc<RefCell<(f64, f64)>>,
-        session: AutoSession,
-    ) -> AnvilInputHandler {
+    pub fn new_with_session(log: Logger, data: InputInitData, session: AutoSession) -> AnvilInputHandler {
         AnvilInputHandler {
             log,
-            pointer,
-            keyboard,
-            window_map,
-            screen_size,
-            running,
-            pointer_location,
+            pointer: data.pointer,
+            keyboard: data.keyboard,
+            window_map: data.window_map,
+            screen_size: data.screen_size,
+            running: data.running,
+            pointer_location: data.pointer_location,
             session: Some(session),
         }
     }

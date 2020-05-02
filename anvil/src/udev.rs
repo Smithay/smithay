@@ -60,7 +60,7 @@ use smithay::{
 
 use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
-use crate::input_handler::AnvilInputHandler;
+use crate::input_handler::{AnvilInputHandler, InputInitData};
 use crate::shell::{MyWindowMap, Roles};
 use crate::state::AnvilState;
 
@@ -205,12 +205,14 @@ pub fn run_udev(
     let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
     libinput_backend.set_handler(AnvilInputHandler::new_with_session(
         log.clone(),
-        pointer,
-        keyboard,
-        state.window_map.clone(),
-        (w, h),
-        state.running.clone(),
-        pointer_location,
+        InputInitData {
+            pointer,
+            keyboard,
+            window_map: state.window_map.clone(),
+            screen_size: (w, h),
+            running: state.running.clone(),
+            pointer_location,
+        },
         session,
     ));
 
