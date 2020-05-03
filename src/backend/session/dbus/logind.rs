@@ -278,21 +278,36 @@ impl LogindSessionImpl {
                     let (major, minor, pause_type) = message.get3::<u32, u32, String>();
                     let major = major.ok_or(Error::UnexpectedMethodReturn)?;
                     let minor = minor.ok_or(Error::UnexpectedMethodReturn)?;
+                    // From https://www.freedesktop.org/wiki/Software/systemd/logind/:
+                    //  `force` means the device got paused by logind already and this is only an
+                    //  asynchronous notification.
+                    //  `pause` means logind tries to pause the device and grants you limited amount
+                    //  of time to pause it. You must respond to this via PauseDeviceComplete().
+                    //  This synchronous pausing-mechanism is used for backwards-compatibility to VTs
+                    //  and logind is **free to not make use of it**.
+                    //  It is also free to send a forced PauseDevice if you don't respond in a timely manner
+                    //  (or for any other reason).
                     let pause_type = pause_type.ok_or(Error::UnexpectedMethodReturn)?;
                     debug!(
                         self.logger,
                         "Request of type \"{}\" to close device ({},{})", pause_type, major, minor
                     );
-                    for signal in &mut *self.signals.borrow_mut() {
-                        if let Some(ref mut signal) = signal {
-                            signal.pause(Some((major, minor)));
+                    
+                    // gone means the device was unplugged from the system and you will no longer get any
+                    // notifications about it.
+                    // This is handled via udev and is not part of our session api.
+                    if pause_type != "gone" {
+                        for signal in &mut *self.signals.borrow_mut() {
+                            if let Some(ref mut signal) = signal {
+                                signal.pause(Some((major, minor)));
+                            }
                         }
                     }
                     // the other possible types are "force" or "gone" (unplugged),
                     // both expect no acknowledgement (note even this is not *really* necessary,
                     // logind would just timeout and send a "force" event. There is no way to
                     // keep the device.)
-                    if &*pause_type == "pause" {
+                    if pause_type == "pause" {
                         LogindSessionImpl::blocking_call(
                             &*self.conn.borrow(),
                             "org.freedesktop.login1",
