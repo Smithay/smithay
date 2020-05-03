@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use super::{AtomicDrmDevice, AtomicDrmSurfaceInternal, Dev};
-use crate::backend::drm::{common::Error, DevPath};
+use crate::backend::drm::{common::Error, DevPath, Surface};
 use crate::backend::session::{AsSessionObserver, SessionObserver};
 
 /// [`SessionObserver`](SessionObserver)
@@ -164,6 +164,18 @@ impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
                     // lets force a non matching state
                     current.connectors.clear();
                     current.mode = unsafe { std::mem::zeroed() };
+
+                    // recreate property blob
+                    let mode = { 
+                        let pending = surface.pending.read().unwrap();
+                        pending.mode.clone()
+                    };
+                    surface.use_mode(mode)?;
+
+                    // drop cursor state
+                    surface.cursor.position.set(None);
+                    surface.cursor.hotspot.set((0,0));
+                    surface.cursor.framebuffer.set(None);
                 }
             }
         }

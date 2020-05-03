@@ -20,9 +20,9 @@ use crate::backend::graphics::CursorBackend;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CursorState {
-    position: Cell<Option<(u32, u32)>>,
-    hotspot: Cell<(u32, u32)>,
-    framebuffer: Cell<Option<framebuffer::Handle>>,
+    pub position: Cell<Option<(u32, u32)>>,
+    pub hotspot: Cell<(u32, u32)>,
+    pub framebuffer: Cell<Option<framebuffer::Handle>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
