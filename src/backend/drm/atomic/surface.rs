@@ -528,7 +528,6 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
                         warn!(self.logger, "Failed to destory old mode property blob: {}", err);
                     }
                 }
-                *current = pending.clone();
 
                 // new config
                 req
@@ -536,7 +535,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
         };
 
         debug!(self.logger, "Setting screen: {:?}", req);
-        self.atomic_commit(
+        let result = self.atomic_commit(
             &[
                 AtomicCommitFlags::PageFlipEvent,
                 AtomicCommitFlags::AllowModeset,
@@ -549,9 +548,13 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
             errmsg: "Error setting crtc",
             dev: self.dev_path(),
             source,
-        })?;
+        });
 
-        Ok(())
+        if result.is_ok() {
+            *current = pending.clone();
+        }
+
+        result
     }
 
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
