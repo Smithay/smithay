@@ -74,11 +74,15 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         };
         self.next_buffer.set(Some(next_bo));
 
+        if cfg!(debug_assertions) {
+            if let Err(err) = self.crtc.get_framebuffer(fb) {
+                error!(self.logger, "Cached framebuffer invalid: {:?}: {}", fb, err);
+            }
+        }
+
         let result = if self.recreated.get() {
             debug!(self.logger, "Commiting new state");
-            let res = self.crtc.commit(fb).map_err(Error::Underlying);
-            self.recreated.set(false);
-            res
+            self.crtc.commit(fb).map_err(Error::Underlying)
         } else {
             trace!(self.logger, "Queueing Page flip");
             RawSurface::page_flip(&self.crtc, fb).map_err(Error::Underlying)
@@ -86,6 +90,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
 
         match result {
             Ok(_) => {
+                self.recreated.set(false);
                 self.current_frame_buffer.set(Some(fb));
                 Ok(())
             },
