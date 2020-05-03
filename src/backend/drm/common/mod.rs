@@ -78,6 +78,7 @@ impl Into<SwapBuffersError> for Error {
             x @ Error::DeviceInactive => SwapBuffersError::TemporaryFailure(Box::new(x)),
             Error::Access { errmsg, dev, source, .. }
                 if match source.get_ref() {
+                    drm::SystemError::PermissionDenied => true,
                     drm::SystemError::Unknown {
                         errno: nix::errno::Errno::EBUSY,
                     } => true,
