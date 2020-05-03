@@ -571,7 +571,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
             None,
         )?;
 
-        trace!(self.logger, "Queueing page flip: {:#?}", req);
+        trace!(self.logger, "Queueing page flip: {:?}", req);
         self.atomic_commit(
             &[AtomicCommitFlags::PageFlipEvent, AtomicCommitFlags::Nonblock],
             req,
