@@ -74,18 +74,26 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         };
         self.next_buffer.set(Some(next_bo));
 
-        if self.recreated.get() {
+        let result = if self.recreated.get() {
             debug!(self.logger, "Commiting new state");
-            self.crtc.commit(fb).map_err(Error::Underlying)?;
+            let res = self.crtc.commit(fb).map_err(Error::Underlying);
             self.recreated.set(false);
+            res
         } else {
             trace!(self.logger, "Queueing Page flip");
-            RawSurface::page_flip(&self.crtc, fb).map_err(Error::Underlying)?;
+            RawSurface::page_flip(&self.crtc, fb).map_err(Error::Underlying)
+        };
+
+        match result {
+            Ok(_) => {
+                self.current_frame_buffer.set(Some(fb));
+                Ok(())
+            },
+            Err(err) => {
+                self.unlock_buffer();
+                Err(err)
+            }
         }
-
-        self.current_frame_buffer.set(Some(fb));
-
-        Ok(())
     }
 
     pub fn recreate(&self) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
