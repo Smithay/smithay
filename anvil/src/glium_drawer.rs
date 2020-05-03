@@ -16,7 +16,11 @@ use smithay::backend::egl::display::EGLBufferReader;
 use smithay::{
     backend::{
         egl::{BufferAccessError, EGLImages, Format},
-        graphics::{gl::GLGraphicsBackend, glium::{GliumGraphicsBackend, Frame}, SwapBuffersError},
+        graphics::{
+            gl::GLGraphicsBackend,
+            glium::{Frame, GliumGraphicsBackend},
+            SwapBuffersError,
+        },
     },
     reexports::{
         calloop::LoopHandle,
@@ -458,21 +462,21 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     }
 }
 
-pub fn schedule_initial_render<F: GLGraphicsBackend + 'static, Data: 'static>(renderer: Rc<GliumDrawer<F>>, evt_handle: &LoopHandle<Data>) {
+pub fn schedule_initial_render<F: GLGraphicsBackend + 'static, Data: 'static>(
+    renderer: Rc<GliumDrawer<F>>,
+    evt_handle: &LoopHandle<Data>,
+) {
     let mut frame = renderer.draw();
     frame.clear_color(0.8, 0.8, 0.9, 1.0);
     if let Err(err) = frame.set_finish() {
         match err {
-            SwapBuffersError::AlreadySwapped => {},
+            SwapBuffersError::AlreadySwapped => {}
             SwapBuffersError::TemporaryFailure(err) => {
                 // TODO dont reschedule after 3(?) retries
-                error!(
-                    renderer.log,
-                    "Failed to submit page_flip: {}", err
-                );
+                error!(renderer.log, "Failed to submit page_flip: {}", err);
                 let handle = evt_handle.clone();
                 evt_handle.insert_idle(move |_| schedule_initial_render(renderer, &handle));
-            },
+            }
             SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
         }
     }

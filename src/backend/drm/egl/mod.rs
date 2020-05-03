@@ -47,6 +47,7 @@ pub enum Error<U: std::error::Error + std::fmt::Debug + std::fmt::Display + 'sta
 }
 
 type Arguments = (crtc::Handle, Mode, Vec<connector::Handle>);
+type BackendRef<D> = Weak<EglSurfaceInternal<<D as Device>::Surface>>;
 
 /// Representation of an egl device to create egl rendering surfaces
 pub struct EglDevice<B, D>
@@ -61,7 +62,7 @@ where
     logger: ::slog::Logger,
     default_attributes: GlAttributes,
     default_requirements: PixelFormatRequirements,
-    backends: Rc<RefCell<HashMap<crtc::Handle, Weak<EglSurfaceInternal<<D as Device>::Surface>>>>>,
+    backends: Rc<RefCell<HashMap<crtc::Handle, BackendRef<D>>>>,
 }
 
 impl<B, D> AsRawFd for EglDevice<B, D>

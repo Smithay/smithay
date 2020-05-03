@@ -292,7 +292,7 @@ impl LogindSessionImpl {
                         self.logger,
                         "Request of type \"{}\" to close device ({},{})", pause_type, major, minor
                     );
-                    
+
                     // gone means the device was unplugged from the system and you will no longer get any
                     // notifications about it.
                     // This is handled via udev and is not part of our session api.

@@ -39,11 +39,14 @@ use smithay::{
             timer::{Timer, TimerHandle},
             EventLoop, LoopHandle, Source,
         },
-        drm::{self, control::{
-            connector::{Info as ConnectorInfo, State as ConnectorState},
-            crtc,
-            encoder::Info as EncoderInfo,
-        }},
+        drm::{
+            self,
+            control::{
+                connector::{Info as ConnectorInfo, State as ConnectorState},
+                crtc,
+                encoder::Info as EncoderInfo,
+            },
+        },
         image::{ImageBuffer, Rgba},
         input::Libinput,
         nix::{fcntl::OFlag, sys::stat::dev_t},
@@ -61,7 +64,7 @@ use smithay::{
 };
 
 use crate::buffer_utils::BufferUtils;
-use crate::glium_drawer::{GliumDrawer, schedule_initial_render};
+use crate::glium_drawer::{schedule_initial_render, GliumDrawer};
 use crate::shell::{MyWindowMap, Roles};
 use crate::state::AnvilState;
 
@@ -431,8 +434,14 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 dnd_icon: self.dnd_icon.clone(),
                 logger: self.logger.clone(),
             });
-            let restart_id = self.notifier.register(DrmRendererSessionListener { renderer: renderer.clone(), loop_handle: self.loop_handle.clone() });
-            device.set_handler(DrmHandlerImpl { renderer, loop_handle: self.loop_handle.clone() });
+            let restart_id = self.notifier.register(DrmRendererSessionListener {
+                renderer: renderer.clone(),
+                loop_handle: self.loop_handle.clone(),
+            });
+            device.set_handler(DrmHandlerImpl {
+                renderer,
+                loop_handle: self.loop_handle.clone(),
+            });
 
             let device_session_id = self.notifier.register(device.observer());
             let dev_id = device.device_id();
@@ -532,7 +541,7 @@ impl<Data: 'static> DeviceHandler for DrmHandlerImpl<Data> {
     fn vblank(&mut self, crtc: crtc::Handle) {
         self.renderer.clone().render(crtc, None, Some(&self.loop_handle))
     }
-    
+
     fn error(&mut self, error: <RenderSurface as Surface>::Error) {
         error!(self.renderer.logger, "{:?}", error);
     }
@@ -549,10 +558,10 @@ impl<Data: 'static> SessionObserver for DrmRendererSessionListener<Data> {
         // we want to be called, after all session handling is done (TODO this is not so nice)
         let renderer = self.renderer.clone();
         let handle = self.loop_handle.clone();
-        self.loop_handle.insert_idle(move |_| renderer.render_all(Some(&handle)));
+        self.loop_handle
+            .insert_idle(move |_| renderer.render_all(Some(&handle)));
     }
 }
-
 
 pub struct DrmRenderer {
     compositor_token: CompositorToken<Roles>,
@@ -570,7 +579,12 @@ impl DrmRenderer {
             self.clone().render(*crtc, None, evt_handle);
         }
     }
-    fn render<Data: 'static>(self: Rc<Self>, crtc: crtc::Handle, timer: Option<TimerHandle<(std::rc::Weak<DrmRenderer>, crtc::Handle)>>, evt_handle: Option<&LoopHandle<Data>>) {
+    fn render<Data: 'static>(
+        self: Rc<Self>,
+        crtc: crtc::Handle,
+        timer: Option<TimerHandle<(std::rc::Weak<DrmRenderer>, crtc::Handle)>>,
+        evt_handle: Option<&LoopHandle<Data>>,
+    ) {
         if let Some(drawer) = self.backends.borrow().get(&crtc) {
             {
                 let (x, y) = *self.pointer_location.borrow();
@@ -625,32 +639,50 @@ impl DrmRenderer {
                 error!(self.logger, "Error during rendering: {:?}", err);
                 let reschedule = match err {
                     SwapBuffersError::AlreadySwapped => false,
-                    SwapBuffersError::TemporaryFailure(err) => match err.downcast_ref::<smithay::backend::drm::common::Error>() { 
-                        Some(&smithay::backend::drm::common::Error::DeviceInactive) => false,
-                        Some(&smithay::backend::drm::common::Error::Access { ref source, .. }) if match source.get_ref() {
-                            drm::SystemError::PermissionDenied => true,
-                            _ => false,
-                        } => false,
-                        _ => true
-                    },
+                    SwapBuffersError::TemporaryFailure(err) => {
+                        match err.downcast_ref::<smithay::backend::drm::common::Error>() {
+                            Some(&smithay::backend::drm::common::Error::DeviceInactive) => false,
+                            Some(&smithay::backend::drm::common::Error::Access { ref source, .. })
+                                if match source.get_ref() {
+                                    drm::SystemError::PermissionDenied => true,
+                                    _ => false,
+                                } =>
+                            {
+                                false
+                            }
+                            _ => true,
+                        }
+                    }
                     SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
                 };
 
                 if reschedule {
                     match (timer, evt_handle) {
                         (Some(handle), _) => {
-                            let _ = handle.add_timeout(Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/), (Rc::downgrade(&self), crtc));
-                        },
+                            let _ = handle.add_timeout(
+                                Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/),
+                                (Rc::downgrade(&self), crtc),
+                            );
+                        }
                         (None, Some(evt_handle)) => {
                             let timer = Timer::new().unwrap();
                             let handle = timer.handle();
-                            let _ = handle.add_timeout(Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/), (Rc::downgrade(&self), crtc));
-                            evt_handle.insert_source(timer, |(renderer, crtc), handle, _data| {
-                                if let Some(renderer) = renderer.upgrade() {
-                                    renderer.render(crtc, Some(handle.clone()), Option::<&LoopHandle<Data>>::None);
-                                }
-                            }).unwrap();
-                        },
+                            let _ = handle.add_timeout(
+                                Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/),
+                                (Rc::downgrade(&self), crtc),
+                            );
+                            evt_handle
+                                .insert_source(timer, |(renderer, crtc), handle, _data| {
+                                    if let Some(renderer) = renderer.upgrade() {
+                                        renderer.render(
+                                            crtc,
+                                            Some(handle.clone()),
+                                            Option::<&LoopHandle<Data>>::None,
+                                        );
+                                    }
+                                })
+                                .unwrap();
+                        }
                         _ => unreachable!(),
                     }
                 }

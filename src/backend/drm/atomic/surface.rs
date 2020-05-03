@@ -535,20 +535,21 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
         };
 
         debug!(self.logger, "Setting screen: {:?}", req);
-        let result = self.atomic_commit(
-            &[
-                AtomicCommitFlags::PageFlipEvent,
-                AtomicCommitFlags::AllowModeset,
-                AtomicCommitFlags::Nonblock,
-            ],
-            req,
-        )
-        .compat()
-        .map_err(|source| Error::Access {
-            errmsg: "Error setting crtc",
-            dev: self.dev_path(),
-            source,
-        });
+        let result = self
+            .atomic_commit(
+                &[
+                    AtomicCommitFlags::PageFlipEvent,
+                    AtomicCommitFlags::AllowModeset,
+                    AtomicCommitFlags::Nonblock,
+                ],
+                req,
+            )
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Error setting crtc",
+                dev: self.dev_path(),
+                source,
+            });
 
         if result.is_ok() {
             *current = pending.clone();
@@ -617,13 +618,13 @@ impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurfaceInternal<A> {
         }
 
         self.cursor.framebuffer.set(Some(
-            self.add_planar_framebuffer(buffer, &[0; 4], 0).compat().map_err(
-                |source| Error::Access {
+            self.add_planar_framebuffer(buffer, &[0; 4], 0)
+                .compat()
+                .map_err(|source| Error::Access {
                     errmsg: "Failed to import cursor",
                     dev: self.dev_path(),
                     source,
-                },
-            )?,
+                })?,
         ));
 
         self.cursor.hotspot.set(hotspot);
@@ -858,7 +859,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                         self.plane_prop_handle(planes.cursor, "FB_ID")?,
                         property::Value::Framebuffer(Some(fb)),
                     );
-                },
+                }
                 Err(err) => {
                     warn!(self.logger, "Cursor FB invalid: {}. Skipping.", err);
                     self.cursor.framebuffer.set(None);

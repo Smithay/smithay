@@ -166,15 +166,15 @@ impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
                     current.mode = unsafe { std::mem::zeroed() };
 
                     // recreate property blob
-                    let mode = { 
+                    let mode = {
                         let pending = surface.pending.read().unwrap();
-                        pending.mode.clone()
+                        pending.mode
                     };
                     surface.use_mode(mode)?;
 
                     // drop cursor state
                     surface.cursor.position.set(None);
-                    surface.cursor.hotspot.set((0,0));
+                    surface.cursor.hotspot.set((0, 0));
                     surface.cursor.framebuffer.set(None);
                 }
             }

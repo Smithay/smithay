@@ -93,7 +93,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
                 self.recreated.set(false);
                 self.current_frame_buffer.set(Some(fb));
                 Ok(())
-            },
+            }
             Err(err) => {
                 self.unlock_buffer();
                 Err(err)

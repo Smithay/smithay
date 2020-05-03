@@ -90,7 +90,9 @@ impl<N: native::NativeSurface> EGLSurface<N> {
             wrap_egl_call(|| unsafe { ffi::egl::SwapBuffers(**self.display, surface as *const _) })
                 .map_err(SwapBuffersError::EGLSwapBuffers)
                 .and_then(|_| self.native.swap_buffers().map_err(SwapBuffersError::Underlying))
-        } else { Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface)) };
+        } else {
+            Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface))
+        };
 
         // workaround for missing `PartialEq` impl
         let is_bad_surface = if let Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface)) = result {

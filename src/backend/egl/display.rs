@@ -485,17 +485,19 @@ impl EGLBufferReader {
         buffer: WlBuffer,
     ) -> ::std::result::Result<EGLImages, BufferAccessError> {
         let mut format: i32 = 0;
-        if wrap_egl_call(|| unsafe {
+        let query = wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
                 buffer.as_ref().c_ptr() as _,
                 ffi::egl::EGL_TEXTURE_FORMAT,
                 &mut format,
             )
-        }).map_err(|source| BufferAccessError::NotManaged(buffer.clone(), source))? == ffi::egl::FALSE {
-            return Err(BufferAccessError::NotManaged(buffer.clone(), EGLError::BadParameter));
+        })
+        .map_err(|source| BufferAccessError::NotManaged(buffer.clone(), source))?;
+        if query == ffi::egl::FALSE {
+            return Err(BufferAccessError::NotManaged(buffer, EGLError::BadParameter));
         }
-        
+
         let format = match format {
             x if x == ffi::egl::TEXTURE_RGB as i32 => Format::RGB,
             x if x == ffi::egl::TEXTURE_RGBA as i32 => Format::RGBA,
