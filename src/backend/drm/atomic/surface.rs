@@ -861,6 +861,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                 },
                 Err(err) => {
                     warn!(self.logger, "Cursor FB invalid: {}. Skipping.", err);
+                    self.cursor.framebuffer.set(None);
                 }
             }
         }
