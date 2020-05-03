@@ -12,7 +12,7 @@ use std::{
 
 /// EGL surface of a given EGL context for rendering
 pub struct EGLSurface<N: native::NativeSurface> {
-    display: Arc<EGLDisplayHandle>,
+    pub(crate) display: Arc<EGLDisplayHandle>,
     native: N,
     pub(crate) surface: Cell<ffi::egl::types::EGLSurface>,
     config_id: ffi::egl::types::EGLConfig,
@@ -90,9 +90,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
             wrap_egl_call(|| unsafe { ffi::egl::SwapBuffers(**self.display, surface as *const _) })
                 .map_err(SwapBuffersError::EGLSwapBuffers)
                 .and_then(|_| self.native.swap_buffers().map_err(SwapBuffersError::Underlying))
-        } else {
-            Ok(())
-        };
+        } else { Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface)) };
 
         // workaround for missing `PartialEq` impl
         let is_bad_surface = if let Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface)) = result {
@@ -117,9 +115,11 @@ impl<N: native::NativeSurface> EGLSurface<N> {
                 })
                 .map_err(SwapBuffersError::EGLCreateWindowSurface)?
             });
-        }
 
-        result
+            result.map_err(|_| SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface))
+        } else {
+            result
+        }
     }
 
     /// Returns true if the OpenGL surface is the current one in the thread.

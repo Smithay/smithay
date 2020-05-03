@@ -11,7 +11,7 @@ use std::rc::{Rc, Weak};
 
 use super::{EglDevice, EglSurfaceInternal};
 use crate::backend::drm::{Device, Surface};
-use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
+use crate::backend::egl::{ffi, native::{Backend, NativeDisplay, NativeSurface}};
 use crate::backend::session::{AsSessionObserver, SessionObserver};
 
 /// [`SessionObserver`](SessionObserver)
@@ -50,5 +50,15 @@ impl<S: SessionObserver + 'static, N: NativeSurface + Surface> SessionObserver f
 
     fn activate(&mut self, devnum: Option<(u32, u32, Option<RawFd>)>) {
         self.observer.activate(devnum);
+        if let Some(backends) = self.backends.upgrade() {
+            for (_crtc, backend) in backends.borrow().iter() {
+                if let Some(backend) = backend.upgrade() {
+                    let old_surface = backend.surface.surface.replace(std::ptr::null());
+                    if !old_surface.is_null() {
+                        unsafe { ffi::egl::DestroySurface(**backend.surface.display, old_surface as *const _); }
+                    }
+                }
+            }
+        }
     }
 }
