@@ -1,25 +1,25 @@
-use crate::backend::input::{self as backend};
+use crate::backend::input::{self as backend, InputEvent};
 use input as libinput;
 use input::event::{
     device::DeviceEvent, keyboard::KeyboardEvent, pointer::PointerEvent, touch::TouchEvent, EventTrait,
 };
 use slog::Logger;
 
-use super::LibinputInputBackend;
+use super::{LibinputConfig, LibinputEvent, LibinputInputBackend};
 use std::{
     collections::hash_map::{DefaultHasher, Entry, HashMap},
     hash::{Hash, Hasher},
 };
 
 #[inline(always)]
-pub fn on_device_event<H>(
-    handler: &mut Option<H>,
+pub fn on_device_event<F>(
+    callback: &mut F,
     seats: &mut HashMap<libinput::Seat, backend::Seat>,
-    devices: &mut Vec<libinput::Device>,
+    config: &mut LibinputConfig,
     event: DeviceEvent,
     logger: &Logger,
 ) where
-    H: backend::InputHandler<LibinputInputBackend>,
+    F: FnMut(InputEvent<LibinputInputBackend>, &mut LibinputConfig),
 {
     match event {
         DeviceEvent::Added(device_added_event) => {
@@ -38,7 +38,7 @@ pub fn on_device_event<H>(
                 added.sysname(),
                 device_seat.logical_name()
             );
-            devices.push(added);
+            config.devices.push(added.clone());
 
             match seats.entry(device_seat.clone()) {
                 Entry::Occupied(mut seat_entry) => {
@@ -49,10 +49,7 @@ pub fn on_device_event<H>(
                         caps.keyboard = new_caps.keyboard || caps.keyboard;
                         caps.touch = new_caps.touch || caps.touch;
                     }
-                    if let Some(ref mut handler) = handler {
-                        trace!(logger, "Calling on_seat_changed with {:?}", old_seat);
-                        handler.on_seat_changed(old_seat);
-                    }
+                    callback(InputEvent::SeatChanged(old_seat.clone()), config);
                 }
                 Entry::Vacant(seat_entry) => {
                     let mut hasher = DefaultHasher::default();
@@ -62,18 +59,17 @@ pub fn on_device_event<H>(
                         format!("{}:{}", device_seat.physical_name(), device_seat.logical_name()),
                         new_caps,
                     ));
-                    if let Some(ref mut handler) = handler {
-                        trace!(logger, "Calling on_seat_created with {:?}", seat);
-                        handler.on_seat_created(seat);
-                    }
+                    callback(InputEvent::NewSeat(seat.clone()), config);
                 }
             }
+
+            callback(InputEvent::Special(LibinputEvent::NewDevice(added)), config);
         }
         DeviceEvent::Removed(device_removed_event) => {
             let removed = device_removed_event.device();
 
             // remove device
-            devices.retain(|dev| *dev != removed);
+            config.devices.retain(|dev| *dev != removed);
 
             let device_seat = removed.seat();
             info!(
@@ -86,15 +82,18 @@ pub fn on_device_event<H>(
             // update capabilities, so they appear correctly on `on_seat_changed` and `on_seat_destroyed`.
             if let Some(seat) = seats.get_mut(&device_seat) {
                 let caps = seat.capabilities_mut();
-                caps.pointer = devices
+                caps.pointer = config
+                    .devices
                     .iter()
                     .filter(|x| x.seat() == device_seat)
                     .any(|x| x.has_capability(libinput::DeviceCapability::Pointer));
-                caps.keyboard = devices
+                caps.keyboard = config
+                    .devices
                     .iter()
                     .filter(|x| x.seat() == device_seat)
                     .any(|x| x.has_capability(libinput::DeviceCapability::Keyboard));
-                caps.touch = devices
+                caps.touch = config
+                    .devices
                     .iter()
                     .filter(|x| x.seat() == device_seat)
                     .any(|x| x.has_capability(libinput::DeviceCapability::Touch));
@@ -104,7 +103,7 @@ pub fn on_device_event<H>(
             }
 
             // check if the seat has any other devices
-            if !devices.iter().any(|x| x.seat() == device_seat) {
+            if !config.devices.iter().any(|x| x.seat() == device_seat) {
                 // it has not, lets destroy it
                 if let Some(seat) = seats.remove(&device_seat) {
                     info!(
@@ -112,133 +111,167 @@ pub fn on_device_event<H>(
                         "Removing seat {} which no longer has any device",
                         device_seat.logical_name()
                     );
-                    if let Some(ref mut handler) = handler {
-                        trace!(logger, "Calling on_seat_destroyed with {:?}", seat);
-                        handler.on_seat_destroyed(&seat);
-                    }
+                    callback(InputEvent::SeatRemoved(seat), config);
                 } else {
                     warn!(logger, "Seat destroyed that was never created");
                     return;
                 }
             // it has, notify about updates
-            } else if let Some(ref mut handler) = handler {
-                if let Some(seat) = seats.get(&device_seat) {
-                    trace!(logger, "Calling on_seat_changed with {:?}", seat);
-                    handler.on_seat_changed(&seat);
-                } else {
-                    warn!(logger, "Seat changed that was never created");
-                    return;
-                }
+            } else if let Some(seat) = seats.get(&device_seat) {
+                callback(InputEvent::SeatChanged(seat.clone()), config);
+            } else {
+                warn!(logger, "Seat changed that was never created");
+                return;
             }
+
+            callback(InputEvent::Special(LibinputEvent::RemovedDevice(removed)), config);
         }
-    }
-    if let Some(ref mut handler) = handler {
-        handler.on_input_config_changed(devices);
     }
 }
 
 #[inline(always)]
-pub fn on_touch_event<H>(
-    handler: &mut Option<H>,
+pub fn on_touch_event<F>(
+    callback: &mut F,
     seats: &HashMap<libinput::Seat, backend::Seat>,
+    config: &mut LibinputConfig,
     event: TouchEvent,
     logger: &Logger,
 ) where
-    H: backend::InputHandler<LibinputInputBackend>,
+    F: FnMut(InputEvent<LibinputInputBackend>, &mut LibinputConfig),
 {
-    if let Some(ref mut handler) = handler {
-        let device_seat = event.device().seat();
-        if let Some(ref seat) = seats.get(&device_seat) {
-            match event {
-                TouchEvent::Down(down_event) => {
-                    trace!(logger, "Calling on_touch_down with {:?}", down_event);
-                    handler.on_touch_down(seat, down_event)
-                }
-                TouchEvent::Motion(motion_event) => {
-                    trace!(logger, "Calling on_touch_motion with {:?}", motion_event);
-                    handler.on_touch_motion(seat, motion_event)
-                }
-                TouchEvent::Up(up_event) => {
-                    trace!(logger, "Calling on_touch_up with {:?}", up_event);
-                    handler.on_touch_up(seat, up_event)
-                }
-                TouchEvent::Cancel(cancel_event) => {
-                    trace!(logger, "Calling on_touch_cancel with {:?}", cancel_event);
-                    handler.on_touch_cancel(seat, cancel_event)
-                }
-                TouchEvent::Frame(frame_event) => {
-                    trace!(logger, "Calling on_touch_frame with {:?}", frame_event);
-                    handler.on_touch_frame(seat, frame_event)
-                }
+    let device_seat = event.device().seat();
+    if let Some(seat) = seats.get(&device_seat).cloned() {
+        match event {
+            TouchEvent::Down(down_event) => {
+                callback(
+                    InputEvent::TouchDown {
+                        seat,
+                        event: down_event,
+                    },
+                    config,
+                );
             }
-        } else {
-            warn!(logger, "Received touch event of non existing Seat");
-            return;
+            TouchEvent::Motion(motion_event) => {
+                callback(
+                    InputEvent::TouchMotion {
+                        seat,
+                        event: motion_event,
+                    },
+                    config,
+                );
+            }
+            TouchEvent::Up(up_event) => {
+                callback(
+                    InputEvent::TouchUp {
+                        seat,
+                        event: up_event,
+                    },
+                    config,
+                );
+            }
+            TouchEvent::Cancel(cancel_event) => {
+                callback(
+                    InputEvent::TouchCancel {
+                        seat,
+                        event: cancel_event,
+                    },
+                    config,
+                );
+            }
+            TouchEvent::Frame(frame_event) => {
+                callback(
+                    InputEvent::TouchFrame {
+                        seat,
+                        event: frame_event,
+                    },
+                    config,
+                );
+            }
         }
+    } else {
+        warn!(logger, "Received touch event of non existing Seat");
     }
 }
 
 #[inline(always)]
-pub fn on_keyboard_event<H>(
-    handler: &mut Option<H>,
+pub fn on_keyboard_event<F>(
+    callback: &mut F,
     seats: &HashMap<libinput::Seat, backend::Seat>,
+    config: &mut LibinputConfig,
     event: KeyboardEvent,
     logger: &Logger,
 ) where
-    H: backend::InputHandler<LibinputInputBackend>,
+    F: FnMut(InputEvent<LibinputInputBackend>, &mut LibinputConfig),
 {
     match event {
         KeyboardEvent::Key(key_event) => {
-            if let Some(ref mut handler) = handler {
-                let device_seat = key_event.device().seat();
-                if let Some(ref seat) = seats.get(&device_seat) {
-                    trace!(logger, "Calling on_keyboard_key with {:?}", key_event);
-                    handler.on_keyboard_key(seat, key_event);
-                } else {
-                    warn!(logger, "Received key event of non existing Seat");
-                    return;
-                }
+            let device_seat = key_event.device().seat();
+            if let Some(seat) = seats.get(&device_seat).cloned() {
+                callback(
+                    InputEvent::Keyboard {
+                        seat,
+                        event: key_event,
+                    },
+                    config,
+                );
+            } else {
+                warn!(logger, "Received key event of non existing Seat");
             }
         }
     }
 }
 
 #[inline(always)]
-pub fn on_pointer_event<H>(
-    handler: &mut Option<H>,
+pub fn on_pointer_event<F>(
+    callback: &mut F,
     seats: &HashMap<libinput::Seat, backend::Seat>,
+    config: &mut LibinputConfig,
     event: PointerEvent,
     logger: &Logger,
 ) where
-    H: backend::InputHandler<LibinputInputBackend>,
+    F: FnMut(InputEvent<LibinputInputBackend>, &mut LibinputConfig),
 {
-    if let Some(ref mut handler) = handler {
-        let device_seat = event.device().seat();
-        if let Some(ref seat) = seats.get(&device_seat) {
-            match event {
-                PointerEvent::Motion(motion_event) => {
-                    trace!(logger, "Calling on_pointer_move with {:?}", motion_event);
-                    handler.on_pointer_move(seat, motion_event);
-                }
-                PointerEvent::MotionAbsolute(motion_abs_event) => {
-                    trace!(
-                        logger,
-                        "Calling on_pointer_move_absolute with {:?}",
-                        motion_abs_event
-                    );
-                    handler.on_pointer_move_absolute(seat, motion_abs_event);
-                }
-                PointerEvent::Axis(axis_event) => {
-                    trace!(logger, "Calling on_pointer_axis with {:?}", axis_event);
-                    handler.on_pointer_axis(seat, axis_event);
-                }
-                PointerEvent::Button(button_event) => {
-                    trace!(logger, "Calling on_pointer_button with {:?}", button_event);
-                    handler.on_pointer_button(seat, button_event);
-                }
+    let device_seat = event.device().seat();
+    if let Some(seat) = seats.get(&device_seat).cloned() {
+        match event {
+            PointerEvent::Motion(motion_event) => {
+                callback(
+                    InputEvent::PointerMotion {
+                        seat,
+                        event: motion_event,
+                    },
+                    config,
+                );
             }
-        } else {
-            warn!(logger, "Received pointer event of non existing Seat");
+            PointerEvent::MotionAbsolute(motion_abs_event) => {
+                callback(
+                    InputEvent::PointerMotionAbsolute {
+                        seat,
+                        event: motion_abs_event,
+                    },
+                    config,
+                );
+            }
+            PointerEvent::Axis(axis_event) => {
+                callback(
+                    InputEvent::PointerAxis {
+                        seat,
+                        event: axis_event,
+                    },
+                    config,
+                );
+            }
+            PointerEvent::Button(button_event) => {
+                callback(
+                    InputEvent::PointerButton {
+                        seat,
+                        event: button_event,
+                    },
+                    config,
+                );
+            }
         }
+    } else {
+        warn!(logger, "Received pointer event of non existing Seat");
     }
 }

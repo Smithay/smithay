@@ -26,8 +26,7 @@ use smithay::{
             DevPath, Device, DeviceHandler, Surface,
         },
         graphics::CursorBackend,
-        input::InputBackend,
-        libinput::{libinput_bind, LibinputInputBackend, LibinputSessionInterface},
+        libinput::{LibinputInputBackend, LibinputSessionInterface},
         session::{
             auto::{auto_session_bind, AutoSession},
             notify_multiplexer, AsSessionObserver, Session, SessionNotifier,
@@ -202,8 +201,8 @@ pub fn run_udev(
         Libinput::new_with_udev::<LibinputSessionInterface<AutoSession>>(session.clone().into());
     let libinput_session_id = notifier.register(libinput_context.observer());
     libinput_context.udev_assign_seat(&seat).unwrap();
-    let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
-    libinput_backend.set_handler(AnvilInputHandler::new_with_session(
+    let libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
+    let mut input_handler = AnvilInputHandler::new_with_session(
         log.clone(),
         InputInitData {
             pointer,
@@ -214,13 +213,16 @@ pub fn run_udev(
             pointer_location,
         },
         session,
-    ));
+    );
 
     /*
      * Bind all our objects that get driven by the event loop
      */
-    let libinput_event_source = libinput_bind(libinput_backend, event_loop.handle())
-        .map_err(|e| -> IoError { e.into() })
+    let libinput_event_source = event_loop
+        .handle()
+        .insert_source(libinput_backend, move |event, _, _anvil_state| {
+            input_handler.process_event(event)
+        })
         .unwrap();
     let session_event_source = auto_session_bind(notifier, event_loop.handle())
         .map_err(|(e, _)| e)
