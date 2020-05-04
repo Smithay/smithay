@@ -31,7 +31,9 @@ pub fn run_winit(
     event_loop: &mut EventLoop<AnvilState>,
     log: Logger,
 ) -> Result<(), ()> {
-    let (renderer, mut input) = winit::init(log.clone()).map_err(|_| ())?;
+    let (renderer, mut input) = winit::init(log.clone()).map_err(|err| {
+        slog::crit!(log, "Failed to initialize Winit backend: {}", err);
+    })?;
 
     #[cfg(feature = "egl")]
     let egl_buffer_reader = Rc::new(RefCell::new(
@@ -111,7 +113,7 @@ pub fn run_winit(
 
     let pointer_location = Rc::new(RefCell::new((0.0, 0.0)));
 
-    input.set_handler(AnvilInputHandler::new(
+    let mut input_handler = AnvilInputHandler::new(
         log.clone(),
         InputInitData {
             pointer,
@@ -121,12 +123,14 @@ pub fn run_winit(
             running: state.running.clone(),
             pointer_location: pointer_location.clone(),
         },
-    ));
+    );
 
     info!(log, "Initialization completed, starting the main loop.");
 
     while state.running.load(Ordering::SeqCst) {
-        input.dispatch_new_events().unwrap();
+        input
+            .dispatch_new_events(|event, _| input_handler.process_event(event))
+            .unwrap();
 
         // drawing logic
         {

@@ -14,7 +14,7 @@ use slog::Logger;
 use smithay::backend::session::{auto::AutoSession, Session};
 use smithay::{
     backend::input::{
-        self, Event, InputBackend, InputHandler, KeyState, KeyboardKeyEvent, PointerAxisEvent,
+        self, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent,
         PointerButtonEvent, PointerMotionAbsoluteEvent, PointerMotionEvent,
     },
     reexports::wayland_server::protocol::wl_pointer,
@@ -77,20 +77,21 @@ impl AnvilInputHandler {
     }
 }
 
-impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
-    fn on_seat_created(&mut self, _: &input::Seat) {
-        /* currently we just create a single static one */
+impl AnvilInputHandler {
+    pub fn process_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
+        match event {
+            InputEvent::Keyboard { event, .. } => self.on_keyboard_key::<B>(event),
+            InputEvent::PointerMotion { event, .. } => self.on_pointer_move::<B>(event),
+            InputEvent::PointerMotionAbsolute { event, .. } => self.on_pointer_move_absolute::<B>(event),
+            InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(event),
+            InputEvent::PointerAxis { event, .. } => self.on_pointer_axis::<B>(event),
+            _ => {
+                // other events are not handled in anvil (yet)
+            }
+        }
     }
 
-    fn on_seat_destroyed(&mut self, _: &input::Seat) {
-        /* currently we just create a single static one */
-    }
-
-    fn on_seat_changed(&mut self, _: &input::Seat) {
-        /* currently we just create a single static one */
-    }
-
-    fn on_keyboard_key(&mut self, _: &input::Seat, evt: B::KeyboardKeyEvent) {
+    fn on_keyboard_key<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) {
         let keycode = evt.key_code();
         let state = evt.state();
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
@@ -146,7 +147,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
         }
     }
 
-    fn on_pointer_move(&mut self, _: &input::Seat, evt: B::PointerMotionEvent) {
+    fn on_pointer_move<B: InputBackend>(&mut self, evt: B::PointerMotionEvent) {
         let (x, y) = (evt.delta_x(), evt.delta_y());
         let serial = SCOUNTER.next_serial();
         let mut location = self.pointer_location.borrow_mut();
@@ -163,7 +164,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
         self.pointer.motion(*location, under, serial, evt.time());
     }
 
-    fn on_pointer_move_absolute(&mut self, _: &input::Seat, evt: B::PointerMotionAbsoluteEvent) {
+    fn on_pointer_move_absolute<B: InputBackend>(&mut self, evt: B::PointerMotionAbsoluteEvent) {
         // different cases depending on the context:
         let (x, y) = {
             #[cfg(feature = "udev")]
@@ -188,7 +189,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
         self.pointer.motion((x, y), under, serial, evt.time());
     }
 
-    fn on_pointer_button(&mut self, _: &input::Seat, evt: B::PointerButtonEvent) {
+    fn on_pointer_button<B: InputBackend>(&mut self, evt: B::PointerButtonEvent) {
         let serial = SCOUNTER.next_serial();
         let button = match evt.button() {
             input::MouseButton::Left => 0x110,
@@ -214,7 +215,7 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
         self.pointer.button(button, state, serial, evt.time());
     }
 
-    fn on_pointer_axis(&mut self, _: &input::Seat, evt: B::PointerAxisEvent) {
+    fn on_pointer_axis<B: InputBackend>(&mut self, evt: B::PointerAxisEvent) {
         let source = match evt.source() {
             input::AxisSource::Continuous => wl_pointer::AxisSource::Continuous,
             input::AxisSource::Finger => wl_pointer::AxisSource::Finger,
@@ -249,25 +250,6 @@ impl<B: InputBackend> InputHandler<B> for AnvilInputHandler {
             }
             self.pointer.axis(frame);
         }
-    }
-
-    fn on_touch_down(&mut self, _: &input::Seat, _: B::TouchDownEvent) {
-        /* not done in this example */
-    }
-    fn on_touch_motion(&mut self, _: &input::Seat, _: B::TouchMotionEvent) {
-        /* not done in this example */
-    }
-    fn on_touch_up(&mut self, _: &input::Seat, _: B::TouchUpEvent) {
-        /* not done in this example */
-    }
-    fn on_touch_cancel(&mut self, _: &input::Seat, _: B::TouchCancelEvent) {
-        /* not done in this example */
-    }
-    fn on_touch_frame(&mut self, _: &input::Seat, _: B::TouchFrameEvent) {
-        /* not done in this example */
-    }
-    fn on_input_config_changed(&mut self, _: &mut B::InputConfig) {
-        /* not done in this example */
     }
 }
 
