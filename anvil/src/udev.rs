@@ -50,16 +50,14 @@ use smithay::{
     },
     wayland::{
         compositor::CompositorToken,
-        data_device::set_data_device_focus,
         output::{Mode, Output, PhysicalProperties},
-        seat::{CursorImageStatus, Seat, XkbConfig},
+        seat::CursorImageStatus,
         SERIAL_COUNTER as SCOUNTER,
     },
 };
 
 use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
-use crate::input_handler::{AnvilInputHandler, InputInitData};
 use crate::shell::{MyWindowMap, Roles};
 use crate::state::AnvilState;
 
@@ -101,66 +99,48 @@ pub fn run_udev(
     let buffer_utils = BufferUtils::new(log.clone());
 
     /*
-     * Initialize the compositor
-     */
-    let mut state = AnvilState::init(display.clone(), event_loop.handle(), buffer_utils, log.clone());
-
-    /*
      * Initialize session
      */
     let (session, mut notifier) = AutoSession::new(log.clone()).ok_or(())?;
     let (udev_observer, udev_notifier) = notify_multiplexer();
     let udev_session_id = notifier.register(udev_observer);
 
-    let pointer_location = Rc::new(RefCell::new((0.0, 0.0)));
-    let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
+    /*
+     * Initialize the compositor
+     */
+    let mut state = AnvilState::init(
+        display.clone(),
+        event_loop.handle(),
+        buffer_utils,
+        Some(session),
+        log.clone(),
+    );
 
     /*
      * Initialize the udev backend
      */
-    let seat = session.seat();
-
-    let primary_gpu = primary_gpu(&seat).unwrap_or_default();
+    let primary_gpu = primary_gpu(&state.seat_name).unwrap_or_default();
 
     let bytes = include_bytes!("../resources/cursor2.rgba");
-    let udev_backend = UdevBackend::new(seat.clone(), log.clone()).map_err(|_| ())?;
+    let udev_backend = UdevBackend::new(state.seat_name.clone(), log.clone()).map_err(|_| ())?;
 
     let mut udev_handler = UdevHandlerImpl {
         compositor_token: state.ctoken,
         #[cfg(feature = "egl")]
         egl_buffer_reader,
-        session: session.clone(),
+        session: state.session.clone().unwrap(),
         backends: HashMap::new(),
         display: display.clone(),
         primary_gpu,
         window_map: state.window_map.clone(),
-        pointer_location: pointer_location.clone(),
+        pointer_location: state.pointer_location.clone(),
         pointer_image: ImageBuffer::from_raw(64, 64, bytes.to_vec()).unwrap(),
-        cursor_status: cursor_status.clone(),
+        cursor_status: state.cursor_status.clone(),
         dnd_icon: state.dnd_icon.clone(),
         loop_handle: event_loop.handle(),
         notifier: udev_notifier,
         logger: log.clone(),
     };
-
-    /*
-     * Initialize wayland input object
-     */
-    let (mut w_seat, _) = Seat::new(
-        &mut display.borrow_mut(),
-        session.seat(),
-        state.ctoken,
-        log.clone(),
-    );
-
-    let pointer = w_seat.add_pointer(state.ctoken.clone(), move |new_status| {
-        *cursor_status.lock().unwrap() = new_status;
-    });
-    let keyboard = w_seat
-        .add_keyboard(XkbConfig::default(), 200, 25, |seat, focus| {
-            set_data_device_focus(seat, focus.and_then(|s| s.as_ref().client()))
-        })
-        .expect("Failed to initialize the keyboard");
 
     /*
      * Initialize a fake output (we render one screen to every device in this example)
@@ -197,31 +177,20 @@ pub fn run_udev(
     /*
      * Initialize libinput backend
      */
-    let mut libinput_context =
-        Libinput::new_with_udev::<LibinputSessionInterface<AutoSession>>(session.clone().into());
-    let libinput_session_id = notifier.register(libinput_context.observer());
-    libinput_context.udev_assign_seat(&seat).unwrap();
-    let libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
-    let mut input_handler = AnvilInputHandler::new_with_session(
-        log.clone(),
-        InputInitData {
-            pointer,
-            keyboard,
-            window_map: state.window_map.clone(),
-            screen_size: (w, h),
-            running: state.running.clone(),
-            pointer_location,
-        },
-        session,
+    let mut libinput_context = Libinput::new_with_udev::<LibinputSessionInterface<AutoSession>>(
+        state.session.clone().unwrap().into(),
     );
+    let libinput_session_id = notifier.register(libinput_context.observer());
+    libinput_context.udev_assign_seat(&state.seat_name).unwrap();
+    let libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
 
     /*
      * Bind all our objects that get driven by the event loop
      */
     let libinput_event_source = event_loop
         .handle()
-        .insert_source(libinput_backend, move |event, _, _anvil_state| {
-            input_handler.process_event(event)
+        .insert_source(libinput_backend, move |event, _, anvil_state| {
+            anvil_state.process_input_event(event)
         })
         .unwrap();
     let session_event_source = auto_session_bind(notifier, event_loop.handle())

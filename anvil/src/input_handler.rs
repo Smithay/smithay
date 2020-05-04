@@ -1,17 +1,9 @@
-use std::{
-    cell::RefCell,
-    process::Command,
-    rc::Rc,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::{process::Command, sync::atomic::Ordering};
 
-use slog::Logger;
+use crate::AnvilState;
 
 #[cfg(feature = "udev")]
-use smithay::backend::session::{auto::AutoSession, Session};
+use smithay::backend::session::Session;
 use smithay::{
     backend::input::{
         self, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent,
@@ -19,66 +11,13 @@ use smithay::{
     },
     reexports::wayland_server::protocol::wl_pointer,
     wayland::{
-        seat::{keysyms as xkb, AxisFrame, KeyboardHandle, Keysym, ModifiersState, PointerHandle},
+        seat::{keysyms as xkb, AxisFrame, Keysym, ModifiersState},
         SERIAL_COUNTER as SCOUNTER,
     },
 };
 
-use crate::shell::MyWindowMap;
-
-pub struct AnvilInputHandler {
-    log: Logger,
-    pointer: PointerHandle,
-    keyboard: KeyboardHandle,
-    window_map: Rc<RefCell<MyWindowMap>>,
-    pointer_location: Rc<RefCell<(f64, f64)>>,
-    screen_size: (u32, u32),
-    #[cfg(feature = "udev")]
-    session: Option<AutoSession>,
-    running: Arc<AtomicBool>,
-}
-
-pub struct InputInitData {
-    pub pointer: PointerHandle,
-    pub keyboard: KeyboardHandle,
-    pub window_map: Rc<RefCell<MyWindowMap>>,
-    pub screen_size: (u32, u32),
-    pub running: Arc<AtomicBool>,
-    pub pointer_location: Rc<RefCell<(f64, f64)>>,
-}
-
-impl AnvilInputHandler {
-    pub fn new(log: Logger, data: InputInitData) -> AnvilInputHandler {
-        AnvilInputHandler {
-            log,
-            pointer: data.pointer,
-            keyboard: data.keyboard,
-            window_map: data.window_map,
-            screen_size: data.screen_size,
-            running: data.running,
-            pointer_location: data.pointer_location,
-            #[cfg(feature = "udev")]
-            session: None,
-        }
-    }
-
-    #[cfg(feature = "udev")]
-    pub fn new_with_session(log: Logger, data: InputInitData, session: AutoSession) -> AnvilInputHandler {
-        AnvilInputHandler {
-            log,
-            pointer: data.pointer,
-            keyboard: data.keyboard,
-            window_map: data.window_map,
-            screen_size: data.screen_size,
-            running: data.running,
-            pointer_location: data.pointer_location,
-            session: Some(session),
-        }
-    }
-}
-
-impl AnvilInputHandler {
-    pub fn process_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
+impl AnvilState {
+    pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
         match event {
             InputEvent::Keyboard { event, .. } => self.on_keyboard_key::<B>(event),
             InputEvent::PointerMotion { event, .. } => self.on_pointer_move::<B>(event),

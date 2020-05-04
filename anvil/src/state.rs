@@ -8,6 +8,7 @@ use std::{
 };
 
 use smithay::{
+    backend::session::auto::AutoSession,
     reexports::{
         calloop::{
             generic::{Fd, Generic},
@@ -17,10 +18,14 @@ use smithay::{
     },
     wayland::{
         compositor::CompositorToken,
-        data_device::{default_action_chooser, init_data_device, DataDeviceEvent},
+        data_device::{default_action_chooser, init_data_device, set_data_device_focus, DataDeviceEvent},
+        seat::{CursorImageStatus, KeyboardHandle, PointerHandle, Seat, XkbConfig},
         shm::init_shm_global,
     },
 };
+
+#[cfg(feature = "udev")]
+use smithay::backend::session::Session;
 
 use crate::{buffer_utils::BufferUtils, shell::init_shell};
 
@@ -33,6 +38,15 @@ pub struct AnvilState {
     pub window_map: Rc<RefCell<crate::window_map::WindowMap<crate::shell::Roles>>>,
     pub dnd_icon: Arc<Mutex<Option<WlSurface>>>,
     pub log: slog::Logger,
+    // input-related fields
+    pub pointer: PointerHandle,
+    pub keyboard: KeyboardHandle,
+    pub pointer_location: Rc<RefCell<(f64, f64)>>,
+    pub cursor_status: Arc<Mutex<CursorImageStatus>>,
+    pub screen_size: (u32, u32),
+    pub seat_name: String,
+    #[cfg(feature = "udev")]
+    pub session: Option<AutoSession>,
     // things we must keep alive
     _wayland_event_source: Source<Generic<Fd>>,
 }
@@ -42,6 +56,8 @@ impl AnvilState {
         display: Rc<RefCell<Display>>,
         handle: LoopHandle<AnvilState>,
         buffer_utils: BufferUtils,
+        #[cfg(feature = "udev")] session: Option<AutoSession>,
+        #[cfg(not(feature = "udev"))] _session: Option<()>,
         log: slog::Logger,
     ) -> AnvilState {
         // init the wayland connection
@@ -102,6 +118,37 @@ impl AnvilState {
             log.clone(),
         );
 
+        // init input
+        #[cfg(feature = "udev")]
+        let seat_name = if let Some(ref session) = session {
+            session.seat()
+        } else {
+            "anvil".into()
+        };
+        #[cfg(not(feature = "udev"))]
+        let seat_name = "anvil".into();
+
+        let (mut seat, _) = Seat::new(
+            &mut display.borrow_mut(),
+            seat_name.clone(),
+            shell_handles.token,
+            log.clone(),
+        );
+
+        let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
+
+        let cursor_status2 = cursor_status.clone();
+        let pointer = seat.add_pointer(shell_handles.token.clone(), move |new_status| {
+            // TODO: hide winit system cursor when relevant
+            *cursor_status2.lock().unwrap() = new_status
+        });
+
+        let keyboard = seat
+            .add_keyboard(XkbConfig::default(), 200, 25, |seat, focus| {
+                set_data_device_focus(seat, focus.and_then(|s| s.as_ref().client()))
+            })
+            .expect("Failed to initialize the keyboard");
+
         AnvilState {
             running: Arc::new(AtomicBool::new(true)),
             display,
@@ -111,6 +158,14 @@ impl AnvilState {
             dnd_icon,
             log,
             socket_name,
+            pointer,
+            keyboard,
+            cursor_status,
+            pointer_location: Rc::new(RefCell::new((0.0, 0.0))),
+            screen_size: (1920, 1080),
+            seat_name,
+            #[cfg(feature = "udev")]
+            session,
             _wayland_event_source,
         }
     }

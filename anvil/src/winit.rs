@@ -1,9 +1,4 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{atomic::Ordering, Arc, Mutex},
-    time::Duration,
-};
+use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 use smithay::{
     backend::{egl::EGLGraphicsBackend, graphics::gl::GLGraphicsBackend, input::InputBackend, winit},
@@ -12,9 +7,8 @@ use smithay::{
         wayland_server::{protocol::wl_output, Display},
     },
     wayland::{
-        data_device::set_data_device_focus,
         output::{Mode, Output, PhysicalProperties},
-        seat::{CursorImageStatus, Seat, XkbConfig},
+        seat::CursorImageStatus,
         SERIAL_COUNTER as SCOUNTER,
     },
 };
@@ -23,7 +17,6 @@ use slog::Logger;
 
 use crate::buffer_utils::BufferUtils;
 use crate::glium_drawer::GliumDrawer;
-use crate::input_handler::{AnvilInputHandler, InputInitData};
 use crate::state::AnvilState;
 
 pub fn run_winit(
@@ -60,28 +53,13 @@ pub fn run_winit(
      * Initialize the globals
      */
 
-    let mut state = AnvilState::init(display.clone(), event_loop.handle(), buffer_utils, log.clone());
-
-    let (mut seat, _) = Seat::new(
-        &mut display.borrow_mut(),
-        "winit".into(),
-        state.ctoken,
+    let mut state = AnvilState::init(
+        display.clone(),
+        event_loop.handle(),
+        buffer_utils,
+        None,
         log.clone(),
     );
-
-    let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
-
-    let cursor_status2 = cursor_status.clone();
-    let pointer = seat.add_pointer(state.ctoken.clone(), move |new_status| {
-        // TODO: hide winit system cursor when relevant
-        *cursor_status2.lock().unwrap() = new_status
-    });
-
-    let keyboard = seat
-        .add_keyboard(XkbConfig::default(), 200, 25, |seat, focus| {
-            set_data_device_focus(seat, focus.and_then(|s| s.as_ref().client()))
-        })
-        .expect("Failed to initialize the keyboard");
 
     let (output, _) = Output::new(
         &mut display.borrow_mut(),
@@ -111,25 +89,11 @@ pub fn run_winit(
         refresh: 60_000,
     });
 
-    let pointer_location = Rc::new(RefCell::new((0.0, 0.0)));
-
-    let mut input_handler = AnvilInputHandler::new(
-        log.clone(),
-        InputInitData {
-            pointer,
-            keyboard,
-            window_map: state.window_map.clone(),
-            screen_size: (0, 0),
-            running: state.running.clone(),
-            pointer_location: pointer_location.clone(),
-        },
-    );
-
     info!(log, "Initialization completed, starting the main loop.");
 
     while state.running.load(Ordering::SeqCst) {
         input
-            .dispatch_new_events(|event, _| input_handler.process_event(event))
+            .dispatch_new_events(|event, _| state.process_input_event(event))
             .unwrap();
 
         // drawing logic
@@ -141,7 +105,7 @@ pub fn run_winit(
             // draw the windows
             drawer.draw_windows(&mut frame, &*state.window_map.borrow(), state.ctoken);
 
-            let (x, y) = *pointer_location.borrow();
+            let (x, y) = *state.pointer_location.borrow();
             // draw the dnd icon if any
             {
                 let guard = state.dnd_icon.lock().unwrap();
@@ -153,7 +117,7 @@ pub fn run_winit(
             }
             // draw the cursor as relevant
             {
-                let mut guard = cursor_status.lock().unwrap();
+                let mut guard = state.cursor_status.lock().unwrap();
                 // reset the cursor if the surface is no longer alive
                 let mut reset = false;
                 if let CursorImageStatus::Image(ref surface) = *guard {
