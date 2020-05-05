@@ -454,7 +454,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
         }
 
         let mut current = self.state.write().unwrap();
-        let mut pending = self.pending.write().unwrap();
+        let pending = self.pending.write().unwrap();
 
         debug!(
             self.logger,
@@ -510,18 +510,8 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
                     self.logger,
                     "New screen configuration invalid!:\n\t{:#?}\n\t{}\n", req, err
                 );
-                info!(self.logger, "Reverting back to last know good state");
-
-                *pending = current.clone();
-
-                self.build_request(
-                    &mut [].iter(),
-                    &mut [].iter(),
-                    &self.planes,
-                    Some(framebuffer),
-                    Some(current.mode),
-                    Some(current.blob),
-                )?
+                
+                return Err(err);
             } else {
                 if current.mode != pending.mode {
                     if let Err(err) = self.dev.destroy_property_blob(current.blob.into()) {
