@@ -18,6 +18,7 @@ pub struct EGLSurface<N: native::NativeSurface> {
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: PixelFormat,
     surface_attributes: Vec<c_int>,
+    logger: ::slog::Logger,
 }
 
 impl<N: native::NativeSurface> Deref for EGLSurface<N> {
@@ -83,6 +84,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
             config_id: config,
             pixel_format,
             surface_attributes,
+            logger: log,
         })
     }
 
@@ -122,7 +124,10 @@ impl<N: native::NativeSurface> EGLSurface<N> {
                 .map_err(SwapBuffersError::EGLCreateWindowSurface)?
             });
 
-            result.map_err(|_| SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface))
+            result.map_err(|err| {
+                debug!(self.logger, "Hiding page-flip error *before* recreation: {}", err);
+                SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface)
+            })
         } else {
             result
         }
