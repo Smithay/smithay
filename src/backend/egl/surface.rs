@@ -72,6 +72,10 @@ impl<N: native::NativeSurface> EGLSurface<N> {
             ffi::egl::CreateWindowSurface(**display, config, native.ptr(), surface_attributes.as_ptr())
         })?;
 
+        if surface == ffi::egl::NO_SURFACE {
+            return Err(EGLError::BadSurface);
+        }
+
         Ok(EGLSurface {
             display,
             native,
