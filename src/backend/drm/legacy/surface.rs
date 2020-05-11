@@ -311,6 +311,11 @@ impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
         connectors: &[connector::Handle],
         logger: ::slog::Logger,
     ) -> Result<LegacyDrmSurfaceInternal<A>, Error> {
+        info!(
+            logger,
+            "Initializing drm surface with mode {:?} and connectors {:?}", mode, connectors
+        );
+
         // Try to enumarate the current state to set the initial state variable correctly
         let crtc_info = dev.get_crtc(crtc).compat().map_err(|source| Error::Access {
             errmsg: "Error loading crtc info",

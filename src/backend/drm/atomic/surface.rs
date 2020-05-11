@@ -66,6 +66,11 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         connectors: &[connector::Handle],
         logger: ::slog::Logger,
     ) -> Result<Self, Error> {
+        info!(
+            logger,
+            "Initializing drm surface with mode {:?} and connectors {:?}", mode, connectors
+        );
+
         let crtc_info = dev.get_crtc(crtc).compat().map_err(|source| Error::Access {
             errmsg: "Error loading crtc info",
             dev: dev.dev_path(),
@@ -510,7 +515,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
                     self.logger,
                     "New screen configuration invalid!:\n\t{:#?}\n\t{}\n", req, err
                 );
-                
+
                 return Err(err);
             } else {
                 if current.mode != pending.mode {
