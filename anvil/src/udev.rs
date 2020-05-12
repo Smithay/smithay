@@ -380,7 +380,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 |fd| match FallbackDevice::new(SessionFd(fd), true, self.logger.clone()) {
                     Ok(drm) => Some(drm),
                     Err(err) => {
-                        error!(self.logger, "Skipping drm device, because of error: {}", err);
+                        warn!(self.logger, "Skipping drm device, because of error: {}", err);
                         None
                     }
                 },
@@ -388,14 +388,14 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
             .and_then(|drm| match GbmDevice::new(drm, self.logger.clone()) {
                 Ok(gbm) => Some(gbm),
                 Err(err) => {
-                    error!(self.logger, "Skipping gbm device, because of error: {}", err);
+                    warn!(self.logger, "Skipping gbm device, because of error: {}", err);
                     None
                 }
             })
             .and_then(|gbm| match EglDevice::new(gbm, self.logger.clone()) {
                 Ok(egl) => Some(egl),
                 Err(err) => {
-                    error!(self.logger, "Skipping egl device, because of error: {}", err);
+                    warn!(self.logger, "Skipping egl device, because of error: {}", err);
                     None
                 }
             })
@@ -636,7 +636,7 @@ impl DrmRenderer {
             }
 
             if let Err(err) = result {
-                error!(self.logger, "Error during rendering: {:?}", err);
+                warn!(self.logger, "Error during rendering: {:?}", err);
                 let reschedule = match err {
                     SwapBuffersError::AlreadySwapped => false,
                     SwapBuffersError::TemporaryFailure(err) => {

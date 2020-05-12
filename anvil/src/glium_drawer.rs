@@ -473,7 +473,7 @@ pub fn schedule_initial_render<F: GLGraphicsBackend + 'static, Data: 'static>(
             SwapBuffersError::AlreadySwapped => {}
             SwapBuffersError::TemporaryFailure(err) => {
                 // TODO dont reschedule after 3(?) retries
-                error!(renderer.log, "Failed to submit page_flip: {}", err);
+                warn!(renderer.log, "Failed to submit page_flip: {}", err);
                 let handle = evt_handle.clone();
                 evt_handle.insert_idle(move |_| schedule_initial_render(renderer, &handle));
             }
