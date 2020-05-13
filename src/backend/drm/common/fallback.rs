@@ -191,7 +191,7 @@ impl<A: AsRawFd + Clone + 'static> FallbackDevice<AtomicDrmDevice<A>, LegacyDrmD
         match AtomicDrmDevice::new(fd.clone(), disable_connectors, log.clone()) {
             Ok(dev) => Ok(FallbackDevice::Preference(dev)),
             Err(err) => {
-                error!(log, "Failed to initialize preferred AtomicDrmDevice: {}", err);
+                warn!(log, "Failed to initialize preferred AtomicDrmDevice: {}", err);
                 info!(log, "Falling back to fallback LegacyDrmDevice");
                 Ok(FallbackDevice::Fallback(LegacyDrmDevice::new(
                     fd,

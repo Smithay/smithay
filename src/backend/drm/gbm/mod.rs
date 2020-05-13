@@ -274,7 +274,7 @@ where
                     _ => false,
                 } =>
             {
-                SwapBuffersError::TemporaryFailure(Box::new(x))
+                SwapBuffersError::TemporaryFailure(Box::new(Error::<E>::FramebufferCreationFailed(x)))
             }
             Error::Underlying(x) => x.into(),
             x => SwapBuffersError::ContextLost(Box::new(x)),

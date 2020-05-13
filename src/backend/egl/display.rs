@@ -150,7 +150,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         };
         info!(log, "EGL Extensions: {:?}", extensions);
 
-        if egl_version >= (1, 2) {
+        if egl_version <= (1, 2) {
             return Err(Error::OpenGlesNotSupported(None));
         }
         wrap_egl_call(|| unsafe { ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) })
@@ -485,7 +485,7 @@ impl EGLBufferReader {
         buffer: WlBuffer,
     ) -> ::std::result::Result<EGLImages, BufferAccessError> {
         let mut format: i32 = 0;
-        wrap_egl_call(|| unsafe {
+        let query = wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
                 buffer.as_ref().c_ptr() as _,
@@ -494,6 +494,9 @@ impl EGLBufferReader {
             )
         })
         .map_err(|source| BufferAccessError::NotManaged(buffer.clone(), source))?;
+        if query == ffi::egl::FALSE {
+            return Err(BufferAccessError::NotManaged(buffer, EGLError::BadParameter));
+        }
 
         let format = match format {
             x if x == ffi::egl::TEXTURE_RGB as i32 => Format::RGB,
@@ -502,7 +505,7 @@ impl EGLBufferReader {
             ffi::egl::TEXTURE_Y_UV_WL => Format::Y_UV,
             ffi::egl::TEXTURE_Y_U_V_WL => Format::Y_U_V,
             ffi::egl::TEXTURE_Y_XUXV_WL => Format::Y_XUXV,
-            _ => panic!("EGL returned invalid texture type"),
+            x => panic!("EGL returned invalid texture type: {}", x),
         };
 
         let mut width: i32 = 0;

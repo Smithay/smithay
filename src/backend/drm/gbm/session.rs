@@ -58,22 +58,7 @@ impl<
         if let Some(backends) = self.backends.upgrade() {
             for (crtc, backend) in backends.borrow().iter() {
                 if let Some(backend) = backend.upgrade() {
-                    // restart rendering loop, if it was previously running
-                    if let Some(current_fb) = backend.current_frame_buffer.get() {
-                        let result = if backend.crtc.commit_pending() {
-                            backend.crtc.commit(current_fb)
-                        } else {
-                            RawSurface::page_flip(&backend.crtc, current_fb)
-                        };
-
-                        if let Err(err) = result {
-                            warn!(
-                                self.logger,
-                                "Failed to restart rendering loop. Re-creating resources. Error: {}", err
-                            );
-                            // TODO bubble up
-                        }
-                    }
+                    backend.clear_framebuffers();
 
                     // reset cursor
                     {

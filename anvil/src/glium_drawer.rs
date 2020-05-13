@@ -19,9 +19,13 @@ use smithay::{
         graphics::{
             gl::GLGraphicsBackend,
             glium::{Frame, GliumGraphicsBackend},
+            SwapBuffersError,
         },
     },
-    reexports::wayland_server::protocol::{wl_buffer, wl_surface},
+    reexports::{
+        calloop::LoopHandle,
+        wayland_server::protocol::{wl_buffer, wl_surface},
+    },
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
         data_device::DnDIconRole,
@@ -455,5 +459,25 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
         }
         let screen_dimensions = self.borrow().get_framebuffer_dimensions();
         self.draw_surface_tree(frame, surface, (x, y), token, screen_dimensions);
+    }
+}
+
+pub fn schedule_initial_render<F: GLGraphicsBackend + 'static, Data: 'static>(
+    renderer: Rc<GliumDrawer<F>>,
+    evt_handle: &LoopHandle<Data>,
+) {
+    let mut frame = renderer.draw();
+    frame.clear_color(0.8, 0.8, 0.9, 1.0);
+    if let Err(err) = frame.set_finish() {
+        match err {
+            SwapBuffersError::AlreadySwapped => {}
+            SwapBuffersError::TemporaryFailure(err) => {
+                // TODO dont reschedule after 3(?) retries
+                warn!(renderer.log, "Failed to submit page_flip: {}", err);
+                let handle = evt_handle.clone();
+                evt_handle.insert_idle(move |_| schedule_initial_render(renderer, &handle));
+            }
+            SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
+        }
     }
 }

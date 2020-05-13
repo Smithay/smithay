@@ -20,9 +20,9 @@ use crate::backend::graphics::CursorBackend;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CursorState {
-    position: Cell<Option<(u32, u32)>>,
-    hotspot: Cell<(u32, u32)>,
-    framebuffer: Cell<Option<framebuffer::Info>>,
+    pub position: Cell<Option<(u32, u32)>>,
+    pub hotspot: Cell<(u32, u32)>,
+    pub framebuffer: Cell<Option<framebuffer::Handle>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -66,6 +66,11 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         connectors: &[connector::Handle],
         logger: ::slog::Logger,
     ) -> Result<Self, Error> {
+        info!(
+            logger,
+            "Initializing drm surface with mode {:?} and connectors {:?}", mode, connectors
+        );
+
         let crtc_info = dev.get_crtc(crtc).compat().map_err(|source| Error::Access {
             errmsg: "Error loading crtc info",
             dev: dev.dev_path(),
@@ -454,7 +459,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
         }
 
         let mut current = self.state.write().unwrap();
-        let mut pending = self.pending.write().unwrap();
+        let pending = self.pending.write().unwrap();
 
         debug!(
             self.logger,
@@ -510,25 +515,14 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
                     self.logger,
                     "New screen configuration invalid!:\n\t{:#?}\n\t{}\n", req, err
                 );
-                info!(self.logger, "Reverting back to last know good state");
 
-                *pending = current.clone();
-
-                self.build_request(
-                    &mut [].iter(),
-                    &mut [].iter(),
-                    &self.planes,
-                    Some(framebuffer),
-                    Some(current.mode),
-                    Some(current.blob),
-                )?
+                return Err(err);
             } else {
                 if current.mode != pending.mode {
                     if let Err(err) = self.dev.destroy_property_blob(current.blob.into()) {
                         warn!(self.logger, "Failed to destory old mode property blob: {}", err);
                     }
                 }
-                *current = pending.clone();
 
                 // new config
                 req
@@ -536,22 +530,27 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
         };
 
         debug!(self.logger, "Setting screen: {:?}", req);
-        self.atomic_commit(
-            &[
-                AtomicCommitFlags::PageFlipEvent,
-                AtomicCommitFlags::AllowModeset,
-                AtomicCommitFlags::Nonblock,
-            ],
-            req,
-        )
-        .compat()
-        .map_err(|source| Error::Access {
-            errmsg: "Error setting crtc",
-            dev: self.dev_path(),
-            source,
-        })?;
+        let result = self
+            .atomic_commit(
+                &[
+                    AtomicCommitFlags::PageFlipEvent,
+                    AtomicCommitFlags::AllowModeset,
+                    AtomicCommitFlags::Nonblock,
+                ],
+                req,
+            )
+            .compat()
+            .map_err(|source| Error::Access {
+                errmsg: "Error setting crtc",
+                dev: self.dev_path(),
+                source,
+            });
 
-        Ok(())
+        if result.is_ok() {
+            *current = pending.clone();
+        }
+
+        result
     }
 
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
@@ -568,7 +567,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
             None,
         )?;
 
-        trace!(self.logger, "Queueing page flip: {:#?}", req);
+        trace!(self.logger, "Queueing page flip: {:?}", req);
         self.atomic_commit(
             &[AtomicCommitFlags::PageFlipEvent, AtomicCommitFlags::Nonblock],
             req,
@@ -610,23 +609,17 @@ impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurfaceInternal<A> {
         trace!(self.logger, "Setting the new imported cursor");
 
         if let Some(fb) = self.cursor.framebuffer.get().take() {
-            let _ = self.destroy_framebuffer(fb.handle());
+            let _ = self.destroy_framebuffer(fb);
         }
 
         self.cursor.framebuffer.set(Some(
-            self.get_framebuffer(self.add_planar_framebuffer(buffer, &[0; 4], 0).compat().map_err(
-                |source| Error::Access {
+            self.add_planar_framebuffer(buffer, &[0; 4], 0)
+                .compat()
+                .map_err(|source| Error::Access {
                     errmsg: "Failed to import cursor",
                     dev: self.dev_path(),
                     source,
-                },
-            )?)
-            .compat()
-            .map_err(|source| Error::Access {
-                errmsg: "Failed to get framebuffer info",
-                dev: self.dev_path(),
-                source,
-            })?,
+                })?,
         ));
 
         self.cursor.hotspot.set(hotspot);
@@ -803,58 +796,70 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         let cursor_fb = self.cursor.framebuffer.get();
 
         if let (Some(pos), Some(fb)) = (cursor_pos, cursor_fb) {
-            let hotspot = self.cursor.hotspot.get();
+            match self.get_framebuffer(fb).compat().map_err(|source| Error::Access {
+                errmsg: "Error getting cursor fb",
+                dev: self.dev_path(),
+                source,
+            }) {
+                Ok(cursor_info) => {
+                    let hotspot = self.cursor.hotspot.get();
 
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "CRTC_ID")?,
-                property::Value::CRTC(Some(self.crtc)),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "SRC_X")?,
-                property::Value::UnsignedRange(0),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "SRC_Y")?,
-                property::Value::UnsignedRange(0),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "SRC_W")?,
-                property::Value::UnsignedRange((fb.size().0 as u64) << 16),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "SRC_H")?,
-                property::Value::UnsignedRange((fb.size().1 as u64) << 16),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "CRTC_X")?,
-                property::Value::SignedRange(pos.0 as i64 - (hotspot.0 as i64)),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "CRTC_Y")?,
-                property::Value::SignedRange(pos.1 as i64 - (hotspot.1 as i64)),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "CRTC_W")?,
-                property::Value::UnsignedRange(fb.size().0 as u64),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "CRTC_H")?,
-                property::Value::UnsignedRange(fb.size().1 as u64),
-            );
-            req.add_property(
-                planes.cursor,
-                self.plane_prop_handle(planes.cursor, "FB_ID")?,
-                property::Value::Framebuffer(Some(fb.handle())),
-            );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "CRTC_ID")?,
+                        property::Value::CRTC(Some(self.crtc)),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "SRC_X")?,
+                        property::Value::UnsignedRange(0),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "SRC_Y")?,
+                        property::Value::UnsignedRange(0),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "SRC_W")?,
+                        property::Value::UnsignedRange((cursor_info.size().0 as u64) << 16),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "SRC_H")?,
+                        property::Value::UnsignedRange((cursor_info.size().1 as u64) << 16),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "CRTC_X")?,
+                        property::Value::SignedRange(pos.0 as i64 - (hotspot.0 as i64)),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "CRTC_Y")?,
+                        property::Value::SignedRange(pos.1 as i64 - (hotspot.1 as i64)),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "CRTC_W")?,
+                        property::Value::UnsignedRange(cursor_info.size().0 as u64),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "CRTC_H")?,
+                        property::Value::UnsignedRange(cursor_info.size().1 as u64),
+                    );
+                    req.add_property(
+                        planes.cursor,
+                        self.plane_prop_handle(planes.cursor, "FB_ID")?,
+                        property::Value::Framebuffer(Some(fb)),
+                    );
+                }
+                Err(err) => {
+                    warn!(self.logger, "Cursor FB invalid: {}. Skipping.", err);
+                    self.cursor.framebuffer.set(None);
+                }
+            }
         }
 
         Ok(req)

@@ -12,12 +12,13 @@ use std::{
 
 /// EGL surface of a given EGL context for rendering
 pub struct EGLSurface<N: native::NativeSurface> {
-    display: Arc<EGLDisplayHandle>,
+    pub(crate) display: Arc<EGLDisplayHandle>,
     native: N,
     pub(crate) surface: Cell<ffi::egl::types::EGLSurface>,
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: PixelFormat,
     surface_attributes: Vec<c_int>,
+    logger: ::slog::Logger,
 }
 
 impl<N: native::NativeSurface> Deref for EGLSurface<N> {
@@ -72,6 +73,10 @@ impl<N: native::NativeSurface> EGLSurface<N> {
             ffi::egl::CreateWindowSurface(**display, config, native.ptr(), surface_attributes.as_ptr())
         })?;
 
+        if surface == ffi::egl::NO_SURFACE {
+            return Err(EGLError::BadSurface);
+        }
+
         Ok(EGLSurface {
             display,
             native,
@@ -79,6 +84,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
             config_id: config,
             pixel_format,
             surface_attributes,
+            logger: log,
         })
     }
 
@@ -91,7 +97,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
                 .map_err(SwapBuffersError::EGLSwapBuffers)
                 .and_then(|_| self.native.swap_buffers().map_err(SwapBuffersError::Underlying))
         } else {
-            Ok(())
+            Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface))
         };
 
         // workaround for missing `PartialEq` impl
@@ -117,9 +123,14 @@ impl<N: native::NativeSurface> EGLSurface<N> {
                 })
                 .map_err(SwapBuffersError::EGLCreateWindowSurface)?
             });
-        }
 
-        result
+            result.map_err(|err| {
+                debug!(self.logger, "Hiding page-flip error *before* recreation: {}", err);
+                SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface)
+            })
+        } else {
+            result
+        }
     }
 
     /// Returns true if the OpenGL surface is the current one in the thread.

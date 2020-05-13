@@ -74,18 +74,31 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         };
         self.next_buffer.set(Some(next_bo));
 
-        if self.recreated.get() {
-            debug!(self.logger, "Commiting new state");
-            self.crtc.commit(fb).map_err(Error::Underlying)?;
-            self.recreated.set(false);
-        } else {
-            trace!(self.logger, "Queueing Page flip");
-            RawSurface::page_flip(&self.crtc, fb).map_err(Error::Underlying)?;
+        if cfg!(debug_assertions) {
+            if let Err(err) = self.crtc.get_framebuffer(fb) {
+                error!(self.logger, "Cached framebuffer invalid: {:?}: {}", fb, err);
+            }
         }
 
-        self.current_frame_buffer.set(Some(fb));
+        let result = if self.recreated.get() {
+            debug!(self.logger, "Commiting new state");
+            self.crtc.commit(fb).map_err(Error::Underlying)
+        } else {
+            trace!(self.logger, "Queueing Page flip");
+            RawSurface::page_flip(&self.crtc, fb).map_err(Error::Underlying)
+        };
 
-        Ok(())
+        match result {
+            Ok(_) => {
+                self.recreated.set(false);
+                self.current_frame_buffer.set(Some(fb));
+                Ok(())
+            }
+            Err(err) => {
+                self.unlock_buffer();
+                Err(err)
+            }
+        }
     }
 
     pub fn recreate(&self) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
@@ -106,6 +119,17 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
             .map_err(Error::SurfaceCreationFailed)?;
 
         // Clean up buffers
+        self.clear_framebuffers();
+
+        // Drop the old surface after cleanup
+        *self.surface.borrow_mut() = surface;
+
+        self.recreated.set(true);
+
+        Ok(())
+    }
+
+    pub fn clear_framebuffers(&self) {
         if let Some(Ok(Some(fb))) = self.next_buffer.take().map(|mut bo| bo.take_userdata()) {
             if let Err(err) = self.crtc.destroy_framebuffer(fb) {
                 warn!(
@@ -123,13 +147,6 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
                 );
             }
         }
-
-        // Drop the old surface after cleanup
-        *self.surface.borrow_mut() = surface;
-
-        self.recreated.set(true);
-
-        Ok(())
     }
 }
 
@@ -228,27 +245,7 @@ impl<D: RawDevice + 'static> Drop for GbmSurfaceInternal<D> {
     fn drop(&mut self) {
         // Drop framebuffers attached to the userdata of the gbm surface buffers.
         // (They don't implement drop, as they need the device)
-        if let Ok(Some(fb)) = {
-            if let Some(mut next) = self.next_buffer.take() {
-                next.take_userdata()
-            } else {
-                Ok(None)
-            }
-        } {
-            // ignore failure at this point
-            let _ = self.crtc.destroy_framebuffer(fb);
-        }
-
-        if let Ok(Some(fb)) = {
-            if let Some(mut next) = self.front_buffer.take() {
-                next.take_userdata()
-            } else {
-                Ok(None)
-            }
-        } {
-            // ignore failure at this point
-            let _ = self.crtc.destroy_framebuffer(fb);
-        }
+        self.clear_framebuffers();
     }
 }
 

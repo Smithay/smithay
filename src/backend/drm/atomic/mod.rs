@@ -389,29 +389,21 @@ impl<A: AsRawFd + 'static> Device for AtomicDrmDevice<A> {
                 for event in events {
                     if let Event::PageFlip(event) = event {
                         trace!(self.logger, "Got a page-flip event for crtc ({:?})", event.crtc);
-                        if self.active.load(Ordering::SeqCst) {
-                            if self
-                                .backends
-                                .borrow()
-                                .get(&event.crtc)
-                                .iter()
-                                .flat_map(|x| x.upgrade())
-                                .next()
-                                .is_some()
-                            {
-                                trace!(self.logger, "Handling event for backend {:?}", event.crtc);
-                                if let Some(handler) = self.handler.as_ref() {
-                                    handler.borrow_mut().vblank(event.crtc);
-                                }
-                            } else {
-                                self.backends.borrow_mut().remove(&event.crtc);
+                        if self
+                            .backends
+                            .borrow()
+                            .get(&event.crtc)
+                            .iter()
+                            .flat_map(|x| x.upgrade())
+                            .next()
+                            .is_some()
+                        {
+                            trace!(self.logger, "Handling event for backend {:?}", event.crtc);
+                            if let Some(handler) = self.handler.as_ref() {
+                                handler.borrow_mut().vblank(event.crtc);
                             }
                         } else {
-                            debug!(
-                                self.logger,
-                                "Device ({:?}) not active. Ignoring PageFlip",
-                                self.dev_path()
-                            );
+                            self.backends.borrow_mut().remove(&event.crtc);
                         }
                     } else {
                         trace!(
