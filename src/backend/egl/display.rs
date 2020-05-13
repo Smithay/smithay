@@ -150,7 +150,8 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         };
         info!(log, "EGL Extensions: {:?}", extensions);
 
-        if egl_version >= (1, 2) {
+        // BindAPI(EGL_OPENGL_ES_API) required (1, 2) or greater
+        if egl_version < (1, 2) {
             return Err(Error::OpenGlesNotSupported(None));
         }
         wrap_egl_call(|| unsafe { ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) })
@@ -484,7 +485,10 @@ impl EGLBufferReader {
         &self,
         buffer: WlBuffer,
     ) -> ::std::result::Result<EGLImages, BufferAccessError> {
-        let mut format: i32 = 0;
+        // If the buffer is not managed by EGL, quering its format will not raise an error,
+        // but will leave the format unchanged 
+        let format_before: i32 = 0;
+        let mut format = format_before;
         wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
@@ -492,8 +496,11 @@ impl EGLBufferReader {
                 ffi::egl::EGL_TEXTURE_FORMAT,
                 &mut format,
             )
-        })
-        .map_err(|source| BufferAccessError::NotManaged(buffer.clone(), source))?;
+        }).expect("This should not happen according to https://www.khronos.org/registry/EGL/sdk/docs/man/html/eglQuerySurface.xhtml");
+        // The format was left unchanged, therefore the buffer is not managed by EGL
+        if format == format_before {
+            return Err(BufferAccessError::NotManaged(buffer, EGLError::BadAccess));
+        }
 
         let format = match format {
             x if x == ffi::egl::TEXTURE_RGB as i32 => Format::RGB,
