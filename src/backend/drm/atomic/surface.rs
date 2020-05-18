@@ -38,11 +38,11 @@ pub struct Planes {
     pub cursor: plane::Handle,
 }
 
-pub(super) struct AtomicDrmSurfaceInternal<A: AsRawFd + 'static> {
+pub(in crate::backend::drm) struct AtomicDrmSurfaceInternal<A: AsRawFd + 'static> {
     pub(super) dev: Rc<Dev<A>>,
     pub(super) crtc: crtc::Handle,
     pub(super) cursor: CursorState,
-    pub(super) planes: Planes,
+    pub(in crate::backend::drm) planes: Planes,
     pub(super) state: RwLock<State>,
     pub(super) pending: RwLock<State>,
     pub(super) logger: ::slog::Logger,
@@ -918,7 +918,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         ))
     }
 
-    pub(crate) fn clear_plane(&self, plane: plane::Handle) -> Result<(), Error> {
+    pub(super) fn clear_plane(&self, plane: plane::Handle) -> Result<(), Error> {
         let mut req = AtomicModeReq::new();
 
         req.add_property(
@@ -948,7 +948,9 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
 }
 
 /// Open raw crtc utilizing atomic mode-setting
-pub struct AtomicDrmSurface<A: AsRawFd + 'static>(pub(super) Rc<AtomicDrmSurfaceInternal<A>>);
+pub struct AtomicDrmSurface<A: AsRawFd + 'static>(
+    pub(in crate::backend::drm) Rc<AtomicDrmSurfaceInternal<A>>,
+);
 
 impl<A: AsRawFd + 'static> AsRawFd for AtomicDrmSurface<A> {
     fn as_raw_fd(&self) -> RawFd {

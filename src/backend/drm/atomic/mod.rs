@@ -61,7 +61,7 @@ type Mapping = (
     HashMap<plane::Handle, HashMap<String, property::Handle>>,
 );
 
-struct Dev<A: AsRawFd + 'static> {
+pub(in crate::backend::drm) struct Dev<A: AsRawFd + 'static> {
     fd: A,
     privileged: bool,
     active: Arc<AtomicBool>,
