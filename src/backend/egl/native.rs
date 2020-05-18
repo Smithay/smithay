@@ -4,6 +4,7 @@ use super::{
     display::EGLDisplayHandle, ffi, wrap_egl_call, EGLError, Error, SurfaceCreationError, SwapBuffersError,
 };
 use nix::libc::{c_int, c_void};
+use std::sync::Arc;
 
 #[cfg(feature = "backend_winit")]
 use wayland_egl as wegl;
@@ -211,7 +212,7 @@ pub unsafe trait NativeSurface {
     /// This is usually an unsafe operation returning a raw pointer.
     unsafe fn create(
         &self,
-        display: &EGLDisplayHandle,
+        display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
         surface_attributes: &[c_int],
     ) -> Result<*const c_void, SurfaceCreationError<Self::Error>>;
@@ -248,7 +249,7 @@ unsafe impl NativeSurface for XlibWindow {
 
     unsafe fn create(
         &self,
-        display: &EGLDisplayHandle,
+        display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
         surface_attributes: &[c_int],
     ) -> Result<*const c_void, SurfaceCreationError<Error>> {
@@ -270,7 +271,7 @@ unsafe impl NativeSurface for wegl::WlEglSurface {
 
     unsafe fn create(
         &self,
-        display: &EGLDisplayHandle,
+        display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
         surface_attributes: &[c_int],
     ) -> Result<*const c_void, SurfaceCreationError<Error>> {
