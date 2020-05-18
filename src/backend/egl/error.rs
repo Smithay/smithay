@@ -15,9 +15,12 @@ pub enum Error {
     /// Backend does not match the context type
     #[error("The expected backend '{0:?}' does not match the runtime")]
     NonMatchingBackend(&'static str),
+    /// Display creation failed
+    #[error("Display creation failed with error: {0:}")]
+    DisplayCreationError(#[source] EGLError),
     /// Unable to obtain a valid EGL Display
-    #[error("Unable to obtain a valid EGL Display. Err: {0:}")]
-    DisplayNotSupported(#[source] EGLError),
+    #[error("Unable to obtain a valid EGL Display.")]
+    DisplayNotSupported,
     /// `eglInitialize` returned an error
     #[error("Failed to initialize EGL. Err: {0:}")]
     InitFailed(#[source] EGLError),
