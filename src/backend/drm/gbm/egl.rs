@@ -60,8 +60,7 @@ impl<D: RawDevice + 'static> Backend for Gbm<D> {
                 ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_GBM_MESA, display as *mut _, attribs.as_ptr())
             })
         } else {
-            trace!(log, "Default EGL Display Initialization via GetDisplay");
-            wrap_egl_call(|| ffi::egl::GetDisplay(display as *mut _))
+            Ok(ffi::egl::NO_DISPLAY)
         }
     }
 }
