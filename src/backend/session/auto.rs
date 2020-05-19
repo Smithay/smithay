@@ -27,17 +27,20 @@
 //!
 //! It is crucial to avoid errors during that state. Examples for object that might be registered
 //! for notifications are the [`Libinput`](input::Libinput) context or the [`Device`](::backend::drm::Device).
+//!
+//! The [`AutoSessionNotifier`](::backend::session::auto::AutoSessionNotifier) is to be inserted into
+//! a calloop event source to have its events processed.
 
 #[cfg(feature = "backend_session_logind")]
-use super::logind::{self, logind_session_bind, BoundLogindSession, LogindSession, LogindSessionNotifier};
+use super::logind::{self, LogindSession, LogindSessionNotifier};
 use super::{
-    direct::{self, direct_session_bind, BoundDirectSession, DirectSession, DirectSessionNotifier},
+    direct::{self, DirectSession, DirectSessionNotifier},
     AsErrno, Session, SessionNotifier, SessionObserver,
 };
 use nix::fcntl::OFlag;
-use std::{cell::RefCell, io::Error as IoError, os::unix::io::RawFd, path::Path, rc::Rc};
+use std::{cell::RefCell, io, os::unix::io::RawFd, path::Path, rc::Rc};
 
-use calloop::LoopHandle;
+use calloop::{EventSource, Poll, Readiness, Token};
 
 /// [`Session`] using the best available interface
 #[derive(Clone)]
@@ -56,19 +59,6 @@ pub enum AutoSessionNotifier {
     Logind(LogindSessionNotifier),
     /// Direct / tty session notifier
     Direct(DirectSessionNotifier),
-}
-
-/// Bound session that is driven by a [`EventLoop`](calloop::EventLoop).
-///
-/// See [`auto_session_bind`] for details.
-///
-/// Dropping this object will close the session just like the [`AutoSessionNotifier`].
-pub enum BoundAutoSession {
-    /// Bound logind session
-    #[cfg(feature = "backend_session_logind")]
-    Logind(BoundLogindSession),
-    /// Bound direct / tty session
-    Direct(BoundDirectSession),
 }
 
 /// Id's used by the [`AutoSessionNotifier`] internally.
@@ -139,26 +129,6 @@ impl AutoSession {
     }
 }
 
-/// Bind an [`AutoSessionNotifier`] to an [`EventLoop`](calloop::EventLoop).
-///
-/// Allows the [`AutoSessionNotifier`] to listen for incoming signals signalling the session state.
-/// If you don't use this function [`AutoSessionNotifier`] will not correctly tell you the
-/// session state and call its [`SessionObserver`]s.
-pub fn auto_session_bind<Data: 'static>(
-    notifier: AutoSessionNotifier,
-    handle: LoopHandle<Data>,
-) -> ::std::result::Result<BoundAutoSession, (IoError, AutoSessionNotifier)> {
-    Ok(match notifier {
-        #[cfg(feature = "backend_session_logind")]
-        AutoSessionNotifier::Logind(logind) => BoundAutoSession::Logind(
-            logind_session_bind(logind, handle).map_err(|(e, n)| (e, AutoSessionNotifier::Logind(n)))?,
-        ),
-        AutoSessionNotifier::Direct(direct) => BoundAutoSession::Direct(
-            direct_session_bind(direct, handle).map_err(|(e, n)| (e, AutoSessionNotifier::Direct(n)))?,
-        ),
-    })
-}
-
 impl Session for AutoSession {
     type Error = Error;
 
@@ -208,10 +178,10 @@ impl SessionNotifier for AutoSessionNotifier {
         match *self {
             #[cfg(feature = "backend_session_logind")]
             AutoSessionNotifier::Logind(ref mut logind) => {
-                AutoId(AutoIdInternal::Logind(logind.register(signal)))
+                AutoId(AutoIdInternal::Logind(SessionNotifier::register(logind, signal)))
             }
             AutoSessionNotifier::Direct(ref mut direct) => {
-                AutoId(AutoIdInternal::Direct(direct.register(signal)))
+                AutoId(AutoIdInternal::Direct(SessionNotifier::register(direct, signal)))
             }
         }
     }
@@ -221,10 +191,10 @@ impl SessionNotifier for AutoSessionNotifier {
         match (self, signal) {
             #[cfg(feature = "backend_session_logind")]
             (&mut AutoSessionNotifier::Logind(ref mut logind), AutoId(AutoIdInternal::Logind(signal))) => {
-                logind.unregister(signal)
+                SessionNotifier::unregister(logind, signal)
             }
             (&mut AutoSessionNotifier::Direct(ref mut direct), AutoId(AutoIdInternal::Direct(signal))) => {
-                direct.unregister(signal)
+                SessionNotifier::unregister(direct, signal)
             }
             // this pattern is needed when the logind backend is activated
             _ => unreachable!(),
@@ -232,13 +202,43 @@ impl SessionNotifier for AutoSessionNotifier {
     }
 }
 
-impl BoundAutoSession {
-    /// Unbind the session from the [`EventLoop`](calloop::EventLoop) again
-    pub fn unbind(self) -> AutoSessionNotifier {
+impl EventSource for AutoSessionNotifier {
+    type Event = ();
+    type Metadata = ();
+    type Ret = ();
+
+    fn process_events<F>(&mut self, readiness: Readiness, token: Token, callback: F) -> io::Result<()>
+    where
+        F: FnMut((), &mut ()),
+    {
         match self {
             #[cfg(feature = "backend_session_logind")]
-            BoundAutoSession::Logind(logind) => AutoSessionNotifier::Logind(logind.unbind()),
-            BoundAutoSession::Direct(direct) => AutoSessionNotifier::Direct(direct.unbind()),
+            AutoSessionNotifier::Logind(s) => s.process_events(readiness, token, callback),
+            AutoSessionNotifier::Direct(s) => s.process_events(readiness, token, callback),
+        }
+    }
+
+    fn register(&mut self, poll: &mut Poll, token: Token) -> io::Result<()> {
+        match self {
+            #[cfg(feature = "backend_session_logind")]
+            AutoSessionNotifier::Logind(s) => EventSource::register(s, poll, token),
+            AutoSessionNotifier::Direct(s) => EventSource::register(s, poll, token),
+        }
+    }
+
+    fn reregister(&mut self, poll: &mut Poll, token: Token) -> io::Result<()> {
+        match self {
+            #[cfg(feature = "backend_session_logind")]
+            AutoSessionNotifier::Logind(s) => EventSource::reregister(s, poll, token),
+            AutoSessionNotifier::Direct(s) => EventSource::reregister(s, poll, token),
+        }
+    }
+
+    fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
+        match self {
+            #[cfg(feature = "backend_session_logind")]
+            AutoSessionNotifier::Logind(s) => EventSource::unregister(s, poll),
+            AutoSessionNotifier::Direct(s) => EventSource::unregister(s, poll),
         }
     }
 }

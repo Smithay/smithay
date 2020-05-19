@@ -41,12 +41,12 @@
 //!
 //! It is crucial to avoid errors during that state. Examples for object that might be registered
 //! for notifications are the [`Libinput`](input::Libinput) context or the [`Device`](::backend::drm::Device).
+//!
+//! The [`DirectSessionNotifier`](::backend::session::direct::DirectSessionNotifier) is to be inserted into
+//! a calloop event source to have its events processed.
 
 use super::{AsErrno, Session, SessionNotifier, SessionObserver};
-use calloop::{
-    signals::{Signal, Signals},
-    LoopHandle, Source,
-};
+use calloop::signals::{Signal, Signals};
 use nix::{
     fcntl::{self, open, OFlag},
     libc::c_int,
@@ -55,11 +55,8 @@ use nix::{
     Error as NixError, Result as NixResult,
 };
 use std::{
-    cell::RefCell,
-    io::Error as IoError,
     os::unix::io::RawFd,
     path::Path,
-    rc::Rc,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -158,6 +155,7 @@ pub struct DirectSessionNotifier {
     signals: Vec<Option<Box<dyn SessionObserver>>>,
     signal: Signal,
     logger: ::slog::Logger,
+    source: Option<Signals>,
 }
 
 impl DirectSession {
@@ -201,6 +199,7 @@ impl DirectSession {
                     signals: Vec::new(),
                     signal,
                     logger: logger.new(o!("vt" => format!("{}", vt), "component" => "session_notifier")),
+                    source: None,
                 },
             )),
             Err(err) => {
@@ -390,64 +389,62 @@ impl DirectSessionNotifier {
     }
 }
 
-/// Bound logind session that is driven by the [`EventLoop`](calloop::EventLoop).
-///
-/// See [`direct_session_bind`] for details.
-pub struct BoundDirectSession {
-    source: Source<Signals>,
-    notifier: Rc<RefCell<DirectSessionNotifier>>,
-    kill_source: Box<dyn Fn(Source<Signals>)>,
-}
+impl calloop::EventSource for DirectSessionNotifier {
+    type Event = ();
+    type Metadata = ();
+    type Ret = ();
 
-impl BoundDirectSession {
-    /// Unbind the direct session from the [`EventLoop`](calloop::EventLoop)
-    pub fn unbind(self) -> DirectSessionNotifier {
-        let BoundDirectSession {
-            source,
-            notifier,
-            kill_source,
-        } = self;
-        kill_source(source);
-        Rc::try_unwrap(notifier)
-            .map(RefCell::into_inner)
-            .unwrap_or_else(|_| panic!("Notifier should have been freed from the event loop!"))
+    fn process_events<F>(
+        &mut self,
+        readiness: calloop::Readiness,
+        token: calloop::Token,
+        _: F,
+    ) -> std::io::Result<()>
+    where
+        F: FnMut((), &mut ()),
+    {
+        let mut source = self.source.take();
+        if let Some(ref mut source) = source {
+            source.process_events(readiness, token, |_, _| self.signal_received())?;
+        }
+        self.source = source;
+        Ok(())
     }
-}
 
-/// Bind a [`DirectSessionNotifier`] to an [`EventLoop`](calloop::EventLoop).
-///
-/// Allows the [`DirectSessionNotifier`] to listen for incoming signals signalling the session state.
-/// If you don't use this function [`DirectSessionNotifier`] will not correctly tell you the current
-/// session state and call it's [`SessionObserver`]s.
-pub fn direct_session_bind<Data: 'static>(
-    notifier: DirectSessionNotifier,
-    handle: LoopHandle<Data>,
-) -> ::std::result::Result<BoundDirectSession, (IoError, DirectSessionNotifier)> {
-    let signal = notifier.signal;
-    let source = match Signals::new(&[signal]) {
-        Ok(s) => s,
-        Err(e) => return Err((e, notifier)),
-    };
-    let notifier = Rc::new(RefCell::new(notifier));
-    let fail_notifier = notifier.clone();
-    let source = handle
-        .insert_source(source, {
-            let notifier = notifier.clone();
-            move |_, _, _| notifier.borrow_mut().signal_received()
-        })
-        .map_err(move |e| {
-            // the backend in the closure should already have been dropped
-            let notifier = Rc::try_unwrap(fail_notifier)
-                .unwrap_or_else(|_| unreachable!())
-                .into_inner();
-            (e.into(), notifier)
-        })?;
-    let kill_source = Box::new(move |source| handle.kill(source));
-    Ok(BoundDirectSession {
-        source,
-        notifier,
-        kill_source,
-    })
+    fn register(&mut self, poll: &mut calloop::Poll, token: calloop::Token) -> std::io::Result<()> {
+        if self.source.is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "This DirectSessionNotifier is already registered.",
+            ));
+        }
+        let mut source = Signals::new(&[self.signal])?;
+        source.register(poll, token)?;
+        self.source = Some(source);
+        Ok(())
+    }
+
+    fn reregister(&mut self, poll: &mut calloop::Poll, token: calloop::Token) -> std::io::Result<()> {
+        if let Some(ref mut source) = self.source {
+            source.reregister(poll, token)
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "This DirectSessionNotifier is not currently registered.",
+            ))
+        }
+    }
+
+    fn unregister(&mut self, poll: &mut calloop::Poll) -> std::io::Result<()> {
+        if let Some(mut source) = self.source.take() {
+            source.unregister(poll)
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "This DirectSessionNotifier is not currently registered.",
+            ))
+        }
+    }
 }
 
 /// Errors related to direct/tty sessions

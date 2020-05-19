@@ -30,11 +30,13 @@
 //!
 //! It is crucial to avoid errors during that state. Examples for object that might be registered
 //! for notifications are the [`Libinput`](input::Libinput) context or the [`Device`](::backend::drm::Device).
+//!
+//! The [`LogindSessionNotifier`](::backend::session::dbus::logind::LogindSessionNotifier) is to be inserted into
+//! a calloop event source to have its events processed.
 
 use crate::backend::session::{AsErrno, Session, SessionNotifier, SessionObserver};
 use dbus::{
     arg::{messageitem::MessageItem, OwnedFd},
-    ffidisp::{BusType, Connection, ConnectionItem, Watch, WatchEvent},
     strings::{BusName, Interface, Member, Path as DbusPath},
     Message,
 };
@@ -52,14 +54,13 @@ use std::{
 };
 use systemd::login;
 
-use calloop::{
-    generic::{Fd, Generic},
-    InsertError, Interest, LoopHandle, Readiness, Source,
-};
+use calloop::{EventSource, Poll, Readiness, Token};
+
+use super::DBusConnection;
 
 struct LogindSessionImpl {
     session_id: String,
-    conn: RefCell<Connection>,
+    conn: RefCell<DBusConnection>,
     session_path: DbusPath<'static>,
     active: AtomicBool,
     signals: RefCell<Vec<Option<Box<dyn SessionObserver>>>>,
@@ -95,7 +96,7 @@ impl LogindSession {
         let vt = login::get_vt(session_id.clone()).ok();
 
         // Create dbus connection
-        let conn = Connection::get_private(BusType::System).map_err(Error::FailedDbusConnection)?;
+        let conn = DBusConnection::new_system().map_err(Error::FailedDbusConnection)?;
         // and get the session path
         let session_path = LogindSessionImpl::blocking_call(
             &conn,
@@ -202,7 +203,7 @@ impl LogindSessionNotifier {
 
 impl LogindSessionImpl {
     fn blocking_call<'d, 'p, 'i, 'm, D, P, I, M>(
-        conn: &Connection,
+        conn: &DBusConnection,
         destination: D,
         path: P,
         interface: I,
@@ -226,15 +227,16 @@ impl LogindSessionImpl {
             message.append_items(&arguments)
         };
 
-        let mut message =
-            conn.send_with_reply_and_block(message, 1000)
-                .map_err(|source| Error::FailedToSendDbusCall {
-                    bus: destination.clone(),
-                    path: path.clone(),
-                    interface: interface.clone(),
-                    member: method.clone(),
-                    source,
-                })?;
+        let mut message = conn
+            .channel()
+            .send_with_reply_and_block(message, std::time::Duration::from_millis(1000))
+            .map_err(|source| Error::FailedToSendDbusCall {
+                bus: destination.clone(),
+                path: path.clone(),
+                interface: interface.clone(),
+                member: method.clone(),
+                source,
+            })?;
 
         match message.as_result() {
             Ok(_) => Ok(message),
@@ -248,100 +250,99 @@ impl LogindSessionImpl {
         }
     }
 
-    fn handle_signals<I>(&self, signals: I) -> Result<(), Error>
-    where
-        I: IntoIterator<Item = ConnectionItem>,
-    {
-        for item in signals {
-            let message = if let ConnectionItem::Signal(ref s) = item {
-                s
-            } else {
-                continue;
-            };
-            if &*message.interface().unwrap() == "org.freedesktop.login1.Manager"
-                && &*message.member().unwrap() == "SessionRemoved"
-                && message.get1::<String>().unwrap() == self.session_id
-            {
-                error!(self.logger, "Session got closed by logind");
-                //Ok... now what?
-                //This session will never live again, but the user maybe has other sessions open
-                //So lets just put it to sleep.. forever
-                for signal in &mut *self.signals.borrow_mut() {
-                    if let Some(ref mut signal) = signal {
-                        signal.pause(None);
-                    }
+    fn handle_message(&self, message: dbus::Message) -> Result<(), Error> {
+        if &*message.interface().unwrap() == "org.freedesktop.login1.Manager"
+            && &*message.member().unwrap() == "SessionRemoved"
+            && message.get1::<String>().unwrap() == self.session_id
+        {
+            error!(self.logger, "Session got closed by logind");
+            //Ok... now what?
+            //This session will never live again, but the user maybe has other sessions open
+            //So lets just put it to sleep.. forever
+            for signal in &mut *self.signals.borrow_mut() {
+                if let Some(ref mut signal) = signal {
+                    signal.pause(None);
                 }
-                self.active.store(false, Ordering::SeqCst);
-                warn!(self.logger, "Session is now considered inactive");
-            } else if &*message.interface().unwrap() == "org.freedesktop.login1.Session" {
-                if &*message.member().unwrap() == "PauseDevice" {
-                    let (major, minor, pause_type) = message.get3::<u32, u32, String>();
-                    let major = major.ok_or(Error::UnexpectedMethodReturn)?;
-                    let minor = minor.ok_or(Error::UnexpectedMethodReturn)?;
-                    // From https://www.freedesktop.org/wiki/Software/systemd/logind/:
-                    //  `force` means the device got paused by logind already and this is only an
-                    //  asynchronous notification.
-                    //  `pause` means logind tries to pause the device and grants you limited amount
-                    //  of time to pause it. You must respond to this via PauseDeviceComplete().
-                    //  This synchronous pausing-mechanism is used for backwards-compatibility to VTs
-                    //  and logind is **free to not make use of it**.
-                    //  It is also free to send a forced PauseDevice if you don't respond in a timely manner
-                    //  (or for any other reason).
-                    let pause_type = pause_type.ok_or(Error::UnexpectedMethodReturn)?;
-                    debug!(
-                        self.logger,
-                        "Request of type \"{}\" to close device ({},{})", pause_type, major, minor
-                    );
+            }
+            self.active.store(false, Ordering::SeqCst);
+            warn!(self.logger, "Session is now considered inactive");
+        } else if &*message.interface().unwrap() == "org.freedesktop.login1.Session" {
+            if &*message.member().unwrap() == "PauseDevice" {
+                let (major, minor, pause_type) = message.get3::<u32, u32, String>();
+                let major = major.ok_or(Error::UnexpectedMethodReturn)?;
+                let minor = minor.ok_or(Error::UnexpectedMethodReturn)?;
+                // From https://www.freedesktop.org/wiki/Software/systemd/logind/:
+                //  `force` means the device got paused by logind already and this is only an
+                //  asynchronous notification.
+                //  `pause` means logind tries to pause the device and grants you limited amount
+                //  of time to pause it. You must respond to this via PauseDeviceComplete().
+                //  This synchronous pausing-mechanism is used for backwards-compatibility to VTs
+                //  and logind is **free to not make use of it**.
+                //  It is also free to send a forced PauseDevice if you don't respond in a timely manner
+                //  (or for any other reason).
+                let pause_type = pause_type.ok_or(Error::UnexpectedMethodReturn)?;
+                debug!(
+                    self.logger,
+                    "Request of type \"{}\" to close device ({},{})", pause_type, major, minor
+                );
 
-                    // gone means the device was unplugged from the system and you will no longer get any
-                    // notifications about it.
-                    // This is handled via udev and is not part of our session api.
-                    if pause_type != "gone" {
-                        for signal in &mut *self.signals.borrow_mut() {
-                            if let Some(ref mut signal) = signal {
-                                signal.pause(Some((major, minor)));
-                            }
-                        }
-                    }
-                    // the other possible types are "force" or "gone" (unplugged),
-                    // both expect no acknowledgement (note even this is not *really* necessary,
-                    // logind would just timeout and send a "force" event. There is no way to
-                    // keep the device.)
-                    if pause_type == "pause" {
-                        LogindSessionImpl::blocking_call(
-                            &*self.conn.borrow(),
-                            "org.freedesktop.login1",
-                            self.session_path.clone(),
-                            "org.freedesktop.login1.Session",
-                            "PauseDeviceComplete",
-                            Some(vec![major.into(), minor.into()]),
-                        )?;
-                    }
-                } else if &*message.member().unwrap() == "ResumeDevice" {
-                    let (major, minor, fd) = message.get3::<u32, u32, OwnedFd>();
-                    let major = major.ok_or(Error::UnexpectedMethodReturn)?;
-                    let minor = minor.ok_or(Error::UnexpectedMethodReturn)?;
-                    let fd = fd.ok_or(Error::UnexpectedMethodReturn)?.into_fd();
-                    debug!(self.logger, "Reactivating device ({},{})", major, minor);
+                // gone means the device was unplugged from the system and you will no longer get any
+                // notifications about it.
+                // This is handled via udev and is not part of our session api.
+                if pause_type != "gone" {
                     for signal in &mut *self.signals.borrow_mut() {
                         if let Some(ref mut signal) = signal {
-                            signal.activate(Some((major, minor, Some(fd))));
+                            signal.pause(Some((major, minor)));
                         }
                     }
                 }
-            } else if &*message.interface().unwrap() == "org.freedesktop.DBus.Properties"
-                && &*message.member().unwrap() == "PropertiesChanged"
-            {
-                use dbus::arg::{Array, Dict, Get, Iter, Variant};
-
-                let (_, changed, _) =
-                    message.get3::<String, Dict<'_, String, Variant<Iter<'_>>, Iter<'_>>, Array<'_, String, Iter<'_>>>();
-                let mut changed = changed.ok_or(Error::UnexpectedMethodReturn)?;
-                if let Some((_, mut value)) = changed.find(|&(ref key, _)| &*key == "Active") {
-                    if let Some(active) = Get::get(&mut value.0) {
-                        self.active.store(active, Ordering::SeqCst);
+                // the other possible types are "force" or "gone" (unplugged),
+                // both expect no acknowledgement (note even this is not *really* necessary,
+                // logind would just timeout and send a "force" event. There is no way to
+                // keep the device.)
+                if pause_type == "pause" {
+                    LogindSessionImpl::blocking_call(
+                        &*self.conn.borrow(),
+                        "org.freedesktop.login1",
+                        self.session_path.clone(),
+                        "org.freedesktop.login1.Session",
+                        "PauseDeviceComplete",
+                        Some(vec![major.into(), minor.into()]),
+                    )?;
+                }
+            } else if &*message.member().unwrap() == "ResumeDevice" {
+                let (major, minor, fd) = message.get3::<u32, u32, OwnedFd>();
+                let major = major.ok_or(Error::UnexpectedMethodReturn)?;
+                let minor = minor.ok_or(Error::UnexpectedMethodReturn)?;
+                let fd = fd.ok_or(Error::UnexpectedMethodReturn)?.into_fd();
+                debug!(self.logger, "Reactivating device ({},{})", major, minor);
+                for signal in &mut *self.signals.borrow_mut() {
+                    if let Some(ref mut signal) = signal {
+                        signal.activate(Some((major, minor, Some(fd))));
                     }
                 }
+            }
+        } else if &*message.interface().unwrap() == "org.freedesktop.DBus.Properties"
+            && &*message.member().unwrap() == "PropertiesChanged"
+        {
+            use dbus::arg::{Array, Dict, Get, Iter, Variant};
+
+            let (_, changed, _) = message
+                .get3::<String, Dict<'_, String, Variant<Iter<'_>>, Iter<'_>>, Array<'_, String, Iter<'_>>>();
+            let mut changed = changed.ok_or(Error::UnexpectedMethodReturn)?;
+            if let Some((_, mut value)) = changed.find(|&(ref key, _)| &*key == "Active") {
+                if let Some(active) = Get::get(&mut value.0) {
+                    self.active.store(active, Ordering::SeqCst);
+                }
+            }
+        } else {
+            // Handle default replies if necessary
+            if let Some(reply) = dbus::channel::default_reply(&message) {
+                self.conn
+                    .borrow()
+                    .channel()
+                    .send(reply)
+                    .map_err(|()| Error::SessionLost)?;
             }
         }
         Ok(())
@@ -439,78 +440,6 @@ impl SessionNotifier for LogindSessionNotifier {
     }
 }
 
-/// Bound logind session that is driven by the [`EventLoop`](calloop::EventLoop).
-///
-/// See [`logind_session_bind`] for details.
-///
-/// Dropping this object will close the logind session just like the [`LogindSessionNotifier`].
-pub struct BoundLogindSession {
-    notifier: LogindSessionNotifier,
-    _watches: Vec<Watch>,
-    sources: Vec<Source<Generic<Fd>>>,
-    kill_source: Box<dyn Fn(Source<Generic<Fd>>)>,
-}
-
-/// Bind a [`LogindSessionNotifier`] to an [`EventLoop`](calloop::EventLoop).
-///
-/// Allows the [`LogindSessionNotifier`] to listen for incoming signals signalling the session state.
-/// If you don't use this function [`LogindSessionNotifier`] will not correctly tell you the logind
-/// session state and call it's [`SessionObserver`]s.
-pub fn logind_session_bind<Data: 'static>(
-    notifier: LogindSessionNotifier,
-    handle: LoopHandle<Data>,
-) -> ::std::result::Result<BoundLogindSession, (IoError, LogindSessionNotifier)> {
-    let watches = notifier.internal.conn.borrow().watch_fds();
-
-    let internal_for_error = notifier.internal.clone();
-    let sources = watches
-        .clone()
-        .into_iter()
-        .filter_map(|watch| {
-            let interest = match (watch.writable(), watch.readable()) {
-                (true, true) => Interest::Both,
-                (true, false) => Interest::Writable,
-                (false, true) => Interest::Readable,
-                (false, false) => return None,
-            };
-            let source = Generic::from_fd(watch.fd(), interest, calloop::Mode::Level);
-            let source = handle.insert_source(source, {
-                let mut notifier = notifier.clone();
-                move |readiness, fd, _| {
-                    notifier.event(readiness, fd.0);
-                    Ok(())
-                }
-            });
-            Some(source)
-        })
-        .collect::<::std::result::Result<Vec<Source<Generic<Fd>>>, InsertError<Generic<Fd>>>>()
-        .map_err(|err| {
-            (
-                err.into(),
-                LogindSessionNotifier {
-                    internal: internal_for_error,
-                },
-            )
-        })?;
-
-    Ok(BoundLogindSession {
-        notifier,
-        _watches: watches,
-        sources,
-        kill_source: Box::new(move |source| handle.kill(source)),
-    })
-}
-
-impl BoundLogindSession {
-    /// Unbind the logind session from the [`EventLoop`](calloop::EventLoop)
-    pub fn unbind(self) -> LogindSessionNotifier {
-        for source in self.sources {
-            (self.kill_source)(source);
-        }
-        self.notifier
-    }
-}
-
 impl Drop for LogindSessionNotifier {
     fn drop(&mut self) {
         info!(self.internal.logger, "Closing logind session");
@@ -526,24 +455,42 @@ impl Drop for LogindSessionNotifier {
     }
 }
 
-impl LogindSessionNotifier {
-    fn event(&mut self, readiness: Readiness, fd: RawFd) {
-        let conn = self.internal.conn.borrow();
-        let items = conn.watch_handle(
-            fd,
-            if readiness.readable && readiness.writable {
-                WatchEvent::Readable as u32 | WatchEvent::Writable as u32
-            } else if readiness.readable {
-                WatchEvent::Readable as u32
-            } else if readiness.writable {
-                WatchEvent::Writable as u32
-            } else {
-                return;
-            },
-        );
-        if let Err(err) = self.internal.handle_signals(items) {
-            error!(self.internal.logger, "Error handling dbus signals: {}", err);
+impl EventSource for LogindSessionNotifier {
+    type Event = ();
+    type Metadata = ();
+    type Ret = ();
+
+    fn process_events<F>(&mut self, readiness: Readiness, token: Token, _: F) -> std::io::Result<()>
+    where
+        F: FnMut((), &mut ()),
+    {
+        // Accumulate the messages, and then process them, as we can't keep the borrow on the `DBusConnection`
+        // while processing the messages
+        let mut messages = Vec::new();
+        self.internal
+            .conn
+            .borrow_mut()
+            .process_events(readiness, token, |msg, _| messages.push(msg))?;
+
+        for msg in messages {
+            if let Err(err) = self.internal.handle_message(msg) {
+                error!(self.internal.logger, "Error handling dbus messages: {}", err);
+            }
         }
+
+        Ok(())
+    }
+
+    fn register(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
+        self.internal.conn.borrow_mut().register(poll, token)
+    }
+
+    fn reregister(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
+        self.internal.conn.borrow_mut().reregister(poll, token)
+    }
+
+    fn unregister(&mut self, poll: &mut Poll) -> std::io::Result<()> {
+        self.internal.conn.borrow_mut().unregister(poll)
     }
 }
 

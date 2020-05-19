@@ -29,8 +29,8 @@ use smithay::{
         graphics::{CursorBackend, SwapBuffersError},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         session::{
-            auto::{auto_session_bind, AutoSession},
-            notify_multiplexer, AsSessionObserver, Session, SessionNotifier, SessionObserver,
+            auto::AutoSession, notify_multiplexer, AsSessionObserver, Session, SessionNotifier,
+            SessionObserver,
         },
         udev::{primary_gpu, UdevBackend, UdevEvent},
     },
@@ -209,10 +209,10 @@ pub fn run_udev(
             anvil_state.process_input_event(event)
         })
         .unwrap();
-    let session_event_source = auto_session_bind(notifier, event_loop.handle())
-        .map_err(|(e, _)| e)
+    let session_event_source = event_loop
+        .handle()
+        .insert_source(notifier, |(), &mut (), _anvil_state| {})
         .unwrap();
-
     for (dev, path) in udev_backend.device_list() {
         udev_handler.device_added(dev, path.into())
     }
@@ -246,7 +246,7 @@ pub fn run_udev(
     // Cleanup stuff
     state.window_map.borrow_mut().clear();
 
-    let mut notifier = session_event_source.unbind();
+    let mut notifier = event_loop.handle().remove(session_event_source);
     notifier.unregister(libinput_session_id);
     notifier.unregister(udev_session_id);
 
