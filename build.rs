@@ -1,12 +1,8 @@
 #[cfg(any(feature = "backend_egl", feature = "renderer_gl"))]
-extern crate gl_generator;
+fn gl_generate() {
+    use gl_generator::{Api, Fallbacks, Profile, Registry};
+    use std::{env, fs::File, path::PathBuf};
 
-#[cfg(any(feature = "backend_egl", feature = "renderer_gl"))]
-use gl_generator::{Api, Fallbacks, Profile, Registry};
-use std::{env, fs::File, path::PathBuf};
-
-#[cfg(any(feature = "backend_egl", feature = "renderer_gl"))]
-fn main() {
     let dest = PathBuf::from(&env::var("OUT_DIR").unwrap());
 
     println!("cargo:rerun-if-changed=build.rs");
@@ -63,5 +59,42 @@ fn main() {
     }
 }
 
-#[cfg(not(any(feature = "backend_egl", feature = "renderer_gl")))]
-fn main() {}
+#[cfg(feature = "backend_session_logind")]
+fn find_logind() {
+    // We should allow only dynamic linkage due to libsystemd and libelogind LICENSE.
+
+    #[cfg(feature = "backend_session_elogind")]
+    {
+        if pkg_config::Config::new()
+            .statik(false)
+            .probe("libelogind")
+            .is_err()
+        {
+            println!("cargo:warning=Could not find `libelogind.so`.");
+            println!("cargo:warning=If your system is systemd-based, you should only enable the `backend_session_logind` feature, not `backend_session_elogind`.");
+            std::process::exit(1);
+        }
+    }
+
+    #[cfg(not(feature = "backend_session_elogind"))]
+    {
+        if pkg_config::Config::new()
+            .statik(false)
+            .probe("libsystemd")
+            .is_err()
+        {
+            println!("cargo:warning=Could not find `libsystemd.so`.");
+            println!("cargo:warning=If your system uses elogind, please enable the `backend_session_elogind` feature.");
+            println!("cargo:warning=Otherwise, you may need to disable the `backend_session_logind` feature as your system does not support it.");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn main() {
+    #[cfg(any(feature = "backend_egl", feature = "renderer_gl"))]
+    gl_generate();
+
+    #[cfg(feature = "backend_session_logind")]
+    find_logind();
+}

@@ -52,7 +52,6 @@ use std::{
     rc::{Rc, Weak},
     sync::atomic::{AtomicBool, Ordering},
 };
-use systemd::login;
 
 use calloop::{EventSource, Poll, Readiness, Token};
 
@@ -91,9 +90,7 @@ impl LogindSession {
             .new(o!("smithay_module" => "backend_session", "session_type" => "logind"));
 
         // Acquire session_id, seat and vt (if any) via libsystemd
-        let session_id = login::get_session(None).map_err(Error::FailedToGetSession)?;
-        let seat = login::get_seat(session_id.clone()).map_err(Error::FailedToGetSeat)?;
-        let vt = login::get_vt(session_id.clone()).ok();
+        let (session_id, seat, vt) = ffi::get_login_state()?;
 
         // Create dbus connection
         let conn = DBusConnection::new_system().map_err(Error::FailedDbusConnection)?;
@@ -556,5 +553,63 @@ pub enum Error {
 impl AsErrno for Error {
     fn as_errno(&self) -> Option<i32> {
         None
+    }
+}
+
+/*
+ * FFI routines to retrieve the session state from logind or elogind
+ */
+
+mod ffi {
+    use libc::pid_t;
+    use std::{
+        ffi::CString,
+        os::raw::{c_char, c_int, c_uint},
+    };
+
+    pub fn get_login_state() -> Result<(String, String, Option<u32>), super::Error> {
+        let session_name = unsafe {
+            let mut session_name: *mut c_char = std::ptr::null_mut();
+            let ret = sd_pid_get_session(0, &mut session_name);
+            if ret < 0 {
+                return Err(super::Error::FailedToGetSession(
+                    std::io::Error::from_raw_os_error(-ret),
+                ));
+            }
+            CString::from_raw(session_name)
+        };
+
+        let seat_name = unsafe {
+            let mut seat_name: *mut c_char = std::ptr::null_mut();
+            let ret = sd_session_get_seat(session_name.as_ptr(), &mut seat_name);
+            if ret < 0 {
+                return Err(super::Error::FailedToGetSeat(std::io::Error::from_raw_os_error(
+                    -ret,
+                )));
+            }
+            CString::from_raw(seat_name)
+        };
+
+        let vt_num = unsafe {
+            let mut vt_num = 0;
+            let ret = sd_session_get_vt(session_name.as_ptr(), &mut vt_num);
+            if ret < 0 {
+                None
+            } else {
+                Some(vt_num)
+            }
+        };
+
+        Ok((
+            session_name.into_string().unwrap(),
+            seat_name.into_string().unwrap(),
+            vt_num,
+        ))
+    }
+
+    extern "C" {
+        fn sd_pid_get_session(pid: pid_t, out_session: *mut *mut c_char) -> c_int;
+        fn sd_session_get_seat(session: *const c_char, out_seat: *mut *mut c_char) -> c_int;
+        fn sd_session_get_vt(session: *const c_char, out_vt: *mut c_uint) -> c_int;
     }
 }
