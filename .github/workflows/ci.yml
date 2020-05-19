@@ -65,7 +65,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features
+          args: --features "test_all_features"
   
   anvil-ci:
     strategy:
@@ -111,7 +111,7 @@ jobs:
       - name: Test all
         if: matrix.features == 'all'
         working-directory: ./anvil
-        run: cargo test --all-features
+        run: cargo test --features "test_all_features"
 
 
   lint:
@@ -135,8 +135,8 @@ jobs:
         run: cargo fmt --all -- --check
       
       - name: Clippy Smithay
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy --features "test_all_features" -- -D warnings
 
       - name: Clippy Anvil
         working-directory: ./anvil
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy --features "test_all_features" -- -D warnings

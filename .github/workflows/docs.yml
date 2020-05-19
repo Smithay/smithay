@@ -33,7 +33,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: doc
-          args: --no-deps --all-features
+          args: --no-deps --features "test_all_features"
 
       - name: Setup index
         run: cp ./doc_index.html ./target/doc/index.html

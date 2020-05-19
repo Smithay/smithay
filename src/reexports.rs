@@ -13,8 +13,6 @@ pub use image;
 pub use input;
 #[cfg(any(feature = "backend_udev", feature = "backend_drm"))]
 pub use nix;
-#[cfg(feature = "backend_session_logind")]
-pub use systemd;
 #[cfg(feature = "backend_udev")]
 pub use udev;
 #[cfg(feature = "wayland_frontend")]
