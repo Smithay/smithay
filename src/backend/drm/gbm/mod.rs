@@ -76,6 +76,8 @@ static LOAD: Once = Once::new();
 pub struct GbmDevice<D: RawDevice + ControlDevice + 'static> {
     pub(self) dev: Rc<RefCell<gbm::Device<D>>>,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<GbmSurfaceInternal<D>>>>>,
+    #[cfg(feature = "backend_session")]
+    links: Vec<crate::signaling::SignalToken>,
     logger: ::slog::Logger,
 }
 
@@ -110,6 +112,8 @@ impl<D: RawDevice + ControlDevice + 'static> GbmDevice<D> {
             // Open the gbm device from the drm device
             dev: Rc::new(RefCell::new(gbm::Device::new(dev).map_err(Error::InitFailed)?)),
             backends: Rc::new(RefCell::new(HashMap::new())),
+            #[cfg(feature = "backend_session")]
+            links: Vec::new(),
             logger: log,
         })
     }

@@ -17,7 +17,10 @@ use std::sync::Arc;
 
 use super::{AtomicDrmDevice, AtomicDrmSurfaceInternal, Dev};
 use crate::backend::drm::{common::Error, DevPath, Surface};
-use crate::backend::session::{AsSessionObserver, SessionObserver};
+use crate::{
+    backend::session::Signal as SessionSignal,
+    signaling::{Linkable, Signaler},
+};
 
 /// [`SessionObserver`](SessionObserver)
 /// linked to the [`AtomicDrmDevice`](AtomicDrmDevice)
@@ -31,20 +34,34 @@ pub struct AtomicDrmDeviceObserver<A: AsRawFd + 'static> {
     logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> AsSessionObserver<AtomicDrmDeviceObserver<A>> for AtomicDrmDevice<A> {
-    fn observer(&mut self) -> AtomicDrmDeviceObserver<A> {
-        AtomicDrmDeviceObserver {
+impl<A: AsRawFd + 'static> Linkable<SessionSignal> for AtomicDrmDevice<A> {
+    fn link(&mut self, signaler: Signaler<SessionSignal>) {
+        let mut observer = AtomicDrmDeviceObserver {
             dev: Rc::downgrade(&self.dev),
             dev_id: self.dev_id,
             active: self.active.clone(),
             privileged: self.dev.privileged,
             backends: Rc::downgrade(&self.backends),
             logger: self.logger.clone(),
-        }
+        };
+
+        let token = signaler.register(move |signal| observer.signal(*signal));
+        self.links.push(token);
     }
 }
 
-impl<A: AsRawFd + 'static> SessionObserver for AtomicDrmDeviceObserver<A> {
+impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
+    fn signal(&mut self, signal: SessionSignal) {
+        match signal {
+            SessionSignal::PauseSession => self.pause(None),
+            SessionSignal::PauseDevice { major, minor } => self.pause(Some((major, minor))),
+            SessionSignal::ActivateSession => self.activate(None),
+            SessionSignal::ActivateDevice { major, minor, new_fd } => {
+                self.activate(Some((major, minor, new_fd)))
+            }
+        }
+    }
+
     fn pause(&mut self, devnum: Option<(u32, u32)>) {
         if let Some((major, minor)) = devnum {
             if major as u64 != stat::major(self.dev_id) || minor as u64 != stat::minor(self.dev_id) {
@@ -104,9 +121,7 @@ impl<A: AsRawFd + 'static> SessionObserver for AtomicDrmDeviceObserver<A> {
             // TODO call drm-handler::error
         }
     }
-}
 
-impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
     fn reset_state(&mut self) -> Result<(), Error> {
         if let Some(dev) = self.dev.upgrade() {
             let res_handles = ControlDevice::resource_handles(&*dev)

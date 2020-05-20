@@ -7,53 +7,57 @@ use drm::control::crtc;
 use gbm::BufferObject;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::os::unix::io::RawFd;
 use std::rc::{Rc, Weak};
 
 use super::{GbmDevice, GbmSurfaceInternal};
-use crate::backend::drm::{RawDevice, RawSurface};
+use crate::backend::drm::{Device, RawDevice};
 use crate::backend::graphics::CursorBackend;
-use crate::backend::session::{AsSessionObserver, SessionObserver};
+use crate::{
+    backend::session::Signal as SessionSignal,
+    signaling::{Linkable, Signaler},
+};
 
 /// [`SessionObserver`](SessionObserver)
 /// linked to the [`GbmDevice`](GbmDevice) it was
 /// created from.
-pub struct GbmDeviceObserver<
-    S: SessionObserver + 'static,
-    D: RawDevice + ::drm::control::Device + AsSessionObserver<S> + 'static,
-> {
-    observer: S,
+pub(crate) struct GbmDeviceObserver<D: RawDevice + ::drm::control::Device + 'static> {
     backends: Weak<RefCell<HashMap<crtc::Handle, Weak<GbmSurfaceInternal<D>>>>>,
     logger: ::slog::Logger,
 }
 
-impl<
-        O: SessionObserver + 'static,
-        S: CursorBackend<CursorFormat = dyn drm::buffer::Buffer> + RawSurface + 'static,
-        D: RawDevice<Surface = S> + drm::control::Device + AsSessionObserver<O> + 'static,
-    > AsSessionObserver<GbmDeviceObserver<O, D>> for GbmDevice<D>
+impl<D> Linkable<SessionSignal> for GbmDevice<D>
+where
+    D: RawDevice + drm::control::Device + Linkable<SessionSignal> + 'static,
+    <D as Device>::Surface: CursorBackend<CursorFormat = dyn drm::buffer::Buffer>,
 {
-    fn observer(&mut self) -> GbmDeviceObserver<O, D> {
-        GbmDeviceObserver {
-            observer: (**self.dev.borrow_mut()).observer(),
+    fn link(&mut self, signaler: Signaler<SessionSignal>) {
+        let lower_signal = Signaler::new();
+        self.dev.borrow_mut().link(lower_signal.clone());
+        let mut observer = GbmDeviceObserver {
             backends: Rc::downgrade(&self.backends),
             logger: self.logger.clone(),
-        }
+        };
+
+        let token = signaler.register(move |&signal| match signal {
+            SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => {
+                // Activate lower *before* we process the event
+                lower_signal.signal(signal);
+                observer.activate()
+            }
+            _ => {
+                lower_signal.signal(signal);
+            }
+        });
+
+        self.links.push(token);
     }
 }
 
-impl<
-        O: SessionObserver + 'static,
-        S: CursorBackend<CursorFormat = dyn drm::buffer::Buffer> + RawSurface + 'static,
-        D: RawDevice<Surface = S> + drm::control::Device + AsSessionObserver<O> + 'static,
-    > SessionObserver for GbmDeviceObserver<O, D>
+impl<D: RawDevice + drm::control::Device + 'static> GbmDeviceObserver<D>
+where
+    <D as Device>::Surface: CursorBackend<CursorFormat = dyn drm::buffer::Buffer>,
 {
-    fn pause(&mut self, devnum: Option<(u32, u32)>) {
-        self.observer.pause(devnum);
-    }
-
-    fn activate(&mut self, devnum: Option<(u32, u32, Option<RawFd>)>) {
-        self.observer.activate(devnum);
+    fn activate(&mut self) {
         let mut crtcs = Vec::new();
         if let Some(backends) = self.backends.upgrade() {
             for (crtc, backend) in backends.borrow().iter() {

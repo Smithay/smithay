@@ -82,6 +82,8 @@ pub struct EglStreamDevice<D: RawDevice + ControlDevice + 'static> {
     raw: D,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<EglStreamSurfaceInternal<D>>>>>,
     logger: ::slog::Logger,
+    #[cfg(feature = "backend_session")]
+    links: Vec<crate::signaling::SignalToken>,
 }
 
 impl<D: RawDevice + ControlDevice + 'static> EglStreamDevice<D> {
@@ -202,6 +204,8 @@ impl<D: RawDevice + ControlDevice + 'static> EglStreamDevice<D> {
             raw,
             backends: Rc::new(RefCell::new(HashMap::new())),
             logger: log,
+            #[cfg(feature = "backend_session")]
+            links: Vec::new(),
         })
     }
 }

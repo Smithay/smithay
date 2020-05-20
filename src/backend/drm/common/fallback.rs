@@ -24,7 +24,6 @@ use crate::backend::graphics::gl::GLGraphicsBackend;
 #[cfg(feature = "renderer_gl")]
 use crate::backend::graphics::PixelFormat;
 use crate::backend::graphics::{CursorBackend, SwapBuffersError};
-use crate::backend::session::{AsSessionObserver, SessionObserver};
 
 use drm::{
     control::{connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Mode, ResourceHandles},
@@ -111,44 +110,16 @@ where
     }
 }
 
-/// [`SessionObserver`](::backend::session::SessionObserver) Wrapper to assist fallback
-/// in case initialization of the preferred device type fails.
-pub enum FallbackDeviceObserver<O1: SessionObserver + 'static, O2: SessionObserver + 'static> {
-    /// Variant for successful initialization of the preferred device
-    Preference(O1),
-    /// Variant for the fallback device
-    Fallback(O2),
-}
-
-impl<O1, O2, D1, D2> AsSessionObserver<FallbackDeviceObserver<O1, O2>> for FallbackDevice<D1, D2>
+#[cfg(feature = "backend_session")]
+impl<D1, D2> crate::signaling::Linkable<crate::backend::session::Signal> for FallbackDevice<D1, D2>
 where
-    O1: SessionObserver + 'static,
-    O2: SessionObserver + 'static,
-    D1: Device + AsSessionObserver<O1> + 'static,
-    D2: Device + AsSessionObserver<O2> + 'static,
+    D1: Device + crate::signaling::Linkable<crate::backend::session::Signal> + 'static,
+    D2: Device + crate::signaling::Linkable<crate::backend::session::Signal> + 'static,
 {
-    fn observer(&mut self) -> FallbackDeviceObserver<O1, O2> {
+    fn link(&mut self, signal: crate::signaling::Signaler<crate::backend::session::Signal>) {
         match self {
-            FallbackDevice::Preference(dev) => FallbackDeviceObserver::Preference(dev.observer()),
-            FallbackDevice::Fallback(dev) => FallbackDeviceObserver::Fallback(dev.observer()),
-        }
-    }
-}
-
-impl<O1: SessionObserver + 'static, O2: SessionObserver + 'static> SessionObserver
-    for FallbackDeviceObserver<O1, O2>
-{
-    fn pause(&mut self, device: Option<(u32, u32)>) {
-        match self {
-            FallbackDeviceObserver::Preference(dev) => dev.pause(device),
-            FallbackDeviceObserver::Fallback(dev) => dev.pause(device),
-        }
-    }
-
-    fn activate(&mut self, device: Option<(u32, u32, Option<RawFd>)>) {
-        match self {
-            FallbackDeviceObserver::Preference(dev) => dev.activate(device),
-            FallbackDeviceObserver::Fallback(dev) => dev.activate(device),
+            FallbackDevice::Preference(d) => d.link(signal),
+            FallbackDevice::Fallback(d) => d.link(signal),
         }
     }
 }

@@ -6,7 +6,6 @@
 use drm::control::{connector, crtc, Mode};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::os::unix::io::RawFd;
 use std::rc::{Rc, Weak};
 
 use super::{EglDevice, EglSurfaceInternal};
@@ -15,42 +14,52 @@ use crate::backend::egl::{
     ffi,
     native::{Backend, NativeDisplay, NativeSurface},
 };
-use crate::backend::session::{AsSessionObserver, SessionObserver};
+use crate::{
+    backend::session::Signal as SessionSignal,
+    signaling::{Linkable, Signaler},
+};
 
 /// [`SessionObserver`](SessionObserver)
 /// linked to the [`EglDevice`](EglDevice) it was
 /// created from.
-pub struct EglDeviceObserver<S: SessionObserver + 'static, N: NativeSurface + Surface> {
-    observer: S,
+pub struct EglDeviceObserver<N: NativeSurface + Surface> {
     backends: Weak<RefCell<HashMap<crtc::Handle, Weak<EglSurfaceInternal<N>>>>>,
 }
 
-impl<S, B, D> AsSessionObserver<EglDeviceObserver<S, <D as Device>::Surface>> for EglDevice<B, D>
+impl<B, D> Linkable<SessionSignal> for EglDevice<B, D>
 where
-    S: SessionObserver + 'static,
     B: Backend<Surface = <D as Device>::Surface, Error = <<D as Device>::Surface as Surface>::Error>
         + 'static,
     D: Device
         + NativeDisplay<B, Arguments = (crtc::Handle, Mode, Vec<connector::Handle>)>
-        + AsSessionObserver<S>
+        + Linkable<SessionSignal>
         + 'static,
     <D as Device>::Surface: NativeSurface<Error = <<D as Device>::Surface as Surface>::Error>,
 {
-    fn observer(&mut self) -> EglDeviceObserver<S, <D as Device>::Surface> {
-        EglDeviceObserver {
-            observer: self.dev.borrow_mut().observer(),
+    fn link(&mut self, signaler: Signaler<SessionSignal>) {
+        let lower_signal = Signaler::new();
+        self.dev.borrow_mut().link(lower_signal.clone());
+        let mut observer = EglDeviceObserver {
             backends: Rc::downgrade(&self.backends),
-        }
+        };
+
+        let token = signaler.register(move |&signal| match signal {
+            SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => {
+                // Activate lower *before* we process the event
+                lower_signal.signal(signal);
+                observer.activate()
+            }
+            _ => {
+                lower_signal.signal(signal);
+            }
+        });
+
+        self.links.push(token);
     }
 }
 
-impl<S: SessionObserver + 'static, N: NativeSurface + Surface> SessionObserver for EglDeviceObserver<S, N> {
-    fn pause(&mut self, devnum: Option<(u32, u32)>) {
-        self.observer.pause(devnum);
-    }
-
-    fn activate(&mut self, devnum: Option<(u32, u32, Option<RawFd>)>) {
-        self.observer.activate(devnum);
+impl<N: NativeSurface + Surface> EglDeviceObserver<N> {
+    fn activate(&mut self) {
         if let Some(backends) = self.backends.upgrade() {
             for (_crtc, backend) in backends.borrow().iter() {
                 if let Some(backend) = backend.upgrade() {
