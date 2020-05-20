@@ -44,6 +44,8 @@ pub struct AtomicDrmDevice<A: AsRawFd + 'static> {
     active: Arc<AtomicBool>,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<AtomicDrmSurfaceInternal<A>>>>>,
     handler: Option<RefCell<Box<dyn DeviceHandler<Device = AtomicDrmDevice<A>>>>>,
+    #[cfg(feature = "backend_session")]
+    links: Vec<crate::signaling::SignalToken>,
     logger: ::slog::Logger,
 }
 
@@ -324,6 +326,8 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             active,
             backends: Rc::new(RefCell::new(HashMap::new())),
             handler: None,
+            #[cfg(feature = "backend_session")]
+            links: Vec::new(),
             logger: log.clone(),
         })
     }

@@ -28,10 +28,7 @@ use smithay::{
         },
         graphics::{CursorBackend, SwapBuffersError},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
-        session::{
-            auto::AutoSession, notify_multiplexer, AsSessionObserver, Session, SessionNotifier,
-            SessionObserver,
-        },
+        session::{auto::AutoSession, Session, Signal as SessionSignal},
         udev::{primary_gpu, UdevBackend, UdevEvent},
     },
     reexports::{
@@ -56,6 +53,7 @@ use smithay::{
             Display,
         },
     },
+    signaling::{Linkable, SignalToken, Signaler},
     wayland::{
         compositor::CompositorToken,
         output::{Mode, Output, PhysicalProperties},
@@ -117,9 +115,8 @@ pub fn run_udev(
     /*
      * Initialize session
      */
-    let (session, mut notifier) = AutoSession::new(log.clone()).ok_or(())?;
-    let (udev_observer, udev_notifier) = notify_multiplexer();
-    let udev_session_id = notifier.register(udev_observer);
+    let (session, notifier) = AutoSession::new(log.clone()).ok_or(())?;
+    let session_signal = notifier.signaler();
 
     /*
      * Initialize the compositor
@@ -154,7 +151,7 @@ pub fn run_udev(
         cursor_status: state.cursor_status.clone(),
         dnd_icon: state.dnd_icon.clone(),
         loop_handle: event_loop.handle(),
-        notifier: udev_notifier,
+        signaler: session_signal.clone(),
         logger: log.clone(),
     };
 
@@ -196,9 +193,9 @@ pub fn run_udev(
     let mut libinput_context = Libinput::new_with_udev::<LibinputSessionInterface<AutoSession>>(
         state.session.clone().unwrap().into(),
     );
-    let libinput_session_id = notifier.register(libinput_context.observer());
     libinput_context.udev_assign_seat(&state.seat_name).unwrap();
-    let libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
+    let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
+    libinput_backend.link(session_signal);
 
     /*
      * Bind all our objects that get driven by the event loop
@@ -246,29 +243,25 @@ pub fn run_udev(
     // Cleanup stuff
     state.window_map.borrow_mut().clear();
 
-    let mut notifier = event_loop.handle().remove(session_event_source);
-    notifier.unregister(libinput_session_id);
-    notifier.unregister(udev_session_id);
-
+    event_loop.handle().remove(session_event_source);
     event_loop.handle().remove(libinput_event_source);
     event_loop.handle().remove(udev_event_source);
 
     Ok(())
 }
 
-struct BackendData<S: SessionNotifier> {
-    id: S::Id,
-    restart_id: S::Id,
+struct BackendData {
+    _restart_token: SignalToken,
     event_source: Source<Generic<RenderDevice>>,
     surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<GliumDrawer<RenderSurface>>>>>,
 }
 
-struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
+struct UdevHandlerImpl<Data: 'static> {
     compositor_token: CompositorToken<Roles>,
     #[cfg(feature = "egl")]
     egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
     session: AutoSession,
-    backends: HashMap<dev_t, BackendData<S>>,
+    backends: HashMap<dev_t, BackendData>,
     display: Rc<RefCell<Display>>,
     primary_gpu: Option<PathBuf>,
     window_map: Rc<RefCell<MyWindowMap>>,
@@ -277,11 +270,11 @@ struct UdevHandlerImpl<S: SessionNotifier, Data: 'static> {
     cursor_status: Arc<Mutex<CursorImageStatus>>,
     dnd_icon: Arc<Mutex<Option<wl_surface::WlSurface>>>,
     loop_handle: LoopHandle<Data>,
-    notifier: S,
+    signaler: Signaler<SessionSignal>,
     logger: ::slog::Logger,
 }
 
-impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
+impl<Data: 'static> UdevHandlerImpl<Data> {
     #[cfg(feature = "egl")]
     pub fn scan_connectors(
         device: &mut RenderDevice,
@@ -375,7 +368,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
     }
 }
 
-impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
+impl<Data: 'static> UdevHandlerImpl<Data> {
     fn device_added(&mut self, _device: dev_t, path: PathBuf) {
         // Try to open the device
         if let Some(mut device) = self
@@ -425,14 +418,14 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
             }
 
             #[cfg(feature = "egl")]
-            let backends = Rc::new(RefCell::new(UdevHandlerImpl::<S, Data>::scan_connectors(
+            let backends = Rc::new(RefCell::new(UdevHandlerImpl::<Data>::scan_connectors(
                 &mut device,
                 self.egl_buffer_reader.clone(),
                 &self.logger,
             )));
 
             #[cfg(not(feature = "egl"))]
-            let backends = Rc::new(RefCell::new(UdevHandlerImpl::<S, Data>::scan_connectors(
+            let backends = Rc::new(RefCell::new(UdevHandlerImpl::<Data>::scan_connectors(
                 &mut device,
                 &self.logger,
             )));
@@ -449,16 +442,20 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 dnd_icon: self.dnd_icon.clone(),
                 logger: self.logger.clone(),
             });
-            let restart_id = self.notifier.register(DrmRendererSessionListener {
+            let mut listener = DrmRendererSessionListener {
                 renderer: renderer.clone(),
                 loop_handle: self.loop_handle.clone(),
+            };
+            let restart_token = self.signaler.register(move |signal| match signal {
+                SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => listener.activate(),
+                _ => {}
             });
             device.set_handler(DrmHandlerImpl {
                 renderer,
                 loop_handle: self.loop_handle.clone(),
             });
 
-            let device_session_id = self.notifier.register(device.observer());
+            device.link(self.signaler.clone());
             let dev_id = device.device_id();
             let event_source = device_bind(&self.loop_handle, device)
                 .map_err(|e| -> IoError { e.into() })
@@ -478,8 +475,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
             self.backends.insert(
                 dev_id,
                 BackendData {
-                    id: device_session_id,
-                    restart_id,
+                    _restart_token: restart_token,
                     event_source,
                     surfaces: backends,
                 },
@@ -498,13 +494,10 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 .with_source(&backend_data.event_source, |source| {
                     let mut backends = backend_data.surfaces.borrow_mut();
                     #[cfg(feature = "egl")]
-                    let new_backends = UdevHandlerImpl::<S, Data>::scan_connectors(
-                        &mut source.file,
-                        egl_buffer_reader,
-                        logger,
-                    );
+                    let new_backends =
+                        UdevHandlerImpl::<Data>::scan_connectors(&mut source.file, egl_buffer_reader, logger);
                     #[cfg(not(feature = "egl"))]
-                    let new_backends = UdevHandlerImpl::<S, Data>::scan_connectors(&mut source.file, logger);
+                    let new_backends = UdevHandlerImpl::<Data>::scan_connectors(&mut source.file, logger);
                     *backends = new_backends;
 
                     for renderer in backends.values() {
@@ -537,9 +530,6 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                     *self.egl_buffer_reader.borrow_mut() = None;
                 }
             }
-
-            self.notifier.unregister(backend_data.id);
-            self.notifier.unregister(backend_data.restart_id);
             debug!(self.logger, "Dropping device");
         }
     }
@@ -567,9 +557,8 @@ pub struct DrmRendererSessionListener<Data: 'static> {
     loop_handle: LoopHandle<Data>,
 }
 
-impl<Data: 'static> SessionObserver for DrmRendererSessionListener<Data> {
-    fn pause(&mut self, _device: Option<(u32, u32)>) {}
-    fn activate(&mut self, _device: Option<(u32, u32, Option<RawFd>)>) {
+impl<Data: 'static> DrmRendererSessionListener<Data> {
+    fn activate(&mut self) {
         // we want to be called, after all session handling is done (TODO this is not so nice)
         let renderer = self.renderer.clone();
         let handle = self.loop_handle.clone();

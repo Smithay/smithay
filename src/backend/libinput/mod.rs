@@ -5,7 +5,10 @@ use helpers::{on_device_event, on_keyboard_event, on_pointer_event, on_touch_eve
 
 use crate::backend::input::{self as backend, Axis, InputBackend, InputEvent};
 #[cfg(feature = "backend_session")]
-use crate::backend::session::{AsErrno, Session, SessionObserver};
+use crate::{
+    backend::session::{AsErrno, Session, Signal as SessionSignal},
+    signaling::{Linkable, SignalToken, Signaler},
+};
 use input as libinput;
 use input::event;
 
@@ -33,6 +36,7 @@ pub struct LibinputInputBackend {
     context: libinput::Libinput,
     config: LibinputConfig,
     seats: HashMap<libinput::Seat, backend::Seat>,
+    links: Vec<SignalToken>,
     logger: ::slog::Logger,
 }
 
@@ -49,8 +53,32 @@ impl LibinputInputBackend {
             context,
             config: LibinputConfig { devices: Vec::new() },
             seats: HashMap::new(),
+            links: Vec::new(),
             logger: log,
         }
+    }
+}
+
+#[cfg(feature = "backend_session")]
+impl Linkable<SessionSignal> for LibinputInputBackend {
+    fn link(&mut self, signaler: Signaler<SessionSignal>) {
+        let mut input = self.context.clone();
+        let log = self.logger.clone();
+        let token = signaler.register(move |s| match s {
+            SessionSignal::PauseSession
+            | SessionSignal::PauseDevice {
+                major: INPUT_MAJOR, ..
+            } => {
+                input.suspend();
+            }
+            SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => {
+                if input.resume().is_err() {
+                    error!(log, "Failed to resume libinput context");
+                }
+            }
+            _ => {}
+        });
+        self.links.push(token);
     }
 }
 
@@ -387,25 +415,6 @@ impl From<event::pointer::ButtonState> for backend::MouseButtonState {
             event::pointer::ButtonState::Pressed => backend::MouseButtonState::Pressed,
             event::pointer::ButtonState::Released => backend::MouseButtonState::Released,
         }
-    }
-}
-
-#[cfg(feature = "backend_session")]
-impl SessionObserver for libinput::Libinput {
-    fn pause(&mut self, device: Option<(u32, u32)>) {
-        if let Some((major, _)) = device {
-            if major != INPUT_MAJOR {
-                return;
-            }
-        }
-        // lets hope multiple suspends are okay in case of logind?
-        self.suspend()
-    }
-
-    fn activate(&mut self, _device: Option<(u32, u32, Option<RawFd>)>) {
-        // libinput closes the devices on suspend, so we should not get any INPUT_MAJOR calls
-        // also lets hope multiple resumes are okay in case of logind
-        self.resume().expect("Unable to resume libinput context");
     }
 }
 

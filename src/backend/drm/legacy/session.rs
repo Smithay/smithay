@@ -16,12 +16,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use super::{Dev, DevPath, Error, LegacyDrmDevice, LegacyDrmSurfaceInternal};
-use crate::backend::session::{AsSessionObserver, SessionObserver};
+use crate::{
+    backend::session::Signal as SessionSignal,
+    signaling::{Linkable, Signaler},
+};
 
 /// [`SessionObserver`](SessionObserver)
 /// linked to the [`LegacyDrmDevice`](LegacyDrmDevice)
 /// it was created from.
-pub struct LegacyDrmDeviceObserver<A: AsRawFd + 'static> {
+pub(crate) struct LegacyDrmDeviceObserver<A: AsRawFd + 'static> {
     dev: Weak<Dev<A>>,
     dev_id: dev_t,
     privileged: bool,
@@ -30,20 +33,34 @@ pub struct LegacyDrmDeviceObserver<A: AsRawFd + 'static> {
     logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> AsSessionObserver<LegacyDrmDeviceObserver<A>> for LegacyDrmDevice<A> {
-    fn observer(&mut self) -> LegacyDrmDeviceObserver<A> {
-        LegacyDrmDeviceObserver {
+impl<A: AsRawFd + 'static> Linkable<SessionSignal> for LegacyDrmDevice<A> {
+    fn link(&mut self, signaler: Signaler<SessionSignal>) {
+        let mut observer = LegacyDrmDeviceObserver {
             dev: Rc::downgrade(&self.dev),
             dev_id: self.dev_id,
             active: self.active.clone(),
             privileged: self.dev.privileged,
             backends: Rc::downgrade(&self.backends),
             logger: self.logger.clone(),
-        }
+        };
+
+        let token = signaler.register(move |signal| observer.signal(*signal));
+        self.links.push(token);
     }
 }
 
-impl<A: AsRawFd + 'static> SessionObserver for LegacyDrmDeviceObserver<A> {
+impl<A: AsRawFd + 'static> LegacyDrmDeviceObserver<A> {
+    fn signal(&mut self, signal: SessionSignal) {
+        match signal {
+            SessionSignal::PauseSession => self.pause(None),
+            SessionSignal::PauseDevice { major, minor } => self.pause(Some((major, minor))),
+            SessionSignal::ActivateSession => self.activate(None),
+            SessionSignal::ActivateDevice { major, minor, new_fd } => {
+                self.activate(Some((major, minor, new_fd)))
+            }
+        }
+    }
+
     fn pause(&mut self, devnum: Option<(u32, u32)>) {
         if let Some((major, minor)) = devnum {
             if major as u64 != stat::major(self.dev_id) || minor as u64 != stat::minor(self.dev_id) {

@@ -6,11 +6,11 @@
 use super::{EglStreamDevice, EglStreamSurfaceInternal};
 use crate::backend::drm::{RawDevice, Surface};
 use crate::backend::egl::ffi;
-use crate::backend::session::{AsSessionObserver, SessionObserver};
+use crate::backend::session::Signal as SessionSignal;
+use crate::signaling::{Linkable, Signaler};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::os::unix::io::RawFd;
 use std::rc::{Rc, Weak};
 
 use drm::control::{crtc, Device as ControlDevice};
@@ -18,31 +18,42 @@ use drm::control::{crtc, Device as ControlDevice};
 /// [`SessionObserver`](SessionObserver)
 /// linked to the [`EglStreamDevice`](EglStreamDevice) it was
 /// created from.
-pub struct EglStreamDeviceObserver<
-    O: SessionObserver + 'static,
-    D: RawDevice + AsSessionObserver<O> + 'static,
-> {
-    observer: O,
+pub struct EglStreamDeviceObserver<D: RawDevice + 'static> {
     backends: Weak<RefCell<HashMap<crtc::Handle, Weak<EglStreamSurfaceInternal<D>>>>>,
     logger: ::slog::Logger,
 }
 
-impl<O: SessionObserver + 'static, D: RawDevice + ControlDevice + AsSessionObserver<O> + 'static>
-    AsSessionObserver<EglStreamDeviceObserver<O, D>> for EglStreamDevice<D>
+impl<D> Linkable<SessionSignal> for EglStreamDevice<D>
+where
+    D: RawDevice + ControlDevice + Linkable<SessionSignal> + 'static,
 {
-    fn observer(&mut self) -> EglStreamDeviceObserver<O, D> {
-        EglStreamDeviceObserver {
-            observer: self.raw.observer(),
+    fn link(&mut self, signaler: Signaler<SessionSignal>) {
+        let lower_signal = Signaler::new();
+        self.raw.link(lower_signal.clone());
+        let mut observer = EglStreamDeviceObserver {
             backends: Rc::downgrade(&self.backends),
             logger: self.logger.clone(),
-        }
+        };
+
+        let token = signaler.register(move |&signal| match signal {
+            SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => {
+                // activate lower device *before* we process the signal
+                lower_signal.signal(signal);
+                observer.activate();
+            }
+            SessionSignal::PauseSession | SessionSignal::PauseDevice { .. } => {
+                // pause lower device *after* we process the signal
+                observer.pause();
+                lower_signal.signal(signal);
+            }
+        });
+
+        self.links.push(token);
     }
 }
 
-impl<O: SessionObserver + 'static, D: RawDevice + AsSessionObserver<O> + 'static> SessionObserver
-    for EglStreamDeviceObserver<O, D>
-{
-    fn pause(&mut self, devnum: Option<(u32, u32)>) {
+impl<D: RawDevice + 'static> EglStreamDeviceObserver<D> {
+    fn pause(&mut self) {
         if let Some(backends) = self.backends.upgrade() {
             for (_, backend) in backends.borrow().iter() {
                 if let Some(backend) = backend.upgrade() {
@@ -60,12 +71,9 @@ impl<O: SessionObserver + 'static, D: RawDevice + AsSessionObserver<O> + 'static
                 }
             }
         }
-
-        self.observer.pause(devnum);
     }
 
-    fn activate(&mut self, devnum: Option<(u32, u32, Option<RawFd>)>) {
-        self.observer.activate(devnum);
+    fn activate(&mut self) {
         if let Some(backends) = self.backends.upgrade() {
             for (_, backend) in backends.borrow().iter() {
                 if let Some(backend) = backend.upgrade() {

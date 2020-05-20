@@ -25,9 +25,17 @@ use std::{
 };
 
 /// A signaler, main type for signaling
-#[derive(Clone)]
 pub struct Signaler<S> {
     inner: Rc<SignalInner<S>>,
+}
+
+// Manual clone impl because of type parameters
+impl<S> Clone for Signaler<S> {
+    fn clone(&self) -> Signaler<S> {
+        Signaler {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 impl<S> Signaler<S> {
@@ -159,6 +167,15 @@ impl<S> SignalInner<S> {
             }
         }
     }
+}
+
+/// Trait representing the capability of an object to listen for some signals
+///
+/// It is provided so that the signaling system can play nicely into generic
+/// constructs.
+pub trait Linkable<S> {
+    /// Make this object listen for signals from given signaler
+    fn link(&mut self, signaler: Signaler<S>);
 }
 
 #[cfg(test)]
