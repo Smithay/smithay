@@ -19,6 +19,7 @@ jobs:
         - backend_drm
         - backend_drm_legacy
         - backend_drm_gbm
+        - backend_drm_eglstream
         - backend_drm_egl
         - backend_libinput
         - backend_udev
