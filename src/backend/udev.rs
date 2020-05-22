@@ -256,3 +256,24 @@ pub fn all_gpus<S: AsRef<str>>(seat: S) -> IoResult<Vec<PathBuf>> {
         .flat_map(|device| device.devnode().map(PathBuf::from))
         .collect())
 }
+
+/// Returns the loaded driver for a device named by it's [`dev_t`](::nix::sys::stat::dev_t).
+pub fn driver(dev: dev_t) -> IoResult<Option<OsString>> {
+    let mut enumerator = Enumerator::new()?;
+    enumerator.match_subsystem("drm")?;
+    enumerator.match_sysname("card[0-9]*")?;
+    Ok(enumerator
+        .scan_devices()?
+        .filter(|device| device.devnum() == Some(dev))
+        .flat_map(|dev| {
+            let mut device = Some(dev);
+            while let Some(dev) = device {
+                if dev.driver().is_some() {
+                    return dev.driver().map(std::ffi::OsStr::to_os_string);
+                }
+                device = dev.parent();
+            }
+            None
+        })
+        .next())
+}
