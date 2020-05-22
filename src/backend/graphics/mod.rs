@@ -32,7 +32,7 @@ pub enum SwapBuffersError {
     ///
     /// Operations will have no effect. Functions that read textures, buffers, etc.
     /// will return uninitialized data instead.
-    #[error("The context has been lost, it needs to be recreated")]
+    #[error("The context has been lost, it needs to be recreated: {0}")]
     ContextLost(Box<dyn std::error::Error>),
     /// A temporary condition caused to rendering to fail.
     ///
@@ -43,6 +43,6 @@ pub enum SwapBuffersError {
     /// Proceed after investigating the source to reschedule another full rendering step or just this page_flip at a later time.
     /// If the root cause cannot be discovered and subsequent renderings also fail, it is advised to fallback to
     /// recreation.
-    #[error("A temporary condition caused the page flip to fail.")]
+    #[error("A temporary condition caused the page flip to fail: {0}")]
     TemporaryFailure(Box<dyn std::error::Error>),
 }
