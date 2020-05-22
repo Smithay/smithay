@@ -301,7 +301,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 .filter_map(|e| *e)
                 .flat_map(|encoder_handle| device.get_encoder_info(encoder_handle))
                 .collect::<Vec<EncoderInfo>>();
-            for encoder_info in encoder_infos {
+            'outer: for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
                     if let Entry::Vacant(entry) = backends.entry(crtc) {
                         let renderer = GliumDrawer::init(
@@ -313,7 +313,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                         );
 
                         entry.insert(Rc::new(renderer));
-                        break;
+                        break 'outer;
                     }
                 }
             }
@@ -349,14 +349,14 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 .filter_map(|e| *e)
                 .flat_map(|encoder_handle| device.get_encoder_info(encoder_handle))
                 .collect::<Vec<EncoderInfo>>();
-            for encoder_info in encoder_infos {
+            'outer: for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
                     if !backends.contains_key(&crtc) {
                         let renderer =
                             GliumDrawer::init(device.create_surface(crtc).unwrap(), logger.clone());
 
                         backends.insert(crtc, Rc::new(renderer));
-                        break;
+                        break 'outer;
                     }
                 }
             }
