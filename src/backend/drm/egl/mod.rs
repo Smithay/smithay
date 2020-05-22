@@ -46,7 +46,7 @@ pub enum Error<U: std::error::Error + std::fmt::Debug + std::fmt::Display + 'sta
     Underlying(#[source] U),
 }
 
-type Arguments = (crtc::Handle, Mode, Vec<connector::Handle>);
+pub(crate) type Arguments = (crtc::Handle, Mode, Vec<connector::Handle>);
 type BackendRef<D> = Weak<EglSurfaceInternal<<D as Device>::Surface>>;
 
 /// Representation of an egl device to create egl rendering surfaces
