@@ -253,11 +253,17 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             config_ids.set_len(num_configs as usize);
         }
 
-        // TODO: Deeper swap intervals might have some uses
+        if config_ids.is_empty() {
+            return Err(Error::NoAvailablePixelFormat);
+        }
+
         let desired_swap_interval = if attributes.vsync { 1 } else { 0 };
 
-        let config_ids = config_ids
-            .into_iter()
+        // try to select a config with the desired_swap_interval
+        // (but don't fail, as the margin might be very small on some cards and most configs are fine)
+        let config_id = config_ids
+            .iter()
+            .copied()
             .map(|config| unsafe {
                 let mut min_swap_interval = 0;
                 wrap_egl_call(|| {
@@ -293,14 +299,8 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             .map_err(Error::ConfigFailed)?
             .into_iter()
             .flatten()
-            .collect::<Vec<_>>();
-
-        if config_ids.is_empty() {
-            return Err(Error::NoAvailablePixelFormat);
-        }
-
-        // TODO: Improve config selection
-        let config_id = config_ids[0];
+            .next()
+            .unwrap_or_else(|| config_ids[0]);
 
         // analyzing each config
         macro_rules! attrib {
