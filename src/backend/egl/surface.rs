@@ -1,6 +1,6 @@
 //! EGL surface related structs
 
-use super::{ffi, native, wrap_egl_call, EGLError, SurfaceCreationError, SwapBuffersError};
+use super::{ffi, native, EGLError, SurfaceCreationError, SwapBuffersError};
 use crate::backend::egl::display::EGLDisplayHandle;
 use crate::backend::graphics::PixelFormat;
 use nix::libc::c_int;
@@ -93,9 +93,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
         let surface = self.surface.get();
 
         let result = if !surface.is_null() {
-            wrap_egl_call(|| unsafe { ffi::egl::SwapBuffers(**self.display, surface as *const _) })
-                .map_err(SwapBuffersError::EGLSwapBuffers)
-                .and_then(|_| self.native.swap_buffers().map_err(SwapBuffersError::Underlying))
+            self.native.swap_buffers(&self.display, surface)
         } else {
             Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface))
         };

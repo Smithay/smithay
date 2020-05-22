@@ -1,6 +1,8 @@
 //! Type safe native types for safe context/surface creation
 
-use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, EGLError, Error, SurfaceCreationError};
+use super::{
+    display::EGLDisplayHandle, ffi, wrap_egl_call, EGLError, Error, SurfaceCreationError, SwapBuffersError,
+};
 use nix::libc::{c_int, c_void};
 
 #[cfg(feature = "backend_winit")]
@@ -228,8 +230,15 @@ pub unsafe trait NativeSurface {
     /// [EGLSurface::swap_buffers](::backend::egl::surface::EGLSurface::swap_buffers)
     ///
     /// Only implement if required by the backend.
-    fn swap_buffers(&self) -> Result<(), Self::Error> {
-        Ok(())
+    fn swap_buffers(
+        &self,
+        display: &Arc<EGLDisplayHandle>,
+        surface: ffi::egl::types::EGLSurface,
+    ) -> Result<(), SwapBuffersError<Self::Error>> {
+        wrap_egl_call(|| unsafe {
+            ffi::egl::SwapBuffers(***display, surface as *const _);
+        })
+        .map_err(SwapBuffersError::EGLSwapBuffers)
     }
 }
 

@@ -7,7 +7,9 @@
 use crate::backend::drm::{Device, RawDevice, Surface};
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use crate::backend::egl::{display::EGLDisplayHandle, ffi};
-use crate::backend::egl::{wrap_egl_call, EGLError, Error as EglBackendError, SurfaceCreationError};
+use crate::backend::egl::{
+    wrap_egl_call, EGLError, Error as EglBackendError, SurfaceCreationError, SwapBuffersError,
+};
 
 use super::{Error, GbmDevice, GbmSurface};
 
@@ -109,9 +111,15 @@ unsafe impl<D: RawDevice + 'static> NativeSurface for GbmSurface<D> {
         self.needs_recreation()
     }
 
-    fn swap_buffers(&self) -> Result<(), Self::Error> {
+    fn swap_buffers(
+        &self,
+        display: &Arc<EGLDisplayHandle>,
+        surface: ffi::egl::types::EGLSurface,
+    ) -> Result<(), SwapBuffersError<Self::Error>> {
+        wrap_egl_call(|| unsafe { ffi::egl::SwapBuffers(***display, surface as *const _) })
+            .map_err(SwapBuffersError::EGLSwapBuffers)?;
         // this is safe since `eglSwapBuffers` will have been called exactly once
         // if this is used by our egl module, which is why this trait is unsafe.
-        unsafe { self.page_flip() }
+        unsafe { self.page_flip() }.map_err(SwapBuffersError::Underlying)
     }
 }
