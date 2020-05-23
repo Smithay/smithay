@@ -13,6 +13,35 @@ pub type NativeDisplayType = *const c_void;
 pub type NativePixmapType = *const c_void;
 pub type NativeWindowType = *const c_void;
 
+pub fn make_sure_egl_is_loaded() {
+    use std::{ffi::CString, ptr};
+
+    egl::LOAD.call_once(|| unsafe {
+        fn constrain<F>(f: F) -> F
+        where
+            F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
+        {
+            f
+        };
+
+        egl::load_with(|sym| {
+            let name = CString::new(sym).unwrap();
+            let symbol = egl::LIB.get::<*mut c_void>(name.as_bytes());
+            match symbol {
+                Ok(x) => *x as *const _,
+                Err(_) => ptr::null(),
+            }
+        });
+        let proc_address = constrain(|sym| super::get_proc_address(sym));
+        egl::load_with(&proc_address);
+        egl::BindWaylandDisplayWL::load_with(&proc_address);
+        egl::UnbindWaylandDisplayWL::load_with(&proc_address);
+        egl::QueryWaylandBufferWL::load_with(&proc_address);
+        #[cfg(feature = "backend_drm_eglstream")]
+        egl::StreamConsumerAcquireAttribNV::load_with(&proc_address);
+    });
+}
+
 #[allow(clippy::all, rust_2018_idioms)]
 pub mod egl {
     use super::*;
@@ -169,4 +198,66 @@ pub mod egl {
     // Accepted in the <attribute> parameter of eglQueryWaylandBufferWL:
     pub const EGL_TEXTURE_FORMAT: i32 = 0x3080;
     pub const WAYLAND_Y_INVERTED_WL: i32 = 0x31DB;
+
+    /// nVidia support needs some implemented but only proposed egl extensions...
+    /// Therefor gl_generator cannot generate them and we need some constants...
+    /// And a function...
+    #[cfg(feature = "backend_drm_eglstream")]
+    pub const CONSUMER_AUTO_ACQUIRE_EXT: i32 = 0x332B;
+    #[cfg(feature = "backend_drm_eglstream")]
+    pub const DRM_FLIP_EVENT_DATA_NV: i32 = 0x333E;
+    #[cfg(feature = "backend_drm_eglstream")]
+    pub const CONSUMER_ACQUIRE_TIMEOUT_USEC_KHR: i32 = 0x321E;
+    #[cfg(feature = "backend_drm_eglstream")]
+    pub const RESOURCE_BUSY_EXT: u32 = 0x3353;
+
+    #[cfg(feature = "backend_drm_eglstream")]
+    #[allow(non_snake_case, unused_variables, dead_code)]
+    #[inline]
+    pub unsafe fn StreamConsumerAcquireAttribNV(
+        dpy: types::EGLDisplay,
+        stream: types::EGLStreamKHR,
+        attrib_list: *const types::EGLAttrib,
+    ) -> types::EGLBoolean {
+        __gl_imports::mem::transmute::<
+            _,
+            extern "system" fn(
+                types::EGLDisplay,
+                types::EGLStreamKHR,
+                *const types::EGLAttrib,
+            ) -> types::EGLBoolean,
+        >(nvidia_storage::StreamConsumerAcquireAttribNV.f)(dpy, stream, attrib_list)
+    }
+
+    #[cfg(feature = "backend_drm_eglstream")]
+    mod nvidia_storage {
+        use super::{FnPtr, __gl_imports::raw};
+        pub static mut StreamConsumerAcquireAttribNV: FnPtr = FnPtr {
+            f: super::missing_fn_panic as *const raw::c_void,
+            is_loaded: false,
+        };
+    }
+
+    #[cfg(feature = "backend_drm_eglstream")]
+    #[allow(non_snake_case)]
+    pub mod StreamConsumerAcquireAttribNV {
+        use super::{FnPtr, __gl_imports::raw, metaloadfn, nvidia_storage};
+
+        #[inline]
+        #[allow(dead_code)]
+        pub fn is_loaded() -> bool {
+            unsafe { nvidia_storage::StreamConsumerAcquireAttribNV.is_loaded }
+        }
+
+        #[allow(dead_code)]
+        pub fn load_with<F>(mut loadfn: F)
+        where
+            F: FnMut(&str) -> *const raw::c_void,
+        {
+            unsafe {
+                nvidia_storage::StreamConsumerAcquireAttribNV =
+                    FnPtr::new(metaloadfn(&mut loadfn, "eglStreamConsumerAcquireAttribNV", &[]))
+            }
+        }
+    }
 }

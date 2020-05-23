@@ -8,9 +8,7 @@ use crate::backend::egl::{
 };
 use std::sync::Arc;
 
-use std::ptr;
-
-use nix::libc::{c_int, c_void};
+use nix::libc::c_int;
 
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
@@ -22,7 +20,7 @@ use crate::backend::egl::context::{GlAttributes, PixelFormatRequirements};
 use crate::backend::graphics::gl::ffi as gl_ffi;
 use crate::backend::graphics::PixelFormat;
 use std::cell::{Ref, RefCell, RefMut};
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
@@ -30,8 +28,9 @@ use std::ops::Deref;
 
 /// Wrapper around [`ffi::EGLDisplay`](ffi::egl::types::EGLDisplay) to ensure display is only destroyed
 /// once all resources bound to it have been dropped.
-pub(crate) struct EGLDisplayHandle {
-    handle: ffi::egl::types::EGLDisplay,
+pub struct EGLDisplayHandle {
+    /// ffi EGLDisplay ptr
+    pub handle: ffi::egl::types::EGLDisplay,
 }
 
 impl Deref for EGLDisplayHandle {
@@ -69,29 +68,9 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
     {
         let log = crate::slog_or_stdlog(logger.into()).new(o!("smithay_module" => "renderer_egl"));
         let ptr = native.ptr()?;
+        let egl_attribs = native.attributes();
 
-        ffi::egl::LOAD.call_once(|| unsafe {
-            fn constrain<F>(f: F) -> F
-            where
-                F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
-            {
-                f
-            };
-
-            ffi::egl::load_with(|sym| {
-                let name = CString::new(sym).unwrap();
-                let symbol = ffi::egl::LIB.get::<*mut c_void>(name.as_bytes());
-                match symbol {
-                    Ok(x) => *x as *const _,
-                    Err(_) => ptr::null(),
-                }
-            });
-            let proc_address = constrain(|sym| get_proc_address(sym));
-            ffi::egl::load_with(&proc_address);
-            ffi::egl::BindWaylandDisplayWL::load_with(&proc_address);
-            ffi::egl::UnbindWaylandDisplayWL::load_with(&proc_address);
-            ffi::egl::QueryWaylandBufferWL::load_with(&proc_address);
-        });
+        ffi::make_sure_egl_is_loaded();
 
         // the first step is to query the list of extensions without any display, if supported
         let dp_extensions = unsafe {
@@ -112,9 +91,17 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         debug!(log, "EGL No-Display Extensions: {:?}", dp_extensions);
 
         let display = unsafe {
-            B::get_display(ptr, |e: &str| dp_extensions.iter().any(|s| s == e), log.clone())
-                .map_err(Error::DisplayNotSupported)?
+            B::get_display(
+                ptr,
+                &egl_attribs,
+                |e: &str| dp_extensions.iter().any(|s| s == e),
+                log.clone(),
+            )
+            .map_err(Error::DisplayCreationError)?
         };
+        if display == ffi::egl::NO_DISPLAY {
+            return Err(Error::DisplayNotSupported);
+        }
 
         let egl_version = {
             let mut major: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
@@ -174,6 +161,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
     ) -> Result<(PixelFormat, ffi::egl::types::EGLConfig), Error> {
         let descriptor = {
             let mut out: Vec<c_int> = Vec::with_capacity(37);
+            let surface_type = self.native.borrow().surface_type();
 
             if self.egl_version >= (1, 2) {
                 trace!(self.logger, "Setting COLOR_BUFFER_TYPE to RGB_BUFFER");
@@ -181,12 +169,12 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                 out.push(ffi::egl::RGB_BUFFER as c_int);
             }
 
-            trace!(self.logger, "Setting SURFACE_TYPE to WINDOW");
+            trace!(self.logger, "Setting SURFACE_TYPE to {}", surface_type);
 
             out.push(ffi::egl::SURFACE_TYPE as c_int);
             // TODO: Some versions of Mesa report a BAD_ATTRIBUTE error
             // if we ask for PBUFFER_BIT as well as WINDOW_BIT
-            out.push((ffi::egl::WINDOW_BIT) as c_int);
+            out.push(surface_type);
 
             match attributes.version {
                 Some((3, _)) => {
@@ -265,11 +253,17 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             config_ids.set_len(num_configs as usize);
         }
 
-        // TODO: Deeper swap intervals might have some uses
+        if config_ids.is_empty() {
+            return Err(Error::NoAvailablePixelFormat);
+        }
+
         let desired_swap_interval = if attributes.vsync { 1 } else { 0 };
 
-        let config_ids = config_ids
-            .into_iter()
+        // try to select a config with the desired_swap_interval
+        // (but don't fail, as the margin might be very small on some cards and most configs are fine)
+        let config_id = config_ids
+            .iter()
+            .copied()
             .map(|config| unsafe {
                 let mut min_swap_interval = 0;
                 wrap_egl_call(|| {
@@ -305,14 +299,8 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             .map_err(Error::ConfigFailed)?
             .into_iter()
             .flatten()
-            .collect::<Vec<_>>();
-
-        if config_ids.is_empty() {
-            return Err(Error::NoAvailablePixelFormat);
-        }
-
-        // TODO: Improve config selection
-        let config_id = config_ids[0];
+            .next()
+            .unwrap_or_else(|| config_ids[0]);
 
         // analyzing each config
         macro_rules! attrib {
@@ -371,7 +359,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         double_buffer: Option<bool>,
         config: ffi::egl::types::EGLConfig,
         args: N::Arguments,
-    ) -> Result<EGLSurface<B::Surface>, SurfaceCreationError<N::Error>> {
+    ) -> Result<EGLSurface<B::Surface>, SurfaceCreationError<B::Error>> {
         trace!(self.logger, "Creating EGL window surface.");
         let surface = self
             .native
@@ -391,7 +379,6 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             debug!(self.logger, "EGL surface successfully created");
             x
         })
-        .map_err(SurfaceCreationError::EGLSurfaceCreationFailed)
     }
 
     /// Returns the runtime egl version of this display

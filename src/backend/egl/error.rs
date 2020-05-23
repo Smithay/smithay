@@ -15,9 +15,12 @@ pub enum Error {
     /// Backend does not match the context type
     #[error("The expected backend '{0:?}' does not match the runtime")]
     NonMatchingBackend(&'static str),
+    /// Display creation failed
+    #[error("Display creation failed with error: {0:}")]
+    DisplayCreationError(#[source] EGLError),
     /// Unable to obtain a valid EGL Display
-    #[error("Unable to obtain a valid EGL Display. Err: {0:}")]
-    DisplayNotSupported(#[source] EGLError),
+    #[error("Unable to obtain a valid EGL Display.")]
+    DisplayNotSupported,
     /// `eglInitialize` returned an error
     #[error("Failed to initialize EGL. Err: {0:}")]
     InitFailed(#[source] EGLError),
@@ -88,6 +91,10 @@ pub enum EGLError {
     /// A NativeWindowType argument does not refer to a valid native window.
     #[error("A NativeWindowType argument does not refer to a valid native window.")]
     BadNativeWindow,
+    #[cfg(feature = "backend_drm_eglstream")]
+    /// The EGL operation failed due to temporary unavailability of a requested resource, but the arguments were otherwise valid, and a subsequent attempt may succeed.
+    #[error("The EGL operation failed due to temporary unavailability of a requested resource, but the arguments were otherwise valid, and a subsequent attempt may succeed.")]
+    ResourceBusy,
     /// A power management event has occurred. The application must destroy all contexts and reinitialise OpenGL ES state and objects to continue rendering.
     #[error("A power management event has occurred. The application must destroy all contexts and reinitialise OpenGL ES state and objects to continue rendering.")]
     ContextLost,
@@ -111,6 +118,8 @@ impl From<u32> for EGLError {
             ffi::egl::BAD_PARAMETER => EGLError::BadParameter,
             ffi::egl::BAD_NATIVE_PIXMAP => EGLError::BadNativePixmap,
             ffi::egl::BAD_NATIVE_WINDOW => EGLError::BadNativeWindow,
+            #[cfg(feature = "backend_drm_eglstream")]
+            ffi::egl::RESOURCE_BUSY_EXT => EGLError::ResourceBusy,
             ffi::egl::CONTEXT_LOST => EGLError::ContextLost,
             x => EGLError::Unknown(x),
         }

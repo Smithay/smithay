@@ -23,9 +23,9 @@ pub struct State {
     pub connectors: HashSet<connector::Handle>,
 }
 
-pub(super) struct LegacyDrmSurfaceInternal<A: AsRawFd + 'static> {
+pub(in crate::backend::drm) struct LegacyDrmSurfaceInternal<A: AsRawFd + 'static> {
     pub(super) dev: Rc<Dev<A>>,
-    pub(super) crtc: crtc::Handle,
+    pub(in crate::backend::drm) crtc: crtc::Handle,
     pub(super) state: RwLock<State>,
     pub(super) pending: RwLock<State>,
     pub(super) logger: ::slog::Logger,
@@ -454,7 +454,9 @@ impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
 }
 
 /// Open raw crtc utilizing legacy mode-setting
-pub struct LegacyDrmSurface<A: AsRawFd + 'static>(pub(super) Rc<LegacyDrmSurfaceInternal<A>>);
+pub struct LegacyDrmSurface<A: AsRawFd + 'static>(
+    pub(in crate::backend::drm) Rc<LegacyDrmSurfaceInternal<A>>,
+);
 
 impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurface<A> {
     fn as_raw_fd(&self) -> RawFd {

@@ -18,9 +18,10 @@ use smithay::{
     backend::{
         drm::{
             atomic::AtomicDrmDevice,
-            common::fallback::FallbackDevice,
+            common::fallback::{FallbackDevice, FallbackSurface},
             device_bind,
             egl::{EglDevice, EglSurface},
+            eglstream::{egl::EglStreamDeviceBackend, EglStreamDevice, EglStreamSurface},
             gbm::{egl::Gbm as EglGbmBackend, GbmDevice, GbmSurface},
             legacy::LegacyDrmDevice,
             DevPath, Device, DeviceHandler, Surface,
@@ -76,12 +77,20 @@ impl AsRawFd for SessionFd {
     }
 }
 
-type RenderDevice = EglDevice<
-    EglGbmBackend<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
-    GbmDevice<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
+type RenderDevice = FallbackDevice<
+    EglDevice<
+        EglGbmBackend<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
+        GbmDevice<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
+    >,
+    EglDevice<
+        EglStreamDeviceBackend<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
+        EglStreamDevice<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
+    >,
 >;
-type RenderSurface =
-    EglSurface<GbmSurface<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>>;
+type RenderSurface = FallbackSurface<
+    EglSurface<GbmSurface<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>>,
+    EglSurface<EglStreamSurface<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>>,
+>;
 
 pub fn run_udev(
     display: Rc<RefCell<Display>>,
@@ -301,7 +310,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 .filter_map(|e| *e)
                 .flat_map(|encoder_handle| device.get_encoder_info(encoder_handle))
                 .collect::<Vec<EncoderInfo>>();
-            for encoder_info in encoder_infos {
+            'outer: for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
                     if let Entry::Vacant(entry) = backends.entry(crtc) {
                         let renderer = GliumDrawer::init(
@@ -313,7 +322,7 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                         );
 
                         entry.insert(Rc::new(renderer));
-                        break;
+                        break 'outer;
                     }
                 }
             }
@@ -349,14 +358,14 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 .filter_map(|e| *e)
                 .flat_map(|encoder_handle| device.get_encoder_info(encoder_handle))
                 .collect::<Vec<EncoderInfo>>();
-            for encoder_info in encoder_infos {
+            'outer: for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
                     if !backends.contains_key(&crtc) {
                         let renderer =
                             GliumDrawer::init(device.create_surface(crtc).unwrap(), logger.clone());
 
                         backends.insert(crtc, Rc::new(renderer));
-                        break;
+                        break 'outer;
                     }
                 }
             }
@@ -376,23 +385,29 @@ impl<S: SessionNotifier, Data: 'static> UdevHandlerImpl<S, Data> {
                 OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK,
             )
             .ok()
-            .and_then(
-                |fd| match FallbackDevice::new(SessionFd(fd), true, self.logger.clone()) {
+            .and_then(|fd| {
+                match FallbackDevice::<AtomicDrmDevice<_>, LegacyDrmDevice<_>>::new(
+                    SessionFd(fd),
+                    true,
+                    self.logger.clone(),
+                ) {
                     Ok(drm) => Some(drm),
                     Err(err) => {
                         warn!(self.logger, "Skipping drm device, because of error: {}", err);
                         None
                     }
-                },
-            )
-            .and_then(|drm| match GbmDevice::new(drm, self.logger.clone()) {
-                Ok(gbm) => Some(gbm),
-                Err(err) => {
-                    warn!(self.logger, "Skipping gbm device, because of error: {}", err);
-                    None
                 }
             })
-            .and_then(|gbm| match EglDevice::new(gbm, self.logger.clone()) {
+            .and_then(|drm| {
+                match FallbackDevice::<GbmDevice<_>, EglStreamDevice<_>>::new(drm, self.logger.clone()) {
+                    Ok(dev) => Some(dev),
+                    Err(err) => {
+                        warn!(self.logger, "Skipping device, because of error: {}", err);
+                        None
+                    }
+                }
+            })
+            .and_then(|dev| match FallbackDevice::new_egl(dev, self.logger.clone()) {
                 Ok(egl) => Some(egl),
                 Err(err) => {
                     warn!(self.logger, "Skipping egl device, because of error: {}", err);
@@ -657,6 +672,7 @@ impl DrmRenderer {
                 };
 
                 if reschedule {
+                    debug!(self.logger, "Rescheduling");
                     match (timer, evt_handle) {
                         (Some(handle), _) => {
                             let _ = handle.add_timeout(
