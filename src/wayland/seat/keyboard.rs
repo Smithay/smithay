@@ -335,10 +335,12 @@ impl KeyboardHandle {
             KeyState::Released => WlKeyState::Released,
         };
         guard.with_focused_kbds(|kbd, _| {
+            // key event must be sent before modifers event for libxkbcommon
+            // to process them correctly
+            kbd.key(serial, time, keycode, wl_state);
             if let Some((dep, la, lo, gr)) = modifiers {
                 kbd.modifiers(serial, dep, la, lo, gr);
             }
-            kbd.key(serial, time, keycode, wl_state);
         });
         if guard.focus.is_some() {
             trace!(self.arc.logger, "Input forwarded to client");
