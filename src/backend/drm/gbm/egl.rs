@@ -4,7 +4,7 @@
 //! [`GbmDevice`](GbmDevice) and [`GbmSurface`](GbmSurface).
 //!
 
-use crate::backend::drm::{Device, RawDevice, Surface};
+use crate::backend::drm::{Device, RawDevice, RawSurface, Surface};
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use crate::backend::egl::{display::EGLDisplayHandle, ffi};
 use crate::backend::egl::{
@@ -27,7 +27,7 @@ pub struct Gbm<D: RawDevice + 'static> {
 }
 
 impl<D: RawDevice + 'static> Backend for Gbm<D> {
-    type Surface = GbmSurface<D>;
+    type Surface = GbmSurface<<D as Device>::Surface>;
     type Error = Error<<<D as Device>::Surface as Surface>::Error>;
 
     // this creates an EGLDisplay for the gbm platform.
@@ -75,19 +75,19 @@ unsafe impl<D: RawDevice + ControlDevice + 'static> NativeDisplay<Gbm<D>> for Gb
     }
 
     fn ptr(&self) -> Result<ffi::NativeDisplayType, EglBackendError> {
-        Ok(self.dev.borrow().as_raw() as *const _)
+        Ok(self.dev.lock().unwrap().as_raw() as *const _)
     }
 
     fn create_surface(
         &mut self,
         args: Self::Arguments,
-    ) -> Result<GbmSurface<D>, Error<<<D as Device>::Surface as Surface>::Error>> {
+    ) -> Result<GbmSurface<<D as Device>::Surface>, Error<<<D as Device>::Surface as Surface>::Error>> {
         Device::create_surface(self, args.0, args.1, &args.2)
     }
 }
 
-unsafe impl<D: RawDevice + 'static> NativeSurface for GbmSurface<D> {
-    type Error = Error<<<D as Device>::Surface as Surface>::Error>;
+unsafe impl<S: RawSurface + 'static> NativeSurface for GbmSurface<S> {
+    type Error = Error<<S as Surface>::Error>;
 
     unsafe fn create(
         &self,
@@ -101,7 +101,7 @@ unsafe impl<D: RawDevice + 'static> NativeSurface for GbmSurface<D> {
             ffi::egl::CreateWindowSurface(
                 display.handle,
                 config_id,
-                self.0.surface.borrow().as_raw() as *const _,
+                self.0.surface.lock().unwrap().as_raw() as *const _,
                 surface_attributes.as_ptr(),
             )
         })

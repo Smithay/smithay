@@ -4,22 +4,26 @@ use super::{ffi, native, EGLError, SurfaceCreationError, SwapBuffersError};
 use crate::backend::egl::display::EGLDisplayHandle;
 use crate::backend::graphics::PixelFormat;
 use nix::libc::c_int;
-use std::sync::Arc;
-use std::{
-    cell::Cell,
-    ops::{Deref, DerefMut},
+use std::ops::{Deref, DerefMut};
+use std::sync::{
+    atomic::{AtomicPtr, Ordering},
+    Arc,
 };
 
 /// EGL surface of a given EGL context for rendering
 pub struct EGLSurface<N: native::NativeSurface> {
     pub(crate) display: Arc<EGLDisplayHandle>,
     native: N,
-    pub(crate) surface: Cell<ffi::egl::types::EGLSurface>,
+    pub(crate) surface: AtomicPtr<nix::libc::c_void>,
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: PixelFormat,
     surface_attributes: Vec<c_int>,
     logger: ::slog::Logger,
 }
+// safe because EGLConfig can be moved between threads
+// and the other types are thread-safe
+unsafe impl<N: native::NativeSurface + Send> Send for EGLSurface<N> {}
+unsafe impl<N: native::NativeSurface + Send + Sync> Sync for EGLSurface<N> {}
 
 impl<N: native::NativeSurface> Deref for EGLSurface<N> {
     type Target = N;
@@ -80,7 +84,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
         Ok(EGLSurface {
             display,
             native,
-            surface: Cell::new(surface),
+            surface: AtomicPtr::new(surface as *mut _),
             config_id: config,
             pixel_format,
             surface_attributes,
@@ -90,7 +94,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
 
     /// Swaps buffers at the end of a frame.
     pub fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError<N::Error>> {
-        let surface = self.surface.get();
+        let surface = self.surface.load(Ordering::SeqCst);
 
         let result = if !surface.is_null() {
             self.native.swap_buffers(&self.display, surface)
@@ -106,21 +110,25 @@ impl<N: native::NativeSurface> EGLSurface<N> {
         };
 
         if self.native.needs_recreation() || surface.is_null() || is_bad_surface {
-            if !surface.is_null() {
+            let previous = self.surface.compare_and_swap(
+                surface,
+                unsafe {
+                    self.native
+                        .create(&self.display, self.config_id, &self.surface_attributes)
+                        .map_err(|err| match err {
+                            SurfaceCreationError::EGLSurfaceCreationFailed(err) => {
+                                SwapBuffersError::EGLCreateWindowSurface(err)
+                            }
+                            SurfaceCreationError::NativeSurfaceCreationFailed(err) => {
+                                SwapBuffersError::Underlying(err)
+                            }
+                        })? as *mut _
+                },
+                Ordering::SeqCst,
+            );
+            if previous == surface && !surface.is_null() {
                 let _ = unsafe { ffi::egl::DestroySurface(**self.display, surface as *const _) };
             }
-            self.surface.set(unsafe {
-                self.native
-                    .create(&self.display, self.config_id, &self.surface_attributes)
-                    .map_err(|err| match err {
-                        SurfaceCreationError::EGLSurfaceCreationFailed(err) => {
-                            SwapBuffersError::EGLCreateWindowSurface(err)
-                        }
-                        SurfaceCreationError::NativeSurfaceCreationFailed(err) => {
-                            SwapBuffersError::Underlying(err)
-                        }
-                    })?
-            });
 
             // if a recreation is pending anyway, ignore page-flip errors.
             // lets see if we still fail after the next commit.
@@ -135,9 +143,10 @@ impl<N: native::NativeSurface> EGLSurface<N> {
 
     /// Returns true if the OpenGL surface is the current one in the thread.
     pub fn is_current(&self) -> bool {
+        let surface = self.surface.load(Ordering::SeqCst);
         unsafe {
-            ffi::egl::GetCurrentSurface(ffi::egl::DRAW as _) == self.surface.get() as *const _
-                && ffi::egl::GetCurrentSurface(ffi::egl::READ as _) == self.surface.get() as *const _
+            ffi::egl::GetCurrentSurface(ffi::egl::DRAW as _) == surface as *const _
+                && ffi::egl::GetCurrentSurface(ffi::egl::READ as _) == surface as *const _
         }
     }
 
@@ -155,7 +164,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
 impl<N: native::NativeSurface> Drop for EGLSurface<N> {
     fn drop(&mut self) {
         unsafe {
-            ffi::egl::DestroySurface(**self.display, self.surface.get() as *const _);
+            ffi::egl::DestroySurface(**self.display, *self.surface.get_mut() as *const _);
         }
     }
 }

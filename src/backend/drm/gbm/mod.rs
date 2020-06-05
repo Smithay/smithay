@@ -16,15 +16,14 @@ use crate::backend::graphics::SwapBuffersError;
 
 use drm::control::{connector, crtc, encoder, framebuffer, plane, Device as ControlDevice, Mode};
 use drm::SystemError as DrmError;
-use gbm::{self, BufferObjectFlags, Format as GbmFormat};
 use nix::libc::dev_t;
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
-use std::sync::Once;
+use std::sync::{Arc, Mutex, Once, Weak as WeakArc};
 
 /// Errors thrown by the [`GbmDevice`](::backend::drm::gbm::GbmDevice)
 /// and [`GbmSurface`](::backend::drm::gbm::GbmSurface).
@@ -74,10 +73,12 @@ pub mod session;
 
 static LOAD: Once = Once::new();
 
+type SurfaceInternalRef<D> = WeakArc<GbmSurfaceInternal<<D as Device>::Surface>>;
 /// Representation of an open gbm device to create rendering surfaces
 pub struct GbmDevice<D: RawDevice + ControlDevice + 'static> {
-    pub(self) dev: Rc<RefCell<gbm::Device<D>>>,
-    backends: Rc<RefCell<HashMap<crtc::Handle, Weak<GbmSurfaceInternal<D>>>>>,
+    pub(self) dev: Arc<Mutex<gbm::Device<gbm::FdWrapper>>>,
+    pub(self) raw: D,
+    backends: Rc<RefCell<HashMap<crtc::Handle, SurfaceInternalRef<D>>>>,
     #[cfg(feature = "backend_session")]
     links: Vec<crate::signaling::SignalToken>,
     logger: ::slog::Logger,
@@ -112,7 +113,10 @@ impl<D: RawDevice + ControlDevice + 'static> GbmDevice<D> {
         debug!(log, "Creating gbm device");
         Ok(GbmDevice {
             // Open the gbm device from the drm device
-            dev: Rc::new(RefCell::new(gbm::Device::new(dev).map_err(Error::InitFailed)?)),
+            dev: Arc::new(Mutex::new(unsafe {
+                gbm::Device::new_from_fd(dev.as_raw_fd()).map_err(Error::InitFailed)?
+            })),
+            raw: dev,
             backends: Rc::new(RefCell::new(HashMap::new())),
             #[cfg(feature = "backend_session")]
             links: Vec::new(),
@@ -123,7 +127,7 @@ impl<D: RawDevice + ControlDevice + 'static> GbmDevice<D> {
 
 struct InternalDeviceHandler<D: RawDevice + ControlDevice + 'static> {
     handler: Box<dyn DeviceHandler<Device = GbmDevice<D>> + 'static>,
-    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<GbmSurfaceInternal<D>>>>>,
+    backends: Weak<RefCell<HashMap<crtc::Handle, SurfaceInternalRef<D>>>>,
     logger: ::slog::Logger,
 }
 
@@ -153,14 +157,14 @@ impl<D: RawDevice + ControlDevice + 'static> DeviceHandler for InternalDeviceHan
 }
 
 impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
-    type Surface = GbmSurface<D>;
+    type Surface = GbmSurface<<D as Device>::Surface>;
 
     fn device_id(&self) -> dev_t {
-        self.dev.borrow().device_id()
+        self.raw.device_id()
     }
 
     fn set_handler(&mut self, handler: impl DeviceHandler<Device = Self> + 'static) {
-        self.dev.borrow_mut().set_handler(InternalDeviceHandler {
+        self.raw.set_handler(InternalDeviceHandler {
             handler: Box::new(handler),
             backends: Rc::downgrade(&self.backends),
             logger: self.logger.clone(),
@@ -168,7 +172,7 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
     }
 
     fn clear_handler(&mut self) {
-        self.dev.borrow_mut().clear_handler();
+        self.raw.clear_handler();
     }
 
     fn create_surface(
@@ -176,85 +180,54 @@ impl<D: RawDevice + ControlDevice + 'static> Device for GbmDevice<D> {
         crtc: crtc::Handle,
         mode: Mode,
         connectors: &[connector::Handle],
-    ) -> Result<GbmSurface<D>, Error<<<D as Device>::Surface as Surface>::Error>> {
+    ) -> Result<GbmSurface<<D as Device>::Surface>, Error<<<D as Device>::Surface as Surface>::Error>> {
         info!(self.logger, "Initializing GbmSurface");
 
-        let drm_surface = Device::create_surface(&mut **self.dev.borrow_mut(), crtc, mode, connectors)
+        let drm_surface = self
+            .raw
+            .create_surface(crtc, mode, connectors)
             .map_err(Error::Underlying)?;
 
-        // initialize the surface
-        let (w, h) = drm_surface.pending_mode().size();
-        let surface = self
-            .dev
-            .borrow()
-            .create_surface(
-                w as u32,
-                h as u32,
-                GbmFormat::XRGB8888,
-                BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING,
-            )
-            .map_err(Error::SurfaceCreationFailed)?;
-
-        // initialize a buffer for the cursor image
-        let cursor = Cell::new((
-            self.dev
-                .borrow()
-                .create_buffer_object(
-                    1,
-                    1,
-                    GbmFormat::ARGB8888,
-                    BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
-                )
-                .map_err(Error::BufferCreationFailed)?,
-            (0, 0),
-        ));
-
-        let backend = Rc::new(GbmSurfaceInternal {
-            dev: self.dev.clone(),
-            surface: RefCell::new(surface),
-            crtc: drm_surface,
-            cursor,
-            current_frame_buffer: Cell::new(None),
-            front_buffer: Cell::new(None),
-            next_buffer: Cell::new(None),
-            recreated: Cell::new(true),
-            logger: self.logger.new(o!("crtc" => format!("{:?}", crtc))),
-        });
-        self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));
+        let backend = Arc::new(GbmSurfaceInternal::new(
+            self.dev.clone(),
+            drm_surface,
+            self.logger.new(o!("crtc" => format!("{:?}", crtc))),
+        )?);
+        self.backends.borrow_mut().insert(crtc, Arc::downgrade(&backend));
         Ok(GbmSurface(backend))
     }
 
     fn process_events(&mut self) {
-        self.dev.borrow_mut().process_events()
+        self.raw.process_events()
     }
 
     fn resource_handles(&self) -> Result<ResourceHandles, Error<<<D as Device>::Surface as Surface>::Error>> {
-        Device::resource_handles(&**self.dev.borrow()).map_err(Error::Underlying)
+        Device::resource_handles(&self.raw).map_err(Error::Underlying)
     }
 
     fn get_connector_info(&self, conn: connector::Handle) -> std::result::Result<connector::Info, DrmError> {
-        self.dev.borrow().get_connector_info(conn)
+        self.raw.get_connector_info(conn)
     }
     fn get_crtc_info(&self, crtc: crtc::Handle) -> std::result::Result<crtc::Info, DrmError> {
-        self.dev.borrow().get_crtc_info(crtc)
+        self.raw.get_crtc_info(crtc)
     }
     fn get_encoder_info(&self, enc: encoder::Handle) -> std::result::Result<encoder::Info, DrmError> {
-        self.dev.borrow().get_encoder_info(enc)
+        self.raw.get_encoder_info(enc)
     }
     fn get_framebuffer_info(
         &self,
         fb: framebuffer::Handle,
     ) -> std::result::Result<framebuffer::Info, DrmError> {
-        self.dev.borrow().get_framebuffer_info(fb)
+        self.raw.get_framebuffer_info(fb)
     }
     fn get_plane_info(&self, plane: plane::Handle) -> std::result::Result<plane::Info, DrmError> {
-        self.dev.borrow().get_plane_info(plane)
+        self.raw.get_plane_info(plane)
     }
 }
 
 impl<D: RawDevice + ControlDevice + 'static> AsRawFd for GbmDevice<D> {
     fn as_raw_fd(&self) -> RawFd {
-        self.dev.borrow().as_raw_fd()
+        self.raw.as_raw_fd()
     }
 }
 

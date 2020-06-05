@@ -1,6 +1,7 @@
 use drm::control::{connector, crtc, Mode};
 use nix::libc::c_void;
 use std::convert::TryInto;
+use std::sync::Arc;
 
 use super::Error;
 use crate::backend::drm::Surface;
@@ -12,10 +13,8 @@ use crate::backend::graphics::gl::GLGraphicsBackend;
 use crate::backend::graphics::PixelFormat;
 use crate::backend::graphics::{CursorBackend, SwapBuffersError};
 
-use std::rc::Rc;
-
 /// Egl surface for rendering
-pub struct EglSurface<N: native::NativeSurface + Surface>(pub(super) Rc<EglSurfaceInternal<N>>);
+pub struct EglSurface<N: native::NativeSurface + Surface>(pub(super) Arc<EglSurfaceInternal<N>>);
 
 pub(super) struct EglSurfaceInternal<N>
 where
@@ -134,5 +133,20 @@ where
 
     fn get_pixel_format(&self) -> PixelFormat {
         self.0.surface.get_pixel_format()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::EglSurface;
+    use crate::backend::drm::gbm::GbmSurface;
+    use crate::backend::drm::legacy::LegacyDrmSurface;
+    use std::fs::File;
+
+    fn is_send<S: Send>() {}
+
+    #[test]
+    fn surface_is_send() {
+        is_send::<EglSurface<GbmSurface<LegacyDrmSurface<File>>>>();
     }
 }

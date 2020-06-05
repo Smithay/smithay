@@ -4,12 +4,11 @@
 //!
 
 use drm::control::crtc;
-use gbm::BufferObject;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
-use super::{GbmDevice, GbmSurfaceInternal};
+use super::{GbmDevice, SurfaceInternalRef};
 use crate::backend::drm::{Device, RawDevice};
 use crate::backend::graphics::CursorBackend;
 use crate::{
@@ -21,8 +20,8 @@ use crate::{
 /// linked to the [`GbmDevice`](GbmDevice) it was
 /// created from.
 pub(crate) struct GbmDeviceObserver<D: RawDevice + ::drm::control::Device + 'static> {
-    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<GbmSurfaceInternal<D>>>>>,
-    logger: ::slog::Logger,
+    backends: Weak<RefCell<HashMap<crtc::Handle, SurfaceInternalRef<D>>>>,
+    _logger: ::slog::Logger,
 }
 
 impl<D> Linkable<SessionSignal> for GbmDevice<D>
@@ -32,10 +31,10 @@ where
 {
     fn link(&mut self, signaler: Signaler<SessionSignal>) {
         let lower_signal = Signaler::new();
-        self.dev.borrow_mut().link(lower_signal.clone());
-        let mut observer = GbmDeviceObserver {
+        self.raw.link(lower_signal.clone());
+        let mut observer = GbmDeviceObserver::<D> {
             backends: Rc::downgrade(&self.backends),
-            logger: self.logger.clone(),
+            _logger: self.logger.clone(),
         };
 
         let token = signaler.register(move |&signal| match signal {
@@ -66,15 +65,8 @@ where
 
                     // reset cursor
                     {
-                        use ::drm::control::Device;
-
-                        let &(ref cursor, ref hotspot): &(BufferObject<()>, (u32, u32)) =
-                            unsafe { &*backend.cursor.as_ptr() };
-                        if backend.crtc.set_cursor_representation(cursor, *hotspot).is_err() {
-                            if let Err(err) = backend.dev.borrow().set_cursor(*crtc, Some(cursor)) {
-                                error!(self.logger, "Failed to reset cursor. Error: {}", err);
-                            }
-                        }
+                        let cursor = backend.cursor.lock().unwrap();
+                        let _ = backend.crtc.set_cursor_representation(&cursor.0, cursor.1);
                     }
                 } else {
                     crtcs.push(*crtc);

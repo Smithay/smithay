@@ -6,11 +6,9 @@ use drm::control::{
 };
 use drm::Device as BasicDevice;
 
-use std::cell::Cell;
 use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::rc::Rc;
-use std::sync::{atomic::Ordering, RwLock};
+use std::sync::{atomic::Ordering, Arc, Mutex, RwLock};
 
 use failure::ResultExt as FailureResultExt;
 
@@ -20,9 +18,9 @@ use crate::backend::graphics::CursorBackend;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CursorState {
-    pub position: Cell<Option<(u32, u32)>>,
-    pub hotspot: Cell<(u32, u32)>,
-    pub framebuffer: Cell<Option<framebuffer::Handle>>,
+    pub position: Option<(u32, u32)>,
+    pub hotspot: (u32, u32),
+    pub framebuffer: Option<framebuffer::Handle>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -39,14 +37,14 @@ pub struct Planes {
 }
 
 pub(in crate::backend::drm) struct AtomicDrmSurfaceInternal<A: AsRawFd + 'static> {
-    pub(super) dev: Rc<Dev<A>>,
+    pub(super) dev: Arc<Dev<A>>,
     pub(in crate::backend::drm) crtc: crtc::Handle,
-    pub(super) cursor: CursorState,
+    pub(super) cursor: Mutex<CursorState>,
     pub(in crate::backend::drm) planes: Planes,
     pub(super) state: RwLock<State>,
     pub(super) pending: RwLock<State>,
     pub(super) logger: ::slog::Logger,
-    pub(super) test_buffer: Cell<Option<(DumbBuffer, framebuffer::Handle)>>,
+    pub(super) test_buffer: Mutex<Option<(DumbBuffer, framebuffer::Handle)>>,
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for AtomicDrmSurfaceInternal<A> {
@@ -60,7 +58,7 @@ impl<A: AsRawFd + 'static> ControlDevice for AtomicDrmSurfaceInternal<A> {}
 
 impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
     pub(crate) fn new(
-        dev: Rc<Dev<A>>,
+        dev: Arc<Dev<A>>,
         crtc: crtc::Handle,
         mode: Mode,
         connectors: &[connector::Handle],
@@ -167,16 +165,16 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         let surface = AtomicDrmSurfaceInternal {
             dev,
             crtc,
-            cursor: CursorState {
-                position: Cell::new(None),
-                framebuffer: Cell::new(None),
-                hotspot: Cell::new((0, 0)),
-            },
+            cursor: Mutex::new(CursorState {
+                position: None,
+                framebuffer: None,
+                hotspot: (0, 0),
+            }),
             planes: Planes { primary, cursor },
             state: RwLock::new(state),
             pending: RwLock::new(pending),
             logger,
-            test_buffer: Cell::new(None),
+            test_buffer: Mutex::new(None),
         };
 
         Ok(surface)
@@ -202,10 +200,13 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                 dev: self.dev_path(),
                 source,
             })?;
-        if let Some((old_db, old_fb)) = self.test_buffer.replace(Some((db, fb))) {
+
+        let mut test_buffer = self.test_buffer.lock().unwrap();
+        if let Some((old_db, old_fb)) = test_buffer.take() {
             let _ = self.destroy_framebuffer(old_fb);
             let _ = self.destroy_dumb_buffer(old_db);
         };
+        *test_buffer = Some((db, fb));
 
         Ok(fb)
     }
@@ -213,7 +214,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
 
 impl<A: AsRawFd + 'static> Drop for AtomicDrmSurfaceInternal<A> {
     fn drop(&mut self) {
-        if let Some((db, fb)) = self.test_buffer.take() {
+        if let Some((db, fb)) = self.test_buffer.lock().unwrap().take() {
             let _ = self.destroy_framebuffer(fb);
             let _ = self.destroy_dumb_buffer(db);
         }
@@ -613,7 +614,7 @@ impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurfaceInternal<A> {
         }
 
         trace!(self.logger, "New cursor position ({},{}) pending", x, y);
-        self.cursor.position.set(Some((x, y)));
+        self.cursor.lock().unwrap().position = Some((x, y));
         Ok(())
     }
 
@@ -628,21 +629,20 @@ impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurfaceInternal<A> {
 
         trace!(self.logger, "Setting the new imported cursor");
 
-        if let Some(fb) = self.cursor.framebuffer.get().take() {
+        let mut cursor = self.cursor.lock().unwrap();
+
+        if let Some(fb) = cursor.framebuffer.take() {
             let _ = self.destroy_framebuffer(fb);
         }
 
-        self.cursor.framebuffer.set(Some(
-            self.add_planar_framebuffer(buffer, &[0; 4], 0)
-                .compat()
-                .map_err(|source| Error::Access {
-                    errmsg: "Failed to import cursor",
-                    dev: self.dev_path(),
-                    source,
-                })?,
-        ));
-
-        self.cursor.hotspot.set(hotspot);
+        cursor.framebuffer = Some(self.add_planar_framebuffer(buffer, &[0; 4], 0).compat().map_err(
+            |source| Error::Access {
+                errmsg: "Failed to import cursor",
+                dev: self.dev_path(),
+                source,
+            },
+        )?);
+        cursor.hotspot = hotspot;
 
         Ok(())
     }
@@ -828,19 +828,17 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
             );
         }
 
-        let cursor_pos = self.cursor.position.get();
-        let cursor_fb = self.cursor.framebuffer.get();
-
         // if there is a cursor, we add the cursor plane to the request as well.
         // this synchronizes cursor movement with rendering, which reduces flickering.
-        if let (Some(pos), Some(fb)) = (cursor_pos, cursor_fb) {
+        let mut cursor = self.cursor.lock().unwrap();
+        if let (Some(pos), Some(fb)) = (cursor.position, cursor.framebuffer) {
             match self.get_framebuffer(fb).compat().map_err(|source| Error::Access {
                 errmsg: "Error getting cursor fb",
                 dev: self.dev_path(),
                 source,
             }) {
                 Ok(cursor_info) => {
-                    let hotspot = self.cursor.hotspot.get();
+                    let hotspot = cursor.hotspot;
 
                     // again like the primary plane we need to set crtc and framebuffer.
                     req.add_property(
@@ -898,7 +896,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                 }
                 Err(err) => {
                     warn!(self.logger, "Cursor FB invalid: {}. Skipping.", err);
-                    self.cursor.framebuffer.set(None);
+                    cursor.framebuffer = None;
                 }
             }
         }
@@ -997,7 +995,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
 
 /// Open raw crtc utilizing atomic mode-setting
 pub struct AtomicDrmSurface<A: AsRawFd + 'static>(
-    pub(in crate::backend::drm) Rc<AtomicDrmSurfaceInternal<A>>,
+    pub(in crate::backend::drm) Arc<AtomicDrmSurfaceInternal<A>>,
 );
 
 impl<A: AsRawFd + 'static> AsRawFd for AtomicDrmSurface<A> {
@@ -1078,5 +1076,18 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurface<A> {
 
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
         RawSurface::page_flip(&*self.0, framebuffer)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::AtomicDrmSurface;
+    use std::fs::File;
+
+    fn is_send<S: Send>() {}
+
+    #[test]
+    fn surface_is_send() {
+        is_send::<AtomicDrmSurface<File>>();
     }
 }

@@ -21,10 +21,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Weak,
 };
 
 use drm::control::{atomic::AtomicModeReq, AtomicCommitFlags, Device as ControlDevice, Event};
@@ -49,7 +49,7 @@ pub mod session;
 
 /// Open raw drm device utilizing atomic mode-setting
 pub struct AtomicDrmDevice<A: AsRawFd + 'static> {
-    dev: Rc<Dev<A>>,
+    dev: Arc<Dev<A>>,
     dev_id: dev_t,
     active: Arc<AtomicBool>,
     backends: Rc<RefCell<HashMap<crtc::Handle, Weak<AtomicDrmSurfaceInternal<A>>>>>,
@@ -360,7 +360,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         }
 
         Ok(AtomicDrmDevice {
-            dev: Rc::new(dev),
+            dev: Arc::new(dev),
             dev_id,
             active,
             backends: Rc::new(RefCell::new(HashMap::new())),
@@ -414,7 +414,7 @@ impl<A: AsRawFd + 'static> Device for AtomicDrmDevice<A> {
             return Err(Error::SurfaceWithoutConnectors(crtc));
         }
 
-        let backend = Rc::new(AtomicDrmSurfaceInternal::new(
+        let backend = Arc::new(AtomicDrmSurfaceInternal::new(
             self.dev.clone(),
             crtc,
             mode,
@@ -422,7 +422,7 @@ impl<A: AsRawFd + 'static> Device for AtomicDrmDevice<A> {
             self.logger.new(o!("crtc" => format!("{:?}", crtc))),
         )?);
 
-        self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));
+        self.backends.borrow_mut().insert(crtc, Arc::downgrade(&backend));
         Ok(AtomicDrmSurface(backend))
     }
 

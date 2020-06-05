@@ -32,6 +32,9 @@ pub struct EGLDisplayHandle {
     /// ffi EGLDisplay ptr
     pub handle: ffi::egl::types::EGLDisplay,
 }
+// EGLDisplay has an internal Mutex
+unsafe impl Send for EGLDisplayHandle {}
+unsafe impl Sync for EGLDisplayHandle {}
 
 impl Deref for EGLDisplayHandle {
     type Target = ffi::egl::types::EGLDisplay;
