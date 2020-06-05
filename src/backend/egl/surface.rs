@@ -122,6 +122,8 @@ impl<N: native::NativeSurface> EGLSurface<N> {
                     })?
             });
 
+            // if a recreation is pending anyway, ignore page-flip errors.
+            // lets see if we still fail after the next commit.
             result.map_err(|err| {
                 debug!(self.logger, "Hiding page-flip error *before* recreation: {}", err);
                 SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface)
