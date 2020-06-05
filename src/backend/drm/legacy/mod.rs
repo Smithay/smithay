@@ -2,10 +2,19 @@
 //! [`RawDevice`](RawDevice) and [`RawSurface`](RawSurface)
 //! implementations using the legacy mode-setting infrastructure.
 //!
+//! Legacy mode-setting refers to the now outdated, but still supported direct manager api
+//! of the linux kernel. Adaptations of this api can be found in BSD kernels.
+//!
+//! The newer and objectively better api is known as atomic-modesetting (or nuclear-page-flip),
+//! however this api is not supported by every driver, so this is provided for backwards compatibility.
+//! Currenly there are no features in smithay, that are exclusive to the atomic api.
+//!
 //! Usually this implementation will be wrapped into a [`GbmDevice`](::backend::drm::gbm::GbmDevice).
 //! Take a look at `anvil`s source code for an example of this.
 //!
 //! For an example how to use this standalone, take a look at the `raw_legacy_drm` example.
+//!
+//! For detailed overview of these abstractions take a look at the module documentation of backend::drm.
 //!
 
 use super::{common::Error, DevPath, Device, DeviceHandler, RawDevice};
@@ -66,6 +75,8 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
             // Here we restore the tty to it's previous state.
             // In case e.g. getty was running on the tty sets the correct framebuffer again,
             // so that getty will be visible.
+            // We do exit correctly, if this fails, but the user will be presented with
+            // a black screen, if no display handler takes control again.
             let old_state = self.old_state.clone();
             for (handle, (info, connectors)) in old_state {
                 if let Err(err) = self.set_crtc(
@@ -88,7 +99,7 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
 }
 
 impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
-    /// Create a new [`LegacyDrmDevice`] from an open drm node
+    /// Create a new [`LegacyDrmDevice`] from an open drm node.
     ///
     /// # Arguments
     ///
@@ -115,6 +126,8 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
             .map_err(Error::UnableToGetDeviceId)?
             .st_rdev;
 
+        // we wrap some of the internal state in another struct to share with
+        // the surfaces and event loop handlers.
         let active = Arc::new(AtomicBool::new(true));
         let mut dev = Dev {
             fd: dev,
@@ -124,13 +137,17 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
             logger: log.clone(),
         };
 
-        // we want to modeset, so we better be the master, if we run via a tty session
+        // We want to modeset, so we better be the master, if we run via a tty session.
+        // This is only needed on older kernels. Newer kernels grant this permission,
+        // if no other process is already the *master*. So we skip over this error.
         if dev.acquire_master_lock().is_err() {
             warn!(log, "Unable to become drm master, assuming unprivileged mode");
             dev.privileged = false;
         };
 
-        // enumerate (and save) the current device state
+        // Enumerate (and save) the current device state.
+        // We need to keep the previous device configuration to restore the state later,
+        // so we query everything, that we can set.
         let res_handles = ControlDevice::resource_handles(&dev)
             .compat()
             .map_err(|source| Error::Access {
@@ -165,11 +182,18 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
             }
         }
 
+        // If the user does not explicitly requests us to skip this,
+        // we clear out the complete connector<->crtc mapping on device creation.
+        //
+        // The reason is, that certain operations may be racy otherwise, as surfaces can
+        // exist on different threads. As a result, we cannot enumerate the current state
+        // on surface creation (it might be changed on another thread during the enumeration).
+        // An easy workaround is to set a known state on device creation.
         if disable_connectors {
             dev.set_connector_state(res_handles.connectors().iter().copied(), false)?;
 
             for crtc in res_handles.crtcs() {
-                // null commit
+                // null commit (necessary to trigger removal on the kernel side with the legacy api.)
                 dev.set_crtc(*crtc, None, (0, 0), &[], None)
                     .compat()
                     .map_err(|source| Error::Access {
@@ -199,6 +223,7 @@ impl<A: AsRawFd + 'static> Dev<A> {
         connectors: impl Iterator<Item = connector::Handle>,
         enabled: bool,
     ) -> Result<(), Error> {
+        // for every connector...
         for conn in connectors {
             let info = self
                 .get_connector(conn)
@@ -208,7 +233,9 @@ impl<A: AsRawFd + 'static> Dev<A> {
                     dev: self.dev_path(),
                     source,
                 })?;
+            // that is currently connected ...
             if info.state() == connector::State::Connected {
+                // get a list of it's properties.
                 let props = self
                     .get_properties(conn)
                     .compat()
@@ -218,7 +245,9 @@ impl<A: AsRawFd + 'static> Dev<A> {
                         source,
                     })?;
                 let (handles, _) = props.as_props_and_values();
+                // for every handle ...
                 for handle in handles {
+                    // get information of that property
                     let info = self
                         .get_property(*handle)
                         .compat()
@@ -227,7 +256,9 @@ impl<A: AsRawFd + 'static> Dev<A> {
                             dev: self.dev_path(),
                             source,
                         })?;
+                    // to find out, if we got the handle of the "DPMS" property ...
                     if info.name().to_str().map(|x| x == "DPMS").unwrap_or(false) {
+                        // so we can use that to turn on / off the connector
                         self.set_property(
                             conn,
                             *handle,
