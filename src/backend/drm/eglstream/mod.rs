@@ -12,6 +12,8 @@
 //! [`FallbackDevice`](::backend::drm::common::fallback::FallbackDevice).
 //! Take a look at `anvil`s source code for an example of this.
 //!
+//! For detailed overview of these abstractions take a look at the module documentation of backend::drm.
+//!
 
 use super::{Device, DeviceHandler, RawDevice, Surface};
 

@@ -7,6 +7,8 @@
 //!
 //! For an example how to use this standalone, take a look at the raw_atomic_drm example.
 //!
+//! For detailed overview of these abstractions take a look at the module documentation of backend::drm.
+//!
 
 use std::cell::RefCell;
 use std::collections::HashMap;

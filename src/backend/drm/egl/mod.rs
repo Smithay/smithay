@@ -7,6 +7,8 @@
 //! to let your compositor render.
 //! Take a look at `anvil`s source code for an example of this.
 //!
+//! For detailed overview of these abstractions take a look at the module documentation of backend::drm.
+//!
 
 use drm::control::{connector, crtc, encoder, framebuffer, plane, Mode, ResourceHandles};
 use drm::SystemError as DrmError;

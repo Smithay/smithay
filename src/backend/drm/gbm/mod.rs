@@ -8,6 +8,8 @@
 //! To use these types standalone, you will need to consider the special requirements
 //! of [`GbmSurface::page_flip`](::backend::drm::gbm::GbmSurface::page_flip).
 //!
+//! For detailed overview of these abstractions take a look at the module documentation of backend::drm.
+//!
 
 use super::{Device, DeviceHandler, RawDevice, ResourceHandles, Surface};
 use crate::backend::graphics::SwapBuffersError;
