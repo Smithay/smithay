@@ -107,7 +107,7 @@ impl<D: RawDevice + 'static> Drop for EglStreamSurfaceInternal<D> {
 // That way we can use hardware cursors at least on all drm-backends (including atomic), although
 // this is a little hacky. Overlay planes however are completely out of question for now.
 //
-// Note that this might still appear a little chuppy, we should just use software cursors
+// Note that this might still appear a little choppy, we should just use software cursors
 // on eglstream devices by default and only use this, if the user really wants it.
 #[cfg(feature = "backend_drm")]
 impl<D: RawDevice + 'static> CursorBackend for EglStreamSurfaceInternal<D> {
@@ -155,6 +155,8 @@ impl<D: RawDevice + 'static> CursorBackend for EglStreamSurfaceInternal<D> {
 
         trace!(self.logger, "Setting the new imported cursor");
 
+        // call the drm-functions directly to bypass ::commit/::page_flip and eglstream...
+
         if self
             .crtc
             .set_cursor2(
@@ -197,6 +199,8 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
         self.0.crtc.commit_pending() || self.0.stream.borrow().is_none()
     }
 
+    // An EGLStream is basically the pump that requests and consumes images to display them.
+    // The heart of this weird api. Any changes to its configuration, require a re-creation.
     pub(super) fn create_stream(
         &self,
         display: &Arc<EGLDisplayHandle>,
@@ -230,6 +234,7 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
             }
         }
 
+        // again enumerate extensions
         let extensions = {
             let p =
                 unsafe { CStr::from_ptr(ffi::egl::QueryString(display.handle, ffi::egl::EXTENSIONS as i32)) };
@@ -237,6 +242,7 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
             list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
         };
 
+        // we need quite a bunch to implement a full-blown renderer.
         if !extensions.iter().any(|s| *s == "EGL_EXT_output_base")
             || !extensions.iter().any(|s| *s == "EGL_EXT_output_drm")
             || !extensions.iter().any(|s| *s == "EGL_KHR_stream")
@@ -315,6 +321,9 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
             // TEST END
         }
 
+        // alright, if the surface appears to be supported, we need an "output layer".
+        // this is basically just a fancy name for a `crtc` or a `plane`.
+        // those are exactly whats inside the `output_attribs` depending on underlying device.
         let mut num_layers = 0;
         if unsafe {
             ffi::egl::GetOutputLayersEXT(
@@ -354,11 +363,18 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
             layers.set_len(num_layers as usize);
         }
 
+        // lets just use the first layer and try to set the swap interval.
+        // this is needed to make sure `eglSwapBuffers` does not block.
         let layer = layers[0];
         unsafe {
             ffi::egl::OutputLayerAttribEXT(display.handle, layer, ffi::egl::SWAP_INTERVAL_EXT as i32, 0);
         }
 
+        // The stream needs to know, it needs to request frames
+        // as soon as another one is rendered (we do not want to build a buffer and delay frames),
+        // which is handled by STREAM_FIFO_LENGTH_KHR = 0.
+        // We also want to "acquire" the frames manually. Like this we can request page-flip events
+        // to drive our event loop. Otherwise we would have no way to know rendering is finished.
         let stream_attributes = {
             let mut out: Vec<c_int> = Vec::with_capacity(7);
             out.push(ffi::egl::STREAM_FIFO_LENGTH_KHR as i32);
@@ -371,12 +387,14 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
             out
         };
 
+        // okay, we have a config, lets create the stream.
         let stream = unsafe { ffi::egl::CreateStreamKHR(display.handle, stream_attributes.as_ptr()) };
         if stream == ffi::egl::NO_STREAM_KHR {
             error!(self.0.logger, "Failed to create egl stream");
             return Err(Error::DeviceStreamCreationFailed);
         }
 
+        // we have a stream, lets connect it to our output layer
         if unsafe { ffi::egl::StreamConsumerOutputEXT(display.handle, stream, layer) } == 0 {
             error!(self.0.logger, "Failed to link Output Layer as Stream Consumer");
             return Err(Error::DeviceStreamCreationFailed);
@@ -394,6 +412,7 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
         _surface_attribs: &[c_int],
         output_attribs: &[isize],
     ) -> Result<*const c_void, Error<<<D as Device>::Surface as Surface>::Error>> {
+        // our surface needs a stream
         let stream = self.create_stream(display, output_attribs)?;
 
         let (w, h) = self.current_mode().size();
@@ -408,6 +427,8 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
             out
         };
 
+        // the stream is already connected to the consumer (output layer) during creation.
+        // we now connect the producer (out egl surface, that we render to).
         let surface = unsafe {
             ffi::egl::CreateStreamProducerSurfaceKHR(
                 display.handle,
@@ -430,7 +451,15 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
         display: &Arc<EGLDisplayHandle>,
         surface: ffi::egl::types::EGLSurface,
     ) -> Result<(), SwapBuffersError<Error<<<D as Device>::Surface as Surface>::Error>>> {
+        // if we have already swapped the buffer successfully, we need to free it again.
+        //
+        // we need to do this here, because the call may fail (compare this with gbm's unlock_buffer...).
+        // if it fails we do not want to swap, because that would block and as a result deadlock us.
         if self.0.locked.load(Ordering::SeqCst) {
+            // which means in eglstream terms: "acquire it".
+            // here we set the user data of the page_flip event
+            // (which is also only triggered if we manually acquire frames).
+            // This is the crtc id like always to get the matching surface for the device handler later.
             let acquire_attributes = [
                 ffi::egl::DRM_FLIP_EVENT_DATA_NV as isize,
                 Into::<u32>::into(crtc) as isize,
@@ -438,6 +467,9 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
             ];
 
             if let Ok(stream) = self.0.stream.try_borrow() {
+                // lets try to acquire the frame.
+                // this may fail, if the buffer is still in use by the gpu,
+                // e.g. the flip was not done yet. In this case this call fails as `BUSY`.
                 let res = if let Some(&(ref display, ref stream)) = stream.as_ref() {
                     wrap_egl_call(|| unsafe {
                         ffi::egl::StreamConsumerAcquireAttribNV(
@@ -450,6 +482,8 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
                 } else {
                     Err(Error::StreamFlipFailed(EGLError::NotInitialized))
                 };
+
+                // so we need to unlock on success and return on failure.
                 if res.is_ok() {
                     self.0.locked.store(false, Ordering::SeqCst);
                 } else {
@@ -458,6 +492,7 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
             }
         }
 
+        // so if we are not locked any more we can send the next frame by calling swap buffers.
         if !self.0.locked.load(Ordering::SeqCst) {
             wrap_egl_call(|| unsafe { ffi::egl::SwapBuffers(***display, surface as *const _) })
                 .map_err(SwapBuffersError::EGLSwapBuffers)?;
