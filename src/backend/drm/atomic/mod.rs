@@ -2,6 +2,14 @@
 //! [`RawDevice`](RawDevice) and [`RawSurface`](RawSurface)
 //! implementations using the atomic mode-setting infrastructure.
 //!
+//! Atomic mode-setting (previously referred to a nuclear page-flip) is a new api of the Direct Rendering
+//! Manager subsystem of the linux kernel. Adaptations of this api can be found in BSD kernels.
+//!
+//! This api is objectively better than the outdated legacy-api, but not supported by every driver.
+//! Initialization will fail, if the api is unsupported. The legacy-api is also wrapped by smithay
+//! and may be used instead in these cases. Currently there are no features in smithay that are
+//! exclusive to the atomic api.
+//!
 //! Usually this implementation will wrapped into a [`GbmDevice`](::backend::drm::gbm::GbmDevice).
 //! Take a look at `anvil`s source code for an example of this.
 //!
@@ -88,9 +96,11 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
             // Here we restore the card/tty's to it's previous state.
             // In case e.g. getty was running on the tty sets the correct framebuffer again,
             // so that getty will be visible.
+            // We do exit correctly if this fails, but the user will be presented with
+            // a black screen if no display handler takes control again.
 
+            // create an atomic mode request consisting of all properties we captured on creation.
             let mut req = AtomicModeReq::new();
-
             fn add_multiple_props<T: ResourceHandle>(
                 req: &mut AtomicModeReq,
                 old_state: &[(T, PropertyValueSet)],
@@ -215,6 +225,8 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
 
         let dev_id = fstat(fd.as_raw_fd()).map_err(Error::UnableToGetDeviceId)?.st_rdev;
 
+        // we wrap some of the internal states in another struct to share with
+        // the surfaces and event loop handlers.
         let active = Arc::new(AtomicBool::new(true));
         let mut dev = Dev {
             fd,
@@ -225,13 +237,22 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             logger: log.clone(),
         };
 
-        // we want to modeset, so we better be the master, if we run via a tty session
+        // we need to be the master to do modesetting if we run via a tty session.
+        // This is only needed on older kernels. Newer kernels grant this permission,
+        // if no other process is already the *master*. So we skip over this error.
         if dev.acquire_master_lock().is_err() {
             warn!(log, "Unable to become drm master, assuming unprivileged mode");
             dev.privileged = false;
         };
 
-        // enable the features we need
+        // Enable the features we need.
+        // We technically could use the atomic api without universal plane support.
+        // But the two are almost exclusively implemented together, as plane synchronization
+        // is one of the killer-features of the atomic api.
+        //
+        // We could bould more abstractions in smithay for devices with partial support,
+        // but for now we role with the oldest possible api (legacy) and the newest feature set
+        // we can use (atomic + universal planes), although we barely use planes yet.
         dev.set_client_capability(ClientCapability::UniversalPlanes, true)
             .compat()
             .map_err(|source| Error::Access {
@@ -247,7 +268,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
                 source,
             })?;
 
-        // enumerate (and save) the current device state
+        // Enumerate (and save) the current device state.
         let res_handles = ControlDevice::resource_handles(&dev)
             .compat()
             .map_err(|source| Error::Access {
@@ -266,11 +287,16 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         let mut old_state = dev.old_state.clone();
         let mut mapping = dev.prop_mapping.clone();
 
+        // This helper function takes a snapshot of the current device properties.
+        // (everything in the atomic api is set via properties.)
         dev.add_props(res_handles.connectors(), &mut old_state.0)?;
         dev.add_props(res_handles.crtcs(), &mut old_state.1)?;
         dev.add_props(res_handles.framebuffers(), &mut old_state.2)?;
         dev.add_props(planes, &mut old_state.3)?;
 
+        // And because the mapping is not consistent across devices,
+        // we also need to lookup the handle for a property name.
+        // And we do this a fair bit, so lets cache that mapping.
         dev.map_props(res_handles.connectors(), &mut mapping.0)?;
         dev.map_props(res_handles.crtcs(), &mut mapping.1)?;
         dev.map_props(res_handles.framebuffers(), &mut mapping.2)?;
@@ -280,6 +306,17 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         dev.prop_mapping = mapping;
         trace!(log, "Mapping: {:#?}", dev.prop_mapping);
 
+        // If the user does not explicitly requests us to skip this,
+        // we clear out the complete connector<->crtc mapping on device creation.
+        //
+        // The reason is, that certain operations may be racy otherwise. Surfaces can
+        // exist on different threads: as a result, we cannot really enumerate the current state
+        // (it might be changed on another thread during the enumeration). And commits can fail,
+        // if e.g. a connector is already bound to another surface, which is difficult to analyse at runtime.
+        //
+        // An easy workaround is to set a known state on device creation, so we can only
+        // run into these errors on our own and not because previous compositors left the device
+        // in a funny state.
         if disable_connectors {
             // Disable all connectors as initial state
             let mut req = AtomicModeReq::new();
