@@ -134,6 +134,8 @@ impl<D: RawDevice + ControlDevice + 'static> DeviceHandler for InternalDeviceHan
         if let Some(backends) = self.backends.upgrade() {
             if let Some(surface) = backends.borrow().get(&crtc) {
                 if let Some(surface) = surface.upgrade() {
+                    // here we unlock the buffer again, that was locked during rendering,
+                    // to make sure it is always unlocked after a successful page_flip.
                     surface.unlock_buffer();
                     self.handler.vblank(crtc);
                 }

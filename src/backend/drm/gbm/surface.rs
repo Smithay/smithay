@@ -56,7 +56,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
             .map_err(|_| Error::FrontBufferLockFailed)?;
 
         // create a framebuffer if the front buffer does not have one already
-        // (they are reused by gbm)
+        // (they are reused internally by gbm)
         let maybe_fb = next_bo
             .userdata()
             .map_err(|_| Error::InvalidInternalState)?
@@ -80,6 +80,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
             }
         }
 
+        // if we re-created the surface, we need to commit the new changes, as we might trigger a modeset
         let result = if self.recreated.get() {
             debug!(self.logger, "Commiting new state");
             self.crtc.commit(fb).map_err(Error::Underlying)
@@ -88,6 +89,7 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
             RawSurface::page_flip(&self.crtc, fb).map_err(Error::Underlying)
         };
 
+        // if it was successful, we can clear the re-created state
         match result {
             Ok(_) => {
                 self.recreated.set(false);
@@ -95,12 +97,15 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
                 Ok(())
             }
             Err(err) => {
+                // if there was an error we need to free the buffer again,
+                // otherwise we may never lock again.
                 self.unlock_buffer();
                 Err(err)
             }
         }
     }
 
+    // this function is called, if we e.g. need to create the surface to match a new mode.
     pub fn recreate(&self) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
         let (w, h) = self.pending_mode().size();
 
@@ -129,6 +134,8 @@ impl<D: RawDevice + 'static> GbmSurfaceInternal<D> {
         Ok(())
     }
 
+    // if the underlying drm-device is closed and re-opened framebuffers may get invalided.
+    // here we clear them just to be sure, they get recreated on the next page_flip.
     pub fn clear_framebuffers(&self) {
         if let Some(Ok(Some(fb))) = self.next_buffer.take().map(|mut bo| bo.take_userdata()) {
             if let Err(err) = self.crtc.destroy_framebuffer(fb) {
