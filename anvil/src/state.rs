@@ -138,7 +138,7 @@ impl AnvilState {
         let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
 
         let cursor_status2 = cursor_status.clone();
-        let pointer = seat.add_pointer(shell_handles.token.clone(), move |new_status| {
+        let pointer = seat.add_pointer(shell_handles.token, move |new_status| {
             // TODO: hide winit system cursor when relevant
             *cursor_status2.lock().unwrap() = new_status
         });

@@ -49,7 +49,7 @@ pub mod egl {
     use std::sync::Once;
 
     lazy_static! {
-        pub static ref LIB: Library = { Library::new("libEGL.so.1").expect("Failed to load LibEGL") };
+        pub static ref LIB: Library = Library::new("libEGL.so.1").expect("Failed to load LibEGL");
     }
 
     pub static LOAD: Once = Once::new();
