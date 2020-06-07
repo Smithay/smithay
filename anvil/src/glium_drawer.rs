@@ -26,6 +26,7 @@ use smithay::{
         calloop::LoopHandle,
         wayland_server::protocol::{wl_buffer, wl_surface},
     },
+    utils::Rectangle,
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
         data_device::DnDIconRole,
@@ -403,12 +404,19 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
         &self,
         frame: &mut Frame,
         window_map: &MyWindowMap,
+        output_rect: Option<Rectangle>,
         compositor_token: MyCompositorToken,
     ) {
         // redraw the frame, in a simple but inneficient way
         {
             let screen_dimensions = self.borrow().get_framebuffer_dimensions();
-            window_map.with_windows_from_bottom_to_top(|toplevel_surface, initial_place| {
+            window_map.with_windows_from_bottom_to_top(|toplevel_surface, initial_place, bounding_box| {
+                // skip windows that do not overlap with a given output
+                if let Some(output) = output_rect {
+                    if !output.overlaps(bounding_box) {
+                        return;
+                    }
+                }
                 if let Some(wl_surface) = toplevel_surface.get_surface() {
                     // this surface is a root of a subsurface tree that needs to be drawn
                     self.draw_surface_tree(

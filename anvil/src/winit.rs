@@ -103,7 +103,7 @@ pub fn run_winit(
             frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
 
             // draw the windows
-            drawer.draw_windows(&mut frame, &*state.window_map.borrow(), state.ctoken);
+            drawer.draw_windows(&mut frame, &*state.window_map.borrow(), None, state.ctoken);
 
             let (x, y) = *state.pointer_location.borrow();
             // draw the dnd icon if any

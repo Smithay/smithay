@@ -601,7 +601,12 @@ impl DrmRenderer {
             let mut frame = drawer.draw();
             frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
             // draw the surfaces
-            drawer.draw_windows(&mut frame, &*self.window_map.borrow(), self.compositor_token);
+            drawer.draw_windows(
+                &mut frame,
+                &*self.window_map.borrow(),
+                None,
+                self.compositor_token,
+            );
             let (x, y) = *self.pointer_location.borrow();
             // draw the dnd icon if applicable
             {
