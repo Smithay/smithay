@@ -81,6 +81,17 @@ impl AnvilState {
                         "err" => format!("{:?}", e)
                     );
                 }
+            },
+            KeyAction::Screen(num) => {
+                let output_map = self.output_map
+                    .as_ref().unwrap();
+                let outputs = output_map.borrow();
+                if let Some(output) = outputs.get(num) {
+                    let x = outputs.iter().take(num).fold(0, |acc, output| acc + output.size.0) as f64 + (output.size.0 as f64 / 2.0);
+                    let y = output.size.1 as f64 / 2.0;
+                    *self.pointer_location.borrow_mut() = (x as f64, y as f64)
+                }
+
             }
             _ => (),
         }
@@ -268,6 +279,8 @@ enum KeyAction {
     VtSwitch(i32),
     /// run a command
     Run(String),
+    /// Switch the current screen
+    Screen(usize),
     /// Forward the key to the client
     Forward,
     /// Do nothing more
@@ -287,6 +300,8 @@ fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> KeyAc
     } else if modifiers.logo && keysym == xkb::KEY_Return {
         // run terminal
         KeyAction::Run("weston-terminal".into())
+    } else if modifiers.logo && keysym >= xkb::KEY_1 && keysym <= xkb::KEY_9 {
+        KeyAction::Screen((keysym - xkb::KEY_1) as usize)
     } else {
         KeyAction::Forward
     }
