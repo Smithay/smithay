@@ -410,12 +410,13 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
         // redraw the frame, in a simple but inneficient way
         {
             let screen_dimensions = self.borrow().get_framebuffer_dimensions();
-            window_map.with_windows_from_bottom_to_top(|toplevel_surface, initial_place, bounding_box| {
+            window_map.with_windows_from_bottom_to_top(|toplevel_surface, mut initial_place, bounding_box| {
                 // skip windows that do not overlap with a given output
                 if let Some(output) = output_rect {
                     if !output.overlaps(bounding_box) {
                         return;
                     }
+                    initial_place.0 -= output.x;
                 }
                 if let Some(wl_surface) = toplevel_surface.get_surface() {
                     // this surface is a root of a subsurface tree that needs to be drawn
