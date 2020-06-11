@@ -30,6 +30,7 @@ impl<D: RawDevice + 'static> Backend for Gbm<D> {
     type Surface = GbmSurface<D>;
     type Error = Error<<<D as Device>::Surface as Surface>::Error>;
 
+    // this creates an EGLDisplay for the gbm platform.
     unsafe fn get_display<F>(
         display: ffi::NativeDisplayType,
         attribs: &[ffi::EGLint],

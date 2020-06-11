@@ -70,10 +70,13 @@ impl<A: AsRawFd + 'static> CursorBackend for LegacyDrmSurfaceInternal<A> {
 
         trace!(self.logger, "Setting the new imported cursor");
 
+        // set_cursor2 allows us to set the hotspot, but is not supported by every implementation.
         if self
             .set_cursor2(self.crtc, Some(buffer), (hotspot.0 as i32, hotspot.1 as i32))
             .is_err()
         {
+            // the cursor will be slightly misplaced, when using the function for hotspots other then (0, 0),
+            // but that is still better then no cursor.
             self.set_cursor(self.crtc, Some(buffer))
                 .compat()
                 .map_err(|source| Error::Access {
@@ -221,7 +224,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
             self.dev.set_connector_state(removed.copied(), false)?;
 
             if conn_removed {
-                // We need to do a null commit to free graphics pipelines
+                // null commit (necessary to trigger removal on the kernel side with the legacy api.)
                 self.set_crtc(self.crtc, None, (0, 0), &[], None)
                     .compat()
                     .map_err(|source| Error::Access {
@@ -246,6 +249,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
         }
 
         debug!(self.logger, "Setting screen");
+        // do a modeset and attach the given framebuffer
         self.set_crtc(
             self.crtc,
             Some(framebuffer),
@@ -266,6 +270,11 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
 
         *current = pending.clone();
 
+        // set crtc does not trigger page_flip events, so we immediately queue a flip
+        // with the same framebuffer.
+        // this will result in wasting a frame, because this flip will need to wait
+        // for `set_crtc`, but is necessary to drive the event loop and thus provide
+        // a more consistent api.
         ControlDevice::page_flip(
             self,
             self.crtc,
@@ -316,7 +325,8 @@ impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
             "Initializing drm surface with mode {:?} and connectors {:?}", mode, connectors
         );
 
-        // Try to enumarate the current state to set the initial state variable correctly
+        // Try to enumarate the current state to set the initial state variable correctly.
+        // We need an accurate state to handle `commit_pending`.
         let crtc_info = dev.get_crtc(crtc).compat().map_err(|source| Error::Access {
             errmsg: "Error loading crtc info",
             dev: dev.dev_path(),
@@ -377,6 +387,13 @@ impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
         Ok(surface)
     }
 
+    // we use this function to verify, if a certain connector/mode combination
+    // is valid on our crtc. We do this with the most basic information we have:
+    // - is there a matching encoder
+    // - does the connector support the provided Mode.
+    //
+    // Better would be some kind of test commit to ask the driver,
+    // but that only exists for the atomic api.
     fn check_connector(&self, conn: connector::Handle, mode: &Mode) -> Result<bool, Error> {
         let info = self
             .get_connector(conn)

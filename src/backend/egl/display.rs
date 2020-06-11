@@ -90,6 +90,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         };
         debug!(log, "EGL No-Display Extensions: {:?}", dp_extensions);
 
+        // we create an EGLDisplay
         let display = unsafe {
             B::get_display(
                 ptr,
@@ -103,6 +104,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             return Err(Error::DisplayNotSupported);
         }
 
+        // We can then query the egl api version
         let egl_version = {
             let mut major: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
             let mut minor: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
@@ -137,6 +139,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         };
         info!(log, "EGL Extensions: {:?}", extensions);
 
+        // egl <= 1.2 does not support OpenGL ES (maybe we want to support OpenGL in the future?)
         if egl_version <= (1, 2) {
             return Err(Error::OpenGlesNotSupported(None));
         }
@@ -222,7 +225,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             out
         };
 
-        // calling `eglChooseConfig`
+        // Try to find configs that match out criteria
         let mut num_configs = 0;
         wrap_egl_call(|| unsafe {
             ffi::egl::ChooseConfig(
@@ -258,7 +261,6 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         }
 
         let desired_swap_interval = if attributes.vsync { 1 } else { 0 };
-
         // try to select a config with the desired_swap_interval
         // (but don't fail, as the margin might be very small on some cards and most configs are fine)
         let config_id = config_ids
@@ -319,6 +321,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             }};
         };
 
+        // return the format that was selected for our config
         let desc = unsafe {
             PixelFormat {
                 hardware_accelerated: attrib!(self.display, config_id, ffi::egl::CONFIG_CAVEAT)

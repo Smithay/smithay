@@ -1,38 +1,153 @@
 //!
-//!
 //! This module provides Traits reprensentating open devices
 //! and their surfaces to render contents.
 //!
-//! ---
+//! # Abstractions
 //!
-//! Initialization of devices happens through an open file descriptor
-//! of a drm device.
+//! This is a model of what the user typically perceives as a `Device` and a `Surface`.
+//! The meaning of these words is very overloaded in the general computer graphics context,
+//! so let me give you a quick run down, what these mean in the context of smithay's public api:
 //!
-//! ---
+//! ## Device
 //!
-//! Initialization of surfaces happens through the types provided by
-//! [`drm-rs`](drm).
+//! A device is some sort of rendering device. It exposes certain properties, which are directly derived
+//! from the *device* as perceived by the direct rendering manager api (drm). These resources consists
+//! out of connectors, encoders, framebuffers, planes and crtcs.
 //!
-//! Four entities are relevant for the initialization procedure.
-//!
-//! [`crtc`](drm::control::crtc)s represent scanout engines
-//! of the device pointer to one framebuffer.
+//! [`crtc`](drm::control::crtc)s represent scanout engines of the device pointer to one framebuffer.
 //! Their responsibility is to read the data of the framebuffer and export it into an "Encoder".
-//! The number of crtc's represent the number of independant output devices the hardware may handle.
+//! The number of crtc's represent the number of independent output devices the hardware may handle.
 //!
-//! An [`encoder`](drm::control::encoder) encodes the data of
-//! connected crtcs into a video signal for a fixed set of connectors.
+//! On modern graphic cards it is better to think about the `crtc` as some sort of rendering engine.
+//! You can only have so many different pictures, you may display, as you have `crtc`s, but a single image
+//! may be put onto multiple displays.
+//!
+//! An [`encoder`](drm::control::encoder) encodes the data of connected crtcs into a video signal for a fixed set of connectors.
 //! E.g. you might have an analog encoder based on a DAG for VGA ports, but another one for digital ones.
 //! Also not every encoder might be connected to every crtc.
 //!
-//! A [`connector`](drm::control::connector) represents a port
-//! on your computer, possibly with a connected monitor, TV, capture card, etc.
+//! A [`connector`](drm::control::connector) represents a port on your computer, possibly with a connected monitor, TV, capture card, etc.
+//!
+//! A [`framebuffer`](drm::control::framebuffer) represents a buffer you may be rendering to, see `Surface` below.
+//!
+//! Planes are another layer on top of the crtcs, which allow us to layer multiple images on top of each other more efficiently
+//! then by combining the rendered images in the rendering phase, e.g. via OpenGL. They are internally used by smithay to provide
+//! hardware-accelerated cursors. More features regarding planes may be added in the future, but they are mostly optional and
+//! mainly provide possibilies for optimizations.
+//!
+//! The main functionality of a `Device` in smithay is to give access to all these properties for the user to
+//! choose an appropriate rendering configuration. What that means is defined by the requirements and constraints documented
+//! in the specific device implementations. The second functionality is the creation of a `Surface`.
+//! Surface creation requires a `crtc` (which cannot be the same as another existing `Surface`'s crtc),
+//! as well as a `Mode` and a set of `connectors`.
+//!
+//! smithay does not make sure that `connectors` are not already in use by another `Surface`. Overlapping `connector`-Sets may
+//! be an error or result in undefined rendering behavior depending on the `Surface` implementation.
+//!
+//! ## Surface
+//!
+//! A surface is a part of a `Device` that may output a picture to a number of connectors. It pumps pictures of buffers to outputs.
 //!
 //! On surface creation a matching encoder for your `encoder`-`connector` is automatically selected,
 //! if it exists, which means you still need to check your configuration.
 //!
-//! At last a [`Mode`](drm::control::Mode) needs to be selected,
-//! supported by the `crtc` in question.
+//! A surface consists of one `crtc` that is rendered to by the user. This is fixed for the `Surface`s lifetime and cannot be changed.
+//! A surface also always needs at least one connector to output the resulting image to as well as a `Mode` that is valid for the given connector.
+//!
+//! The state of a `Surface` is double-buffered, meaning all operations that chance the set of `connector`s or their `Mode` are stored and
+//! only applied on the next commit. `Surface`s do their best to validate these changes, if possible.
+//!
+//! A commit/page_flip may be triggered by any other method the `Surface` has, but needs to be documented as such.
+//! The most low-level `Surface`s also implement `RawSurface`, which let you trigger a commit explicitly.
+//!
+//! ## RawDevice
+//!
+//! A low-level device that produces not only `Surface`s, but `RawSurface`s.
+//!
+//! ## RawSurface
+//!
+//! RawSurfaces provide two additional functions related to rendering: `commit` and `page_flip`.
+//! Both attach the contents of a framebuffer, resulting in it's contents being displayed on the set connectors.
+//!
+//! `commit` also applies any pending changes to the current `Mode` and `connector`-Sets.
+//! You can easily check, if there are pending changes and avoid the costly commit by using `commit_pending`,
+//! which compares the current and pending state internally.
+//!
+//! # Rendering
+//!
+//! To perform actual rendering operations you need to render your image to a framebuffer.
+//! Several types of framebuffers exists.
+//!
+//! The simplest one - the `Dumbbuffer` is a simple bitmap, usually very slow and not hardware-accelerated.
+//! It should be avoided at any cost, but works on all devices and can be used directly with a `RawSurface`.
+//! Rendering to it can be done manually by coping bitmaps around (cpu rendering).
+//!
+//! Accelerated buffers are usually hardware manufacturer dependent. A problem, which is mostly solved by
+//! the General Buffer Manager (gbm-)API. `gbm::Buffer`s can only be rendered to by egl. Appropriate hardware-accelerated
+//! buffers are picked automatically. gbm even may fall back to `Dumbbuffers` on unsupported devices and
+//! egl-support is then provided by Mesa's software renderer `llvmpipe`.
+//!
+//! An alternative api to `gbm` is the so called `eglstream`-api, proposed (and implemented) by nvidia.
+//! It is currenly only supported by nvidias proprietary driver, which is also not accelerated by gbm, although other
+//! manufacturers could in theory implement the standard, just like nvidia could implement gbm-support in their driver.
+//! Ongoing discussions about these api's may result in another (but hopefully unified) api in the future.
+//!
+//! # Implementations
+//!
+//! Smithay provided these different functionalities as wrappers around many `Device` and `Surface` implementations.
+//!
+//! At the low-level we have:
+//!
+//! - [`AtomicDrmDevice`](atomic::AtomicDrmDevice) (and [`AtomicDrmSurface`](atomic::AtomicDrmSurface)), which implement the traits directly using the modern atomic drm-api.
+//! - [`LegacyDrmDevice`](legacy::LegacyDrmDevice) (and [`LegacyDrmSurface`](legacy::LegacyDrmSurface)), which implement the traits directly using the outdated drm-api.
+//!
+//! Both of these also implement `RawDevice` and `RawSurface`.
+//!
+//! On top of that the following wrappers add buffer allocation apis:
+//!
+//! - [`GbmDevice`](gbm::GbmDevice) (and [`GbmSurface`](gbm::Surface)), which replace the direct rendering capabilities of any underlying `RawSurface` with an egl-specific `page_flip` function.
+//! - [`EglStreamDevice`](eglstream::EglStreamDevice) (and [`EglStreamSurface`](eglstream::EglStreamSurface)), which replace the direct rendering capabilities of any underlying `RawSurface` with functionality to create EGLStreams.
+//!
+//! On top of that the [`EglDevice`](egl::EglDevice) (and [`EglSurface`](egl::EglSurface)) replace the manual buffer management
+//! with an implementation of smithays [`GLGraphicsBackend`](::backend::graphics::gl::GLGraphicsBackend) to initialize the OpenGL-API for rendering.
+//!
+//! Additionally the [`FallbackDevice`](fallback::FallbackDevice) provides an easy wrapper to automatically pick an appropriate device.
+//! E.g. it can initialize an `AtomicDrmDevice` or fallback to a `LegacyDrmDevice` with the atomic api is not supported by the graphics card.
+//! It can also check for a loaded nvidia-driver for a given device and choose between an `EglStreamDevice` or a `GbmDevice`.
+//!
+//! Any layer of this chain can be implemented and therefore extended by the user. All building blocks are exposed to add addtional
+//! buffer management solutions or rendering apis out of tree. Additionally all of these implementations can be excluded from a build
+//! by disabling their corresponding feature.
+//!
+//! The most versatile type currently provided by smithay, that should be able to initialize almost every
+//! common graphics card is
+//! ```rust,ignore
+//! type RenderDevice<A: AsRawFd> = FallbackDevice<
+//!     EglDevice<
+//!         EglGbmBackend<FallbackDevice<AtomicDrmDevice<A>, LegacyDrmDevice<A>>>,
+//!         GbmDevice<FallbackDevice<AtomicDrmDevice<A>, LegacyDrmDevice<A>>>,
+//!     >,
+//!     EglDevice<
+//!         EglStreamDeviceBackend<FallbackDevice<AtomicDrmDevice<A>, LegacyDrmDevice<A>>>,
+//!         EglStreamDevice<FallbackDevice<AtomicDrmDevice<A>, LegacyDrmDevice<A>>>,
+//!     >
+//! >;
+//! ```
+//!
+//! # Event handling
+//!
+//! Devices can be attached to an eventloop using `device_bind`.
+//! Events triggered by a drm-device correspond to finished page-flips.
+//! After submitting a page_flip (possibly through a high-level api, such as a `EglSurface`)
+//! the GPU may take some time until the new framebuffer is displayed. Rendering the next
+//! frame should be delayed until the flip is done.
+//!
+//! Naive implementations should thus be driven by the drm device events to synchronize rendering
+//! with the device. More advanced implementations may take into account that, if no change has occurred,
+//! a page_flip may waste resources and therefore delay rendering until the buffer change from a client
+//! is received or input is registered, etc. Because a flip may fail (which will result in no event),
+//! a robust rescheduling implementation for missed frames or intentionally skipped flips should be
+//! in place.
 //!
 
 use drm::{

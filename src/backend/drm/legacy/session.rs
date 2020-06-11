@@ -72,6 +72,8 @@ impl<A: AsRawFd + 'static> LegacyDrmDeviceObserver<A> {
                 for surface in backends.borrow().values().filter_map(Weak::upgrade) {
                     // other ttys that use no cursor, might not clear it themselves.
                     // This makes sure our cursor won't stay visible.
+                    //
+                    // This usually happens with getty, and a cursor on top of a kernel console looks very weird.
                     let _ = (*device).set_cursor(
                         surface.crtc,
                         Option::<&drm::control::dumbbuffer::DumbBuffer>::None,
@@ -119,6 +121,11 @@ impl<A: AsRawFd + 'static> LegacyDrmDeviceObserver<A> {
 }
 
 impl<A: AsRawFd + 'static> LegacyDrmDeviceObserver<A> {
+    // reset state enumerates the actual current state of the drm device
+    // and applies that to the `current_state` as saved in the surfaces.
+    //
+    // This re-sync is necessary after a tty swap, as the pipeline might
+    // be left in a different state.
     fn reset_state(&mut self) -> Result<(), Error> {
         // lets enumerate it the current state
         if let Some(dev) = self.dev.upgrade() {

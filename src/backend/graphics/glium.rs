@@ -125,7 +125,7 @@ unsafe impl<T: GLGraphicsBackend> Backend for InternalBackend<T> {
     }
 }
 
-/// Omplementation of `glium::Surface`, targeting the default framebuffer.
+/// Implementation of `glium::Surface`, targeting the default framebuffer.
 ///
 /// The back- and front-buffers are swapped when you call `finish`.
 ///

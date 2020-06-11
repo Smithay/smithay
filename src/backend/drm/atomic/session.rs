@@ -75,6 +75,8 @@ impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
             for surface in backends.borrow().values().filter_map(Weak::upgrade) {
                 // other ttys that use no cursor, might not clear it themselves.
                 // This makes sure our cursor won't stay visible.
+                //
+                // This usually happens with getty, and a cursor on top of a kernel console looks very weird.
                 if let Err(err) = surface.clear_plane(surface.planes.cursor) {
                     warn!(
                         self.logger,
@@ -123,6 +125,13 @@ impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
     }
 
     fn reset_state(&mut self) -> Result<(), Error> {
+        // reset state sets the connectors into a known state (all disabled),
+        // for the same reasons we do this on device creation.
+        //
+        // We might end up with conflicting commit requirements, if we want to restore our state,
+        // on top of the state the previous compositor left the device in.
+        // This is because we do commits per surface and not per device, so we do a global
+        // commit here, to fix any conflicts.
         if let Some(dev) = self.dev.upgrade() {
             let res_handles = ControlDevice::resource_handles(&*dev)
                 .compat()
@@ -172,6 +181,11 @@ impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
                     source,
                 })?;
 
+            // because we change the state and disabled everything,
+            // we want to force a commit (instead of a page-flip) on all used surfaces
+            // for the next rendering step to re-activate the connectors.
+            //
+            // Lets do that, by creating a garbage/non-matching current-state.
             if let Some(backends) = self.backends.upgrade() {
                 for surface in backends.borrow().values().filter_map(Weak::upgrade) {
                     let mut current = surface.state.write().unwrap();
@@ -187,7 +201,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
                     };
                     surface.use_mode(mode)?;
 
-                    // drop cursor state
+                    // drop cursor state to force setting the cursor again.
                     surface.cursor.position.set(None);
                     surface.cursor.hotspot.set((0, 0));
                     surface.cursor.framebuffer.set(None);

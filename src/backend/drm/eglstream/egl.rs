@@ -42,6 +42,7 @@ where
     type Surface = EglStreamSurface<D>;
     type Error = Error<<<D as Device>::Surface as Surface>::Error>;
 
+    // create an EGLDisplay for the EGLstream platform
     unsafe fn get_display<F>(
         display: ffi::NativeDisplayType,
         attribs: &[ffi::EGLint],
@@ -103,6 +104,11 @@ where
         Device::create_surface(self, args.0, args.1, &args.2)
     }
 }
+
+// we need either a `crtc` or a `plane` for EGLStream initializations,
+// which totally breaks our abstraction.. (This is normally an implementation details of `RawSurface`-implementations).
+//
+// as a result, we need three implemenations for atomic, legacy and fallback...
 
 #[cfg(feature = "backend_drm_atomic")]
 unsafe impl<A: AsRawFd + 'static> NativeSurface for EglStreamSurface<AtomicDrmDevice<A>> {

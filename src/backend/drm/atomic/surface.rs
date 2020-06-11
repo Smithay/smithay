@@ -111,6 +111,10 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                 source,
             })?;
 
+        // the current set of connectors are those, that already have the correct `CRTC_ID` set.
+        // so we collect them for `current_state` and set the user-given once in `pending_state`.
+        //
+        // If they don't match, `commit_pending` will return true and they will be changed on the next `commit`.
         let mut current_connectors = HashSet::new();
         for conn in res_handles.connectors() {
             let crtc_prop = dev
@@ -152,6 +156,9 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
             connectors: connectors.iter().copied().collect(),
         };
 
+        // we need to find planes for this crtc.
+        // (cursor and primary planes are usually available once for every crtc,
+        //  so this is a very naive algorithm.)
         let (primary, cursor) =
             AtomicDrmSurfaceInternal::find_planes(&dev, crtc).ok_or(Error::NoSuitablePlanes {
                 crtc,
@@ -175,6 +182,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         Ok(surface)
     }
 
+    // we need a framebuffer to do test commits, which we use to verify our pending state.
+    // here we create a dumbbuffer for that purpose.
     fn create_test_buffer(&self, mode: &Mode) -> Result<framebuffer::Handle, Error> {
         let (w, h) = mode.size();
         let db = self
@@ -367,6 +376,7 @@ impl<A: AsRawFd + 'static> Surface for AtomicDrmSurfaceInternal<A> {
     }
 
     fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error> {
+        // the test would also prevent this, but the error message is far less helpful
         if connectors.is_empty() {
             return Err(Error::SurfaceWithoutConnectors(self.crtc));
         }
@@ -466,6 +476,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
             "Preparing Commit.\n\tCurrent: {:?}\n\tPending: {:?}\n", *current, *pending
         );
 
+        // we need the differences to know, which connectors need to change properties
         let current_conns = current.connectors.clone();
         let pending_conns = pending.connectors.clone();
         let mut removed = current_conns.difference(&pending_conns);
@@ -493,6 +504,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
 
         trace!(self.logger, "Testing screen config");
 
+        // test the new config and return the request if it would be accepted by the driver.
         let req = {
             let req = self.build_request(
                 &mut added,
@@ -533,8 +545,11 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
         let result = self
             .atomic_commit(
                 &[
+                    // on the atomic api we can modeset and trigger a page_flip event on the same call!
                     AtomicCommitFlags::PageFlipEvent,
                     AtomicCommitFlags::AllowModeset,
+                    // we also do not need to wait for completion, like with `set_crtc`.
+                    // and have tested this already, so we do not expect any errors later down the line.
                     AtomicCommitFlags::Nonblock,
                 ],
                 req,
@@ -558,6 +573,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
             return Err(Error::DeviceInactive);
         }
 
+        // page flips work just like commits with fewer parameters..
         let req = self.build_request(
             &mut [].iter(),
             &mut [].iter(),
@@ -567,6 +583,9 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
             None,
         )?;
 
+        // .. and without `AtomicCommitFlags::AllowModeset`.
+        // If we would set anything here, that would require a modeset, this would fail,
+        // indicating a problem in our assumptions.
         trace!(self.logger, "Queueing page flip: {:?}", req);
         self.atomic_commit(
             &[AtomicCommitFlags::PageFlipEvent, AtomicCommitFlags::Nonblock],
@@ -583,6 +602,7 @@ impl<A: AsRawFd + 'static> RawSurface for AtomicDrmSurfaceInternal<A> {
     }
 }
 
+// this whole implementation just queues the cursor state for the next commit.
 impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurfaceInternal<A> {
     type CursorFormat = dyn Buffer;
     type Error = Error;
@@ -708,8 +728,13 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         mode: Option<Mode>,
         blob: Option<property::Value<'static>>,
     ) -> Result<AtomicModeReq, Error> {
+        // okay, here we build the actual requests used by the surface.
         let mut req = AtomicModeReq::new();
 
+        // requests consist out of a set of properties and their new values
+        // for different drm objects (crtc, plane, connector, ...).
+
+        // for every connector that is new, we need to set our crtc_id
         for conn in new_connectors {
             req.add_property(
                 *conn,
@@ -718,6 +743,10 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
             );
         }
 
+        // for every connector that got removed, we need to set no crtc_id.
+        // (this is a bit problematic, because this means we need to remove, commit, add, commit
+        // in the right order to move a connector to another surface. otherwise we disable the
+        // the connector here again...)
         for conn in removed_connectors {
             req.add_property(
                 *conn,
@@ -726,16 +755,19 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
             );
         }
 
+        // we need to set the new mode, if there is one
         if let Some(blob) = blob {
             req.add_property(self.crtc, self.crtc_prop_handle(self.crtc, "MODE_ID")?, blob);
         }
 
+        // we also need to set this crtc active
         req.add_property(
             self.crtc,
             self.crtc_prop_handle(self.crtc, "ACTIVE")?,
             property::Value::Boolean(true),
         );
 
+        // and we need to set the framebuffer for our primary plane
         if let Some(fb) = framebuffer {
             req.add_property(
                 planes.primary,
@@ -744,12 +776,14 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
             );
         }
 
+        // if there is a new mode, we shoudl also make sure the plane is connected
         if let Some(mode) = mode {
             req.add_property(
                 planes.primary,
                 self.plane_prop_handle(planes.primary, "CRTC_ID")?,
                 property::Value::CRTC(Some(self.crtc)),
             );
+            // we can take different parts of a plane ...
             req.add_property(
                 planes.primary,
                 self.plane_prop_handle(planes.primary, "SRC_X")?,
@@ -763,6 +797,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
             req.add_property(
                 planes.primary,
                 self.plane_prop_handle(planes.primary, "SRC_W")?,
+                // these are 16.16. fixed point
                 property::Value::UnsignedRange((mode.size().0 as u64) << 16),
             );
             req.add_property(
@@ -770,6 +805,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                 self.plane_prop_handle(planes.primary, "SRC_H")?,
                 property::Value::UnsignedRange((mode.size().1 as u64) << 16),
             );
+            // .. onto different coordinated on the crtc, but we just use a 1:1 mapping.
             req.add_property(
                 planes.primary,
                 self.plane_prop_handle(planes.primary, "CRTC_X")?,
@@ -795,6 +831,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         let cursor_pos = self.cursor.position.get();
         let cursor_fb = self.cursor.framebuffer.get();
 
+        // if there is a cursor, we add the cursor plane to the request as well.
+        // this synchronizes cursor movement with rendering, which reduces flickering.
         if let (Some(pos), Some(fb)) = (cursor_pos, cursor_fb) {
             match self.get_framebuffer(fb).compat().map_err(|source| Error::Access {
                 errmsg: "Error getting cursor fb",
@@ -804,11 +842,13 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                 Ok(cursor_info) => {
                     let hotspot = self.cursor.hotspot.get();
 
+                    // again like the primary plane we need to set crtc and framebuffer.
                     req.add_property(
                         planes.cursor,
                         self.plane_prop_handle(planes.cursor, "CRTC_ID")?,
                         property::Value::CRTC(Some(self.crtc)),
                     );
+                    // copy the whole plane
                     req.add_property(
                         planes.cursor,
                         self.plane_prop_handle(planes.cursor, "SRC_X")?,
@@ -829,6 +869,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
                         self.plane_prop_handle(planes.cursor, "SRC_H")?,
                         property::Value::UnsignedRange((cursor_info.size().1 as u64) << 16),
                     );
+                    // but this time add this at some very specific coordinates of the crtc
                     req.add_property(
                         planes.cursor,
                         self.plane_prop_handle(planes.cursor, "CRTC_X")?,
@@ -865,6 +906,9 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         Ok(req)
     }
 
+    // primary and cursor planes are almost always unique to a crtc.
+    // otherwise we would be in trouble and would need to figure this out
+    // on the device level to find the best plane combination.
     fn find_planes(card: &Dev<A>, crtc: crtc::Handle) -> Option<(plane::Handle, plane::Handle)> {
         let res = card.resource_handles().expect("Could not list resources");
         let planes = card.plane_handles().expect("Could not list planes");
@@ -918,6 +962,10 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
         ))
     }
 
+    // this helper function clears the contents of a single plane.
+    // this is mostly used to remove the cursor, e.g. on tty switch,
+    // as other compositors might not make use of other planes,
+    // leaving our cursor as a relict of a better time on the screen.
     pub(super) fn clear_plane(&self, plane: plane::Handle) -> Result<(), Error> {
         let mut req = AtomicModeReq::new();
 

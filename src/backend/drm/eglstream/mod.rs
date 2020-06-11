@@ -12,6 +12,8 @@
 //! [`FallbackDevice`](::backend::drm::common::fallback::FallbackDevice).
 //! Take a look at `anvil`s source code for an example of this.
 //!
+//! For detailed overview of these abstractions take a look at the module documentation of backend::drm.
+//!
 
 use super::{Device, DeviceHandler, RawDevice, Surface};
 
@@ -144,6 +146,7 @@ impl<D: RawDevice + ControlDevice + 'static> EglStreamDevice<D> {
                 .map_err(|_| Error::DeviceIsNoEGLStreamDevice)?;
             }
 
+            // we can now query the amount of devices implementing the required extension
             let mut num_devices = 0;
             wrap_egl_call(|| ffi::egl::QueryDevicesEXT(0, ptr::null_mut(), &mut num_devices))
                 .map_err(Error::FailedToEnumerateDevices)?;
@@ -151,6 +154,7 @@ impl<D: RawDevice + ControlDevice + 'static> EglStreamDevice<D> {
                 return Err(Error::DeviceIsNoEGLStreamDevice);
             }
 
+            // afterwards we can allocate a buffer large enough and query the actual device (this is a common pattern in egl).
             let mut devices = Vec::with_capacity(num_devices as usize);
             wrap_egl_call(|| ffi::egl::QueryDevicesEXT(num_devices, devices.as_mut_ptr(), &mut num_devices))
                 .map_err(Error::FailedToEnumerateDevices)?;
@@ -160,8 +164,10 @@ impl<D: RawDevice + ControlDevice + 'static> EglStreamDevice<D> {
             devices
                 .into_iter()
                 .find(|device| {
+                    // we may get devices, that are - well - NO_DEVICE...
                     *device != ffi::egl::NO_DEVICE_EXT
                         && {
+                            // the device then also needs EGL_EXT_device_drm
                             let device_extensions = {
                                 let p = ffi::egl::QueryDeviceStringEXT(*device, ffi::egl::EXTENSIONS as i32);
                                 if p.is_null() {
@@ -177,6 +183,14 @@ impl<D: RawDevice + ControlDevice + 'static> EglStreamDevice<D> {
                             device_extensions.iter().any(|s| *s == "EGL_EXT_device_drm")
                         }
                         && {
+                            // and we want to get the file descriptor to check, that we found
+                            // the device the user wants to initialize.
+                            //
+                            // notice how this is kinda the other way around.
+                            // EGL_EXT_device_query expects use to find all devices using this extension...
+                            // But there is no way, we are going to replace our udev-interface with this, so we list devices
+                            // just to find the id of the one, that we actually want, because we cannot
+                            // request it directly afaik...
                             let path = {
                                 let p = ffi::egl::QueryDeviceStringEXT(
                                     *device,
@@ -199,6 +213,7 @@ impl<D: RawDevice + ControlDevice + 'static> EglStreamDevice<D> {
                 .ok_or(Error::DeviceIsNoEGLStreamDevice)?
         };
 
+        // okay the device is compatible and found, ready to go.
         Ok(EglStreamDevice {
             dev: device,
             raw,
