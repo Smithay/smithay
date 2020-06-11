@@ -58,6 +58,7 @@ pub fn run_winit(
         event_loop.handle(),
         buffer_utils,
         None,
+        None,
         log.clone(),
     );
 

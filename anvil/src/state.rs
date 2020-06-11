@@ -27,7 +27,7 @@ use smithay::{
 #[cfg(feature = "udev")]
 use smithay::backend::session::Session;
 
-use crate::{buffer_utils::BufferUtils, shell::init_shell};
+use crate::{buffer_utils::BufferUtils, shell::init_shell, udev::MyOutput};
 
 pub struct AnvilState {
     pub socket_name: String,
@@ -43,7 +43,8 @@ pub struct AnvilState {
     pub keyboard: KeyboardHandle,
     pub pointer_location: Rc<RefCell<(f64, f64)>>,
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
-    pub screen_size: (u32, u32),
+    #[cfg(feature = "udev")]
+    pub output_map: Option<Rc<RefCell<Vec<MyOutput>>>>,
     pub seat_name: String,
     #[cfg(feature = "udev")]
     pub session: Option<AutoSession>,
@@ -58,6 +59,8 @@ impl AnvilState {
         buffer_utils: BufferUtils,
         #[cfg(feature = "udev")] session: Option<AutoSession>,
         #[cfg(not(feature = "udev"))] _session: Option<()>,
+        #[cfg(feature = "udev")] output_map: Option<Rc<RefCell<Vec<MyOutput>>>>,
+        #[cfg(not(feature = "udev"))] _output_map: Option<()>,
         log: slog::Logger,
     ) -> AnvilState {
         // init the wayland connection
@@ -162,7 +165,8 @@ impl AnvilState {
             keyboard,
             cursor_status,
             pointer_location: Rc::new(RefCell::new((0.0, 0.0))),
-            screen_size: (1920, 1080),
+            #[cfg(feature = "udev")]
+            output_map,
             seat_name,
             #[cfg(feature = "udev")]
             session,

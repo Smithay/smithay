@@ -112,6 +112,8 @@ pub fn run_udev(
     let buffer_utils = BufferUtils::new(egl_buffer_reader.clone(), log.clone());
     #[cfg(not(feature = "egl"))]
     let buffer_utils = BufferUtils::new(log.clone());
+    
+    let output_map = Rc::new(RefCell::new(Vec::new()));
 
     /*
      * Initialize session
@@ -127,6 +129,7 @@ pub fn run_udev(
         event_loop.handle(),
         buffer_utils,
         Some(session),
+        Some(output_map.clone()),
         log.clone(),
     );
 
@@ -137,8 +140,6 @@ pub fn run_udev(
 
     let bytes = include_bytes!("../resources/cursor2.rgba");
     let udev_backend = UdevBackend::new(state.seat_name.clone(), log.clone()).map_err(|_| ())?;
-
-    let output_map = Rc::new(RefCell::new(Vec::new()));
 
     let mut udev_handler = UdevHandlerImpl {
         compositor_token: state.ctoken,
@@ -227,10 +228,10 @@ pub fn run_udev(
     Ok(())
 }
 
-struct MyOutput {
-    device_id: dev_t,
-    crtc: crtc::Handle,
-    size: (u32, u32),
+pub struct MyOutput {
+    pub device_id: dev_t,
+    pub crtc: crtc::Handle,
+    pub size: (u32, u32),
     _wl: Output,
     global: Option<Global<wl_output::WlOutput>>,
 }
