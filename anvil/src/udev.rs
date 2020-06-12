@@ -5,7 +5,7 @@ use std::{
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
     rc::Rc,
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::{atomic::{Ordering, AtomicBool}, Arc, Mutex},
     time::Duration,
 };
 
@@ -488,6 +488,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 pointer_image: self.pointer_image.clone(),
                 cursor_status: self.cursor_status.clone(),
                 dnd_icon: self.dnd_icon.clone(),
+                hardware_cursor: AtomicBool::new(false),
                 logger: self.logger.clone(),
             });
             let mut listener = DrmRendererSessionListener {
@@ -626,6 +627,7 @@ pub struct DrmRenderer {
     pointer_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     cursor_status: Arc<Mutex<CursorImageStatus>>,
     dnd_icon: Arc<Mutex<Option<wl_surface::WlSurface>>>,
+    hardware_cursor: AtomicBool,
     logger: ::slog::Logger,
 }
 
@@ -681,7 +683,7 @@ impl DrmRenderer {
                     .borrow()
                     .set_cursor_position(ptr_x as u32, ptr_y as u32);
                 
-                let mut software_cursor = false;
+                let mut needs_software_cursor = false;
 
                 // draw the dnd icon if applicable
                 {
@@ -694,7 +696,7 @@ impl DrmRenderer {
                                 (ptr_x, ptr_y),
                                 self.compositor_token,
                             );
-                            software_cursor = true;
+                            //needs_software_cursor = true;
                         }
                     }
                 }
@@ -711,23 +713,24 @@ impl DrmRenderer {
                     }
                     if let CursorImageStatus::Image(ref surface) = *guard {
                         drawer.draw_cursor(&mut frame, surface, (ptr_x, ptr_y), self.compositor_token);
-                        software_cursor = true;
+                        needs_software_cursor = true;
                     }
                 }
 
-                // TODO: this is wasteful, only do this on change (cache previous software cursor state)
-                if software_cursor {
-                    if let Err(err) = drawer.borrow().set_cursor_representation(&empty, (2, 2)) {
+                if needs_software_cursor && self.hardware_cursor.swap(false, Ordering::AcqRel) {
+                    if let Err(err) = drawer.borrow().set_cursor_representation(&empty, (0, 0)) {
                         error!(self.logger, "Error setting cursor: {}", err);
                     }
-                } else {
+                } else if !needs_software_cursor && !self.hardware_cursor.swap(true, Ordering::AcqRel) {
                     if let Err(err) = drawer.borrow().set_cursor_representation(&self.pointer_image, (2, 2)) {
                         error!(self.logger, "Error setting cursor: {}", err);
                     }
                 }
             } else {
-                if let Err(err) = drawer.borrow().set_cursor_representation(&empty, (2, 2)) {
-                    error!(self.logger, "Error setting cursor: {}", err);
+                if self.hardware_cursor.swap(false, Ordering::AcqRel) {
+                    if let Err(err) = drawer.borrow().set_cursor_representation(&empty, (0, 0)) {
+                        error!(self.logger, "Error setting cursor: {}", err);
+                    }
                 }
             }
 
