@@ -1,6 +1,7 @@
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use glium::{
@@ -38,6 +39,8 @@ use smithay::{
 use crate::shaders;
 use crate::shell::{MyCompositorToken, MyWindowMap, SurfaceData};
 
+pub static BACKEND_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 #[derive(Copy, Clone)]
 struct Vertex {
     position: [f32; 2],
@@ -52,6 +55,7 @@ mod implement_vertex {
 }
 
 pub struct GliumDrawer<F: GLGraphicsBackend + 'static> {
+    id: usize,
     display: GliumGraphicsBackend<F>,
     vertex_buffer: glium::VertexBuffer<Vertex>,
     index_buffer: glium::IndexBuffer<u16>,
@@ -107,6 +111,7 @@ impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer
         let programs = opengl_programs!(&display);
 
         GliumDrawer {
+            id: BACKEND_COUNTER.fetch_add(1, Ordering::AcqRel),
             display,
             vertex_buffer,
             index_buffer,
@@ -151,6 +156,7 @@ impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer
         let programs = opengl_programs!(&display);
 
         GliumDrawer {
+            id: BACKEND_COUNTER.fetch_add(1, Ordering::AcqRel),
             display,
             vertex_buffer,
             index_buffer,
@@ -321,7 +327,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                 // Pull a new buffer if available
                 if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
                     let mut data = data.borrow_mut();
-                    if data.texture.is_none() {
+                    if !data.texture.contains_key(&self.id) {
                         if let Some(buffer) = data.current_state.buffer.take() {
                             if let Ok(m) = self.texture_from_buffer(buffer.clone()) {
                                 // release the buffer if it was an SHM buffer
@@ -335,8 +341,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                                 {
                                     buffer.release();
                                 }
-
-                                data.texture = Some(m);
+                                data.texture.insert(self.id, m);
                             } else {
                                 // there was an error reading the buffer, release it, we
                                 // already logged the error
@@ -345,7 +350,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                         }
                     }
                     // Now, should we be drawn ?
-                    if data.texture.is_some() {
+                    if data.texture.contains_key(&self.id) {
                         // if yes, also process the children
                         if Role::<SubsurfaceRole>::has(role) {
                             x += data.current_state.sub_location.0;
@@ -364,7 +369,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
             |_surface, attributes, role, &(mut x, mut y)| {
                 if let Some(ref data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
                     let data = data.borrow();
-                    if let Some(ref metadata) = data.texture {
+                    if let Some(ref metadata) = data.texture.get(&self.id) {
                         // we need to re-extract the subsurface offset, as the previous closure
                         // only passes it to our children
                         if Role::<SubsurfaceRole>::has(role) {

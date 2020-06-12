@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    collections::HashMap,
     rc::Rc,
     sync::{Arc, Mutex},
 };
@@ -654,7 +655,7 @@ pub struct CommitedState {
 
 #[derive(Default)]
 pub struct SurfaceData {
-    pub texture: Option<crate::glium_drawer::TextureMetadata>,
+    pub texture: HashMap<usize, crate::glium_drawer::TextureMetadata>,
     pub geometry: Option<Rectangle>,
     pub resize_state: ResizeState,
     /// Minimum width and height, as requested by the surface.
@@ -673,7 +674,7 @@ impl SurfaceData {
     /// Apply a next state into the surface current state
     pub fn apply_state(&mut self, next_state: CommitedState) {
         if Self::merge_state(&mut self.current_state, next_state) {
-            self.texture = None;
+            self.texture.clear();
         }
     }
 
