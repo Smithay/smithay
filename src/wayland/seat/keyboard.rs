@@ -375,8 +375,9 @@ impl KeyboardHandle {
             let (dep, la, lo, gr) = guard.serialize_modifiers();
             let keys = guard.serialize_pressed_keys();
             guard.with_focused_kbds(|kbd, surface| {
-                kbd.modifiers(serial, dep, la, lo, gr);
                 kbd.enter(serial, &surface, keys.clone());
+                // Modifiers must be send after enter event.
+                kbd.modifiers(serial, dep, la, lo, gr);
             });
             {
                 let KbdInternal {
