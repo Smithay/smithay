@@ -16,7 +16,8 @@ use nix::libc::dev_t;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
+use std::sync::{Arc, Weak as WeakArc};
 #[cfg(feature = "use_system_lib")]
 use wayland_server::Display;
 
@@ -49,7 +50,7 @@ pub enum Error<U: std::error::Error + std::fmt::Debug + std::fmt::Display + 'sta
 }
 
 pub(crate) type Arguments = (crtc::Handle, Mode, Vec<connector::Handle>);
-type BackendRef<D> = Weak<EglSurfaceInternal<<D as Device>::Surface>>;
+type BackendRef<D> = WeakArc<EglSurfaceInternal<<D as Device>::Surface>>;
 
 /// Representation of an egl device to create egl rendering surfaces
 pub struct EglDevice<B, D>
@@ -214,8 +215,8 @@ where
                 SurfaceCreationError::NativeSurfaceCreationFailed(err) => Error::Underlying(err),
             })?;
 
-        let backend = Rc::new(EglSurfaceInternal { context, surface });
-        self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));
+        let backend = Arc::new(EglSurfaceInternal { context, surface });
+        self.backends.borrow_mut().insert(crtc, Arc::downgrade(&backend));
         Ok(EglSurface(backend))
     }
 

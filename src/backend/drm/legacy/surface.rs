@@ -7,8 +7,7 @@ use drm::Device as BasicDevice;
 
 use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::rc::Rc;
-use std::sync::{atomic::Ordering, RwLock};
+use std::sync::{atomic::Ordering, Arc, RwLock};
 
 use crate::backend::drm::{common::Error, DevPath, RawSurface, Surface};
 use crate::backend::graphics::CursorBackend;
@@ -24,7 +23,7 @@ pub struct State {
 }
 
 pub(in crate::backend::drm) struct LegacyDrmSurfaceInternal<A: AsRawFd + 'static> {
-    pub(super) dev: Rc<Dev<A>>,
+    pub(super) dev: Arc<Dev<A>>,
     pub(in crate::backend::drm) crtc: crtc::Handle,
     pub(super) state: RwLock<State>,
     pub(super) pending: RwLock<State>,
@@ -314,7 +313,7 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurfaceInternal<A> {
 
 impl<A: AsRawFd + 'static> LegacyDrmSurfaceInternal<A> {
     pub(crate) fn new(
-        dev: Rc<Dev<A>>,
+        dev: Arc<Dev<A>>,
         crtc: crtc::Handle,
         mode: Mode,
         connectors: &[connector::Handle],
@@ -472,7 +471,7 @@ impl<A: AsRawFd + 'static> Drop for LegacyDrmSurfaceInternal<A> {
 
 /// Open raw crtc utilizing legacy mode-setting
 pub struct LegacyDrmSurface<A: AsRawFd + 'static>(
-    pub(in crate::backend::drm) Rc<LegacyDrmSurfaceInternal<A>>,
+    pub(in crate::backend::drm) Arc<LegacyDrmSurfaceInternal<A>>,
 );
 
 impl<A: AsRawFd + 'static> AsRawFd for LegacyDrmSurface<A> {
@@ -553,5 +552,18 @@ impl<A: AsRawFd + 'static> RawSurface for LegacyDrmSurface<A> {
 
     fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
         RawSurface::page_flip(&*self.0, framebuffer)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::LegacyDrmSurface;
+    use std::fs::File;
+
+    fn is_send<S: Send>() {}
+
+    #[test]
+    fn surface_is_send() {
+        is_send::<LegacyDrmSurface<File>>();
     }
 }

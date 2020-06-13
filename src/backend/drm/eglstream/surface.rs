@@ -1,21 +1,19 @@
-use super::super::{Device, RawDevice, RawSurface, Surface};
+use super::super::{RawSurface, Surface};
 use super::Error;
 
 use drm::buffer::format::PixelFormat;
-use drm::control::{connector, crtc, dumbbuffer::DumbBuffer, framebuffer, Device as ControlDevice, Mode};
+use drm::control::{connector, crtc, dumbbuffer::DumbBuffer, framebuffer, Mode};
 #[cfg(feature = "backend_drm")]
 use failure::ResultExt;
 #[cfg(feature = "backend_drm")]
 use image::{ImageBuffer, Rgba};
 use nix::libc::{c_int, c_void};
 
-use std::cell::{Cell, RefCell};
 use std::ffi::CStr;
 use std::ptr;
-use std::rc::Rc;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 
 #[cfg(feature = "backend_drm")]
@@ -30,18 +28,24 @@ use crate::backend::egl::{display::EGLDisplayHandle, wrap_egl_call, EGLError, Sw
 #[cfg(feature = "backend_drm")]
 use crate::backend::graphics::CursorBackend;
 
-pub(in crate::backend::drm) struct EglStreamSurfaceInternal<D: RawDevice + 'static> {
-    pub(in crate::backend::drm) crtc: <D as Device>::Surface,
-    pub(in crate::backend::drm) cursor: Cell<Option<(DumbBuffer, (u32, u32))>>,
-    pub(in crate::backend::drm) stream: RefCell<Option<(Arc<EGLDisplayHandle>, EGLStreamKHR)>>,
-    pub(in crate::backend::drm) commit_buffer: Cell<Option<(DumbBuffer, framebuffer::Handle)>>,
+// We do not want to mark the whole surface as `Send` in case we screw up somewhere else
+// and because S needs to be `Send` as well for this to work.
+pub(super) struct StreamHandle(pub(super) EGLStreamKHR);
+// EGLStreamKHR can be moved between threads
+unsafe impl Send for StreamHandle {}
+
+pub(in crate::backend::drm) struct EglStreamSurfaceInternal<S: RawSurface + 'static> {
+    pub(in crate::backend::drm) crtc: S,
+    pub(in crate::backend::drm) cursor: Mutex<Option<(DumbBuffer, (u32, u32))>>,
+    pub(super) stream: Mutex<Option<(Arc<EGLDisplayHandle>, StreamHandle)>>,
+    pub(in crate::backend::drm) commit_buffer: Mutex<Option<(DumbBuffer, framebuffer::Handle)>>,
     pub(in crate::backend::drm) locked: AtomicBool,
     pub(in crate::backend::drm) logger: ::slog::Logger,
 }
 
-impl<D: RawDevice + 'static> Surface for EglStreamSurfaceInternal<D> {
-    type Connectors = <<D as Device>::Surface as Surface>::Connectors;
-    type Error = Error<<<D as Device>::Surface as Surface>::Error>;
+impl<S: RawSurface + 'static> Surface for EglStreamSurfaceInternal<S> {
+    type Connectors = <S as Surface>::Connectors;
+    type Error = Error<<S as Surface>::Error>;
 
     fn crtc(&self) -> crtc::Handle {
         self.crtc.crtc()
@@ -75,23 +79,23 @@ impl<D: RawDevice + 'static> Surface for EglStreamSurfaceInternal<D> {
         self.crtc.pending_mode()
     }
 
-    fn use_mode(&self, mode: Mode) -> Result<(), Error<<<D as Device>::Surface as Surface>::Error>> {
+    fn use_mode(&self, mode: Mode) -> Result<(), Error<<S as Surface>::Error>> {
         self.crtc.use_mode(mode).map_err(Error::Underlying)
     }
 }
 
-impl<D: RawDevice + 'static> Drop for EglStreamSurfaceInternal<D> {
+impl<S: RawSurface + 'static> Drop for EglStreamSurfaceInternal<S> {
     fn drop(&mut self) {
-        if let Some((buffer, _)) = self.cursor.get() {
+        if let Some((buffer, _)) = self.cursor.lock().unwrap().take() {
             let _ = self.crtc.destroy_dumb_buffer(buffer);
         }
-        if let Some((buffer, fb)) = self.commit_buffer.take() {
+        if let Some((buffer, fb)) = self.commit_buffer.lock().unwrap().take() {
             let _ = self.crtc.destroy_framebuffer(fb);
             let _ = self.crtc.destroy_dumb_buffer(buffer);
         }
-        if let Some((display, stream)) = self.stream.replace(None) {
+        if let Some((display, stream)) = self.stream.lock().unwrap().take() {
             unsafe {
-                egl::DestroyStreamKHR(display.handle, stream);
+                egl::DestroyStreamKHR(display.handle, stream.0);
             }
         }
     }
@@ -110,7 +114,7 @@ impl<D: RawDevice + 'static> Drop for EglStreamSurfaceInternal<D> {
 // Note that this might still appear a little choppy, we should just use software cursors
 // on eglstream devices by default and only use this, if the user really wants it.
 #[cfg(feature = "backend_drm")]
-impl<D: RawDevice + 'static> CursorBackend for EglStreamSurfaceInternal<D> {
+impl<S: RawSurface + 'static> CursorBackend for EglStreamSurfaceInternal<S> {
     type CursorFormat = ImageBuffer<Rgba<u8>, Vec<u8>>;
     type Error = Error<DrmError>;
 
@@ -178,7 +182,7 @@ impl<D: RawDevice + 'static> CursorBackend for EglStreamSurfaceInternal<D> {
         }
 
         // and store it
-        if let Some((old, _)) = self.cursor.replace(Some((cursor, hotspot))) {
+        if let Some((old, _)) = self.cursor.lock().unwrap().replace((cursor, hotspot)) {
             if self.crtc.destroy_dumb_buffer(old).is_err() {
                 warn!(self.logger, "Failed to free old cursor");
             }
@@ -189,14 +193,14 @@ impl<D: RawDevice + 'static> CursorBackend for EglStreamSurfaceInternal<D> {
 }
 
 /// egl stream surface for rendering
-pub struct EglStreamSurface<D: RawDevice + 'static>(
-    pub(in crate::backend::drm) Rc<EglStreamSurfaceInternal<D>>,
+pub struct EglStreamSurface<S: RawSurface + 'static>(
+    pub(in crate::backend::drm) Arc<EglStreamSurfaceInternal<S>>,
 );
 
-impl<D: RawDevice + 'static> EglStreamSurface<D> {
+impl<S: RawSurface + 'static> EglStreamSurface<S> {
     /// Check if underlying gbm resources need to be recreated.
     pub fn needs_recreation(&self) -> bool {
-        self.0.crtc.commit_pending() || self.0.stream.borrow().is_none()
+        self.0.crtc.commit_pending() || self.0.stream.lock().unwrap().is_none()
     }
 
     // An EGLStream is basically the pump that requests and consumes images to display them.
@@ -205,12 +209,13 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
         &self,
         display: &Arc<EGLDisplayHandle>,
         output_attribs: &[isize],
-    ) -> Result<EGLStreamKHR, Error<<<D as Device>::Surface as Surface>::Error>> {
+    ) -> Result<EGLStreamKHR, Error<<S as Surface>::Error>> {
+        let mut stream = self.0.stream.lock().unwrap();
         // drop old steam, if it already exists
-        if let Some((display, stream)) = self.0.stream.replace(None) {
+        if let Some((display, stream)) = stream.take() {
             // ignore result
             unsafe {
-                ffi::egl::DestroyStreamKHR(display.handle, stream);
+                ffi::egl::DestroyStreamKHR(display.handle, stream.0);
             }
         }
 
@@ -225,7 +230,7 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
                 .create_dumb_buffer((w as u32, h as u32), PixelFormat::ARGB8888)
             {
                 if let Ok(fb) = self.0.crtc.add_framebuffer(&buffer) {
-                    if let Some((buffer, fb)) = self.0.commit_buffer.replace(Some((buffer, fb))) {
+                    if let Some((buffer, fb)) = self.0.commit_buffer.lock().unwrap().replace((buffer, fb)) {
                         let _ = self.0.crtc.destroy_framebuffer(fb);
                         let _ = self.0.crtc.destroy_dumb_buffer(buffer);
                     }
@@ -388,21 +393,21 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
         };
 
         // okay, we have a config, lets create the stream.
-        let stream = unsafe { ffi::egl::CreateStreamKHR(display.handle, stream_attributes.as_ptr()) };
-        if stream == ffi::egl::NO_STREAM_KHR {
+        let raw_stream = unsafe { ffi::egl::CreateStreamKHR(display.handle, stream_attributes.as_ptr()) };
+        if raw_stream == ffi::egl::NO_STREAM_KHR {
             error!(self.0.logger, "Failed to create egl stream");
             return Err(Error::DeviceStreamCreationFailed);
         }
 
         // we have a stream, lets connect it to our output layer
-        if unsafe { ffi::egl::StreamConsumerOutputEXT(display.handle, stream, layer) } == 0 {
+        if unsafe { ffi::egl::StreamConsumerOutputEXT(display.handle, raw_stream, layer) } == 0 {
             error!(self.0.logger, "Failed to link Output Layer as Stream Consumer");
             return Err(Error::DeviceStreamCreationFailed);
         }
 
-        let _ = self.0.stream.replace(Some((display.clone(), stream)));
+        *stream = Some((display.clone(), StreamHandle(raw_stream)));
 
-        Ok(stream)
+        Ok(raw_stream)
     }
 
     pub(super) fn create_surface(
@@ -411,7 +416,7 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
         config_id: ffi::egl::types::EGLConfig,
         _surface_attribs: &[c_int],
         output_attribs: &[isize],
-    ) -> Result<*const c_void, Error<<<D as Device>::Surface as Surface>::Error>> {
+    ) -> Result<*const c_void, Error<<S as Surface>::Error>> {
         // our surface needs a stream
         let stream = self.create_stream(display, output_attribs)?;
 
@@ -450,7 +455,7 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
         crtc: crtc::Handle,
         display: &Arc<EGLDisplayHandle>,
         surface: ffi::egl::types::EGLSurface,
-    ) -> Result<(), SwapBuffersError<Error<<<D as Device>::Surface as Surface>::Error>>> {
+    ) -> Result<(), SwapBuffersError<Error<<S as Surface>::Error>>> {
         // if we have already swapped the buffer successfully, we need to free it again.
         //
         // we need to do this here, because the call may fail (compare this with gbm's unlock_buffer...).
@@ -466,7 +471,7 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
                 ffi::egl::NONE as isize,
             ];
 
-            if let Ok(stream) = self.0.stream.try_borrow() {
+            if let Ok(stream) = self.0.stream.try_lock() {
                 // lets try to acquire the frame.
                 // this may fail, if the buffer is still in use by the gpu,
                 // e.g. the flip was not done yet. In this case this call fails as `BUSY`.
@@ -474,7 +479,7 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
                     wrap_egl_call(|| unsafe {
                         ffi::egl::StreamConsumerAcquireAttribNV(
                             display.handle,
-                            *stream,
+                            stream.0,
                             acquire_attributes.as_ptr(),
                         );
                     })
@@ -503,9 +508,9 @@ impl<D: RawDevice + 'static> EglStreamSurface<D> {
     }
 }
 
-impl<D: RawDevice + 'static> Surface for EglStreamSurface<D> {
-    type Connectors = <<D as Device>::Surface as Surface>::Connectors;
-    type Error = Error<<<D as Device>::Surface as Surface>::Error>;
+impl<S: RawSurface + 'static> Surface for EglStreamSurface<S> {
+    type Connectors = <S as Surface>::Connectors;
+    type Error = Error<<S as Surface>::Error>;
 
     fn crtc(&self) -> crtc::Handle {
         self.0.crtc()
@@ -545,7 +550,7 @@ impl<D: RawDevice + 'static> Surface for EglStreamSurface<D> {
 }
 
 #[cfg(feature = "backend_drm_legacy")]
-impl<D: RawDevice + 'static> CursorBackend for EglStreamSurface<D> {
+impl<S: RawSurface + 'static> CursorBackend for EglStreamSurface<S> {
     type CursorFormat = ImageBuffer<Rgba<u8>, Vec<u8>>;
     type Error = Error<DrmError>;
 
@@ -559,5 +564,19 @@ impl<D: RawDevice + 'static> CursorBackend for EglStreamSurface<D> {
         hotspot: (u32, u32),
     ) -> Result<(), Self::Error> {
         self.0.set_cursor_representation(buffer, hotspot)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::EglStreamSurface;
+    use crate::backend::drm::legacy::LegacyDrmSurface;
+    use std::fs::File;
+
+    fn is_send<S: Send>() {}
+
+    #[test]
+    fn surface_is_send() {
+        is_send::<EglStreamSurface<LegacyDrmSurface<File>>>();
     }
 }

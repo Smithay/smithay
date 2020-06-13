@@ -7,6 +7,7 @@ use drm::control::{connector, crtc, Mode};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
+use std::sync::{atomic::Ordering, Weak as WeakArc};
 
 use super::{EglDevice, EglSurfaceInternal};
 use crate::backend::drm::{Device, Surface};
@@ -23,7 +24,7 @@ use crate::{
 /// linked to the [`EglDevice`](EglDevice) it was
 /// created from.
 pub struct EglDeviceObserver<N: NativeSurface + Surface> {
-    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<EglSurfaceInternal<N>>>>>,
+    backends: Weak<RefCell<HashMap<crtc::Handle, WeakArc<EglSurfaceInternal<N>>>>>,
 }
 
 impl<B, D> Linkable<SessionSignal> for EglDevice<B, D>
@@ -63,7 +64,10 @@ impl<N: NativeSurface + Surface> EglDeviceObserver<N> {
         if let Some(backends) = self.backends.upgrade() {
             for (_crtc, backend) in backends.borrow().iter() {
                 if let Some(backend) = backend.upgrade() {
-                    let old_surface = backend.surface.surface.replace(std::ptr::null());
+                    let old_surface = backend
+                        .surface
+                        .surface
+                        .swap(std::ptr::null_mut(), Ordering::SeqCst);
                     if !old_surface.is_null() {
                         unsafe {
                             ffi::egl::DestroySurface(**backend.surface.display, old_surface as *const _);

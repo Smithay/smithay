@@ -25,12 +25,13 @@ use drm::SystemError as DrmError;
 use failure::ResultExt;
 use nix::libc::dev_t;
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::CStr;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
+use std::sync::{Arc, Mutex, Weak as WeakArc};
 use std::{fs, ptr};
 
 mod surface;
@@ -78,11 +79,12 @@ pub enum Error<U: std::error::Error + std::fmt::Debug + std::fmt::Display + 'sta
     StreamFlipFailed(#[source] RawEGLError),
 }
 
+type SurfaceInternalRef<D> = WeakArc<EglStreamSurfaceInternal<<D as Device>::Surface>>;
 /// Representation of an open egl stream device to create egl rendering surfaces
 pub struct EglStreamDevice<D: RawDevice + ControlDevice + 'static> {
     pub(self) dev: EGLDeviceEXT,
     raw: D,
-    backends: Rc<RefCell<HashMap<crtc::Handle, Weak<EglStreamSurfaceInternal<D>>>>>,
+    backends: Rc<RefCell<HashMap<crtc::Handle, SurfaceInternalRef<D>>>>,
     logger: ::slog::Logger,
     #[cfg(feature = "backend_session")]
     links: Vec<crate::signaling::SignalToken>,
@@ -227,7 +229,7 @@ impl<D: RawDevice + ControlDevice + 'static> EglStreamDevice<D> {
 
 struct InternalDeviceHandler<D: RawDevice + ControlDevice + 'static> {
     handler: Box<dyn DeviceHandler<Device = EglStreamDevice<D>> + 'static>,
-    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<EglStreamSurfaceInternal<D>>>>>,
+    backends: Weak<RefCell<HashMap<crtc::Handle, SurfaceInternalRef<D>>>>,
     logger: ::slog::Logger,
 }
 
@@ -254,7 +256,7 @@ impl<D: RawDevice + ControlDevice + 'static> DeviceHandler for InternalDeviceHan
 }
 
 impl<D: RawDevice + ControlDevice + 'static> Device for EglStreamDevice<D> {
-    type Surface = EglStreamSurface<D>;
+    type Surface = EglStreamSurface<<D as Device>::Surface>;
 
     fn device_id(&self) -> dev_t {
         self.raw.device_id()
@@ -277,30 +279,31 @@ impl<D: RawDevice + ControlDevice + 'static> Device for EglStreamDevice<D> {
         crtc: crtc::Handle,
         mode: Mode,
         connectors: &[connector::Handle],
-    ) -> Result<EglStreamSurface<D>, Error<<<D as Device>::Surface as Surface>::Error>> {
+    ) -> Result<EglStreamSurface<<D as Device>::Surface>, Error<<<D as Device>::Surface as Surface>::Error>>
+    {
         info!(self.logger, "Initializing EglStreamSurface");
 
         let drm_surface =
             Device::create_surface(&mut self.raw, crtc, mode, connectors).map_err(Error::Underlying)?;
 
         // initialize a buffer for the cursor image
-        let cursor = Cell::new(Some((
+        let cursor = Some((
             self.raw
                 .create_dumb_buffer((1, 1), PixelFormat::ARGB8888)
                 .compat()
                 .map_err(Error::BufferCreationFailed)?,
             (0, 0),
-        )));
+        ));
 
-        let backend = Rc::new(EglStreamSurfaceInternal {
+        let backend = Arc::new(EglStreamSurfaceInternal {
             crtc: drm_surface,
-            cursor,
-            stream: RefCell::new(None),
-            commit_buffer: Cell::new(None),
+            cursor: Mutex::new(cursor),
+            stream: Mutex::new(None),
+            commit_buffer: Mutex::new(None),
             logger: self.logger.new(o!("crtc" => format!("{:?}", crtc))),
             locked: std::sync::atomic::AtomicBool::new(false),
         });
-        self.backends.borrow_mut().insert(crtc, Rc::downgrade(&backend));
+        self.backends.borrow_mut().insert(crtc, Arc::downgrade(&backend));
         Ok(EglStreamSurface(backend))
     }
 

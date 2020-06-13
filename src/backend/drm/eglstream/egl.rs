@@ -5,13 +5,13 @@
 //!
 
 #[cfg(feature = "backend_drm_atomic")]
-use crate::backend::drm::atomic::AtomicDrmDevice;
+use crate::backend::drm::atomic::AtomicDrmSurface;
 #[cfg(all(feature = "backend_drm_atomic", feature = "backend_drm_legacy"))]
-use crate::backend::drm::common::fallback::{EitherError, FallbackDevice, FallbackSurface};
+use crate::backend::drm::common::fallback::{EitherError, FallbackSurface};
 #[cfg(any(feature = "backend_drm_atomic", feature = "backend_drm_legacy"))]
 use crate::backend::drm::common::Error as DrmError;
 #[cfg(feature = "backend_drm_legacy")]
-use crate::backend::drm::legacy::LegacyDrmDevice;
+use crate::backend::drm::legacy::LegacyDrmSurface;
 use crate::backend::drm::{Device, RawDevice, RawSurface, Surface};
 use crate::backend::egl::native::{Backend, NativeDisplay, NativeSurface};
 use crate::backend::egl::{
@@ -37,9 +37,10 @@ pub struct EglStreamDeviceBackend<D: RawDevice + 'static> {
 
 impl<D: RawDevice + 'static> Backend for EglStreamDeviceBackend<D>
 where
-    EglStreamSurface<D>: NativeSurface<Error = Error<<<D as Device>::Surface as Surface>::Error>>,
+    EglStreamSurface<<D as Device>::Surface>:
+        NativeSurface<Error = Error<<<D as Device>::Surface as Surface>::Error>>,
 {
-    type Surface = EglStreamSurface<D>;
+    type Surface = EglStreamSurface<<D as Device>::Surface>;
     type Error = Error<<<D as Device>::Surface as Surface>::Error>;
 
     // create an EGLDisplay for the EGLstream platform
@@ -73,7 +74,8 @@ where
 unsafe impl<D: RawDevice + ControlDevice + 'static> NativeDisplay<EglStreamDeviceBackend<D>>
     for EglStreamDevice<D>
 where
-    EglStreamSurface<D>: NativeSurface<Error = Error<<<D as Device>::Surface as Surface>::Error>>,
+    EglStreamSurface<<D as Device>::Surface>:
+        NativeSurface<Error = Error<<<D as Device>::Surface as Surface>::Error>>,
 {
     type Arguments = (crtc::Handle, Mode, Vec<connector::Handle>);
 
@@ -100,7 +102,8 @@ where
     fn create_surface(
         &mut self,
         args: Self::Arguments,
-    ) -> Result<EglStreamSurface<D>, Error<<<D as Device>::Surface as Surface>::Error>> {
+    ) -> Result<EglStreamSurface<<D as Device>::Surface>, Error<<<D as Device>::Surface as Surface>::Error>>
+    {
         Device::create_surface(self, args.0, args.1, &args.2)
     }
 }
@@ -111,7 +114,7 @@ where
 // as a result, we need three implemenations for atomic, legacy and fallback...
 
 #[cfg(feature = "backend_drm_atomic")]
-unsafe impl<A: AsRawFd + 'static> NativeSurface for EglStreamSurface<AtomicDrmDevice<A>> {
+unsafe impl<A: AsRawFd + 'static> NativeSurface for EglStreamSurface<AtomicDrmSurface<A>> {
     type Error = Error<DrmError>;
 
     unsafe fn create(
@@ -141,17 +144,12 @@ unsafe impl<A: AsRawFd + 'static> NativeSurface for EglStreamSurface<AtomicDrmDe
         display: &Arc<EGLDisplayHandle>,
         surface: ffi::egl::types::EGLSurface,
     ) -> Result<(), SwapBuffersError<Error<DrmError>>> {
-        if let Some((buffer, fb)) = self.0.commit_buffer.take() {
-            let _ = self.0.crtc.destroy_framebuffer(fb);
-            let _ = self.0.crtc.destroy_dumb_buffer(buffer);
-        }
-
         self.flip(self.0.crtc.0.crtc, display, surface)
     }
 }
 
 #[cfg(feature = "backend_drm_legacy")]
-unsafe impl<A: AsRawFd + 'static> NativeSurface for EglStreamSurface<LegacyDrmDevice<A>> {
+unsafe impl<A: AsRawFd + 'static> NativeSurface for EglStreamSurface<LegacyDrmSurface<A>> {
     type Error = Error<DrmError>;
 
     unsafe fn create(
@@ -181,17 +179,13 @@ unsafe impl<A: AsRawFd + 'static> NativeSurface for EglStreamSurface<LegacyDrmDe
         display: &Arc<EGLDisplayHandle>,
         surface: ffi::egl::types::EGLSurface,
     ) -> Result<(), SwapBuffersError<Error<DrmError>>> {
-        if let Some((buffer, fb)) = self.0.commit_buffer.take() {
-            let _ = self.0.crtc.destroy_framebuffer(fb);
-            let _ = self.0.crtc.destroy_dumb_buffer(buffer);
-        }
         self.flip(self.0.crtc.0.crtc, display, surface)
     }
 }
 
 #[cfg(all(feature = "backend_drm_atomic", feature = "backend_drm_legacy"))]
 unsafe impl<A: AsRawFd + 'static> NativeSurface
-    for EglStreamSurface<FallbackDevice<AtomicDrmDevice<A>, LegacyDrmDevice<A>>>
+    for EglStreamSurface<FallbackSurface<AtomicDrmSurface<A>, LegacyDrmSurface<A>>>
 {
     type Error = Error<EitherError<DrmError, DrmError>>;
 
@@ -230,10 +224,6 @@ unsafe impl<A: AsRawFd + 'static> NativeSurface
         display: &Arc<EGLDisplayHandle>,
         surface: ffi::egl::types::EGLSurface,
     ) -> Result<(), SwapBuffersError<Self::Error>> {
-        if let Some((buffer, fb)) = self.0.commit_buffer.take() {
-            let _ = self.0.crtc.destroy_framebuffer(fb);
-            let _ = self.0.crtc.destroy_dumb_buffer(buffer);
-        }
         let crtc = match &self.0.crtc {
             FallbackSurface::Preference(dev) => dev.0.crtc,
             FallbackSurface::Fallback(dev) => dev.0.crtc,

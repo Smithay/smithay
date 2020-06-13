@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak as WeakArc};
 
 use super::{Dev, DevPath, Error, LegacyDrmDevice, LegacyDrmSurfaceInternal};
 use crate::{
@@ -25,18 +25,18 @@ use crate::{
 /// linked to the [`LegacyDrmDevice`](LegacyDrmDevice)
 /// it was created from.
 pub(crate) struct LegacyDrmDeviceObserver<A: AsRawFd + 'static> {
-    dev: Weak<Dev<A>>,
+    dev: WeakArc<Dev<A>>,
     dev_id: dev_t,
     privileged: bool,
     active: Arc<AtomicBool>,
-    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<LegacyDrmSurfaceInternal<A>>>>>,
+    backends: Weak<RefCell<HashMap<crtc::Handle, WeakArc<LegacyDrmSurfaceInternal<A>>>>>,
     logger: ::slog::Logger,
 }
 
 impl<A: AsRawFd + 'static> Linkable<SessionSignal> for LegacyDrmDevice<A> {
     fn link(&mut self, signaler: Signaler<SessionSignal>) {
         let mut observer = LegacyDrmDeviceObserver {
-            dev: Rc::downgrade(&self.dev),
+            dev: Arc::downgrade(&self.dev),
             dev_id: self.dev_id,
             active: self.active.clone(),
             privileged: self.dev.privileged,
@@ -69,7 +69,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDeviceObserver<A> {
         }
         if let Some(device) = self.dev.upgrade() {
             if let Some(backends) = self.backends.upgrade() {
-                for surface in backends.borrow().values().filter_map(Weak::upgrade) {
+                for surface in backends.borrow().values().filter_map(WeakArc::upgrade) {
                     // other ttys that use no cursor, might not clear it themselves.
                     // This makes sure our cursor won't stay visible.
                     //
@@ -139,7 +139,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDeviceObserver<A> {
 
             let mut used_connectors = HashSet::new();
             if let Some(backends) = self.backends.upgrade() {
-                for surface in backends.borrow().values().filter_map(Weak::upgrade) {
+                for surface in backends.borrow().values().filter_map(WeakArc::upgrade) {
                     let mut current = surface.state.write().unwrap();
                     let pending = surface.pending.read().unwrap();
 

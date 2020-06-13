@@ -13,9 +13,9 @@ use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak as WeakArc};
 
-use super::{AtomicDrmDevice, AtomicDrmSurfaceInternal, Dev};
+use super::{surface::CursorState, AtomicDrmDevice, AtomicDrmSurfaceInternal, Dev};
 use crate::backend::drm::{common::Error, DevPath, Surface};
 use crate::{
     backend::session::Signal as SessionSignal,
@@ -26,18 +26,18 @@ use crate::{
 /// linked to the [`AtomicDrmDevice`](AtomicDrmDevice)
 /// it was created from.
 pub struct AtomicDrmDeviceObserver<A: AsRawFd + 'static> {
-    dev: Weak<Dev<A>>,
+    dev: WeakArc<Dev<A>>,
     dev_id: dev_t,
     privileged: bool,
     active: Arc<AtomicBool>,
-    backends: Weak<RefCell<HashMap<crtc::Handle, Weak<AtomicDrmSurfaceInternal<A>>>>>,
+    backends: Weak<RefCell<HashMap<crtc::Handle, WeakArc<AtomicDrmSurfaceInternal<A>>>>>,
     logger: ::slog::Logger,
 }
 
 impl<A: AsRawFd + 'static> Linkable<SessionSignal> for AtomicDrmDevice<A> {
     fn link(&mut self, signaler: Signaler<SessionSignal>) {
         let mut observer = AtomicDrmDeviceObserver {
-            dev: Rc::downgrade(&self.dev),
+            dev: Arc::downgrade(&self.dev),
             dev_id: self.dev_id,
             active: self.active.clone(),
             privileged: self.dev.privileged,
@@ -72,7 +72,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
         // TODO: Clear overlay planes (if we ever use them)
 
         if let Some(backends) = self.backends.upgrade() {
-            for surface in backends.borrow().values().filter_map(Weak::upgrade) {
+            for surface in backends.borrow().values().filter_map(WeakArc::upgrade) {
                 // other ttys that use no cursor, might not clear it themselves.
                 // This makes sure our cursor won't stay visible.
                 //
@@ -187,7 +187,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
             //
             // Lets do that, by creating a garbage/non-matching current-state.
             if let Some(backends) = self.backends.upgrade() {
-                for surface in backends.borrow().values().filter_map(Weak::upgrade) {
+                for surface in backends.borrow().values().filter_map(WeakArc::upgrade) {
                     let mut current = surface.state.write().unwrap();
 
                     // lets force a non matching state
@@ -202,9 +202,11 @@ impl<A: AsRawFd + 'static> AtomicDrmDeviceObserver<A> {
                     surface.use_mode(mode)?;
 
                     // drop cursor state to force setting the cursor again.
-                    surface.cursor.position.set(None);
-                    surface.cursor.hotspot.set((0, 0));
-                    surface.cursor.framebuffer.set(None);
+                    *surface.cursor.lock().unwrap() = CursorState {
+                        position: None,
+                        hotspot: (0, 0),
+                        framebuffer: None,
+                    };
                 }
             }
         }

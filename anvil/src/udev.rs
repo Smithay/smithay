@@ -17,13 +17,13 @@ use smithay::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
 use smithay::{
     backend::{
         drm::{
-            atomic::AtomicDrmDevice,
+            atomic::{AtomicDrmDevice, AtomicDrmSurface},
             common::fallback::{FallbackDevice, FallbackSurface},
             device_bind,
             egl::{EglDevice, EglSurface},
             eglstream::{egl::EglStreamDeviceBackend, EglStreamDevice, EglStreamSurface},
             gbm::{egl::Gbm as EglGbmBackend, GbmDevice, GbmSurface},
-            legacy::LegacyDrmDevice,
+            legacy::{LegacyDrmDevice, LegacyDrmSurface},
             DevPath, Device, DeviceHandler, Surface,
         },
         graphics::{CursorBackend, SwapBuffersError},
@@ -86,8 +86,8 @@ type RenderDevice = FallbackDevice<
     >,
 >;
 type RenderSurface = FallbackSurface<
-    EglSurface<GbmSurface<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>>,
-    EglSurface<EglStreamSurface<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>>,
+    EglSurface<GbmSurface<FallbackSurface<AtomicDrmSurface<SessionFd>, LegacyDrmSurface<SessionFd>>>>,
+    EglSurface<EglStreamSurface<FallbackSurface<AtomicDrmSurface<SessionFd>, LegacyDrmSurface<SessionFd>>>>,
 >;
 
 pub fn run_udev(

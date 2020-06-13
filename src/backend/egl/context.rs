@@ -7,7 +7,7 @@ use crate::backend::egl::{native, EGLSurface};
 use crate::backend::graphics::PixelFormat;
 use std::os::raw::c_int;
 use std::ptr;
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
 /// EGL context for rendering
 pub struct EGLContext {
@@ -16,6 +16,9 @@ pub struct EGLContext {
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: PixelFormat,
 }
+// EGLContexts can be moved between threads safely
+unsafe impl Send for EGLContext {}
+unsafe impl Sync for EGLContext {}
 
 impl EGLContext {
     /// Create a new [`EGLContext`] from a given [`NativeDisplay`](native::NativeDisplay)
@@ -124,8 +127,7 @@ impl EGLContext {
     where
         N: NativeSurface,
     {
-        let surface_ptr = surface.surface.get();
-
+        let surface_ptr = surface.surface.load(Ordering::SeqCst);
         wrap_egl_call(|| ffi::egl::MakeCurrent(**self.display, surface_ptr, surface_ptr, self.context))
             .map(|_| ())
             .map_err(Into::into)

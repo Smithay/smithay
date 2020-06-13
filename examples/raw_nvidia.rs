@@ -8,15 +8,15 @@ use slog::Drain;
 use smithay::{
     backend::{
         drm::{
-            atomic::AtomicDrmDevice,
-            common::fallback::{EitherError, FallbackDevice},
+            atomic::{AtomicDrmDevice, AtomicDrmSurface},
+            common::fallback::{EitherError, FallbackDevice, FallbackSurface},
             common::Error as DrmError,
             device_bind,
             egl::{EglDevice, EglSurface, Error as EglError},
             eglstream::{
                 egl::EglStreamDeviceBackend, EglStreamDevice, EglStreamSurface, Error as EglStreamError,
             },
-            legacy::LegacyDrmDevice,
+            legacy::{LegacyDrmDevice, LegacyDrmSurface},
             Device, DeviceHandler,
         },
         graphics::glium::GliumGraphicsBackend,
@@ -145,7 +145,7 @@ pub struct DrmHandlerImpl {
         GliumGraphicsBackend<
             EglSurface<
                 EglStreamSurface<
-                    FallbackDevice<AtomicDrmDevice<ClonableFile>, LegacyDrmDevice<ClonableFile>>,
+                    FallbackSurface<AtomicDrmSurface<ClonableFile>, LegacyDrmSurface<ClonableFile>>,
                 >,
             >,
         >,
