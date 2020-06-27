@@ -1,7 +1,7 @@
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, AtomicBool, Ordering},
 };
 
 use glium::{
@@ -14,6 +14,7 @@ use slog::Logger;
 
 use smithay::{
     backend::graphics::{
+        CursorBackend,
         gl::GLGraphicsBackend,
         glium::{Frame, GliumGraphicsBackend},
         SwapBuffersError,
@@ -56,6 +57,7 @@ pub struct GliumDrawer<F: GLGraphicsBackend + 'static> {
     index_buffer: glium::IndexBuffer<u16>,
     programs: [glium::Program; shaders::FRAGMENT_COUNT],
     buffer_loader: BufferUtils,
+    pub hardware_cursor: AtomicBool,
     log: Logger,
 }
 
@@ -110,10 +112,89 @@ impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer
             index_buffer,
             programs,
             buffer_loader,
+            hardware_cursor: AtomicBool::new(false),
             log,
         }
     }
 }
+
+impl<F: GLGraphicsBackend + CursorBackend + 'static> GliumDrawer<F> {
+    pub fn draw_hardware_cursor(
+        &self,
+        cursor: &<F as CursorBackend>::CursorFormat,
+        hotspot: (u32, u32),
+        position: (i32, i32),
+    ) {
+        let (x, y) = position;
+        let _ = self.display.borrow().set_cursor_position(x as u32, y as u32);
+        if !self.hardware_cursor.swap(true, Ordering::SeqCst) {
+            if let Err(_) = self.display.borrow().set_cursor_representation(cursor, hotspot) {
+                warn!(
+                    self.log,
+                    "Failed to upload hardware cursor",
+                );
+            }
+        }
+    }
+
+    pub fn draw_software_cursor(
+        &self,
+        frame: &mut Frame,
+        surface: &wl_surface::WlSurface,
+        (x, y): (i32, i32),
+        token: MyCompositorToken,
+    ) {
+        let (dx, dy) = match token.with_role_data::<CursorImageRole, _, _>(surface, |data| data.hotspot) {
+            Ok(h) => h,
+            Err(_) => {
+                warn!(
+                    self.log,
+                    "Trying to display as a cursor a surface that does not have the CursorImage role."
+                );
+                (0, 0)
+            }
+        };
+        let screen_dimensions = self.borrow().get_framebuffer_dimensions();
+        self.draw_surface_tree(frame, surface, (x - dx, y - dy), token, screen_dimensions);
+        self.clear_cursor()
+    }
+
+    pub fn clear_cursor(&self) {
+        if self.hardware_cursor.swap(false, Ordering::SeqCst) {
+            if let Err(_) = self.display.borrow().clear_cursor_representation() {
+                warn!(self.log, "Failed to clear cursor");
+            }
+        }
+    }
+}
+
+// I would love to do this, but this is essentially specialization...
+// And since this is just an example compositor, it seems we require now,
+// that for the use of software cursors we need the hardware cursor trait (to do automatic cleanup..)
+/*
+impl<F: GLGraphicsBackend + !CursorBackend + 'static> GliumDrawer<F> {
+    pub fn draw_software_cursor(
+        &self,
+        frame: &mut Frame,
+        surface: &wl_surface::WlSurface,
+        (x, y): (i32, i32),
+        token: MyCompositorToken,
+    ) {
+        let (dx, dy) = match token.with_role_data::<CursorImageRole, _, _>(surface, |data| data.hotspot) {
+            Ok(h) => h,
+            Err(_) => {
+                warn!(
+                    self.log,
+                    "Trying to display as a cursor a surface that does not have the CursorImage role."
+                );
+                (0, 0)
+            }
+        };
+        let screen_dimensions = self.borrow().get_framebuffer_dimensions();
+        self.draw_surface_tree(frame, surface, (x - dx, y - dy), token, screen_dimensions);
+    }
+}
+*/
 
 impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     pub fn render_texture(&self, target: &mut Frame, spec: RenderTextureSpec<'_>) {
@@ -286,27 +367,6 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                 }
             });
         }
-    }
-
-    pub fn draw_cursor(
-        &self,
-        frame: &mut Frame,
-        surface: &wl_surface::WlSurface,
-        (x, y): (i32, i32),
-        token: MyCompositorToken,
-    ) {
-        let (dx, dy) = match token.with_role_data::<CursorImageRole, _, _>(surface, |data| data.hotspot) {
-            Ok(h) => h,
-            Err(_) => {
-                warn!(
-                    self.log,
-                    "Trying to display as a cursor a surface that does not have the CursorImage role."
-                );
-                (0, 0)
-            }
-        };
-        let screen_dimensions = self.borrow().get_framebuffer_dimensions();
-        self.draw_surface_tree(frame, surface, (x - dx, y - dy), token, screen_dimensions);
     }
 
     pub fn draw_dnd_icon(

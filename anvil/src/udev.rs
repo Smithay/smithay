@@ -5,7 +5,7 @@ use std::{
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
     rc::Rc,
-    sync::{atomic::{Ordering, AtomicBool}, Arc, Mutex},
+    sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
 };
 
@@ -45,7 +45,7 @@ use smithay::{
                 encoder::Info as EncoderInfo,
             },
         },
-        image::{ImageBuffer, Rgba, Pixel},
+        image::{ImageBuffer, Rgba},
         input::Libinput,
         nix::{fcntl::OFlag, sys::stat::dev_t},
         wayland_server::{
@@ -435,7 +435,6 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 pointer_image: self.pointer_image.clone(),
                 cursor_status: self.cursor_status.clone(),
                 dnd_icon: self.dnd_icon.clone(),
-                hardware_cursor: AtomicBool::new(false),
                 logger: self.logger.clone(),
             });
             let mut listener = DrmRendererSessionListener {
@@ -566,7 +565,6 @@ pub struct DrmRenderer {
     pointer_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     cursor_status: Arc<Mutex<CursorImageStatus>>,
     dnd_icon: Arc<Mutex<Option<wl_surface::WlSurface>>>,
-    hardware_cursor: AtomicBool,
     logger: ::slog::Logger,
 }
 
@@ -615,15 +613,11 @@ impl DrmRenderer {
             let ptr_y = ptr_y.trunc().abs() as i32 - y as i32;
 
             // set cursor
-            // TODO hack, should be possible to clear the cursor
-            let empty = ImageBuffer::from_fn(self.pointer_image.width(), self.pointer_image.height(), |_, _| Rgba::from_channels(0, 0, 0, 0));
-            if ptr_x > 0 && ptr_x < width as i32 && ptr_y > 0 && ptr_y < height as i32 {
+            if ptr_x >= 0 && ptr_x < width as i32 && ptr_y >= 0 && ptr_y < height as i32 {
                 let _ = drawer
                     .borrow()
                     .set_cursor_position(ptr_x as u32, ptr_y as u32);
                 
-                let mut needs_software_cursor = false;
-
                 // draw the dnd icon if applicable
                 {
                     let guard = self.dnd_icon.lock().unwrap();
@@ -635,7 +629,6 @@ impl DrmRenderer {
                                 (ptr_x, ptr_y),
                                 self.compositor_token,
                             );
-                            //needs_software_cursor = true;
                         }
                     }
                 }
@@ -651,26 +644,13 @@ impl DrmRenderer {
                         *guard = CursorImageStatus::Default;
                     }
                     if let CursorImageStatus::Image(ref surface) = *guard {
-                        drawer.draw_cursor(&mut frame, surface, (ptr_x, ptr_y), self.compositor_token);
-                        needs_software_cursor = true;
-                    }
-                }
-
-                if needs_software_cursor && self.hardware_cursor.swap(false, Ordering::AcqRel) {
-                    if let Err(err) = drawer.borrow().set_cursor_representation(&empty, (0, 0)) {
-                        error!(self.logger, "Error setting cursor: {}", err);
-                    }
-                } else if !needs_software_cursor && !self.hardware_cursor.swap(true, Ordering::AcqRel) {
-                    if let Err(err) = drawer.borrow().set_cursor_representation(&self.pointer_image, (2, 2)) {
-                        error!(self.logger, "Error setting cursor: {}", err);
+                        drawer.draw_software_cursor(&mut frame, surface, (ptr_x, ptr_y), self.compositor_token);
+                    } else {
+                        drawer.draw_hardware_cursor(&self.pointer_image, (2, 2), (ptr_x, ptr_y));
                     }
                 }
             } else {
-                if self.hardware_cursor.swap(false, Ordering::AcqRel) {
-                    if let Err(err) = drawer.borrow().set_cursor_representation(&empty, (0, 0)) {
-                        error!(self.logger, "Error setting cursor: {}", err);
-                    }
-                }
+                drawer.clear_cursor();
             }
 
             if let Err(err) = frame.finish() {

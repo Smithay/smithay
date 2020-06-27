@@ -5,6 +5,7 @@ use smithay::{
     reexports::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
+        winit::window::CursorIcon,
     },
     wayland::{
         output::{Mode, Output, PhysicalProperties},
@@ -128,7 +129,9 @@ pub fn run_winit(
                 }
                 // draw as relevant
                 if let CursorImageStatus::Image(ref surface) = *guard {
-                    drawer.draw_cursor(&mut frame, surface, (x as i32, y as i32), state.ctoken);
+                    drawer.draw_software_cursor(&mut frame, surface, (x as i32, y as i32), state.ctoken);
+                } else {
+                    drawer.draw_hardware_cursor(&CursorIcon::Default, (0, 0), (x as i32, y as i32));
                 }
             }
 
