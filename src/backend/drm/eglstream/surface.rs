@@ -192,7 +192,8 @@ impl<S: RawSurface + 'static> CursorBackend for EglStreamSurfaceInternal<S> {
     }
 
     fn clear_cursor_representation(&self) -> Result<(), Self::Error> {
-        self.crtc.set_cursor(self.crtc.crtc(), Option::<&DumbBuffer>::None)
+        self.crtc
+            .set_cursor(self.crtc.crtc(), Option::<&DumbBuffer>::None)
             .compat()
             .map_err(|source| DrmError::Access {
                 errmsg: "Failed to clear cursor",

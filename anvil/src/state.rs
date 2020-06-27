@@ -24,14 +24,11 @@ use smithay::{
 };
 
 #[cfg(feature = "udev")]
-use smithay::backend::session::{
-    auto::AutoSession,
-    Session,
-};
+use smithay::backend::session::{auto::AutoSession, Session};
 
-use crate::{buffer_utils::BufferUtils, shell::init_shell};
 #[cfg(feature = "udev")]
 use crate::udev::MyOutput;
+use crate::{buffer_utils::BufferUtils, shell::init_shell};
 
 pub struct AnvilState {
     pub socket_name: String,

@@ -307,7 +307,9 @@ where
     }
 
     fn clear_cursor_representation(&self) -> Result<(), Self::Error> {
-        *self.cursor.lock().unwrap() = (self.dev.lock()
+        *self.cursor.lock().unwrap() = (
+            self.dev
+                .lock()
                 .unwrap()
                 .create_buffer_object(
                     1,
@@ -316,10 +318,9 @@ where
                     BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
                 )
                 .map_err(Error::BufferCreationFailed)?,
-            (0, 0)
+            (0, 0),
         );
-        self.crtc.clear_cursor_representation()
-            .map_err(Error::Underlying)
+        self.crtc.clear_cursor_representation().map_err(Error::Underlying)
     }
 }
 

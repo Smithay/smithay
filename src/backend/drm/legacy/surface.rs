@@ -90,7 +90,7 @@ impl<A: AsRawFd + 'static> CursorBackend for LegacyDrmSurfaceInternal<A> {
 
     fn clear_cursor_representation(&self) -> Result<(), Error> {
         self.set_cursor(self.crtc, Option::<&DumbBuffer>::None)
-            .compat()    
+            .compat()
             .map_err(|source| Error::Access {
                 errmsg: "Failed to set cursor",
                 dev: self.dev_path(),

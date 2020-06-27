@@ -81,18 +81,20 @@ impl AnvilState {
                         "err" => format!("{:?}", e)
                     );
                 }
-            },
+            }
             #[cfg(feature = "udev")]
             KeyAction::Screen(num) => {
-                let output_map = self.output_map
-                    .as_ref().unwrap();
+                let output_map = self.output_map.as_ref().unwrap();
                 let outputs = output_map.borrow();
                 if let Some(output) = outputs.get(num) {
-                    let x = outputs.iter().take(num).fold(0, |acc, output| acc + output.size.0) as f64 + (output.size.0 as f64 / 2.0);
+                    let x = outputs
+                        .iter()
+                        .take(num)
+                        .fold(0, |acc, output| acc + output.size.0) as f64
+                        + (output.size.0 as f64 / 2.0);
                     let y = output.size.1 as f64 / 2.0;
                     *self.pointer_location.borrow_mut() = (x as f64, y as f64)
                 }
-
             }
             _ => (),
         }
@@ -104,7 +106,7 @@ impl AnvilState {
         let mut location = self.pointer_location.borrow_mut();
         location.0 += x as f64;
         location.1 += y as f64;
-        
+
         #[cfg(feature = "udev")]
         {
             // clamp to screen limits
@@ -149,19 +151,16 @@ impl AnvilState {
 
     #[cfg(feature = "udev")]
     fn clamp_coords(&self, pos: (f64, f64)) -> (f64, f64) {
-        let output_map = self.output_map
-            .as_ref().unwrap();
+        let output_map = self.output_map.as_ref().unwrap();
         let outputs = output_map.borrow();
-            
+
         if outputs.len() == 0 {
             return pos;
         }
 
         let (mut x, mut y) = pos;
         // max_x is the sum of the width of all outputs
-        let max_x = outputs
-            .iter()
-            .fold(0u32, |acc, output| acc + output.size.0);
+        let max_x = outputs.iter().fold(0u32, |acc, output| acc + output.size.0);
         x = x.max(0.0).min(max_x as f64);
 
         // max y depends on the current output
@@ -170,7 +169,7 @@ impl AnvilState {
 
         (x, y)
     }
-    
+
     #[cfg(feature = "udev")]
     fn current_output_idx(&self, x: f64) -> usize {
         let output_map = self.output_map.as_ref().unwrap();

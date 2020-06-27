@@ -1031,7 +1031,7 @@ impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurface<A> {
     ) -> Result<(), Error> {
         self.0.set_cursor_representation(buffer, hotspot)
     }
-    
+
     fn clear_cursor_representation(&self) -> Result<(), Self::Error> {
         self.0.clear_cursor_representation()
     }

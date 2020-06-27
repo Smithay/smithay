@@ -162,7 +162,7 @@ impl AsErrno for () {
 pub mod auto;
 pub mod direct;
 
-#[cfg(feature="backend_session_logind")]
+#[cfg(feature = "backend_session_logind")]
 mod dbus;
-#[cfg(feature="backend_session_logind")]
+#[cfg(feature = "backend_session_logind")]
 pub use self::dbus::*;

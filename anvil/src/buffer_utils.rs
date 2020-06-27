@@ -1,9 +1,3 @@
-use std::collections::HashMap;
-#[cfg(feature = "egl")]
-use std::{
-    cell::RefCell,
-    rc::Rc,
-};
 use glium::texture::Texture2d;
 #[cfg(feature = "egl")]
 use glium::{
@@ -11,9 +5,14 @@ use glium::{
     GlObject,
 };
 use slog::Logger;
+use std::collections::HashMap;
+#[cfg(feature = "egl")]
+use std::{cell::RefCell, rc::Rc};
 
 #[cfg(feature = "egl")]
-use smithay::backend::egl::{display::EGLBufferReader, EGLImages, BufferAccessError as EGLBufferAccessError, Format};
+use smithay::backend::egl::{
+    display::EGLBufferReader, BufferAccessError as EGLBufferAccessError, EGLImages, Format,
+};
 use smithay::{
     backend::graphics::gl::GLGraphicsBackend,
     reexports::wayland_server::protocol::wl_buffer::WlBuffer,
@@ -65,11 +64,10 @@ impl BufferUtils {
 
     /// Returns the dimensions of an image stored in the shm buffer.
     fn shm_buffer_dimensions(&self, buffer: &WlBuffer) -> Result<(i32, i32), BufferAccessError> {
-        shm_buffer_contents(buffer, |_, data| (data.width, data.height))
-            .map_err(|err| {
-                warn!(self.log, "Unable to load buffer contents"; "err" => format!("{:?}", err));
-                err
-            })
+        shm_buffer_contents(buffer, |_, data| (data.width, data.height)).map_err(|err| {
+            warn!(self.log, "Unable to load buffer contents"; "err" => format!("{:?}", err));
+            err
+        })
     }
 
     #[cfg(feature = "egl")]
@@ -111,13 +109,14 @@ impl BufferUtils {
     }
 
     fn load_shm_buffer(&self, buffer: WlBuffer) -> Result<BufferTextures, WlBuffer> {
-        let (width, height, format) = match shm_buffer_contents(&buffer, |_, data| (data.width, data.height, data.format)) {
-            Ok(x) => x,
-            Err(err) => {
-                warn!(self.log, "Unable to load buffer contents"; "err" => format!("{:?}", err));
-                return Err(buffer);
-            }
-        };
+        let (width, height, format) =
+            match shm_buffer_contents(&buffer, |_, data| (data.width, data.height, data.format)) {
+                Ok(x) => x,
+                Err(err) => {
+                    warn!(self.log, "Unable to load buffer contents"; "err" => format!("{:?}", err));
+                    return Err(buffer);
+                }
+            };
         let shader = match crate::shm_load::load_format(format) {
             Ok(x) => x.1,
             Err(format) => {
@@ -151,12 +150,16 @@ pub struct BufferTextures {
 
 impl BufferTextures {
     #[cfg(feature = "egl")]
-    pub fn load_texture<'a, F: GLGraphicsBackend + 'static>(&'a mut self, drawer: &GliumDrawer<F>) -> Result<&'a Texture2d, ()> {
+    pub fn load_texture<'a, F: GLGraphicsBackend + 'static>(
+        &'a mut self,
+        drawer: &GliumDrawer<F>,
+    ) -> Result<&'a Texture2d, ()> {
         if self.textures.contains_key(&drawer.id) {
             return Ok(&self.textures[&drawer.id]);
         }
 
-        if let Some(images) = self.images.as_ref() { //EGL buffer
+        if let Some(images) = self.images.as_ref() {
+            //EGL buffer
             let format = match images.format {
                 Format::RGB => UncompressedFloatFormat::U8U8U8,
                 Format::RGBA => UncompressedFloatFormat::U8U8U8U8,
@@ -189,7 +192,10 @@ impl BufferTextures {
     }
 
     #[cfg(not(feature = "egl"))]
-    pub fn load_texture<'a, F: GLGraphicsBackend + 'static>(&'a mut self, drawer: &GliumDrawer<F>) -> Result<&'a Texture2d, ()> {
+    pub fn load_texture<'a, F: GLGraphicsBackend + 'static>(
+        &'a mut self,
+        drawer: &GliumDrawer<F>,
+    ) -> Result<&'a Texture2d, ()> {
         if self.textures.contains_key(&drawer.id) {
             return Ok(&self.textures[&drawer.id]);
         }
@@ -197,7 +203,10 @@ impl BufferTextures {
         self.load_shm_texture(drawer)
     }
 
-    fn load_shm_texture<'a, F: GLGraphicsBackend + 'static>(&'a mut self, drawer: &GliumDrawer<F>) -> Result<&'a Texture2d, ()> {
+    fn load_shm_texture<'a, F: GLGraphicsBackend + 'static>(
+        &'a mut self,
+        drawer: &GliumDrawer<F>,
+    ) -> Result<&'a Texture2d, ()> {
         match shm_buffer_contents(&self.buffer, |slice, data| {
             crate::shm_load::load_shm_buffer(data, slice)
                 .map(|(image, _kind)| Texture2d::new(&drawer.display, image).unwrap())
@@ -205,7 +214,7 @@ impl BufferTextures {
             Ok(Ok(texture)) => {
                 self.textures.insert(drawer.id, texture);
                 Ok(&self.textures[&drawer.id])
-            },
+            }
             Ok(Err(format)) => {
                 warn!(self.logger, "Unsupported SHM buffer format"; "format" => format!("{:?}", format));
                 Err(())

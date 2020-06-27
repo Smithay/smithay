@@ -1,5 +1,7 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
+#[cfg(feature = "egl")]
+use smithay::backend::egl::EGLGraphicsBackend;
 use smithay::{
     backend::{graphics::gl::GLGraphicsBackend, input::InputBackend, winit},
     reexports::{
@@ -13,8 +15,6 @@ use smithay::{
         SERIAL_COUNTER as SCOUNTER,
     },
 };
-#[cfg(feature = "egl")]
-use smithay::backend::egl::EGLGraphicsBackend;
 
 use slog::Logger;
 

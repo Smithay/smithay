@@ -1,28 +1,19 @@
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
-    sync::atomic::{AtomicUsize, AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use glium::{
-    self,
-    index::PrimitiveType,
-    texture::Texture2d,
-    Surface,
-};
+use glium::{self, index::PrimitiveType, texture::Texture2d, Surface};
 use slog::Logger;
 
 use smithay::{
     backend::graphics::{
-        CursorBackend,
         gl::GLGraphicsBackend,
         glium::{Frame, GliumGraphicsBackend},
-        SwapBuffersError,
+        CursorBackend, SwapBuffersError,
     },
-    reexports::{
-        calloop::LoopHandle,
-        wayland_server::protocol::wl_surface,
-    },
+    reexports::{calloop::LoopHandle, wayland_server::protocol::wl_surface},
     utils::Rectangle,
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
@@ -68,11 +59,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
 }
 
 impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer<T> {
-    pub fn init(
-        backend: T,
-        buffer_loader: BufferUtils,
-        log: Logger,
-    ) -> GliumDrawer<T> {
+    pub fn init(backend: T, buffer_loader: BufferUtils, log: Logger) -> GliumDrawer<T> {
         let display = backend.into();
 
         // building the vertex buffer, which contains all the vertices that we will draw
@@ -127,13 +114,14 @@ impl<F: GLGraphicsBackend + CursorBackend + 'static> GliumDrawer<F> {
     ) {
         let (x, y) = position;
         let _ = self.display.borrow().set_cursor_position(x as u32, y as u32);
-        if !self.hardware_cursor.swap(true, Ordering::SeqCst) {
-            if let Err(_) = self.display.borrow().set_cursor_representation(cursor, hotspot) {
-                warn!(
-                    self.log,
-                    "Failed to upload hardware cursor",
-                );
-            }
+        if !self.hardware_cursor.swap(true, Ordering::SeqCst)
+            && self
+                .display
+                .borrow()
+                .set_cursor_representation(cursor, hotspot)
+                .is_err()
+        {
+            warn!(self.log, "Failed to upload hardware cursor",);
         }
     }
 
@@ -160,15 +148,15 @@ impl<F: GLGraphicsBackend + CursorBackend + 'static> GliumDrawer<F> {
     }
 
     pub fn clear_cursor(&self) {
-        if self.hardware_cursor.swap(false, Ordering::SeqCst) {
-            if let Err(_) = self.display.borrow().clear_cursor_representation() {
-                warn!(self.log, "Failed to clear cursor");
-            }
+        if self.hardware_cursor.swap(false, Ordering::SeqCst)
+            && self.display.borrow().clear_cursor_representation().is_err()
+        {
+            warn!(self.log, "Failed to clear cursor");
         }
     }
 }
 
-// I would love to do this, but this is essentially specialization...
+// I would love to do this (check on !CursorBackend), but this is essentially specialization...
 // And since this is just an example compositor, it seems we require now,
 // that for the use of software cursors we need the hardware cursor trait (to do automatic cleanup..)
 /*
@@ -347,25 +335,27 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
         // redraw the frame, in a simple but inneficient way
         {
             let screen_dimensions = self.borrow().get_framebuffer_dimensions();
-            window_map.with_windows_from_bottom_to_top(|toplevel_surface, mut initial_place, bounding_box| {
-                // skip windows that do not overlap with a given output
-                if let Some(output) = output_rect {
-                    if !output.overlaps(bounding_box) {
-                        return;
+            window_map.with_windows_from_bottom_to_top(
+                |toplevel_surface, mut initial_place, bounding_box| {
+                    // skip windows that do not overlap with a given output
+                    if let Some(output) = output_rect {
+                        if !output.overlaps(bounding_box) {
+                            return;
+                        }
+                        initial_place.0 -= output.x;
                     }
-                    initial_place.0 -= output.x;
-                }
-                if let Some(wl_surface) = toplevel_surface.get_surface() {
-                    // this surface is a root of a subsurface tree that needs to be drawn
-                    self.draw_surface_tree(
-                        frame,
-                        &wl_surface,
-                        initial_place,
-                        compositor_token,
-                        screen_dimensions,
-                    );
-                }
-            });
+                    if let Some(wl_surface) = toplevel_surface.get_surface() {
+                        // this surface is a root of a subsurface tree that needs to be drawn
+                        self.draw_surface_tree(
+                            frame,
+                            &wl_surface,
+                            initial_place,
+                            compositor_token,
+                            screen_dimensions,
+                        );
+                    }
+                },
+            );
         }
     }
 
