@@ -82,6 +82,7 @@ impl AnvilState {
                     );
                 }
             },
+            #[cfg(feature = "udev")]
             KeyAction::Screen(num) => {
                 let output_map = self.output_map
                     .as_ref().unwrap();

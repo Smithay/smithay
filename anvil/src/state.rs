@@ -8,7 +8,6 @@ use std::{
 };
 
 use smithay::{
-    backend::session::auto::AutoSession,
     reexports::{
         calloop::{
             generic::{Fd, Generic},
@@ -25,9 +24,14 @@ use smithay::{
 };
 
 #[cfg(feature = "udev")]
-use smithay::backend::session::Session;
+use smithay::backend::session::{
+    auto::AutoSession,
+    Session,
+};
 
-use crate::{buffer_utils::BufferUtils, shell::init_shell, udev::MyOutput};
+use crate::{buffer_utils::BufferUtils, shell::init_shell};
+#[cfg(feature = "udev")]
+use crate::udev::MyOutput;
 
 pub struct AnvilState {
     pub socket_name: String,
@@ -129,7 +133,7 @@ impl AnvilState {
             "anvil".into()
         };
         #[cfg(not(feature = "udev"))]
-        let seat_name = "anvil".into();
+        let seat_name: String = "anvil".into();
 
         let (mut seat, _) = Seat::new(
             &mut display.borrow_mut(),

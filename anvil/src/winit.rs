@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 use smithay::{
-    backend::{egl::EGLGraphicsBackend, graphics::gl::GLGraphicsBackend, input::InputBackend, winit},
+    backend::{graphics::gl::GLGraphicsBackend, input::InputBackend, winit},
     reexports::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
@@ -12,6 +12,8 @@ use smithay::{
         SERIAL_COUNTER as SCOUNTER,
     },
 };
+#[cfg(feature = "egl")]
+use smithay::backend::egl::EGLGraphicsBackend;
 
 use slog::Logger;
 
@@ -38,16 +40,13 @@ pub fn run_winit(
         },
     ));
 
-    let (w, h) = renderer.get_framebuffer_dimensions();
-    #[cfg(feature = "egl")]
-    let drawer = GliumDrawer::init(renderer, egl_buffer_reader.clone(), log.clone());
-    #[cfg(not(feature = "egl"))]
-    let drawer = GliumDrawer::init(renderer, log.clone());
-
     #[cfg(feature = "egl")]
     let buffer_utils = BufferUtils::new(egl_buffer_reader, log.clone());
     #[cfg(not(feature = "egl"))]
     let buffer_utils = BufferUtils::new(log.clone());
+
+    let (w, h) = renderer.get_framebuffer_dimensions();
+    let drawer = GliumDrawer::init(renderer, buffer_utils.clone(), log.clone());
 
     /*
      * Initialize the globals

@@ -32,13 +32,7 @@ pub fn load_shm_buffer(data: BufferData, pool: &[u8]) -> Result<(RawImage2d<'_, 
     };
 
     // sharders format need to be reversed to account for endianness
-    let (client_format, fragment) = match data.format {
-        Format::Argb8888 => (ClientFormat::U8U8U8U8, crate::shaders::BUFFER_BGRA),
-        Format::Xrgb8888 => (ClientFormat::U8U8U8U8, crate::shaders::BUFFER_BGRX),
-        Format::Rgba8888 => (ClientFormat::U8U8U8U8, crate::shaders::BUFFER_ABGR),
-        Format::Rgbx8888 => (ClientFormat::U8U8U8U8, crate::shaders::BUFFER_XBGR),
-        _ => return Err(data.format),
-    };
+    let (client_format, fragment) = load_format(data.format)?;
     Ok((
         RawImage2d {
             data: slice,
@@ -48,4 +42,14 @@ pub fn load_shm_buffer(data: BufferData, pool: &[u8]) -> Result<(RawImage2d<'_, 
         },
         fragment,
     ))
+}
+
+pub fn load_format(format: Format) -> Result<(ClientFormat, usize), Format> {
+    Ok(match format {
+        Format::Argb8888 => (ClientFormat::U8U8U8U8, crate::shaders::BUFFER_BGRA),
+        Format::Xrgb8888 => (ClientFormat::U8U8U8U8, crate::shaders::BUFFER_BGRX),
+        Format::Rgba8888 => (ClientFormat::U8U8U8U8, crate::shaders::BUFFER_ABGR),
+        Format::Rgbx8888 => (ClientFormat::U8U8U8U8, crate::shaders::BUFFER_XBGR),
+        _ => return Err(format),
+    })
 }

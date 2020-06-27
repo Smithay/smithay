@@ -127,7 +127,7 @@ pub fn run_udev(
     let mut state = AnvilState::init(
         display.clone(),
         event_loop.handle(),
-        buffer_utils,
+        buffer_utils.clone(),
         Some(session),
         Some(output_map.clone()),
         log.clone(),
@@ -143,6 +143,7 @@ pub fn run_udev(
 
     let mut udev_handler = UdevHandlerImpl {
         compositor_token: state.ctoken,
+        buffer_utils: buffer_utils,
         #[cfg(feature = "egl")]
         egl_buffer_reader,
         session: state.session.clone().unwrap(),
@@ -292,6 +293,7 @@ struct BackendData {
 
 struct UdevHandlerImpl<Data: 'static> {
     compositor_token: CompositorToken<Roles>,
+    buffer_utils: BufferUtils,
     #[cfg(feature = "egl")]
     egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
     session: AutoSession,
@@ -310,10 +312,9 @@ struct UdevHandlerImpl<Data: 'static> {
 }
 
 impl<Data: 'static> UdevHandlerImpl<Data> {
-    #[cfg(feature = "egl")]
     pub fn scan_connectors(
         device: &mut RenderDevice,
-        egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
+        buffer_utils: &BufferUtils,
         display: &mut Display,
         output_map: &mut Vec<MyOutput>,
         logger: &::slog::Logger,
@@ -347,58 +348,12 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                             device
                                 .create_surface(crtc, connector_info.modes()[0], &[connector_info.handle()])
                                 .unwrap(),
-                            egl_buffer_reader.clone(),
+                            buffer_utils.clone(),
                             logger.clone(),
                         );
                         output_map.push(MyOutput::new(display, device.device_id(), crtc, connector_info, logger.clone()));
 
                         entry.insert(Rc::new(renderer));
-                        break 'outer;
-                    }
-                }
-            }
-        }
-
-        backends
-    }
-
-    #[cfg(not(feature = "egl"))]
-    pub fn scan_connectors(
-        device: &mut RenderDevice,
-        display: &mut Display,
-        output_map: &mut Vec<MyOutput>,
-        logger: &::slog::Logger,
-    ) -> HashMap<crtc::Handle, Rc<GliumDrawer<RenderSurface>>> {
-        // Get a set of all modesetting resource handles (excluding planes):
-        let res_handles = device.resource_handles().unwrap();
-
-        // Use first connected connector
-        let connector_infos: Vec<ConnectorInfo> = res_handles
-            .connectors()
-            .iter()
-            .map(|conn| device.get_connector_info(*conn).unwrap())
-            .filter(|conn| conn.state() == ConnectorState::Connected)
-            .inspect(|conn| info!(logger, "Connected: {:?}", conn.interface()))
-            .collect();
-
-        let mut backends = HashMap::new();
-
-        // very naive way of finding good crtc/encoder/connector combinations. This problem is np-complete
-        for connector_info in connector_infos {
-            let encoder_infos = connector_info
-                .encoders()
-                .iter()
-                .filter_map(|e| *e)
-                .flat_map(|encoder_handle| device.get_encoder_info(encoder_handle))
-                .collect::<Vec<EncoderInfo>>();
-            'outer: for encoder_info in encoder_infos {
-                for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
-                    if !backends.contains_key(&crtc) {
-                        let renderer =
-                            GliumDrawer::init(device.create_surface(crtc).unwrap(), logger.clone());
-                        output_map.push(MyOutput::new(display, device.device_id(), crtc, connector_info, logger.clone()));
-
-                        backends.insert(crtc, Rc::new(renderer));
                         break 'outer;
                     }
                 }
@@ -453,23 +408,15 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
             #[cfg(feature = "egl")]
             {
                 if path.canonicalize().ok() == self.primary_gpu {
+                    info!(self.logger, "Initializing EGL Hardware Acceleration via {:?}", path);
                     *self.egl_buffer_reader.borrow_mut() =
                         device.bind_wl_display(&*self.display.borrow()).ok();
                 }
             }
 
-            #[cfg(feature = "egl")]
             let backends = Rc::new(RefCell::new(UdevHandlerImpl::<Data>::scan_connectors(
                 &mut device,
-                self.egl_buffer_reader.clone(),
-                &mut *self.display.borrow_mut(),
-                &mut *self.output_map.borrow_mut(),
-                &self.logger,
-            )));
-
-            #[cfg(not(feature = "egl"))]
-            let backends = Rc::new(RefCell::new(UdevHandlerImpl::<Data>::scan_connectors(
-                &mut device,
+                &self.buffer_utils,
                 &mut *self.display.borrow_mut(),
                 &mut *self.output_map.borrow_mut(),
                 &self.logger,
@@ -528,9 +475,9 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
 
     fn device_changed(&mut self, device: dev_t) {
         //quick and dirty, just re-init all backends
+        let buffer_utils = &self.buffer_utils;
         if let Some(ref mut backend_data) = self.backends.get_mut(&device) {
             let logger = &self.logger;
-            let egl_buffer_reader = self.egl_buffer_reader.clone();
             let loop_handle = self.loop_handle.clone();
             let mut display = self.display.borrow_mut();
             let mut output_map = self.output_map.borrow_mut();
@@ -538,21 +485,13 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
             self.loop_handle
                 .with_source(&backend_data.event_source, |source| {
                     let mut backends = backend_data.surfaces.borrow_mut();
-                    #[cfg(feature = "egl")]
-                    let new_backends =
+                    *backends =
                         UdevHandlerImpl::<Data>::scan_connectors(
                             &mut source.file,
-                            egl_buffer_reader,
+                            buffer_utils,
                             &mut *display,
                             &mut *output_map,
                             logger);
-                    #[cfg(not(feature = "egl"))]
-                    let new_backends = UdevHandlerImpl::<Data>::scan_connectors(
-                        &mut source.file,
-                        &mut *display,
-                        &mut *output_map,
-                        logger);
-                    *backends = new_backends;
 
                     for renderer in backends.values() {
                         // render first frame
