@@ -552,6 +552,7 @@ where
 
     fallback_surface_err_impl!(set_cursor_position, &Self, Result<(), EitherError<E3, E4>>, x: u32, y: u32);
     fallback_surface_err_impl!(set_cursor_representation, &Self, Result<(), EitherError<E3, E4>>, buffer: &Self::CursorFormat, hotspot: (u32, u32));
+    fallback_surface_err_impl!(clear_cursor_representation, &Self, Result<(), EitherError<E3, E4>>,);
 }
 
 #[cfg(feature = "renderer_gl")]

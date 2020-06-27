@@ -87,6 +87,16 @@ impl<A: AsRawFd + 'static> CursorBackend for LegacyDrmSurfaceInternal<A> {
 
         Ok(())
     }
+
+    fn clear_cursor_representation(&self) -> Result<(), Error> {
+        self.set_cursor(self.crtc, Option::<&DumbBuffer>::None)
+            .compat()    
+            .map_err(|source| Error::Access {
+                errmsg: "Failed to set cursor",
+                dev: self.dev_path(),
+                source,
+            })
+    }
 }
 
 impl<A: AsRawFd + 'static> Surface for LegacyDrmSurfaceInternal<A> {
@@ -497,6 +507,10 @@ impl<A: AsRawFd + 'static> CursorBackend for LegacyDrmSurface<A> {
         hotspot: (u32, u32),
     ) -> Result<(), Error> {
         self.0.set_cursor_representation(buffer, hotspot)
+    }
+
+    fn clear_cursor_representation(&self) -> Result<(), Self::Error> {
+        self.0.clear_cursor_representation()
     }
 }
 

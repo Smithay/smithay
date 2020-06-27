@@ -646,6 +646,15 @@ impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurfaceInternal<A> {
 
         Ok(())
     }
+
+    fn clear_cursor_representation(&self) -> Result<(), Self::Error> {
+        let mut cursor = self.cursor.lock().unwrap();
+        if let Some(fb) = cursor.framebuffer.take() {
+            let _ = self.destroy_framebuffer(fb);
+        }
+
+        self.clear_plane(self.planes.cursor)
+    }
 }
 
 impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
@@ -1021,6 +1030,10 @@ impl<A: AsRawFd + 'static> CursorBackend for AtomicDrmSurface<A> {
         hotspot: (u32, u32),
     ) -> Result<(), Error> {
         self.0.set_cursor_representation(buffer, hotspot)
+    }
+    
+    fn clear_cursor_representation(&self) -> Result<(), Self::Error> {
+        self.0.clear_cursor_representation()
     }
 }
 
