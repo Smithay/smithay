@@ -8,7 +8,6 @@ use std::{
 };
 
 use smithay::{
-    backend::session::auto::AutoSession,
     reexports::{
         calloop::{
             generic::{Fd, Generic},
@@ -25,8 +24,10 @@ use smithay::{
 };
 
 #[cfg(feature = "udev")]
-use smithay::backend::session::Session;
+use smithay::backend::session::{auto::AutoSession, Session};
 
+#[cfg(feature = "udev")]
+use crate::udev::MyOutput;
 use crate::{buffer_utils::BufferUtils, shell::init_shell};
 
 pub struct AnvilState {
@@ -43,7 +44,8 @@ pub struct AnvilState {
     pub keyboard: KeyboardHandle,
     pub pointer_location: Rc<RefCell<(f64, f64)>>,
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
-    pub screen_size: (u32, u32),
+    #[cfg(feature = "udev")]
+    pub output_map: Option<Rc<RefCell<Vec<MyOutput>>>>,
     pub seat_name: String,
     #[cfg(feature = "udev")]
     pub session: Option<AutoSession>,
@@ -58,6 +60,8 @@ impl AnvilState {
         buffer_utils: BufferUtils,
         #[cfg(feature = "udev")] session: Option<AutoSession>,
         #[cfg(not(feature = "udev"))] _session: Option<()>,
+        #[cfg(feature = "udev")] output_map: Option<Rc<RefCell<Vec<MyOutput>>>>,
+        #[cfg(not(feature = "udev"))] _output_map: Option<()>,
         log: slog::Logger,
     ) -> AnvilState {
         // init the wayland connection
@@ -126,7 +130,7 @@ impl AnvilState {
             "anvil".into()
         };
         #[cfg(not(feature = "udev"))]
-        let seat_name = "anvil".into();
+        let seat_name: String = "anvil".into();
 
         let (mut seat, _) = Seat::new(
             &mut display.borrow_mut(),
@@ -162,7 +166,8 @@ impl AnvilState {
             keyboard,
             cursor_status,
             pointer_location: Rc::new(RefCell::new((0.0, 0.0))),
-            screen_size: (1920, 1080),
+            #[cfg(feature = "udev")]
+            output_map,
             seat_name,
             #[cfg(feature = "udev")]
             session,

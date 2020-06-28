@@ -26,7 +26,7 @@ use crate::backend::graphics::{
 use nix::libc::c_uint;
 use std::fmt;
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
+use wayland_server::Display;
 
 pub mod context;
 pub use self::context::EGLContext;
@@ -87,8 +87,8 @@ pub enum BufferAccessError {
     #[error("The corresponding context was lost")]
     ContextLost,
     /// This buffer is not managed by the EGL buffer
-    #[error("This buffer is not managed by EGL. Err: {1:}")]
-    NotManaged(WlBuffer, #[source] EGLError),
+    #[error("This buffer is not managed by EGL. Err: {0:}")]
+    NotManaged(#[source] EGLError),
     /// Failed to create `EGLImages` from the buffer
     #[error("Failed to create EGLImages from the buffer. Err: {0:}")]
     EGLImageCreationFailed(#[source] EGLError),
@@ -102,7 +102,7 @@ impl fmt::Debug for BufferAccessError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> ::std::result::Result<(), fmt::Error> {
         match *self {
             BufferAccessError::ContextLost => write!(formatter, "BufferAccessError::ContextLost"),
-            BufferAccessError::NotManaged(_, _) => write!(formatter, "BufferAccessError::NotManaged"),
+            BufferAccessError::NotManaged(_) => write!(formatter, "BufferAccessError::NotManaged"),
             BufferAccessError::EGLImageCreationFailed(_) => {
                 write!(formatter, "BufferAccessError::EGLImageCreationFailed")
             }
@@ -265,7 +265,6 @@ pub struct EGLImages {
     /// Format of these images
     pub format: Format,
     images: Vec<EGLImage>,
-    buffer: WlBuffer,
     #[cfg(feature = "renderer_gl")]
     gl: gl_ffi::Gles2,
 }
@@ -339,7 +338,6 @@ impl Drop for EGLImages {
                 ffi::egl::DestroyImageKHR(**self.display, image);
             }
         }
-        self.buffer.release();
     }
 }
 

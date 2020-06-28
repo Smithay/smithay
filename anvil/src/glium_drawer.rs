@@ -1,41 +1,32 @@
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use glium::{
-    self,
-    index::PrimitiveType,
-    texture::{MipmapsOption, Texture2d, UncompressedFloatFormat},
-    GlObject, Surface,
-};
+use glium::{self, index::PrimitiveType, texture::Texture2d, Surface};
 use slog::Logger;
 
-#[cfg(feature = "egl")]
-use smithay::backend::egl::display::EGLBufferReader;
 use smithay::{
-    backend::{
-        egl::{BufferAccessError, EGLImages, Format},
-        graphics::{
-            gl::GLGraphicsBackend,
-            glium::{Frame, GliumGraphicsBackend},
-            SwapBuffersError,
-        },
+    backend::graphics::{
+        gl::GLGraphicsBackend,
+        glium::{Frame, GliumGraphicsBackend},
+        CursorBackend, SwapBuffersError,
     },
-    reexports::{
-        calloop::LoopHandle,
-        wayland_server::protocol::{wl_buffer, wl_surface},
-    },
+    reexports::{calloop::LoopHandle, wayland_server::protocol::wl_surface},
+    utils::Rectangle,
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
         data_device::DnDIconRole,
         seat::CursorImageRole,
-        shm::with_buffer_contents as shm_buffer_contents,
     },
 };
 
+use crate::buffer_utils::BufferUtils;
 use crate::shaders;
 use crate::shell::{MyCompositorToken, MyWindowMap, SurfaceData};
+
+pub static BACKEND_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Copy, Clone)]
 struct Vertex {
@@ -51,12 +42,13 @@ mod implement_vertex {
 }
 
 pub struct GliumDrawer<F: GLGraphicsBackend + 'static> {
-    display: GliumGraphicsBackend<F>,
+    pub id: usize,
+    pub display: GliumGraphicsBackend<F>,
     vertex_buffer: glium::VertexBuffer<Vertex>,
     index_buffer: glium::IndexBuffer<u16>,
     programs: [glium::Program; shaders::FRAGMENT_COUNT],
-    #[cfg(feature = "egl")]
-    egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
+    buffer_loader: BufferUtils,
+    pub hardware_cursor: AtomicBool,
     log: Logger,
 }
 
@@ -67,12 +59,7 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
 }
 
 impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer<T> {
-    #[cfg(feature = "egl")]
-    pub fn init(
-        backend: T,
-        egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
-        log: Logger,
-    ) -> GliumDrawer<T> {
+    pub fn init(backend: T, buffer_loader: BufferUtils, log: Logger) -> GliumDrawer<T> {
         let display = backend.into();
 
         // building the vertex buffer, which contains all the vertices that we will draw
@@ -106,143 +93,98 @@ impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer
         let programs = opengl_programs!(&display);
 
         GliumDrawer {
+            id: BACKEND_COUNTER.fetch_add(1, Ordering::AcqRel),
             display,
             vertex_buffer,
             index_buffer,
             programs,
-            egl_buffer_reader,
-            log,
-        }
-    }
-
-    #[cfg(not(feature = "egl"))]
-    pub fn init(backend: T, log: Logger) -> GliumDrawer<T> {
-        let display = backend.into();
-
-        // building the vertex buffer, which contains all the vertices that we will draw
-        let vertex_buffer = glium::VertexBuffer::new(
-            &display,
-            &[
-                Vertex {
-                    position: [0.0, 0.0],
-                    tex_coords: [0.0, 0.0],
-                },
-                Vertex {
-                    position: [0.0, 1.0],
-                    tex_coords: [0.0, 1.0],
-                },
-                Vertex {
-                    position: [1.0, 1.0],
-                    tex_coords: [1.0, 1.0],
-                },
-                Vertex {
-                    position: [1.0, 0.0],
-                    tex_coords: [1.0, 0.0],
-                },
-            ],
-        )
-        .unwrap();
-
-        // building the index buffer
-        let index_buffer =
-            glium::IndexBuffer::new(&display, PrimitiveType::TriangleStrip, &[1 as u16, 2, 0, 3]).unwrap();
-
-        let programs = opengl_programs!(&display);
-
-        GliumDrawer {
-            display,
-            vertex_buffer,
-            index_buffer,
-            programs,
+            buffer_loader,
+            hardware_cursor: AtomicBool::new(false),
             log,
         }
     }
 }
 
-impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
-    #[cfg(feature = "egl")]
-    pub fn texture_from_buffer(&self, buffer: wl_buffer::WlBuffer) -> Result<TextureMetadata, ()> {
-        // try to retrieve the egl contents of this buffer
-        let images = if let Some(display) = &self.egl_buffer_reader.borrow().as_ref() {
-            display.egl_buffer_contents(buffer)
-        } else {
-            Err(BufferAccessError::NotManaged(
-                buffer,
-                smithay::backend::egl::EGLError::BadDisplay,
-            ))
+impl<F: GLGraphicsBackend + CursorBackend + 'static> GliumDrawer<F> {
+    pub fn draw_hardware_cursor(
+        &self,
+        cursor: &<F as CursorBackend>::CursorFormat,
+        hotspot: (u32, u32),
+        position: (i32, i32),
+    ) {
+        let (x, y) = position;
+        let _ = self.display.borrow().set_cursor_position(x as u32, y as u32);
+        if !self.hardware_cursor.swap(true, Ordering::SeqCst)
+            && self
+                .display
+                .borrow()
+                .set_cursor_representation(cursor, hotspot)
+                .is_err()
+        {
+            warn!(self.log, "Failed to upload hardware cursor",);
+        }
+    }
+
+    pub fn draw_software_cursor(
+        &self,
+        frame: &mut Frame,
+        surface: &wl_surface::WlSurface,
+        (x, y): (i32, i32),
+        token: MyCompositorToken,
+    ) {
+        let (dx, dy) = match token.with_role_data::<CursorImageRole, _, _>(surface, |data| data.hotspot) {
+            Ok(h) => h,
+            Err(_) => {
+                warn!(
+                    self.log,
+                    "Trying to display as a cursor a surface that does not have the CursorImage role."
+                );
+                (0, 0)
+            }
         };
-        match images {
-            Ok(images) => {
-                // we have an EGL buffer
-                let format = match images.format {
-                    Format::RGB => UncompressedFloatFormat::U8U8U8,
-                    Format::RGBA => UncompressedFloatFormat::U8U8U8U8,
-                    _ => {
-                        warn!(self.log, "Unsupported EGL buffer format"; "format" => format!("{:?}", images.format));
-                        return Err(());
-                    }
-                };
-                let opengl_texture = Texture2d::empty_with_format(
-                    &self.display,
-                    format,
-                    MipmapsOption::NoMipmap,
-                    images.width,
-                    images.height,
-                )
-                .unwrap();
-                unsafe {
-                    images
-                        .bind_to_texture(0, opengl_texture.get_id(), &*self.display.borrow())
-                        .expect("Failed to bind to texture");
-                }
-                Ok(TextureMetadata {
-                    texture: opengl_texture,
-                    fragment: crate::shaders::BUFFER_RGBA,
-                    y_inverted: images.y_inverted,
-                    dimensions: (images.width, images.height),
-                    images: Some(images), // I guess we need to keep this alive ?
-                })
-            }
-            Err(BufferAccessError::NotManaged(buffer, _)) => {
-                // this is not an EGL buffer, try SHM
-                self.texture_from_shm_buffer(buffer)
-            }
-            Err(err) => {
-                error!(self.log, "EGL error"; "err" => format!("{:?}", err));
-                Err(())
-            }
+        let screen_dimensions = self.borrow().get_framebuffer_dimensions();
+        self.draw_surface_tree(frame, surface, (x - dx, y - dy), token, screen_dimensions);
+        self.clear_cursor()
+    }
+
+    pub fn clear_cursor(&self) {
+        if self.hardware_cursor.swap(false, Ordering::SeqCst)
+            && self.display.borrow().clear_cursor_representation().is_err()
+        {
+            warn!(self.log, "Failed to clear cursor");
         }
     }
+}
 
-    #[cfg(not(feature = "egl"))]
-    pub fn texture_from_buffer(&self, buffer: wl_buffer::WlBuffer) -> Result<TextureMetadata, ()> {
-        self.texture_from_shm_buffer(buffer)
-    }
-
-    fn texture_from_shm_buffer(&self, buffer: wl_buffer::WlBuffer) -> Result<TextureMetadata, ()> {
-        match shm_buffer_contents(&buffer, |slice, data| {
-            crate::shm_load::load_shm_buffer(data, slice)
-                .map(|(image, kind)| (Texture2d::new(&self.display, image).unwrap(), kind, data))
-        }) {
-            Ok(Ok((texture, kind, data))) => Ok(TextureMetadata {
-                texture,
-                fragment: kind,
-                y_inverted: false,
-                dimensions: (data.width as u32, data.height as u32),
-                #[cfg(feature = "egl")]
-                images: None,
-            }),
-            Ok(Err(format)) => {
-                warn!(self.log, "Unsupported SHM buffer format"; "format" => format!("{:?}", format));
-                Err(())
+// I would love to do this (check on !CursorBackend), but this is essentially specialization...
+// And since this is just an example compositor, it seems we require now,
+// that for the use of software cursors we need the hardware cursor trait (to do automatic cleanup..)
+/*
+impl<F: GLGraphicsBackend + !CursorBackend + 'static> GliumDrawer<F> {
+    pub fn draw_software_cursor(
+        &self,
+        frame: &mut Frame,
+        surface: &wl_surface::WlSurface,
+        (x, y): (i32, i32),
+        token: MyCompositorToken,
+    ) {
+        let (dx, dy) = match token.with_role_data::<CursorImageRole, _, _>(surface, |data| data.hotspot) {
+            Ok(h) => h,
+            Err(_) => {
+                warn!(
+                    self.log,
+                    "Trying to display as a cursor a surface that does not have the CursorImage role."
+                );
+                (0, 0)
             }
-            Err(err) => {
-                warn!(self.log, "Unable to load buffer contents"; "err" => format!("{:?}", err));
-                Err(())
-            }
-        }
+        };
+        let screen_dimensions = self.borrow().get_framebuffer_dimensions();
+        self.draw_surface_tree(frame, surface, (x - dx, y - dy), token, screen_dimensions);
     }
+}
+*/
 
+impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     pub fn render_texture(&self, target: &mut Frame, spec: RenderTextureSpec<'_>) {
         let xscale = 2.0 * (spec.surface_dimensions.0 as f32) / (spec.screen_size.0 as f32);
         let mut yscale = -2.0 * (spec.surface_dimensions.1 as f32) / (spec.screen_size.1 as f32);
@@ -295,15 +237,6 @@ pub struct RenderTextureSpec<'a> {
     blending: glium::Blend,
 }
 
-pub struct TextureMetadata {
-    pub texture: Texture2d,
-    pub fragment: usize,
-    pub y_inverted: bool,
-    pub dimensions: (u32, u32),
-    #[cfg(feature = "egl")]
-    images: Option<EGLImages>,
-}
-
 impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
     fn draw_surface_tree(
         &self,
@@ -322,25 +255,12 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
                     let mut data = data.borrow_mut();
                     if data.texture.is_none() {
                         if let Some(buffer) = data.current_state.buffer.take() {
-                            if let Ok(m) = self.texture_from_buffer(buffer.clone()) {
-                                // release the buffer if it was an SHM buffer
-                                #[cfg(feature = "egl")]
-                                {
-                                    if m.images.is_none() {
-                                        buffer.release();
-                                    }
-                                }
-                                #[cfg(not(feature = "egl"))]
-                                {
-                                    buffer.release();
-                                }
-
-                                data.texture = Some(m);
-                            } else {
+                            match self.buffer_loader.load_buffer(buffer) {
+                                Ok(m) => data.texture = Some(m),
                                 // there was an error reading the buffer, release it, we
                                 // already logged the error
-                                buffer.release();
-                            }
+                                Err(buffer) => buffer.release(),
+                            };
                         }
                     }
                     // Now, should we be drawn ?
@@ -362,36 +282,42 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
             },
             |_surface, attributes, role, &(mut x, mut y)| {
                 if let Some(ref data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
-                    let data = data.borrow();
-                    if let Some(ref metadata) = data.texture {
-                        // we need to re-extract the subsurface offset, as the previous closure
-                        // only passes it to our children
-                        if Role::<SubsurfaceRole>::has(role) {
-                            x += data.current_state.sub_location.0;
-                            y += data.current_state.sub_location.1;
-                        }
-                        self.render_texture(
-                            frame,
-                            RenderTextureSpec {
-                                texture: &metadata.texture,
-                                texture_kind: metadata.fragment,
-                                y_inverted: metadata.y_inverted,
-                                surface_dimensions: metadata.dimensions,
-                                surface_location: (x, y),
-                                screen_size: screen_dimensions,
-                                blending: ::glium::Blend {
-                                    color: ::glium::BlendingFunction::Addition {
-                                        source: ::glium::LinearBlendingFactor::One,
-                                        destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                    let mut data = data.borrow_mut();
+                    let (sub_x, sub_y) = data.current_state.sub_location;
+                    if let Some(buffer_textures) = data.texture.as_mut() {
+                        let texture_kind = buffer_textures.fragment;
+                        let y_inverted = buffer_textures.y_inverted;
+                        let surface_dimensions = buffer_textures.dimensions;
+                        if let Ok(ref texture) = buffer_textures.load_texture(&self) {
+                            // we need to re-extract the subsurface offset, as the previous closure
+                            // only passes it to our children
+                            if Role::<SubsurfaceRole>::has(role) {
+                                x += sub_x;
+                                y += sub_y;
+                            }
+                            self.render_texture(
+                                frame,
+                                RenderTextureSpec {
+                                    texture: &texture,
+                                    texture_kind,
+                                    y_inverted,
+                                    surface_dimensions,
+                                    surface_location: (x, y),
+                                    screen_size: screen_dimensions,
+                                    blending: ::glium::Blend {
+                                        color: ::glium::BlendingFunction::Addition {
+                                            source: ::glium::LinearBlendingFactor::One,
+                                            destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                        },
+                                        alpha: ::glium::BlendingFunction::Addition {
+                                            source: ::glium::LinearBlendingFactor::One,
+                                            destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
+                                        },
+                                        ..Default::default()
                                     },
-                                    alpha: ::glium::BlendingFunction::Addition {
-                                        source: ::glium::LinearBlendingFactor::One,
-                                        destination: ::glium::LinearBlendingFactor::OneMinusSourceAlpha,
-                                    },
-                                    ..Default::default()
                                 },
-                            },
-                        );
+                            );
+                        }
                     }
                 }
             },
@@ -403,45 +329,34 @@ impl<F: GLGraphicsBackend + 'static> GliumDrawer<F> {
         &self,
         frame: &mut Frame,
         window_map: &MyWindowMap,
+        output_rect: Option<Rectangle>,
         compositor_token: MyCompositorToken,
     ) {
         // redraw the frame, in a simple but inneficient way
         {
             let screen_dimensions = self.borrow().get_framebuffer_dimensions();
-            window_map.with_windows_from_bottom_to_top(|toplevel_surface, initial_place| {
-                if let Some(wl_surface) = toplevel_surface.get_surface() {
-                    // this surface is a root of a subsurface tree that needs to be drawn
-                    self.draw_surface_tree(
-                        frame,
-                        &wl_surface,
-                        initial_place,
-                        compositor_token,
-                        screen_dimensions,
-                    );
-                }
-            });
+            window_map.with_windows_from_bottom_to_top(
+                |toplevel_surface, mut initial_place, bounding_box| {
+                    // skip windows that do not overlap with a given output
+                    if let Some(output) = output_rect {
+                        if !output.overlaps(bounding_box) {
+                            return;
+                        }
+                        initial_place.0 -= output.x;
+                    }
+                    if let Some(wl_surface) = toplevel_surface.get_surface() {
+                        // this surface is a root of a subsurface tree that needs to be drawn
+                        self.draw_surface_tree(
+                            frame,
+                            &wl_surface,
+                            initial_place,
+                            compositor_token,
+                            screen_dimensions,
+                        );
+                    }
+                },
+            );
         }
-    }
-
-    pub fn draw_cursor(
-        &self,
-        frame: &mut Frame,
-        surface: &wl_surface::WlSurface,
-        (x, y): (i32, i32),
-        token: MyCompositorToken,
-    ) {
-        let (dx, dy) = match token.with_role_data::<CursorImageRole, _, _>(surface, |data| data.hotspot) {
-            Ok(h) => h,
-            Err(_) => {
-                warn!(
-                    self.log,
-                    "Trying to display as a cursor a surface that does not have the CursorImage role."
-                );
-                (0, 0)
-            }
-        };
-        let screen_dimensions = self.borrow().get_framebuffer_dimensions();
-        self.draw_surface_tree(frame, surface, (x - dx, y - dy), token, screen_dimensions);
     }
 
     pub fn draw_dnd_icon(

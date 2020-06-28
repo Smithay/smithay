@@ -92,6 +92,10 @@ where
     ) -> ::std::result::Result<(), Self::Error> {
         self.0.surface.set_cursor_representation(buffer, hotspot)
     }
+
+    fn clear_cursor_representation(&self) -> Result<(), Self::Error> {
+        self.0.surface.clear_cursor_representation()
+    }
 }
 
 #[cfg(feature = "renderer_gl")]

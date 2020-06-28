@@ -475,7 +475,7 @@ impl EGLBufferReader {
     /// to render it another way.
     pub fn egl_buffer_contents(
         &self,
-        buffer: WlBuffer,
+        buffer: &WlBuffer,
     ) -> ::std::result::Result<EGLImages, BufferAccessError> {
         let mut format: i32 = 0;
         let query = wrap_egl_call(|| unsafe {
@@ -486,9 +486,9 @@ impl EGLBufferReader {
                 &mut format,
             )
         })
-        .map_err(|source| BufferAccessError::NotManaged(buffer.clone(), source))?;
+        .map_err(BufferAccessError::NotManaged)?;
         if query == ffi::egl::FALSE {
-            return Err(BufferAccessError::NotManaged(buffer, EGLError::BadParameter));
+            return Err(BufferAccessError::NotManaged(EGLError::BadParameter));
         }
 
         let format = match format {
@@ -510,7 +510,7 @@ impl EGLBufferReader {
                 &mut width,
             )
         })
-        .map_err(|source| BufferAccessError::NotManaged(buffer.clone(), source))?;
+        .map_err(BufferAccessError::NotManaged)?;
 
         let mut height: i32 = 0;
         wrap_egl_call(|| unsafe {
@@ -521,7 +521,7 @@ impl EGLBufferReader {
                 &mut height,
             )
         })
-        .map_err(|source| BufferAccessError::NotManaged(buffer.clone(), source))?;
+        .map_err(BufferAccessError::NotManaged)?;
 
         let mut inverted: i32 = 0;
         wrap_egl_call(|| unsafe {
@@ -532,7 +532,7 @@ impl EGLBufferReader {
                 &mut inverted,
             )
         })
-        .map_err(|source| BufferAccessError::NotManaged(buffer.clone(), source))?;
+        .map_err(BufferAccessError::NotManaged)?;
 
         let mut images = Vec::with_capacity(format.num_planes());
         for i in 0..format.num_planes() {
@@ -562,7 +562,6 @@ impl EGLBufferReader {
             y_inverted: inverted != 0,
             format,
             images,
-            buffer,
             #[cfg(feature = "renderer_gl")]
             gl: self.gl.clone(),
         })

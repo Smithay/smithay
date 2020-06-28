@@ -21,3 +21,5 @@ pub use wayland_commons;
 pub use wayland_protocols;
 #[cfg(feature = "wayland_frontend")]
 pub use wayland_server;
+#[cfg(feature = "backend_winit")]
+pub use winit;

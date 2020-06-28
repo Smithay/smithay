@@ -270,6 +270,12 @@ impl CursorBackend for WinitGraphicsBackend {
         // Cannot log this one, as `CursorFormat` is not `Debug` and should not be
         debug!(self.logger, "Changing cursor representation");
         self.window.window().set_cursor_icon(*cursor);
+        self.window.window().set_cursor_visible(true);
+        Ok(())
+    }
+
+    fn clear_cursor_representation(&self) -> ::std::result::Result<(), ()> {
+        self.window.window().set_cursor_visible(false);
         Ok(())
     }
 }

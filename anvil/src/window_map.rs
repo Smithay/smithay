@@ -248,10 +248,10 @@ where
 
     pub fn with_windows_from_bottom_to_top<Func>(&self, mut f: Func)
     where
-        Func: FnMut(&Kind<R>, (i32, i32)),
+        Func: FnMut(&Kind<R>, (i32, i32), &Rectangle),
     {
         for w in self.windows.iter().rev() {
-            f(&w.toplevel, w.location)
+            f(&w.toplevel, w.location, &w.bbox)
         }
     }
 

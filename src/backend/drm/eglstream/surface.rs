@@ -190,6 +190,18 @@ impl<S: RawSurface + 'static> CursorBackend for EglStreamSurfaceInternal<S> {
 
         Ok(())
     }
+
+    fn clear_cursor_representation(&self) -> Result<(), Self::Error> {
+        self.crtc
+            .set_cursor(self.crtc.crtc(), Option::<&DumbBuffer>::None)
+            .compat()
+            .map_err(|source| DrmError::Access {
+                errmsg: "Failed to clear cursor",
+                dev: self.crtc.dev_path(),
+                source,
+            })
+            .map_err(Error::Underlying)
+    }
 }
 
 /// egl stream surface for rendering
@@ -564,6 +576,10 @@ impl<S: RawSurface + 'static> CursorBackend for EglStreamSurface<S> {
         hotspot: (u32, u32),
     ) -> Result<(), Self::Error> {
         self.0.set_cursor_representation(buffer, hotspot)
+    }
+
+    fn clear_cursor_representation(&self) -> Result<(), Self::Error> {
+        self.0.clear_cursor_representation()
     }
 }
 

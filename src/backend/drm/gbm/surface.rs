@@ -305,6 +305,23 @@ where
         *self.cursor.lock().unwrap() = (cursor, hotspot);
         Ok(())
     }
+
+    fn clear_cursor_representation(&self) -> Result<(), Self::Error> {
+        *self.cursor.lock().unwrap() = (
+            self.dev
+                .lock()
+                .unwrap()
+                .create_buffer_object(
+                    1,
+                    1,
+                    GbmFormat::ARGB8888,
+                    BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
+                )
+                .map_err(Error::BufferCreationFailed)?,
+            (0, 0),
+        );
+        self.crtc.clear_cursor_representation().map_err(Error::Underlying)
+    }
 }
 
 impl<S: RawSurface + 'static> Drop for GbmSurfaceInternal<S> {
@@ -414,6 +431,10 @@ where
         hotspot: (u32, u32),
     ) -> Result<(), Self::Error> {
         self.0.set_cursor_representation(buffer, hotspot)
+    }
+
+    fn clear_cursor_representation(&self) -> Result<(), Self::Error> {
+        self.0.clear_cursor_representation()
     }
 }
 

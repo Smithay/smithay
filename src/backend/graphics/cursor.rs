@@ -34,4 +34,7 @@ pub trait CursorBackend {
         cursor: &Self::CursorFormat,
         hotspot: (u32, u32),
     ) -> Result<(), Self::Error>;
+
+    /// Clear the current cursor image drawn on the [`CursorBackend`].
+    fn clear_cursor_representation(&self) -> Result<(), Self::Error>;
 }
