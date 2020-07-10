@@ -152,7 +152,7 @@ pub fn init_from_builder_with_gl_attr<L>(
 where
     L: Into<Option<::slog::Logger>>,
 {
-    let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_winit"));
+    let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_winit"));
     info!(log, "Initializing a winit backend");
 
     let events_loop = EventLoop::new();

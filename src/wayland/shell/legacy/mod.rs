@@ -305,7 +305,7 @@ where
     L: Into<Option<::slog::Logger>>,
     Impl: FnMut(ShellRequest<R>) + 'static,
 {
-    let _log = crate::slog_or_stdlog(logger);
+    let _log = crate::slog_or_fallback(logger);
 
     let implementation = Rc::new(RefCell::new(implementation));
 

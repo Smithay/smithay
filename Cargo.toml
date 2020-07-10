@@ -24,7 +24,7 @@ libc = "0.2.70"
 libloading = "0.6.0"
 nix = "0.17"
 slog = "2"
-slog-stdlog = "4"
+slog-stdlog = { version = "4", optional = true }
 tempfile = "3.0"
 thiserror = "1"
 udev = { version = "0.4", optional = true }
@@ -46,7 +46,7 @@ gl_generator = { version = "0.14", optional = true }
 pkg-config = { version = "0.3.17", optional = true }
 
 [features]
-default = ["backend_winit", "backend_drm_legacy", "backend_drm_atomic", "backend_drm_gbm", "backend_drm_eglstream", "backend_drm_egl", "backend_libinput", "backend_udev", "backend_session_logind", "renderer_glium", "xwayland", "wayland_frontend"]
+default = ["backend_winit", "backend_drm_legacy", "backend_drm_atomic", "backend_drm_gbm", "backend_drm_eglstream", "backend_drm_egl", "backend_libinput", "backend_udev", "backend_session_logind", "renderer_glium", "xwayland", "wayland_frontend", "slog-stdlog"]
 backend_winit = ["winit", "wayland-server/dlopen", "backend_egl", "wayland-egl", "renderer_gl", "use_system_lib"]
 backend_drm = ["drm", "failure"]
 backend_drm_atomic = ["backend_drm"]

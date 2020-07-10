@@ -183,7 +183,7 @@ where
     L: Into<Option<::slog::Logger>>,
     H: DmabufHandler + 'static,
 {
-    let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "dmabuf_handler"));
+    let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "dmabuf_handler"));
 
     let max_planes = formats.iter().map(|f| f.plane_count).max().unwrap_or(0);
     let formats = Rc::new(formats);

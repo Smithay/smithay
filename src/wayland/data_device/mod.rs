@@ -286,7 +286,7 @@ where
     R: Role<DnDIconRole> + 'static,
     L: Into<Option<::slog::Logger>>,
 {
-    let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "data_device_mgr"));
+    let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "data_device_mgr"));
     let action_choice = Rc::new(RefCell::new(action_choice));
     let callback = Rc::new(RefCell::new(callback));
     display.create_global(

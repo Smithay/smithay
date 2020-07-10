@@ -220,7 +220,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm"));
+        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_drm"));
         info!(log, "AtomicDrmDevice initializing");
 
         let dev_id = fstat(fd.as_raw_fd()).map_err(Error::UnableToGetDeviceId)?.st_rdev;

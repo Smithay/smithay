@@ -119,7 +119,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm"));
+        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_drm"));
         info!(log, "LegacyDrmDevice initializing");
 
         let dev_id = fstat(dev.as_raw_fd())
