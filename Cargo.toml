@@ -25,7 +25,7 @@ libloading = "0.6.0"
 nix = "0.17"
 slog = "2"
 slog-stdlog = { version = "4", optional = true }
-tempfile = "3.0"
+tempfile = { version = "3.0", optional = true }
 thiserror = "1"
 udev = { version = "0.4", optional = true }
 wayland-commons = { version = "0.26", optional = true }
@@ -63,7 +63,7 @@ backend_session_elogind = ["backend_session_logind"]
 renderer_gl = ["gl_generator"]
 renderer_glium = ["renderer_gl", "glium"]
 use_system_lib = ["wayland_frontend", "wayland-sys", "wayland-server/use_system_lib"]
-wayland_frontend = ["wayland-server", "wayland-commons", "wayland-protocols"]
+wayland_frontend = ["wayland-server", "wayland-commons", "wayland-protocols", "tempfile"]
 xwayland = ["wayland_frontend"]
 test_all_features = ["default"]
 
