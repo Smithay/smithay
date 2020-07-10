@@ -89,7 +89,7 @@ impl LogindSession {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let logger = crate::slog_or_stdlog(logger)
+        let logger = crate::slog_or_fallback(logger)
             .new(o!("smithay_module" => "backend_session", "session_type" => "logind"));
 
         // Acquire session_id, seat and vt (if any) via libsystemd

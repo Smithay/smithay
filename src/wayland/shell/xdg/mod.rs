@@ -289,7 +289,7 @@ where
     L: Into<Option<::slog::Logger>>,
     Impl: FnMut(XdgRequest<R>) + 'static,
 {
-    let log = crate::slog_or_stdlog(logger);
+    let log = crate::slog_or_fallback(logger);
     let shell_state = Arc::new(Mutex::new(ShellState {
         known_toplevels: Vec::new(),
         known_popups: Vec::new(),

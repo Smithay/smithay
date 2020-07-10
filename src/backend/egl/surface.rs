@@ -50,7 +50,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(log.into()).new(o!("smithay_module" => "renderer_egl"));
+        let log = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "renderer_egl"));
 
         let surface_attributes = {
             let mut out: Vec<c_int> = Vec::with_capacity(3);

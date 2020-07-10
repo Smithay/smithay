@@ -127,7 +127,7 @@ impl Seat {
         R: Role<CursorImageRole> + 'static,
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger);
+        let log = crate::slog_or_fallback(logger);
         let arc = Rc::new(SeatRc {
             inner: RefCell::new(Inner {
                 pointer: None,

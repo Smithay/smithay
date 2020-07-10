@@ -123,7 +123,7 @@ where
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_egl"));
+        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_egl"));
 
         dev.clear_handler();
 

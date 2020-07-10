@@ -98,7 +98,7 @@ impl<D: RawDevice + ControlDevice + 'static> EglStreamDevice<D> {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_eglstream"));
+        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_eglstream"));
 
         raw.clear_handler();
 

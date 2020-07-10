@@ -106,7 +106,7 @@ impl<D: RawDevice + ControlDevice + 'static> GbmDevice<D> {
             );
         });
 
-        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_gbm"));
+        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_gbm"));
 
         dev.clear_handler();
 

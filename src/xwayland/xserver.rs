@@ -88,7 +88,7 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger);
+        let log = crate::slog_or_fallback(logger);
         let inner = Rc::new(RefCell::new(Inner {
             wm,
             kill_source: {

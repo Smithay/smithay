@@ -69,7 +69,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger.into()).new(o!("smithay_module" => "renderer_egl"));
+        let log = crate::slog_or_fallback(logger.into()).new(o!("smithay_module" => "renderer_egl"));
         let ptr = native.ptr()?;
         let egl_attribs = native.attributes();
 

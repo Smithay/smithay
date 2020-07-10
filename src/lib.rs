@@ -2,7 +2,10 @@
 //! **Smithay: the Wayland compositor smithy**
 //!
 //! Most entry points in the modules can take an optional [`slog::Logger`](::slog::Logger) as argument
-//! that will be used as a drain for logging. If `None` is provided, they'll log to `slog-stdlog`.
+//! that will be used as a drain for logging. If `None` is provided, the behavior depends on
+//! whether the `slog-stdlog` is enabled. If yes, the module will log to the global logger of the
+//! `log` crate. If not, the logs will discarded. This cargo feature is part of the default set of
+//! features of Smithay.
 
 // `error_chain!` can recurse deeply
 #![recursion_limit = "1024"]
@@ -29,7 +32,8 @@ pub mod xwayland;
 
 pub mod reexports;
 
-fn slog_or_stdlog<L>(logger: L) -> ::slog::Logger
+#[cfg(feature = "slog-stdlog")]
+fn slog_or_fallback<L>(logger: L) -> ::slog::Logger
 where
     L: Into<Option<::slog::Logger>>,
 {
@@ -37,4 +41,14 @@ where
     logger
         .into()
         .unwrap_or_else(|| ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), o!()))
+}
+
+#[cfg(not(feature = "slog-stdlog"))]
+fn slog_or_fallback<L>(logger: L) -> ::slog::Logger
+where
+    L: Into<Option<::slog::Logger>>,
+{
+    logger
+        .into()
+        .unwrap_or_else(|| ::slog::Logger::root(::slog::Discard, o!()))
 }

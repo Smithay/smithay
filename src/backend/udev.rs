@@ -78,7 +78,7 @@ impl UdevBackend {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_udev"));
+        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_udev"));
 
         let devices = all_gpus(seat)?
             .into_iter()

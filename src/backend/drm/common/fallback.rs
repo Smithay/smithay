@@ -181,7 +181,7 @@ impl<A: AsRawFd + Clone + 'static> FallbackDevice<AtomicDrmDevice<A>, LegacyDrmD
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm_fallback"));
+        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_drm_fallback"));
         info!(log, "Trying to initialize AtomicDrmDevice");
 
         let force_legacy = env::var("SMITHAY_USE_LEGACY")
@@ -246,7 +246,7 @@ where
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm_fallback"));
+        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_drm_fallback"));
 
         let driver = crate::backend::udev::driver(dev.device_id()).expect("Failed to query device");
         info!(log, "Drm device driver: {:?}", driver);
@@ -299,7 +299,7 @@ where
         D2: NativeDisplay<B2, Arguments = EglDeviceArguments>,
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm_fallback"));
+        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_drm_fallback"));
         match dev {
             FallbackDevice::Preference(gbm) => match EglDevice::new(gbm, log) {
                 Ok(dev) => Ok(FallbackDevice::Preference(dev)),
@@ -335,7 +335,7 @@ where
         D2: NativeDisplay<B2, Arguments = EglDeviceArguments>,
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_drm_fallback"));
+        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_drm_fallback"));
         match dev {
             FallbackDevice::Preference(gbm) => {
                 match EglDevice::new_with_defaults(gbm, default_attributes, default_requirements, log) {

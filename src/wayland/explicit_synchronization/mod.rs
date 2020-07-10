@@ -206,7 +206,8 @@ where
     L: Into<Option<::slog::Logger>>,
     R: 'static,
 {
-    let _log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "wayland_explicit_synchronization"));
+    let _log =
+        crate::slog_or_fallback(logger).new(o!("smithay_module" => "wayland_explicit_synchronization"));
 
     display.create_global::<ZwpLinuxExplicitSynchronizationV1, _>(
         2,

@@ -47,7 +47,7 @@ impl LibinputInputBackend {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "backend_libinput"));
+        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_libinput"));
         info!(log, "Initializing a libinput backend");
         LibinputInputBackend {
             context,

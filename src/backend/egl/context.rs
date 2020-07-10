@@ -33,7 +33,7 @@ impl EGLContext {
         B: native::Backend,
         N: native::NativeDisplay<B>,
     {
-        let log = crate::slog_or_stdlog(log.into()).new(o!("smithay_module" => "renderer_egl"));
+        let log = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "renderer_egl"));
 
         // If no version is given, try OpenGLES 3.0, if available,
         // fallback to 2.0 otherwise

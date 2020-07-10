@@ -491,7 +491,7 @@ where
     R: Default + RoleType + Role<SubsurfaceRole> + Send + 'static,
     Impl: FnMut(SurfaceEvent, WlSurface, CompositorToken<R>) + 'static,
 {
-    let log = crate::slog_or_stdlog(logger).new(o!("smithay_module" => "compositor_handler"));
+    let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "compositor_handler"));
     let implem = Rc::new(RefCell::new(implem));
 
     let compositor = display.create_global(
