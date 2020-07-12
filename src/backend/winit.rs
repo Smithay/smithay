@@ -15,7 +15,6 @@ use crate::backend::{
 use nix::libc::c_void;
 use std::{
     cell::{Ref, RefCell},
-    cmp,
     convert::TryInto,
     rc::Rc,
     time::Instant,
@@ -415,16 +414,16 @@ impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
         self.logical_position.y * wsize.scale_factor
     }
 
-    fn x_transformed(&self, width: u32) -> u32 {
+    fn x_transformed(&self, width: u32) -> f64 {
         let wsize = self.size.borrow();
         let w_width = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).width;
-        cmp::max((self.logical_position.x * width as f64 / w_width) as i32, 0) as u32
+        f64::max(self.logical_position.x * width as f64 / w_width, 0.0)
     }
 
-    fn y_transformed(&self, height: u32) -> u32 {
+    fn y_transformed(&self, height: u32) -> f64 {
         let wsize = self.size.borrow();
         let w_height = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).height;
-        cmp::max((self.logical_position.y * height as f64 / w_height) as i32, 0) as u32
+        f64::max(self.logical_position.y * height as f64 / w_height, 0.0)
     }
 }
 
@@ -520,16 +519,16 @@ impl TouchDownEvent for WinitTouchStartedEvent {
         self.location.1 * wsize.scale_factor
     }
 
-    fn x_transformed(&self, width: u32) -> u32 {
+    fn x_transformed(&self, width: u32) -> f64 {
         let wsize = self.size.borrow();
-        let w_width = wsize.physical_size.to_logical::<i32>(wsize.scale_factor).width;
-        cmp::min(self.location.0 as i32 * width as i32 / w_width, 0) as u32
+        let w_width = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).width;
+        f64::max(self.location.0 * width as f64 / w_width, 0.0)
     }
 
-    fn y_transformed(&self, height: u32) -> u32 {
+    fn y_transformed(&self, height: u32) -> f64 {
         let wsize = self.size.borrow();
-        let w_height = wsize.physical_size.to_logical::<i32>(wsize.scale_factor).height;
-        cmp::min(self.location.1 as i32 * height as i32 / w_height, 0) as u32
+        let w_height = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).height;
+        f64::max(self.location.1 * height as f64 / w_height, 0.0)
     }
 }
 
@@ -563,16 +562,16 @@ impl TouchMotionEvent for WinitTouchMovedEvent {
         self.location.1 * wsize.scale_factor
     }
 
-    fn x_transformed(&self, width: u32) -> u32 {
+    fn x_transformed(&self, width: u32) -> f64 {
         let wsize = self.size.borrow();
-        let w_width = wsize.physical_size.to_logical::<u32>(wsize.scale_factor).width;
-        self.location.0 as u32 * width / w_width
+        let w_width = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).width;
+        f64::max(self.location.0 * width as f64 / w_width, 0.0)
     }
 
-    fn y_transformed(&self, height: u32) -> u32 {
+    fn y_transformed(&self, height: u32) -> f64 {
         let wsize = self.size.borrow();
-        let w_height = wsize.physical_size.to_logical::<u32>(wsize.scale_factor).height;
-        self.location.1 as u32 * height / w_height
+        let w_height = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).height;
+        f64::max(self.location.1 * height as f64 / w_height, 0.0)
     }
 }
 

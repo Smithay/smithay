@@ -152,11 +152,11 @@ impl backend::Event for event::pointer::PointerMotionEvent {
 }
 
 impl backend::PointerMotionEvent for event::pointer::PointerMotionEvent {
-    fn delta_x(&self) -> i32 {
-        self.dx() as i32
+    fn delta_x(&self) -> f64 {
+        self.dx()
     }
-    fn delta_y(&self) -> i32 {
-        self.dy() as i32
+    fn delta_y(&self) -> f64 {
+        self.dy()
     }
 }
 
@@ -175,12 +175,12 @@ impl backend::PointerMotionAbsoluteEvent for event::pointer::PointerMotionAbsolu
         self.absolute_y()
     }
 
-    fn x_transformed(&self, width: u32) -> u32 {
-        self.absolute_x_transformed(width) as u32
+    fn x_transformed(&self, width: u32) -> f64 {
+        self.absolute_x_transformed(width)
     }
 
-    fn y_transformed(&self, height: u32) -> u32 {
-        self.absolute_y_transformed(height) as u32
+    fn y_transformed(&self, height: u32) -> f64 {
+        self.absolute_y_transformed(height)
     }
 }
 
@@ -203,12 +203,12 @@ impl backend::TouchDownEvent for event::touch::TouchDownEvent {
         event::touch::TouchEventPosition::y(self)
     }
 
-    fn x_transformed(&self, width: u32) -> u32 {
-        event::touch::TouchEventPosition::x_transformed(self, width) as u32
+    fn x_transformed(&self, width: u32) -> f64 {
+        event::touch::TouchEventPosition::x_transformed(self, width)
     }
 
-    fn y_transformed(&self, height: u32) -> u32 {
-        event::touch::TouchEventPosition::y_transformed(self, height) as u32
+    fn y_transformed(&self, height: u32) -> f64 {
+        event::touch::TouchEventPosition::y_transformed(self, height)
     }
 }
 
@@ -231,12 +231,12 @@ impl backend::TouchMotionEvent for event::touch::TouchMotionEvent {
         event::touch::TouchEventPosition::y(self)
     }
 
-    fn x_transformed(&self, width: u32) -> u32 {
-        event::touch::TouchEventPosition::x_transformed(self, width) as u32
+    fn x_transformed(&self, width: u32) -> f64 {
+        event::touch::TouchEventPosition::x_transformed(self, width)
     }
 
-    fn y_transformed(&self, height: u32) -> u32 {
-        event::touch::TouchEventPosition::y_transformed(self, height) as u32
+    fn y_transformed(&self, height: u32) -> f64 {
+        event::touch::TouchEventPosition::y_transformed(self, height)
     }
 }
 
