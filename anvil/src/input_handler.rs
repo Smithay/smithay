@@ -132,7 +132,7 @@ impl AnvilState {
                     let screen_size = self.current_output_size(x);
                     // monitor coordinates
                     let (ux, uy) = evt.position_transformed(screen_size);
-                    ((ux + self.current_output_offset(x)) as f64, uy as f64)
+                    (ux + self.current_output_offset(x) as f64, uy as f64)
                 } else {
                     // we are started in winit
                     evt.position()
