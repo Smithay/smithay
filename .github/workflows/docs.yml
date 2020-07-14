@@ -27,7 +27,7 @@ jobs:
           override: true
 
       - name: System dependencies
-        run: sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
 
       - name: Build Documentation
         uses: actions-rs/cargo@v1
