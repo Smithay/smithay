@@ -31,6 +31,47 @@ pub static SERIAL_COUNTER: SerialCounter = SerialCounter {
     serial: AtomicUsize::new(0),
 };
 
+/// A serial type, whose comparison takes into account the wrapping-around behavior of the
+/// underlying counter.
+#[derive(Debug, Copy, Clone)]
+pub struct Serial(u32);
+
+impl PartialEq for Serial {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for Serial {}
+
+impl PartialOrd for Serial {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let distance = if self.0 > other.0 {
+            self.0 - other.0
+        } else {
+            other.0 - self.0
+        };
+        if distance < u32::MAX / 2 {
+            self.0.partial_cmp(&other.0)
+        } else {
+            // wrap-around occured, invert comparison
+            other.0.partial_cmp(&self.0)
+        }
+    }
+}
+
+impl From<u32> for Serial {
+    fn from(n: u32) -> Self {
+        Serial(n)
+    }
+}
+
+impl From<Serial> for u32 {
+    fn from(serial: Serial) -> u32 {
+        serial.0
+    }
+}
+
 /// A counter for generating serials, for use in the client protocol
 ///
 /// A global instance of this counter is available as the `SERIAL_COUNTER`
@@ -46,7 +87,7 @@ pub struct SerialCounter {
 
 impl SerialCounter {
     /// Retrieve the next serial from the counter
-    pub fn next_serial(&self) -> u32 {
-        self.serial.fetch_add(1, Ordering::AcqRel) as u32
+    pub fn next_serial(&self) -> Serial {
+        Serial(self.serial.fetch_add(1, Ordering::AcqRel) as u32)
     }
 }
