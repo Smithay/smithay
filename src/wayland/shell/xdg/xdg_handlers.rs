@@ -1,6 +1,7 @@
 use std::{cell::RefCell, ops::Deref as _, sync::Mutex};
 
 use crate::wayland::compositor::{roles::*, CompositorToken};
+use crate::wayland::Serial;
 use wayland_protocols::xdg_shell::server::{
     xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base,
 };
@@ -94,10 +95,11 @@ where
             });
         }
         xdg_wm_base::Request::Pong { serial } => {
+            let serial = Serial::from(serial);
             let valid = {
                 let mut guard = data.client_data.lock().unwrap();
                 if guard.pending_ping == serial {
-                    guard.pending_ping = 0;
+                    guard.pending_ping = Serial::from(0);
                     true
                 } else {
                     false
@@ -344,6 +346,7 @@ where
                 .expect("xdg_surface exists but surface has not shell_surface role?!");
 
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
+            let serial = Serial::from(serial);
             (&mut *user_impl)(XdgRequest::AckConfigure {
                 surface: data.wl_surface.clone(),
                 serial,
@@ -405,11 +408,13 @@ where
     };
     let serial = configure.serial;
     resource.configure(width, height, states);
-    data.xdg_surface.configure(serial);
+    data.xdg_surface.configure(serial.into());
     // Add the configure as pending
     data.shell_data
         .compositor_token
-        .with_role_data::<XdgSurfaceRole, _, _>(&data.wl_surface, |data| data.pending_configures.push(serial))
+        .with_role_data::<XdgSurfaceRole, _, _>(&data.wl_surface, |data| {
+            data.pending_configures.push(serial.into())
+        })
         .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
@@ -464,6 +469,7 @@ where
         }
         xdg_toplevel::Request::ShowWindowMenu { seat, serial, x, y } => {
             let handle = make_toplevel_handle(&toplevel);
+            let serial = Serial::from(serial);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
             (&mut *user_impl)(XdgRequest::ShowWindowMenu {
                 surface: handle,
@@ -474,6 +480,7 @@ where
         }
         xdg_toplevel::Request::Move { seat, serial } => {
             let handle = make_toplevel_handle(&toplevel);
+            let serial = Serial::from(serial);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
             (&mut *user_impl)(XdgRequest::Move {
                 surface: handle,
@@ -484,6 +491,7 @@ where
         xdg_toplevel::Request::Resize { seat, serial, edges } => {
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
+            let serial = Serial::from(serial);
             (&mut *user_impl)(XdgRequest::Resize {
                 surface: handle,
                 seat,
@@ -581,11 +589,13 @@ where
     let (width, height) = configure.size;
     let serial = configure.serial;
     resource.configure(x, y, width, height);
-    data.xdg_surface.configure(serial);
+    data.xdg_surface.configure(serial.into());
     // Add the configure as pending
     data.shell_data
         .compositor_token
-        .with_role_data::<XdgSurfaceRole, _, _>(&data.wl_surface, |data| data.pending_configures.push(serial))
+        .with_role_data::<XdgSurfaceRole, _, _>(&data.wl_surface, |data| {
+            data.pending_configures.push(serial.into())
+        })
         .expect("xdg_toplevel exists but surface has not shell_surface role?!");
 }
 
@@ -618,6 +628,7 @@ where
         xdg_popup::Request::Grab { seat, serial } => {
             let handle = make_popup_handle(&popup);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
+            let serial = Serial::from(serial);
             (&mut *user_impl)(XdgRequest::Grab {
                 surface: handle,
                 seat,

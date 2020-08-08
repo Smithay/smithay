@@ -8,6 +8,7 @@ use wayland_server::{
 use crate::wayland::{
     compositor::{roles::Role, CompositorToken},
     seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
+    Serial,
 };
 
 use super::{with_source_metadata, DataDeviceData, DnDIconRole, SeatData};
@@ -56,7 +57,7 @@ impl<R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<R> {
         _handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         focus: Option<(wl_surface::WlSurface, (f64, f64))>,
-        serial: u32,
+        serial: Serial,
         time: u32,
     ) {
         let (x, y) = location;
@@ -132,7 +133,7 @@ impl<R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<R> {
                             offer.source_actions(meta.dnd_action.to_raw());
                         })
                         .unwrap();
-                        device.enter(serial, &surface, x - sx, y - sy, Some(&offer));
+                        device.enter(serial.into(), &surface, x - sx, y - sy, Some(&offer));
                         self.pending_offers.push(offer);
                     }
                     self.offer_data = Some(offer_data);
@@ -141,7 +142,7 @@ impl<R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<R> {
                     if self.origin.as_ref().same_client_as(&surface.as_ref()) {
                         for device in &seat_data.known_devices {
                             if device.as_ref().same_client_as(&surface.as_ref()) {
-                                device.enter(serial, &surface, x - sx, y - sy, None);
+                                device.enter(serial.into(), &surface, x - sx, y - sy, None);
                             }
                         }
                     }
@@ -165,7 +166,7 @@ impl<R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<R> {
         handle: &mut PointerInnerHandle<'_>,
         _button: u32,
         _state: wl_pointer::ButtonState,
-        serial: u32,
+        serial: Serial,
         time: u32,
     ) {
         if handle.current_pressed().is_empty() {

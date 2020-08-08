@@ -9,6 +9,7 @@ use wayland_server::{
 };
 
 use crate::wayland::compositor::{roles::Role, CompositorToken};
+use crate::wayland::Serial;
 
 /// The role representing a surface set as the pointer cursor
 #[derive(Default, Copy, Clone)]
@@ -30,7 +31,7 @@ pub enum CursorImageStatus {
 
 enum GrabStatus {
     None,
-    Active(u32, Box<dyn PointerGrab>),
+    Active(Serial, Box<dyn PointerGrab>),
     Borrowed,
 }
 
@@ -138,7 +139,7 @@ impl PointerHandle {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab + 'static>(&self, grab: G, serial: u32) {
+    pub fn set_grab<G: PointerGrab + 'static>(&self, grab: G, serial: Serial) {
         self.inner.borrow_mut().grab = GrabStatus::Active(serial, Box::new(grab));
     }
 
@@ -148,7 +149,7 @@ impl PointerHandle {
     }
 
     /// Check if this pointer is currently grabbed with this serial
-    pub fn has_grab(&self, serial: u32) -> bool {
+    pub fn has_grab(&self, serial: Serial) -> bool {
         let guard = self.inner.borrow_mut();
         match guard.grab {
             GrabStatus::Active(s, _) => s == serial,
@@ -189,7 +190,7 @@ impl PointerHandle {
         &self,
         location: (f64, f64),
         focus: Option<(WlSurface, (f64, f64))>,
-        serial: u32,
+        serial: Serial,
         time: u32,
     ) {
         let mut inner = self.inner.borrow_mut();
@@ -203,7 +204,7 @@ impl PointerHandle {
     ///
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
-    pub fn button(&self, button: u32, state: ButtonState, serial: u32, time: u32) {
+    pub fn button(&self, button: u32, state: ButtonState, serial: Serial, time: u32) {
         let mut inner = self.inner.borrow_mut();
         match state {
             ButtonState::Pressed => {
@@ -269,7 +270,7 @@ pub trait PointerGrab {
         handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         focus: Option<(WlSurface, (f64, f64))>,
-        serial: u32,
+        serial: Serial,
         time: u32,
     );
     /// A button press was reported
@@ -278,7 +279,7 @@ pub trait PointerGrab {
         handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
-        serial: u32,
+        serial: Serial,
         time: u32,
     );
     /// An axis scroll was reported
@@ -297,14 +298,14 @@ impl<'a> PointerInnerHandle<'a> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab + 'static>(&mut self, serial: u32, grab: G) {
+    pub fn set_grab<G: PointerGrab + 'static>(&mut self, serial: Serial, grab: G) {
         self.inner.grab = GrabStatus::Active(serial, Box::new(grab));
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
     ///
     /// This will also restore the focus of the underlying pointer
-    pub fn unset_grab(&mut self, serial: u32, time: u32) {
+    pub fn unset_grab(&mut self, serial: Serial, time: u32) {
         self.inner.grab = GrabStatus::None;
         // restore the focus
         let location = self.current_location();
@@ -345,7 +346,7 @@ impl<'a> PointerInnerHandle<'a> {
         &mut self,
         (x, y): (f64, f64),
         focus: Option<(WlSurface, (f64, f64))>,
-        serial: u32,
+        serial: Serial,
         time: u32,
     ) {
         // do we leave a surface ?
@@ -360,7 +361,7 @@ impl<'a> PointerInnerHandle<'a> {
         }
         if leave {
             self.inner.with_focused_pointers(|pointer, surface| {
-                pointer.leave(serial, &surface);
+                pointer.leave(serial.into(), &surface);
                 if pointer.as_ref().version() >= 5 {
                     pointer.frame();
                 }
@@ -377,7 +378,7 @@ impl<'a> PointerInnerHandle<'a> {
             self.inner.focus = Some((surface, (sx, sy)));
             if entered {
                 self.inner.with_focused_pointers(|pointer, surface| {
-                    pointer.enter(serial, &surface, x - sx, y - sy);
+                    pointer.enter(serial.into(), &surface, x - sx, y - sy);
                     if pointer.as_ref().version() >= 5 {
                         pointer.frame();
                     }
@@ -398,9 +399,9 @@ impl<'a> PointerInnerHandle<'a> {
     ///
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
-    pub fn button(&self, button: u32, state: ButtonState, serial: u32, time: u32) {
+    pub fn button(&self, button: u32, state: ButtonState, serial: Serial, time: u32) {
         self.inner.with_focused_pointers(|pointer, _| {
-            pointer.button(serial, time, button, state);
+            pointer.button(serial.into(), time, button, state);
             if pointer.as_ref().version() >= 5 {
                 pointer.frame();
             }
@@ -639,7 +640,7 @@ impl PointerGrab for DefaultGrab {
         handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         focus: Option<(WlSurface, (f64, f64))>,
-        serial: u32,
+        serial: Serial,
         time: u32,
     ) {
         handle.motion(location, focus, serial, time);
@@ -649,7 +650,7 @@ impl PointerGrab for DefaultGrab {
         handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
-        serial: u32,
+        serial: Serial,
         time: u32,
     ) {
         handle.button(button, state, serial, time);
@@ -687,7 +688,7 @@ impl PointerGrab for ClickGrab {
         handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         _focus: Option<(WlSurface, (f64, f64))>,
-        serial: u32,
+        serial: Serial,
         time: u32,
     ) {
         handle.motion(location, self.start_data.focus.clone(), serial, time);
@@ -697,7 +698,7 @@ impl PointerGrab for ClickGrab {
         handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
-        serial: u32,
+        serial: Serial,
         time: u32,
     ) {
         handle.button(button, state, serial, time);

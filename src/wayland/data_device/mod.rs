@@ -67,6 +67,7 @@ use wayland_server::{
 use crate::wayland::{
     compositor::{roles::Role, CompositorToken},
     seat::{GrabStartData, Seat},
+    Serial,
 };
 
 mod data_source;
@@ -342,7 +343,7 @@ pub fn set_data_device_selection(seat: &Seat, mime_types: Vec<String>) {
 /// which events can be generated and what response is expected from you to them.
 pub fn start_dnd<C>(
     seat: &Seat,
-    serial: u32,
+    serial: Serial,
     start_data: GrabStartData,
     metadata: SourceMetadata,
     callback: C,
@@ -443,6 +444,7 @@ where
             serial,
         } => {
             /* TODO: handle the icon */
+            let serial = Serial::from(serial);
             if let Some(pointer) = seat.get_pointer() {
                 if pointer.has_grab(serial) {
                     if let Some(ref icon) = icon {

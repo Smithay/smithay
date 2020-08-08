@@ -1,4 +1,5 @@
 use crate::backend::input::KeyState;
+use crate::wayland::Serial;
 use std::{
     cell::RefCell,
     default::Default,
@@ -301,7 +302,7 @@ impl KeyboardHandle {
     ///
     /// The module [`wayland::seat::keysyms`](::wayland::seat::keysyms) exposes definitions of all possible keysyms
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
-    pub fn input<F>(&self, keycode: u32, state: KeyState, serial: u32, time: u32, filter: F)
+    pub fn input<F>(&self, keycode: u32, state: KeyState, serial: Serial, time: u32, filter: F)
     where
         F: FnOnce(&ModifiersState, Keysym) -> bool,
     {
@@ -337,9 +338,9 @@ impl KeyboardHandle {
         guard.with_focused_kbds(|kbd, _| {
             // key event must be sent before modifers event for libxkbcommon
             // to process them correctly
-            kbd.key(serial, time, keycode, wl_state);
+            kbd.key(serial.into(), time, keycode, wl_state);
             if let Some((dep, la, lo, gr)) = modifiers {
-                kbd.modifiers(serial, dep, la, lo, gr);
+                kbd.modifiers(serial.into(), dep, la, lo, gr);
             }
         });
         if guard.focus.is_some() {
@@ -355,7 +356,7 @@ impl KeyboardHandle {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus(&self, focus: Option<&WlSurface>, serial: u32) {
+    pub fn set_focus(&self, focus: Option<&WlSurface>, serial: Serial) {
         let mut guard = self.arc.internal.borrow_mut();
 
         let same = guard
@@ -367,7 +368,7 @@ impl KeyboardHandle {
         if !same {
             // unset old focus
             guard.with_focused_kbds(|kbd, s| {
-                kbd.leave(serial, &s);
+                kbd.leave(serial.into(), &s);
             });
 
             // set new focus
@@ -375,9 +376,9 @@ impl KeyboardHandle {
             let (dep, la, lo, gr) = guard.serialize_modifiers();
             let keys = guard.serialize_pressed_keys();
             guard.with_focused_kbds(|kbd, surface| {
-                kbd.enter(serial, &surface, keys.clone());
+                kbd.enter(serial.into(), &surface, keys.clone());
                 // Modifiers must be send after enter event.
-                kbd.modifiers(serial, dep, la, lo, gr);
+                kbd.modifiers(serial.into(), dep, la, lo, gr);
             });
             {
                 let KbdInternal {
