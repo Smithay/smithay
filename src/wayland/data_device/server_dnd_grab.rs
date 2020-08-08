@@ -6,6 +6,7 @@ use wayland_server::{
 };
 
 use crate::wayland::seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat};
+use crate::wayland::Serial;
 
 use super::{DataDeviceData, SeatData};
 
@@ -72,7 +73,7 @@ where
         _handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         focus: Option<(wl_surface::WlSurface, (f64, f64))>,
-        serial: u32,
+        serial: Serial,
         time: u32,
     ) {
         let (x, y) = location;
@@ -142,7 +143,7 @@ where
                         offer.offer(mime_type);
                     }
                     offer.source_actions(self.metadata.dnd_action.to_raw());
-                    device.enter(serial, &surface, x - sx, y - sy, Some(&offer));
+                    device.enter(serial.into(), &surface, x - sx, y - sy, Some(&offer));
                     self.pending_offers.push(offer);
                 }
                 self.offer_data = Some(offer_data);
@@ -163,7 +164,7 @@ where
         handle: &mut PointerInnerHandle<'_>,
         _button: u32,
         _state: wl_pointer::ButtonState,
-        serial: u32,
+        serial: Serial,
         time: u32,
     ) {
         if handle.current_pressed().is_empty() {

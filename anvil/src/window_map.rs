@@ -9,6 +9,7 @@ use smithay::{
             legacy::{ShellSurface, ShellSurfaceRole},
             xdg::{ToplevelSurface, XdgSurfaceRole},
         },
+        Serial,
     },
 };
 
@@ -172,7 +173,7 @@ where
 
     /// Sends the frame callback to all the subsurfaces in this
     /// window that requested it
-    pub fn send_frame(&self, serial: u32, ctoken: CompositorToken<R>) {
+    pub fn send_frame(&self, serial: Serial, ctoken: CompositorToken<R>) {
         if let Some(wl_surface) = self.toplevel.get_surface() {
             ctoken.with_surface_tree_downward(
                 wl_surface,
@@ -312,7 +313,7 @@ where
             .map(|w| w.geometry(self.ctoken))
     }
 
-    pub fn send_frames(&self, serial: u32) {
+    pub fn send_frames(&self, serial: Serial) {
         for window in &self.windows {
             window.send_frame(serial, self.ctoken);
         }

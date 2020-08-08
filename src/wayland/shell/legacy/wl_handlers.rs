@@ -11,6 +11,7 @@ use wayland_server::{
 };
 
 use crate::wayland::compositor::{roles::Role, CompositorToken};
+use crate::wayland::Serial;
 
 use super::{ShellRequest, ShellState, ShellSurface, ShellSurfaceKind, ShellSurfaceRole};
 
@@ -31,7 +32,7 @@ pub(crate) fn implement_shell<R, Impl>(
         let role_data = ShellSurfaceRole {
             title: "".into(),
             class: "".into(),
-            pending_ping: 0,
+            pending_ping: Serial::from(0),
         };
         if ctoken.give_role_with(&surface, role_data).is_err() {
             shell
@@ -98,10 +99,11 @@ where
         let mut user_impl = implementation.borrow_mut();
         match req {
             Request::Pong { serial } => {
+                let serial = Serial::from(serial);
                 let valid = ctoken
                     .with_role_data(&data.surface, |data| {
                         if data.pending_ping == serial {
-                            data.pending_ping = 0;
+                            data.pending_ping = Serial::from(0);
                             true
                         } else {
                             false
@@ -114,17 +116,23 @@ where
                     });
                 }
             }
-            Request::Move { seat, serial } => (&mut *user_impl)(ShellRequest::Move {
-                surface: make_handle(&shell_surface, ctoken),
-                serial,
-                seat,
-            }),
-            Request::Resize { seat, serial, edges } => (&mut *user_impl)(ShellRequest::Resize {
-                surface: make_handle(&shell_surface, ctoken),
-                serial,
-                seat,
-                edges,
-            }),
+            Request::Move { seat, serial } => {
+                let serial = Serial::from(serial);
+                (&mut *user_impl)(ShellRequest::Move {
+                    surface: make_handle(&shell_surface, ctoken),
+                    serial,
+                    seat,
+                })
+            }
+            Request::Resize { seat, serial, edges } => {
+                let serial = Serial::from(serial);
+                (&mut *user_impl)(ShellRequest::Resize {
+                    surface: make_handle(&shell_surface, ctoken),
+                    serial,
+                    seat,
+                    edges,
+                })
+            }
             Request::SetToplevel => (&mut *user_impl)(ShellRequest::SetKind {
                 surface: make_handle(&shell_surface, ctoken),
                 kind: ShellSurfaceKind::Toplevel,
@@ -156,16 +164,19 @@ where
                 x,
                 y,
                 flags,
-            } => (&mut *user_impl)(ShellRequest::SetKind {
-                surface: make_handle(&shell_surface, ctoken),
-                kind: ShellSurfaceKind::Popup {
-                    parent,
-                    serial,
-                    seat,
-                    location: (x, y),
-                    inactive: flags.contains(wl_shell_surface::Transient::Inactive),
-                },
-            }),
+            } => {
+                let serial = Serial::from(serial);
+                (&mut *user_impl)(ShellRequest::SetKind {
+                    surface: make_handle(&shell_surface, ctoken),
+                    kind: ShellSurfaceKind::Popup {
+                        parent,
+                        serial,
+                        seat,
+                        location: (x, y),
+                        inactive: flags.contains(wl_shell_surface::Transient::Inactive),
+                    },
+                })
+            }
             Request::SetMaximized { output } => (&mut *user_impl)(ShellRequest::SetKind {
                 surface: make_handle(&shell_surface, ctoken),
                 kind: ShellSurfaceKind::Maximized { output },

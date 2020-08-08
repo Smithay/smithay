@@ -29,6 +29,7 @@ use smithay::{
                 XdgSurfacePendingState, XdgSurfaceRole,
             },
         },
+        Serial,
     },
 };
 
@@ -61,7 +62,7 @@ impl PointerGrab for MoveSurfaceGrab {
         _handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         _focus: Option<(wl_surface::WlSurface, (f64, f64))>,
-        _serial: u32,
+        _serial: Serial,
         _time: u32,
     ) {
         let dx = location.0 - self.start_data.location.0;
@@ -79,7 +80,7 @@ impl PointerGrab for MoveSurfaceGrab {
         handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
-        serial: u32,
+        serial: Serial,
         time: u32,
     ) {
         handle.button(button, state, serial, time);
@@ -155,7 +156,7 @@ impl PointerGrab for ResizeSurfaceGrab {
         _handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         _focus: Option<(wl_surface::WlSurface, (f64, f64))>,
-        serial: u32,
+        serial: Serial,
         _time: u32,
     ) {
         let mut dx = location.0 - self.start_data.location.0;
@@ -226,7 +227,7 @@ impl PointerGrab for ResizeSurfaceGrab {
         handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
-        serial: u32,
+        serial: Serial,
         time: u32,
     ) {
         handle.button(button, state, serial, time);
@@ -328,7 +329,7 @@ pub fn init_shell(display: &mut Display, buffer_utils: BufferUtils, log: ::slog:
                 surface.send_configure(ToplevelConfigure {
                     size: None,
                     states: vec![],
-                    serial: 42,
+                    serial: Serial::from(42),
                 });
                 xdg_window_map
                     .borrow_mut()
@@ -337,7 +338,7 @@ pub fn init_shell(display: &mut Display, buffer_utils: BufferUtils, log: ::slog:
             XdgRequest::NewPopup { surface } => surface.send_configure(PopupConfigure {
                 size: (10, 10),
                 position: (10, 10),
-                serial: 42,
+                serial: Serial::from(42),
             }),
             XdgRequest::Move {
                 surface,
@@ -453,7 +454,7 @@ pub fn init_shell(display: &mut Display, buffer_utils: BufferUtils, log: ::slog:
                 if let Some(serial) = waiting_for_serial {
                     let acked = compositor_token
                         .with_role_data(&surface, |role: &mut XdgSurfaceRole| {
-                            !role.pending_configures.contains(&serial)
+                            !role.pending_configures.contains(&serial.into())
                         })
                         .unwrap();
 
@@ -632,7 +633,7 @@ pub enum ResizeState {
     /// The surface is currently being resized.
     Resizing(ResizeData),
     /// The resize has finished, and the surface needs to ack the final configure.
-    WaitingForFinalAck(ResizeData, u32),
+    WaitingForFinalAck(ResizeData, Serial),
     /// The resize has finished, and the surface needs to commit its final state.
     WaitingForCommit(ResizeData),
 }
@@ -754,9 +755,9 @@ impl SurfaceData {
     }
 
     /// Send the frame callback if it had been requested
-    pub fn send_frame(&mut self, serial: u32) {
+    pub fn send_frame(&mut self, serial: Serial) {
         if let Some(callback) = self.current_state.frame_callback.take() {
-            callback.done(serial);
+            callback.done(serial.into());
         }
     }
 }

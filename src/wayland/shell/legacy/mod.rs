@@ -67,6 +67,7 @@ use std::{
 };
 
 use crate::wayland::compositor::{roles::Role, CompositorToken};
+use crate::wayland::Serial;
 
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface},
@@ -81,7 +82,7 @@ pub struct ShellSurfaceRole {
     pub title: String,
     /// Class of the surface
     pub class: String,
-    pending_ping: u32,
+    pending_ping: Serial,
 }
 
 /// A handle to a shell surface
@@ -136,12 +137,12 @@ where
     /// down to 0 before a pong is received, mark the client as unresponsive.
     ///
     /// Fails if this shell client already has a pending ping or is already dead.
-    pub fn send_ping(&self, serial: u32) -> Result<(), ()> {
+    pub fn send_ping(&self, serial: Serial) -> Result<(), ()> {
         if !self.alive() {
             return Err(());
         }
         let ret = self.token.with_role_data(&self.wl_surface, |data| {
-            if data.pending_ping == 0 {
+            if data.pending_ping == Serial::from(0) {
                 data.pending_ping = serial;
                 true
             } else {
@@ -149,7 +150,7 @@ where
             }
         });
         if let Ok(true) = ret {
-            self.shell_surface.ping(serial);
+            self.shell_surface.ping(serial.into());
             Ok(())
         } else {
             Err(())
@@ -201,7 +202,7 @@ pub enum ShellSurfaceKind {
         parent: wl_surface::WlSurface,
         /// The serial of the input event triggering the creation of this
         /// popup
-        serial: u32,
+        serial: Serial,
         /// Wether this popup should be marked as inactive
         inactive: bool,
         /// Location of the popup relative to its parent
@@ -244,7 +245,7 @@ pub enum ShellRequest<R> {
         /// The surface requesting the move
         surface: ShellSurface<R>,
         /// Serial of the implicit grab that initiated the move
-        serial: u32,
+        serial: Serial,
         /// Seat associated with the move
         seat: wl_seat::WlSeat,
     },
@@ -255,7 +256,7 @@ pub enum ShellRequest<R> {
         /// The surface requesting the resize
         surface: ShellSurface<R>,
         /// Serial of the implicit grab that initiated the resize
-        serial: u32,
+        serial: Serial,
         /// Seat associated with the resize
         seat: wl_seat::WlSeat,
         /// Direction of the resize
