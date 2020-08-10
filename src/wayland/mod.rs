@@ -91,3 +91,54 @@ impl SerialCounter {
         Serial(self.serial.fetch_add(1, Ordering::AcqRel) as u32)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_serial_counter(initial_value: u32) -> SerialCounter {
+        SerialCounter {
+            serial: AtomicUsize::new(initial_value as usize),
+        }
+    }
+
+    #[test]
+    fn serial_equals_self() {
+        let counter = create_serial_counter(0);
+        let serial = counter.next_serial();
+        assert!(serial == serial);
+    }
+
+    #[test]
+    fn consecutive_serials() {
+        let counter = create_serial_counter(0);
+        let serial1 = counter.next_serial();
+        let serial2 = counter.next_serial();
+        assert!(serial1 < serial2);
+    }
+
+    #[test]
+    fn non_consecutive_serials() {
+        let skip_serials = 147;
+
+        let counter = create_serial_counter(0);
+        let serial1 = counter.next_serial();
+        for _ in 0..skip_serials {
+            let _ = counter.next_serial();
+        }
+        let serial2 = counter.next_serial();
+        assert!(serial1 < serial2);
+    }
+
+    #[test]
+    fn serial_wrap_around() {
+        let counter = create_serial_counter(u32::MAX);
+        let serial1 = counter.next_serial();
+        let serial2 = counter.next_serial();
+
+        assert!(serial1 == u32::MAX.into());
+        assert!(serial2 == 0.into());
+
+        assert!(serial1 < serial2);
+    }
+}
