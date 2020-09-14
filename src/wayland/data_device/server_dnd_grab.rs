@@ -142,7 +142,7 @@ where
                     for mime_type in self.metadata.mime_types.iter().cloned() {
                         offer.offer(mime_type);
                     }
-                    offer.source_actions(self.metadata.dnd_action.to_raw());
+                    offer.source_actions(self.metadata.dnd_action);
                     device.enter(serial.into(), &surface, x - sx, y - sy, Some(&offer));
                     self.pending_offers.push(offer);
                 }
@@ -288,20 +288,20 @@ where
                 dnd_actions,
                 preferred_action,
             } => {
-                let preferred_action = DndAction::from_bits_truncate(preferred_action);
+                let preferred_action = preferred_action;
                 if ![DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&preferred_action) {
                     offer.as_ref().post_error(
                         wl_data_offer::Error::InvalidAction as u32,
                         "Invalid preferred action.".into(),
                     );
                 }
-                let possible_actions = metadata.dnd_action & DndAction::from_bits_truncate(dnd_actions);
+                let possible_actions = metadata.dnd_action & dnd_actions;
                 data.chosen_action = (&mut *action_choice.borrow_mut())(possible_actions, preferred_action);
                 // check that the user provided callback respects that one precise action should be chosen
                 debug_assert!(
                     [DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&data.chosen_action)
                 );
-                offer.action(data.chosen_action.to_raw());
+                offer.action(data.chosen_action);
                 (&mut *callback.borrow_mut())(ServerDndEvent::Action(data.chosen_action));
             }
             _ => unreachable!(),
