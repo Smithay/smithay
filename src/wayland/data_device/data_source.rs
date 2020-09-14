@@ -24,7 +24,7 @@ pub(crate) fn implement_data_source(src: Main<WlDataSource>) -> WlDataSource {
         match req {
             Request::Offer { mime_type } => guard.mime_types.push(mime_type),
             Request::SetActions { dnd_actions } => {
-                guard.dnd_action = DndAction::from_bits_truncate(dnd_actions);
+                guard.dnd_action = dnd_actions;
             }
             Request::Destroy => {}
             _ => unreachable!(),
