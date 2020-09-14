@@ -4,7 +4,7 @@ use nix::libc::c_void;
 
 use super::{PixelFormat, SwapBuffersError};
 
-#[allow(clippy::all, rust_2018_idioms, missing_docs)]
+#[allow(clippy::all, missing_docs)]
 pub(crate) mod ffi {
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
 }

@@ -42,7 +42,7 @@ pub fn make_sure_egl_is_loaded() {
     });
 }
 
-#[allow(clippy::all, rust_2018_idioms)]
+#[allow(clippy::all)]
 pub mod egl {
     use super::*;
     use libloading::Library;

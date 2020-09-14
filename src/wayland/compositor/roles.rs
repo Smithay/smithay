@@ -245,7 +245,7 @@ macro_rules! define_roles(
                         Ok(data)
                     } else {
                         // put it back in place
-                        ::std::mem::replace(self, temp);
+                        *self = temp;
                         Err($crate::wayland::compositor::roles::WrongRole)
                     }
                 }

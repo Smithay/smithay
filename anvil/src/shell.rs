@@ -784,8 +784,6 @@ fn surface_commit(
         .with_role_data(surface, |&mut role: &mut SubsurfaceRole| role)
         .ok();
 
-    let mut next_state = CommitedState::default();
-
     let (refresh, apply_children) = token.with_surface_data(surface, |attributes| {
         attributes
             .user_data
@@ -796,13 +794,12 @@ fn surface_commit(
             .unwrap()
             .borrow_mut();
 
-        if let Some(ref cached_state) = data.cached_state {
+        let mut next_state = match data.cached_state {
             // There is a pending state, accumulate into it
-            next_state = cached_state.clone();
-        } else {
-            // start from the current state
-            next_state = data.current_state.clone();
-        }
+            Some(ref cached_state) => cached_state.clone(),
+            // Start from the current state
+            None => data.current_state.clone(),
+        };
 
         if let Some(ref data) = sub_data {
             next_state.sub_location = data.location;

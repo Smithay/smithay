@@ -97,13 +97,7 @@ fn main() {
     let crtc = encoder_info
         .crtc()
         // or use the first one that is compatible with the encoder
-        .unwrap_or_else(|| {
-            *res_handles
-                .filter_crtcs(encoder_info.possible_crtcs())
-                .iter()
-                .next()
-                .unwrap()
-        });
+        .unwrap_or_else(|| res_handles.filter_crtcs(encoder_info.possible_crtcs())[0]);
     println!("Crtc {:?}", crtc);
 
     // Assuming we found a good connector and loaded the info into `connector_info`
