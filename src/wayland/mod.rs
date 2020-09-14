@@ -103,6 +103,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::eq_op)]
     fn serial_equals_self() {
         let counter = create_serial_counter(0);
         let serial = counter.next_serial();

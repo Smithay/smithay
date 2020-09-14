@@ -49,7 +49,7 @@ impl EventSource for DBusConnection {
 
     fn process_events<F>(&mut self, _: Readiness, _: Token, mut callback: F) -> io::Result<()>
     where
-        F: FnMut(Message, &mut DBusConnection) -> (),
+        F: FnMut(Message, &mut DBusConnection),
     {
         self.cx
             .channel()

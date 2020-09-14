@@ -28,8 +28,8 @@ use std::{
     sync::Mutex,
 };
 
-fn get_property_by_name<'a, D: ControlDevice, T: ResourceHandle>(
-    dev: &'a D,
+fn get_property_by_name<D: ControlDevice, T: ResourceHandle>(
+    dev: &D,
     handle: T,
     name: &'static str,
 ) -> Option<(property::ValueType, property::RawValue)> {
@@ -84,11 +84,7 @@ fn main() {
                 .unwrap();
             let encoder_info = device.get_encoder_info(encoder).unwrap();
 
-            *res_handles
-                .filter_crtcs(encoder_info.possible_crtcs())
-                .iter()
-                .next()
-                .unwrap()
+            res_handles.filter_crtcs(encoder_info.possible_crtcs())[0]
         }
         _ => unreachable!("CRTC_ID does not return another property type"),
     };
