@@ -12,12 +12,12 @@ A smithy for rusty wayland compositors
 
 Smithay aims to provide building blocks to create wayland compositors in Rust. While not
 being a full-blown compositor, it'll provide objects and interfaces implementing common
-functionnalities that pretty much any compositor will need, in a generic fashion.
+functionalities that pretty much any compositor will need, in a generic fashion.
 
 Also:
 
 - **Documented:** Smithay strives to maintain a clear and detailed documentation of its API and its
-  functionnalities. Compiled documentations are available on [docs.rs](https://docs.rs/smithay) for released
+  functionalities. Compiled documentations are available on [docs.rs](https://docs.rs/smithay) for released
   versions, and [here](https://smithay.github.io/smithay) for the master branch.
 - **Safety:** Smithay will target to be safe to use, because Rust.
 - **Modularity:** Smithay is not a framework, and will not be constraining. If there is a
