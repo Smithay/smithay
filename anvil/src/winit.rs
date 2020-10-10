@@ -12,7 +12,6 @@ use smithay::{
     wayland::{
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
-        SERIAL_COUNTER as SCOUNTER,
     },
 };
 
@@ -90,6 +89,8 @@ pub fn run_winit(
         refresh: 60_000,
     });
 
+    let start_time = std::time::Instant::now();
+
     info!(log, "Initialization completed, starting the main loop.");
 
     while state.running.load(Ordering::SeqCst) {
@@ -140,7 +141,11 @@ pub fn run_winit(
             }
         }
         // Send frame events so that client start drawing their next frame
-        state.window_map.borrow().send_frames(SCOUNTER.next_serial());
+        state
+            .window_map
+            .borrow()
+            .send_frames(start_time.elapsed().as_millis() as u32);
+        display.borrow_mut().flush_clients(&mut state);
 
         if event_loop
             .dispatch(Some(Duration::from_millis(16)), &mut state)

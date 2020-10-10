@@ -59,7 +59,6 @@ use smithay::{
         compositor::CompositorToken,
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
-        SERIAL_COUNTER as SCOUNTER,
     },
 };
 
@@ -450,6 +449,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 cursor_status: self.cursor_status.clone(),
                 dnd_icon: self.dnd_icon.clone(),
                 logger: self.logger.clone(),
+                start_time: std::time::Instant::now(),
             });
             let mut listener = DrmRendererSessionListener {
                 renderer: renderer.clone(),
@@ -582,6 +582,7 @@ pub struct DrmRenderer {
     cursor_status: Arc<Mutex<CursorImageStatus>>,
     dnd_icon: Arc<Mutex<Option<wl_surface::WlSurface>>>,
     logger: ::slog::Logger,
+    start_time: std::time::Instant,
 }
 
 impl DrmRenderer {
@@ -727,7 +728,9 @@ impl DrmRenderer {
             } else {
                 // TODO: only send drawn windows the frames callback
                 // Send frame events so that client start drawing their next frame
-                self.window_map.borrow().send_frames(SCOUNTER.next_serial());
+                self.window_map
+                    .borrow()
+                    .send_frames(self.start_time.elapsed().as_millis() as u32);
             }
         }
     }
