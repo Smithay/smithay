@@ -98,6 +98,13 @@ pub fn run_winit(
             .dispatch_new_events(|event, _| state.process_input_event(event))
             .unwrap();
 
+        // Send frame events so that client start drawing their next frame
+        state
+            .window_map
+            .borrow()
+            .send_frames(start_time.elapsed().as_millis() as u32);
+        display.borrow_mut().flush_clients(&mut state);
+
         // drawing logic
         {
             use glium::Surface;
@@ -140,13 +147,7 @@ pub fn run_winit(
                 error!(log, "Error during rendering: {:?}", err);
             }
         }
-        // Send frame events so that client start drawing their next frame
-        state
-            .window_map
-            .borrow()
-            .send_frames(start_time.elapsed().as_millis() as u32);
-        display.borrow_mut().flush_clients(&mut state);
-
+        
         if event_loop
             .dispatch(Some(Duration::from_millis(16)), &mut state)
             .is_err()
