@@ -755,9 +755,9 @@ impl SurfaceData {
     }
 
     /// Send the frame callback if it had been requested
-    pub fn send_frame(&mut self, serial: Serial) {
+    pub fn send_frame(&mut self, time: u32) {
         if let Some(callback) = self.current_state.frame_callback.take() {
-            callback.done(serial.into());
+            callback.done(time);
         }
     }
 }
