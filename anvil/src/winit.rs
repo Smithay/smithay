@@ -147,7 +147,7 @@ pub fn run_winit(
                 error!(log, "Error during rendering: {:?}", err);
             }
         }
-        
+
         if event_loop
             .dispatch(Some(Duration::from_millis(16)), &mut state)
             .is_err()

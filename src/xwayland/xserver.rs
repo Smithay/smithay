@@ -182,7 +182,7 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
     let sigusr1_handler = (&mut *guard.source_maker)(inner.clone())?;
 
     // all is ready, we can do the fork dance
-    let child_pid = match fork() {
+    let child_pid = match unsafe { fork() } {
         Ok(ForkResult::Parent { child }) => {
             // we are the main smithay process
             child
@@ -195,7 +195,7 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
             set.add(signal::Signal::SIGCHLD);
             // we can't handle errors here anyway
             let _ = signal::sigprocmask(signal::SigmaskHow::SIG_BLOCK, Some(&set), None);
-            match fork() {
+            match unsafe { fork() } {
                 Ok(ForkResult::Parent { child }) => {
                     // we are still the first child
                     let sig = set.wait();
