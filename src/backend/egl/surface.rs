@@ -103,11 +103,10 @@ impl<N: native::NativeSurface> EGLSurface<N> {
         };
 
         // workaround for missing `PartialEq` impl
-        let is_bad_surface = if let Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface)) = result {
-            true
-        } else {
-            false
-        };
+        let is_bad_surface = matches!(
+            result,
+            Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface))
+        );
 
         if self.native.needs_recreation() || surface.is_null() || is_bad_surface {
             let previous = self.surface.compare_and_swap(

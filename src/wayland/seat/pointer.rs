@@ -160,10 +160,7 @@ impl PointerHandle {
     /// Check if this pointer is currently being grabbed
     pub fn is_grabbed(&self) -> bool {
         let guard = self.inner.borrow_mut();
-        match guard.grab {
-            GrabStatus::None => false,
-            _ => true,
-        }
+        !matches!(guard.grab, GrabStatus::None)
     }
 
     /// Returns the start data for the grab, if any.
