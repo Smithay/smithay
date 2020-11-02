@@ -675,24 +675,20 @@ impl DrmRenderer {
 
             if let Err(err) = frame.finish() {
                 warn!(self.logger, "Error during rendering: {:?}", err);
-                let reschedule = match err {
-                    SwapBuffersError::AlreadySwapped => false,
-                    SwapBuffersError::TemporaryFailure(err) => {
-                        match err.downcast_ref::<smithay::backend::drm::common::Error>() {
-                            Some(&smithay::backend::drm::common::Error::DeviceInactive) => false,
-                            Some(&smithay::backend::drm::common::Error::Access { ref source, .. })
-                                if match source.get_ref() {
-                                    drm::SystemError::PermissionDenied => true,
-                                    _ => false,
-                                } =>
-                            {
-                                false
+                let reschedule =
+                    match err {
+                        SwapBuffersError::AlreadySwapped => false,
+                        SwapBuffersError::TemporaryFailure(err) => {
+                            match err.downcast_ref::<smithay::backend::drm::common::Error>() {
+                                Some(&smithay::backend::drm::common::Error::DeviceInactive) => false,
+                                Some(&smithay::backend::drm::common::Error::Access {
+                                    ref source, ..
+                                }) if matches!(source.get_ref(), drm::SystemError::PermissionDenied) => false,
+                                _ => true,
                             }
-                            _ => true,
                         }
-                    }
-                    SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
-                };
+                        SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
+                    };
 
                 if reschedule {
                     debug!(self.logger, "Rescheduling");

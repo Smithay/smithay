@@ -48,11 +48,7 @@ impl AnvilState {
                 action = process_keyboard_shortcut(*modifiers, keysym);
                 // forward to client only if action == KeyAction::Forward
                 // both for pressed and released, to avoid inconsistencies
-                if let KeyAction::Forward = action {
-                    true
-                } else {
-                    false
-                }
+                matches!(action, KeyAction::Forward)
             });
         if let KeyState::Released = state {
             // only process special actions on key press, not release

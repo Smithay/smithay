@@ -2,6 +2,9 @@
 //! Types to make fallback device initialization easier
 //!
 
+// The macros in this module rely on these constructs
+#![allow(clippy::needless_arbitrary_self_type)]
+
 #[cfg(feature = "backend_drm_egl")]
 use crate::backend::drm::egl::{Arguments as EglDeviceArguments, EglDevice, Error as EglDeviceError};
 #[cfg(all(feature = "backend_drm_atomic", feature = "backend_drm_legacy"))]
