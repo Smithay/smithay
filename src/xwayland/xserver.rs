@@ -206,9 +206,13 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
                     if let Ok(signal::Signal::SIGCHLD) = sig {
                         // XWayland has exited before being ready
                         let _ = ::nix::sys::wait::waitpid(child, None);
-                        unsafe { ::nix::libc::exit(1) };
+                        // See below for exit vs _exit
+                        unsafe { ::nix::libc::_exit(1) };
                     }
-                    unsafe { ::nix::libc::exit(0) };
+                    // Use _exit so that atexit handlers are not run. We certainly did not set any,
+                    // but we might have inherited some from the main process and they have been
+                    // seen causing segfaults.
+                    unsafe { ::nix::libc::_exit(0) };
                 }
                 Ok(ForkResult::Child) => {
                     // we are the second child, we exec xwayland
