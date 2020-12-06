@@ -38,7 +38,7 @@ impl X11Lock {
         match lockfile {
             Ok(mut file) => {
                 // we got it, write our PID in it and we're good
-                let ret = file.write_fmt(format_args!("{:>10}", ::nix::unistd::Pid::this()));
+                let ret = file.write_fmt(format_args!("{:>10}\n", ::nix::unistd::Pid::this()));
                 if ret.is_err() {
                     // write to the file failed ? we abandon
                     ::std::mem::drop(file);
