@@ -37,10 +37,7 @@ use std::{
     sync::Arc,
 };
 
-use calloop::{
-    signals::{Signal, Signals},
-    LoopHandle, Source,
-};
+use calloop::{generic::Generic, Interest, LoopHandle, Mode, Source};
 
 use nix::{
     errno::Errno,
@@ -95,13 +92,14 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
                 let handle = handle.clone();
                 Box::new(move |source| handle.kill(source))
             },
-            source_maker: Box::new(move |inner| {
+            source_maker: Box::new(move |inner, fd| {
                 handle
                     .insert_source(
-                        Signals::new(&[Signal::SIGUSR1]).map_err(|_| ())?,
+                        Generic::new(fd, Interest::Readable, Mode::Level),
                         move |evt, _, _| {
-                            debug_assert!(evt.signal() == Signal::SIGUSR1);
+                            debug_assert!(evt.readable);
                             xwayland_ready(&inner);
+                            Ok(())
                         },
                     )
                     .map_err(|_| ())
@@ -124,13 +122,14 @@ impl<WM: XWindowManager> Drop for XWayland<WM> {
 struct XWaylandInstance {
     display_lock: X11Lock,
     wayland_client: Client,
-    sigusr1_handler: Option<Source<Signals>>,
+    startup_handler: Option<Source<Generic<UnixStream>>>,
     wm_fd: Option<UnixStream>,
     started_at: ::std::time::Instant,
     child_pid: Option<Pid>,
 }
 
-type SourceMaker<WM> = dyn FnMut(Rc<RefCell<Inner<WM>>>) -> Result<Source<Signals>, ()>;
+type SourceMaker<WM> =
+    dyn FnMut(Rc<RefCell<Inner<WM>>>, UnixStream) -> Result<Source<Generic<UnixStream>>, ()>;
 
 // Inner implementation of the XWayland manager
 struct Inner<WM: XWindowManager> {
@@ -138,7 +137,7 @@ struct Inner<WM: XWindowManager> {
     source_maker: Box<SourceMaker<WM>>,
     wayland_display: Rc<RefCell<Display>>,
     instance: Option<XWaylandInstance>,
-    kill_source: Box<dyn Fn(Source<Signals>)>,
+    kill_source: Box<dyn Fn(Source<Generic<UnixStream>>)>,
     log: ::slog::Logger,
 }
 
@@ -156,6 +155,7 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
 
     info!(guard.log, "Starting XWayland");
 
+    let (status_child, status_me) = UnixStream::pair().map_err(|_| ())?;
     let (x_wm_x11, x_wm_me) = UnixStream::pair().map_err(|_| ())?;
     let (wl_x11, wl_me) = UnixStream::pair().map_err(|_| ())?;
 
@@ -178,9 +178,6 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
         client_destroy::<WM, T>(&e, data.get().unwrap())
     }));
 
-    // setup the SIGUSR1 handler
-    let sigusr1_handler = (&mut *guard.source_maker)(inner.clone())?;
-
     // all is ready, we can do the fork dance
     let child_pid = match unsafe { fork() } {
         Ok(ForkResult::Parent { child }) => {
@@ -189,7 +186,6 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
         }
         Ok(ForkResult::Child) => {
             // we are the first child
-            let ppid = Pid::parent();
             let mut set = signal::SigSet::empty();
             set.add(signal::Signal::SIGUSR1);
             set.add(signal::Signal::SIGCHLD);
@@ -197,10 +193,10 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
             let _ = signal::sigprocmask(signal::SigmaskHow::SIG_BLOCK, Some(&set), None);
             match unsafe { fork() } {
                 Ok(ForkResult::Parent { child }) => {
+                    // When we exit(), we will close() this which wakes up the main process.
+                    let _status_child = status_child;
                     // we are still the first child
                     let sig = set.wait();
-                    // send USR1 to parent
-                    let _ = signal::kill(ppid, signal::Signal::SIGUSR1);
                     // Parent will wait for us and know from out
                     // exit status if XWayland launch was a success or not =)
                     if let Ok(signal::Signal::SIGCHLD) = sig {
@@ -234,10 +230,12 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
         }
     };
 
+    let startup_handler = (&mut *guard.source_maker)(inner.clone(), status_me)?;
+
     guard.instance = Some(XWaylandInstance {
         display_lock: lock,
         wayland_client: client,
-        sigusr1_handler: Some(sigusr1_handler),
+        startup_handler: Some(startup_handler),
         wm_fd: Some(x_wm_me),
         started_at: creation_time,
         child_pid: Some(child_pid),
@@ -256,7 +254,7 @@ impl<WM: XWindowManager> Inner<WM> {
             // kill the client
             instance.wayland_client.kill();
             // remove the event source
-            if let Some(s) = instance.sigusr1_handler.take() {
+            if let Some(s) = instance.startup_handler.take() {
                 (self.kill_source)(s);
             }
             // All connections and lockfiles are cleaned by their destructors
@@ -340,7 +338,7 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
     }
 
     // in all cases, cleanup
-    if let Some(s) = instance.sigusr1_handler.take() {
+    if let Some(s) = instance.startup_handler.take() {
         (inner.kill_source)(s);
     }
 }
