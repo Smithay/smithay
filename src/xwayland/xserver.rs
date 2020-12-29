@@ -23,6 +23,11 @@
  *
  * cf https://github.com/swaywm/wlroots/blob/master/xwayland/xwayland.c
  *
+ * Since fork is not safe to call in a multi-threaded process, a process is
+ * forked of early (LaunchHelper). Via a shared FD, a command to actually launch
+ * Xwayland can be sent to that process. The process then does the fork and
+ * reports back when Xwayland successfully started (=SIGUSR1 was received) with
+ * another write on the pipe.
  */
 use std::{
     any::Any,
