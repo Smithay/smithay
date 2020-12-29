@@ -24,6 +24,8 @@ pub struct LaunchHelper(UnixStream);
 impl LaunchHelper {
     /// Start a new launch helper process.
     ///
+    /// # Safety
+    ///
     /// This function calls [`nix::unistd::fork`] to create a new process. This function is unsafe
     /// because `fork` is unsafe. Most importantly: Calling `fork` in a multi-threaded process has
     /// lots of limitations. Thus, you must call this function before any threads are created.
@@ -87,7 +89,7 @@ fn do_child(mut stream: UnixStream) -> IOResult<()> {
     signal::sigprocmask(signal::SigmaskHow::SIG_BLOCK, Some(&set), None).map_err(nix_error_to_io)?;
 
     loop {
-        while let Ok(_) = wait::waitpid(None, Some(wait::WaitPidFlag::WNOHANG)) {
+        while wait::waitpid(None, Some(wait::WaitPidFlag::WNOHANG)).is_ok() {
             // We just want to reap the zombies
         }
 
@@ -105,10 +107,10 @@ fn do_child(mut stream: UnixStream) -> IOResult<()> {
         assert!(num_fds >= 2);
         let wayland_socket = unsafe { UnixStream::from_raw_fd(fds[0]) };
         let wm_socket = unsafe { UnixStream::from_raw_fd(fds[1]) };
-        let mut listen_sockets = Vec::new();
-        for idx in 2..num_fds {
-            listen_sockets.push(unsafe { UnixStream::from_raw_fd(fds[idx]) });
-        }
+        let listen_sockets = fds[2..num_fds]
+            .iter()
+            .map(|fd| unsafe { UnixStream::from_raw_fd(*fd) })
+            .collect::<Vec<_>>();
 
         // Fork Xwayland and report back the result
         let success = match fork_xwayland(display, wayland_socket, wm_socket, &listen_sockets) {
