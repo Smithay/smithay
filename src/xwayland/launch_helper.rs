@@ -38,6 +38,29 @@ impl LaunchHelper {
         }
     }
 
+    /// Check the status of a previous launch.
+    pub(crate) fn was_launch_succesful(&self, pid: Pid) -> IOResult<bool> {
+        // find out if the launch was a success by waiting on the intermediate child
+        use nix::{errno::Errno, sys::wait};
+        loop {
+            match wait::waitpid(pid, None) {
+                Ok(wait::WaitStatus::Exited(_, 0)) => {
+                    // XWayland was correctly started :)
+                    return Ok(true);
+                }
+                Ok(_) => {
+                    // Something weird happened, most likely WaitStatus::Signaled
+                    return Ok(false);
+                }
+                Err(NixError::Sys(Errno::EINTR)) => {
+                    // interrupted, retry
+                    continue;
+                }
+                Err(e) => return Err(nix_error_to_io(e)),
+            }
+        }
+    }
+
     /// Fork a child and call exec_xwayland() in it.
     pub(crate) fn launch(
         &self,

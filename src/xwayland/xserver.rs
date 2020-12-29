@@ -40,9 +40,8 @@ use std::{
 use calloop::{generic::Generic, Interest, LoopHandle, Mode, Source};
 
 use nix::{
-    errno::Errno,
     unistd::Pid,
-    Error as NixError, Result as NixResult,
+    Result as NixResult,
 };
 
 use wayland_server::{Client, Display, Filter};
@@ -245,7 +244,6 @@ fn client_destroy<WM: XWindowManager + 'static, T: Any>(map: &::wayland_server::
 }
 
 fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
-    use nix::sys::wait;
     let mut guard = inner.borrow_mut();
     let inner = &mut *guard;
     // instance should never be None at this point
@@ -254,26 +252,13 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
     // neither the pid
     let pid = instance.child_pid.unwrap();
 
-    // find out if the launch was a success by waiting on the intermediate child
-    let success: bool;
-    loop {
-        match wait::waitpid(pid, None) {
-            Ok(wait::WaitStatus::Exited(_, 0)) => {
-                // XWayland was correctly started :)
-                success = true;
-                break;
-            }
-            Err(NixError::Sys(Errno::EINTR)) => {
-                // interupted, retry
-                continue;
-            }
-            _ => {
-                // something went wrong :(
-                success = false;
-                break;
-            }
+    let success = match inner.helper.was_launch_succesful(pid) {
+        Ok(s) => s,
+        Err(e) => {
+            error!(inner.log, "Checking launch status failed"; "err" => format!("{:?}", e));
+            false
         }
-    }
+    };
 
     if success {
         // signal the WM
