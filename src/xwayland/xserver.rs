@@ -41,14 +41,16 @@ use calloop::{generic::Generic, Interest, LoopHandle, Mode, Source};
 
 use nix::{
     errno::Errno,
-    sys::signal,
-    unistd::{fork, ForkResult, Pid},
+    unistd::Pid,
     Error as NixError, Result as NixResult,
 };
 
 use wayland_server::{Client, Display, Filter};
 
-use super::x11_sockets::{prepare_x11_sockets, X11Lock};
+use super::{
+    LaunchHelper,
+    x11_sockets::{prepare_x11_sockets, X11Lock},
+};
 
 /// The XWayland handle
 pub struct XWayland<WM: XWindowManager> {
@@ -81,6 +83,7 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
         display: Rc<RefCell<Display>>,
         data: &mut T,
         logger: L,
+        helper: LaunchHelper,
     ) -> Result<XWayland<WM>, ()>
     where
         L: Into<Option<::slog::Logger>>,
@@ -106,6 +109,7 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
             }),
             wayland_display: display,
             instance: None,
+            helper,
             log: log.new(o!("smithay_module" => "XWayland")),
         }));
         launch(&inner, data)?;
@@ -138,6 +142,7 @@ struct Inner<WM: XWindowManager> {
     wayland_display: Rc<RefCell<Display>>,
     instance: Option<XWaylandInstance>,
     kill_source: Box<dyn Fn(Source<Generic<UnixStream>>)>,
+    helper: LaunchHelper,
     log: ::slog::Logger,
 }
 
@@ -155,7 +160,6 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
 
     info!(guard.log, "Starting XWayland");
 
-    let (status_child, status_me) = UnixStream::pair().map_err(|_| ())?;
     let (x_wm_x11, x_wm_me) = UnixStream::pair().map_err(|_| ())?;
     let (wl_x11, wl_me) = UnixStream::pair().map_err(|_| ())?;
 
@@ -179,56 +183,7 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
     }));
 
     // all is ready, we can do the fork dance
-    let child_pid = match unsafe { fork() } {
-        Ok(ForkResult::Parent { child }) => {
-            // we are the main smithay process
-            child
-        }
-        Ok(ForkResult::Child) => {
-            // we are the first child
-            let mut set = signal::SigSet::empty();
-            set.add(signal::Signal::SIGUSR1);
-            set.add(signal::Signal::SIGCHLD);
-            // we can't handle errors here anyway
-            let _ = signal::sigprocmask(signal::SigmaskHow::SIG_BLOCK, Some(&set), None);
-            match unsafe { fork() } {
-                Ok(ForkResult::Parent { child }) => {
-                    // When we exit(), we will close() this which wakes up the main process.
-                    let _status_child = status_child;
-                    // we are still the first child
-                    let sig = set.wait();
-                    // Parent will wait for us and know from out
-                    // exit status if XWayland launch was a success or not =)
-                    if let Ok(signal::Signal::SIGCHLD) = sig {
-                        // XWayland has exited before being ready
-                        let _ = ::nix::sys::wait::waitpid(child, None);
-                        unsafe { ::nix::libc::exit(1) };
-                    }
-                    unsafe { ::nix::libc::exit(0) };
-                }
-                Ok(ForkResult::Child) => {
-                    // we are the second child, we exec xwayland
-                    match exec_xwayland(lock.display(), wl_x11, x_wm_x11, &x_fds) {
-                        Ok(x) => match x {},
-                        Err(e) => {
-                            // well, what can we do ?
-                            error!(guard.log, "exec XWayland failed"; "err" => format!("{:?}", e));
-                            unsafe { ::nix::libc::exit(1) };
-                        }
-                    }
-                }
-                Err(e) => {
-                    // well, what can we do ?
-                    error!(guard.log, "XWayland second fork failed"; "err" => format!("{:?}", e));
-                    unsafe { ::nix::libc::exit(1) };
-                }
-            }
-        }
-        Err(e) => {
-            error!(guard.log, "XWayland first fork failed"; "err" => format!("{:?}", e));
-            return Err(());
-        }
-    };
+    let (child_pid, status_me) = guard.helper.launch(lock.display(), wl_x11, x_wm_x11, &x_fds, &guard.log)?;
 
     let startup_handler = (&mut *guard.source_maker)(inner.clone(), status_me)?;
 
@@ -343,12 +298,12 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
     }
 }
 
-enum Void {}
+pub(crate) enum Void {}
 
 /// Exec XWayland with given sockets on given display
 ///
 /// If this returns, that means that something failed
-fn exec_xwayland(
+pub(crate) fn exec_xwayland(
     display: u32,
     wayland_socket: UnixStream,
     wm_socket: UnixStream,
