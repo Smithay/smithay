@@ -88,7 +88,7 @@ mod pool;
 /// This type is only visible as type parameter of
 /// the `Global` handle you are provided.
 pub struct ShmGlobalData {
-    formats: Rc<Vec<wl_shm::Format>>,
+    formats: Rc<[wl_shm::Format]>,
     log: ::slog::Logger,
 }
 
@@ -115,7 +115,7 @@ where
     formats.push(wl_shm::Format::Argb8888);
     formats.push(wl_shm::Format::Xrgb8888);
     let data = ShmGlobalData {
-        formats: Rc::new(formats),
+        formats: formats.into(),
         log: log.new(o!("smithay_module" => "shm_handler")),
     };
 

@@ -186,7 +186,7 @@ where
     let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "dmabuf_handler"));
 
     let max_planes = formats.iter().map(|f| f.plane_count).max().unwrap_or(0);
-    let formats = Rc::new(formats);
+    let formats = Rc::<[Format]>::from(formats);
     let handler = Rc::new(RefCell::new(handler));
 
     trace!(
@@ -262,7 +262,7 @@ struct ParamsHandler<H: DmabufHandler> {
     pending_planes: Vec<Plane>,
     max_planes: u32,
     used: bool,
-    formats: Rc<Vec<Format>>,
+    formats: Rc<[Format]>,
     handler: Rc<RefCell<H>>,
     log: ::slog::Logger,
 }
