@@ -15,5 +15,7 @@
 
 mod x11_sockets;
 mod xserver;
+mod launch_helper;
 
 pub use self::xserver::{XWayland, XWindowManager};
+pub use self::launch_helper::LaunchHelper;
