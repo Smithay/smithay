@@ -1,18 +1,17 @@
 use std::{
-    io::{Result as IOResult, Error as IOError, Read, Write},
-    os::unix::{net::UnixStream, io::{AsRawFd, FromRawFd, RawFd}},
+    io::{Error as IOError, Read, Result as IOResult, Write},
+    os::unix::{
+        io::{AsRawFd, FromRawFd, RawFd},
+        net::UnixStream,
+    },
 };
 
 use nix::{
     errno::Errno,
     libc::exit,
-    sys::{
-        signal,
-        socket,
-        uio,
-    },
+    sys::{signal, socket, uio},
     unistd::{fork, ForkResult},
-    Error as NixError, Result as NixResult
+    Error as NixError, Result as NixResult,
 };
 
 use super::xserver::exec_xwayland;
@@ -41,7 +40,7 @@ impl LaunchHelper {
                     }
                 }
             }
-            ForkResult::Parent { child: _ } => Ok(Self(me))
+            ForkResult::Parent { child: _ } => Ok(Self(me)),
         }
     }
 
@@ -85,8 +84,7 @@ fn do_child(mut stream: UnixStream) -> IOResult<()> {
     let mut set = signal::SigSet::empty();
     set.add(signal::Signal::SIGUSR1);
     set.add(signal::Signal::SIGCHLD);
-    signal::sigprocmask(signal::SigmaskHow::SIG_BLOCK, Some(&set), None)
-        .map_err(nix_error_to_io)?;
+    signal::sigprocmask(signal::SigmaskHow::SIG_BLOCK, Some(&set), None).map_err(nix_error_to_io)?;
 
     loop {
         while let Ok(_) = wait::waitpid(None, Some(wait::WaitPidFlag::WNOHANG)) {
@@ -189,7 +187,12 @@ fn receive_fds(fd: RawFd, buffer: &mut [u8], fds: &mut [RawFd]) -> IOResult<(usi
     let iov = [uio::IoVec::from_mut_slice(buffer)];
 
     let msg = loop {
-        match socket::recvmsg(fd.as_raw_fd(), &iov[..], Some(&mut cmsg), socket::MsgFlags::empty()) {
+        match socket::recvmsg(
+            fd.as_raw_fd(),
+            &iov[..],
+            Some(&mut cmsg),
+            socket::MsgFlags::empty(),
+        ) {
             Ok(msg) => break msg,
             Err(NixError::Sys(Errno::EINTR)) => {
                 // Try again
@@ -214,9 +217,7 @@ fn nix_error_to_io(err: NixError) -> IOError {
     use std::io::ErrorKind;
     match err {
         NixError::Sys(errno) => errno.into(),
-        NixError::InvalidPath | NixError::InvalidUtf8 =>
-            IOError::new(ErrorKind::InvalidInput, err),
-        NixError::UnsupportedOperation =>
-            IOError::new(ErrorKind::Other, err),
+        NixError::InvalidPath | NixError::InvalidUtf8 => IOError::new(ErrorKind::InvalidInput, err),
+        NixError::UnsupportedOperation => IOError::new(ErrorKind::Other, err),
     }
 }

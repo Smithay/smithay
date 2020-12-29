@@ -13,9 +13,9 @@
 //!
 //! Smithay does not provide any helper for doing that yet, but it is planned.
 
+mod launch_helper;
 mod x11_sockets;
 mod xserver;
-mod launch_helper;
 
-pub use self::xserver::{XWayland, XWindowManager};
 pub use self::launch_helper::LaunchHelper;
+pub use self::xserver::{XWayland, XWindowManager};

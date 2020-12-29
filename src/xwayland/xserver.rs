@@ -42,15 +42,18 @@ use std::{
     sync::Arc,
 };
 
-use calloop::{generic::{Fd, Generic}, Interest, LoopHandle, Mode, Source};
+use calloop::{
+    generic::{Fd, Generic},
+    Interest, LoopHandle, Mode, Source,
+};
 
 use nix::Result as NixResult;
 
 use wayland_server::{Client, Display, Filter};
 
 use super::{
-    LaunchHelper,
     x11_sockets::{prepare_x11_sockets, X11Lock},
+    LaunchHelper,
 };
 
 /// The XWayland handle
@@ -132,8 +135,7 @@ struct XWaylandInstance {
     started_at: ::std::time::Instant,
 }
 
-type SourceMaker<WM> =
-    dyn FnMut(Rc<RefCell<Inner<WM>>>, RawFd) -> Result<Source<Generic<Fd>>, ()>;
+type SourceMaker<WM> = dyn FnMut(Rc<RefCell<Inner<WM>>>, RawFd) -> Result<Source<Generic<Fd>>, ()>;
 
 // Inner implementation of the XWayland manager
 struct Inner<WM: XWindowManager> {
@@ -184,7 +186,7 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
 
     // all is ready, we can do the fork dance
     match guard.helper.launch(lock.display(), wl_x11, x_wm_x11, &x_fds) {
-        Ok(()) => {},
+        Ok(()) => {}
         Err(e) => {
             error!(guard.log, "Could not initiate launch of Xwayland"; "err" => format!("{:?}", e));
             return Err(());
