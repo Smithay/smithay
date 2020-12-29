@@ -45,7 +45,7 @@ impl X11Lock {
                     let _ = ::std::fs::remove_file(&filename);
                     Err(())
                 } else {
-                    debug!(log, "X11 lock aquired"; "D" => display);
+                    debug!(log, "X11 lock acquired"; "D" => display);
                     // we got the lockfile and wrote our pid to it, all is good
                     Ok(X11Lock { display, log })
                 }
