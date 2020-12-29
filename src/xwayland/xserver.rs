@@ -30,19 +30,16 @@ use std::{
     env,
     ffi::CString,
     os::unix::{
-        io::{AsRawFd, IntoRawFd},
+        io::{AsRawFd, IntoRawFd, RawFd},
         net::UnixStream,
     },
     rc::Rc,
     sync::Arc,
 };
 
-use calloop::{generic::Generic, Interest, LoopHandle, Mode, Source};
+use calloop::{generic::{Fd, Generic}, Interest, LoopHandle, Mode, Source};
 
-use nix::{
-    unistd::Pid,
-    Result as NixResult,
-};
+use nix::Result as NixResult;
 
 use wayland_server::{Client, Display, Filter};
 
@@ -97,7 +94,7 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
             source_maker: Box::new(move |inner, fd| {
                 handle
                     .insert_source(
-                        Generic::new(fd, Interest::Readable, Mode::Level),
+                        Generic::new(Fd(fd), Interest::Readable, Mode::Level),
                         move |evt, _, _| {
                             debug_assert!(evt.readable);
                             xwayland_ready(&inner);
@@ -125,14 +122,13 @@ impl<WM: XWindowManager> Drop for XWayland<WM> {
 struct XWaylandInstance {
     display_lock: X11Lock,
     wayland_client: Client,
-    startup_handler: Option<Source<Generic<UnixStream>>>,
+    startup_handler: Option<Source<Generic<Fd>>>,
     wm_fd: Option<UnixStream>,
     started_at: ::std::time::Instant,
-    child_pid: Option<Pid>,
 }
 
 type SourceMaker<WM> =
-    dyn FnMut(Rc<RefCell<Inner<WM>>>, UnixStream) -> Result<Source<Generic<UnixStream>>, ()>;
+    dyn FnMut(Rc<RefCell<Inner<WM>>>, RawFd) -> Result<Source<Generic<Fd>>, ()>;
 
 // Inner implementation of the XWayland manager
 struct Inner<WM: XWindowManager> {
@@ -140,7 +136,7 @@ struct Inner<WM: XWindowManager> {
     source_maker: Box<SourceMaker<WM>>,
     wayland_display: Rc<RefCell<Display>>,
     instance: Option<XWaylandInstance>,
-    kill_source: Box<dyn Fn(Source<Generic<UnixStream>>)>,
+    kill_source: Box<dyn Fn(Source<Generic<Fd>>)>,
     helper: LaunchHelper,
     log: ::slog::Logger,
 }
@@ -182,9 +178,16 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
     }));
 
     // all is ready, we can do the fork dance
-    let (child_pid, status_me) = guard.helper.launch(lock.display(), wl_x11, x_wm_x11, &x_fds, &guard.log)?;
+    match guard.helper.launch(lock.display(), wl_x11, x_wm_x11, &x_fds) {
+        Ok(()) => {},
+        Err(e) => {
+            error!(guard.log, "Could not initiate launch of Xwayland"; "err" => format!("{:?}", e));
+            return Err(());
+        }
+    }
 
-    let startup_handler = (&mut *guard.source_maker)(inner.clone(), status_me)?;
+    let status_fd = guard.helper.status_fd();
+    let startup_handler = (&mut *guard.source_maker)(inner.clone(), status_fd)?;
 
     guard.instance = Some(XWaylandInstance {
         display_lock: lock,
@@ -192,7 +195,6 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
         startup_handler: Some(startup_handler),
         wm_fd: Some(x_wm_me),
         started_at: creation_time,
-        child_pid: Some(child_pid),
     });
 
     Ok(())
@@ -249,10 +251,8 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
     // instance should never be None at this point
     let instance = inner.instance.as_mut().unwrap();
     let wm = &mut inner.wm;
-    // neither the pid
-    let pid = instance.child_pid.unwrap();
 
-    let success = match inner.helper.was_launch_succesful(pid) {
+    let success = match inner.helper.was_launch_succesful() {
         Ok(s) => s,
         Err(e) => {
             error!(inner.log, "Checking launch status failed"; "err" => format!("{:?}", e));

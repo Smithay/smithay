@@ -1,16 +1,23 @@
 use std::{
-    io::{Result as IOResult, Error as IOError},
-    os::unix::net::UnixStream,
+    io::{Result as IOResult, Error as IOError, Read, Write},
+    os::unix::{net::UnixStream, io::{AsRawFd, FromRawFd, RawFd}},
 };
 
 use nix::{
+    errno::Errno,
     libc::exit,
-    sys::signal,
-    unistd::{fork, ForkResult, Pid},
+    sys::{
+        signal,
+        socket,
+        uio,
+    },
+    unistd::{fork, ForkResult},
     Error as NixError, Result as NixResult
 };
 
 use super::xserver::exec_xwayland;
+
+const MAX_FDS: usize = 10;
 
 /// A handle to a `fork()`'d child process that is used for starting XWayland
 pub struct LaunchHelper(UnixStream);
@@ -38,27 +45,18 @@ impl LaunchHelper {
         }
     }
 
+    /// Get access to an fd that becomes readable when a launch finished. Call
+    /// `was_launch_succesful()` once this happens.
+    pub(crate) fn status_fd(&self) -> RawFd {
+        self.0.as_raw_fd()
+    }
+
     /// Check the status of a previous launch.
-    pub(crate) fn was_launch_succesful(&self, pid: Pid) -> IOResult<bool> {
-        // find out if the launch was a success by waiting on the intermediate child
-        use nix::{errno::Errno, sys::wait};
-        loop {
-            match wait::waitpid(pid, None) {
-                Ok(wait::WaitStatus::Exited(_, 0)) => {
-                    // XWayland was correctly started :)
-                    return Ok(true);
-                }
-                Ok(_) => {
-                    // Something weird happened, most likely WaitStatus::Signaled
-                    return Ok(false);
-                }
-                Err(NixError::Sys(Errno::EINTR)) => {
-                    // interrupted, retry
-                    continue;
-                }
-                Err(e) => return Err(nix_error_to_io(e)),
-            }
-        }
+    pub(crate) fn was_launch_succesful(&self) -> IOResult<bool> {
+        // This reads the one byte that is written at the end of do_child()
+        let mut buffer = [0];
+        let len = (&mut &self.0).read(&mut buffer)?;
+        Ok(len > 0 && buffer[0] != 0)
     }
 
     /// Fork a child and call exec_xwayland() in it.
@@ -68,65 +66,148 @@ impl LaunchHelper {
         wayland_socket: UnixStream,
         wm_socket: UnixStream,
         listen_sockets: &[UnixStream],
-        log: &::slog::Logger,
-    ) -> Result<(Pid, UnixStream), ()> {
-        let (status_child, status_me) = UnixStream::pair().map_err(|_| ())?;
-        match unsafe { fork() } {
-            Ok(ForkResult::Parent { child }) => {
-                // we are the main smithay process
-                Ok((child, status_me))
-            }
-            Ok(ForkResult::Child) => {
-                // we are the first child
-                let mut set = signal::SigSet::empty();
-                set.add(signal::Signal::SIGUSR1);
-                set.add(signal::Signal::SIGCHLD);
-                // we can't handle errors here anyway
-                let _ = signal::sigprocmask(signal::SigmaskHow::SIG_BLOCK, Some(&set), None);
-                match unsafe { fork() } {
-                    Ok(ForkResult::Parent { child }) => {
-                        // When we exit(), we will close() this which wakes up the main process.
-                        let _status_child = status_child;
-                        // we are still the first child
-                        let sig = set.wait();
-                        // Parent will wait for us and know from out
-                        // exit status if XWayland launch was a success or not =)
-                        if let Ok(signal::Signal::SIGCHLD) = sig {
-                            // XWayland has exited before being ready
-                            let _ = ::nix::sys::wait::waitpid(child, None);
-                            unsafe { ::nix::libc::exit(1) };
-                        }
-                        unsafe { ::nix::libc::exit(0) };
-                    }
-                    Ok(ForkResult::Child) => {
-                        // we are the second child, we exec xwayland
-                        match exec_xwayland(display, wayland_socket, wm_socket, listen_sockets) {
-                            Ok(x) => match x {},
-                            Err(e) => {
-                                // well, what can we do ?
-                                error!(log, "exec XWayland failed"; "err" => format!("{:?}", e));
-                                unsafe { ::nix::libc::exit(1) };
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // well, what can we do ?
-                        error!(log, "XWayland second fork failed"; "err" => format!("{:?}", e));
-                        unsafe { ::nix::libc::exit(1) };
-                    }
-                }
+    ) -> IOResult<()> {
+        let buffer = display.to_ne_bytes();
+        let mut fds = vec![wayland_socket.as_raw_fd(), wm_socket.as_raw_fd()];
+        fds.extend(listen_sockets.iter().map(|s| s.as_raw_fd()));
+        assert!(fds.len() <= MAX_FDS);
+        send_with_fds(self.0.as_raw_fd(), &buffer, &fds)
+    }
+}
+
+fn do_child(mut stream: UnixStream) -> IOResult<()> {
+    use nix::sys::wait;
+
+    let mut display = [0; 4];
+    let mut fds = [0; MAX_FDS];
+
+    // Block signals. SIGUSR1 being blocked is inherited by Xwayland and makes it signal its parent
+    let mut set = signal::SigSet::empty();
+    set.add(signal::Signal::SIGUSR1);
+    set.add(signal::Signal::SIGCHLD);
+    signal::sigprocmask(signal::SigmaskHow::SIG_BLOCK, Some(&set), None)
+        .map_err(nix_error_to_io)?;
+
+    loop {
+        while let Ok(_) = wait::waitpid(None, Some(wait::WaitPidFlag::WNOHANG)) {
+            // We just want to reap the zombies
+        }
+
+        // Receive a new command: u32 display number and associated FDs
+        let (bytes, num_fds) = receive_fds(stream.as_raw_fd(), &mut display, &mut fds)?;
+        if bytes == 0 {
+            // End of file => our parent exited => we should do the same
+            break Ok(());
+        }
+
+        assert_eq!(bytes, 4);
+        let display = u32::from_ne_bytes(display);
+
+        // Wrap the FDs so that they are later closed.
+        assert!(num_fds >= 2);
+        let wayland_socket = unsafe { UnixStream::from_raw_fd(fds[0]) };
+        let wm_socket = unsafe { UnixStream::from_raw_fd(fds[1]) };
+        let mut listen_sockets = Vec::new();
+        for idx in 2..num_fds {
+            listen_sockets.push(unsafe { UnixStream::from_raw_fd(fds[idx]) });
+        }
+
+        // Fork Xwayland and report back the result
+        let success = match fork_xwayland(display, wayland_socket, wm_socket, &listen_sockets) {
+            Ok(true) => 1,
+            Ok(false) => {
+                eprintln!("Xwayland failed to start");
+                0
             }
             Err(e) => {
-                error!(log, "XWayland first fork failed"; "err" => format!("{:?}", e));
-                Err(())
+                eprintln!("Failed to fork Xwayland: {:?}", e);
+                0
+            }
+        };
+        stream.write_all(&[success])?;
+    }
+}
+
+/// fork() a child process and execute XWayland via exec_xwayland()
+fn fork_xwayland(
+    display: u32,
+    wayland_socket: UnixStream,
+    wm_socket: UnixStream,
+    listen_sockets: &[UnixStream],
+) -> NixResult<bool> {
+    match unsafe { fork()? } {
+        ForkResult::Parent { child: _ } => {
+            // Wait for the child process to exit or send SIGUSR1
+            let mut set = signal::SigSet::empty();
+            set.add(signal::Signal::SIGUSR1);
+            set.add(signal::Signal::SIGCHLD);
+            match set.wait()? {
+                signal::Signal::SIGUSR1 => Ok(true),
+                _ => Ok(false),
+            }
+        }
+        ForkResult::Child => {
+            match exec_xwayland(display, wayland_socket, wm_socket, listen_sockets) {
+                Ok(x) => match x {},
+                Err(e) => {
+                    // Well, what can we do? Our parent will get SIGCHLD when we exit.
+                    eprintln!("exec Xwayland failed: {:?}", e);
+                    unsafe { exit(1) };
+                }
             }
         }
     }
 }
 
-fn do_child(stream: UnixStream) -> NixResult<()> {
-    let _ = stream; // TODO
-    Ok(())
+/// Wrapper around `sendmsg()` for FD-passing
+fn send_with_fds(fd: RawFd, bytes: &[u8], fds: &[RawFd]) -> IOResult<()> {
+    let iov = [uio::IoVec::from_slice(bytes)];
+    loop {
+        let result = if !fds.is_empty() {
+            let cmsgs = [socket::ControlMessage::ScmRights(fds)];
+            socket::sendmsg(fd.as_raw_fd(), &iov, &cmsgs, socket::MsgFlags::empty(), None)
+        } else {
+            socket::sendmsg(fd.as_raw_fd(), &iov, &[], socket::MsgFlags::empty(), None)
+        };
+        match result {
+            Ok(len) => {
+                // All data should have been sent. Why would it fail!?
+                assert_eq!(len, bytes.len());
+                return Ok(());
+            }
+            Err(NixError::Sys(Errno::EINTR)) => {
+                // Try again
+            }
+            Err(e) => return Err(nix_error_to_io(e)),
+        }
+    }
+}
+
+/// Wrapper around `recvmsg()` for FD-passing
+fn receive_fds(fd: RawFd, buffer: &mut [u8], fds: &mut [RawFd]) -> IOResult<(usize, usize)> {
+    let mut cmsg = cmsg_space!([RawFd; MAX_FDS]);
+    let iov = [uio::IoVec::from_mut_slice(buffer)];
+
+    let msg = loop {
+        match socket::recvmsg(fd.as_raw_fd(), &iov[..], Some(&mut cmsg), socket::MsgFlags::empty()) {
+            Ok(msg) => break msg,
+            Err(NixError::Sys(Errno::EINTR)) => {
+                // Try again
+            }
+            Err(e) => return Err(nix_error_to_io(e)),
+        }
+    };
+
+    let received_fds = msg.cmsgs().flat_map(|cmsg| match cmsg {
+        socket::ControlMessageOwned::ScmRights(s) => s,
+        _ => Vec::new(),
+    });
+    let mut fd_count = 0;
+    for (fd, place) in received_fds.zip(fds.iter_mut()) {
+        fd_count += 1;
+        *place = fd;
+    }
+    Ok((msg.bytes, fd_count))
 }
 
 fn nix_error_to_io(err: NixError) -> IOError {
