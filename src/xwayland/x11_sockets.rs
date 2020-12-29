@@ -108,6 +108,7 @@ impl Drop for X11Lock {
 /// Should only be done after the associated lockfile is aquired!
 fn open_x11_sockets_for_display(display: u32) -> NixResult<[UnixStream; 2]> {
     let path = format!("/tmp/.X11-unix/X{}", display);
+    let _ = ::std::fs::remove_file(&path);
     // We know this path is not to long, these unwrap cannot fail
     let fs_addr = socket::UnixAddr::new(path.as_bytes()).unwrap();
     let abs_addr = socket::UnixAddr::new_abstract(path.as_bytes()).unwrap();
