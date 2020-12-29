@@ -23,6 +23,11 @@
  *
  * cf https://github.com/swaywm/wlroots/blob/master/xwayland/xwayland.c
  *
+ * Since fork is not safe to call in a multi-threaded process, a process is
+ * forked of early (LaunchHelper). Via a shared FD, a command to actually launch
+ * Xwayland can be sent to that process. The process then does the fork and
+ * reports back when Xwayland successfully started (=SIGUSR1 was received) with
+ * another write on the pipe.
  */
 use std::{
     any::Any,
@@ -30,25 +35,26 @@ use std::{
     env,
     ffi::CString,
     os::unix::{
-        io::{AsRawFd, IntoRawFd},
+        io::{AsRawFd, IntoRawFd, RawFd},
         net::UnixStream,
     },
     rc::Rc,
     sync::Arc,
 };
 
-use calloop::{generic::Generic, Interest, LoopHandle, Mode, Source};
-
-use nix::{
-    errno::Errno,
-    sys::signal,
-    unistd::{fork, ForkResult, Pid},
-    Error as NixError, Result as NixResult,
+use calloop::{
+    generic::{Fd, Generic},
+    Interest, LoopHandle, Mode, Source,
 };
+
+use nix::Result as NixResult;
 
 use wayland_server::{Client, Display, Filter};
 
-use super::x11_sockets::{prepare_x11_sockets, X11Lock};
+use super::{
+    x11_sockets::{prepare_x11_sockets, X11Lock},
+    LaunchHelper,
+};
 
 /// The XWayland handle
 pub struct XWayland<WM: XWindowManager> {
@@ -81,6 +87,7 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
         display: Rc<RefCell<Display>>,
         data: &mut T,
         logger: L,
+        helper: LaunchHelper,
     ) -> Result<XWayland<WM>, ()>
     where
         L: Into<Option<::slog::Logger>>,
@@ -95,7 +102,7 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
             source_maker: Box::new(move |inner, fd| {
                 handle
                     .insert_source(
-                        Generic::new(fd, Interest::Readable, Mode::Level),
+                        Generic::new(Fd(fd), Interest::Readable, Mode::Level),
                         move |evt, _, _| {
                             debug_assert!(evt.readable);
                             xwayland_ready(&inner);
@@ -106,6 +113,7 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
             }),
             wayland_display: display,
             instance: None,
+            helper,
             log: log.new(o!("smithay_module" => "XWayland")),
         }));
         launch(&inner, data)?;
@@ -122,14 +130,12 @@ impl<WM: XWindowManager> Drop for XWayland<WM> {
 struct XWaylandInstance {
     display_lock: X11Lock,
     wayland_client: Client,
-    startup_handler: Option<Source<Generic<UnixStream>>>,
+    startup_handler: Option<Source<Generic<Fd>>>,
     wm_fd: Option<UnixStream>,
     started_at: ::std::time::Instant,
-    child_pid: Option<Pid>,
 }
 
-type SourceMaker<WM> =
-    dyn FnMut(Rc<RefCell<Inner<WM>>>, UnixStream) -> Result<Source<Generic<UnixStream>>, ()>;
+type SourceMaker<WM> = dyn FnMut(Rc<RefCell<Inner<WM>>>, RawFd) -> Result<Source<Generic<Fd>>, ()>;
 
 // Inner implementation of the XWayland manager
 struct Inner<WM: XWindowManager> {
@@ -137,7 +143,8 @@ struct Inner<WM: XWindowManager> {
     source_maker: Box<SourceMaker<WM>>,
     wayland_display: Rc<RefCell<Display>>,
     instance: Option<XWaylandInstance>,
-    kill_source: Box<dyn Fn(Source<Generic<UnixStream>>)>,
+    kill_source: Box<dyn Fn(Source<Generic<Fd>>)>,
+    helper: LaunchHelper,
     log: ::slog::Logger,
 }
 
@@ -155,7 +162,6 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
 
     info!(guard.log, "Starting XWayland");
 
-    let (status_child, status_me) = UnixStream::pair().map_err(|_| ())?;
     let (x_wm_x11, x_wm_me) = UnixStream::pair().map_err(|_| ())?;
     let (wl_x11, wl_me) = UnixStream::pair().map_err(|_| ())?;
 
@@ -179,58 +185,16 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
     }));
 
     // all is ready, we can do the fork dance
-    let child_pid = match unsafe { fork() } {
-        Ok(ForkResult::Parent { child }) => {
-            // we are the main smithay process
-            child
-        }
-        Ok(ForkResult::Child) => {
-            // we are the first child
-            let mut set = signal::SigSet::empty();
-            set.add(signal::Signal::SIGUSR1);
-            set.add(signal::Signal::SIGCHLD);
-            // we can't handle errors here anyway
-            let _ = signal::sigprocmask(signal::SigmaskHow::SIG_BLOCK, Some(&set), None);
-            match unsafe { fork() } {
-                Ok(ForkResult::Parent { child }) => {
-                    // When we exit(), we will close() this which wakes up the main process.
-                    let _status_child = status_child;
-                    // we are still the first child
-                    let sig = set.wait();
-                    // Parent will wait for us and know from out
-                    // exit status if XWayland launch was a success or not =)
-                    if let Ok(signal::Signal::SIGCHLD) = sig {
-                        // XWayland has exited before being ready
-                        let _ = ::nix::sys::wait::waitpid(child, None);
-                        unsafe { ::nix::libc::exit(1) };
-                    }
-                    unsafe { ::nix::libc::exit(0) };
-                }
-                Ok(ForkResult::Child) => {
-                    // we are the second child, we exec xwayland
-                    match exec_xwayland(lock.display(), wl_x11, x_wm_x11, &x_fds) {
-                        Ok(x) => match x {},
-                        Err(e) => {
-                            // well, what can we do ?
-                            error!(guard.log, "exec XWayland failed"; "err" => format!("{:?}", e));
-                            unsafe { ::nix::libc::exit(1) };
-                        }
-                    }
-                }
-                Err(e) => {
-                    // well, what can we do ?
-                    error!(guard.log, "XWayland second fork failed"; "err" => format!("{:?}", e));
-                    unsafe { ::nix::libc::exit(1) };
-                }
-            }
-        }
+    match guard.helper.launch(lock.display(), wl_x11, x_wm_x11, &x_fds) {
+        Ok(()) => {}
         Err(e) => {
-            error!(guard.log, "XWayland first fork failed"; "err" => format!("{:?}", e));
+            error!(guard.log, "Could not initiate launch of Xwayland"; "err" => format!("{:?}", e));
             return Err(());
         }
-    };
+    }
 
-    let startup_handler = (&mut *guard.source_maker)(inner.clone(), status_me)?;
+    let status_fd = guard.helper.status_fd();
+    let startup_handler = (&mut *guard.source_maker)(inner.clone(), status_fd)?;
 
     guard.instance = Some(XWaylandInstance {
         display_lock: lock,
@@ -238,7 +202,6 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
         startup_handler: Some(startup_handler),
         wm_fd: Some(x_wm_me),
         started_at: creation_time,
-        child_pid: Some(child_pid),
     });
 
     Ok(())
@@ -290,46 +253,30 @@ fn client_destroy<WM: XWindowManager + 'static, T: Any>(map: &::wayland_server::
 }
 
 fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
-    use nix::sys::wait;
     let mut guard = inner.borrow_mut();
     let inner = &mut *guard;
     // instance should never be None at this point
     let instance = inner.instance.as_mut().unwrap();
     let wm = &mut inner.wm;
-    // neither the pid
-    let pid = instance.child_pid.unwrap();
 
-    // find out if the launch was a success by waiting on the intermediate child
-    let success: bool;
-    loop {
-        match wait::waitpid(pid, None) {
-            Ok(wait::WaitStatus::Exited(_, 0)) => {
-                // XWayland was correctly started :)
-                success = true;
-                break;
-            }
-            Err(NixError::Sys(Errno::EINTR)) => {
-                // interupted, retry
-                continue;
-            }
-            _ => {
-                // something went wrong :(
-                success = false;
-                break;
-            }
+    let success = match inner.helper.was_launch_succesful() {
+        Ok(s) => s,
+        Err(e) => {
+            error!(inner.log, "Checking launch status failed"; "err" => format!("{:?}", e));
+            false
         }
-    }
+    };
 
     if success {
+        // setup the environemnt
+        ::std::env::set_var("DISPLAY", format!(":{}", instance.display_lock.display()));
+
         // signal the WM
         info!(inner.log, "XWayland is ready, signaling the WM.");
         wm.xwayland_ready(
             instance.wm_fd.take().unwrap(), // This is a bug if None
             instance.wayland_client.clone(),
         );
-
-        // setup the environemnt
-        ::std::env::set_var("DISPLAY", format!(":{}", instance.display_lock.display()));
     } else {
         error!(
             inner.log,
@@ -343,12 +290,12 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
     }
 }
 
-enum Void {}
+pub(crate) enum Void {}
 
 /// Exec XWayland with given sockets on given display
 ///
 /// If this returns, that means that something failed
-fn exec_xwayland(
+pub(crate) fn exec_xwayland(
     display: u32,
     wayland_socket: UnixStream,
     wm_socket: UnixStream,
