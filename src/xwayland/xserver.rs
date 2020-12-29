@@ -261,15 +261,15 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
     };
 
     if success {
+        // setup the environemnt
+        ::std::env::set_var("DISPLAY", format!(":{}", instance.display_lock.display()));
+
         // signal the WM
         info!(inner.log, "XWayland is ready, signaling the WM.");
         wm.xwayland_ready(
             instance.wm_fd.take().unwrap(), // This is a bug if None
             instance.wayland_client.clone(),
         );
-
-        // setup the environemnt
-        ::std::env::set_var("DISPLAY", format!(":{}", instance.display_lock.display()));
     } else {
         error!(
             inner.log,
