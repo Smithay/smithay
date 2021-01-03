@@ -25,9 +25,13 @@ use smithay::{
 
 #[cfg(feature = "udev")]
 use smithay::backend::session::{auto::AutoSession, Session};
+#[cfg(feature = "xwayland")]
+use smithay::xwayland::XWayland;
 
 #[cfg(feature = "udev")]
 use crate::udev::MyOutput;
+#[cfg(feature = "xwayland")]
+use crate::xwayland::XWm;
 use crate::{buffer_utils::BufferUtils, shell::init_shell};
 
 pub struct AnvilState {
@@ -51,6 +55,8 @@ pub struct AnvilState {
     pub session: Option<AutoSession>,
     // things we must keep alive
     _wayland_event_source: Source<Generic<Fd>>,
+    #[cfg(feature = "xwayland")]
+    _xwayland: XWayland<XWm>,
 }
 
 impl AnvilState {
@@ -153,6 +159,12 @@ impl AnvilState {
             })
             .expect("Failed to initialize the keyboard");
 
+        #[cfg(feature = "xwayland")]
+        let _xwayland = {
+            let xwm = XWm::new();
+            XWayland::init(xwm, handle.clone(), display.clone(), &mut (), log.clone()).unwrap()
+        };
+
         AnvilState {
             running: Arc::new(AtomicBool::new(true)),
             display,
@@ -172,6 +184,8 @@ impl AnvilState {
             #[cfg(feature = "udev")]
             session,
             _wayland_event_source,
+            #[cfg(feature = "xwayland")]
+            _xwayland,
         }
     }
 }

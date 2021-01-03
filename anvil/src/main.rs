@@ -25,6 +25,8 @@ mod udev;
 mod window_map;
 #[cfg(feature = "winit")]
 mod winit;
+#[cfg(feature = "xwayland")]
+mod xwayland;
 
 use state::AnvilState;
 
