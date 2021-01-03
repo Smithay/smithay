@@ -25,10 +25,11 @@ features = [ "renderer_glium", "backend_egl", "wayland_frontend" ]
 gl_generator = "0.14"
 
 [features]
-default = [ "winit", "egl", "udev", "logind" ]
+default = [ "winit", "egl", "udev", "logind", "xwayland" ]
 egl = [ "smithay/use_system_lib" ]
 winit = [ "smithay/backend_winit" ]
 udev = [ "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_drm_atomic", "smithay/backend_drm_legacy", "smithay/backend_drm_gbm", "smithay/backend_drm_eglstream", "smithay/backend_drm_egl", "smithay/backend_session", "input" ]
 logind = [ "smithay/backend_session_logind" ]
 elogind = ["logind", "smithay/backend_session_elogind" ]
+xwayland = [ "smithay/xwayland" ]
 test_all_features = ["default"]
