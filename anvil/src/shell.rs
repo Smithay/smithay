@@ -768,6 +768,9 @@ fn surface_commit(
     buffer_utils: &BufferUtils,
     window_map: &RefCell<MyWindowMap>,
 ) {
+    #[cfg(feature = "xwayland")]
+    super::xwayland::commit_hook(surface);
+
     let mut geometry = None;
     let mut min_size = (0, 0);
     let mut max_size = (0, 0);
