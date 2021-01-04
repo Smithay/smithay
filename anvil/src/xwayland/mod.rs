@@ -90,7 +90,7 @@ struct X11State {
     conn: Rc<RustConnection>,
     atoms: Atoms,
     log: slog::Logger,
-    unpaired_surfaces: HashMap<u32, Window>,
+    unpaired_surfaces: HashMap<u32, (Window, (i32, i32))>,
     token: CompositorToken<Roles>,
     window_map: Rc<RefCell<MyWindowMap>>,
 }
@@ -193,6 +193,21 @@ impl X11State {
                     // wayland socket). Thus, we could receive these two in any order. Hence, it
                     // can happen that we get None below when X11 was faster than Wayland.
 
+                    let location = {
+                        match self.conn.get_geometry(msg.window)?.reply() {
+                            Ok(geo) => (geo.x.into(), geo.y.into()),
+                            Err(err) => {
+                                error!(
+                                    self.log,
+                                    "Failed to get geometry for {:x}, perhaps the window was already destroyed?",
+                                    msg.window;
+                                    "err" => format!("{:?}", err),
+                                );
+                                (0, 0)
+                            }
+                        }
+                    };
+
                     let id = msg.data.as_data32()[0];
                     let surface = client.get_resource::<WlSurface>(id);
                     info!(
@@ -201,9 +216,9 @@ impl X11State {
                     );
                     match surface {
                         None => {
-                            self.unpaired_surfaces.insert(id, msg.window);
+                            self.unpaired_surfaces.insert(id, (msg.window, location));
                         }
-                        Some(surface) => self.new_window(msg.window, surface),
+                        Some(surface) => self.new_window(msg.window, surface, location),
                     }
                 }
             }
@@ -212,7 +227,7 @@ impl X11State {
         Ok(())
     }
 
-    fn new_window(&mut self, window: Window, surface: WlSurface) {
+    fn new_window(&mut self, window: Window, surface: WlSurface, location: (i32, i32)) {
         debug!(self.log, "Matched X11 surface {:x?} to {:x?}", window, surface);
 
         if self.token.give_role_with(&surface, X11SurfaceRole).is_err() {
@@ -224,7 +239,7 @@ impl X11State {
         let x11surface = X11Surface { surface };
         self.window_map
             .borrow_mut()
-            .insert(Kind::X11(x11surface), (0, 0));
+            .insert(Kind::X11(x11surface), location);
     }
 }
 
@@ -236,8 +251,8 @@ pub fn commit_hook(surface: &WlSurface) {
             let mut inner = x11.borrow_mut();
             // Is the surface among the unpaired surfaces (see comment next to WL_SURFACE_ID
             // handling above)
-            if let Some(window) = inner.unpaired_surfaces.remove(&surface.as_ref().id()) {
-                inner.new_window(window, surface.clone());
+            if let Some((window, location)) = inner.unpaired_surfaces.remove(&surface.as_ref().id()) {
+                inner.new_window(window, surface.clone(), location);
             }
         }
     }
