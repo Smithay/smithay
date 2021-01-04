@@ -38,9 +38,22 @@ use crate::{
     window_map::{Kind as SurfaceKind, WindowMap},
 };
 
+#[cfg(feature = "xwayland")]
+use crate::xwayland::X11SurfaceRole;
+
+// The xwayland feature only adds a X11Surface role, but the macro does not support #[cfg]
+#[cfg(not(feature = "xwayland"))]
 define_roles!(Roles =>
     [ XdgSurface, XdgSurfaceRole ]
     [ ShellSurface, ShellSurfaceRole]
+    [ DnDIcon, DnDIconRole ]
+    [ CursorImage, CursorImageRole ]
+);
+#[cfg(feature = "xwayland")]
+define_roles!(Roles =>
+    [ XdgSurface, XdgSurfaceRole ]
+    [ ShellSurface, ShellSurfaceRole]
+    [ X11Surface, X11SurfaceRole ]
     [ DnDIcon, DnDIconRole ]
     [ CursorImage, CursorImageRole ]
 );
@@ -219,6 +232,10 @@ impl PointerGrab for ResizeSurfaceGrab {
                 (self.last_window_size.0 as u32, self.last_window_size.1 as u32),
                 self.edges.into(),
             ),
+            #[cfg(feature = "xwayland")]
+            SurfaceKind::X11(_) => {
+                // TODO: What to do here? Send the update via X11?
+            }
         }
     }
 
