@@ -5,6 +5,7 @@ use smithay::{
         calloop::LoopHandle,
         wayland_server::{protocol::wl_surface::WlSurface, Client},
     },
+    wayland::compositor::CompositorToken,
     xwayland::XWindowManager,
 };
 
@@ -22,7 +23,11 @@ use x11rb::{
     rust_connection::{DefaultStream, RustConnection},
 };
 
-use crate::AnvilState;
+use crate::{
+    shell::{MyWindowMap, Roles},
+    window_map::Kind,
+    AnvilState,
+};
 
 use x11rb_event_source::X11Source;
 
@@ -32,18 +37,31 @@ mod x11rb_event_source;
 /// After XWayland was started, the actual state is kept in `X11State`.
 pub struct XWm {
     handle: LoopHandle<AnvilState>,
+    token: CompositorToken<Roles>,
+    window_map: Rc<RefCell<MyWindowMap>>,
     log: slog::Logger,
 }
 
 impl XWm {
-    pub fn new(handle: LoopHandle<AnvilState>, log: slog::Logger) -> Self {
-        Self { handle, log }
+    pub fn new(
+        handle: LoopHandle<AnvilState>,
+        token: CompositorToken<Roles>,
+        window_map: Rc<RefCell<MyWindowMap>>,
+        log: slog::Logger,
+    ) -> Self {
+        Self {
+            handle,
+            token,
+            window_map,
+            log,
+        }
     }
 }
 
 impl XWindowManager for XWm {
     fn xwayland_ready(&mut self, connection: UnixStream, client: Client) {
-        let (wm, source) = X11State::start_wm(connection, self.log.clone()).unwrap();
+        let (wm, source) =
+            X11State::start_wm(connection, self.token, self.window_map.clone(), self.log.clone()).unwrap();
         let wm = Rc::new(RefCell::new(wm));
         client.data_map().insert_if_missing(|| Rc::clone(&wm));
         self.handle
@@ -73,10 +91,17 @@ struct X11State {
     atoms: Atoms,
     log: slog::Logger,
     unpaired_surfaces: HashMap<u32, Window>,
+    token: CompositorToken<Roles>,
+    window_map: Rc<RefCell<MyWindowMap>>,
 }
 
 impl X11State {
-    fn start_wm(connection: UnixStream, log: slog::Logger) -> Result<(Self, X11Source), Box<dyn std::error::Error>> {
+    fn start_wm(
+        connection: UnixStream,
+        token: CompositorToken<Roles>,
+        window_map: Rc<RefCell<MyWindowMap>>,
+        log: slog::Logger,
+    ) -> Result<(Self, X11Source), Box<dyn std::error::Error>> {
         // Create an X11 connection. XWayland only uses screen 0.
         let screen = 0;
         let stream = DefaultStream::from_unix_stream(connection)?;
@@ -119,6 +144,8 @@ impl X11State {
             conn: Rc::clone(&conn),
             atoms,
             unpaired_surfaces: Default::default(),
+            token,
+            window_map,
             log,
         };
 
@@ -187,6 +214,17 @@ impl X11State {
 
     fn new_window(&mut self, window: Window, surface: WlSurface) {
         debug!(self.log, "Matched X11 surface {:x?} to {:x?}", window, surface);
+
+        if self.token.give_role_with(&surface, X11SurfaceRole).is_err() {
+            // It makes no sense to post a protocol error here since that would only kill Xwayland
+            error!(self.log, "Surface {:x?} already has a role?!", surface);
+            return;
+        }
+
+        let x11surface = X11Surface { surface };
+        self.window_map
+            .borrow_mut()
+            .insert(Kind::X11(x11surface), (0, 0));
     }
 }
 
@@ -201,6 +239,31 @@ pub fn commit_hook(surface: &WlSurface) {
             if let Some(window) = inner.unpaired_surfaces.remove(&surface.as_ref().id()) {
                 inner.new_window(window, surface.clone());
             }
+        }
+    }
+}
+
+pub struct X11SurfaceRole;
+
+#[derive(Clone)]
+pub struct X11Surface {
+    surface: WlSurface,
+}
+
+impl X11Surface {
+    pub fn alive(&self) -> bool {
+        self.surface.as_ref().is_alive()
+    }
+
+    pub fn equals(&self, other: &Self) -> bool {
+        self.alive() && other.alive() && self.surface.as_ref().equals(&other.surface.as_ref())
+    }
+
+    pub fn get_surface(&self) -> Option<&WlSurface> {
+        if self.alive() {
+            Some(&self.surface)
+        } else {
+            None
         }
     }
 }

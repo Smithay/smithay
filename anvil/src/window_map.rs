@@ -13,10 +13,14 @@ use smithay::{
 };
 
 use crate::shell::SurfaceData;
+#[cfg(feature = "xwayland")]
+use crate::xwayland::X11Surface;
 
 pub enum Kind<R> {
     Xdg(ToplevelSurface<R>),
     Wl(ShellSurface<R>),
+    #[cfg(feature = "xwayland")]
+    X11(X11Surface),
 }
 
 // We implement Clone manually because #[derive(..)] would require R: Clone.
@@ -25,6 +29,8 @@ impl<R> Clone for Kind<R> {
         match self {
             Kind::Xdg(xdg) => Kind::Xdg(xdg.clone()),
             Kind::Wl(wl) => Kind::Wl(wl.clone()),
+            #[cfg(feature = "xwayland")]
+            Kind::X11(x11) => Kind::X11(x11.clone()),
         }
     }
 }
@@ -37,12 +43,16 @@ where
         match *self {
             Kind::Xdg(ref t) => t.alive(),
             Kind::Wl(ref t) => t.alive(),
+            #[cfg(feature = "xwayland")]
+            Kind::X11(ref t) => t.alive(),
         }
     }
     pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
         match *self {
             Kind::Xdg(ref t) => t.get_surface(),
             Kind::Wl(ref t) => t.get_surface(),
+            #[cfg(feature = "xwayland")]
+            Kind::X11(ref t) => t.get_surface(),
         }
     }
 
@@ -51,6 +61,8 @@ where
         match (self, other) {
             (Kind::Xdg(a), Kind::Xdg(b)) => a.equals(b),
             (Kind::Wl(a), Kind::Wl(b)) => a.equals(b),
+            #[cfg(feature = "xwayland")]
+            (Kind::X11(a), Kind::X11(b)) => a.equals(b),
             _ => false,
         }
     }

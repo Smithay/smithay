@@ -161,7 +161,12 @@ impl AnvilState {
 
         #[cfg(feature = "xwayland")]
         let _xwayland = {
-            let xwm = XWm::new(handle.clone(), log.clone());
+            let xwm = XWm::new(
+                handle.clone(),
+                shell_handles.token,
+                shell_handles.window_map.clone(),
+                log.clone(),
+            );
             XWayland::init(xwm, handle.clone(), display.clone(), &mut (), log.clone()).unwrap()
         };
 
