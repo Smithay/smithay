@@ -31,7 +31,7 @@ udev = { version = "0.5", optional = true }
 wayland-commons = { version = "0.28", optional = true }
 wayland-egl = { version = "0.28", optional = true }
 wayland-protocols = { version = "0.28", features = ["unstable_protocols", "server"], optional = true }
-wayland-server = { version = "0.28", optional = true }
+wayland-server = { version = "0.28.3", optional = true }
 wayland-sys = { version = "0.28", optional = true }
 winit = { version = "0.23.0", optional = true }
 xkbcommon = "0.4.0"
