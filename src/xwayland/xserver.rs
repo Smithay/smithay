@@ -33,11 +33,13 @@ use std::{
     any::Any,
     cell::RefCell,
     env,
-    ffi::CString,
+    io::{Error as IOError, Read, Result as IOResult},
     os::unix::{
         io::{AsRawFd, IntoRawFd, RawFd},
         net::UnixStream,
+        process::CommandExt,
     },
+    process::{ChildStdout, Command, Stdio},
     rc::Rc,
     sync::Arc,
 };
@@ -47,14 +49,11 @@ use calloop::{
     Interest, LoopHandle, Mode, Source,
 };
 
-use nix::Result as NixResult;
+use nix::Error as NixError;
 
 use wayland_server::{Client, Display, Filter};
 
-use super::{
-    x11_sockets::{prepare_x11_sockets, X11Lock},
-    LaunchHelper,
-};
+use super::x11_sockets::{prepare_x11_sockets, X11Lock};
 
 /// The XWayland handle
 pub struct XWayland<WM: XWindowManager> {
@@ -87,7 +86,6 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
         display: Rc<RefCell<Display>>,
         data: &mut T,
         logger: L,
-        helper: LaunchHelper,
     ) -> Result<XWayland<WM>, ()>
     where
         L: Into<Option<::slog::Logger>>,
@@ -113,7 +111,6 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
             }),
             wayland_display: display,
             instance: None,
-            helper,
             log: log.new(o!("smithay_module" => "XWayland")),
         }));
         launch(&inner, data)?;
@@ -133,6 +130,7 @@ struct XWaylandInstance {
     startup_handler: Option<Source<Generic<Fd>>>,
     wm_fd: Option<UnixStream>,
     started_at: ::std::time::Instant,
+    child_stdout: Option<ChildStdout>,
 }
 
 type SourceMaker<WM> = dyn FnMut(Rc<RefCell<Inner<WM>>>, RawFd) -> Result<Source<Generic<Fd>>, ()>;
@@ -144,7 +142,6 @@ struct Inner<WM: XWindowManager> {
     wayland_display: Rc<RefCell<Display>>,
     instance: Option<XWaylandInstance>,
     kill_source: Box<dyn Fn(Source<Generic<Fd>>)>,
-    helper: LaunchHelper,
     log: ::slog::Logger,
 }
 
@@ -185,16 +182,15 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
     }));
 
     // all is ready, we can do the fork dance
-    match guard.helper.launch(lock.display(), wl_x11, x_wm_x11, &x_fds) {
-        Ok(()) => {}
+    let child_stdout = match spawn_xwayland(lock.display(), wl_x11, x_wm_x11, &x_fds) {
+        Ok(child_stdout) => child_stdout,
         Err(e) => {
-            error!(guard.log, "Could not initiate launch of Xwayland"; "err" => format!("{:?}", e));
+            error!(guard.log, "XWayland failed to spawn"; "err" => format!("{:?}", e));
             return Err(());
         }
-    }
+    };
 
-    let status_fd = guard.helper.status_fd();
-    let startup_handler = (&mut *guard.source_maker)(inner.clone(), status_fd)?;
+    let startup_handler = (&mut *guard.source_maker)(inner.clone(), child_stdout.as_raw_fd())?;
 
     guard.instance = Some(XWaylandInstance {
         display_lock: lock,
@@ -202,6 +198,7 @@ fn launch<WM: XWindowManager + 'static, T: Any>(
         startup_handler: Some(startup_handler),
         wm_fd: Some(x_wm_me),
         started_at: creation_time,
+        child_stdout: Some(child_stdout),
     });
 
     Ok(())
@@ -258,9 +255,13 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
     // instance should never be None at this point
     let instance = inner.instance.as_mut().unwrap();
     let wm = &mut inner.wm;
+    // neither the child_stdout
+    let child_stdout = instance.child_stdout.as_mut().unwrap();
 
-    let success = match inner.helper.was_launch_succesful() {
-        Ok(s) => s,
+    // This reads the one byte that is written when sh receives SIGUSR1
+    let mut buffer = [0];
+    let success = match child_stdout.read(&mut buffer) {
+        Ok(len) => len > 0 && buffer[0] == b'S',
         Err(e) => {
             error!(inner.log, "Checking launch status failed"; "err" => format!("{:?}", e));
             false
@@ -290,72 +291,79 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
     }
 }
 
-pub(crate) enum Void {}
-
 /// Exec XWayland with given sockets on given display
 ///
 /// If this returns, that means that something failed
-pub(crate) fn exec_xwayland(
+fn spawn_xwayland(
     display: u32,
     wayland_socket: UnixStream,
     wm_socket: UnixStream,
     listen_sockets: &[UnixStream],
-) -> NixResult<Void> {
-    // uset the CLOEXEC flag from the sockets we need to pass
-    // to xwayland
-    unset_cloexec(&wayland_socket)?;
-    unset_cloexec(&wm_socket)?;
+) -> IOResult<ChildStdout> {
+    let mut command = Command::new("sh");
+
+    // We use output stream to communicate because FD is easier to handle than exit code.
+    command.stdout(Stdio::piped());
+
+    let mut xwayland_args = format!(":{} -rootless -terminate -wm {}", display, wm_socket.as_raw_fd());
     for socket in listen_sockets {
-        unset_cloexec(socket)?;
+        xwayland_args.push_str(&format!(" -listen {}", socket.as_raw_fd()));
     }
-    // prepare the arguments to XWayland
-    let mut args = vec![
-        CString::new("Xwayland").unwrap(),
-        CString::new(format!(":{}", display)).unwrap(),
-        CString::new("-rootless").unwrap(),
-        CString::new("-terminate").unwrap(),
-        CString::new("-wm").unwrap(),
-        CString::new(format!("{}", wm_socket.as_raw_fd())).unwrap(),
-    ];
-    for socket in listen_sockets {
-        args.push(CString::new("-listen").unwrap());
-        args.push(CString::new(format!("{}", socket.as_raw_fd())).unwrap());
-    }
-    // setup the environment: clear everything except PATH and XDG_RUNTIME_DIR
-    for (key, _) in env::vars_os() {
+    // This command let sh to:
+    // * Set up signal handler for USR1
+    // * Launch Xwayland with USR1 ignored so Xwayland will signal us when it is ready (also redirect
+    //   Xwayland's STDOUT to STDERR so its output, if any, won't distract us)
+    // * Print "S" and exit if USR1 is received
+    command.arg("-c").arg(format!(
+        "trap 'echo S' USR1; (trap '' USR1; exec Xwayland {}) 1>&2 & wait",
+        xwayland_args
+    ));
+
+    // Setup the environment: clear everything except PATH and XDG_RUNTIME_DIR
+    command.env_clear();
+    for (key, value) in env::vars_os() {
         if key.to_str() == Some("PATH") || key.to_str() == Some("XDG_RUNTIME_DIR") {
+            command.env(key, value);
             continue;
         }
-        env::remove_var(key);
     }
-    // the WAYLAND_SOCKET var tells XWayland where to connect as a wayland client
-    env::set_var("WAYLAND_SOCKET", format!("{}", wayland_socket.as_raw_fd()));
+    command.env("WAYLAND_SOCKET", format!("{}", wayland_socket.as_raw_fd()));
 
-    // ignore SIGUSR1, this will make the XWayland server send us this
-    // signal when it is ready apparently
     unsafe {
-        use nix::sys::signal::*;
-        sigaction(
-            Signal::SIGUSR1,
-            &SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty()),
-        )?;
+        let wayland_socket_fd = wayland_socket.as_raw_fd();
+        let wm_socket_fd = wm_socket.as_raw_fd();
+        let socket_fds: Vec<_> = listen_sockets.iter().map(|socket| socket.as_raw_fd()).collect();
+        command.pre_exec(move || {
+            // unset the CLOEXEC flag from the sockets we need to pass
+            // to xwayland
+            unset_cloexec(wayland_socket_fd)?;
+            unset_cloexec(wm_socket_fd)?;
+            for &socket in socket_fds.iter() {
+                unset_cloexec(socket)?;
+            }
+            Ok(())
+        });
     }
 
-    // run it
-    let ret = ::nix::unistd::execvp(
-        &CString::new("Xwayland").unwrap(),
-        &args.iter().map(AsRef::as_ref).collect::<Vec<_>>(),
-    )?;
-    // small dance to actually return Void
-    match ret {}
+    let mut child = command.spawn()?;
+    Ok(child.stdout.take().expect("stdout should be piped"))
+}
+
+fn nix_error_to_io(err: NixError) -> IOError {
+    use std::io::ErrorKind;
+    match err {
+        NixError::Sys(errno) => errno.into(),
+        NixError::InvalidPath | NixError::InvalidUtf8 => IOError::new(ErrorKind::InvalidInput, err),
+        NixError::UnsupportedOperation => IOError::new(ErrorKind::Other, err),
+    }
 }
 
 /// Remove the `O_CLOEXEC` flag from this `Fd`
 ///
 /// This means that the `Fd` will *not* be automatically
 /// closed when we `exec()` into XWayland
-fn unset_cloexec<F: AsRawFd>(fd: &F) -> NixResult<()> {
+fn unset_cloexec(fd: RawFd) -> IOResult<()> {
     use nix::fcntl::{fcntl, FcntlArg, FdFlag};
-    fcntl(fd.as_raw_fd(), FcntlArg::F_SETFD(FdFlag::empty()))?;
+    fcntl(fd, FcntlArg::F_SETFD(FdFlag::empty())).map_err(nix_error_to_io)?;
     Ok(())
 }
