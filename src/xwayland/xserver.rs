@@ -14,20 +14,29 @@
  *   - /tmp/.X11-unix/X$D
  *   - @/tmp/.X11-unix/X$D (abstract socket)
  *
- * The XWayland server is spawned via fork+exec.
+ * The XWayland server is spawned via an intermediate shell
  * -> wlroots does a double-fork while weston a single one, why ??
  *    -> https://stackoverflow.com/questions/881388/
- * -> once it is started, it sends us a SIGUSR1, we need to setup a listener
- *    for it and when we receive it we can launch the WM
+ * -> once it is started, it will check if SIGUSR1 is set to ignored. If so,
+ *    if will consider its parent as "smart", and send a SIGUSR1 signal when
+ *    startup completes. We want to catch this so we can launch the VM.
  * -> we need to track if the XWayland crashes, to restart it
  *
  * cf https://github.com/swaywm/wlroots/blob/master/xwayland/xwayland.c
  *
- * Since fork is not safe to call in a multi-threaded process, a process is
- * forked of early (LaunchHelper). Via a shared FD, a command to actually launch
- * Xwayland can be sent to that process. The process then does the fork and
- * reports back when Xwayland successfully started (=SIGUSR1 was received) with
- * another write on the pipe.
+ * Setting SIGUSR1 handler is complicated in multithreaded program, because
+ * Xwayland will send SIGUSR1 to the process, and if a thread cannot handle
+ * SIGUSR1, that thread will be killed.
+ *
+ * Double-fork can tackle this issue, but this is also very complex in a
+ * a multithread program, after forking only signal-safe functions can be used.
+ * The only workaround is to fork early before any other thread starts, but
+ * doing so will expose an unsafe interface.
+ *
+ * We use an intermediate shell to translate the signal to simple fd IO.
+ * We ask sh to setup SIGUSR1 handler, and in a subshell mute SIGUSR1 and exec
+ * Xwayland. When the SIGUSR1 is received, it can communicate to us via redirected
+ * STDOUT.
  */
 use std::{
     any::Any,
@@ -291,9 +300,9 @@ fn xwayland_ready<WM: XWindowManager>(inner: &Rc<RefCell<Inner<WM>>>) {
     }
 }
 
-/// Exec XWayland with given sockets on given display
+/// Spawn XWayland with given sockets on given display
 ///
-/// If this returns, that means that something failed
+/// Returns a pipe that outputs 'S' upon successful launch.
 fn spawn_xwayland(
     display: u32,
     wayland_socket: UnixStream,
