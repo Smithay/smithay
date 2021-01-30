@@ -251,14 +251,13 @@ impl CursorBackend for WinitGraphicsBackend {
     type CursorFormat = CursorIcon;
     type Error = ();
 
-    fn set_cursor_position(&self, x: u32, y: u32) -> ::std::result::Result<(), ()> {
-        debug!(self.logger, "Setting cursor position to {:?}", (x, y));
-        self.window
-            .window()
-            .set_cursor_position(LogicalPosition::new(x as f64, y as f64))
-            .map_err(|err| {
-                debug!(self.logger, "{}", err);
-            })
+    fn set_cursor_position(&self, _x: u32, _y: u32) -> ::std::result::Result<(), ()> {
+        // With other backends, we read events from input devices and then have to position the
+        // mouse cursor on screen accordingly. Here, there is already a windowing system that deals
+        // with the position on screen. If we "force" out idea of the cursor position here, that
+        // breaks and e.g. the cursor on X11 becomes stuck and cannot move. (Us forcing a cursor
+        // position generates a mouse move event and thus we force the same cursor position again.)
+        Ok(())
     }
 
     fn set_cursor_representation(
