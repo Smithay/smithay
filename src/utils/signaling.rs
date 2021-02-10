@@ -1,5 +1,6 @@
 use std::{rc::Rc, cell::RefCell};
 
+#[derive(Debug)]
 struct SignalerInner<E> {
     closures: RefCell<Vec<Box<dyn FnMut(&mut E)>>>
 }
@@ -12,6 +13,7 @@ impl<E> SignalerInner<E> {
     }
 }
 
+#[derive(Debug)]
 pub struct Signaler<E> {
     inner: Rc<SignalerInner<E>>
 }
