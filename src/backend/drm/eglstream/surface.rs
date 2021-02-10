@@ -30,10 +30,12 @@ use crate::backend::graphics::CursorBackend;
 
 // We do not want to mark the whole surface as `Send` in case we screw up somewhere else
 // and because S needs to be `Send` as well for this to work.
+#[derive(Debug)]
 pub(super) struct StreamHandle(pub(super) EGLStreamKHR);
 // EGLStreamKHR can be moved between threads
 unsafe impl Send for StreamHandle {}
 
+#[derive(Debug)]
 pub(in crate::backend::drm) struct EglStreamSurfaceInternal<S: RawSurface + 'static> {
     pub(in crate::backend::drm) crtc: S,
     pub(in crate::backend::drm) cursor: Mutex<Option<(DumbBuffer, (u32, u32))>>,
@@ -205,6 +207,7 @@ impl<S: RawSurface + 'static> CursorBackend for EglStreamSurfaceInternal<S> {
 }
 
 /// egl stream surface for rendering
+#[derive(Debug)]
 pub struct EglStreamSurface<S: RawSurface + 'static>(
     pub(in crate::backend::drm) Arc<EglStreamSurfaceInternal<S>>,
 );

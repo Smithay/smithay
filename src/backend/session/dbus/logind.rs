@@ -49,6 +49,7 @@ use nix::{
 };
 use std::{
     cell::RefCell,
+    fmt,
     io::Error as IoError,
     os::unix::io::RawFd,
     path::Path,
@@ -70,15 +71,29 @@ struct LogindSessionImpl {
     logger: ::slog::Logger,
 }
 
+impl fmt::Debug for LogindSessionImpl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LogindSessionImpl ")
+            .field("session_id", &self.session_id)
+            .field("conn", &"..")
+            .field("session_path", &self.session_path)
+            .field("active", &self.active)
+            .field("signaler", &self.signaler)
+            .field("seat", &self.seat)
+            .field("logger", &self.logger)
+            .finish()
+    }
+}
+
 /// [`Session`] via the logind dbus interface
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LogindSession {
     internal: Weak<LogindSessionImpl>,
     seat: String,
 }
 
 /// [`SessionNotifier`] via the logind dbus interface
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LogindSessionNotifier {
     internal: Rc<LogindSessionImpl>,
 }

@@ -8,6 +8,7 @@ use glium::{
 };
 use std::{
     cell::{Cell, Ref, RefCell, RefMut},
+    fmt,
     os::raw::c_void,
     rc::Rc,
 };
@@ -20,6 +21,16 @@ pub struct GliumGraphicsBackend<T: GLGraphicsBackend> {
     // while there can be multiple Frames, they cannot in parallel call `set_finish`.
     // so a buffer of the last error is sufficient, if always cleared...
     error_channel: Rc<Cell<Option<Box<dyn std::error::Error>>>>,
+}
+
+impl<T: GLGraphicsBackend> fmt::Debug for GliumGraphicsBackend<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let backend = &self.backend.0.borrow().debug_fmt(f);
+
+        f.debug_struct("GliumGraphicsBackend")
+            .field("backend", backend)
+            .finish()
+    }
 }
 
 struct InternalBackend<T: GLGraphicsBackend>(RefCell<T>, Rc<Cell<Option<Box<dyn std::error::Error>>>>);

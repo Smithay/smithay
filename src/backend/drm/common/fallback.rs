@@ -36,6 +36,7 @@ use drm::{
 use nix::libc::c_void;
 use nix::libc::dev_t;
 use std::env;
+use std::fmt;
 use std::os::unix::io::{AsRawFd, RawFd};
 #[cfg(feature = "use_system_lib")]
 use wayland_server::Display;
@@ -47,6 +48,21 @@ pub enum FallbackDevice<D1: Device + 'static, D2: Device + 'static> {
     Preference(D1),
     /// Variant for the fallback device
     Fallback(D2),
+}
+
+impl<D1: Device + 'static, D2: Device + 'static> fmt::Debug for FallbackDevice<D1, D2> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FallbackDevice::Preference(d) => f
+                .debug_struct("FallbackDevice::Preference")
+                .field("device_id", &d.device_id())
+                .finish(),
+            FallbackDevice::Fallback(d) => f
+                .debug_struct("FallbackDevice::Preference")
+                .field("device_id", &d.device_id())
+                .finish(),
+        }
+    }
 }
 
 struct FallbackDeviceHandlerD1<E1, E2, C, S1, S2, D1, D2>(
@@ -134,6 +150,21 @@ pub enum FallbackSurface<S1: Surface, S2: Surface> {
     Preference(S1),
     /// Variant for the fallback device
     Fallback(S2),
+}
+
+impl<S1: Surface, S2: Surface> fmt::Debug for FallbackSurface<S1, S2> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FallbackSurface::Preference(s) => f
+                .debug_struct("FallbackDevice::Preference")
+                .field("crtc", &s.crtc())
+                .finish(),
+            FallbackSurface::Fallback(s) => f
+                .debug_struct("FallbackDevice::Preference")
+                .field("crtc", &s.crtc())
+                .finish(),
+        }
+    }
 }
 
 /// Enum uniting two kinds of possible errors.

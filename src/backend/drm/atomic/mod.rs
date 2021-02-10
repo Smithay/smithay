@@ -20,6 +20,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::sync::{
@@ -59,6 +60,23 @@ pub struct AtomicDrmDevice<A: AsRawFd + 'static> {
     logger: ::slog::Logger,
 }
 
+impl<A: AsRawFd + 'static> fmt::Debug for AtomicDrmDevice<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug = f.debug_struct("AtomicDrmDevice");
+
+        debug
+            .field("dev", &self.dev)
+            .field("dev_id", &self.dev_id)
+            .field("active", &self.active)
+            .field("backends", &self.backends);
+
+        #[cfg(feature = "backend_session")]
+        debug.field("links", &self.links);
+
+        debug.field("logger", &self.logger).finish()
+    }
+}
+
 type OldState = (
     Vec<(connector::Handle, PropertyValueSet)>,
     Vec<(crtc::Handle, PropertyValueSet)>,
@@ -80,6 +98,18 @@ pub(in crate::backend::drm) struct Dev<A: AsRawFd + 'static> {
     old_state: OldState,
     prop_mapping: Mapping,
     logger: ::slog::Logger,
+}
+
+impl<A: AsRawFd + 'static> fmt::Debug for Dev<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Dev")
+            .field("privileged", &self.privileged)
+            .field("active", &self.active)
+            .field("old_state", &self.old_state)
+            .field("prop_mapping", &self.prop_mapping)
+            .field("logger", &self.logger)
+            .finish()
+    }
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for Dev<A> {

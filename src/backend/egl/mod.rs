@@ -270,6 +270,20 @@ pub struct EGLImages {
 }
 
 #[cfg(feature = "wayland_frontend")]
+impl fmt::Debug for EGLImages {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Point")
+            .field("display", &self.display)
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("y_inverted", &self.y_inverted)
+            .field("format", &self.format)
+            .field("images", &self.images)
+            .finish()
+    }
+}
+
+#[cfg(feature = "wayland_frontend")]
 impl EGLImages {
     /// Amount of planes of these `EGLImages`
     pub fn num_planes(&self) -> usize {

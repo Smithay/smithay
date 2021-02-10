@@ -7,6 +7,7 @@ use drm::control::{
 use drm::Device as BasicDevice;
 
 use std::collections::HashSet;
+use std::fmt;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::sync::{atomic::Ordering, Arc, Mutex, RwLock};
 
@@ -45,6 +46,20 @@ pub(in crate::backend::drm) struct AtomicDrmSurfaceInternal<A: AsRawFd + 'static
     pub(super) pending: RwLock<State>,
     pub(super) logger: ::slog::Logger,
     pub(super) test_buffer: Mutex<Option<(DumbBuffer, framebuffer::Handle)>>,
+}
+
+impl<A: AsRawFd + 'static> fmt::Debug for AtomicDrmSurfaceInternal<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AtomicDrmSurfaceInternal")
+            .field("crtc", &self.crtc)
+            .field("cursor", &self.cursor)
+            .field("planse", &self.planes)
+            .field("state", &self.state)
+            .field("pending", &self.pending)
+            .field("logger", &self.logger)
+            .field("test_buffer", &self.test_buffer)
+            .finish()
+    }
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for AtomicDrmSurfaceInternal<A> {
@@ -1003,6 +1018,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
 }
 
 /// Open raw crtc utilizing atomic mode-setting
+#[derive(Debug)]
 pub struct AtomicDrmSurface<A: AsRawFd + 'static>(
     pub(in crate::backend::drm) Arc<AtomicDrmSurfaceInternal<A>>,
 );

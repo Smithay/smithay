@@ -14,8 +14,10 @@ use crate::backend::graphics::PixelFormat;
 use crate::backend::graphics::{CursorBackend, SwapBuffersError};
 
 /// Egl surface for rendering
+#[derive(Debug)]
 pub struct EglSurface<N: native::NativeSurface + Surface>(pub(super) Arc<EglSurfaceInternal<N>>);
 
+#[derive(Debug)]
 pub(super) struct EglSurfaceInternal<N>
 where
     N: native::NativeSurface + Surface,

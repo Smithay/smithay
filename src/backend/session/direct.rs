@@ -57,6 +57,7 @@ use nix::{
     Error as NixError, Result as NixResult,
 };
 use std::{
+    fmt,
     os::unix::io::RawFd,
     path::Path,
     sync::{
@@ -142,6 +143,7 @@ fn is_tty_device(dev: dev_t, path: Option<&Path>) -> bool {
 }
 
 /// [`Session`] via the virtual terminal direct kernel interface
+#[derive(Debug)]
 pub struct DirectSession {
     tty: RawFd,
     active: Arc<AtomicBool>,
@@ -158,6 +160,25 @@ pub struct DirectSessionNotifier {
     signal: Signal,
     logger: ::slog::Logger,
     source: Option<Signals>,
+}
+
+impl fmt::Debug for DirectSessionNotifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Point")
+            .field("tty", &self.tty)
+            .field("active", &self.active)
+            .field("signaler", &self.signaler)
+            .field("signal", &self.signal)
+            .field("logger", &self.logger)
+            .field(
+                "source",
+                &match self.source {
+                    Some(_) => "Some(..)",
+                    None => "None",
+                },
+            )
+            .finish()
+    }
 }
 
 impl DirectSession {

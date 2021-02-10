@@ -24,10 +24,12 @@ use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
+use std::fmt;
 use std::ops::Deref;
 
 /// Wrapper around [`ffi::EGLDisplay`](ffi::egl::types::EGLDisplay) to ensure display is only destroyed
 /// once all resources bound to it have been dropped.
+#[derive(Debug)]
 pub struct EGLDisplayHandle {
     /// ffi EGLDisplay ptr
     pub handle: ffi::egl::types::EGLDisplay,
@@ -54,6 +56,7 @@ impl Drop for EGLDisplayHandle {
 }
 
 /// [`EGLDisplay`] represents an initialised EGL environment
+#[derive(Debug)]
 pub struct EGLDisplay<B: native::Backend, N: native::NativeDisplay<B>> {
     native: RefCell<N>,
     pub(crate) display: Arc<EGLDisplayHandle>,
@@ -452,6 +455,16 @@ pub struct EGLBufferReader {
     wayland: *mut wl_display,
     #[cfg(feature = "renderer_gl")]
     gl: gl_ffi::Gles2,
+}
+
+#[cfg(feature = "use_system_lib")]
+impl fmt::Debug for EGLBufferReader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EGLBufferReader")
+            .field("display", &self.display)
+            .field("wayland", &self.wayland)
+            .finish()
+    }
 }
 
 #[cfg(feature = "use_system_lib")]

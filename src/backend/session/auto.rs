@@ -44,7 +44,7 @@ use std::{cell::RefCell, io, os::unix::io::RawFd, path::Path, rc::Rc};
 use calloop::{EventSource, Poll, Readiness, Token};
 
 /// [`Session`] using the best available interface
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum AutoSession {
     /// Logind session
     #[cfg(feature = "backend_session_logind")]
@@ -54,6 +54,7 @@ pub enum AutoSession {
 }
 
 /// [`SessionNotifier`] using the best available interface
+#[derive(Debug)]
 pub enum AutoSessionNotifier {
     /// Logind session notifier
     #[cfg(feature = "backend_session_logind")]

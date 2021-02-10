@@ -35,6 +35,7 @@ pub trait Backend {
 }
 
 #[cfg(feature = "backend_winit")]
+#[derive(Debug)]
 /// Wayland backend type
 pub enum Wayland {}
 #[cfg(feature = "backend_winit")]
@@ -79,10 +80,12 @@ impl Backend for Wayland {
 }
 
 #[cfg(feature = "backend_winit")]
+#[derive(Debug)]
 /// Typed Xlib window for the `X11` backend
 pub struct XlibWindow(u64);
 #[cfg(feature = "backend_winit")]
 /// X11 backend type
+#[derive(Debug)]
 pub enum X11 {}
 #[cfg(feature = "backend_winit")]
 impl Backend for X11 {

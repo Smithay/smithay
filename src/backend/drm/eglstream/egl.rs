@@ -31,6 +31,7 @@ use std::sync::Arc;
 /// Egl Device backend type
 ///
 /// See [`Backend`](::backend::egl::native::Backend).
+#[derive(Debug)]
 pub struct EglStreamDeviceBackend<D: RawDevice + 'static> {
     _userdata: PhantomData<D>,
 }
