@@ -77,6 +77,7 @@ use wayland_server::{
 mod wl_handlers;
 
 /// Metadata associated with the `wl_surface` role
+#[derive(Debug)]
 pub struct ShellSurfaceRole {
     /// Title of the surface
     pub title: String,
@@ -86,6 +87,7 @@ pub struct ShellSurfaceRole {
 }
 
 /// A handle to a shell surface
+#[derive(Debug)]
 pub struct ShellSurface<R> {
     wl_surface: wl_surface::WlSurface,
     shell_surface: wl_shell_surface::WlShellSurface,
@@ -169,6 +171,7 @@ where
 }
 
 /// Possible kinds of shell surface of the `wl_shell` protocol
+#[derive(Debug)]
 pub enum ShellSurfaceKind {
     /// Toplevel, a regular window displayed somewhere in the compositor space
     Toplevel,
@@ -222,6 +225,7 @@ pub enum ShellSurfaceKind {
 }
 
 /// A request triggered by a `wl_shell_surface`
+#[derive(Debug)]
 pub enum ShellRequest<R> {
     /// A new shell surface was created
     ///
@@ -275,6 +279,7 @@ pub enum ShellRequest<R> {
 ///
 /// This state allows you to retrieve a list of surfaces
 /// currently known to the shell global.
+#[derive(Debug)]
 pub struct ShellState<R> {
     known_surfaces: Vec<ShellSurface<R>>,
 }

@@ -80,6 +80,7 @@ impl From<Serial> for u32 {
 ///
 /// The counter will wrap around on overflow, ensuring it can run for as long
 /// as needed.
+#[derive(Debug)]
 pub struct SerialCounter {
     // TODO: replace with an AtomicU32 when stabilized
     serial: AtomicUsize,

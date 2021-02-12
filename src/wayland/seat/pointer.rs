@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ops::Deref as _, rc::Rc};
+use std::{cell::RefCell, fmt, ops::Deref as _, rc::Rc};
 
 use wayland_server::{
     protocol::{
@@ -12,14 +12,14 @@ use crate::wayland::compositor::{roles::Role, CompositorToken};
 use crate::wayland::Serial;
 
 /// The role representing a surface set as the pointer cursor
-#[derive(Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct CursorImageRole {
     /// Location of the hotspot of the pointer in the surface
     pub hotspot: (i32, i32),
 }
 
 /// Possible status of a cursor as requested by clients
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CursorImageStatus {
     /// The cursor should be hidden
     Hidden,
@@ -35,6 +35,16 @@ enum GrabStatus {
     Borrowed,
 }
 
+impl fmt::Debug for GrabStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GrabStatus::None => f.debug_tuple("GrabStatus::None").finish(),
+            GrabStatus::Active(serial, _) => f.debug_tuple("GrabStatus::Active").field(&serial).finish(),
+            GrabStatus::Borrowed => f.debug_tuple("GrabStatus::Borrowed").finish(),
+        }
+    }
+}
+
 struct PointerInternal {
     known_pointers: Vec<WlPointer>,
     focus: Option<(WlSurface, (f64, f64))>,
@@ -43,6 +53,20 @@ struct PointerInternal {
     grab: GrabStatus,
     pressed_buttons: Vec<u32>,
     image_callback: Box<dyn FnMut(CursorImageStatus)>,
+}
+
+impl fmt::Debug for PointerInternal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Point")
+            .field("known_pointers", &self.known_pointers)
+            .field("focus", &self.focus)
+            .field("pending_focus", &self.pending_focus)
+            .field("location", &self.location)
+            .field("grab", &self.grab)
+            .field("pressed_buttons", &self.pressed_buttons)
+            .field("image_callback", &"...")
+            .finish()
+    }
 }
 
 impl PointerInternal {
@@ -125,7 +149,7 @@ impl PointerInternal {
 ///
 /// When sending events using this handle, they will be intercepted by a pointer
 /// grab if any is active. See the [`PointerGrab`] trait for details.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PointerHandle {
     inner: Rc<RefCell<PointerInternal>>,
 }
@@ -233,7 +257,7 @@ impl PointerHandle {
 }
 
 /// Data about the event that started the grab.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct GrabStartData {
     /// The focused surface and its location, if any, at the start of the grab.
     ///
@@ -287,6 +311,7 @@ pub trait PointerGrab {
 
 /// This inner handle is accessed from inside a pointer grab logic, and directly
 /// sends event to the client
+#[derive(Debug)]
 pub struct PointerInnerHandle<'a> {
     inner: &'a mut PointerInternal,
 }

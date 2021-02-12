@@ -65,7 +65,7 @@ use wayland_server::{
 ///
 /// This should only describe the characteristics of the video driver,
 /// not taking into account any global scaling.
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Mode {
     /// The width in pixels
     pub width: i32,
@@ -78,6 +78,7 @@ pub struct Mode {
 }
 
 /// The physical properties of an output
+#[derive(Debug)]
 pub struct PhysicalProperties {
     /// The width in millimeters
     pub width: i32,
@@ -91,6 +92,7 @@ pub struct PhysicalProperties {
     pub model: String,
 }
 
+#[derive(Debug)]
 struct Inner {
     name: String,
     log: ::slog::Logger,
@@ -155,6 +157,7 @@ impl Inner {
 ///
 /// This handle is stored in the event loop, and allows you to notify clients
 /// about any change in the properties of this output.
+#[derive(Debug)]
 pub struct Output {
     inner: Arc<Mutex<Inner>>,
 }

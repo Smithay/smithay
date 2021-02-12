@@ -109,6 +109,7 @@ mod xdg_handlers;
 mod zxdgv6_handlers;
 
 /// Metadata associated with the `xdg_surface` role
+#[derive(Debug)]
 pub struct XdgSurfaceRole {
     /// Pending state as requested by the client
     ///
@@ -177,6 +178,7 @@ impl PositionerState {
 }
 
 /// Contents of the pending state of a shell surface, depending on its role
+#[derive(Debug)]
 pub enum XdgSurfacePendingState {
     /// This a regular, toplevel surface
     ///
@@ -196,6 +198,7 @@ pub enum XdgSurfacePendingState {
 }
 
 /// State of a regular toplevel surface
+#[derive(Debug)]
 pub struct ToplevelState {
     /// Parent of this surface
     ///
@@ -233,6 +236,7 @@ impl Clone for ToplevelState {
 }
 
 /// The pending state of a popup surface
+#[derive(Debug)]
 pub struct PopupState {
     /// Parent of this popup surface
     pub parent: Option<wl_surface::WlSurface>,
@@ -326,6 +330,7 @@ where
 ///
 /// This state allows you to retrieve a list of surfaces
 /// currently known to the shell global.
+#[derive(Debug)]
 pub struct ShellState<R> {
     known_toplevels: Vec<ToplevelSurface<R>>,
     known_popups: Vec<PopupSurface<R>>,
@@ -350,6 +355,7 @@ where
  * User interaction
  */
 
+#[derive(Debug)]
 enum ShellClientKind {
     Xdg(xdg_wm_base::XdgWmBase),
     ZxdgV6(zxdg_shell_v6::ZxdgShellV6),
@@ -377,6 +383,7 @@ fn make_shell_client_data() -> ShellClientData {
 ///
 /// You can use this handle to access a storage for any
 /// client-specific data you wish to associate with it.
+#[derive(Debug)]
 pub struct ShellClient<R> {
     kind: ShellClientKind,
     _token: CompositorToken<R>,
@@ -481,13 +488,14 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) enum ToplevelKind {
     Xdg(xdg_toplevel::XdgToplevel),
     ZxdgV6(zxdg_toplevel_v6::ZxdgToplevelV6),
 }
 
 /// A handle to a toplevel surface
+#[derive(Debug)]
 pub struct ToplevelSurface<R> {
     wl_surface: wl_surface::WlSurface,
     shell_surface: ToplevelKind,
@@ -650,6 +658,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum PopupKind {
     Xdg(xdg_popup::XdgPopup),
     ZxdgV6(zxdg_popup_v6::ZxdgPopupV6),
@@ -659,6 +668,7 @@ pub(crate) enum PopupKind {
 ///
 /// This is an unified abstraction over the popup surfaces
 /// of both `wl_shell` and `xdg_shell`.
+#[derive(Debug)]
 pub struct PopupSurface<R> {
     wl_surface: wl_surface::WlSurface,
     shell_surface: PopupKind,
@@ -818,6 +828,7 @@ where
 }
 
 /// A configure message for toplevel surfaces
+#[derive(Debug)]
 pub struct ToplevelConfigure {
     /// A suggestion for a new size for the surface
     pub size: Option<(i32, i32)>,
@@ -835,6 +846,7 @@ pub struct ToplevelConfigure {
 }
 
 /// A configure message for popup surface
+#[derive(Debug)]
 pub struct PopupConfigure {
     /// The position chosen for this popup relative to
     /// its parent
@@ -855,6 +867,7 @@ pub struct PopupConfigure {
 /// for you directly.
 ///
 /// Depending on what you want to do, you might ignore some of them
+#[derive(Debug)]
 pub enum XdgRequest<R> {
     /// A new shell client was instantiated
     NewClient {

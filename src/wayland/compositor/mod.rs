@@ -68,7 +68,7 @@
 //! surfaces. See the documentation of the [`roles`](::wayland::compositor::roles) submodule
 //! for a detailed explanation.
 
-use std::{cell::RefCell, rc::Rc, sync::Mutex};
+use std::{cell::RefCell, fmt, rc::Rc, sync::Mutex};
 
 mod handlers;
 pub mod roles;
@@ -89,6 +89,7 @@ use wayland_server::{
 
 /// Description of which part of a surface
 /// should be considered damaged and needs to be redrawn
+#[derive(Debug)]
 pub enum Damage {
     /// The whole surface must be considered damaged (this is the default)
     Full,
@@ -100,12 +101,13 @@ pub enum Damage {
     Buffer(Rectangle),
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 struct Marker<R> {
     _r: ::std::marker::PhantomData<R>,
 }
 
 /// New buffer assignation for a surface
+#[derive(Debug)]
 pub enum BufferAssignment {
     /// The surface no longer has a buffer attached to it
     Removed,
@@ -168,6 +170,21 @@ pub struct SurfaceAttributes {
     ///
     /// This is your field to host whatever you need.
     pub user_data: UserDataMap,
+}
+
+impl fmt::Debug for SurfaceAttributes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SurfaceAttributes")
+            .field("buffer", &self.buffer)
+            .field("buffer_scale", &self.buffer_scale)
+            .field("buffer_transform", &self.buffer_transform)
+            .field("opaque_region", &self.opaque_region)
+            .field("input_region", &self.input_region)
+            .field("damage", &self.damage)
+            .field("frame_callback", &self.frame_callback)
+            .field("user_data", &"...")
+            .finish()
+    }
 }
 
 impl Default for SurfaceAttributes {
@@ -259,6 +276,7 @@ impl RegionAttributes {
 /// access data associated with the [`wl_surface`](wayland_server::protocol::wl_surface)
 /// and [`wl_region`](wayland_server::protocol::wl_region) managed
 /// by the `CompositorGlobal` that provided it.
+#[derive(Debug)]
 pub struct CompositorToken<R> {
     _role: ::std::marker::PhantomData<*mut R>,
 }
@@ -516,6 +534,7 @@ where
 /// The global provided by smithay cannot process these events for you, so
 /// they are forwarded directly via your provided implementation, and are
 /// described by this global.
+#[derive(Debug)]
 pub enum SurfaceEvent {
     /// The double-buffered state has been validated by the client
     ///
