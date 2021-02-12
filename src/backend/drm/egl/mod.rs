@@ -73,17 +73,20 @@ where
 impl<B, D> fmt::Debug for EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface, Error = <<D as Device>::Surface as Surface>::Error>
+        + fmt::Debug
         + 'static,
-    D: Device + NativeDisplay<B, Arguments = Arguments> + 'static,
+    D: Device + NativeDisplay<B, Arguments = Arguments> + fmt::Debug + 'static,
     <D as Device>::Surface: NativeSurface<Error = <<D as Device>::Surface as Surface>::Error>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("EglDevice");
 
         debug
+            .field("dev", &self.dev)
             .field("logger", &self.logger)
             .field("default_attributes", &self.default_attributes)
-            .field("default_requirements", &self.default_requirements);
+            .field("default_requirements", &self.default_requirements)
+            .field("backends", &"...");
 
         #[cfg(feature = "backend_session")]
         debug.field("links", &self.links);

@@ -75,7 +75,7 @@ impl fmt::Debug for LogindSessionImpl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LogindSessionImpl ")
             .field("session_id", &self.session_id)
-            .field("conn", &"..")
+            .field("conn", &"...")
             .field("session_path", &self.session_path)
             .field("active", &self.active)
             .field("signaler", &self.signaler)

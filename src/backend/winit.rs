@@ -69,10 +69,23 @@ enum Window {
 impl fmt::Debug for Window {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Window::Wayland { .. } => f.debug_tuple("Window::Wayland"),
-            Window::X11 { .. } => f.debug_tuple("Window::X11"),
+            Window::Wayland { display, context, .. } => f
+                .debug_struct("Window::Wayland")
+                .field("display", &display)
+                .field("context", &context)
+                .field("surface", &"...")
+                .finish(),
+            Window::X11 {
+                display,
+                context,
+                surface,
+            } => f
+                .debug_struct("Window::X11")
+                .field("display", &display)
+                .field("context", &context)
+                .field("surface", &surface)
+                .finish(),
         }
-        .finish()
     }
 }
 

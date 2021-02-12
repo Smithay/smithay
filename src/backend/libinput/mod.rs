@@ -430,13 +430,19 @@ pub struct LibinputSessionInterface<S: Session>(S);
 #[cfg(feature = "backend_session")]
 impl<S: Session> fmt::Debug for LibinputSessionInterface<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let sesion = &f
-            .debug_struct("Session")
-            .field("is_active", &self.0.is_active())
-            .field("seat", &self.0.seat())
-            .finish();
+        struct SessionDebug<'a, S: Session>(&'a S);
+        impl<'a, S: Session> fmt::Debug for SessionDebug<'a, S> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_struct("Session")
+                    .field("is_active", &self.0.is_active())
+                    .field("seat", &self.0.seat())
+                    .finish()
+            }
+        }
 
-        f.debug_tuple("LibinputSessionInterface").field(sesion).finish()
+        f.debug_tuple("LibinputSessionInterface")
+            .field(&SessionDebug(&self.0))
+            .finish()
     }
 }
 

@@ -91,10 +91,15 @@ pub struct EglStreamDevice<D: RawDevice + ControlDevice + 'static> {
     links: Vec<crate::signaling::SignalToken>,
 }
 
-impl<D: RawDevice + ControlDevice + 'static> fmt::Debug for EglStreamDevice<D> {
+impl<D: RawDevice + ControlDevice + fmt::Debug + 'static> fmt::Debug for EglStreamDevice<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("EglStreamDevice");
-        debug.field("dev", &self.dev).field("logger", &self.logger);
+        debug
+            .field("dev", &self.dev)
+            .field("raw", &self.raw)
+            .field("backends", &"...")
+            .field("logger", &self.logger);
+
         #[cfg(feature = "backend_session")]
         debug.field("links", &self.links);
         debug.finish()

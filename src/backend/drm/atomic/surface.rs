@@ -48,9 +48,10 @@ pub(in crate::backend::drm) struct AtomicDrmSurfaceInternal<A: AsRawFd + 'static
     pub(super) test_buffer: Mutex<Option<(DumbBuffer, framebuffer::Handle)>>,
 }
 
-impl<A: AsRawFd + 'static> fmt::Debug for AtomicDrmSurfaceInternal<A> {
+impl<A: AsRawFd + fmt::Debug + 'static> fmt::Debug for AtomicDrmSurfaceInternal<A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AtomicDrmSurfaceInternal")
+            .field("dev", &self.dev)
             .field("crtc", &self.crtc)
             .field("cursor", &self.cursor)
             .field("planse", &self.planes)

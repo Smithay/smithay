@@ -1,7 +1,6 @@
 //! OpenGL rendering types
 
 use nix::libc::c_void;
-use std::fmt;
 
 use super::{PixelFormat, SwapBuffersError};
 
@@ -40,15 +39,6 @@ pub trait GLGraphicsBackend {
 
     /// Returns the pixel format of the main framebuffer of the context.
     fn get_pixel_format(&self) -> PixelFormat;
-
-    /// Formats the debug value using the given formatter.
-    fn debug_fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("GLGraphicsBackend")
-            .field("framebuffer_dimensions", &self.get_framebuffer_dimensions())
-            .field("is_current", &self.is_current())
-            .field("pixel_format", &self.get_pixel_format())
-            .finish()
-    }
 }
 
 /// Loads a Raw GLES Interface for a given [`GLGraphicsBackend`]
