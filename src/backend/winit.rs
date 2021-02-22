@@ -28,7 +28,7 @@ use winit::{
         TouchPhase, WindowEvent,
     },
     event_loop::{ControlFlow, EventLoop},
-    platform::desktop::EventLoopExtDesktop,
+    platform::run_return::EventLoopExtRunReturn,
     window::{CursorIcon, Window as WinitWindow, WindowBuilder},
 };
 
@@ -857,7 +857,7 @@ impl From<WinitMouseButton> for MouseButton {
             WinitMouseButton::Left => MouseButton::Left,
             WinitMouseButton::Right => MouseButton::Right,
             WinitMouseButton::Middle => MouseButton::Middle,
-            WinitMouseButton::Other(num) => MouseButton::Other(num),
+            WinitMouseButton::Other(num) => MouseButton::Other(num as u8),
         }
     }
 }
