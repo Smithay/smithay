@@ -63,6 +63,7 @@ pub struct UdevBackend {
     logger: ::slog::Logger,
 }
 
+// MonitorSocket does not implement debug, so we have to impl Debug manually
 impl fmt::Debug for UdevBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use udev::AsRaw;

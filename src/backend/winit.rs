@@ -66,6 +66,7 @@ enum Window {
     },
 }
 
+// WlEglSurface does not implement debug, so we have to impl Debug manually
 impl fmt::Debug for Window {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

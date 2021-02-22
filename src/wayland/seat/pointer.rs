@@ -35,6 +35,7 @@ enum GrabStatus {
     Borrowed,
 }
 
+// PointerGrab is a trait, so we have to impl Debug manually
 impl fmt::Debug for GrabStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -55,6 +56,7 @@ struct PointerInternal {
     image_callback: Box<dyn FnMut(CursorImageStatus)>,
 }
 
+// image_callback does not implement debug, so we have to impl Debug manually
 impl fmt::Debug for PointerInternal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Point")

@@ -60,6 +60,7 @@ pub struct AtomicDrmDevice<A: AsRawFd + 'static> {
     logger: ::slog::Logger,
 }
 
+// DeviceHandler does not implement Debug, so we have to impl Debug manually
 impl<A: AsRawFd + fmt::Debug + 'static> fmt::Debug for AtomicDrmDevice<A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("AtomicDrmDevice");
@@ -92,6 +93,7 @@ type Mapping = (
     HashMap<plane::Handle, HashMap<String, property::Handle>>,
 );
 
+#[derive(Debug)]
 pub(in crate::backend::drm) struct Dev<A: AsRawFd + 'static> {
     fd: A,
     privileged: bool,
@@ -99,19 +101,6 @@ pub(in crate::backend::drm) struct Dev<A: AsRawFd + 'static> {
     old_state: OldState,
     prop_mapping: Mapping,
     logger: ::slog::Logger,
-}
-
-impl<A: AsRawFd + fmt::Debug + 'static> fmt::Debug for Dev<A> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Dev")
-            .field("fd", &self.fd)
-            .field("privileged", &self.privileged)
-            .field("active", &self.active)
-            .field("old_state", &self.old_state)
-            .field("prop_mapping", &self.prop_mapping)
-            .field("logger", &self.logger)
-            .finish()
-    }
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for Dev<A> {

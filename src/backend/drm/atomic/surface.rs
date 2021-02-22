@@ -7,7 +7,6 @@ use drm::control::{
 use drm::Device as BasicDevice;
 
 use std::collections::HashSet;
-use std::fmt;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::sync::{atomic::Ordering, Arc, Mutex, RwLock};
 
@@ -37,6 +36,7 @@ pub struct Planes {
     pub cursor: plane::Handle,
 }
 
+#[derive(Debug)]
 pub(in crate::backend::drm) struct AtomicDrmSurfaceInternal<A: AsRawFd + 'static> {
     pub(super) dev: Arc<Dev<A>>,
     pub(in crate::backend::drm) crtc: crtc::Handle,
@@ -46,21 +46,6 @@ pub(in crate::backend::drm) struct AtomicDrmSurfaceInternal<A: AsRawFd + 'static
     pub(super) pending: RwLock<State>,
     pub(super) logger: ::slog::Logger,
     pub(super) test_buffer: Mutex<Option<(DumbBuffer, framebuffer::Handle)>>,
-}
-
-impl<A: AsRawFd + fmt::Debug + 'static> fmt::Debug for AtomicDrmSurfaceInternal<A> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AtomicDrmSurfaceInternal")
-            .field("dev", &self.dev)
-            .field("crtc", &self.crtc)
-            .field("cursor", &self.cursor)
-            .field("planse", &self.planes)
-            .field("state", &self.state)
-            .field("pending", &self.pending)
-            .field("logger", &self.logger)
-            .field("test_buffer", &self.test_buffer)
-            .finish()
-    }
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for AtomicDrmSurfaceInternal<A> {

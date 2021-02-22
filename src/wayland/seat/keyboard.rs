@@ -120,6 +120,7 @@ struct KbdInternal {
     focus_hook: Box<dyn FnMut(Option<&WlSurface>)>,
 }
 
+// focus_hook does not implement debug, so we have to impl Debug manually
 impl fmt::Debug for KbdInternal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KbdInternal")

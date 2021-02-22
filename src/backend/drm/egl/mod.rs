@@ -70,6 +70,7 @@ where
     links: Vec<crate::signaling::SignalToken>,
 }
 
+// BackendRef does not implement debug, so we have to impl Debug manually
 impl<B, D> fmt::Debug for EglDevice<B, D>
 where
     B: Backend<Surface = <D as Device>::Surface, Error = <<D as Device>::Surface as Surface>::Error>

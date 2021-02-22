@@ -269,6 +269,7 @@ pub struct EGLImages {
     gl: gl_ffi::Gles2,
 }
 
+// Gles2 does not implement debug, so we have to impl Debug manually
 #[cfg(feature = "wayland_frontend")]
 impl fmt::Debug for EGLImages {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -71,6 +71,7 @@ struct LogindSessionImpl {
     logger: ::slog::Logger,
 }
 
+// DBusConnection does not implement debug, so we have to impl Debug manually
 impl fmt::Debug for LogindSessionImpl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LogindSessionImpl ")

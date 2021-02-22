@@ -91,6 +91,7 @@ pub struct EglStreamDevice<D: RawDevice + ControlDevice + 'static> {
     links: Vec<crate::signaling::SignalToken>,
 }
 
+// SurfaceInternalRef does not implement debug, so we have to impl Debug manually
 impl<D: RawDevice + ControlDevice + fmt::Debug + 'static> fmt::Debug for EglStreamDevice<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("EglStreamDevice");

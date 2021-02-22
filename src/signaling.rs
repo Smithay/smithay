@@ -111,6 +111,7 @@ struct SignalInner<S> {
     pending_events: RefCell<VecDeque<S>>,
 }
 
+// WeakCallback does not implement debug, so we have to impl Debug manually
 impl<S: fmt::Debug> fmt::Debug for SignalInner<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SignalInner")

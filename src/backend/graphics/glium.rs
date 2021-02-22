@@ -23,6 +23,7 @@ pub struct GliumGraphicsBackend<T: GLGraphicsBackend> {
     error_channel: Rc<Cell<Option<Box<dyn std::error::Error>>>>,
 }
 
+// GLGraphicsBackend is a trait, so we have to impl Debug manually
 impl<T: GLGraphicsBackend> fmt::Debug for GliumGraphicsBackend<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         struct BackendDebug<'a, T: GLGraphicsBackend>(&'a Rc<InternalBackend<T>>);

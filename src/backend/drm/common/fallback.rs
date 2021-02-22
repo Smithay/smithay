@@ -50,6 +50,7 @@ pub enum FallbackDevice<D1: Device + 'static, D2: Device + 'static> {
     Fallback(D2),
 }
 
+// Device is a trait, so we have to impl Debug manually
 impl<D1: Device + 'static, D2: Device + 'static> fmt::Debug for FallbackDevice<D1, D2> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -152,6 +153,7 @@ pub enum FallbackSurface<S1: Surface, S2: Surface> {
     Fallback(S2),
 }
 
+// Surface is a trait, so we have to impl Debug manually
 impl<S1: Surface, S2: Surface> fmt::Debug for FallbackSurface<S1, S2> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

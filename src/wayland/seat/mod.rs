@@ -74,6 +74,7 @@ pub(crate) struct SeatRc {
     name: String,
 }
 
+// UserDataMap does not implement debug, so we have to impl Debug manually
 impl fmt::Debug for SeatRc {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SeatRc")

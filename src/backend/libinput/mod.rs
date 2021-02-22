@@ -427,6 +427,7 @@ impl From<event::pointer::ButtonState> for backend::MouseButtonState {
 #[cfg(feature = "backend_session")]
 pub struct LibinputSessionInterface<S: Session>(S);
 
+// Session is a trait, so we have to impl Debug manually
 #[cfg(feature = "backend_session")]
 impl<S: Session> fmt::Debug for LibinputSessionInterface<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

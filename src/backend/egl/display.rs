@@ -457,6 +457,7 @@ pub struct EGLBufferReader {
     gl: gl_ffi::Gles2,
 }
 
+// Gles2 does not implement debug, so we have to impl Debug manually
 #[cfg(feature = "use_system_lib")]
 impl fmt::Debug for EGLBufferReader {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
