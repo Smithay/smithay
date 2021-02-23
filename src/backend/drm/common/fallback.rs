@@ -43,27 +43,12 @@ use wayland_server::Display;
 
 /// [`Device`](::backend::drm::Device) Wrapper to assist fallback
 /// in case initialization of the preferred device type fails.
+#[derive(Debug)]
 pub enum FallbackDevice<D1: Device + 'static, D2: Device + 'static> {
     /// Variant for successful initialization of the preferred device
     Preference(D1),
     /// Variant for the fallback device
     Fallback(D2),
-}
-
-// Device is a trait, so we have to impl Debug manually
-impl<D1: Device + 'static, D2: Device + 'static> fmt::Debug for FallbackDevice<D1, D2> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FallbackDevice::Preference(d) => f
-                .debug_struct("FallbackDevice::Preference")
-                .field("device_id", &d.device_id())
-                .finish(),
-            FallbackDevice::Fallback(d) => f
-                .debug_struct("FallbackDevice::Preference")
-                .field("device_id", &d.device_id())
-                .finish(),
-        }
-    }
 }
 
 struct FallbackDeviceHandlerD1<E1, E2, C, S1, S2, D1, D2>(
@@ -146,27 +131,12 @@ where
 
 /// [`Surface`](::backend::drm::Surface) Wrapper to assist fallback
 /// in case initialization of the preferred device type fails.
+#[derive(Debug)]
 pub enum FallbackSurface<S1: Surface, S2: Surface> {
     /// Variant for successful initialization of the preferred device
     Preference(S1),
     /// Variant for the fallback device
     Fallback(S2),
-}
-
-// Surface is a trait, so we have to impl Debug manually
-impl<S1: Surface, S2: Surface> fmt::Debug for FallbackSurface<S1, S2> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FallbackSurface::Preference(s) => f
-                .debug_struct("FallbackDevice::Preference")
-                .field("crtc", &s.crtc())
-                .finish(),
-            FallbackSurface::Fallback(s) => f
-                .debug_struct("FallbackDevice::Preference")
-                .field("crtc", &s.crtc())
-                .finish(),
-        }
-    }
 }
 
 /// Enum uniting two kinds of possible errors.
