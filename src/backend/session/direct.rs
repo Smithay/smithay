@@ -170,6 +170,7 @@ impl fmt::Debug for DirectSessionNotifier {
             .field("signaler", &self.signaler)
             .field("signal", &self.signal)
             .field("logger", &self.logger)
+            // Signal deos not implement Debug`
             .field(
                 "source",
                 &match self.source {
