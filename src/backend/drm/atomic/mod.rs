@@ -20,6 +20,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::sync::{
@@ -59,6 +60,25 @@ pub struct AtomicDrmDevice<A: AsRawFd + 'static> {
     logger: ::slog::Logger,
 }
 
+// DeviceHandler does not implement Debug, so we have to impl Debug manually
+impl<A: AsRawFd + fmt::Debug + 'static> fmt::Debug for AtomicDrmDevice<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug = f.debug_struct("AtomicDrmDevice");
+
+        debug
+            .field("dev", &self.dev)
+            .field("dev_id", &self.dev_id)
+            .field("active", &self.active)
+            .field("backends", &self.backends)
+            .field("handler", &"...");
+
+        #[cfg(feature = "backend_session")]
+        debug.field("links", &self.links);
+
+        debug.field("logger", &self.logger).finish()
+    }
+}
+
 type OldState = (
     Vec<(connector::Handle, PropertyValueSet)>,
     Vec<(crtc::Handle, PropertyValueSet)>,
@@ -73,6 +93,7 @@ type Mapping = (
     HashMap<plane::Handle, HashMap<String, property::Handle>>,
 );
 
+#[derive(Debug)]
 pub(in crate::backend::drm) struct Dev<A: AsRawFd + 'static> {
     fd: A,
     privileged: bool,

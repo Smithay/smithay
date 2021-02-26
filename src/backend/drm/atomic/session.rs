@@ -25,6 +25,7 @@ use crate::{
 /// [`SessionObserver`](SessionObserver)
 /// linked to the [`AtomicDrmDevice`](AtomicDrmDevice)
 /// it was created from.
+#[derive(Debug)]
 pub struct AtomicDrmDeviceObserver<A: AsRawFd + 'static> {
     dev: WeakArc<Dev<A>>,
     dev_id: dev_t,

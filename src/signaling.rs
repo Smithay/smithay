@@ -21,10 +21,12 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::VecDeque,
+    fmt,
     rc::{Rc, Weak},
 };
 
 /// A signaler, main type for signaling
+#[derive(Debug)]
 pub struct Signaler<S> {
     inner: Rc<SignalInner<S>>,
 }
@@ -88,6 +90,7 @@ impl<S> Default for Signaler<S> {
 /// Dropping it will disable and drop the callback it is associated to.
 /// If you don't plan to ever disable the callback, you can use the `leak`
 /// method to safely get rid of this value.
+#[derive(Debug)]
 pub struct SignalToken {
     signal: Rc<dyn Any>,
 }
@@ -106,6 +109,17 @@ struct SignalInner<S> {
     callbacks: RefCell<Vec<WeakCallback<S>>>,
     pending_callbacks: RefCell<Vec<WeakCallback<S>>>,
     pending_events: RefCell<VecDeque<S>>,
+}
+
+// WeakCallback does not implement debug, so we have to impl Debug manually
+impl<S: fmt::Debug> fmt::Debug for SignalInner<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SignalInner")
+            .field("callbacks::len()", &self.callbacks.borrow().len())
+            .field("pending_callbacks::len()", &self.pending_callbacks.borrow().len())
+            .field("pending_events", &self.pending_events)
+            .finish()
+    }
 }
 
 impl<S> SignalInner<S> {

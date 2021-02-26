@@ -28,6 +28,7 @@ pub enum Location {
 }
 
 /// Possible actions to do after handling a node diring tree traversal
+#[derive(Debug)]
 pub enum TraversalAction<T> {
     /// Traverse its children as well, providing them the data T
     DoChildren(T),

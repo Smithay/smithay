@@ -76,6 +76,7 @@ use wayland_protocols::unstable::linux_dmabuf::v1::server::{
 use wayland_server::{protocol::wl_buffer, Display, Filter, Global, Main};
 
 /// Representation of a Dmabuf format, as advertized to the client
+#[derive(Debug)]
 pub struct Format {
     /// The format identifier.
     pub format: ::drm::buffer::format::PixelFormat,
@@ -89,6 +90,7 @@ pub struct Format {
 }
 
 /// A plane send by the client
+#[derive(Debug)]
 pub struct Plane {
     /// The file descriptor
     pub fd: RawFd,
@@ -115,6 +117,7 @@ bitflags! {
 }
 
 /// The complete information provided by the client to create a dmabuf buffer
+#[derive(Debug)]
 pub struct BufferInfo {
     /// The submitted planes
     pub planes: Vec<Plane>,

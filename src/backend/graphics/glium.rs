@@ -8,6 +8,7 @@ use glium::{
 };
 use std::{
     cell::{Cell, Ref, RefCell, RefMut},
+    fmt,
     os::raw::c_void,
     rc::Rc,
 };
@@ -20,6 +21,29 @@ pub struct GliumGraphicsBackend<T: GLGraphicsBackend> {
     // while there can be multiple Frames, they cannot in parallel call `set_finish`.
     // so a buffer of the last error is sufficient, if always cleared...
     error_channel: Rc<Cell<Option<Box<dyn std::error::Error>>>>,
+}
+
+// GLGraphicsBackend is a trait, so we have to impl Debug manually
+impl<T: GLGraphicsBackend> fmt::Debug for GliumGraphicsBackend<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct BackendDebug<'a, T: GLGraphicsBackend>(&'a Rc<InternalBackend<T>>);
+        impl<'a, T: GLGraphicsBackend> fmt::Debug for BackendDebug<'a, T> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let b = &self.0 .0.borrow();
+                f.debug_struct("GLGraphicsBackend")
+                    .field("framebuffer_dimensions", &b.get_framebuffer_dimensions())
+                    .field("is_current", &b.is_current())
+                    .field("pixel_format", &b.get_pixel_format())
+                    .finish()
+            }
+        }
+
+        f.debug_struct("GliumGraphicsBackend")
+            .field("context", &"...")
+            .field("backend", &BackendDebug(&self.backend))
+            .field("error_channel", &"...")
+            .finish()
+    }
 }
 
 struct InternalBackend<T: GLGraphicsBackend>(RefCell<T>, Rc<Cell<Option<Box<dyn std::error::Error>>>>);

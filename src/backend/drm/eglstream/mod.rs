@@ -28,6 +28,7 @@ use nix::libc::dev_t;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::CStr;
+use std::fmt;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::{Rc, Weak};
@@ -88,6 +89,22 @@ pub struct EglStreamDevice<D: RawDevice + ControlDevice + 'static> {
     logger: ::slog::Logger,
     #[cfg(feature = "backend_session")]
     links: Vec<crate::signaling::SignalToken>,
+}
+
+// SurfaceInternalRef does not implement debug, so we have to impl Debug manually
+impl<D: RawDevice + ControlDevice + fmt::Debug + 'static> fmt::Debug for EglStreamDevice<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug = f.debug_struct("EglStreamDevice");
+        debug
+            .field("dev", &self.dev)
+            .field("raw", &self.raw)
+            .field("backends", &"...")
+            .field("logger", &self.logger);
+
+        #[cfg(feature = "backend_session")]
+        debug.field("links", &self.links);
+        debug.finish()
+    }
 }
 
 impl<D: RawDevice + ControlDevice + 'static> EglStreamDevice<D> {

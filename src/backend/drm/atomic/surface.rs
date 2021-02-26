@@ -36,6 +36,7 @@ pub struct Planes {
     pub cursor: plane::Handle,
 }
 
+#[derive(Debug)]
 pub(in crate::backend::drm) struct AtomicDrmSurfaceInternal<A: AsRawFd + 'static> {
     pub(super) dev: Arc<Dev<A>>,
     pub(in crate::backend::drm) crtc: crtc::Handle,
@@ -1003,6 +1004,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurfaceInternal<A> {
 }
 
 /// Open raw crtc utilizing atomic mode-setting
+#[derive(Debug)]
 pub struct AtomicDrmSurface<A: AsRawFd + 'static>(
     pub(in crate::backend::drm) Arc<AtomicDrmSurfaceInternal<A>>,
 );

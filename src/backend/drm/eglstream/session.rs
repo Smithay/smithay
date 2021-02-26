@@ -19,6 +19,7 @@ use drm::control::{crtc, Device as ControlDevice};
 /// [`SessionObserver`](SessionObserver)
 /// linked to the [`EglStreamDevice`](EglStreamDevice) it was
 /// created from.
+#[derive(Debug)]
 pub struct EglStreamDeviceObserver<S: RawSurface + 'static> {
     backends: Weak<RefCell<HashMap<crtc::Handle, WeakArc<EglStreamSurfaceInternal<S>>>>>,
     logger: ::slog::Logger,

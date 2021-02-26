@@ -23,6 +23,7 @@ use crate::{
 /// [`SessionObserver`](SessionObserver)
 /// linked to the [`EglDevice`](EglDevice) it was
 /// created from.
+#[derive(Debug)]
 pub struct EglDeviceObserver<N: NativeSurface + Surface> {
     backends: Weak<RefCell<HashMap<crtc::Handle, WeakArc<EglSurfaceInternal<N>>>>>,
 }

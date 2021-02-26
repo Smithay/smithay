@@ -86,6 +86,7 @@ use wayland_server::{protocol::wl_surface::WlSurface, Display, Filter, Global, M
 use crate::wayland::compositor::{CompositorToken, SurfaceAttributes};
 
 /// An object to signal end of use of a buffer
+#[derive(Debug)]
 pub struct ExplicitBufferRelease {
     release: ZwpLinuxBufferReleaseV1,
 }
@@ -111,6 +112,7 @@ impl ExplicitBufferRelease {
 /// The client is not required to fill both. `acquire` being `None` means that you don't need to wait
 /// before acessing the buffer, `release` being `None` means that the client does not require additionnal
 /// signaling that you are finished (you still need to send `wl_buffer.release`).
+#[derive(Debug)]
 pub struct ExplicitSyncState {
     /// An acquire `dma_fence` object, that you should wait on before accessing the contents of the
     /// buffer associated with the surface.
@@ -143,6 +145,7 @@ impl ESUserData {
 }
 
 /// Possible errors you can send to an ill-behaving clients
+#[derive(Debug)]
 pub enum ExplicitSyncError {
     /// An invalid file descriptor was sent by the client for an acquire fence
     InvalidFence,

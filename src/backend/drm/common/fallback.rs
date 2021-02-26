@@ -36,12 +36,14 @@ use drm::{
 use nix::libc::c_void;
 use nix::libc::dev_t;
 use std::env;
+use std::fmt;
 use std::os::unix::io::{AsRawFd, RawFd};
 #[cfg(feature = "use_system_lib")]
 use wayland_server::Display;
 
 /// [`Device`](::backend::drm::Device) Wrapper to assist fallback
 /// in case initialization of the preferred device type fails.
+#[derive(Debug)]
 pub enum FallbackDevice<D1: Device + 'static, D2: Device + 'static> {
     /// Variant for successful initialization of the preferred device
     Preference(D1),
@@ -129,6 +131,7 @@ where
 
 /// [`Surface`](::backend::drm::Surface) Wrapper to assist fallback
 /// in case initialization of the preferred device type fails.
+#[derive(Debug)]
 pub enum FallbackSurface<S1: Surface, S2: Surface> {
     /// Variant for successful initialization of the preferred device
     Preference(S1),

@@ -82,7 +82,7 @@ use wayland_server::{
 
 mod pool;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 /// Internal data storage of `ShmGlobal`
 ///
 /// This type is only visible as type parameter of

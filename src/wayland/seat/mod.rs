@@ -40,7 +40,7 @@
 //! These methods return handles that can be cloned and sent across thread, so you can keep one around
 //! in your event-handling code to forward inputs to your clients.
 
-use std::{cell::RefCell, ops::Deref as _, rc::Rc};
+use std::{cell::RefCell, fmt, ops::Deref as _, rc::Rc};
 
 mod keyboard;
 mod pointer;
@@ -60,6 +60,7 @@ use wayland_server::{
     Display, Filter, Global, Main, UserDataMap,
 };
 
+#[derive(Debug)]
 struct Inner {
     pointer: Option<PointerHandle>,
     keyboard: Option<KeyboardHandle>,
@@ -71,6 +72,18 @@ pub(crate) struct SeatRc {
     user_data: UserDataMap,
     pub(crate) log: ::slog::Logger,
     name: String,
+}
+
+// UserDataMap does not implement debug, so we have to impl Debug manually
+impl fmt::Debug for SeatRc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SeatRc")
+            .field("inner", &self.inner)
+            .field("user_data", &"...")
+            .field("log", &self.log)
+            .field("name", &self.name)
+            .finish()
+    }
 }
 
 impl Inner {
@@ -103,7 +116,7 @@ impl Inner {
 /// This is an handle to the inner logic, it can be cloned.
 ///
 /// See module-level documentation for details of use.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Seat {
     pub(crate) arc: Rc<SeatRc>,
 }

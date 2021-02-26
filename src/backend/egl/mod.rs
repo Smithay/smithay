@@ -269,6 +269,21 @@ pub struct EGLImages {
     gl: gl_ffi::Gles2,
 }
 
+// Gles2 does not implement debug, so we have to impl Debug manually
+#[cfg(feature = "wayland_frontend")]
+impl fmt::Debug for EGLImages {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Point")
+            .field("display", &self.display)
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("y_inverted", &self.y_inverted)
+            .field("format", &self.format)
+            .field("images", &self.images)
+            .finish()
+    }
+}
+
 #[cfg(feature = "wayland_frontend")]
 impl EGLImages {
     /// Amount of planes of these `EGLImages`

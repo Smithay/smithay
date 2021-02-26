@@ -10,6 +10,7 @@ use std::ptr;
 use std::sync::{atomic::Ordering, Arc};
 
 /// EGL context for rendering
+#[derive(Debug)]
 pub struct EGLContext {
     context: ffi::egl::types::EGLContext,
     display: Arc<EGLDisplayHandle>,

@@ -3,6 +3,7 @@ use crate::wayland::Serial;
 use std::{
     cell::RefCell,
     default::Default,
+    fmt,
     io::{Error as IoError, Write},
     ops::Deref as _,
     os::unix::io::AsRawFd,
@@ -117,6 +118,23 @@ struct KbdInternal {
     repeat_rate: i32,
     repeat_delay: i32,
     focus_hook: Box<dyn FnMut(Option<&WlSurface>)>,
+}
+
+// focus_hook does not implement debug, so we have to impl Debug manually
+impl fmt::Debug for KbdInternal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KbdInternal")
+            .field("known_kbds", &self.known_kbds)
+            .field("focus", &self.focus)
+            .field("pressed_keys", &self.pressed_keys)
+            .field("mods_state", &self.mods_state)
+            .field("keymap", &self.keymap.get_raw_ptr())
+            .field("state", &self.state.get_raw_ptr())
+            .field("repeat_rate", &self.repeat_rate)
+            .field("repeat_delay", &self.repeat_delay)
+            .field("focus_hook", &"...")
+            .finish()
+    }
 }
 
 // This is OK because all parts of `xkb` will remain on the
@@ -267,6 +285,7 @@ where
     })
 }
 
+#[derive(Debug)]
 struct KbdRc {
     internal: RefCell<KbdInternal>,
     keymap: String,
@@ -284,7 +303,7 @@ struct KbdRc {
 /// - process key inputs from the input backend, allowing them to be caught at the compositor-level
 ///   or forwarded to the client. See the documentation of the [`KeyboardHandle::input`] method for
 ///   details.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct KeyboardHandle {
     arc: Rc<KbdRc>,
 }

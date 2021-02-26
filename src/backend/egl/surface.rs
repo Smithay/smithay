@@ -11,6 +11,7 @@ use std::sync::{
 };
 
 /// EGL surface of a given EGL context for rendering
+#[derive(Debug)]
 pub struct EGLSurface<N: native::NativeSurface> {
     pub(crate) display: Arc<EGLDisplayHandle>,
     native: N,
