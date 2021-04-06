@@ -1,10 +1,12 @@
 //! Implementation of backend traits for types provided by `winit`
 
 use crate::backend::egl::display::EGLDisplay;
-use crate::backend::egl::get_proc_address;
 use crate::backend::{
-    egl::{context::GlAttributes, native, EGLContext, EGLSurface, Error as EGLError, SurfaceCreationError},
-    graphics::{gl::GLGraphicsBackend, CursorBackend, PixelFormat, SwapBuffersError},
+    egl::{context::GlAttributes, native, EGLContext, EGLSurface, Error as EGLError},
+    renderer::{
+        Renderer, Bind, Transform, Frame,
+        gles2::{Gles2Renderer, Gles2Error, Gles2Texture, Gles2Frame},
+    },
     input::{
         Axis, AxisSource, Event as BackendEvent, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
         MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent,
@@ -12,16 +14,16 @@ use crate::backend::{
         UnusedEvent,
     },
 };
-use nix::libc::c_void;
 use std::{
-    cell::{Ref, RefCell},
-    convert::TryInto,
-    fmt,
+    cell::RefCell,
     rc::Rc,
     time::Instant,
 };
+use cgmath::Matrix3;
 use wayland_egl as wegl;
 use wayland_server::Display;
+#[cfg(feature = "wayland_frontend")]
+use wayland_server::protocol::{wl_shm, wl_buffer};
 use winit::{
     dpi::{LogicalPosition, LogicalSize, PhysicalSize},
     event::{
@@ -29,12 +31,13 @@ use winit::{
         TouchPhase, WindowEvent,
     },
     event_loop::{ControlFlow, EventLoop},
-    platform::run_return::EventLoopExtRunReturn,
-    window::{CursorIcon, Window as WinitWindow, WindowBuilder},
+    platform::desktop::EventLoopExtDesktop,
+    platform::unix::WindowExtUnix,
+    window::{Window as WinitWindow, WindowBuilder},
 };
 
 #[cfg(feature = "use_system_lib")]
-use crate::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
+use crate::backend::egl::{display::EGLBufferReader};
 
 /// Errors thrown by the `winit` backends
 #[derive(thiserror::Error, Debug)]
@@ -47,71 +50,32 @@ pub enum Error {
     NotSupported,
     /// EGL error
     #[error("EGL error: {0}")]
-    EGL(#[from] EGLError),
-    /// Surface Creation failed
-    #[error("Surface creation failed: {0}")]
-    SurfaceCreationError(#[from] SurfaceCreationError<EGLError>),
+    Egl(#[from] EGLError),
+    /// Renderer initialization failed
+    #[error("Renderer creation failed: {0}")]
+    RendererCreationError(#[from] Gles2Error),
 }
 
-enum Window {
-    Wayland {
-        display: EGLDisplay<native::Wayland, WinitWindow>,
-        context: EGLContext,
-        surface: EGLSurface<wegl::WlEglSurface>,
-    },
-    X11 {
-        display: EGLDisplay<native::X11, WinitWindow>,
-        context: EGLContext,
-        surface: EGLSurface<native::XlibWindow>,
-    },
-}
-
-// WlEglSurface does not implement debug, so we have to impl Debug manually
-impl fmt::Debug for Window {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Window::Wayland { display, context, .. } => f
-                .debug_struct("Window::Wayland")
-                .field("display", &display)
-                .field("context", &context)
-                .field("surface", &"...")
-                .finish(),
-            Window::X11 {
-                display,
-                context,
-                surface,
-            } => f
-                .debug_struct("Window::X11")
-                .field("display", &display)
-                .field("context", &context)
-                .field("surface", &surface)
-                .finish(),
-        }
-    }
-}
-
-impl Window {
-    fn window(&self) -> Ref<'_, WinitWindow> {
-        match *self {
-            Window::Wayland { ref display, .. } => display.borrow(),
-            Window::X11 { ref display, .. } => display.borrow(),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct WindowSize {
-    physical_size: PhysicalSize<u32>,
-    scale_factor: f64,
+#[derive(Debug, Clone)]
+pub struct WindowSize {
+    pub physical_size: PhysicalSize<u32>,
+    pub scale_factor: f64,
 }
 
 /// Window with an active EGL Context created by `winit`. Implements the
 /// [`EGLGraphicsBackend`] and [`GLGraphicsBackend`] graphics backend trait
 #[derive(Debug)]
 pub struct WinitGraphicsBackend {
-    window: Rc<Window>,
+    renderer: Gles2Renderer,
+    display: EGLDisplay,
+    egl: Rc<EGLSurface>,
+    window: Rc<WinitWindow>,
     size: Rc<RefCell<WindowSize>>,
-    logger: ::slog::Logger,
+}
+
+pub struct WinitFrame {
+    frame: Gles2Frame,
+    egl: Rc<EGLSurface>,
 }
 
 /// Abstracted event loop of a [`WinitWindow`] implementing the [`InputBackend`] trait
@@ -120,8 +84,9 @@ pub struct WinitGraphicsBackend {
 /// periodically to receive any events.
 #[derive(Debug)]
 pub struct WinitInputBackend {
+    egl: Rc<EGLSurface>,
+    window: Rc<WinitWindow>,
     events_loop: EventLoop<()>,
-    window: Rc<Window>,
     time: Instant,
     key_counter: u32,
     seat: Seat,
@@ -158,7 +123,7 @@ where
     init_from_builder_with_gl_attr(
         builder,
         GlAttributes {
-            version: None,
+            version: (3, 0),
             profile: None,
             debug: cfg!(debug_assertions),
             vsync: true,
@@ -188,54 +153,53 @@ where
     debug!(log, "Window created");
 
     let reqs = Default::default();
-    let window = Rc::new(
-        if native::NativeDisplay::<native::Wayland>::is_backend(&winit_window) {
-            let display = EGLDisplay::<native::Wayland, WinitWindow>::new(winit_window, log.clone())?;
-            let context = display.create_context(attributes, reqs)?;
-            let surface = display.create_surface(
-                context.get_pixel_format(),
-                reqs.double_buffer,
-                context.get_config_id(),
-                (),
-            )?;
-            Window::Wayland {
-                display,
-                context,
-                surface,
-            }
-        } else if native::NativeDisplay::<native::X11>::is_backend(&winit_window) {
-            let display = EGLDisplay::<native::X11, WinitWindow>::new(winit_window, log.clone())?;
-            let context = display.create_context(attributes, reqs)?;
-            let surface = display.create_surface(
-                context.get_pixel_format(),
-                reqs.double_buffer,
-                context.get_config_id(),
-                (),
-            )?;
-            Window::X11 {
-                display,
-                context,
-                surface,
-            }
+    let (display, context, surface) = {
+        let display = EGLDisplay::new(&winit_window, log.clone())?;
+        let context = EGLContext::new_with_config(&display, attributes, reqs, log.clone())?;
+
+        let surface = if let Some(wl_surface) = winit_window.wayland_surface() {
+            debug!(log, "Winit backend: Wayland");
+            let size = winit_window.inner_size();
+            let surface = unsafe {
+                wegl::WlEglSurface::new_from_raw(wl_surface as *mut _, size.width as i32, size.height as i32)
+            };
+            EGLSurface::new(&display, context.pixel_format().unwrap(), reqs.double_buffer, context.config_id(), surface, log.clone())
+                .map_err(EGLError::CreationFailed)?
+        } else if let Some(xlib_window) = winit_window.xlib_window().map(native::XlibWindow) {
+            debug!(log, "Winit backend: X11");
+            EGLSurface::new(&display, context.pixel_format().unwrap(), reqs.double_buffer, context.config_id(), xlib_window, log.clone())
+                .map_err(EGLError::CreationFailed)?
         } else {
-            return Err(Error::NotSupported);
-        },
-    );
+            unreachable!("No backends for winit other then Wayland and X11 are supported")
+        };
+        
+        (
+            display,
+            context,
+            surface,
+        )
+    };
 
     let size = Rc::new(RefCell::new(WindowSize {
-        physical_size: window.window().inner_size(), // TODO: original code check if window is alive or not using inner_size().expect()
-        scale_factor: window.window().scale_factor(),
+        physical_size: winit_window.inner_size(), // TODO: original code check if window is alive or not using inner_size().expect()
+        scale_factor: winit_window.scale_factor(),
     }));
+
+    let window = Rc::new(winit_window);
+    let egl = Rc::new(surface);
 
     Ok((
         WinitGraphicsBackend {
             window: window.clone(),
+            display,
+            egl: egl.clone(),
+            renderer: Gles2Renderer::new(context, log.clone())?,
             size: size.clone(),
-            logger: log.new(o!("smithay_winit_component" => "graphics")),
         },
         WinitInputBackend {
             events_loop,
             window,
+            egl,
             time: Instant::now(),
             key_counter: 0,
             seat: Seat::new(
@@ -269,111 +233,71 @@ pub enum WinitEvent {
     Refresh,
 }
 
-impl WinitGraphicsBackend {
-    /// Get a reference to the internally used [`WinitWindow`]
-    pub fn winit_window(&self) -> Ref<'_, WinitWindow> {
-        self.window.window()
-    }
-}
-
-impl CursorBackend for WinitGraphicsBackend {
-    type CursorFormat = CursorIcon;
-    type Error = ();
-
-    fn set_cursor_position(&self, _x: u32, _y: u32) -> ::std::result::Result<(), ()> {
-        // With other backends, we read events from input devices and then have to position the
-        // mouse cursor on screen accordingly. Here, there is already a windowing system that deals
-        // with the position on screen. If we "force" out idea of the cursor position here, that
-        // breaks and e.g. the cursor on X11 becomes stuck and cannot move. (Us forcing a cursor
-        // position generates a mouse move event and thus we force the same cursor position again.)
-        Ok(())
-    }
-
-    fn set_cursor_representation(
-        &self,
-        cursor: &Self::CursorFormat,
-        _hotspot: (u32, u32),
-    ) -> ::std::result::Result<(), ()> {
-        // Cannot log this one, as `CursorFormat` is not `Debug` and should not be
-        debug!(self.logger, "Changing cursor representation");
-        self.window.window().set_cursor_icon(*cursor);
-        self.window.window().set_cursor_visible(true);
-        Ok(())
-    }
-
-    fn clear_cursor_representation(&self) -> ::std::result::Result<(), ()> {
-        self.window.window().set_cursor_visible(false);
-        Ok(())
-    }
-}
-
-impl GLGraphicsBackend for WinitGraphicsBackend {
-    fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        trace!(self.logger, "Swapping buffers");
-        match *self.window {
-            Window::Wayland { ref surface, .. } => {
-                surface.swap_buffers().map_err(|err| err.try_into().unwrap())
-            }
-            Window::X11 { ref surface, .. } => surface.swap_buffers().map_err(|err| err.try_into().unwrap()),
-        }
-    }
-
-    fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        trace!(self.logger, "Getting symbol for {:?}", symbol);
-        get_proc_address(symbol)
-    }
-
-    fn get_framebuffer_dimensions(&self) -> (u32, u32) {
-        let size = self.size.borrow();
-        size.physical_size.into()
-    }
-
-    fn is_current(&self) -> bool {
-        match *self.window {
-            Window::Wayland {
-                ref context,
-                ref surface,
-                ..
-            } => context.is_current() && surface.is_current(),
-            Window::X11 {
-                ref context,
-                ref surface,
-                ..
-            } => context.is_current() && surface.is_current(),
-        }
-    }
-
-    unsafe fn make_current(&self) -> ::std::result::Result<(), SwapBuffersError> {
-        trace!(self.logger, "Setting EGL context to be the current context");
-        match *self.window {
-            Window::Wayland {
-                ref surface,
-                ref context,
-                ..
-            } => context.make_current_with_surface(surface).map_err(Into::into),
-            Window::X11 {
-                ref surface,
-                ref context,
-                ..
-            } => context.make_current_with_surface(surface).map_err(Into::into),
-        }
-    }
-
-    fn get_pixel_format(&self) -> PixelFormat {
-        match *self.window {
-            Window::Wayland { ref surface, .. } => surface.get_pixel_format(),
-            Window::X11 { ref surface, .. } => surface.get_pixel_format(),
-        }
-    }
-}
-
 #[cfg(feature = "use_system_lib")]
-impl EGLGraphicsBackend for WinitGraphicsBackend {
-    fn bind_wl_display(&self, wl_display: &Display) -> Result<EGLBufferReader, EGLError> {
-        match *self.window {
-            Window::Wayland { ref display, .. } => display.bind_wl_display(wl_display),
-            Window::X11 { ref display, .. } => display.bind_wl_display(wl_display),
-        }
+impl WinitGraphicsBackend {
+    pub fn bind_wl_display(&self, wl_display: &Display) -> Result<EGLBufferReader, EGLError> {
+        self.display.bind_wl_display(wl_display)
+    }
+
+    pub fn window_size(&self) -> WindowSize {
+        self.size.borrow().clone()
+    }
+
+    pub fn window(&self) -> &WinitWindow {
+        &*self.window
+    }
+
+    pub fn begin(&mut self) -> Result<WinitFrame, Gles2Error> {
+        let (width, height) = {
+            let size = self.size.borrow();
+            size.physical_size.into()
+        };
+        Renderer::begin(self, width, height, Transform::Normal)
+    }
+}
+
+impl Renderer for WinitGraphicsBackend {
+    type Error = Gles2Error;
+    type Texture = Gles2Texture;
+    type Frame = WinitFrame;
+
+    fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<Self::Frame, Self::Error> {
+        self.renderer.bind(&*self.egl)?;
+        let frame = self.renderer.begin(width, height, transform)?;
+
+        Ok(WinitFrame {
+            frame,
+            egl: self.egl.clone(),
+        })
+    }
+
+    #[cfg(feature = "wayland_frontend")]
+    fn shm_formats(&self) -> &[wl_shm::Format] {
+        self.renderer.shm_formats()
+    }
+
+    #[cfg(feature = "wayland_frontend")]
+    fn import_shm(&self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error> {
+        self.renderer.import_shm(buffer)
+    }
+}
+
+impl Frame for WinitFrame {
+    type Error = Gles2Error;
+    type Texture = Gles2Texture;
+
+    fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error> {
+        self.frame.clear(color)
+    }
+
+    fn render_texture(&mut self, texture: &Self::Texture, matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error> {
+        self.frame.render_texture(texture, matrix, alpha)
+    }
+
+    fn finish(self) -> Result<(), crate::backend::SwapBuffersError> {
+        self.frame.finish()?;
+        self.egl.swap_buffers()?;
+        Ok(())
     }
 }
 
@@ -703,6 +627,7 @@ impl InputBackend for WinitInputBackend {
             let time = &self.time;
             let seat = &self.seat;
             let window = &self.window;
+            let egl = &self.egl;
             let logger = &self.logger;
             let window_size = &self.size;
             let mut callback = move |event| callback(event, &mut WinitInputConfig);
@@ -722,13 +647,11 @@ impl InputBackend for WinitInputBackend {
                         match event {
                             WindowEvent::Resized(psize) => {
                                 trace!(logger, "Resizing window to {:?}", psize);
-                                let scale_factor = window.window().scale_factor();
+                                let scale_factor = window.scale_factor();
                                 let mut wsize = window_size.borrow_mut();
                                 wsize.physical_size = psize;
                                 wsize.scale_factor = scale_factor;
-                                if let Window::Wayland { ref surface, .. } = **window {
-                                    surface.resize(psize.width as i32, psize.height as i32, 0, 0);
-                                }
+                                egl.resize(psize.width as i32, psize.height as i32, 0, 0);
                                 callback(InputEvent::Special(WinitEvent::Resized {
                                     size: psize.into(),
                                     scale_factor,
@@ -744,9 +667,7 @@ impl InputBackend for WinitInputBackend {
                             } => {
                                 let mut wsize = window_size.borrow_mut();
                                 wsize.scale_factor = scale_factor;
-                                if let Window::Wayland { ref surface, .. } = **window {
-                                    surface.resize(new_psize.width as i32, new_psize.height as i32, 0, 0);
-                                }
+                                egl.resize(new_psize.width as i32, new_psize.height as i32, 0, 0);
                                 let psize_f64: (f64, f64) = (new_psize.width.into(), new_psize.height.into());
                                 callback(InputEvent::Special(WinitEvent::Resized {
                                     size: psize_f64,
