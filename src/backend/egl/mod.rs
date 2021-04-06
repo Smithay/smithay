@@ -18,20 +18,20 @@
 //! You may then use the resulting [`EGLDisplay`](::backend::egl::EGLDisplay) to receive [`EGLImages`](::backend::egl::EGLImages)
 //! of an EGL-based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer) for rendering.
 
+/*
 #[cfg(feature = "renderer_gl")]
 use crate::backend::graphics::{
     gl::{ffi as gl_ffi, GLGraphicsBackend},
     SwapBuffersError as GraphicsSwapBuffersError,
 };
-use nix::libc::c_uint;
+*/
 use std::fmt;
-#[cfg(feature = "wayland_frontend")]
-use wayland_server::Display;
 
 pub mod context;
 pub use self::context::EGLContext;
 mod error;
 pub use self::error::*;
+use crate::backend::SwapBuffersError as GraphicsSwapBuffersError;
 
 use nix::libc::c_void;
 
@@ -43,11 +43,7 @@ pub mod display;
 pub mod native;
 pub mod surface;
 pub use self::surface::EGLSurface;
-#[cfg(feature = "use_system_lib")]
-use crate::backend::egl::display::EGLBufferReader;
 use crate::backend::egl::display::EGLDisplayHandle;
-#[cfg(feature = "renderer_gl")]
-use std::ffi::CStr;
 use std::ffi::CString;
 use std::sync::Arc;
 
@@ -71,7 +67,7 @@ impl ::std::error::Error for EglExtensionNotSupportedError {}
 /// Returns the address of an OpenGL function.
 ///
 /// Result is independent of displays and does not guarantee an extension is actually supported at runtime.
-pub fn get_proc_address(symbol: &str) -> *const c_void {
+pub unsafe fn get_proc_address(symbol: &str) -> *const c_void {
     unsafe {
         let addr = CString::new(symbol.as_bytes()).unwrap();
         let addr = addr.as_ptr();
@@ -111,45 +107,29 @@ impl fmt::Debug for BufferAccessError {
     }
 }
 
-/// Error that can occur when creating a surface.
-#[derive(Debug, thiserror::Error)]
-pub enum SurfaceCreationError<E: std::error::Error + 'static> {
-    /// Native Surface creation failed
-    #[error("Surface creation failed. Err: {0:}")]
-    NativeSurfaceCreationFailed(#[source] E),
-    /// EGL surface creation failed
-    #[error("EGL surface creation failed. Err: {0:}")]
-    EGLSurfaceCreationFailed(#[source] EGLError),
-}
-
 /// Error that can happen when swapping buffers.
 #[derive(Debug, thiserror::Error)]
-pub enum SwapBuffersError<E: std::error::Error + 'static> {
-    /// Error of the underlying native surface
-    #[error("Underlying error: {0:?}")]
-    Underlying(#[source] E),
+pub enum SwapBuffersError {
     /// EGL error during `eglSwapBuffers`
     #[error("{0:}")]
     EGLSwapBuffers(#[source] EGLError),
-    /// EGL error during `eglCreateWindowSurface`
+    /// EGL error during surface creation
     #[error("{0:}")]
-    EGLCreateWindowSurface(#[source] EGLError),
+    EGLCreateSurface(#[source] EGLError),
 }
 
-impl<E: std::error::Error> std::convert::TryFrom<SwapBuffersError<E>> for GraphicsSwapBuffersError {
-    type Error = E;
-    fn try_from(value: SwapBuffersError<E>) -> Result<Self, Self::Error> {
+impl std::convert::From<SwapBuffersError> for GraphicsSwapBuffersError {
+    fn from(value: SwapBuffersError) -> Self {
         match value {
             // bad surface is answered with a surface recreation in `swap_buffers`
             x @ SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface) => {
-                Ok(GraphicsSwapBuffersError::TemporaryFailure(Box::new(x)))
+                GraphicsSwapBuffersError::TemporaryFailure(Box::new(x))
             }
             // the rest is either never happening or are unrecoverable
-            x @ SwapBuffersError::EGLSwapBuffers(_) => Ok(GraphicsSwapBuffersError::ContextLost(Box::new(x))),
-            x @ SwapBuffersError::EGLCreateWindowSurface(_) => {
-                Ok(GraphicsSwapBuffersError::ContextLost(Box::new(x)))
+            x @ SwapBuffersError::EGLSwapBuffers(_) => GraphicsSwapBuffersError::ContextLost(Box::new(x)),
+            x @ SwapBuffersError::EGLCreateSurface(_) => {
+                GraphicsSwapBuffersError::ContextLost(Box::new(x))
             }
-            SwapBuffersError::Underlying(e) => Err(e),
         }
     }
 }
@@ -265,8 +245,6 @@ pub struct EGLImages {
     /// Format of these images
     pub format: Format,
     images: Vec<EGLImage>,
-    #[cfg(feature = "renderer_gl")]
-    gl: gl_ffi::Gles2,
 }
 
 // Gles2 does not implement debug, so we have to impl Debug manually
@@ -291,6 +269,7 @@ impl EGLImages {
         self.format.num_planes()
     }
 
+    /*
     /// Bind plane to an OpenGL texture id
     ///
     /// This does only temporarily modify the OpenGL state any changes are reverted before returning.
@@ -342,6 +321,7 @@ impl EGLImages {
         self.gl.BindTexture(gl_ffi::TEXTURE_2D, old_tex_id as u32);
         res
     }
+    */
 }
 
 #[cfg(feature = "wayland_frontend")]
@@ -354,23 +334,4 @@ impl Drop for EGLImages {
             }
         }
     }
-}
-
-/// Trait any backend type may implement that allows binding a [`Display`](wayland_server::Display)
-/// to create an [`EGLBufferReader`](display::EGLBufferReader) for EGL-based [`WlBuffer`]s.
-#[cfg(feature = "use_system_lib")]
-pub trait EGLGraphicsBackend {
-    /// Binds this EGL context to the given Wayland display.
-    ///
-    /// This will allow clients to utilize EGL to create hardware-accelerated
-    /// surfaces. The server will need to be able to handle EGL-[`WlBuffer`]s.
-    ///
-    /// ## Errors
-    ///
-    /// This might return [`EglExtensionNotSupported`](ErrorKind::EglExtensionNotSupported)
-    /// if binding is not supported by the EGL implementation.
-    ///
-    /// This might return [`OtherEGLDisplayAlreadyBound`](ErrorKind::OtherEGLDisplayAlreadyBound)
-    /// if called for the same [`Display`] multiple times, as only one context may be bound at any given time.
-    fn bind_wl_display(&self, display: &Display) -> Result<EGLBufferReader, Error>;
 }

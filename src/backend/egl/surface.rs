@@ -1,20 +1,23 @@
 //! EGL surface related structs
 
-use super::{ffi, native, EGLError, SurfaceCreationError, SwapBuffersError};
-use crate::backend::egl::display::EGLDisplayHandle;
-use crate::backend::graphics::PixelFormat;
-use nix::libc::c_int;
-use std::ops::{Deref, DerefMut};
 use std::sync::{
     atomic::{AtomicPtr, Ordering},
     Arc,
 };
 
+use nix::libc::c_int;
+
+use crate::backend::egl::{
+    display::{EGLDisplay, EGLDisplayHandle, PixelFormat},
+    native::EGLNativeSurface,
+    ffi, EGLError, SwapBuffersError
+};
+
+
 /// EGL surface of a given EGL context for rendering
-#[derive(Debug)]
-pub struct EGLSurface<N: native::NativeSurface> {
+pub struct EGLSurface {
     pub(crate) display: Arc<EGLDisplayHandle>,
-    native: N,
+    native: Box<dyn EGLNativeSurface + Send + 'static>,
     pub(crate) surface: AtomicPtr<nix::libc::c_void>,
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: PixelFormat,
@@ -23,32 +26,19 @@ pub struct EGLSurface<N: native::NativeSurface> {
 }
 // safe because EGLConfig can be moved between threads
 // and the other types are thread-safe
-unsafe impl<N: native::NativeSurface + Send> Send for EGLSurface<N> {}
-unsafe impl<N: native::NativeSurface + Send + Sync> Sync for EGLSurface<N> {}
+unsafe impl Send for EGLSurface {}
 
-impl<N: native::NativeSurface> Deref for EGLSurface<N> {
-    type Target = N;
-    fn deref(&self) -> &N {
-        &self.native
-    }
-}
-
-impl<N: native::NativeSurface> DerefMut for EGLSurface<N> {
-    fn deref_mut(&mut self) -> &mut N {
-        &mut self.native
-    }
-}
-
-impl<N: native::NativeSurface> EGLSurface<N> {
-    pub(crate) fn new<L>(
-        display: Arc<EGLDisplayHandle>,
+impl EGLSurface {
+    pub fn new<N, L>(
+        display: &EGLDisplay,
         pixel_format: PixelFormat,
         double_buffered: Option<bool>,
         config: ffi::egl::types::EGLConfig,
         native: N,
         log: L,
-    ) -> Result<EGLSurface<N>, SurfaceCreationError<N::Error>>
+    ) -> Result<EGLSurface, EGLError>
     where
+        N: EGLNativeSurface + Send + 'static,
         L: Into<Option<::slog::Logger>>,
     {
         let log = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "renderer_egl"));
@@ -74,17 +64,15 @@ impl<N: native::NativeSurface> EGLSurface<N> {
             out
         };
 
-        let surface = unsafe { native.create(&display, config, &surface_attributes)? };
+        let surface = native.create(&display.display, config, &surface_attributes)?;
 
         if surface == ffi::egl::NO_SURFACE {
-            return Err(SurfaceCreationError::EGLSurfaceCreationFailed(
-                EGLError::BadSurface,
-            ));
+            return Err(EGLError::BadSurface);
         }
 
         Ok(EGLSurface {
-            display,
-            native,
+            display: display.display.clone(),
+            native: Box::new(native),
             surface: AtomicPtr::new(surface as *mut _),
             config_id: config,
             pixel_format,
@@ -94,7 +82,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
     }
 
     /// Swaps buffers at the end of a frame.
-    pub fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError<N::Error>> {
+    pub fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
         let surface = self.surface.load(Ordering::SeqCst);
 
         let result = if !surface.is_null() {
@@ -115,14 +103,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
                 unsafe {
                     self.native
                         .create(&self.display, self.config_id, &self.surface_attributes)
-                        .map_err(|err| match err {
-                            SurfaceCreationError::EGLSurfaceCreationFailed(err) => {
-                                SwapBuffersError::EGLCreateWindowSurface(err)
-                            }
-                            SurfaceCreationError::NativeSurfaceCreationFailed(err) => {
-                                SwapBuffersError::Underlying(err)
-                            }
-                        })? as *mut _
+                        .map_err(SwapBuffersError::EGLCreateSurface)? as *mut _
                 },
                 Ordering::SeqCst,
             );
@@ -151,17 +132,30 @@ impl<N: native::NativeSurface> EGLSurface<N> {
     }
 
     /// Returns the egl config for this context
-    pub fn get_config_id(&self) -> ffi::egl::types::EGLConfig {
+    pub fn config_id(&self) -> ffi::egl::types::EGLConfig {
         self.config_id
     }
 
     /// Returns the pixel format of the main framebuffer of the context.
-    pub fn get_pixel_format(&self) -> PixelFormat {
+    pub fn pixel_format(&self) -> PixelFormat {
         self.pixel_format
+    }
+    
+    /// Tries to resize the underlying native surface.
+    /// 
+    /// The two first arguments (width, height) are the new size of the surface,
+    /// the two others (dx, dy) represent the displacement of the top-left corner of the surface.
+    /// It allows you to control the direction of the resizing if necessary.
+    /// 
+    /// Implementations may ignore the dx and dy arguments.
+    /// 
+    /// Returns true if the resize was successful.
+    pub fn resize(&self, width: i32, height: i32, dx: i32, dy: i32) -> bool {
+        self.native.resize(width, height, dx, dy)
     }
 }
 
-impl<N: native::NativeSurface> Drop for EGLSurface<N> {
+impl Drop for EGLSurface {
     fn drop(&mut self) {
         unsafe {
             ffi::egl::DestroySurface(**self.display, *self.surface.get_mut() as *const _);

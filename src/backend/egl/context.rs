@@ -1,96 +1,106 @@
 //! EGL context related structs
-
-use super::{ffi, wrap_egl_call, Error, MakeCurrentError};
-use crate::backend::egl::display::{EGLDisplay, EGLDisplayHandle};
-use crate::backend::egl::native::NativeSurface;
-use crate::backend::egl::{native, EGLSurface};
-use crate::backend::graphics::PixelFormat;
 use std::os::raw::c_int;
 use std::ptr;
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::atomic::Ordering;
+
+use super::{ffi, wrap_egl_call, Error, MakeCurrentError};
+use crate::backend::egl::display::{EGLDisplay, PixelFormat};
+use crate::backend::egl::native::EGLNativeSurface;
+use crate::backend::egl::EGLSurface;
+
 
 /// EGL context for rendering
 #[derive(Debug)]
 pub struct EGLContext {
     context: ffi::egl::types::EGLContext,
-    display: Arc<EGLDisplayHandle>,
+    pub(crate) display: EGLDisplay,
     config_id: ffi::egl::types::EGLConfig,
-    pixel_format: PixelFormat,
+    pixel_format: Option<PixelFormat>,
 }
 // EGLContexts can be moved between threads safely
 unsafe impl Send for EGLContext {}
 unsafe impl Sync for EGLContext {}
 
 impl EGLContext {
+    pub fn new<L>(
+        display: &EGLDisplay,
+        log: L,
+    ) -> Result<EGLContext, Error>
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
+        Self::new_internal(display, None, log)
+    }
+
     /// Create a new [`EGLContext`] from a given [`NativeDisplay`](native::NativeDisplay)
-    pub(crate) fn new<B, N, L>(
-        display: &EGLDisplay<B, N>,
-        mut attributes: GlAttributes,
+    pub fn new_with_config<L>(
+        display: &EGLDisplay,
+        attributes: GlAttributes,
         reqs: PixelFormatRequirements,
         log: L,
     ) -> Result<EGLContext, Error>
     where
         L: Into<Option<::slog::Logger>>,
-        B: native::Backend,
-        N: native::NativeDisplay<B>,
     {
-        let log = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "renderer_egl"));
+        Self::new_internal(display, Some((attributes, reqs)), log)
+    }
 
-        // If no version is given, try OpenGLES 3.0, if available,
-        // fallback to 2.0 otherwise
-        let version = match attributes.version {
-            Some((3, x)) => (3, x),
-            Some((2, x)) => (2, x),
+    fn new_internal<L>(
+        display: &EGLDisplay,
+        config: Option<(GlAttributes, PixelFormatRequirements)>,
+        log: L,
+    ) -> Result<EGLContext, Error>
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
+        let log = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "backend_egl"));
+
+        let (pixel_format, config_id) = match config {
+            Some((attributes, reqs)) => {
+                let (format, config_id) = display.choose_config(attributes, reqs)?;
+                (Some(format), config_id)
+            },
             None => {
-                debug!(log, "Trying to initialize EGL with OpenGLES 3.0");
-                attributes.version = Some((3, 0));
-                match EGLContext::new(display, attributes, reqs, log.clone()) {
-                    Ok(x) => return Ok(x),
-                    Err(err) => {
-                        warn!(log, "EGL OpenGLES 3.0 Initialization failed with {}", err);
-                        debug!(log, "Trying to initialize EGL with OpenGLES 2.0");
-                        attributes.version = Some((2, 0));
-                        return EGLContext::new(display, attributes, reqs, log.clone());
-                    }
+                if !display.extensions.iter().any(|x| x == "EGL_KHR_no_config_context") &&
+                   !display.extensions.iter().any(|x| x == "EGL_MESA_configless_context") &&
+                   !display.extensions.iter().any(|x| x == "EGL_KHR_surfaceless_context")
+                {
+                    return Err(Error::EglExtensionNotSupported(&["EGL_KHR_no_config_context", "EGL_MESA_configless_context", "EGL_KHR_surfaceless_context"]));
                 }
-            }
-            Some((1, x)) => {
-                error!(log, "OpenGLES 1.* is not supported by the EGL renderer backend");
-                return Err(Error::OpenGlVersionNotSupported((1, x)));
-            }
-            Some(version) => {
-                error!(
-                    log,
-                    "OpenGLES {:?} is unknown and not supported by the EGL renderer backend", version
-                );
-                return Err(Error::OpenGlVersionNotSupported(version));
+                (None, ffi::egl::NO_CONFIG_KHR)
             }
         };
 
-        let (pixel_format, config_id) = display.choose_config(attributes, reqs)?;
-
         let mut context_attributes = Vec::with_capacity(10);
 
-        if display.egl_version >= (1, 5) || display.extensions.iter().any(|s| s == "EGL_KHR_create_context") {
-            trace!(log, "Setting CONTEXT_MAJOR_VERSION to {}", version.0);
-            context_attributes.push(ffi::egl::CONTEXT_MAJOR_VERSION as i32);
-            context_attributes.push(version.0 as i32);
-            trace!(log, "Setting CONTEXT_MINOR_VERSION to {}", version.1);
-            context_attributes.push(ffi::egl::CONTEXT_MINOR_VERSION as i32);
-            context_attributes.push(version.1 as i32);
+        if let Some((attributes, _)) = config {
+            let version = attributes.version;
 
-            if attributes.debug && display.egl_version >= (1, 5) {
-                trace!(log, "Setting CONTEXT_OPENGL_DEBUG to TRUE");
-                context_attributes.push(ffi::egl::CONTEXT_OPENGL_DEBUG as i32);
-                context_attributes.push(ffi::egl::TRUE as i32);
+            if display.egl_version >= (1, 5) || display.extensions.iter().any(|s| s == "EGL_KHR_create_context") {
+                trace!(log, "Setting CONTEXT_MAJOR_VERSION to {}", version.0);
+                context_attributes.push(ffi::egl::CONTEXT_MAJOR_VERSION as i32);
+                context_attributes.push(version.0 as i32);
+                trace!(log, "Setting CONTEXT_MINOR_VERSION to {}", version.1);
+                context_attributes.push(ffi::egl::CONTEXT_MINOR_VERSION as i32);
+                context_attributes.push(version.1 as i32);
+
+                if attributes.debug && display.egl_version >= (1, 5) {
+                    trace!(log, "Setting CONTEXT_OPENGL_DEBUG to TRUE");
+                    context_attributes.push(ffi::egl::CONTEXT_OPENGL_DEBUG as i32);
+                    context_attributes.push(ffi::egl::TRUE as i32);
+                }
+
+                context_attributes.push(ffi::egl::CONTEXT_FLAGS_KHR as i32);
+                context_attributes.push(0);
+            } else if display.egl_version >= (1, 3) {
+                trace!(log, "Setting CONTEXT_CLIENT_VERSION to {}", version.0);
+                context_attributes.push(ffi::egl::CONTEXT_CLIENT_VERSION as i32);
+                context_attributes.push(version.0 as i32);
             }
-
-            context_attributes.push(ffi::egl::CONTEXT_FLAGS_KHR as i32);
-            context_attributes.push(0);
-        } else if display.egl_version >= (1, 3) {
-            trace!(log, "Setting CONTEXT_CLIENT_VERSION to {}", version.0);
+        } else {
+            trace!(log, "Setting CONTEXT_CLIENT_VERSION to 2");
             context_attributes.push(ffi::egl::CONTEXT_CLIENT_VERSION as i32);
-            context_attributes.push(version.0 as i32);
+            context_attributes.push(2);
         }
 
         context_attributes.push(ffi::egl::NONE as i32);
@@ -111,7 +121,7 @@ impl EGLContext {
 
         Ok(EGLContext {
             context,
-            display: display.display.clone(),
+            display: display.clone(),
             config_id,
             pixel_format,
         })
@@ -124,12 +134,10 @@ impl EGLContext {
     ///
     /// This function is marked unsafe, because the context cannot be made current
     /// on multiple threads.
-    pub unsafe fn make_current_with_surface<N>(&self, surface: &EGLSurface<N>) -> Result<(), MakeCurrentError>
-    where
-        N: NativeSurface,
+    pub unsafe fn make_current_with_surface(&self, surface: &EGLSurface) -> Result<(), MakeCurrentError>
     {
         let surface_ptr = surface.surface.load(Ordering::SeqCst);
-        wrap_egl_call(|| ffi::egl::MakeCurrent(**self.display, surface_ptr, surface_ptr, self.context))
+        wrap_egl_call(|| ffi::egl::MakeCurrent(**self.display.display, surface_ptr, surface_ptr, self.context))
             .map(|_| ())
             .map_err(Into::into)
     }
@@ -143,7 +151,7 @@ impl EGLContext {
     pub unsafe fn make_current(&self) -> Result<(), MakeCurrentError> {
         wrap_egl_call(|| {
             ffi::egl::MakeCurrent(
-                **self.display,
+                **self.display.display,
                 ffi::egl::NO_SURFACE,
                 ffi::egl::NO_SURFACE,
                 self.context,
@@ -159,12 +167,12 @@ impl EGLContext {
     }
 
     /// Returns the egl config for this context
-    pub fn get_config_id(&self) -> ffi::egl::types::EGLConfig {
+    pub fn config_id(&self) -> ffi::egl::types::EGLConfig {
         self.config_id
     }
 
     /// Returns the pixel format of the main framebuffer of the context.
-    pub fn get_pixel_format(&self) -> PixelFormat {
+    pub fn pixel_format(&self) -> Option<PixelFormat> {
         self.pixel_format
     }
 
@@ -175,7 +183,7 @@ impl EGLContext {
         if self.is_current() {
             wrap_egl_call(|| unsafe {
                 ffi::egl::MakeCurrent(
-                    **self.display,
+                    **self.display.display,
                     ffi::egl::NO_SURFACE,
                     ffi::egl::NO_SURFACE,
                     ffi::egl::NO_CONTEXT,
@@ -192,7 +200,7 @@ impl Drop for EGLContext {
             // We need to ensure the context is unbound, otherwise it egl stalls the destroy call
             // ignore failures at this point
             let _ = self.unbind();
-            ffi::egl::DestroyContext(**self.display, self.context);
+            ffi::egl::DestroyContext(**self.display.display, self.context);
         }
     }
 }
@@ -202,9 +210,9 @@ impl Drop for EGLContext {
 pub struct GlAttributes {
     /// Describes the OpenGL API and version that are being requested when a context is created.
     ///
-    /// `Some(3, 0)` will request a OpenGL ES 3.0 context for example.
-    /// `None` means "don't care" (minimum will be 2.0).
-    pub version: Option<(u8, u8)>,
+    /// `(3, 0)` will request a OpenGL ES 3.0 context for example.
+    /// `(2, 0)` is the minimum.
+    pub version: (u8, u8),
     /// OpenGL profile to use
     pub profile: Option<GlProfile>,
     /// Whether to enable the debug flag of the context.
