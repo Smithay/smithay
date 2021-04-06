@@ -16,7 +16,7 @@ use slog::Logger;
 use smithay::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
 use smithay::{
     backend::{
-        drm::{
+        drm_old::{
             atomic::{AtomicDrmDevice, AtomicDrmSurface},
             common::fallback::{FallbackDevice, FallbackSurface},
             device_bind,
@@ -679,9 +679,9 @@ impl DrmRenderer {
                     match err {
                         SwapBuffersError::AlreadySwapped => false,
                         SwapBuffersError::TemporaryFailure(err) => {
-                            match err.downcast_ref::<smithay::backend::drm::common::Error>() {
-                                Some(&smithay::backend::drm::common::Error::DeviceInactive) => false,
-                                Some(&smithay::backend::drm::common::Error::Access {
+                            match err.downcast_ref::<smithay::backend::drm_old::common::Error>() {
+                                Some(&smithay::backend::drm_old::common::Error::DeviceInactive) => false,
+                                Some(&smithay::backend::drm_old::common::Error::Access {
                                     ref source, ..
                                 }) if matches!(source.get_ref(), drm::SystemError::PermissionDenied) => false,
                                 _ => true,

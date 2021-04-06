@@ -1,8 +1,6 @@
 #![warn(rust_2018_idioms)]
 
 #[macro_use]
-extern crate glium;
-#[macro_use]
 extern crate slog;
 #[macro_use(define_roles)]
 extern crate smithay;
@@ -12,13 +10,10 @@ use std::{cell::RefCell, rc::Rc};
 use slog::Drain;
 use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
 
-#[macro_use]
-mod shaders;
 mod buffer_utils;
-mod glium_drawer;
+mod drawing;
 mod input_handler;
 mod shell;
-mod shm_load;
 mod state;
 #[cfg(feature = "udev")]
 mod udev;
@@ -41,6 +36,7 @@ fn main() {
     // A logger facility, here we use the terminal here
     let log = slog::Logger::root(
         slog_async::Async::default(slog_term::term_full().fuse()).fuse(),
+        //std::sync::Mutex::new(slog_term::term_full().fuse()).fuse(),
         o!(),
     );
 

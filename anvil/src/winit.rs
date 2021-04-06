@@ -1,9 +1,9 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
-#[cfg(feature = "egl")]
-use smithay::backend::egl::EGLGraphicsBackend;
+//#[cfg(feature = "egl")]
+//use smithay::backend::egl::EGLGraphicsBackend;
 use smithay::{
-    backend::{graphics::gl::GLGraphicsBackend, input::InputBackend, winit},
+    backend::{renderer::Frame, input::InputBackend, winit, SwapBuffersError},
     reexports::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
@@ -17,19 +17,20 @@ use smithay::{
 
 use slog::Logger;
 
-use crate::buffer_utils::BufferUtils;
-use crate::glium_drawer::GliumDrawer;
 use crate::state::AnvilState;
+use crate::buffer_utils::BufferUtils;
+use crate::drawing::*;
 
 pub fn run_winit(
     display: Rc<RefCell<Display>>,
     event_loop: &mut EventLoop<AnvilState>,
     log: Logger,
 ) -> Result<(), ()> {
-    let (renderer, mut input) = winit::init(log.clone()).map_err(|err| {
+    let (mut renderer, mut input) = winit::init(log.clone()).map_err(|err| {
         slog::crit!(log, "Failed to initialize Winit backend: {}", err);
     })?;
 
+    /*
     #[cfg(feature = "egl")]
     let egl_buffer_reader = Rc::new(RefCell::new(
         if let Ok(egl_buffer_reader) = renderer.bind_wl_display(&display.borrow()) {
@@ -43,10 +44,10 @@ pub fn run_winit(
     #[cfg(feature = "egl")]
     let buffer_utils = BufferUtils::new(egl_buffer_reader, log.clone());
     #[cfg(not(feature = "egl"))]
+    */
     let buffer_utils = BufferUtils::new(log.clone());
 
-    let (w, h) = renderer.get_framebuffer_dimensions();
-    let drawer = GliumDrawer::init(renderer, buffer_utils.clone(), log.clone());
+    let (w, h): (u32, u32) = renderer.window_size().physical_size.into();
 
     /*
      * Initialize the globals
@@ -94,9 +95,13 @@ pub fn run_winit(
     info!(log, "Initialization completed, starting the main loop.");
 
     while state.running.load(Ordering::SeqCst) {
-        input
+        if input
             .dispatch_new_events(|event, _| state.process_input_event(event))
-            .unwrap();
+            .is_err()
+        {
+            state.running.store(false, Ordering::SeqCst);
+            break;
+        }
 
         // Send frame events so that client start drawing their next frame
         state
@@ -107,12 +112,11 @@ pub fn run_winit(
 
         // drawing logic
         {
-            use glium::Surface;
-            let mut frame = drawer.draw();
-            frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
+            let mut frame = renderer.begin().expect("Failed to render frame");
+            frame.clear([0.8, 0.8, 0.9, 1.0]);
 
             // draw the windows
-            drawer.draw_windows(&mut frame, &*state.window_map.borrow(), None, state.ctoken);
+            draw_windows(&mut renderer, &mut frame, &*state.window_map.borrow(), None, state.ctoken, &log);
 
             let (x, y) = *state.pointer_location.borrow();
             // draw the dnd icon if any
@@ -120,7 +124,7 @@ pub fn run_winit(
                 let guard = state.dnd_icon.lock().unwrap();
                 if let Some(ref surface) = *guard {
                     if surface.as_ref().is_alive() {
-                        drawer.draw_dnd_icon(&mut frame, surface, (x as i32, y as i32), state.ctoken);
+                        draw_dnd_icon(&mut renderer, &mut frame, surface, (x as i32, y as i32), state.ctoken, &log);
                     }
                 }
             }
@@ -135,18 +139,22 @@ pub fn run_winit(
                 if reset {
                     *guard = CursorImageStatus::Default;
                 }
+                
                 // draw as relevant
                 if let CursorImageStatus::Image(ref surface) = *guard {
-                    drawer.draw_software_cursor(&mut frame, surface, (x as i32, y as i32), state.ctoken);
+                    renderer.window().set_cursor_visible(false);
+                    draw_cursor(&mut renderer, &mut frame, surface, (x as i32, y as i32), state.ctoken, &log);
                 } else {
-                    drawer.draw_hardware_cursor(&CursorIcon::Default, (0, 0), (x as i32, y as i32));
+                    renderer.window().set_cursor_visible(true);
                 }
             }
 
-            if let Err(err) = frame.finish() {
-                error!(log, "Error during rendering: {:?}", err);
+            if let Err(SwapBuffersError::ContextLost(err)) = frame.finish() {
+                error!(log, "Critical Rendering Error: {}", err);
+                state.running.store(false, Ordering::SeqCst);
             }
         }
+
 
         if event_loop
             .dispatch(Some(Duration::from_millis(16)), &mut state)

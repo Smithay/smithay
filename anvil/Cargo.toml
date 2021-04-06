@@ -8,18 +8,17 @@ edition = "2018"
 
 [dependencies]
 bitflags = "1.2.1"
-glium = { version = "0.29.0", default-features = false }
 input = { version = "0.5.0", features = ["udev"], optional = true }
 rand = "0.8"
 slog = { version = "2.1.1" }
-slog-term = "2.3"
+slog-term = "2.8"
 slog-async = "2.2"
 xkbcommon = "0.4.0"
 
 [dependencies.smithay]
 path = ".."
 default-features = false
-features = [ "renderer_glium", "backend_egl", "wayland_frontend" ]
+features = [ "renderer_gl", "backend_egl", "wayland_frontend" ]
 
 [dependencies.x11rb]
 optional = true
@@ -34,7 +33,7 @@ gl_generator = "0.14"
 default = [ "winit", "egl", "udev", "logind", "xwayland" ]
 egl = [ "smithay/use_system_lib" ]
 winit = [ "smithay/backend_winit" ]
-udev = [ "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_drm_atomic", "smithay/backend_drm_legacy", "smithay/backend_drm_gbm", "smithay/backend_drm_eglstream", "smithay/backend_drm_egl", "smithay/backend_session", "input" ]
+udev = [ "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_drm", "smithay/backend_gbm", "smithay/backend_egl", "smithay/backend_session", "input" ]
 logind = [ "smithay/backend_session_logind" ]
 elogind = ["logind", "smithay/backend_session_elogind" ]
 xwayland = [ "smithay/xwayland", "x11rb" ]

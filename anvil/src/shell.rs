@@ -672,7 +672,7 @@ pub struct CommitedState {
 
 #[derive(Default)]
 pub struct SurfaceData {
-    pub texture: Option<crate::buffer_utils::BufferTextures>,
+    pub texture: Option<Box<dyn std::any::Any + 'static>>,
     pub geometry: Option<Rectangle>,
     pub resize_state: ResizeState,
     /// Minimum width and height, as requested by the surface.
