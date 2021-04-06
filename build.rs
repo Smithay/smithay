@@ -5,8 +5,6 @@ fn gl_generate() {
 
     let dest = PathBuf::from(&env::var("OUT_DIR").unwrap());
 
-    println!("cargo:rerun-if-changed=build.rs");
-
     if env::var_os("CARGO_FEATURE_BACKEND_EGL").is_some() {
         let mut file = File::create(&dest.join("egl_bindings.rs")).unwrap();
         Registry::new(
@@ -18,27 +16,15 @@ fn gl_generate() {
                 "EGL_KHR_create_context",
                 "EGL_EXT_create_context_robustness",
                 "EGL_KHR_create_context_no_error",
-                "EGL_KHR_platform_x11",
-                "EGL_KHR_platform_android",
-                "EGL_KHR_platform_wayland",
-                "EGL_KHR_platform_gbm",
+                "EGL_KHR_no_config_context",
                 "EGL_EXT_platform_base",
                 "EGL_EXT_platform_x11",
-                "EGL_MESA_platform_gbm",
                 "EGL_EXT_platform_wayland",
-                "EGL_EXT_platform_device",
+                "EGL_MESA_platform_gbm",
+                "EGL_WL_bind_wayland_display",
                 "EGL_KHR_image_base",
-                "EGL_EXT_output_base",
-                "EGL_EXT_output_drm",
-                "EGL_EXT_device_drm",
-                "EGL_EXT_device_enumeration",
-                "EGL_EXT_device_query",
-                "EGL_KHR_stream",
-                "EGL_KHR_stream_producer_eglsurface",
-                "EGL_EXT_stream_consumer_egloutput",
-                "EGL_KHR_stream_fifo",
-                "EGL_NV_output_drm_flip_event",
-                "EGL_NV_stream_attrib",
+                "EGL_EXT_image_dma_buf_import",
+                "EGL_EXT_image_dma_buf_import_modifiers",
             ],
         )
         .write_bindings(gl_generator::GlobalGenerator, &mut file)
@@ -52,7 +38,12 @@ fn gl_generate() {
             (3, 2),
             Profile::Compatibility,
             Fallbacks::None,
-            ["GL_OES_EGL_image"],
+            [
+                "GL_OES_EGL_image",
+                "GL_OES_EGL_image_external",
+                "GL_EXT_texture_format_BGRA8888",
+                "GL_EXT_unpack_subimage",
+            ],
         )
         .write_bindings(gl_generator::StructGenerator, &mut file)
         .unwrap();
