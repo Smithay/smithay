@@ -1,18 +1,9 @@
-//!
-//! Module for common/shared types of the various [`Device`](::backend::drm::Device)
-//! and [`Surface`](::backend::drm::Surface) implementations of the `backend::drm` module.
-//!
-
-use crate::backend::graphics::SwapBuffersError;
-use drm::control::{connector, crtc, Mode, RawResourceHandle};
+//use crate::backend::graphics::SwapBuffersError;
+use drm::control::{connector, crtc, plane, Mode, RawResourceHandle};
 use std::path::PathBuf;
 
-pub mod fallback;
-
-/// Errors thrown by the [`LegacyDrmDevice`](::backend::drm::legacy::LegacyDrmDevice),
-/// [`AtomicDrmDevice`](::backend::drm::atomic::AtomicDrmDevice)
-/// and their surfaces: [`LegacyDrmSurface`](::backend::drm::legacy::LegacyDrmSurface)
-/// and [`AtomicDrmSurface`](::backend::drm::atomic::AtomicDrmSurface).
+/// Errors thrown by the [`DrmDevice`](::backend::drm::DrmDevice)
+/// and the [`DrmSurface`](::backend::drm::DrmSurface).
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     /// Unable to acquire DRM master
@@ -26,7 +17,7 @@ pub enum Error {
         /// Device on which the error was generated
         dev: Option<PathBuf>,
         /// Underlying device error
-        source: failure::Compat<drm::SystemError>,
+        source: drm::SystemError,
     },
     /// Unable to determine device id of drm device
     #[error("Unable to determine device id of drm device")]
@@ -43,6 +34,10 @@ pub enum Error {
     /// This operation would result in a surface without connectors.
     #[error("Surface of crtc `{0:?}` would have no connectors, which is not accepted")]
     SurfaceWithoutConnectors(crtc::Handle),
+    #[error("Plane `{1:?}` is not compatible for use with crtc `{0:?}`")]
+    PlaneNotCompatible(crtc::Handle, plane::Handle),
+    #[error("Non-Primary Planes (provided was `{0:?}`) are not available for use with legacy devices")]
+    NonPrimaryPlane(plane::Handle),
     /// No encoder was found for a given connector on the set crtc
     #[error("No encoder found for the given connector '{connector:?}' on crtc `{crtc:?}`")]
     NoSuitableEncoder {
@@ -50,14 +45,6 @@ pub enum Error {
         connector: connector::Handle,
         /// CRTC
         crtc: crtc::Handle,
-    },
-    /// No matching primary and cursor plane could be found for the given crtc
-    #[error("No matching primary and cursor plane could be found for crtc {crtc:?} on {dev:?}")]
-    NoSuitablePlanes {
-        /// CRTC
-        crtc: crtc::Handle,
-        /// Device on which the error was generated
-        dev: Option<PathBuf>,
     },
     /// The DrmDevice is missing a required property
     #[error("The DrmDevice is missing a required property '{name}' for handle ({handle:?})")]
@@ -72,6 +59,7 @@ pub enum Error {
     TestFailed(crtc::Handle),
 }
 
+/*
 impl Into<SwapBuffersError> for Error {
     fn into(self) -> SwapBuffersError {
         match self {
@@ -95,3 +83,4 @@ impl Into<SwapBuffersError> for Error {
         }
     }
 }
+*/
