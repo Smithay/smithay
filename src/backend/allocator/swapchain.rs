@@ -86,9 +86,6 @@ impl<A: Allocator<B>, B: Buffer> Swapchain<A, B> {
 
         self.width = width;
         self.height = height;
-
-        for mut slot in &mut self.slots {
-            let _ = std::mem::replace(&mut slot, &mut Slot::default());
-        }
+        self.slots = Default::default();
     }
 }
