@@ -12,7 +12,7 @@ use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
 #[cfg(feature = "use_system_lib")]
 use wayland_sys::server::wl_display;
 
-use crate::backend::allocator::{Buffer, dmabuf::Dmabuf, Fourcc, Modifier};
+use crate::backend::allocator::{Buffer, dmabuf::Dmabuf, Fourcc, Modifier, Format as DrmFormat};
 use crate::backend::egl::{
     ffi::egl::types::EGLImage,
     ffi, wrap_egl_call, EGLError, Error,
@@ -55,8 +55,8 @@ pub struct EGLDisplay {
     pub(crate) display: Arc<EGLDisplayHandle>,
     pub(crate) egl_version: (i32, i32),
     pub(crate) extensions: Vec<String>,
-    pub(crate) dmabuf_import_formats: HashSet<(u32, u64)>,
-    pub(crate) dmabuf_render_formats: HashSet<(u32, u64)>,
+    pub(crate) dmabuf_import_formats: HashSet<DrmFormat>,
+    pub(crate) dmabuf_render_formats: HashSet<DrmFormat>,
     surface_type: ffi::EGLint,
     logger: slog::Logger,
 }
@@ -464,7 +464,7 @@ impl EGLDisplay {
     }
 }
 
-fn get_dmabuf_formats(display: &ffi::egl::types::EGLDisplay, extensions: &[String], log: &::slog::Logger) -> Result<(HashSet<(u32, u64)>, HashSet<(u32, u64)>), EGLError>
+fn get_dmabuf_formats(display: &ffi::egl::types::EGLDisplay, extensions: &[String], log: &::slog::Logger) -> Result<(HashSet<DrmFormat>, HashSet<DrmFormat>), EGLError>
 {
     use std::convert::TryFrom;
 
@@ -481,8 +481,8 @@ fn get_dmabuf_formats(display: &ffi::egl::types::EGLDisplay, extensions: &[Strin
         // given that the modifiers extension isn't supported everywhere.
         if !extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers") {
             vec![
-                Fourcc::Argb8888 as u32,
-                Fourcc::Xrgb8888 as u32,
+                Fourcc::Argb8888,
+                Fourcc::Xrgb8888,
             ]
         } else {
             let mut num = 0i32;
@@ -499,28 +499,34 @@ fn get_dmabuf_formats(display: &ffi::egl::types::EGLDisplay, extensions: &[Strin
             unsafe {
                 formats.set_len(num as usize);
             }
-            formats
+            formats.into_iter().flat_map(|x| Fourcc::try_from(x).ok()).collect::<Vec<_>>()
         }
     };
 
     let mut texture_formats = HashSet::new();
     let mut render_formats = HashSet::new();
 
-    for format in formats {
+    for fourcc in formats {
         let mut num = 0i32;
         wrap_egl_call(|| unsafe {
-            ffi::egl::QueryDmaBufModifiersEXT(*display, format as i32, 0, std::ptr::null_mut(), std::ptr::null_mut(), &mut num as *mut _)
+            ffi::egl::QueryDmaBufModifiersEXT(*display, fourcc as i32, 0, std::ptr::null_mut(), std::ptr::null_mut(), &mut num as *mut _)
         })?;
 
         if num == 0 {
-            texture_formats.insert((format, Modifier::Invalid.into()));
-            render_formats.insert((format, Modifier::Invalid.into()));
+            texture_formats.insert(DrmFormat {
+                code: fourcc,
+                modifier: Modifier::Invalid.into()
+            });
+            render_formats.insert(DrmFormat {
+                code: fourcc,
+                modifier: Modifier::Invalid.into()
+            });
         } else {
             let mut mods: Vec<u64> = Vec::with_capacity(num as usize);
             let mut external: Vec<ffi::egl::types::EGLBoolean> = Vec::with_capacity(num as usize);
 
             wrap_egl_call(|| unsafe {
-                ffi::egl::QueryDmaBufModifiersEXT(*display, format as i32, num, mods.as_mut_ptr(), external.as_mut_ptr(), &mut num as *mut _)
+                ffi::egl::QueryDmaBufModifiersEXT(*display, fourcc as i32, num, mods.as_mut_ptr(), external.as_mut_ptr(), &mut num as *mut _)
             })?;
 
             unsafe {
@@ -529,20 +535,20 @@ fn get_dmabuf_formats(display: &ffi::egl::types::EGLDisplay, extensions: &[Strin
             }
 
             for (modifier, external_only) in mods.into_iter().zip(external.into_iter()) {
-                texture_formats.insert((format, modifier));
+                let format = DrmFormat {
+                    code: fourcc,
+                    modifier: Modifier::from(modifier),
+                };
+                texture_formats.insert(format);
                 if external_only == 0 {
-                    render_formats.insert((format, modifier));
+                    render_formats.insert(format);
                 }
             }
         }
     }
 
-    info!(log, "Supported dmabuf import formats: {:#?}",
-        texture_formats.clone().into_iter()
-        .map(|(fmt, modi)| (Fourcc::try_from(fmt), Modifier::from(modi))).collect::<Vec<_>>());
-    info!(log, "Supported dmabuf render formats: {:#?}",
-        render_formats.clone().into_iter()
-        .map(|(fmt, modi)| (Fourcc::try_from(fmt), Modifier::from(modi))).collect::<Vec<_>>());
+    info!(log, "Supported dmabuf import formats: {:#?}", texture_formats);
+    info!(log, "Supported dmabuf render formats: {:#?}", render_formats);
 
     Ok((texture_formats, render_formats))
 }
