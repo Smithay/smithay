@@ -1,5 +1,6 @@
 //! Type safe native types for safe egl initialisation
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
@@ -11,7 +12,7 @@ use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
 #[cfg(feature = "use_system_lib")]
 use wayland_sys::server::wl_display;
 
-use crate::backend::allocator::{Buffer, dmabuf::Dmabuf};
+use crate::backend::allocator::{Buffer, dmabuf::Dmabuf, Fourcc, Modifier};
 use crate::backend::egl::{
     ffi::egl::types::EGLImage,
     ffi, wrap_egl_call, EGLError, Error,
@@ -54,6 +55,8 @@ pub struct EGLDisplay {
     pub(crate) display: Arc<EGLDisplayHandle>,
     pub(crate) egl_version: (i32, i32),
     pub(crate) extensions: Vec<String>,
+    pub(crate) dmabuf_import_formats: HashSet<(u32, u64)>,
+    pub(crate) dmabuf_render_formats: HashSet<(u32, u64)>,
     surface_type: ffi::EGLint,
     logger: slog::Logger,
 }
@@ -137,6 +140,9 @@ impl EGLDisplay {
         };
         info!(log, "Supported EGL display extensions: {:?}", extensions);
 
+        let (dmabuf_import_formats, dmabuf_render_formats) =
+            get_dmabuf_formats(&display, &extensions, &log).map_err(Error::DisplayCreationError)?;
+
         // egl <= 1.2 does not support OpenGL ES (maybe we want to support OpenGL in the future?)
         if egl_version <= (1, 2) {
             return Err(Error::OpenGlesNotSupported(None));
@@ -149,6 +155,8 @@ impl EGLDisplay {
             surface_type: native.surface_type(),
             egl_version,
             extensions,
+            dmabuf_import_formats,
+            dmabuf_render_formats,
             logger: log,
         })
     }
@@ -454,6 +462,89 @@ impl EGLDisplay {
         .map_err(Error::OtherEGLDisplayAlreadyBound)?;
         Ok(EGLBufferReader::new(self.display.clone(), display.c_ptr()))
     }
+}
+
+fn get_dmabuf_formats(display: &ffi::egl::types::EGLDisplay, extensions: &[String], log: &::slog::Logger) -> Result<(HashSet<(u32, u64)>, HashSet<(u32, u64)>), EGLError>
+{
+    use std::convert::TryFrom;
+
+    if !extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import") {
+        warn!(log, "Dmabuf import extension not available");
+        return Ok((HashSet::new(), HashSet::new()));
+    }
+
+    let formats = {
+        // when we only have the image_dmabuf_import extension we can't query
+        // which formats are supported. These two are on almost always
+        // supported; it's the intended way to just try to create buffers.
+        // Just a guess but better than not supporting dmabufs at all,
+        // given that the modifiers extension isn't supported everywhere.
+        if !extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers") {
+            vec![
+                Fourcc::Argb8888 as u32,
+                Fourcc::Xrgb8888 as u32,
+            ]
+        } else {
+            let mut num = 0i32;
+            wrap_egl_call(|| unsafe {
+                ffi::egl::QueryDmaBufFormatsEXT(*display, 0, std::ptr::null_mut(), &mut num as *mut _)
+            })?;
+            if num == 0 {
+                return Ok((HashSet::new(), HashSet::new()));
+            }
+            let mut formats: Vec<u32> = Vec::with_capacity(num as usize);
+            wrap_egl_call(|| unsafe {
+                ffi::egl::QueryDmaBufFormatsEXT(*display, num, formats.as_mut_ptr() as *mut _, &mut num as *mut _)
+            })?;
+            unsafe {
+                formats.set_len(num as usize);
+            }
+            formats
+        }
+    };
+
+    let mut texture_formats = HashSet::new();
+    let mut render_formats = HashSet::new();
+
+    for format in formats {
+        let mut num = 0i32;
+        wrap_egl_call(|| unsafe {
+            ffi::egl::QueryDmaBufModifiersEXT(*display, format as i32, 0, std::ptr::null_mut(), std::ptr::null_mut(), &mut num as *mut _)
+        })?;
+
+        if num == 0 {
+            texture_formats.insert((format, Modifier::Invalid.into()));
+            render_formats.insert((format, Modifier::Invalid.into()));
+        } else {
+            let mut mods: Vec<u64> = Vec::with_capacity(num as usize);
+            let mut external: Vec<ffi::egl::types::EGLBoolean> = Vec::with_capacity(num as usize);
+
+            wrap_egl_call(|| unsafe {
+                ffi::egl::QueryDmaBufModifiersEXT(*display, format as i32, num, mods.as_mut_ptr(), external.as_mut_ptr(), &mut num as *mut _)
+            })?;
+
+            unsafe {
+                mods.set_len(num as usize);
+                external.set_len(num as usize);
+            }
+
+            for (modifier, external_only) in mods.into_iter().zip(external.into_iter()) {
+                texture_formats.insert((format, modifier));
+                if external_only == 0 {
+                    render_formats.insert((format, modifier));
+                }
+            }
+        }
+    }
+
+    info!(log, "Supported dmabuf import formats: {:#?}",
+        texture_formats.clone().into_iter()
+        .map(|(fmt, modi)| (Fourcc::try_from(fmt), Modifier::from(modi))).collect::<Vec<_>>());
+    info!(log, "Supported dmabuf render formats: {:#?}",
+        render_formats.clone().into_iter()
+        .map(|(fmt, modi)| (Fourcc::try_from(fmt), Modifier::from(modi))).collect::<Vec<_>>());
+
+    Ok((texture_formats, render_formats))
 }
 
 /// Type to receive [`EGLImages`] for EGL-based [`WlBuffer`]s.
