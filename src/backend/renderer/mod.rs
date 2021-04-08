@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::error::Error;
 
 use cgmath::{prelude::*, Matrix3, Vector2};
@@ -111,6 +112,9 @@ impl From<wayland_server::protocol::wl_output::Transform> for Transform {
 
 pub trait Bind<Target>: Unbind {
     fn bind(&mut self, target: Target) -> Result<(), <Self as Renderer>::Error>;
+    fn supported_formats(&self) -> Option<HashSet<crate::backend::allocator::Format>> {
+        None
+    }
 }
 
 pub trait Unbind: Renderer {

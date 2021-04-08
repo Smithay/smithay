@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ffi::CStr;
 use std::ptr;
 use std::sync::Arc;
@@ -5,7 +6,7 @@ use std::sync::Arc;
 use cgmath::{prelude::*, Matrix3, Vector2};
 
 mod shaders;
-use crate::backend::allocator::dmabuf::{Dmabuf, WeakDmabuf};
+use crate::backend::allocator::{dmabuf::{Dmabuf, WeakDmabuf}, Format};
 use crate::backend::egl::{EGLContext, EGLSurface, ffi::egl::types::EGLImage};
 use super::{Renderer, Frame, Bind, Unbind, Transform, Texture};
 
@@ -345,6 +346,10 @@ impl Bind<Dmabuf> for Gles2Renderer {
         }
         self.current_buffer = Some(buffer);
         Ok(())
+    }
+
+    fn supported_formats(&self) -> Option<HashSet<Format>> {
+        Some(self.internal.egl.display.dmabuf_render_formats.clone())
     }
 }
 
