@@ -15,7 +15,7 @@ bitflags = "1"
 calloop = "0.6.2"
 cgmath = "0.18.0"
 dbus = { version = "0.9.0", optional = true }
-drm-fourcc = "^2.0.0"
+drm-fourcc = "^2.1.0"
 drm = { version = "^0.4.0-alpha1", git = "https://github.com/drakulix/drm-rs", branch = "next", optional = true }
 gbm = { version = "^0.6.0", git = "https://github.com/drakulix/gbm.rs", branch = "develop", optional = true, default-features = false, features = ["drm-support"] }
 image = { version = "0.23.0", optional = true, default-features = false }
