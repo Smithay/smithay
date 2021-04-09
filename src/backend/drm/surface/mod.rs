@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::sync::Arc;
 
@@ -9,12 +10,14 @@ pub(super) mod legacy;
 use super::error::Error;
 use atomic::AtomicDrmSurface;
 use legacy::LegacyDrmSurface;
+use crate::backend::allocator::Format;
 
 pub struct DrmSurface<A: AsRawFd + 'static>
 {
     pub(super) crtc: crtc::Handle,
     pub(super) plane: plane::Handle,
     pub(super) internal: Arc<DrmSurfaceInternal<A>>,
+    pub(super) formats: HashSet<Format>,
 }
 
 pub enum DrmSurfaceInternal<A: AsRawFd + 'static> {
@@ -176,5 +179,9 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
             DrmSurfaceInternal::Atomic(surf) => surf.page_flip(framebuffer),
             DrmSurfaceInternal::Legacy(surf) => surf.page_flip(framebuffer)
         }
+    }
+
+    pub fn supported_formats(&self) -> &HashSet<Format> {
+        &self.formats
     }
 }

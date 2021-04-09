@@ -63,7 +63,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         let current_mode = crtc_info.mode().unwrap_or_else(|| unsafe { std::mem::zeroed() });
         let current_blob = match crtc_info.mode() {
             Some(mode) => fd
-                .create_property_blob(mode)
+                .create_property_blob(&mode)
                 .map_err(|source| Error::Access {
                     errmsg: "Failed to create Property Blob for mode",
                     dev: fd.dev_path(),
@@ -73,7 +73,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         };
 
         let blob = fd
-            .create_property_blob(mode)
+            .create_property_blob(&mode)
             .map_err(|source| Error::Access {
                 errmsg: "Failed to create Property Blob for mode",
                 dev: fd.dev_path(),
@@ -312,7 +312,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
 
         // check if new config is supported
         let new_blob = self.fd
-            .create_property_blob(mode)
+            .create_property_blob(&mode)
             .map_err(|source| Error::Access {
                 errmsg: "Failed to create Property Blob for mode",
                 dev: self.fd.dev_path(),
@@ -485,7 +485,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         Ok(())
     }
 
-    fn conn_prop_handle(
+    pub(crate) fn conn_prop_handle(
         &self,
         handle: connector::Handle,
         name: &'static str,
@@ -503,7 +503,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             .map(|x| *x)
     }
 
-    fn crtc_prop_handle(&self, handle: crtc::Handle, name: &'static str) -> Result<property::Handle, Error> {
+    pub(crate) fn crtc_prop_handle(&self, handle: crtc::Handle, name: &'static str) -> Result<property::Handle, Error> {
         self
             .prop_mapping
             .1
@@ -518,7 +518,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
     }
 
     #[allow(dead_code)]
-    fn fb_prop_handle(
+    pub(crate) fn fb_prop_handle(
         &self,
         handle: framebuffer::Handle,
         name: &'static str,
@@ -536,7 +536,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             .map(|x| *x)
     }
 
-    fn plane_prop_handle(
+    pub(crate) fn plane_prop_handle(
         &self,
         handle: plane::Handle,
         name: &'static str,
