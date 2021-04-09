@@ -1,12 +1,14 @@
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::sync::{Arc, atomic::AtomicBool};
 use std::path::PathBuf;
 use std::os::unix::io::{AsRawFd, RawFd};
 
 use calloop::{generic::Generic, InsertError, LoopHandle, Source};
-use drm::{Device as BasicDevice, ClientCapability};
-use drm::control::{ResourceHandles, PlaneResourceHandles, Device as ControlDevice, Event, Mode, PlaneType, crtc, plane, connector};
+use drm::{Device as BasicDevice, ClientCapability, DriverCapability};
+use drm::control::{ResourceHandles, PlaneResourceHandles, Device as ControlDevice, Event, Mode, PlaneType, crtc, plane, connector, property};
 use nix::libc::dev_t;
 use nix::sys::stat::fstat;
 
@@ -16,6 +18,7 @@ use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
 use super::surface::{DrmSurface, DrmSurfaceInternal, atomic::AtomicDrmSurface, legacy::LegacyDrmSurface};
 use super::error::Error;
+use crate::backend::allocator::{Fourcc, Format, Modifier};
 
 pub struct DrmDevice<A: AsRawFd + 'static> {
     pub(super) dev_id: dev_t,
@@ -279,7 +282,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             DrmDeviceInternal::Legacy(dev) => dev.active.clone(),
         };
 
-        let internal = Arc::new(if self.is_atomic() {
+        let internal = if self.is_atomic() {
             let mapping = match &*self.internal {
                 DrmDeviceInternal::Atomic(dev) => dev.prop_mapping.clone(),
                 _ => unreachable!(),
@@ -292,12 +295,88 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             }
 
             DrmSurfaceInternal::Legacy(LegacyDrmSurface::new(self.internal.clone(), active, crtc, mode, connectors, self.logger.clone())?)
-        });
+        };
+
+        // get plane formats
+        let plane_info = self.get_plane(plane).map_err(|source| Error::Access {
+            errmsg: "Error loading plane info",
+            dev: self.dev_path(),
+            source,
+        })?;
+        let mut formats = HashSet::new();
+        for code in plane_info.formats().iter().flat_map(|x| Fourcc::try_from(*x).ok()) {
+            formats.insert(Format {
+                code,
+                modifier: Modifier::Invalid,
+            });
+        }
+
+        if let (Ok(1), &DrmSurfaceInternal::Atomic(ref surf)) = (self.get_driver_capability(DriverCapability::AddFB2Modifiers), &internal) {
+            let set = self.get_properties(plane).map_err(|source| Error::Access {
+                errmsg: "Failed to query properties",
+                dev: self.dev_path(),
+                source
+            })?;
+            if let Ok(prop) = surf.plane_prop_handle(plane, "IN_FORMATS") {
+                let prop_info = self.get_property(prop).map_err(|source| Error::Access {
+                    errmsg: "Failed to query property",
+                    dev: self.dev_path(),
+                    source,
+                })?;
+                let (handles, raw_values) = set.as_props_and_values();
+                let raw_value = raw_values[handles.iter().enumerate().find_map(|(i, handle)| if *handle == prop { Some(i) } else { None }).unwrap()];
+                if let property::Value::Blob(blob) = prop_info.value_type().convert_value(raw_value) {
+                    let data = self.get_property_blob(blob).map_err(|source| Error::Access {
+                        errmsg: "Failed to query property blob data",
+                        dev: self.dev_path(),
+                        source,
+                    })?;
+                    // be careful here, we have no idea about the alignment inside the blob, so always copy using `read_unaligned`,
+                    // although slice::from_raw_parts would be so much nicer to iterate and to read.
+                    unsafe {
+                        let fmt_mod_blob_ptr = data.as_ptr() as *const drm_ffi::drm_format_modifier_blob;
+                        let fmt_mod_blob = &*fmt_mod_blob_ptr;
+
+                        let formats_ptr: *const u32 = fmt_mod_blob_ptr.cast::<u8>().offset(fmt_mod_blob.formats_offset as isize) as *const _;
+                        let modifiers_ptr: *const drm_ffi::drm_format_modifier = fmt_mod_blob_ptr.cast::<u8>().offset(fmt_mod_blob.modifiers_offset as isize) as *const _;
+                        let formats_ptr = formats_ptr as *const u32;
+                        let modifiers_ptr = modifiers_ptr as *const drm_ffi::drm_format_modifier;
+
+                        for i in 0..fmt_mod_blob.count_modifiers {
+                            let mod_info = modifiers_ptr.offset(i as isize).read_unaligned();
+                            for j in 0..64 {
+                                if mod_info.formats & (1u64 << j) != 0 {
+                                    let code = Fourcc::try_from(formats_ptr.offset((j + mod_info.offset) as isize).read_unaligned()).ok();
+                                    let modifier = Modifier::from(mod_info.modifier);
+                                    if let Some(code) = code {
+                                        formats.insert(Format {
+                                            code,
+                                            modifier,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if self.plane_type(plane)? == PlaneType::Cursor {
+            // Force a LINEAR layout for the cursor if the driver doesn't support modifiers
+            for format in formats.clone() {
+                formats.insert(Format {
+                    code: format.code,
+                    modifier: Modifier::Linear,
+                });
+            }
+        }
+
+        info!(self.logger, "Supported scan-out formats for plane ({:?}): {:#?}", plane, formats);
 
         Ok(DrmSurface {
             crtc,
             plane,
-            internal,
+            internal: Arc::new(internal),
+            formats,
         })
     }
 }
