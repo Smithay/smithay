@@ -4,13 +4,14 @@ use std::os::unix::io::RawFd;
 
 const MAX_PLANES: usize = 4;
 
-struct DmabufInternal {
-    src: Box<dyn Buffer + 'static>,
-
-    num_planes: usize,
-    offsets: [u32; MAX_PLANES],
-    strides: [u32; MAX_PLANES],
-    fds: [RawFd; MAX_PLANES],
+pub(crate) struct DmabufInternal {
+    pub num_planes: usize,
+    pub offsets: [u32; MAX_PLANES],
+    pub strides: [u32; MAX_PLANES],
+    pub fds: [RawFd; MAX_PLANES],
+    pub width: u32,
+    pub height: u32,
+    pub format: Format,
 }
 
 #[derive(Clone)]
@@ -46,15 +47,15 @@ impl PartialEq for WeakDmabuf {
 
 impl Buffer for Dmabuf {
     fn width(&self) -> u32 {
-        self.0.src.width()
+        self.0.width
     }
 
     fn height(&self) -> u32 {
-        self.0.src.height()
+        self.0.height
     }
 
     fn format(&self) -> Format {
-        self.0.src.format()
+        self.0.format
     }
 }
 
@@ -81,12 +82,14 @@ impl Dmabuf {
         let mut fds = fds.iter().take(planes).chain(end_fds.iter());
 
         Some(Dmabuf(Arc::new(DmabufInternal {
-            src: Box::new(src),
-
             num_planes: planes,
             offsets: [*offsets.next().unwrap(), *offsets.next().unwrap(), *offsets.next().unwrap(), *offsets.next().unwrap()],
             strides: [*strides.next().unwrap(), *strides.next().unwrap(), *strides.next().unwrap(), *strides.next().unwrap()],
             fds: [*fds.next().unwrap(), *fds.next().unwrap(), *fds.next().unwrap(), *fds.next().unwrap()],
+
+            width: src.width(),
+            height: src.height(),
+            format: src.format(),
         })))
     }
 
@@ -103,17 +106,27 @@ impl Dmabuf {
     }
 
     pub fn has_modifier(&self) -> bool {
-        self.0.src.format().modifier != Modifier::Invalid &&
-        self.0.src.format().modifier != Modifier::Linear 
+        self.0.format.modifier != Modifier::Invalid &&
+        self.0.format.modifier != Modifier::Linear 
     }
 
     pub fn weak(&self) -> WeakDmabuf {
         WeakDmabuf(Arc::downgrade(&self.0))
-    } 
+    }
 }
 
 impl WeakDmabuf {
     pub fn upgrade(&self) -> Option<Dmabuf> {
         self.0.upgrade().map(|internal| Dmabuf(internal))
+    }
+}
+
+impl Drop for DmabufInternal {
+    fn drop(&mut self) {
+        for fd in self.fds.iter() {
+            if *fd != 0 {
+                let _ = nix::unistd::close(*fd);
+            }
+        }
     }
 }
