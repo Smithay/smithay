@@ -81,3 +81,31 @@ impl<T> std::convert::TryFrom<GbmBuffer<T>> for Dmabuf {
         Ok(Dmabuf::new(buf, planes as usize, &offsets, &strides, &fds).unwrap())
     }
 }
+
+impl Dmabuf {
+    pub fn import<A: AsRawFd + 'static, T>(&self, gbm: &GbmDevice<A>, usage: BufferObjectFlags) -> std::io::Result<GbmBuffer<T>> {
+        let buf = &*self.0;
+        if self.has_modifier() || buf.num_planes > 1 || buf.offsets[0] != 0 {
+            gbm.import_buffer_object_from_dma_buf_with_modifiers(
+                buf.num_planes as u32,
+                buf.fds,
+                buf.width,
+                buf.height,
+                buf.format.code,
+                usage,
+                unsafe { std::mem::transmute::<[u32; 4], [i32; 4]>(buf.strides) },
+                unsafe { std::mem::transmute::<[u32; 4], [i32; 4]>(buf.offsets) },
+                buf.format.modifier,
+            )
+        } else {
+            gbm.import_buffer_object_from_dma_buf(
+                buf.fds[0],
+                buf.width,
+                buf.height,
+                buf.strides[0],
+                buf.format.code,
+                if buf.format.modifier == Modifier::Linear { usage | BufferObjectFlags::LINEAR } else { usage },
+            )
+        }
+    }
+}

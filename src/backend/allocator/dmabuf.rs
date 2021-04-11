@@ -15,10 +15,10 @@ pub(crate) struct DmabufInternal {
 }
 
 #[derive(Clone)]
-pub struct Dmabuf(Arc<DmabufInternal>);
+pub struct Dmabuf(pub(crate) Arc<DmabufInternal>);
 
 #[derive(Clone)]
-pub struct WeakDmabuf(Weak<DmabufInternal>);
+pub struct WeakDmabuf(pub(crate) Weak<DmabufInternal>);
 
 impl PartialEq for Dmabuf {
     fn eq(&self, other: &Self) -> bool {
@@ -60,9 +60,8 @@ impl Buffer for Dmabuf {
 }
 
 impl Dmabuf {
-    pub fn new(
-        src: impl Buffer + 'static,
-
+    pub(crate) fn new(
+        src: impl Buffer,
         planes: usize,
         offsets: &[u32],
         strides: &[u32],
