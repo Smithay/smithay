@@ -21,11 +21,11 @@ pub struct State {
 
 pub struct LegacyDrmSurface<A: AsRawFd + 'static> {
     pub(super) fd: Arc<DrmDeviceInternal<A>>,
-    active: Arc<AtomicBool>,
+    pub(super) active: Arc<AtomicBool>,
     crtc: crtc::Handle,
     state: RwLock<State>,
     pending: RwLock<State>,
-    logger: ::slog::Logger,
+    pub(super) logger: ::slog::Logger,
 }
 
 impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
@@ -310,6 +310,21 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
             dev: self.fd.dev_path(),
             source,
         })
+    }
+
+    pub fn test_buffer(&self, fb: framebuffer::Handle, mode: &Mode) -> Result<bool, Error> {
+        if !self.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+        
+        debug!(self.logger, "Setting screen for buffer *testing*");
+        Ok(self.fd.set_crtc(
+            self.crtc,
+            Some(fb),
+            (0, 0),
+            &[],
+            Some(*mode),
+        ).is_ok())
     }
 
     // we use this function to verify, if a certain connector/mode combination

@@ -23,14 +23,14 @@ pub struct State {
 
 pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
     pub(super) fd: Arc<DrmDeviceInternal<A>>,
-    active: Arc<AtomicBool>,
+    pub(super) active: Arc<AtomicBool>,
     crtc: crtc::Handle,
     plane: plane::Handle,
     prop_mapping: Mapping,
     state: RwLock<State>,
     pending: RwLock<State>,
     test_buffer: Mutex<Option<(DumbBuffer, framebuffer::Handle)>>,
-    logger: ::slog::Logger,
+    pub(super) logger: ::slog::Logger,
 }
 
 impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
@@ -483,6 +483,37 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         })?;
 
         Ok(())
+    }
+    
+    pub fn test_buffer(&self, fb: framebuffer::Handle, mode: &Mode) -> Result<bool, Error> {
+        if !self.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
+        let blob = self.fd
+            .create_property_blob(&mode)
+            .map_err(|source| Error::Access {
+                errmsg: "Failed to create Property Blob for mode",
+                dev: self.fd.dev_path(),
+                source,
+            })?;
+        
+        let req = self.build_request(
+            &mut [].iter(),
+            &mut [].iter(),
+            self.plane,
+            Some(fb),
+            Some(*mode),
+            Some(blob)
+        )?;
+
+        let result = self.fd.atomic_commit(&[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly], req).is_ok();
+
+        if let Err(err) = self.fd.destroy_framebuffer(fb) {
+            debug!(self.logger, "Failed to destroy framebuffer({:?}): {}", fb, err);
+        }
+
+        Ok(result)
     }
 
     pub(crate) fn conn_prop_handle(
