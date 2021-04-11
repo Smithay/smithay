@@ -38,6 +38,7 @@ pub struct LibinputInputBackend {
     context: libinput::Libinput,
     config: LibinputConfig,
     seats: HashMap<libinput::Seat, backend::Seat>,
+    #[cfg(feature = "backend_session")]
     links: Vec<SignalToken>,
     logger: ::slog::Logger,
 }
@@ -55,6 +56,7 @@ impl LibinputInputBackend {
             context,
             config: LibinputConfig { devices: Vec::new() },
             seats: HashMap::new(),
+            #[cfg(feature = "backend_session")]
             links: Vec::new(),
             logger: log,
         }
