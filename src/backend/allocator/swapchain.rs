@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use crate::backend::allocator::{Allocator, Buffer, Format};
 
-pub const SLOT_CAP: usize = 3;
+pub const SLOT_CAP: usize = 4;
 
 pub struct Swapchain<A: Allocator<B>, B: Buffer + TryInto<B>, D: Buffer = B> {
     allocator: A,
