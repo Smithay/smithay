@@ -379,6 +379,10 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             formats,
         })
     }
+
+    pub fn device_id(&self) -> dev_t {
+        self.dev_id
+    }
 }
 
 pub struct Planes {
