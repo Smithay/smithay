@@ -350,7 +350,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
 
-    pub fn commit(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
+    pub fn commit(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -430,14 +430,21 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         debug!(self.logger, "Setting screen: {:?}", req);
         let result = self.fd
             .atomic_commit(
-                &[
-                    // on the atomic api we can modeset and trigger a page_flip event on the same call!
-                    AtomicCommitFlags::PageFlipEvent,
-                    AtomicCommitFlags::AllowModeset,
-                    // we also do not need to wait for completion, like with `set_crtc`.
-                    // and have tested this already, so we do not expect any errors later down the line.
-                    AtomicCommitFlags::Nonblock,
-                ],
+                if event {
+                    &[
+                        // on the atomic api we can modeset and trigger a page_flip event on the same call!
+                        AtomicCommitFlags::PageFlipEvent,
+                        AtomicCommitFlags::AllowModeset,
+                        // we also do not need to wait for completion, like with `set_crtc`.
+                        // and have tested this already, so we do not expect any errors later down the line.
+                        AtomicCommitFlags::Nonblock,
+                    ]
+                } else {
+                    &[
+                        AtomicCommitFlags::AllowModeset,
+                        AtomicCommitFlags::Nonblock,
+                    ]
+                },
                 req,
             )
             .map_err(|source| Error::Access {
@@ -453,7 +460,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         result
     }
 
-    pub fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
+    pub fn page_flip(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -473,7 +480,11 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         // indicating a problem in our assumptions.
         trace!(self.logger, "Queueing page flip: {:?}", req);
         self.fd.atomic_commit(
-            &[AtomicCommitFlags::PageFlipEvent, AtomicCommitFlags::Nonblock],
+            if event {
+                &[AtomicCommitFlags::PageFlipEvent, AtomicCommitFlags::Nonblock]
+            } else {
+                &[AtomicCommitFlags::Nonblock]
+            },
             req,
         )
         .map_err(|source| Error::Access {

@@ -202,7 +202,7 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
 
-    pub fn commit(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
+    pub fn commit(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -272,26 +272,30 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
 
         *current = pending.clone();
 
-        // set crtc does not trigger page_flip events, so we immediately queue a flip
-        // with the same framebuffer.
-        // this will result in wasting a frame, because this flip will need to wait
-        // for `set_crtc`, but is necessary to drive the event loop and thus provide
-        // a more consistent api.
-        ControlDevice::page_flip(
-            &*self.fd,
-            self.crtc,
-            framebuffer,
-            &[PageFlipFlags::PageFlipEvent],
-            None,
-        )
-        .map_err(|source| Error::Access {
-            errmsg: "Failed to queue page flip",
-            dev: self.fd.dev_path(),
-            source,
-        })
+        if event {
+            // set crtc does not trigger page_flip events, so we immediately queue a flip
+            // with the same framebuffer.
+            // this will result in wasting a frame, because this flip will need to wait
+            // for `set_crtc`, but is necessary to drive the event loop and thus provide
+            // a more consistent api.
+            ControlDevice::page_flip(
+                &*self.fd,
+                self.crtc,
+                framebuffer,
+                &[PageFlipFlags::PageFlipEvent],
+                None,
+            )
+            .map_err(|source| Error::Access {
+                errmsg: "Failed to queue page flip",
+                dev: self.fd.dev_path(),
+                source,
+            })?;
+        }
+
+        Ok(())
     }
 
-    pub fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
+    pub fn page_flip(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
         trace!(self.logger, "Queueing Page flip");
 
         if !self.active.load(Ordering::SeqCst) {
@@ -302,7 +306,7 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
             &*self.fd,
             self.crtc,
             framebuffer,
-            &[PageFlipFlags::PageFlipEvent],
+            if event { &[PageFlipFlags::PageFlipEvent] } else { &[] },
             None,
         )
         .map_err(|source| Error::Access {
