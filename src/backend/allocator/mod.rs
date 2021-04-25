@@ -5,7 +5,7 @@ pub mod dumb;
 pub mod dmabuf;
 
 mod swapchain;
-pub use swapchain::{Slot, Swapchain};
+pub use swapchain::{Slot, Swapchain, SwapchainError};
 
 pub use drm_fourcc::{DrmFormat as Format, DrmFourcc as Fourcc, DrmModifier as Modifier, DrmVendor as Vendor, UnrecognizedFourcc, UnrecognizedVendor};
 
