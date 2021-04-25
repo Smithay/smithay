@@ -547,8 +547,8 @@ fn get_dmabuf_formats(display: &ffi::egl::types::EGLDisplay, extensions: &[Strin
         }
     }
 
-    info!(log, "Supported dmabuf import formats: {:#?}", texture_formats);
-    info!(log, "Supported dmabuf render formats: {:#?}", render_formats);
+    info!(log, "Supported dmabuf import formats: {:?}", texture_formats);
+    info!(log, "Supported dmabuf render formats: {:?}", render_formats);
 
     Ok((texture_formats, render_formats))
 }
