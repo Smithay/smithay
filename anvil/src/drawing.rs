@@ -1,9 +1,16 @@
-use std::cell::RefCell;
+use std::{
+    cell::RefCell,
+    rc::Rc,
+};
 
 use slog::Logger;
 use smithay::{
-    backend::renderer::{Renderer, Frame, Transform, Texture},
-    reexports::{wayland_server::protocol::wl_surface},
+    backend::SwapBuffersError,
+    backend::renderer::{Renderer, Transform, Texture},
+    reexports::{
+        calloop::LoopHandle,
+        wayland_server::protocol::wl_surface,
+    },
     utils::Rectangle,
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
@@ -190,24 +197,31 @@ pub fn draw_dnd_icon<R, E, T>(
     draw_surface_tree(renderer, surface, (x, y), token, log);
 }
 
-/*
-pub fn schedule_initial_render<F: GLGraphicsBackend + 'static, Data: 'static>(
-    renderer: Rc<GliumDrawer<F>>,
+pub fn schedule_initial_render<R: Renderer + 'static, Data: 'static>(
+    renderer: Rc<RefCell<R>>,
     evt_handle: &LoopHandle<Data>,
-) {
-    let mut frame = renderer.draw();
-    frame.clear_color(0.8, 0.8, 0.9, 1.0);
-    if let Err(err) = frame.set_finish() {
+    logger: ::slog::Logger,
+)
+where
+    <R as Renderer>::Error: Into<SwapBuffersError>
+{
+    let result = {
+        let mut renderer = renderer.borrow_mut();
+        // Does not matter if we render an empty frame
+        renderer.begin(1, 1, Transform::Normal).map_err(Into::<SwapBuffersError>::into)
+        .and_then(|_| renderer.clear([0.8, 0.8, 0.9, 1.0]).map_err(Into::<SwapBuffersError>::into))
+        .and_then(|_| renderer.finish())
+    };
+    if let Err(err) = result {
         match err {
             SwapBuffersError::AlreadySwapped => {}
             SwapBuffersError::TemporaryFailure(err) => {
                 // TODO dont reschedule after 3(?) retries
-                warn!(renderer.log, "Failed to submit page_flip: {}", err);
+                warn!(logger, "Failed to submit page_flip: {}", err);
                 let handle = evt_handle.clone();
-                evt_handle.insert_idle(move |_| schedule_initial_render(renderer, &handle));
+                evt_handle.insert_idle(move |_| schedule_initial_render(renderer, &handle, logger));
             }
             SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
         }
     }
 }
-*/
