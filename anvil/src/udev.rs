@@ -9,24 +9,26 @@ use std::{
     time::Duration,
 };
 
-use glium::Surface as GliumSurface;
+use image::{ImageBuffer, Rgba};
 use slog::Logger;
 
-#[cfg(feature = "egl")]
-use smithay::backend::egl::{display::EGLBufferReader, EGLGraphicsBackend};
 use smithay::{
     backend::{
-        drm_old::{
-            atomic::{AtomicDrmDevice, AtomicDrmSurface},
-            common::fallback::{FallbackDevice, FallbackSurface},
+        SwapBuffersError,
+        drm::{
+            DrmDevice,
+            DeviceHandler,
             device_bind,
-            egl::{EglDevice, EglSurface},
-            eglstream::{egl::EglStreamDeviceBackend, EglStreamDevice, EglStreamSurface},
-            gbm::{egl::Gbm as EglGbmBackend, GbmDevice, GbmSurface},
-            legacy::{LegacyDrmDevice, LegacyDrmSurface},
-            DevPath, Device, DeviceHandler, Surface,
+            DrmRenderSurface,
+            DrmError,
+            DrmRenderError,
         },
-        graphics::{CursorBackend, SwapBuffersError},
+        egl::{EGLDisplay, EGLContext},
+        renderer::{
+            Renderer,
+            gles2::Gles2Renderer,
+            Transform,
+        },
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         session::{auto::AutoSession, Session, Signal as SessionSignal},
         udev::{primary_gpu, UdevBackend, UdevEvent},
@@ -40,12 +42,16 @@ use smithay::{
         drm::{
             self,
             control::{
+                Device as ControlDevice,
                 connector::{Info as ConnectorInfo, State as ConnectorState},
                 crtc,
                 encoder::Info as EncoderInfo,
             },
         },
-        image::{ImageBuffer, Rgba},
+        gbm::{
+            BufferObject as GbmBuffer,
+            Device as GbmDevice,
+        },
         input::Libinput,
         nix::{fcntl::OFlag, sys::stat::dev_t},
         wayland_server::{
@@ -63,9 +69,9 @@ use smithay::{
 };
 
 use crate::buffer_utils::BufferUtils;
-use crate::glium_drawer::{schedule_initial_render, GliumDrawer};
 use crate::shell::{MyWindowMap, Roles};
 use crate::state::AnvilState;
+use crate::drawing::*;
 
 #[derive(Clone)]
 pub struct SessionFd(RawFd);
@@ -74,21 +80,6 @@ impl AsRawFd for SessionFd {
         self.0
     }
 }
-
-type RenderDevice = FallbackDevice<
-    EglDevice<
-        EglGbmBackend<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
-        GbmDevice<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
-    >,
-    EglDevice<
-        EglStreamDeviceBackend<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
-        EglStreamDevice<FallbackDevice<AtomicDrmDevice<SessionFd>, LegacyDrmDevice<SessionFd>>>,
-    >,
->;
-type RenderSurface = FallbackSurface<
-    EglSurface<GbmSurface<FallbackSurface<AtomicDrmSurface<SessionFd>, LegacyDrmSurface<SessionFd>>>>,
-    EglSurface<EglStreamSurface<FallbackSurface<AtomicDrmSurface<SessionFd>, LegacyDrmSurface<SessionFd>>>>,
->;
 
 pub fn run_udev(
     display: Rc<RefCell<Display>>,
@@ -104,12 +95,14 @@ pub fn run_udev(
     info!(log, "Listening on wayland socket"; "name" => name.clone());
     ::std::env::set_var("WAYLAND_DISPLAY", name);
 
+    /*
     #[cfg(feature = "egl")]
     let egl_buffer_reader = Rc::new(RefCell::new(None));
 
     #[cfg(feature = "egl")]
     let buffer_utils = BufferUtils::new(egl_buffer_reader.clone(), log.clone());
     #[cfg(not(feature = "egl"))]
+    */
     let buffer_utils = BufferUtils::new(log.clone());
 
     let output_map = Rc::new(RefCell::new(Vec::new()));
@@ -289,17 +282,22 @@ impl Drop for MyOutput {
     }
 }
 
+type RenderSurface = DrmRenderSurface<SessionFd, GbmDevice<SessionFd>, Gles2Renderer, GbmBuffer<()>>;
+
 struct BackendData {
     _restart_token: SignalToken,
-    event_source: Source<Generic<RenderDevice>>,
-    surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<GliumDrawer<RenderSurface>>>>>,
+    surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>>>>,
+    context: EGLContext,
+    egl: EGLDisplay,
+    gbm: GbmDevice<SessionFd>,
+    event_source: Source<Generic<DrmDevice<SessionFd>>>,
 }
 
 struct UdevHandlerImpl<Data: 'static> {
     compositor_token: CompositorToken<Roles>,
     buffer_utils: BufferUtils,
-    #[cfg(feature = "egl")]
-    egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
+    //#[cfg(feature = "egl")]
+    //egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
     session: AutoSession,
     backends: HashMap<dev_t, BackendData>,
     display: Rc<RefCell<Display>>,
@@ -317,12 +315,15 @@ struct UdevHandlerImpl<Data: 'static> {
 
 impl<Data: 'static> UdevHandlerImpl<Data> {
     pub fn scan_connectors(
-        device: &mut RenderDevice,
+        device: &mut DrmDevice<SessionFd>,
+        gbm: &GbmDevice<SessionFd>,
+        egl: &EGLDisplay,
+        context: &EGLContext,
         buffer_utils: &BufferUtils,
         display: &mut Display,
         output_map: &mut Vec<MyOutput>,
         logger: &::slog::Logger,
-    ) -> HashMap<crtc::Handle, Rc<GliumDrawer<RenderSurface>>> {
+    ) -> HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>> {
         // Get a set of all modesetting resource handles (excluding planes):
         let res_handles = device.resource_handles().unwrap();
 
@@ -330,7 +331,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
         let connector_infos: Vec<ConnectorInfo> = res_handles
             .connectors()
             .iter()
-            .map(|conn| device.get_connector_info(*conn).unwrap())
+            .map(|conn| device.get_connector(*conn).unwrap())
             .filter(|conn| conn.state() == ConnectorState::Connected)
             .inspect(|conn| info!(logger, "Connected: {:?}", conn.interface()))
             .collect();
@@ -343,18 +344,59 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 .encoders()
                 .iter()
                 .filter_map(|e| *e)
-                .flat_map(|encoder_handle| device.get_encoder_info(encoder_handle))
+                .flat_map(|encoder_handle| device.get_encoder(encoder_handle))
                 .collect::<Vec<EncoderInfo>>();
             'outer: for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
+                    // TODO cursor
+                    let primary = match device.planes(&crtc) {
+                        Ok(planes) => planes.primary,
+                        Err(err) => {
+                            warn!(logger, "Failed to enumerate planes: {}", err);
+                            continue;
+                        }
+                    };
+
                     if let Entry::Vacant(entry) = backends.entry(crtc) {
-                        let renderer = GliumDrawer::init(
-                            device
-                                .create_surface(crtc, connector_info.modes()[0], &[connector_info.handle()])
-                                .unwrap(),
-                            buffer_utils.clone(),
-                            logger.clone(),
+                        info!(logger, "Trying to setup connector {:?}-{} with crtc {:?}",
+                            connector_info.interface(),
+                            connector_info.interface_id(),
+                            crtc,
                         );
+                        let context = match EGLContext::new_shared(egl, context, logger.clone()) {
+                            Ok(context) => context,
+                            Err(err) => {
+                                warn!(logger, "Failed to create EGLContext: {}", err);
+                                continue;
+                            }
+                        };
+                        let renderer = match unsafe { Gles2Renderer::new(context, logger.clone()) } {
+                            Ok(renderer) => renderer,
+                            Err(err) => {
+                                warn!(logger, "Failed to create Gles2 Renderer: {}", err);
+                                continue;
+                            }
+                        };
+                        let surface = match device.create_surface(crtc, primary, connector_info.modes()[0], &[connector_info.handle()]) {
+                            Ok(surface) => surface,
+                            Err(err) => {
+                                warn!(logger, "Failed to create drm surface: {}", err);
+                                continue;
+                            }
+                        };
+                        let renderer = match DrmRenderSurface::new(
+                            surface,
+                            gbm.clone(),
+                            renderer,
+                            logger.clone()
+                        ) {
+                            Ok(renderer) => renderer,
+                            Err(err) => {
+                                warn!(logger, "Failed to create rendering surface: {}", err);
+                                continue;
+                            }
+                        };
+
                         output_map.push(MyOutput::new(
                             display,
                             device.device_id(),
@@ -363,7 +405,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                             logger.clone(),
                         ));
 
-                        entry.insert(Rc::new(renderer));
+                        entry.insert(Rc::new(RefCell::new(renderer)));
                         break 'outer;
                     }
                 }
@@ -377,7 +419,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
 impl<Data: 'static> UdevHandlerImpl<Data> {
     fn device_added(&mut self, device_id: dev_t, path: PathBuf) {
         // Try to open the device
-        if let Some(mut device) = self
+        if let Some((mut device, gbm)) = self
             .session
             .open(
                 &path,
@@ -385,36 +427,35 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
             )
             .ok()
             .and_then(|fd| {
-                match FallbackDevice::<AtomicDrmDevice<_>, LegacyDrmDevice<_>>::new(
-                    SessionFd(fd),
-                    true,
-                    self.logger.clone(),
-                ) {
-                    Ok(drm) => Some(drm),
-                    Err(err) => {
-                        warn!(self.logger, "Skipping drm device, because of error: {}", err);
-                        None
-                    }
+                match {
+                    let fd = SessionFd(fd);
+                    (
+                        DrmDevice::new(
+                            fd.clone(),
+                            true,
+                            self.logger.clone(),
+                        ),
+                        GbmDevice::new(
+                            fd.clone()
+                        ),
+                    )
                 }
-            })
-            .and_then(|drm| {
-                match FallbackDevice::<GbmDevice<_>, EglStreamDevice<_>>::new(drm, self.logger.clone()) {
-                    Ok(dev) => Some(dev),
-                    Err(err) => {
-                        warn!(self.logger, "Skipping device, because of error: {}", err);
+                {
+                    (Ok(drm), Ok(gbm)) => Some((drm, gbm)),
+                    (Err(err), _) => {
+                        warn!(self.logger, "Skipping device {:?}, because of drm error: {}", device_id, err);
                         None
-                    }
-                }
-            })
-            .and_then(|dev| match FallbackDevice::new_egl(dev, self.logger.clone()) {
-                Ok(egl) => Some(egl),
-                Err(err) => {
-                    warn!(self.logger, "Skipping egl device, because of error: {}", err);
-                    None
+                    },
+                    (_, Err(err)) => {
+                        // TODO try DumbBuffer allocator in this case
+                        warn!(self.logger, "Skipping device {:?}, because of gbm error: {}", device_id, err);
+                        None
+                    },
                 }
             })
         {
             // init hardware acceleration on the primary gpu.
+            /*
             #[cfg(feature = "egl")]
             {
                 if path.canonicalize().ok() == self.primary_gpu {
@@ -426,9 +467,28 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                         device.bind_wl_display(&*self.display.borrow()).ok();
                 }
             }
+            */
 
+            let egl = match EGLDisplay::new(&gbm, self.logger.clone()) {
+                Ok(display) => display,
+                Err(err) => {
+                    warn!(self.logger, "Skipping device {:?}, because of egl display error: {}", device_id, err);
+                    return;
+                }
+            };
+            let context = match EGLContext::new(&egl, self.logger.clone()) {
+                Ok(context) => context,
+                Err(err) => {
+                    warn!(self.logger, "Skipping device {:?}, because of egl context error: {}", device_id, err);
+                    return;
+                }
+            };
+            
             let backends = Rc::new(RefCell::new(UdevHandlerImpl::<Data>::scan_connectors(
                 &mut device,
+                &gbm,
+                &egl,
+                &context,
                 &self.buffer_utils,
                 &mut *self.display.borrow_mut(),
                 &mut *self.output_map.borrow_mut(),
@@ -470,9 +530,11 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 .map_err(|e| -> IoError { e.into() })
                 .unwrap();
 
+            trace!(self.logger, "Backends: {:?}", backends.borrow().keys());
             for renderer in backends.borrow_mut().values() {
                 // render first frame
-                schedule_initial_render(renderer.clone(), &self.loop_handle);
+                trace!(self.logger, "Scheduling frame");
+                schedule_initial_render(renderer.clone(), &self.loop_handle, self.logger.clone());
             }
 
             self.backends.insert(
@@ -481,6 +543,9 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                     _restart_token: restart_token,
                     event_source,
                     surfaces: backends,
+                    egl,
+                    context,
+                    gbm,
                 },
             );
         }
@@ -490,7 +555,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
         //quick and dirty, just re-init all backends
         let buffer_utils = &self.buffer_utils;
         if let Some(ref mut backend_data) = self.backends.get_mut(&device) {
-            let logger = &self.logger;
+            let logger = self.logger.clone();
             let loop_handle = self.loop_handle.clone();
             let mut display = self.display.borrow_mut();
             let mut output_map = self.output_map.borrow_mut();
@@ -500,15 +565,19 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                     let mut backends = backend_data.surfaces.borrow_mut();
                     *backends = UdevHandlerImpl::<Data>::scan_connectors(
                         &mut source.file,
+                        &backend_data.gbm,
+                        &backend_data.egl,
+                        &backend_data.context,
                         buffer_utils,
                         &mut *display,
                         &mut *output_map,
-                        logger,
+                        &logger,
                     );
 
                     for renderer in backends.values() {
+                        let logger = logger.clone();
                         // render first frame
-                        schedule_initial_render(renderer.clone(), &loop_handle);
+                        schedule_initial_render(renderer.clone(), &loop_handle, logger);
                     }
                 });
         }
@@ -545,13 +614,11 @@ pub struct DrmHandlerImpl<Data: 'static> {
 }
 
 impl<Data: 'static> DeviceHandler for DrmHandlerImpl<Data> {
-    type Device = RenderDevice;
-
     fn vblank(&mut self, crtc: crtc::Handle) {
         self.renderer.clone().render(crtc, None, Some(&self.loop_handle))
     }
 
-    fn error(&mut self, error: <RenderSurface as Surface>::Error) {
+    fn error(&mut self, error: DrmError) {
         error!(self.renderer.logger, "{:?}", error);
     }
 }
@@ -574,7 +641,7 @@ impl<Data: 'static> DrmRendererSessionListener<Data> {
 pub struct DrmRenderer {
     device_id: dev_t,
     compositor_token: CompositorToken<Roles>,
-    backends: Rc<RefCell<HashMap<crtc::Handle, Rc<GliumDrawer<RenderSurface>>>>>,
+    backends: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>>>>,
     window_map: Rc<RefCell<MyWindowMap>>,
     output_map: Rc<RefCell<Vec<MyOutput>>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
@@ -597,93 +664,29 @@ impl DrmRenderer {
         timer: Option<TimerHandle<(std::rc::Weak<DrmRenderer>, crtc::Handle)>>,
         evt_handle: Option<&LoopHandle<Data>>,
     ) {
-        if let Some(drawer) = self.backends.borrow().get(&crtc) {
-            // get output coordinates
-            let (x, y) = self
-                .output_map
-                .borrow()
-                .iter()
-                .take_while(|output| output.device_id != self.device_id || output.crtc != crtc)
-                .fold((0u32, 0u32), |pos, output| (pos.0 + output.size.0, pos.1));
-            let (width, height) = self
-                .output_map
-                .borrow()
-                .iter()
-                .find(|output| output.device_id == self.device_id && output.crtc == crtc)
-                .map(|output| output.size)
-                .unwrap_or((0, 0)); // in this case the output will be removed.
-
-            // and draw in sync with our monitor
-            let mut frame = drawer.draw();
-            frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
-            // draw the surfaces
-            drawer.draw_windows(
-                &mut frame,
-                &*self.window_map.borrow(),
-                Some(Rectangle {
-                    x: x as i32,
-                    y: y as i32,
-                    width: width as i32,
-                    height: height as i32,
-                }),
-                self.compositor_token,
+        if let Some(surface) = self.backends.borrow().get(&crtc) {
+            let result = DrmRenderer::render_surface(
+                  &mut *surface.borrow_mut(),
+                  self.device_id,
+                  crtc,
+                  &mut *self.window_map.borrow_mut(),
+                  &mut *self.output_map.borrow_mut(),
+                  &self.compositor_token,
+                  &*self.pointer_location.borrow(),
+                  &self.logger
             );
-
-            // get pointer coordinates
-            let (ptr_x, ptr_y) = *self.pointer_location.borrow();
-            let ptr_x = ptr_x.trunc().abs() as i32 - x as i32;
-            let ptr_y = ptr_y.trunc().abs() as i32 - y as i32;
-
-            // set cursor
-            if ptr_x >= 0 && ptr_x < width as i32 && ptr_y >= 0 && ptr_y < height as i32 {
-                let _ = drawer.borrow().set_cursor_position(ptr_x as u32, ptr_y as u32);
-
-                // draw the dnd icon if applicable
-                {
-                    let guard = self.dnd_icon.lock().unwrap();
-                    if let Some(ref surface) = *guard {
-                        if surface.as_ref().is_alive() {
-                            drawer.draw_dnd_icon(&mut frame, surface, (ptr_x, ptr_y), self.compositor_token);
-                        }
-                    }
-                }
-                // draw the cursor as relevant
-                {
-                    let mut guard = self.cursor_status.lock().unwrap();
-                    // reset the cursor if the surface is no longer alive
-                    let mut reset = false;
-                    if let CursorImageStatus::Image(ref surface) = *guard {
-                        reset = !surface.as_ref().is_alive();
-                    }
-                    if reset {
-                        *guard = CursorImageStatus::Default;
-                    }
-                    if let CursorImageStatus::Image(ref surface) = *guard {
-                        drawer.draw_software_cursor(
-                            &mut frame,
-                            surface,
-                            (ptr_x, ptr_y),
-                            self.compositor_token,
-                        );
-                    } else {
-                        drawer.draw_hardware_cursor(&self.pointer_image, (2, 2), (ptr_x, ptr_y));
-                    }
-                }
-            } else {
-                drawer.clear_cursor();
-            }
-
-            if let Err(err) = frame.finish() {
+            if let Err(err) = result {
                 warn!(self.logger, "Error during rendering: {:?}", err);
                 let reschedule =
                     match err {
                         SwapBuffersError::AlreadySwapped => false,
                         SwapBuffersError::TemporaryFailure(err) => {
-                            match err.downcast_ref::<smithay::backend::drm_old::common::Error>() {
-                                Some(&smithay::backend::drm_old::common::Error::DeviceInactive) => false,
-                                Some(&smithay::backend::drm_old::common::Error::Access {
-                                    ref source, ..
-                                }) if matches!(source.get_ref(), drm::SystemError::PermissionDenied) => false,
+                            match err.downcast_ref::<DrmError>() {
+                                Some(&DrmError::DeviceInactive) => false,
+                                Some(&DrmError::Access {
+                                    source: drm::SystemError::PermissionDenied,
+                                    ..
+                                }) => false,
                                 _ => true,
                             }
                         }
@@ -729,5 +732,93 @@ impl DrmRenderer {
                     .send_frames(self.start_time.elapsed().as_millis() as u32);
             }
         }
+    }
+
+    fn render_surface(
+        surface: &mut RenderSurface,
+        device_id: dev_t,
+        crtc: crtc::Handle,
+        window_map: &mut MyWindowMap,
+        output_map: &mut Vec<MyOutput>,
+        compositor_token: &CompositorToken<Roles>,
+        pointer_location: &(f64, f64),
+        logger: &slog::Logger,
+    ) -> Result<(), SwapBuffersError> {
+        surface.frame_submitted()?;
+
+        // get output coordinates
+        let (x, y) = output_map
+            .iter()
+            .take_while(|output| output.device_id != device_id || output.crtc != crtc)
+            .fold((0u32, 0u32), |pos, output| (pos.0 + output.size.0, pos.1));
+        let (width, height) = output_map
+            .iter()
+            .find(|output| output.device_id == device_id && output.crtc == crtc)
+            .map(|output| output.size)
+            .unwrap_or((0, 0)); // in this case the output will be removed.
+
+        // and draw in sync with our monitor
+        surface.queue_frame().unwrap();
+        surface.clear([0.8, 0.8, 0.9, 1.0]).unwrap();
+        // draw the surfaces
+        draw_windows(
+            surface,
+            window_map,
+            Some(Rectangle {
+                x: x as i32,
+                y: y as i32,
+                width: width as i32,
+                height: height as i32,
+            }),
+            compositor_token.clone(),
+            logger,
+        );
+
+        // get pointer coordinates
+        let (ptr_x, ptr_y) = *pointer_location;
+        let ptr_x = ptr_x.trunc().abs() as i32 - x as i32;
+        let ptr_y = ptr_y.trunc().abs() as i32 - y as i32;
+
+        // set cursor
+        /*
+        if ptr_x >= 0 && ptr_x < width as i32 && ptr_y >= 0 && ptr_y < height as i32 {
+            let _ = drawer.borrow().set_cursor_position(ptr_x as u32, ptr_y as u32);
+
+            // draw the dnd icon if applicable
+            {
+                let guard = self.dnd_icon.lock().unwrap();
+                if let Some(ref surface) = *guard {
+                    if surface.as_ref().is_alive() {
+                        drawer.draw_dnd_icon(&mut frame, surface, (ptr_x, ptr_y), self.compositor_token);
+                    }
+                }
+            }
+            // draw the cursor as relevant
+            {
+                let mut guard = self.cursor_status.lock().unwrap();
+                // reset the cursor if the surface is no longer alive
+                let mut reset = false;
+                if let CursorImageStatus::Image(ref surface) = *guard {
+                    reset = !surface.as_ref().is_alive();
+                }
+                if reset {
+                    *guard = CursorImageStatus::Default;
+                }
+                if let CursorImageStatus::Image(ref surface) = *guard {
+                    drawer.draw_software_cursor(
+                        &mut frame,
+                        surface,
+                        (ptr_x, ptr_y),
+                        self.compositor_token,
+                    );
+                } else {
+                    drawer.draw_hardware_cursor(&self.pointer_image, (2, 2), (ptr_x, ptr_y));
+                }
+            }
+        } else {
+            drawer.clear_cursor();
+        }
+        */
+        surface.finish()
     }
 }
