@@ -5,10 +5,8 @@ pub use calloop;
 pub use dbus;
 #[cfg(feature = "backend_drm")]
 pub use drm;
-#[cfg(feature = "backend_drm_gbm")]
+#[cfg(feature = "backend_gbm")]
 pub use gbm;
-#[cfg(feature = "backend_drm_gbm")]
-pub use image;
 #[cfg(feature = "backend_libinput")]
 pub use input;
 #[cfg(any(feature = "backend_udev", feature = "backend_drm"))]
