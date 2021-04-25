@@ -42,8 +42,10 @@ use self::ffi::egl::types::EGLImage;
 pub mod display;
 pub mod native;
 pub mod surface;
+pub use self::display::EGLDisplay;
 pub use self::surface::EGLSurface;
-use crate::backend::egl::display::EGLDisplayHandle;
+
+use self::display::EGLDisplayHandle;
 use std::ffi::CString;
 use std::sync::Arc;
 
