@@ -370,7 +370,14 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             }
         }
 
-        info!(self.logger, "Supported scan-out formats for plane ({:?}): {:#?}", plane, formats);
+        if formats.is_empty() {
+            formats.insert(Format {
+                code: Fourcc::Argb8888,
+                modifier: Modifier::Invalid,
+            });
+        }
+
+        info!(self.logger, "Supported scan-out formats for plane ({:?}): {:?}", plane, formats);
 
         Ok(DrmSurface {
             crtc,
