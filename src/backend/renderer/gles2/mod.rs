@@ -6,6 +6,7 @@ use std::sync::Arc;
 use cgmath::{prelude::*, Matrix3, Vector2};
 
 mod shaders;
+use crate::backend::SwapBuffersError;
 use crate::backend::allocator::{dmabuf::{Dmabuf, WeakDmabuf}, Format};
 use crate::backend::egl::{EGLContext, EGLSurface, ffi::egl::types::EGLImage};
 use super::{Renderer, Frame, Bind, Unbind, Transform, Texture};
@@ -102,6 +103,24 @@ pub enum Gles2Error {
     #[error("Error accessing the buffer ({0:?})")]
     #[cfg(feature = "wayland_frontend")]
     BufferAccessError(crate::wayland::shm::BufferAccessError),
+}
+
+impl From<Gles2Error> for SwapBuffersError {
+    fn from(err: Gles2Error) -> SwapBuffersError {
+        match err {
+            x @ Gles2Error::ShaderCompileError(_)
+            | x @ Gles2Error::ProgramLinkError
+            | x @ Gles2Error::GLFunctionLoaderError
+            | x @ Gles2Error::GLExtensionNotSupported(_)
+                => SwapBuffersError::ContextLost(Box::new(x)),
+            Gles2Error::ContextActivationError(err) => err.into(),
+            x @ Gles2Error::FramebufferBindingError
+            | x @ Gles2Error::BindBufferEGLError(_)
+            | x @ Gles2Error::UnsupportedPixelFormat(_)
+            | x @ Gles2Error::BufferAccessError(_)
+                => SwapBuffersError::TemporaryFailure(Box::new(x)),
+        }
+    }
 }
 
 extern "system" fn gl_debug_log(_source: ffi::types::GLenum,
