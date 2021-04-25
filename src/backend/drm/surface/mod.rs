@@ -159,10 +159,10 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     /// but will trigger a `vblank` event once done.
     /// Make sure to [set a `DeviceHandler`](Device::set_handler) and
     /// [register the belonging `Device`](device_bind) before to receive the event in time.
-    pub fn commit(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
+    pub fn commit(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
         match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => surf.commit(framebuffer),
-            DrmSurfaceInternal::Legacy(surf) => surf.commit(framebuffer),
+            DrmSurfaceInternal::Atomic(surf) => surf.commit(framebuffer, event),
+            DrmSurfaceInternal::Legacy(surf) => surf.commit(framebuffer, event),
         }
     }
 
@@ -174,10 +174,10 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     /// This operation is not blocking and will produce a `vblank` event once swapping is done.
     /// Make sure to [set a `DeviceHandler`](Device::set_handler) and
     /// [register the belonging `Device`](device_bind) before to receive the event in time.
-    pub fn page_flip(&self, framebuffer: framebuffer::Handle) -> Result<(), Error> {
+    pub fn page_flip(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
         match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => surf.page_flip(framebuffer),
-            DrmSurfaceInternal::Legacy(surf) => surf.page_flip(framebuffer)
+            DrmSurfaceInternal::Atomic(surf) => surf.page_flip(framebuffer, event),
+            DrmSurfaceInternal::Legacy(surf) => surf.page_flip(framebuffer, event),
         }
     }
 
