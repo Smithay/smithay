@@ -321,12 +321,18 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
             return Err(Error::DeviceInactive);
         }
         
+        let pending = self.pending.read().unwrap();
+        
         debug!(self.logger, "Setting screen for buffer *testing*");
         Ok(self.fd.set_crtc(
             self.crtc,
             Some(fb),
             (0, 0),
-            &[],
+            &pending
+                .connectors
+                .iter()
+                .copied()
+                .collect::<Vec<connector::Handle>>(),
             Some(*mode),
         ).is_ok())
     }

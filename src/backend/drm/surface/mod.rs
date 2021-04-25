@@ -185,64 +185,12 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
         &self.formats
     }
 
-    pub fn test_buffer<B>(&self, buffer: &B, bpp: u32, modifier: Option<[Modifier; 4]>, mode: &Mode, allow_screen_change: bool) -> Result<Option<framebuffer::Handle>, Error>
-    where
-        B: drm::buffer::Buffer + drm::buffer::PlanarBuffer
-    {
-        use std::sync::atomic::Ordering;
-
-        let (active, logger) = match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => (surf.active.load(Ordering::SeqCst), surf.logger.clone()),
-            DrmSurfaceInternal::Legacy(surf) => (surf.active.load(Ordering::SeqCst), surf.logger.clone()),
-        };
-
-        if !active {
-            return Err(Error::DeviceInactive);
-        }
-
-        let fb = match
-            if let Some(mods) = modifier {
-                self.add_planar_framebuffer(buffer, unsafe { 
-                    std::mem::transmute::<&[Modifier; 4], &[Option<Modifier>; 4]>(&mods)
-                }, drm_ffi::DRM_MODE_FB_MODIFIERS)
-            } else {
-                self.add_planar_framebuffer(buffer, &[None, None, None, None], 0)
-            }
-        {
-            Ok(fb) => fb,
-            Err(_) => {
-                // We only support this as a fallback of last resort for ARGB8888 visuals,
-	            // like xf86-video-modesetting does.
-                if drm::buffer::Buffer::format(buffer) != Fourcc::Argb8888
-                || buffer.handles()[1].is_some() {
-                    return Ok(false);
-                }
-                debug!(logger, "Failed to add framebuffer, trying legacy method");
-                self.add_framebuffer(buffer, bpp, 32).map_err(|source| Error::Access {
-                    errmsg: "Failed to add framebuffer",
-                    dev: self.dev_path(),
-                    source,
-                })?
-            }
-        };
-
-        let result = match &*self.internal {
+    pub fn test_buffer(&self, fb: framebuffer::Handle, mode: &Mode, allow_screen_change: bool) -> Result<bool, Error> {
+        match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.test_buffer(fb, mode),
             DrmSurfaceInternal::Legacy(surf) => if allow_screen_change {
                 surf.test_buffer(fb, mode)
             } else { Ok(false) } // There is no test-commiting with the legacy interface
-        };
-
-        if !result.unwrap_or(false) {
-            if let Err(err) = self.destroy_framebuffer(fb) {
-                debug!(logger, "Failed to destroy framebuffer({:?}): {}", fb, err);
-            }
         }
-
-        result.map(|x| if x {
-            Some(fb)
-        } else {
-            None
-        })
     }
 }
