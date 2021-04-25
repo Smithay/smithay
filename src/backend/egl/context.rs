@@ -29,7 +29,7 @@ impl EGLContext {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        Self::new_internal(display, None, log)
+        Self::new_internal(display, None, None, log)
     }
 
     /// Create a new [`EGLContext`] from a given [`NativeDisplay`](native::NativeDisplay)
@@ -42,11 +42,36 @@ impl EGLContext {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        Self::new_internal(display, Some((attributes, reqs)), log)
+        Self::new_internal(display, None, Some((attributes, reqs)), log)
+    }
+
+    pub fn new_shared<L>(
+        display: &EGLDisplay,
+        share: &EGLContext,
+        log: L,
+    ) -> Result<EGLContext, Error>
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
+        Self::new_internal(display, Some(share), None, log)
+    }
+    
+    pub fn new_shared_with_config<L>(
+        display: &EGLDisplay,
+        share: &EGLContext,
+        attributes: GlAttributes,
+        reqs: PixelFormatRequirements,
+        log: L,
+    ) -> Result<EGLContext, Error>
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
+        Self::new_internal(display, Some(share), Some((attributes, reqs)), log)
     }
 
     fn new_internal<L>(
         display: &EGLDisplay,
+        shared: Option<&EGLContext>,
         config: Option<(GlAttributes, PixelFormatRequirements)>,
         log: L,
     ) -> Result<EGLContext, Error>
@@ -111,7 +136,7 @@ impl EGLContext {
             ffi::egl::CreateContext(
                 **display.display,
                 config_id,
-                ptr::null(),
+                shared.map(|context| context.context).unwrap_or(ffi::egl::NO_CONTEXT),
                 context_attributes.as_ptr(),
             )
         })
