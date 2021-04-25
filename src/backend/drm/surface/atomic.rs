@@ -56,7 +56,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             source,
         })?;
 
-        // If we have no current mode, we create a fake one, which will not match (and thus gets overriden on the commit below).
+        // If we have no current mode, we create a fake one, which will not match (and thus gets overridden on the commit below).
         // A better fix would probably be making mode an `Option`, but that would mean
         // we need to be sure, we require a mode to always be set without relying on the compiler.
         // So we cheat, because it works and is easier to handle later.
@@ -509,9 +509,17 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 source,
             })?;
         
+        let current = self.state.read().unwrap();
+        let pending = self.pending.read().unwrap();
+
+        let current_conns = current.connectors.clone();
+        let pending_conns = pending.connectors.clone();
+        let mut removed = current_conns.difference(&pending_conns);
+        let mut added = pending_conns.difference(&current_conns);
+
         let req = self.build_request(
-            &mut [].iter(),
-            &mut [].iter(),
+            &mut added,
+            &mut removed,
             self.plane,
             Some(fb),
             Some(*mode),
@@ -519,11 +527,6 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         )?;
 
         let result = self.fd.atomic_commit(&[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly], req).is_ok();
-
-        if let Err(err) = self.fd.destroy_framebuffer(fb) {
-            debug!(self.logger, "Failed to destroy framebuffer({:?}): {}", fb, err);
-        }
-
         Ok(result)
     }
 
