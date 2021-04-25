@@ -30,7 +30,7 @@ pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
     state: RwLock<State>,
     pending: RwLock<State>,
     test_buffer: Mutex<Option<(DumbBuffer, framebuffer::Handle)>>,
-    pub(super) logger: ::slog::Logger,
+    pub(crate) logger: ::slog::Logger,
 }
 
 impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {

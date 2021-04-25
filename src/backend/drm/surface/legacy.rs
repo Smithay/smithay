@@ -25,7 +25,7 @@ pub struct LegacyDrmSurface<A: AsRawFd + 'static> {
     crtc: crtc::Handle,
     state: RwLock<State>,
     pending: RwLock<State>,
-    pub(super) logger: ::slog::Logger,
+    pub(crate) logger: ::slog::Logger,
 }
 
 impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
