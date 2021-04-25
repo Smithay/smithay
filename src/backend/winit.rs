@@ -4,8 +4,8 @@ use crate::backend::egl::display::EGLDisplay;
 use crate::backend::{
     egl::{context::GlAttributes, native, EGLContext, EGLSurface, Error as EGLError},
     renderer::{
-        Renderer, Bind, Transform, Frame,
-        gles2::{Gles2Renderer, Gles2Error, Gles2Texture, Gles2Frame},
+        Renderer, Bind, Transform,
+        gles2::{Gles2Renderer, Gles2Error, Gles2Texture},
     },
     input::{
         Axis, AxisSource, Event as BackendEvent, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
@@ -71,11 +71,6 @@ pub struct WinitGraphicsBackend {
     egl: Rc<EGLSurface>,
     window: Rc<WinitWindow>,
     size: Rc<RefCell<WindowSize>>,
-}
-
-pub struct WinitFrame {
-    frame: Gles2Frame,
-    egl: Rc<EGLSurface>,
 }
 
 /// Abstracted event loop of a [`WinitWindow`] implementing the [`InputBackend`] trait
@@ -172,6 +167,8 @@ where
         } else {
             unreachable!("No backends for winit other then Wayland and X11 are supported")
         };
+
+        context.unbind();
         
         (
             display,
@@ -187,13 +184,14 @@ where
 
     let window = Rc::new(winit_window);
     let egl = Rc::new(surface);
+    let mut renderer = unsafe { Gles2Renderer::new(context, log.clone())? };
 
     Ok((
         WinitGraphicsBackend {
             window: window.clone(),
             display,
             egl: egl.clone(),
-            renderer: Gles2Renderer::new(context, log.clone())?,
+            renderer,
             size: size.clone(),
         },
         WinitInputBackend {
@@ -247,55 +245,46 @@ impl WinitGraphicsBackend {
         &*self.window
     }
 
-    pub fn begin(&mut self) -> Result<WinitFrame, Gles2Error> {
+    pub fn begin(&mut self) -> Result<(), Gles2Error> {
         let (width, height) = {
             let size = self.size.borrow();
             size.physical_size.into()
         };
-        Renderer::begin(self, width, height, Transform::Normal)
+        
+        self.renderer.bind(self.egl.clone())?;
+        self.renderer.begin(width, height, Transform::Normal)
     }
 }
 
 impl Renderer for WinitGraphicsBackend {
     type Error = Gles2Error;
     type Texture = Gles2Texture;
-    type Frame = WinitFrame;
-
-    fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<Self::Frame, Self::Error> {
-        self.renderer.bind(&*self.egl)?;
-        let frame = self.renderer.begin(width, height, transform)?;
-
-        Ok(WinitFrame {
-            frame,
-            egl: self.egl.clone(),
-        })
-    }
 
     #[cfg(feature = "wayland_frontend")]
     fn shm_formats(&self) -> &[wl_shm::Format] {
-        self.renderer.shm_formats()
+        Renderer::shm_formats(&self.renderer)
     }
 
     #[cfg(feature = "wayland_frontend")]
-    fn import_shm(&self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error> {
+    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error> {
         self.renderer.import_shm(buffer)
     }
-}
 
-impl Frame for WinitFrame {
-    type Error = Gles2Error;
-    type Texture = Gles2Texture;
+    fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), <Self as Renderer>::Error> {
+        self.renderer.bind(self.egl.clone())?;
+        self.renderer.begin(width, height, transform)
+    }
 
     fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error> {
-        self.frame.clear(color)
+        self.renderer.clear(color)
     }
 
     fn render_texture(&mut self, texture: &Self::Texture, matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error> {
-        self.frame.render_texture(texture, matrix, alpha)
+        self.renderer.render_texture(texture, matrix, alpha)
     }
 
-    fn finish(self) -> Result<(), crate::backend::SwapBuffersError> {
-        self.frame.finish()?;
+    fn finish(&mut self) -> Result<(), crate::backend::SwapBuffersError> {
+        self.renderer.finish()?;
         self.egl.swap_buffers()?;
         Ok(())
     }

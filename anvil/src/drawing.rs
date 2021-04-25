@@ -14,17 +14,16 @@ use smithay::{
 
 use crate::shell::{MyCompositorToken, MyWindowMap, SurfaceData};
 
-pub fn draw_cursor<R, E, T, F>(
+
+pub fn draw_cursor<R, E, T>(
     renderer: &mut R,
-    frame: &mut F,
     surface: &wl_surface::WlSurface,
     (x, y): (i32, i32),
     token: MyCompositorToken,
     log: &Logger,
 )
     where
-        R: Renderer<Error=E, Texture=T, Frame=F>,
-        F: Frame<Error=E, Texture=T>,
+        R: Renderer<Error=E, Texture=T>,
         E: std::error::Error,
         T: Texture + 'static,
 {
@@ -38,27 +37,25 @@ pub fn draw_cursor<R, E, T, F>(
             (0, 0)
         }
     };
-    draw_surface_tree(renderer, frame, surface, (x - dx, y - dy), token, log);
+    draw_surface_tree(renderer, surface, (x - dx, y - dy), token, log);
 }
 
-fn draw_surface_tree<R, E, T, F>(
+fn draw_surface_tree<R, E, T>(
     renderer: &mut R,
-    frame: &mut F,
     root: &wl_surface::WlSurface,
     location: (i32, i32),
     compositor_token: MyCompositorToken,
     log: &Logger,
 )
     where
-        R: Renderer<Error=E, Texture=T, Frame=F>,
-        F: Frame<Error=E, Texture=T>,
+        R: Renderer<Error=E, Texture=T>,
         E: std::error::Error,
         T: Texture + 'static,
 {
     compositor_token.with_surface_tree_upward(
         root,
-        location,
-        |_surface, attributes, role, &(mut x, mut y)| {
+        (),
+        |_surface, attributes, role, _| {
             // Pull a new buffer if available
             if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
@@ -75,6 +72,29 @@ fn draw_surface_tree<R, E, T, F>(
                         buffer.release();
                     }
                 }
+                // Now, should we be drawn ?
+                if data.texture.is_some() {
+                    TraversalAction::DoChildren(())
+                } else {
+                    // we are not displayed, so our children are neither
+                    TraversalAction::SkipChildren
+                }
+            } else {
+                // we are not displayed, so our children are neither
+                TraversalAction::SkipChildren
+            }
+        },
+        |_, _, _, _| {},
+        |_, _, _, _| true,
+    );
+
+    compositor_token.with_surface_tree_upward(
+        root,
+        location,
+        |_surface, attributes, role, &(mut x, mut y)| {
+            // Pull a new buffer if available
+            if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
+                let mut data = data.borrow_mut();
                 // Now, should we be drawn ?
                 if data.texture.is_some() {
                     // if yes, also process the children
@@ -103,7 +123,7 @@ fn draw_surface_tree<R, E, T, F>(
                         x += sub_x;
                         y += sub_y;
                     }
-                    frame.render_texture_at(&*buffer_texture, (x, y), Transform::Normal /* TODO */, 1.0);
+                    renderer.render_texture_at(&*buffer_texture, (x, y), Transform::Normal /* TODO */, 1.0);
                 }
             }
         },
@@ -111,17 +131,15 @@ fn draw_surface_tree<R, E, T, F>(
     );
 }
 
-pub fn draw_windows<R, E, T, F>(
+pub fn draw_windows<R, E, T>(
     renderer: &mut R,
-    frame: &mut F,
     window_map: &MyWindowMap,
     output_rect: Option<Rectangle>,
     compositor_token: MyCompositorToken,
     log: &::slog::Logger,
 )
     where
-        R: Renderer<Error=E, Texture=T, Frame=F>,
-        F: Frame<Error=E, Texture=T>,
+        R: Renderer<Error=E, Texture=T>,
         E: std::error::Error,
         T: Texture + 'static,
 {
@@ -140,7 +158,6 @@ pub fn draw_windows<R, E, T, F>(
                     // this surface is a root of a subsurface tree that needs to be drawn
                     draw_surface_tree(
                         renderer,
-                        frame,
                         &wl_surface,
                         initial_place,
                         compositor_token,
@@ -152,17 +169,15 @@ pub fn draw_windows<R, E, T, F>(
     }
 }
 
-pub fn draw_dnd_icon<R, E, T, F>(
+pub fn draw_dnd_icon<R, E, T>(
     renderer: &mut R,
-    frame: &mut F,
     surface: &wl_surface::WlSurface,
     (x, y): (i32, i32),
     token: MyCompositorToken,
     log: &::slog::Logger,
 )
     where
-        R: Renderer<Error=E, Texture=T, Frame=F>,
-        F: Frame<Error=E, Texture=T>,
+        R: Renderer<Error=E, Texture=T>,
         E: std::error::Error,
         T: Texture + 'static,
 {
@@ -172,7 +187,7 @@ pub fn draw_dnd_icon<R, E, T, F>(
             "Trying to display as a dnd icon a surface that does not have the DndIcon role."
         );
     }
-    draw_surface_tree(renderer, frame, surface, (x, y), token, log);
+    draw_surface_tree(renderer, surface, (x, y), token, log);
 }
 
 /*

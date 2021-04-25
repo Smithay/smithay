@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 //#[cfg(feature = "egl")]
 //use smithay::backend::egl::EGLGraphicsBackend;
 use smithay::{
-    backend::{renderer::Frame, input::InputBackend, winit, SwapBuffersError},
+    backend::{renderer::Renderer, input::InputBackend, winit, SwapBuffersError},
     reexports::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
@@ -112,11 +112,11 @@ pub fn run_winit(
 
         // drawing logic
         {
-            let mut frame = renderer.begin().expect("Failed to render frame");
-            frame.clear([0.8, 0.8, 0.9, 1.0]);
+            renderer.begin().expect("Failed to render frame");
+            renderer.clear([0.8, 0.8, 0.9, 1.0]).expect("Failed to clear frame");
 
             // draw the windows
-            draw_windows(&mut renderer, &mut frame, &*state.window_map.borrow(), None, state.ctoken, &log);
+            draw_windows(&mut renderer, &*state.window_map.borrow(), None, state.ctoken, &log);
 
             let (x, y) = *state.pointer_location.borrow();
             // draw the dnd icon if any
@@ -124,7 +124,7 @@ pub fn run_winit(
                 let guard = state.dnd_icon.lock().unwrap();
                 if let Some(ref surface) = *guard {
                     if surface.as_ref().is_alive() {
-                        draw_dnd_icon(&mut renderer, &mut frame, surface, (x as i32, y as i32), state.ctoken, &log);
+                        draw_dnd_icon(&mut renderer, surface, (x as i32, y as i32), state.ctoken, &log);
                     }
                 }
             }
@@ -143,13 +143,13 @@ pub fn run_winit(
                 // draw as relevant
                 if let CursorImageStatus::Image(ref surface) = *guard {
                     renderer.window().set_cursor_visible(false);
-                    draw_cursor(&mut renderer, &mut frame, surface, (x as i32, y as i32), state.ctoken, &log);
+                    draw_cursor(&mut renderer, surface, (x as i32, y as i32), state.ctoken, &log);
                 } else {
                     renderer.window().set_cursor_visible(true);
                 }
             }
 
-            if let Err(SwapBuffersError::ContextLost(err)) = frame.finish() {
+            if let Err(SwapBuffersError::ContextLost(err)) = renderer.finish() {
                 error!(log, "Critical Rendering Error: {}", err);
                 state.running.store(false, Ordering::SeqCst);
             }
