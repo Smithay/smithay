@@ -133,10 +133,6 @@ pub trait Texture {
 pub trait Renderer {
     type Error: Error;
     type Texture: Texture;
-    type Frame: Frame<Error=Self::Error, Texture=Self::Texture>;
-
-    #[must_use]
-    fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<Self::Frame, Self::Error>;
 
     #[cfg(feature = "wayland_frontend")]
     fn shm_formats(&self) -> &[wl_shm::Format] {
@@ -144,13 +140,11 @@ pub trait Renderer {
         &[wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888]
     }
     #[cfg(feature = "wayland_frontend")]
-    fn import_shm(&self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error>;
-}
-
-pub trait Frame {
-    type Error: Error;
-    type Texture: Texture;
-
+    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error>;
+    
+    fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), <Self as Renderer>::Error>;
+    fn finish(&mut self) -> Result<(), SwapBuffersError>;
+    
     fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error>;
     fn render_texture(&mut self, texture: &Self::Texture, matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error>;
     fn render_texture_at(&mut self, texture: &Self::Texture, pos: (i32, i32), transform: Transform, alpha: f32) -> Result<(), Self::Error> {
@@ -173,5 +167,4 @@ pub trait Frame {
         self.render_texture(texture, mat, alpha)
     }
 
-    fn finish(self) -> Result<(), SwapBuffersError>;
 }
