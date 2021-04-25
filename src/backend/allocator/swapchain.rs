@@ -1,55 +1,72 @@
 use std::convert::TryInto;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex, MutexGuard, atomic::{AtomicBool, Ordering}};
 use std::ops::Deref;
 
 use crate::backend::allocator::{Allocator, Buffer, Format};
 
 pub const SLOT_CAP: usize = 4;
 
-pub struct Swapchain<A: Allocator<B>, B: Buffer + TryInto<B>, D: Buffer = B> {
-    allocator: A,
+pub struct Swapchain<A: Allocator<B>, B: Buffer + TryInto<B>, U: 'static, D: Buffer = B> {
+    pub allocator: A,
     _original_buffer_format: std::marker::PhantomData<B>,
 
     width: u32,
     height: u32,
     format: Format,
 
-    slots: [Slot<D>; SLOT_CAP],
+    slots: [Slot<D, U>; SLOT_CAP],
 }
 
-pub struct Slot<B: Buffer> {
+pub struct Slot<B: Buffer, U: 'static> {
     buffer: Arc<Option<B>>,
     acquired: Arc<AtomicBool>,
+    userdata: Arc<Mutex<Option<U>>>,
 }
 
-impl<B: Buffer> Default for Slot<B> {
+impl<B: Buffer, U: 'static> Slot<B, U> {
+    pub fn set_userdata(&self, data: U) -> Option<U> {
+        self.userdata.lock().unwrap().replace(data)
+    }
+
+    pub fn userdata(&self) -> MutexGuard<'_, Option<U>> {
+        self.userdata.lock().unwrap()
+    }
+
+    pub fn clear_userdata(&self) -> Option<U> {
+        self.userdata.lock().unwrap().take()
+    }
+}
+
+impl<B: Buffer, U: 'static> Default for Slot<B, U> {
     fn default() -> Self {
         Slot {
             buffer: Arc::new(None),
             acquired: Arc::new(AtomicBool::new(false)),
+            userdata: Arc::new(Mutex::new(None)),
         }
     }
 }
 
-impl<B: Buffer> Clone for Slot<B> {
+impl<B: Buffer, U: 'static> Clone for Slot<B, U> {
     fn clone(&self) -> Self {
         Slot {
             buffer: self.buffer.clone(),
             acquired: self.acquired.clone(),
+            userdata: self.userdata.clone(),
         }
     }
 }
 
-impl<B: Buffer> Deref for Slot<B> {
+impl<B: Buffer, U: 'static> Deref for Slot<B, U> {
     type Target = B;
     fn deref(&self) -> &B {
         Option::as_ref(&*self.buffer).unwrap()
     }
 }
 
-impl<B: Buffer> Drop for Slot<B> {
+impl<B: Buffer, U: 'static> Drop for Slot<B, U> {
     fn drop(&mut self) {
-        self.acquired.store(false, Ordering::AcqRel);
+        self.acquired.store(false, Ordering::SeqCst);
     }
 }
 
@@ -65,15 +82,16 @@ where
     ConversionError(#[source] E2),
 }
 
-impl<A, B, D, E1, E2> Swapchain<A, B, D>
+impl<A, B, D, U, E1, E2> Swapchain<A, B, U, D>
 where
     A: Allocator<B, Error=E1>,
     B: Buffer + TryInto<D, Error=E2>,
     D: Buffer,
     E1: std::error::Error + 'static,
     E2: std::error::Error + 'static,
+    U: 'static
 {
-    pub fn new(allocator: A, width: u32, height: u32, format: Format) -> Swapchain<A, B, D> {
+    pub fn new(allocator: A, width: u32, height: u32, format: Format) -> Swapchain<A, B, U, D> {
         Swapchain {
             allocator,
             _original_buffer_format: std::marker::PhantomData,
@@ -84,7 +102,7 @@ where
         }
     }
 
-    pub fn acquire(&mut self) -> Result<Option<Slot<D>>, SwapchainError<E1, E2>> {
+    pub fn acquire(&mut self) -> Result<Option<Slot<D, U>>, SwapchainError<E1, E2>> {
         if let Some(free_slot) = self.slots.iter_mut().filter(|s| !s.acquired.load(Ordering::SeqCst)).next() {
             if free_slot.buffer.is_none() {
                 free_slot.buffer = Arc::new(Some(
@@ -93,9 +111,9 @@ where
                     .try_into().map_err(SwapchainError::ConversionError)?
                 ));
             }
-            assert!(!free_slot.buffer.is_some());
+            assert!(free_slot.buffer.is_some());
 
-            if !free_slot.acquired.swap(true, Ordering::AcqRel) {
+            if !free_slot.acquired.swap(true, Ordering::SeqCst) {
                 return Ok(Some(free_slot.clone()));
             }
 
