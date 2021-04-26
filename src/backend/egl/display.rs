@@ -18,7 +18,7 @@ use crate::backend::egl::{
     ffi, wrap_egl_call, EGLError, Error,
     context::{GlAttributes, PixelFormatRequirements},
     native::{EGLNativeDisplay},
-    BufferAccessError, EGLImages, Format,
+    BufferAccessError, EGLBuffer, Format,
 };
 
 /// Wrapper around [`ffi::EGLDisplay`](ffi::egl::types::EGLDisplay) to ensure display is only destroyed
@@ -591,7 +591,7 @@ impl EGLBufferReader {
     pub fn egl_buffer_contents(
         &self,
         buffer: &WlBuffer,
-    ) -> ::std::result::Result<EGLImages, BufferAccessError> {
+    ) -> ::std::result::Result<EGLBuffer, BufferAccessError> {
         let mut format: i32 = 0;
         let query = wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
@@ -670,7 +670,7 @@ impl EGLBufferReader {
             });
         }
 
-        Ok(EGLImages {
+        Ok(EGLBuffer {
             display: self.display.clone(),
             width: width as u32,
             height: height as u32,
