@@ -93,6 +93,9 @@ pub enum BufferAccessError {
     /// The required EGL extension is not supported by the underlying EGL implementation
     #[error("{0}")]
     EglExtensionNotSupported(#[from] EglExtensionNotSupportedError),
+    /// We currently do not support multi-planar buffers
+    #[error("Multi-planar formats (like {0:?}) are unsupported")]
+    UnsupportedMultiPlanarFormat(Format),
 }
 
 #[cfg(feature = "wayland_frontend")]
@@ -105,6 +108,8 @@ impl fmt::Debug for BufferAccessError {
                 write!(formatter, "BufferAccessError::EGLImageCreationFailed")
             }
             BufferAccessError::EglExtensionNotSupported(ref err) => write!(formatter, "{:?}", err),
+            BufferAccessError::UnsupportedMultiPlanarFormat(ref fmt) =>
+                write!(formatter, "BufferAccessError::UnsupportedMultiPlanerFormat({:?})", fmt),
         }
     }
 }
