@@ -236,7 +236,7 @@ impl Format {
 
 /// Images of the EGL-based [`WlBuffer`].
 #[cfg(feature = "wayland_frontend")]
-pub struct EGLImages {
+pub struct EGLBuffer {
     display: Arc<EGLDisplayHandle>,
     /// Width in pixels
     pub width: u32,
@@ -265,7 +265,7 @@ impl fmt::Debug for EGLImages {
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl EGLImages {
+impl EGLBuffer {
     /// Amount of planes of these `EGLImages`
     pub fn num_planes(&self) -> usize {
         self.format.num_planes()
@@ -327,7 +327,7 @@ impl EGLImages {
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl Drop for EGLImages {
+impl Drop for EGLBuffer {
     fn drop(&mut self) {
         for image in self.images.drain(..) {
             // ignore result on drop
