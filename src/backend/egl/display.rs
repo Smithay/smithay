@@ -576,7 +576,6 @@ impl fmt::Debug for EGLBufferReader {
 #[cfg(feature = "use_system_lib")]
 impl EGLBufferReader {
     fn new(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display) -> Self {
-
         Self {
             display,
             wayland,
@@ -610,9 +609,9 @@ impl EGLBufferReader {
             x if x == ffi::egl::TEXTURE_RGB as i32 => Format::RGB,
             x if x == ffi::egl::TEXTURE_RGBA as i32 => Format::RGBA,
             ffi::egl::TEXTURE_EXTERNAL_WL => Format::External,
-            ffi::egl::TEXTURE_Y_UV_WL => Format::Y_UV,
-            ffi::egl::TEXTURE_Y_U_V_WL => Format::Y_U_V,
-            ffi::egl::TEXTURE_Y_XUXV_WL => Format::Y_XUXV,
+            ffi::egl::TEXTURE_Y_UV_WL => return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_UV)),
+            ffi::egl::TEXTURE_Y_U_V_WL => return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_U_V)),
+            ffi::egl::TEXTURE_Y_XUXV_WL => return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_XUXV)),
             x => panic!("EGL returned invalid texture type: {}", x),
         };
 
