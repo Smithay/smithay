@@ -276,59 +276,13 @@ impl EGLBuffer {
         self.format.num_planes()
     }
 
-    /*
-    /// Bind plane to an OpenGL texture id
-    ///
-    /// This does only temporarily modify the OpenGL state any changes are reverted before returning.
-    /// The given `GLGraphicsBackend` must be the one belonging to the `tex_id` and will be the current
-    /// context (and surface if applicable) after this function returns.
-    ///
-    /// # Safety
-    ///
-    /// The given `tex_id` needs to be a valid GL texture in the given context otherwise undefined behavior might occur.
-    #[cfg(feature = "renderer_gl")]
-    pub unsafe fn bind_to_texture(
-        &self,
-        plane: usize,
-        tex_id: c_uint,
-        backend: &dyn GLGraphicsBackend,
-    ) -> ::std::result::Result<(), TextureCreationError> {
-        // receive the list of extensions for *this* context
-        backend
-            .make_current()
-            .map_err(|_| TextureCreationError::ContextLost)?;
-
-        let egl_to_texture_support = {
-            // the list of gl extensions supported by the context
-            let data = CStr::from_ptr(self.gl.GetString(gl_ffi::EXTENSIONS) as *const _)
-                .to_bytes()
-                .to_vec();
-            let list = String::from_utf8(data).unwrap();
-            list.split(' ')
-                .any(|s| s == "GL_OES_EGL_image" || s == "GL_OES_EGL_image_base")
-        };
-        if !egl_to_texture_support {
-            return Err(TextureCreationError::GLExtensionNotSupported("GL_OES_EGL_image"));
+    pub fn image(&self, plane: usize) -> Option<EGLImage> {
+        if plane > self.format.num_planes() {
+            None
+        } else {
+            Some(self.images[plane])
         }
-
-        let mut old_tex_id: i32 = 0;
-        self.gl.GetIntegerv(gl_ffi::TEXTURE_BINDING_2D, &mut old_tex_id);
-        self.gl.BindTexture(gl_ffi::TEXTURE_2D, tex_id);
-        self.gl.EGLImageTargetTexture2DOES(
-            gl_ffi::TEXTURE_2D,
-            *self
-                .images
-                .get(plane)
-                .ok_or(TextureCreationError::PlaneIndexOutOfBounds)?,
-        );
-        let res = match ffi::egl::GetError() as u32 {
-            ffi::egl::SUCCESS => Ok(()),
-            err => Err(TextureCreationError::TextureBindingFailed(err)),
-        };
-        self.gl.BindTexture(gl_ffi::TEXTURE_2D, old_tex_id as u32);
-        res
     }
-    */
 }
 
 #[cfg(feature = "wayland_frontend")]
