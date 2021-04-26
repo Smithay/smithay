@@ -212,7 +212,7 @@ pub enum TextureCreationError {
 /// Texture format types
 #[repr(i32)]
 #[allow(non_camel_case_types)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Format {
     /// RGB format
     RGB = ffi::egl::TEXTURE_RGB as i32,

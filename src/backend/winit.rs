@@ -2,7 +2,7 @@
 
 use crate::backend::egl::display::EGLDisplay;
 use crate::backend::{
-    egl::{context::GlAttributes, native, EGLContext, EGLSurface, Error as EGLError},
+    egl::{context::GlAttributes, native, EGLContext, EGLSurface, EGLBuffer, Error as EGLError},
     renderer::{
         Renderer, Bind, Transform,
         gles2::{Gles2Renderer, Gles2Error, Gles2Texture},
@@ -259,7 +259,7 @@ impl WinitGraphicsBackend {
 impl Renderer for WinitGraphicsBackend {
     type Error = Gles2Error;
     type Texture = Gles2Texture;
-
+    
     #[cfg(feature = "image")]
     fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::Texture, Self::Error> {
         self.renderer.import_bitmap(image)
@@ -273,6 +273,11 @@ impl Renderer for WinitGraphicsBackend {
     #[cfg(feature = "wayland_frontend")]
     fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error> {
         self.renderer.import_shm(buffer)
+    }
+    
+    #[cfg(feature = "wayland_frontend")]
+    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::Texture, Self::Error> {
+        self.renderer.import_egl(buffer)        
     }
 
     fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), <Self as Renderer>::Error> {

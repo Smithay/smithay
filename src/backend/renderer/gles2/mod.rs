@@ -8,7 +8,7 @@ use cgmath::{prelude::*, Matrix3, Vector2};
 mod shaders;
 use crate::backend::SwapBuffersError;
 use crate::backend::allocator::{dmabuf::{Dmabuf, WeakDmabuf}, Format};
-use crate::backend::egl::{EGLContext, EGLSurface, ffi::egl::types::EGLImage, MakeCurrentError};
+use crate::backend::egl::{EGLContext, EGLSurface, EGLBuffer, Format as EGLFormat, ffi::egl::types::EGLImage, MakeCurrentError};
 use super::{Renderer, Bind, Unbind, Transform, Texture};
 
 #[cfg(feature = "wayland_frontend")]
@@ -461,7 +461,7 @@ impl Renderer for Gles2Renderer {
             height: image.height(),
         };
         self.egl.unbind()?;
-        
+ 
         Ok(texture)
     }
     
@@ -521,6 +521,45 @@ impl Renderer for Gles2Renderer {
         }).map_err(Gles2Error::BufferAccessError)?
     }
     
+    #[cfg(feature = "wayland_frontend")]
+    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::Texture, Self::Error> {
+        if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
+            return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
+        }
+
+        self.make_current()?;
+
+        let mut tex = 0;
+        let target = if buffer.format == EGLFormat::External { ffi::TEXTURE_EXTERNAL_OES } else { ffi::TEXTURE_2D };
+        unsafe {
+            self.gl.GenTextures(1, &mut tex);
+            self.gl.BindTexture(target, tex);
+
+            self.gl.EGLImageTargetTexture2DOES(
+                target,
+                buffer.image(0).unwrap(),
+            );
+        }
+
+        let texture = Gles2Texture {
+            texture: tex,
+            texture_kind: match buffer.format {
+                EGLFormat::RGB  => 3,
+                EGLFormat::RGBA => 2,
+                EGLFormat::External => 4,
+                _ => unreachable!("EGLBuffer currenly does not expose multi-planar buffers to us"),
+            },
+            is_external: buffer.format == EGLFormat::External,
+            y_inverted: buffer.y_inverted,
+            width: buffer.width,
+            height: buffer.height,
+        };
+        self.egl.unbind()?;
+        
+        Ok(texture)
+    }
+
+
     fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), Gles2Error> {
         self.make_current()?;
         unsafe {
