@@ -1,9 +1,16 @@
 #[cfg(feature = "egl")]
 use std::{cell::RefCell, rc::Rc};
 
+#[cfg(feature = "udev")]
+use smithay::backend::renderer::{Renderer, Texture};
+#[cfg(feature = "udev")]
+use smithay::reexports::nix::libc::dev_t;
+#[cfg(feature = "udev")]
+use std::collections::HashMap;
+
 #[cfg(feature = "egl")]
 use smithay::backend::egl::{
-    display::EGLBufferReader, BufferAccessError as EGLBufferAccessError, EGLImages, Format,
+    display::EGLBufferReader, BufferAccessError as EGLBufferAccessError, EGLBuffer,
 };
 use smithay::{
     reexports::wayland_server::protocol::wl_buffer::WlBuffer,
@@ -57,5 +64,99 @@ impl BufferUtils {
             warn!(self.log, "Unable to load buffer contents"; "err" => format!("{:?}", err));
             err
         })
+    }
+
+    #[cfg(feature = "egl")]
+    pub fn load_buffer<T>(&self, buffer: WlBuffer) -> Result<BufferTextures<T>, WlBuffer> {
+        let result = if let Some(reader) = &self.egl_buffer_reader.borrow().as_ref() {
+            reader.egl_buffer_contents(&buffer)
+        } else {
+            return Err(buffer);
+        };
+
+        let egl_buffer = match result {
+            Ok(egl) => Some(egl),
+            Err(EGLBufferAccessError::NotManaged(_)) => { None },
+            Err(err) => {
+                error!(self.log, "EGL error"; "err" => format!("{:?}", err));
+                return Err(buffer);
+            }
+        };
+
+        Ok(BufferTextures {
+            buffer,
+            textures: HashMap::new(),
+            egl: egl_buffer, // I guess we need to keep this alive ?
+        })
+    }
+
+    #[cfg(not(feature = "egl"))]
+    pub fn load_buffer<T>(&self, buffer: WlBuffer) -> Result<BufferTextures<T>, WlBuffer> {
+        Ok(BufferTextures {
+            buffer,
+            textures: HashMap::new(),
+        })
+    }
+}
+
+#[cfg(feature = "udev")]
+pub struct BufferTextures<T> {
+    buffer: WlBuffer,
+    pub textures: HashMap<dev_t, T>,
+    #[cfg(feature = "egl")]
+    egl: Option<EGLBuffer>,
+}
+
+#[cfg(feature = "udev")]
+impl<T: Texture> BufferTextures<T> {
+    #[cfg(feature = "egl")]
+    pub fn load_texture<'a, R: Renderer<Texture=T>>(
+        &'a mut self,
+        id: u64,
+        renderer: &mut R,
+    ) -> Result<&'a T, R::Error> {
+        if self.textures.contains_key(&id) {
+            return Ok(&self.textures[&id]);
+        }
+
+        if let Some(buffer) = self.egl.as_ref() {
+            //EGL buffer
+            let texture = renderer.import_egl(&buffer)?;
+            self.textures.insert(id, texture);
+            Ok(&self.textures[&id])
+        } else {
+            self.load_shm_texture(id, renderer)
+        }
+    }
+
+    #[cfg(not(feature = "egl"))]
+    pub fn load_texture<'a, R: Renderer<Texture=T>>(
+        &'a mut self,
+        id: u64,
+        renderer: &mut R,
+    ) -> Result<&'a T, R::Error> {
+        if self.textures.contains_key(&id) {
+            return Ok(&self.textures[&id]);
+        }
+
+        self.load_shm_texture(id, renderer)
+    }
+
+    fn load_shm_texture<'a, R: Renderer<Texture=T>>(
+        &'a mut self,
+        id: u64,
+        renderer: &mut R,
+    ) -> Result<&'a T, R::Error> {
+        let texture = renderer.import_shm(&self.buffer)?;
+        
+        self.textures.insert(id, texture);
+        Ok(&self.textures[&id])
+    }
+}
+
+#[cfg(feature = "udev")]
+impl<T> Drop for BufferTextures<T> {
+    fn drop(&mut self) {
+        self.buffer.release()
     }
 }
