@@ -134,6 +134,8 @@ pub trait Renderer {
     type Error: Error;
     type Texture: Texture;
 
+    #[cfg(feature = "image")]
+    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::Texture, Self::Error>; 
     #[cfg(feature = "wayland_frontend")]
     fn shm_formats(&self) -> &[wl_shm::Format] {
         // Mandatory

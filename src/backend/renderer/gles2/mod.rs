@@ -437,6 +437,34 @@ impl Renderer for Gles2Renderer {
             wl_shm::Format::Xrgb8888,
         ]
     }
+    
+    #[cfg(feature = "image")]
+    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::Texture, Self::Error> {
+        self.make_current()?;
+        
+        let mut tex = 0;
+        unsafe {
+            self.gl.GenTextures(1, &mut tex);
+            self.gl.BindTexture(ffi::TEXTURE_2D, tex);
+            self.gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
+            self.gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+            self.gl.TexImage2D(ffi::TEXTURE_2D, 0, ffi::RGBA as i32, image.width() as i32, image.height() as i32, 0, ffi::RGBA, ffi::UNSIGNED_BYTE as u32, image.as_ptr() as *const _);
+            self.gl.BindTexture(ffi::TEXTURE_2D, 0);
+        }
+        
+        let texture = Gles2Texture {
+            texture: tex,
+            texture_kind: 2,
+            is_external: false,
+            y_inverted: false,
+            width: image.width(),
+            height: image.height(),
+        };
+        self.egl.unbind()?;
+        
+        Ok(texture)
+    }
+    
 
     #[cfg(feature = "wayland_frontend")]
     fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error> {
@@ -502,13 +530,6 @@ impl Renderer for Gles2Renderer {
             self.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
         }
 
-        // output transformation passed in by the user
-        let mut projection = Matrix3::<f32>::identity();
-        //projection = projection * Matrix3::from_translation(Vector2::new(width as f32 / 2.0, height as f32 / 2.0));
-        projection = projection * transform.matrix();
-        //let (transformed_width, transformed_height) = transform.transform_size(width, height);
-        //projection = projection * Matrix3::from_translation(Vector2::new(-(transformed_width as f32) / 2.0, -(transformed_height as f32) / 2.0));
-        
         // replicate https://www.khronos.org/registry/OpenGL-Refpages/gl2.1/xhtml/glOrtho.xml
         // glOrtho(0, width, 0, height, 1, 1);
         let mut renderer = Matrix3::<f32>::identity();
@@ -526,7 +547,8 @@ impl Renderer for Gles2Renderer {
         renderer[2][0] = -(1.0f32.copysign(renderer[0][0] + renderer[1][0]));
         renderer[2][1] = -(1.0f32.copysign(renderer[0][1] + renderer[1][1]));
 
-        self.current_projection = Some(projection * renderer);
+        // output transformation passed in by the user
+        self.current_projection = Some(transform.matrix() * renderer);
         Ok(())
     }
     

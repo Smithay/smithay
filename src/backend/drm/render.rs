@@ -231,6 +231,11 @@ where
     type Error = Error<E1, E2, E3>;
     type Texture = T;
 
+    #[cfg(feature = "image")]
+    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::Texture, Self::Error> {
+        self.renderer.import_bitmap(image).map_err(Error::RenderError)
+    }
+
     #[cfg(feature = "wayland_frontend")]
     fn shm_formats(&self) -> &[wl_shm::Format] {
         self.renderer.shm_formats()

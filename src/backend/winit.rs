@@ -260,6 +260,11 @@ impl Renderer for WinitGraphicsBackend {
     type Error = Gles2Error;
     type Texture = Gles2Texture;
 
+    #[cfg(feature = "image")]
+    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::Texture, Self::Error> {
+        self.renderer.import_bitmap(image)
+    }
+     
     #[cfg(feature = "wayland_frontend")]
     fn shm_formats(&self) -> &[wl_shm::Format] {
         Renderer::shm_formats(&self.renderer)
