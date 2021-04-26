@@ -7,7 +7,6 @@ use smithay::{
     reexports::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
-        winit::window::CursorIcon,
     },
     wayland::{
         output::{Mode, Output, PhysicalProperties},
@@ -30,7 +29,6 @@ pub fn run_winit(
         slog::crit!(log, "Failed to initialize Winit backend: {}", err);
     })?;
 
-    /*
     #[cfg(feature = "egl")]
     let egl_buffer_reader = Rc::new(RefCell::new(
         if let Ok(egl_buffer_reader) = renderer.bind_wl_display(&display.borrow()) {
@@ -44,7 +42,6 @@ pub fn run_winit(
     #[cfg(feature = "egl")]
     let buffer_utils = BufferUtils::new(egl_buffer_reader, log.clone());
     #[cfg(not(feature = "egl"))]
-    */
     let buffer_utils = BufferUtils::new(log.clone());
 
     let (w, h): (u32, u32) = renderer.window_size().physical_size.into();
@@ -56,7 +53,7 @@ pub fn run_winit(
     let mut state = AnvilState::init(
         display.clone(),
         event_loop.handle(),
-        buffer_utils,
+        buffer_utils.clone(),
         None,
         None,
         log.clone(),
@@ -116,7 +113,7 @@ pub fn run_winit(
             renderer.clear([0.8, 0.8, 0.9, 1.0]).expect("Failed to clear frame");
 
             // draw the windows
-            draw_windows(&mut renderer, &*state.window_map.borrow(), None, state.ctoken, &log);
+            draw_windows(&mut renderer, 0, &buffer_utils, &*state.window_map.borrow(), None, state.ctoken, &log);
 
             let (x, y) = *state.pointer_location.borrow();
             // draw the dnd icon if any
@@ -124,7 +121,7 @@ pub fn run_winit(
                 let guard = state.dnd_icon.lock().unwrap();
                 if let Some(ref surface) = *guard {
                     if surface.as_ref().is_alive() {
-                        draw_dnd_icon(&mut renderer, surface, (x as i32, y as i32), state.ctoken, &log);
+                        draw_dnd_icon(&mut renderer, 0, &buffer_utils, surface, (x as i32, y as i32), state.ctoken, &log);
                     }
                 }
             }
@@ -143,7 +140,7 @@ pub fn run_winit(
                 // draw as relevant
                 if let CursorImageStatus::Image(ref surface) = *guard {
                     renderer.window().set_cursor_visible(false);
-                    draw_cursor(&mut renderer, surface, (x as i32, y as i32), state.ctoken, &log);
+                    draw_cursor(&mut renderer, 0, &buffer_utils, surface, (x as i32, y as i32), state.ctoken, &log);
                 } else {
                     renderer.window().set_cursor_visible(true);
                 }

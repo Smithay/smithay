@@ -20,10 +20,12 @@ use smithay::{
 };
 
 use crate::shell::{MyCompositorToken, MyWindowMap, SurfaceData};
-
+use crate::buffer_utils::{BufferUtils, BufferTextures};
 
 pub fn draw_cursor<R, E, T>(
     renderer: &mut R,
+    renderer_id: u64,
+    buffer_utils: &BufferUtils,
     surface: &wl_surface::WlSurface,
     (x, y): (i32, i32),
     token: MyCompositorToken,
@@ -44,11 +46,13 @@ pub fn draw_cursor<R, E, T>(
             (0, 0)
         }
     };
-    draw_surface_tree(renderer, surface, (x - dx, y - dy), token, log);
+    draw_surface_tree(renderer, renderer_id, buffer_utils, surface, (x - dx, y - dy), token, log);
 }
 
 fn draw_surface_tree<R, E, T>(
     renderer: &mut R,
+    renderer_id: u64,
+    buffer_utils: &BufferUtils,
     root: &wl_surface::WlSurface,
     location: (i32, i32),
     compositor_token: MyCompositorToken,
@@ -62,21 +66,20 @@ fn draw_surface_tree<R, E, T>(
     compositor_token.with_surface_tree_upward(
         root,
         (),
-        |_surface, attributes, role, _| {
+        |_surface, attributes, _, _| {
             // Pull a new buffer if available
             if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
                 if data.texture.is_none() {
                     if let Some(buffer) = data.current_state.buffer.take() {
-                        match renderer.import_shm(&buffer) {
+                        match buffer_utils.load_buffer::<R::Texture>(buffer) {
                             Ok(m) => data.texture = Some(Box::new(m) as Box<dyn std::any::Any + 'static>),
                             // there was an error reading the buffer, release it, we
                             // already logged the error
                             Err(err) => {
-                                warn!(log, "Error loading buffer: {}", err);
+                                warn!(log, "Error loading buffer: {:?}", err);
                             },
                         };
-                        buffer.release();
                     }
                 }
                 // Now, should we be drawn ?
@@ -101,7 +104,7 @@ fn draw_surface_tree<R, E, T>(
         |_surface, attributes, role, &(mut x, mut y)| {
             // Pull a new buffer if available
             if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
-                let mut data = data.borrow_mut();
+                let data = data.borrow();
                 // Now, should we be drawn ?
                 if data.texture.is_some() {
                     // if yes, also process the children
@@ -123,14 +126,15 @@ fn draw_surface_tree<R, E, T>(
             if let Some(ref data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
                 let (sub_x, sub_y) = data.current_state.sub_location;
-                if let Some(buffer_texture) = data.texture.as_ref().and_then(|x| x.downcast_ref::<T>()) {
+                if let Some(buffer_textures) = data.texture.as_mut().and_then(|x| x.downcast_mut::<BufferTextures<T>>()) {
                     // we need to re-extract the subsurface offset, as the previous closure
                     // only passes it to our children
                     if Role::<SubsurfaceRole>::has(role) {
                         x += sub_x;
                         y += sub_y;
                     }
-                    renderer.render_texture_at(&*buffer_texture, (x, y), Transform::Normal /* TODO */, 1.0);
+                    let texture = buffer_textures.load_texture(renderer_id, renderer).unwrap();
+                    renderer.render_texture_at(texture, (x, y), Transform::Normal /* TODO */, 1.0);
                 }
             }
         },
@@ -140,6 +144,8 @@ fn draw_surface_tree<R, E, T>(
 
 pub fn draw_windows<R, E, T>(
     renderer: &mut R,
+    renderer_id: u64,
+    buffer_utils: &BufferUtils,
     window_map: &MyWindowMap,
     output_rect: Option<Rectangle>,
     compositor_token: MyCompositorToken,
@@ -165,6 +171,8 @@ pub fn draw_windows<R, E, T>(
                     // this surface is a root of a subsurface tree that needs to be drawn
                     draw_surface_tree(
                         renderer,
+                        renderer_id,
+                        buffer_utils,
                         &wl_surface,
                         initial_place,
                         compositor_token,
@@ -178,6 +186,8 @@ pub fn draw_windows<R, E, T>(
 
 pub fn draw_dnd_icon<R, E, T>(
     renderer: &mut R,
+    renderer_id: u64,
+    buffer_utils: &BufferUtils,
     surface: &wl_surface::WlSurface,
     (x, y): (i32, i32),
     token: MyCompositorToken,
@@ -194,7 +204,7 @@ pub fn draw_dnd_icon<R, E, T>(
             "Trying to display as a dnd icon a surface that does not have the DndIcon role."
         );
     }
-    draw_surface_tree(renderer, surface, (x, y), token, log);
+    draw_surface_tree(renderer, renderer_id, buffer_utils, surface, (x, y), token, log);
 }
 
 pub fn schedule_initial_render<R: Renderer + 'static, Data: 'static>(
