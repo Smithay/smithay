@@ -25,9 +25,12 @@ use smithay::{
         },
         egl::{EGLDisplay, EGLContext},
         renderer::{
-            Renderer,
-            gles2::Gles2Renderer,
             Transform,
+            Renderer,
+            gles2::{
+                Gles2Renderer,
+                Gles2Texture,
+            },
         },
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         session::{auto::AutoSession, Session, Signal as SessionSignal},
@@ -495,6 +498,12 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 &self.logger,
             )));
 
+            let pointer_image = {
+                let context = EGLContext::new_shared(&egl, &context, self.logger.clone()).unwrap();
+                let mut renderer = unsafe { Gles2Renderer::new(context, self.logger.clone()).unwrap() };
+                renderer.import_bitmap(&self.pointer_image).expect("Failed to load pointer")
+            };
+
             // Set the handler.
             // Note: if you replicate this (very simple) structure, it is rather easy
             // to introduce reference cycles with Rc. Be sure about your drop order
@@ -505,7 +514,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 window_map: self.window_map.clone(),
                 output_map: self.output_map.clone(),
                 pointer_location: self.pointer_location.clone(),
-                pointer_image: self.pointer_image.clone(),
+                pointer_image: pointer_image,
                 cursor_status: self.cursor_status.clone(),
                 dnd_icon: self.dnd_icon.clone(),
                 logger: self.logger.clone(),
@@ -645,7 +654,7 @@ pub struct DrmRenderer {
     window_map: Rc<RefCell<MyWindowMap>>,
     output_map: Rc<RefCell<Vec<MyOutput>>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
-    pointer_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
+    pointer_image: Gles2Texture,
     cursor_status: Arc<Mutex<CursorImageStatus>>,
     dnd_icon: Arc<Mutex<Option<wl_surface::WlSurface>>>,
     logger: ::slog::Logger,
@@ -673,6 +682,9 @@ impl DrmRenderer {
                   &mut *self.output_map.borrow_mut(),
                   &self.compositor_token,
                   &*self.pointer_location.borrow(),
+                  &self.pointer_image,
+                  &*self.dnd_icon.lock().unwrap(),
+                  &mut *self.cursor_status.lock().unwrap(),
                   &self.logger
             );
             if let Err(err) = result {
@@ -742,6 +754,9 @@ impl DrmRenderer {
         output_map: &mut Vec<MyOutput>,
         compositor_token: &CompositorToken<Roles>,
         pointer_location: &(f64, f64),
+        pointer_image: &Gles2Texture,
+        dnd_icon: &Option<wl_surface::WlSurface>,
+        cursor_status: &mut CursorImageStatus,
         logger: &slog::Logger,
     ) -> Result<(), SwapBuffersError> {
         surface.frame_submitted()?;
@@ -780,45 +795,39 @@ impl DrmRenderer {
         let ptr_y = ptr_y.trunc().abs() as i32 - y as i32;
 
         // set cursor
-        /*
         if ptr_x >= 0 && ptr_x < width as i32 && ptr_y >= 0 && ptr_y < height as i32 {
-            let _ = drawer.borrow().set_cursor_position(ptr_x as u32, ptr_y as u32);
-
             // draw the dnd icon if applicable
             {
-                let guard = self.dnd_icon.lock().unwrap();
-                if let Some(ref surface) = *guard {
-                    if surface.as_ref().is_alive() {
-                        drawer.draw_dnd_icon(&mut frame, surface, (ptr_x, ptr_y), self.compositor_token);
+                if let Some(ref wl_surface) = dnd_icon.as_ref() {
+                    if wl_surface.as_ref().is_alive() {
+                        draw_dnd_icon(surface, wl_surface, (ptr_x, ptr_y), compositor_token.clone(), logger);
                     }
                 }
             }
             // draw the cursor as relevant
             {
-                let mut guard = self.cursor_status.lock().unwrap();
                 // reset the cursor if the surface is no longer alive
                 let mut reset = false;
-                if let CursorImageStatus::Image(ref surface) = *guard {
+                if let CursorImageStatus::Image(ref surface) = *cursor_status {
                     reset = !surface.as_ref().is_alive();
                 }
                 if reset {
-                    *guard = CursorImageStatus::Default;
+                    *cursor_status = CursorImageStatus::Default;
                 }
-                if let CursorImageStatus::Image(ref surface) = *guard {
-                    drawer.draw_software_cursor(
-                        &mut frame,
+
+                if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
+                    draw_cursor(
                         surface,
+                        wl_surface,
                         (ptr_x, ptr_y),
-                        self.compositor_token,
+                        compositor_token.clone(),
+                        logger,
                     );
                 } else {
-                    drawer.draw_hardware_cursor(&self.pointer_image, (2, 2), (ptr_x, ptr_y));
+                    surface.render_texture_at(pointer_image, (ptr_x, ptr_y), Transform::Normal, 1.0);
                 }
             }
-        } else {
-            drawer.clear_cursor();
         }
-        */
         surface.finish()
     }
 }
