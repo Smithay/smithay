@@ -4,7 +4,7 @@ pub(self) mod error;
 pub(self) mod session;
 mod render;
 
-pub use device::{DrmDevice, DrmSource, DeviceHandler, device_bind, Planes};
+pub use device::{DrmDevice, DrmSource, DeviceHandler, device_bind, Planes, DevPath};
 pub use surface::DrmSurface;
 pub use error::Error as DrmError;
 pub use session::DrmDeviceObserver;
