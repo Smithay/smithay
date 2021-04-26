@@ -13,6 +13,7 @@ use wayland_server::protocol::{wl_shm, wl_buffer};
 use crate::backend::SwapBuffersError;
 use crate::backend::allocator::{Allocator, Format, Fourcc, Modifier, Swapchain, SwapchainError, Slot, Buffer, dmabuf::Dmabuf};
 use crate::backend::renderer::{Renderer, Bind, Transform, Texture};
+use crate::backend::egl::EGLBuffer;
 use super::{DrmSurface, DrmError, device::DevPath, surface::DrmSurfaceInternal};
 
 pub struct DrmRenderSurface<
@@ -244,6 +245,11 @@ where
     #[cfg(feature = "wayland_frontend")]
     fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error> {
         self.renderer.import_shm(buffer).map_err(Error::RenderError)
+    }
+    
+    #[cfg(feature = "wayland_frontend")]
+    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::Texture, Self::Error> {
+        self.renderer.import_egl(buffer).map_err(Error::RenderError)       
     }
     
     fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), Error<E1, E2, E3>> {

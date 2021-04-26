@@ -8,6 +8,8 @@ use wayland_server::protocol::{wl_shm, wl_buffer};
 use crate::backend::SwapBuffersError;
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
+#[cfg(feature = "wayland_frontend")]
+use crate::backend::egl::EGLBuffer;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum Transform {
@@ -143,7 +145,9 @@ pub trait Renderer {
     }
     #[cfg(feature = "wayland_frontend")]
     fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error>;
-    
+    #[cfg(feature = "wayland_frontend")]
+    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::Texture, Self::Error>;
+
     fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), <Self as Renderer>::Error>;
     fn finish(&mut self) -> Result<(), SwapBuffersError>;
     
