@@ -1,7 +1,7 @@
 use super::ffi;
 
-#[derive(thiserror::Error, Debug)]
 /// EGL errors
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
     /// The requested OpenGL version is not supported
     #[error("The requested OpenGL version {0:?} is not supported")]

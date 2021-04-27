@@ -237,12 +237,13 @@ impl<D: RawDevice + ControlDevice + 'static> Drop for GbmDevice<D> {
     }
 }
 
-impl<E> Into<SwapBuffersError> for Error<E>
+impl<E> From<Error<E>> for SwapBuffersError
 where
     E: std::error::Error + Into<SwapBuffersError> + 'static,
 {
-    fn into(self) -> SwapBuffersError {
-        match self {
+    #[allow(clippy::match_like_matches_macro)]
+    fn from(err: Error<E>) -> Self {
+        match err {
             Error::FrontBuffersExhausted => SwapBuffersError::AlreadySwapped,
             Error::FramebufferCreationFailed(x)
                 if match x.get_ref() {

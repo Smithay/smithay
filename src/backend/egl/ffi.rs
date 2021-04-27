@@ -22,7 +22,7 @@ pub fn make_sure_egl_is_loaded() {
             F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
         {
             f
-        };
+        }
 
         egl::load_with(|sym| {
             let name = CString::new(sym).unwrap();

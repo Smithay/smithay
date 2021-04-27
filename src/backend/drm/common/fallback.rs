@@ -36,7 +36,6 @@ use drm::{
 use nix::libc::c_void;
 use nix::libc::dev_t;
 use std::env;
-use std::fmt;
 use std::os::unix::io::{AsRawFd, RawFd};
 #[cfg(feature = "use_system_lib")]
 use wayland_server::Display;
@@ -150,13 +149,13 @@ pub enum EitherError<E1: std::error::Error + 'static, E2: std::error::Error + 's
     Or(#[source] E2),
 }
 
-impl<E1, E2> Into<SwapBuffersError> for EitherError<E1, E2>
+impl<E1, E2> From<EitherError<E1, E2>> for SwapBuffersError
 where
     E1: std::error::Error + Into<SwapBuffersError> + 'static,
     E2: std::error::Error + Into<SwapBuffersError> + 'static,
 {
-    fn into(self) -> SwapBuffersError {
-        match self {
+    fn from(err: EitherError<E1, E2>) -> Self {
+        match err {
             EitherError::Either(err) => err.into(),
             EitherError::Or(err) => err.into(),
         }

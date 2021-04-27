@@ -132,7 +132,7 @@ impl<A: AsRawFd + 'static> Drop for Dev<A> {
                         req.add_raw_property((*handle).into(), prop_handle, val);
                     }
                 }
-            };
+            }
 
             add_multiple_props(&mut req, &self.old_state.0);
             add_multiple_props(&mut req, &self.old_state.1);

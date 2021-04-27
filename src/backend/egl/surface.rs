@@ -110,7 +110,7 @@ impl<N: native::NativeSurface> EGLSurface<N> {
         );
 
         if self.native.needs_recreation() || surface.is_null() || is_bad_surface {
-            let previous = self.surface.compare_and_swap(
+            let previous = self.surface.compare_exchange(
                 surface,
                 unsafe {
                     self.native
@@ -125,8 +125,10 @@ impl<N: native::NativeSurface> EGLSurface<N> {
                         })? as *mut _
                 },
                 Ordering::SeqCst,
+                Ordering::SeqCst,
             );
-            if previous == surface && !surface.is_null() {
+
+            if previous.is_ok() && !surface.is_null() {
                 let _ = unsafe { ffi::egl::DestroySurface(**self.display, surface as *const _) };
             }
 

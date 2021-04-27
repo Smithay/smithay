@@ -325,7 +325,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                 .map_err(Error::ConfigFailed)?;
                 value.assume_init()
             }};
-        };
+        }
 
         // return the format that was selected for our config
         let desc = unsafe {
@@ -550,10 +550,7 @@ impl EGLBufferReader {
 
         let mut images = Vec::with_capacity(format.num_planes());
         for i in 0..format.num_planes() {
-            let mut out = Vec::with_capacity(3);
-            out.push(ffi::egl::WAYLAND_PLANE_WL as i32);
-            out.push(i as i32);
-            out.push(ffi::egl::NONE as i32);
+            let out = vec![ffi::egl::WAYLAND_PLANE_WL as i32, i as i32, ffi::egl::NONE as i32];
 
             images.push({
                 wrap_egl_call(|| unsafe {

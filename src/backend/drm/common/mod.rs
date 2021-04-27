@@ -72,9 +72,10 @@ pub enum Error {
     TestFailed(crtc::Handle),
 }
 
-impl Into<SwapBuffersError> for Error {
-    fn into(self) -> SwapBuffersError {
-        match self {
+impl From<Error> for SwapBuffersError {
+    #[allow(clippy::match_like_matches_macro)]
+    fn from(err: Error) -> Self {
+        match err {
             x @ Error::DeviceInactive => SwapBuffersError::TemporaryFailure(Box::new(x)),
             Error::Access {
                 errmsg, dev, source, ..

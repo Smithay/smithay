@@ -124,13 +124,11 @@ unsafe impl<A: AsRawFd + 'static> NativeSurface for EglStreamSurface<AtomicDrmSu
         config_id: ffi::egl::types::EGLConfig,
         surface_attribs: &[c_int],
     ) -> Result<*const c_void, SurfaceCreationError<Self::Error>> {
-        let output_attributes = {
-            let mut out: Vec<isize> = Vec::with_capacity(3);
-            out.push(ffi::egl::DRM_PLANE_EXT as isize);
-            out.push(Into::<u32>::into(self.0.crtc.0.planes.primary) as isize);
-            out.push(ffi::egl::NONE as isize);
-            out
-        };
+        let output_attributes = vec![
+            ffi::egl::DRM_PLANE_EXT as isize,
+            Into::<u32>::into(self.0.crtc.0.planes.primary) as isize,
+            ffi::egl::NONE as isize,
+        ];
 
         self.create_surface(display, config_id, surface_attribs, &output_attributes)
             .map_err(SurfaceCreationError::NativeSurfaceCreationFailed)
@@ -159,13 +157,11 @@ unsafe impl<A: AsRawFd + 'static> NativeSurface for EglStreamSurface<LegacyDrmSu
         config_id: ffi::egl::types::EGLConfig,
         surface_attribs: &[c_int],
     ) -> Result<*const c_void, SurfaceCreationError<Self::Error>> {
-        let output_attributes = {
-            let mut out: Vec<isize> = Vec::with_capacity(3);
-            out.push(ffi::egl::DRM_CRTC_EXT as isize);
-            out.push(Into::<u32>::into(self.0.crtc.0.crtc) as isize);
-            out.push(ffi::egl::NONE as isize);
-            out
-        };
+        let output_attributes = vec![
+            ffi::egl::DRM_CRTC_EXT as isize,
+            Into::<u32>::into(self.0.crtc.0.crtc) as isize,
+            ffi::egl::NONE as isize,
+        ];
 
         self.create_surface(display, config_id, surface_attribs, &output_attributes)
             .map_err(SurfaceCreationError::NativeSurfaceCreationFailed)

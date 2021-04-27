@@ -283,6 +283,7 @@ enum KeyAction {
     None,
 }
 
+#[allow(clippy::manual_range_contains)]
 fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> KeyAction {
     if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace
         || modifiers.logo && keysym == xkb::KEY_q

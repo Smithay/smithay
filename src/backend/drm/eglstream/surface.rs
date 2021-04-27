@@ -395,17 +395,15 @@ impl<S: RawSurface + 'static> EglStreamSurface<S> {
         // which is handled by STREAM_FIFO_LENGTH_KHR = 0.
         // We also want to "acquire" the frames manually. Like this we can request page-flip events
         // to drive our event loop. Otherwise we would have no way to know rendering is finished.
-        let stream_attributes = {
-            let mut out: Vec<c_int> = Vec::with_capacity(7);
-            out.push(ffi::egl::STREAM_FIFO_LENGTH_KHR as i32);
-            out.push(0);
-            out.push(ffi::egl::CONSUMER_AUTO_ACQUIRE_EXT as i32);
-            out.push(ffi::egl::FALSE as i32);
-            out.push(ffi::egl::CONSUMER_ACQUIRE_TIMEOUT_USEC_KHR as i32);
-            out.push(0);
-            out.push(ffi::egl::NONE as i32);
-            out
-        };
+        let stream_attributes = vec![
+            ffi::egl::STREAM_FIFO_LENGTH_KHR as i32,
+            0,
+            ffi::egl::CONSUMER_AUTO_ACQUIRE_EXT as i32,
+            ffi::egl::FALSE as i32,
+            ffi::egl::CONSUMER_ACQUIRE_TIMEOUT_USEC_KHR as i32,
+            0,
+            ffi::egl::NONE as i32,
+        ];
 
         // okay, we have a config, lets create the stream.
         let raw_stream = unsafe { ffi::egl::CreateStreamKHR(display.handle, stream_attributes.as_ptr()) };
@@ -437,15 +435,13 @@ impl<S: RawSurface + 'static> EglStreamSurface<S> {
 
         let (w, h) = self.current_mode().size();
         info!(self.0.logger, "Creating stream surface with size: ({}:{})", w, h);
-        let surface_attributes = {
-            let mut out: Vec<c_int> = Vec::with_capacity(5);
-            out.push(ffi::egl::WIDTH as i32);
-            out.push(w as i32);
-            out.push(ffi::egl::HEIGHT as i32);
-            out.push(h as i32);
-            out.push(ffi::egl::NONE as i32);
-            out
-        };
+        let surface_attributes = vec![
+            ffi::egl::WIDTH as i32,
+            w as i32,
+            ffi::egl::HEIGHT as i32,
+            h as i32,
+            ffi::egl::NONE as i32,
+        ];
 
         // the stream is already connected to the consumer (output layer) during creation.
         // we now connect the producer (out egl surface, that we render to).

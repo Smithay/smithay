@@ -88,7 +88,7 @@ impl<T: Into<GliumGraphicsBackend<T>> + GLGraphicsBackend + 'static> GliumDrawer
 
         // building the index buffer
         let index_buffer =
-            glium::IndexBuffer::new(&display, PrimitiveType::TriangleStrip, &[1 as u16, 2, 0, 3]).unwrap();
+            glium::IndexBuffer::new(&display, PrimitiveType::TriangleStrip, &[1, 2, 0, 3]).unwrap();
 
         let programs = opengl_programs!(&display);
 

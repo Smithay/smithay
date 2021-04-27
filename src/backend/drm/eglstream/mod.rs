@@ -36,6 +36,7 @@ use std::sync::{Arc, Mutex, Weak as WeakArc};
 use std::{fs, ptr};
 
 mod surface;
+
 pub use self::surface::EglStreamSurface;
 use self::surface::EglStreamSurfaceInternal;
 
@@ -81,6 +82,7 @@ pub enum Error<U: std::error::Error + std::fmt::Debug + std::fmt::Display + 'sta
 }
 
 type SurfaceInternalRef<D> = WeakArc<EglStreamSurfaceInternal<<D as Device>::Surface>>;
+
 /// Representation of an open egl stream device to create egl rendering surfaces
 pub struct EglStreamDevice<D: RawDevice + ControlDevice + 'static> {
     pub(self) dev: EGLDeviceEXT,
@@ -124,16 +126,13 @@ impl<D: RawDevice + ControlDevice + 'static> EglStreamDevice<D> {
         ffi::make_sure_egl_is_loaded();
 
         fn has_extensions(exts: &[String], check: &'static [&'static str]) -> Result<(), EglError> {
-            check
-                .iter()
-                .map(|ext| {
-                    if exts.iter().any(|s| *s == *ext) {
-                        Ok(())
-                    } else {
-                        Err(EglError::EglExtensionNotSupported(check))
-                    }
-                })
-                .collect()
+            check.iter().try_for_each(|ext| {
+                if exts.iter().any(|s| *s == *ext) {
+                    Ok(())
+                } else {
+                    Err(EglError::EglExtensionNotSupported(check))
+                }
+            })
         }
 
         let device = unsafe {
@@ -361,12 +360,13 @@ impl<D: RawDevice + ControlDevice + 'static> Drop for EglStreamDevice<D> {
     }
 }
 
-impl<E> Into<SwapBuffersError> for Error<E>
+impl<E> From<Error<E>> for SwapBuffersError
 where
     E: std::error::Error + Into<SwapBuffersError> + 'static,
 {
-    fn into(self) -> SwapBuffersError {
-        match self {
+    #[allow(clippy::match_like_matches_macro)]
+    fn from(err: Error<E>) -> Self {
+        match err {
             Error::BufferCreationFailed(x)
                 if match x.get_ref() {
                     drm::SystemError::Unknown {

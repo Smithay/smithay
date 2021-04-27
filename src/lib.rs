@@ -1,4 +1,10 @@
 #![warn(missing_docs, rust_2018_idioms)]
+
+// Allow returning Result<(), ()>
+#![allow(clippy::result_unit_err)]
+// Allow acronyms like EGL
+#![allow(clippy::upper_case_acronyms)]
+
 //! **Smithay: the Wayland compositor smithy**
 //!
 //! Most entry points in the modules can take an optional [`slog::Logger`](::slog::Logger) as argument
