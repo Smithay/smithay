@@ -318,7 +318,7 @@ impl EGLDisplay {
                 .map_err(Error::ConfigFailed)?;
                 value.assume_init()
             }};
-        };
+        }
 
         // return the format that was selected for our config
         let desc = unsafe {

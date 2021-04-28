@@ -168,7 +168,7 @@ where
             unreachable!("No backends for winit other then Wayland and X11 are supported")
         };
 
-        context.unbind();
+        let _ = context.unbind();
         
         (
             display,
@@ -184,7 +184,7 @@ where
 
     let window = Rc::new(winit_window);
     let egl = Rc::new(surface);
-    let mut renderer = unsafe { Gles2Renderer::new(context, log.clone())? };
+    let renderer = unsafe { Gles2Renderer::new(context, log.clone())? };
 
     Ok((
         WinitGraphicsBackend {
