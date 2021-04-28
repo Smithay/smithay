@@ -21,7 +21,6 @@ use smithay::{
             device_bind,
             DrmRenderSurface,
             DrmError,
-            DrmRenderError,
             DevPath,
         },
         egl::{EGLDisplay, EGLContext, display::EGLBufferReader},
@@ -781,8 +780,8 @@ impl DrmRenderer {
             .unwrap_or((0, 0)); // in this case the output will be removed.
 
         // and draw in sync with our monitor
-        surface.queue_frame().unwrap();
-        surface.clear([0.8, 0.8, 0.9, 1.0]).unwrap();
+        surface.queue_frame()?;
+        surface.clear([0.8, 0.8, 0.9, 1.0])?;
         // draw the surfaces
         draw_windows(
             surface,
@@ -798,7 +797,7 @@ impl DrmRenderer {
             }),
             compositor_token.clone(),
             logger,
-        );
+        )?;
 
         // get pointer coordinates
         let (ptr_x, ptr_y) = *pointer_location;
@@ -811,7 +810,7 @@ impl DrmRenderer {
             {
                 if let Some(ref wl_surface) = dnd_icon.as_ref() {
                     if wl_surface.as_ref().is_alive() {
-                        draw_dnd_icon(surface, device_id, texture_destruction_callback, buffer_utils, wl_surface, (ptr_x, ptr_y), compositor_token.clone(), logger);
+                        draw_dnd_icon(surface, device_id, texture_destruction_callback, buffer_utils, wl_surface, (ptr_x, ptr_y), compositor_token.clone(), logger)?;
                     }
                 }
             }
@@ -836,9 +835,9 @@ impl DrmRenderer {
                         (ptr_x, ptr_y),
                         compositor_token.clone(),
                         logger,
-                    );
+                    )?;
                 } else {
-                    surface.render_texture_at(pointer_image, (ptr_x, ptr_y), Transform::Normal, 1.0);
+                    surface.render_texture_at(pointer_image, (ptr_x, ptr_y), Transform::Normal, 1.0)?;
                 }
             }
         }
