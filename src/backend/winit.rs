@@ -280,6 +280,10 @@ impl Renderer for WinitGraphicsBackend {
         self.renderer.import_egl(buffer)        
     }
 
+    fn destroy_texture(&mut self, texture: Self::Texture) -> Result<(), Self::Error> {
+        self.renderer.destroy_texture(texture)
+    }
+
     fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), <Self as Renderer>::Error> {
         self.renderer.bind(self.egl.clone())?;
         self.renderer.begin(width, height, transform)

@@ -147,6 +147,7 @@ pub trait Renderer {
     fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error>;
     #[cfg(feature = "wayland_frontend")]
     fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::Texture, Self::Error>;
+    fn destroy_texture(&mut self, texture: Self::Texture) -> Result<(), Self::Error>;
 
     fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), <Self as Renderer>::Error>;
     fn finish(&mut self) -> Result<(), SwapBuffersError>;
