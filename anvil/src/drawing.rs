@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     rc::Rc,
+    sync::mpsc::Sender,
 };
 
 use slog::Logger;
@@ -25,6 +26,7 @@ use crate::buffer_utils::{BufferUtils, BufferTextures};
 pub fn draw_cursor<R, E, T>(
     renderer: &mut R,
     renderer_id: u64,
+    texture_destruction_callback: &Sender<T>,
     buffer_utils: &BufferUtils,
     surface: &wl_surface::WlSurface,
     (x, y): (i32, i32),
@@ -32,7 +34,7 @@ pub fn draw_cursor<R, E, T>(
     log: &Logger,
 )
     where
-        R: Renderer<Error=E, Texture=T>,
+        R: Renderer<Error=E, TextureId=T>,
         E: std::error::Error,
         T: Texture + 'static,
 {
@@ -46,12 +48,13 @@ pub fn draw_cursor<R, E, T>(
             (0, 0)
         }
     };
-    draw_surface_tree(renderer, renderer_id, buffer_utils, surface, (x - dx, y - dy), token, log);
+    draw_surface_tree(renderer, renderer_id, texture_destruction_callback, buffer_utils, surface, (x - dx, y - dy), token, log);
 }
 
 fn draw_surface_tree<R, E, T>(
     renderer: &mut R,
     renderer_id: u64,
+    texture_destruction_callback: &Sender<T>,
     buffer_utils: &BufferUtils,
     root: &wl_surface::WlSurface,
     location: (i32, i32),
@@ -59,7 +62,7 @@ fn draw_surface_tree<R, E, T>(
     log: &Logger,
 )
     where
-        R: Renderer<Error=E, Texture=T>,
+        R: Renderer<Error=E, TextureId=T>,
         E: std::error::Error,
         T: Texture + 'static,
 {
@@ -72,7 +75,7 @@ fn draw_surface_tree<R, E, T>(
                 let mut data = data.borrow_mut();
                 if data.texture.is_none() {
                     if let Some(buffer) = data.current_state.buffer.take() {
-                        match buffer_utils.load_buffer::<R::Texture>(buffer) {
+                        match buffer_utils.load_buffer::<R::TextureId>(buffer) {
                             Ok(m) => data.texture = Some(Box::new(m) as Box<dyn std::any::Any + 'static>),
                             // there was an error reading the buffer, release it, we
                             // already logged the error
@@ -133,7 +136,7 @@ fn draw_surface_tree<R, E, T>(
                         x += sub_x;
                         y += sub_y;
                     }
-                    let texture = buffer_textures.load_texture(renderer_id, renderer).unwrap();
+                    let texture = buffer_textures.load_texture(renderer_id, renderer, texture_destruction_callback).unwrap();
                     renderer.render_texture_at(texture, (x, y), Transform::Normal /* TODO */, 1.0);
                 }
             }
@@ -145,6 +148,7 @@ fn draw_surface_tree<R, E, T>(
 pub fn draw_windows<R, E, T>(
     renderer: &mut R,
     renderer_id: u64,
+    texture_destruction_callback: &Sender<T>,
     buffer_utils: &BufferUtils,
     window_map: &MyWindowMap,
     output_rect: Option<Rectangle>,
@@ -152,7 +156,7 @@ pub fn draw_windows<R, E, T>(
     log: &::slog::Logger,
 )
     where
-        R: Renderer<Error=E, Texture=T>,
+        R: Renderer<Error=E, TextureId=T>,
         E: std::error::Error,
         T: Texture + 'static,
 {
@@ -172,6 +176,7 @@ pub fn draw_windows<R, E, T>(
                     draw_surface_tree(
                         renderer,
                         renderer_id,
+                        texture_destruction_callback,
                         buffer_utils,
                         &wl_surface,
                         initial_place,
@@ -187,6 +192,7 @@ pub fn draw_windows<R, E, T>(
 pub fn draw_dnd_icon<R, E, T>(
     renderer: &mut R,
     renderer_id: u64,
+    texture_destruction_callback: &Sender<T>,
     buffer_utils: &BufferUtils,
     surface: &wl_surface::WlSurface,
     (x, y): (i32, i32),
@@ -194,7 +200,7 @@ pub fn draw_dnd_icon<R, E, T>(
     log: &::slog::Logger,
 )
     where
-        R: Renderer<Error=E, Texture=T>,
+        R: Renderer<Error=E, TextureId=T>,
         E: std::error::Error,
         T: Texture + 'static,
 {
@@ -204,7 +210,7 @@ pub fn draw_dnd_icon<R, E, T>(
             "Trying to display as a dnd icon a surface that does not have the DndIcon role."
         );
     }
-    draw_surface_tree(renderer, renderer_id, buffer_utils, surface, (x, y), token, log);
+    draw_surface_tree(renderer, renderer_id, texture_destruction_callback, buffer_utils, surface, (x, y), token, log);
 }
 
 pub fn schedule_initial_render<R: Renderer + 'static, Data: 'static>(
