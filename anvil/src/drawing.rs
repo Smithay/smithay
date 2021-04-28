@@ -1,19 +1,12 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::mpsc::Sender,
-};
+use std::{cell::RefCell, rc::Rc, sync::mpsc::Sender};
 
 use slog::Logger;
 use smithay::{
+    backend::renderer::{Renderer, Texture, Transform},
     backend::SwapBuffersError,
-    backend::renderer::{Renderer, Transform, Texture},
-    reexports::{
-        calloop::LoopHandle,
-        wayland_server::protocol::wl_surface,
-    },
+    reexports::{calloop::LoopHandle, wayland_server::protocol::wl_surface},
     utils::Rectangle,
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
@@ -22,8 +15,8 @@ use smithay::{
     },
 };
 
+use crate::buffer_utils::{BufferTextures, BufferUtils};
 use crate::shell::{MyCompositorToken, MyWindowMap, SurfaceData};
-use crate::buffer_utils::{BufferUtils, BufferTextures};
 
 pub fn draw_cursor<R, E, T>(
     renderer: &mut R,
@@ -35,10 +28,10 @@ pub fn draw_cursor<R, E, T>(
     token: MyCompositorToken,
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
-    where
-        R: Renderer<Error=E, TextureId=T>,
-        E: std::error::Error + Into<SwapBuffersError>,
-        T: Texture + 'static,
+where
+    R: Renderer<Error = E, TextureId = T>,
+    E: std::error::Error + Into<SwapBuffersError>,
+    T: Texture + 'static,
 {
     let (dx, dy) = match token.with_role_data::<CursorImageRole, _, _>(surface, |data| data.hotspot) {
         Ok(h) => h,
@@ -50,7 +43,16 @@ pub fn draw_cursor<R, E, T>(
             (0, 0)
         }
     };
-    draw_surface_tree(renderer, renderer_id, texture_destruction_callback, buffer_utils, surface, (x - dx, y - dy), token, log)
+    draw_surface_tree(
+        renderer,
+        renderer_id,
+        texture_destruction_callback,
+        buffer_utils,
+        surface,
+        (x - dx, y - dy),
+        token,
+        log,
+    )
 }
 
 fn draw_surface_tree<R, E, T>(
@@ -63,10 +65,10 @@ fn draw_surface_tree<R, E, T>(
     compositor_token: MyCompositorToken,
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
-    where
-        R: Renderer<Error=E, TextureId=T>,
-        E: std::error::Error + Into<SwapBuffersError>,
-        T: Texture + 'static,
+where
+    R: Renderer<Error = E, TextureId = T>,
+    E: std::error::Error + Into<SwapBuffersError>,
+    T: Texture + 'static,
 {
     let mut result = Ok(());
 
@@ -85,7 +87,7 @@ fn draw_surface_tree<R, E, T>(
                             // already logged the error
                             Err(err) => {
                                 warn!(log, "Error loading buffer: {:?}", err);
-                            },
+                            }
                         };
                     }
                 }
@@ -133,15 +135,23 @@ fn draw_surface_tree<R, E, T>(
             if let Some(ref data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
                 let (sub_x, sub_y) = data.current_state.sub_location;
-                if let Some(buffer_textures) = data.texture.as_mut().and_then(|x| x.downcast_mut::<BufferTextures<T>>()) {
+                if let Some(buffer_textures) = data
+                    .texture
+                    .as_mut()
+                    .and_then(|x| x.downcast_mut::<BufferTextures<T>>())
+                {
                     // we need to re-extract the subsurface offset, as the previous closure
                     // only passes it to our children
                     if Role::<SubsurfaceRole>::has(role) {
                         x += sub_x;
                         y += sub_y;
                     }
-                    let texture = buffer_textures.load_texture(renderer_id, renderer, texture_destruction_callback).unwrap();
-                    if let Err(err) = renderer.render_texture_at(texture, (x, y), Transform::Normal /* TODO */, 1.0) {
+                    let texture = buffer_textures
+                        .load_texture(renderer_id, renderer, texture_destruction_callback)
+                        .unwrap();
+                    if let Err(err) =
+                        renderer.render_texture_at(texture, (x, y), Transform::Normal /* TODO */, 1.0)
+                    {
                         result = Err(err.into());
                     }
                 }
@@ -163,41 +173,39 @@ pub fn draw_windows<R, E, T>(
     compositor_token: MyCompositorToken,
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
-    where
-        R: Renderer<Error=E, TextureId=T>,
-        E: std::error::Error + Into<SwapBuffersError>,
-        T: Texture + 'static,
+where
+    R: Renderer<Error = E, TextureId = T>,
+    E: std::error::Error + Into<SwapBuffersError>,
+    T: Texture + 'static,
 {
     let mut result = Ok(());
 
     // redraw the frame, in a simple but inneficient way
-    window_map.with_windows_from_bottom_to_top(
-        |toplevel_surface, mut initial_place, bounding_box| {
-            // skip windows that do not overlap with a given output
-            if let Some(output) = output_rect {
-                if !output.overlaps(bounding_box) {
-                    return;
-                }
-                initial_place.0 -= output.x;
+    window_map.with_windows_from_bottom_to_top(|toplevel_surface, mut initial_place, bounding_box| {
+        // skip windows that do not overlap with a given output
+        if let Some(output) = output_rect {
+            if !output.overlaps(bounding_box) {
+                return;
             }
-            if let Some(wl_surface) = toplevel_surface.get_surface() {
-                // this surface is a root of a subsurface tree that needs to be drawn
-                if let Err(err) = draw_surface_tree(
-                    renderer,
-                    renderer_id,
-                    texture_destruction_callback,
-                    buffer_utils,
-                    &wl_surface,
-                    initial_place,
-                    compositor_token,
-                    log,
-                ) {
-                    result = Err(err);
-                }
+            initial_place.0 -= output.x;
+        }
+        if let Some(wl_surface) = toplevel_surface.get_surface() {
+            // this surface is a root of a subsurface tree that needs to be drawn
+            if let Err(err) = draw_surface_tree(
+                renderer,
+                renderer_id,
+                texture_destruction_callback,
+                buffer_utils,
+                &wl_surface,
+                initial_place,
+                compositor_token,
+                log,
+            ) {
+                result = Err(err);
             }
-        },
-    );
-    
+        }
+    });
+
     result
 }
 
@@ -211,10 +219,10 @@ pub fn draw_dnd_icon<R, E, T>(
     token: MyCompositorToken,
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
-    where
-        R: Renderer<Error=E, TextureId=T>,
-        E: std::error::Error + Into<SwapBuffersError>,
-        T: Texture + 'static,
+where
+    R: Renderer<Error = E, TextureId = T>,
+    E: std::error::Error + Into<SwapBuffersError>,
+    T: Texture + 'static,
 {
     if !token.has_role::<DnDIconRole>(surface) {
         warn!(
@@ -222,23 +230,37 @@ pub fn draw_dnd_icon<R, E, T>(
             "Trying to display as a dnd icon a surface that does not have the DndIcon role."
         );
     }
-    draw_surface_tree(renderer, renderer_id, texture_destruction_callback, buffer_utils, surface, (x, y), token, log)
+    draw_surface_tree(
+        renderer,
+        renderer_id,
+        texture_destruction_callback,
+        buffer_utils,
+        surface,
+        (x, y),
+        token,
+        log,
+    )
 }
 
 pub fn schedule_initial_render<R: Renderer + 'static, Data: 'static>(
     renderer: Rc<RefCell<R>>,
     evt_handle: &LoopHandle<Data>,
     logger: ::slog::Logger,
-)
-where
-    <R as Renderer>::Error: Into<SwapBuffersError>
+) where
+    <R as Renderer>::Error: Into<SwapBuffersError>,
 {
     let result = {
         let mut renderer = renderer.borrow_mut();
         // Does not matter if we render an empty frame
-        renderer.begin(1, 1, Transform::Normal).map_err(Into::<SwapBuffersError>::into)
-        .and_then(|_| renderer.clear([0.8, 0.8, 0.9, 1.0]).map_err(Into::<SwapBuffersError>::into))
-        .and_then(|_| renderer.finish())
+        renderer
+            .begin(1, 1, Transform::Normal)
+            .map_err(Into::<SwapBuffersError>::into)
+            .and_then(|_| {
+                renderer
+                    .clear([0.8, 0.8, 0.9, 1.0])
+                    .map_err(Into::<SwapBuffersError>::into)
+            })
+            .and_then(|_| renderer.finish())
     };
     if let Err(err) = result {
         match err {

@@ -1,6 +1,6 @@
+use super::{dmabuf::Dmabuf, Allocator, Buffer, Format, Fourcc, Modifier};
+use gbm::{BufferObject as GbmBuffer, BufferObjectFlags, Device as GbmDevice};
 use std::os::unix::io::AsRawFd;
-use gbm::{BufferObject as GbmBuffer, Device as GbmDevice, BufferObjectFlags};
-use super::{Allocator, Buffer, Format, Fourcc, Modifier, dmabuf::Dmabuf};
 
 impl<A: AsRawFd + 'static, T> Allocator<GbmBuffer<T>> for GbmDevice<A> {
     type Error = std::io::Error;
@@ -13,7 +13,12 @@ impl<A: AsRawFd + 'static, T> Allocator<GbmBuffer<T>> for GbmDevice<A> {
             }
             self.create_buffer_object(width, height, format.code, usage)
         } else {
-            self.create_buffer_object_with_modifiers(width, height, format.code, Some(format.modifier).into_iter())
+            self.create_buffer_object_with_modifiers(
+                width,
+                height,
+                format.code,
+                Some(format.modifier).into_iter(),
+            )
         }
     }
 }
@@ -77,15 +82,23 @@ impl<T> std::convert::TryFrom<GbmBuffer<T>> for Dmabuf {
             return Err(GbmConvertError::InvalidFD);
         }
 
-        let offsets = (0i32..planes).map(|i| buf.offset(i)).collect::<Result<Vec<u32>, gbm::DeviceDestroyedError>>()?;
-        let strides = (0i32..planes).map(|i| buf.stride_for_plane(i)).collect::<Result<Vec<u32>, gbm::DeviceDestroyedError>>()?;
+        let offsets = (0i32..planes)
+            .map(|i| buf.offset(i))
+            .collect::<Result<Vec<u32>, gbm::DeviceDestroyedError>>()?;
+        let strides = (0i32..planes)
+            .map(|i| buf.stride_for_plane(i))
+            .collect::<Result<Vec<u32>, gbm::DeviceDestroyedError>>()?;
 
         Ok(Dmabuf::new(buf, planes as usize, &offsets, &strides, &fds).unwrap())
     }
 }
 
 impl Dmabuf {
-    pub fn import<A: AsRawFd + 'static, T>(&self, gbm: &GbmDevice<A>, usage: BufferObjectFlags) -> std::io::Result<GbmBuffer<T>> {
+    pub fn import<A: AsRawFd + 'static, T>(
+        &self,
+        gbm: &GbmDevice<A>,
+        usage: BufferObjectFlags,
+    ) -> std::io::Result<GbmBuffer<T>> {
         let buf = &*self.0;
         if self.has_modifier() || buf.num_planes > 1 || buf.offsets[0] != 0 {
             gbm.import_buffer_object_from_dma_buf_with_modifiers(
@@ -106,7 +119,11 @@ impl Dmabuf {
                 buf.height,
                 buf.strides[0],
                 buf.format.code,
-                if buf.format.modifier == Modifier::Linear { usage | BufferObjectFlags::LINEAR } else { usage },
+                if buf.format.modifier == Modifier::Linear {
+                    usage | BufferObjectFlags::LINEAR
+                } else {
+                    usage
+                },
             )
         }
     }

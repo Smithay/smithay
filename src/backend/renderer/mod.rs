@@ -3,7 +3,7 @@ use std::error::Error;
 
 use cgmath::{prelude::*, Matrix3, Vector2};
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::{wl_shm, wl_buffer};
+use wayland_server::protocol::{wl_buffer, wl_shm};
 
 use crate::backend::SwapBuffersError;
 #[cfg(feature = "renderer_gl")]
@@ -26,46 +26,14 @@ pub enum Transform {
 impl Transform {
     pub fn matrix(&self) -> Matrix3<f32> {
         match self {
-	        Transform::Normal => Matrix3::new(
-                1.0, 0.0, 0.0,
-                0.0, 1.0, 0.0,
-                0.0, 0.0, 1.0,
-            ),
-            Transform::_90 => Matrix3::new(
-                0.0, -1.0, 0.0,
-                1.0, 0.0, 0.0,
-                0.0, 0.0, 1.0,
-            ),
-            Transform::_180 => Matrix3::new(
-                -1.0, 0.0, 0.0,
-                0.0, -1.0, 0.0,
-                0.0, 0.0, 1.0,
-            ),
-            Transform::_270 => Matrix3::new(
-                0.0, 1.0, 0.0,
-                -1.0, 0.0, 0.0,
-                0.0, 0.0, 1.0,
-            ),
-            Transform::Flipped => Matrix3::new(
-                -1.0, 0.0, 0.0,
-                0.0, 1.0, 0.0,
-                0.0, 0.0, 1.0,
-            ),
-            Transform::Flipped90 => Matrix3::new(
-                0.0, 1.0, 0.0,
-                1.0, 0.0, 0.0,
-                0.0, 0.0, 1.0,
-            ),
-            Transform::Flipped180 => Matrix3::new(
-                1.0, 0.0, 0.0,
-                0.0, -1.0, 0.0,
-                0.0, 0.0, 1.0,
-            ),
-            Transform::Flipped270 => Matrix3::new(
-                0.0, -1.0, 0.0,
-                -1.0, 0.0, 0.0,
-                0.0, 0.0, 1.0,
-            ),
+            Transform::Normal => Matrix3::new(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
+            Transform::_90 => Matrix3::new(0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+            Transform::_180 => Matrix3::new(-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0),
+            Transform::_270 => Matrix3::new(0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+            Transform::Flipped => Matrix3::new(-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
+            Transform::Flipped90 => Matrix3::new(0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+            Transform::Flipped180 => Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0),
+            Transform::Flipped270 => Matrix3::new(0.0, -1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
         }
     }
 
@@ -137,7 +105,10 @@ pub trait Renderer {
     type TextureId: Texture;
 
     #[cfg(feature = "image")]
-    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::TextureId, Self::Error>; 
+    fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
+        &mut self,
+        image: &image::ImageBuffer<image::Rgba<u8>, C>,
+    ) -> Result<Self::TextureId, Self::Error>;
     #[cfg(feature = "wayland_frontend")]
     fn shm_formats(&self) -> &[wl_shm::Format] {
         // Mandatory
@@ -149,14 +120,30 @@ pub trait Renderer {
     fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::TextureId, Self::Error>;
     fn destroy_texture(&mut self, texture: Self::TextureId) -> Result<(), Self::Error>;
 
-    fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), <Self as Renderer>::Error>;
+    fn begin(
+        &mut self,
+        width: u32,
+        height: u32,
+        transform: Transform,
+    ) -> Result<(), <Self as Renderer>::Error>;
     fn finish(&mut self) -> Result<(), SwapBuffersError>;
-    
+
     fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error>;
-    fn render_texture(&mut self, texture: &Self::TextureId, matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error>;
-    fn render_texture_at(&mut self, texture: &Self::TextureId, pos: (i32, i32), transform: Transform, alpha: f32) -> Result<(), Self::Error> {
+    fn render_texture(
+        &mut self,
+        texture: &Self::TextureId,
+        matrix: Matrix3<f32>,
+        alpha: f32,
+    ) -> Result<(), Self::Error>;
+    fn render_texture_at(
+        &mut self,
+        texture: &Self::TextureId,
+        pos: (i32, i32),
+        transform: Transform,
+        alpha: f32,
+    ) -> Result<(), Self::Error> {
         let mut mat = Matrix3::<f32>::identity();
-        
+
         // position and scale
         let size = texture.size();
         mat = mat * Matrix3::from_translation(Vector2::new(pos.0 as f32, pos.1 as f32));
@@ -173,5 +160,4 @@ pub trait Renderer {
 
         self.render_texture(texture, mat, alpha)
     }
-
 }

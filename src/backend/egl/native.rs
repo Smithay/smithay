@@ -1,12 +1,10 @@
 //! Type safe native types for safe context/surface creation
 
-use super::{
-    display::EGLDisplayHandle, ffi, wrap_egl_call, SwapBuffersError,
-};
+use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, SwapBuffersError};
 use nix::libc::{c_int, c_void};
-use std::sync::Arc;
 #[cfg(feature = "backend_gbm")]
 use std::os::unix::io::AsRawFd;
+use std::sync::Arc;
 
 #[cfg(feature = "backend_winit")]
 use wayland_egl as wegl;
@@ -33,7 +31,11 @@ impl<A: AsRawFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
         &["EGL_MESA_platform_gbm"]
     }
     fn platform_display(&self) -> (ffi::egl::types::EGLenum, *mut c_void, Vec<ffi::EGLint>) {
-        (ffi::egl::PLATFORM_GBM_MESA, self.as_raw() as *mut _, vec![ffi::egl::NONE as ffi::EGLint])
+        (
+            ffi::egl::PLATFORM_GBM_MESA,
+            self.as_raw() as *mut _,
+            vec![ffi::egl::NONE as ffi::EGLint],
+        )
     }
 }
 
@@ -51,9 +53,17 @@ impl EGLNativeDisplay for WinitWindow {
 
     fn platform_display(&self) -> (ffi::egl::types::EGLenum, *mut c_void, Vec<ffi::EGLint>) {
         if let Some(display) = self.wayland_display() {
-            (ffi::egl::PLATFORM_WAYLAND_EXT, display as *mut _, vec![ffi::egl::NONE as ffi::EGLint])
+            (
+                ffi::egl::PLATFORM_WAYLAND_EXT,
+                display as *mut _,
+                vec![ffi::egl::NONE as ffi::EGLint],
+            )
         } else if let Some(display) = self.xlib_display() {
-            (ffi::egl::PLATFORM_X11_EXT, display as *mut _, vec![ffi::egl::NONE as ffi::EGLint])
+            (
+                ffi::egl::PLATFORM_X11_EXT,
+                display as *mut _,
+                vec![ffi::egl::NONE as ffi::EGLint],
+            )
         } else {
             unreachable!("No backends for winit other then Wayland and X11 are supported")
         }
@@ -91,13 +101,13 @@ pub unsafe trait EGLNativeSurface: Send + Sync {
     }
 
     /// If the surface supports resizing you may implement and use this function.
-    /// 
+    ///
     /// The two first arguments (width, height) are the new size of the surface,
     /// the two others (dx, dy) represent the displacement of the top-left corner of the surface.
     /// It allows you to control the direction of the resizing if necessary.
-    /// 
+    ///
     /// Implementations may ignore the dx and dy arguments.
-    /// 
+    ///
     /// Returns true if the resize was successful.
     fn resize(&self, _width: i32, _height: i32, _dx: i32, _dy: i32) -> bool {
         false
@@ -160,7 +170,7 @@ unsafe impl EGLNativeSurface for wegl::WlEglSurface {
             )
         })
     }
-    
+
     fn resize(&self, width: i32, height: i32, dx: i32, dy: i32) -> bool {
         wegl::WlEglSurface::resize(self, width, height, dx, dy);
         true

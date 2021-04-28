@@ -106,8 +106,11 @@ impl fmt::Debug for BufferAccessError {
                 write!(formatter, "BufferAccessError::EGLImageCreationFailed")
             }
             BufferAccessError::EglExtensionNotSupported(ref err) => write!(formatter, "{:?}", err),
-            BufferAccessError::UnsupportedMultiPlanarFormat(ref fmt) =>
-                write!(formatter, "BufferAccessError::UnsupportedMultiPlanerFormat({:?})", fmt),
+            BufferAccessError::UnsupportedMultiPlanarFormat(ref fmt) => write!(
+                formatter,
+                "BufferAccessError::UnsupportedMultiPlanerFormat({:?})",
+                fmt
+            ),
         }
     }
 }
@@ -132,9 +135,7 @@ impl std::convert::From<SwapBuffersError> for GraphicsSwapBuffersError {
             }
             // the rest is either never happening or are unrecoverable
             x @ SwapBuffersError::EGLSwapBuffers(_) => GraphicsSwapBuffersError::ContextLost(Box::new(x)),
-            x @ SwapBuffersError::EGLCreateSurface(_) => {
-                GraphicsSwapBuffersError::ContextLost(Box::new(x))
-            }
+            x @ SwapBuffersError::EGLCreateSurface(_) => GraphicsSwapBuffersError::ContextLost(Box::new(x)),
         }
     }
 }

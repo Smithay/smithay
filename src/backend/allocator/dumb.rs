@@ -2,7 +2,7 @@ use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 
 use drm::buffer::Buffer as DrmBuffer;
-use drm::control::{Device as ControlDevice, dumbbuffer::DumbBuffer as Handle};
+use drm::control::{dumbbuffer::DumbBuffer as Handle, Device as ControlDevice};
 
 use super::{Allocator, Buffer, Format};
 use crate::backend::drm::device::{DrmDevice, DrmDeviceInternal, FdWrapper};
@@ -16,8 +16,13 @@ pub struct DumbBuffer<A: AsRawFd + 'static> {
 impl<A: AsRawFd + 'static> Allocator<DumbBuffer<A>> for DrmDevice<A> {
     type Error = drm::SystemError;
 
-    fn create_buffer(&mut self, width: u32, height: u32, format: Format) -> Result<DumbBuffer<A>, Self::Error> {
-        let handle = self.create_dumb_buffer((width, height), format.code, 32/* TODO */)?;
+    fn create_buffer(
+        &mut self,
+        width: u32,
+        height: u32,
+        format: Format,
+    ) -> Result<DumbBuffer<A>, Self::Error> {
+        let handle = self.create_dumb_buffer((width, height), format.code, 32 /* TODO */)?;
 
         Ok(DumbBuffer {
             fd: match &*self.internal {
@@ -38,7 +43,7 @@ impl<A: AsRawFd + 'static> Buffer for DumbBuffer<A> {
     fn height(&self) -> u32 {
         self.handle.size().1
     }
-    
+
     fn format(&self) -> Format {
         self.format
     }

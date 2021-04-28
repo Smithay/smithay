@@ -1,18 +1,23 @@
-#[cfg(feature = "backend_gbm")]
-pub mod gbm;
+pub mod dmabuf;
 #[cfg(feature = "backend_drm")]
 pub mod dumb;
-pub mod dmabuf;
+#[cfg(feature = "backend_gbm")]
+pub mod gbm;
 
 mod swapchain;
 pub use swapchain::{Slot, Swapchain, SwapchainError};
 
-pub use drm_fourcc::{DrmFormat as Format, DrmFourcc as Fourcc, DrmModifier as Modifier, DrmVendor as Vendor, UnrecognizedFourcc, UnrecognizedVendor};
+pub use drm_fourcc::{
+    DrmFormat as Format, DrmFourcc as Fourcc, DrmModifier as Modifier, DrmVendor as Vendor,
+    UnrecognizedFourcc, UnrecognizedVendor,
+};
 
 pub trait Buffer {
     fn width(&self) -> u32;
     fn height(&self) -> u32;
-    fn size(&self) -> (u32, u32) { (self.width(), self.height()) }
+    fn size(&self) -> (u32, u32) {
+        (self.width(), self.height())
+    }
     fn format(&self) -> Format;
 }
 

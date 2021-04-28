@@ -1,20 +1,22 @@
-use std::os::unix::io::AsRawFd;
 use std::collections::HashSet;
 use std::convert::TryInto;
+use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 
 use cgmath::Matrix3;
 use drm::buffer::PlanarBuffer;
-use drm::control::{Device, Mode, crtc, connector, framebuffer, plane};
-use gbm::{Device as GbmDevice, BufferObject, BufferObjectFlags};
+use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
+use gbm::{BufferObject, BufferObjectFlags, Device as GbmDevice};
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::{wl_shm, wl_buffer};
+use wayland_server::protocol::{wl_buffer, wl_shm};
 
-use crate::backend::SwapBuffersError;
-use crate::backend::allocator::{Allocator, Format, Fourcc, Modifier, Swapchain, SwapchainError, Slot, Buffer, dmabuf::Dmabuf};
-use crate::backend::renderer::{Renderer, Bind, Transform, Texture};
+use super::{device::DevPath, surface::DrmSurfaceInternal, DrmError, DrmSurface};
+use crate::backend::allocator::{
+    dmabuf::Dmabuf, Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain, SwapchainError,
+};
 use crate::backend::egl::EGLBuffer;
-use super::{DrmSurface, DrmError, device::DevPath, surface::DrmSurfaceInternal};
+use crate::backend::renderer::{Bind, Renderer, Texture, Transform};
+use crate::backend::SwapBuffersError;
 
 pub struct DrmRenderSurface<
     D: AsRawFd + 'static,
@@ -33,16 +35,20 @@ pub struct DrmRenderSurface<
 impl<D, A, B, R, E1, E2, E3> DrmRenderSurface<D, A, R, B>
 where
     D: AsRawFd + 'static,
-    A: Allocator<B, Error=E1>,
-    B: Buffer + TryInto<Dmabuf, Error=E2>,
-    R: Bind<Dmabuf> + Renderer<Error=E3>,
+    A: Allocator<B, Error = E1>,
+    B: Buffer + TryInto<Dmabuf, Error = E2>,
+    R: Bind<Dmabuf> + Renderer<Error = E3>,
     E1: std::error::Error + 'static,
     E2: std::error::Error + 'static,
     E3: std::error::Error + 'static,
 {
     #[allow(clippy::type_complexity)]
-    pub fn new<L: Into<Option<::slog::Logger>>>(drm: DrmSurface<D>, allocator: A, renderer: R, log: L) -> Result<DrmRenderSurface<D, A, R, B>, Error<E1, E2, E3>>
-    {
+    pub fn new<L: Into<Option<::slog::Logger>>>(
+        drm: DrmSurface<D>,
+        allocator: A,
+        renderer: R,
+        log: L,
+    ) -> Result<DrmRenderSurface<D, A, R, B>, Error<E1, E2, E3>> {
         // we cannot simply pick the first supported format of the intersection of *all* formats, because:
         // - we do not want something like Abgr4444, which looses color information
         // - some formats might perform terribly
@@ -56,14 +62,29 @@ where
         let logger = crate::slog_or_fallback(log).new(o!("backend" => "drm_render"));
 
         // select a format
-        let plane_formats = drm.supported_formats().iter().filter(|fmt| fmt.code == code).cloned().collect::<HashSet<_>>();
-        let renderer_formats = Bind::<Dmabuf>::supported_formats(&renderer).expect("Dmabuf renderer without formats")
-            .iter().filter(|fmt| fmt.code == code).cloned().collect::<HashSet<_>>();
+        let plane_formats = drm
+            .supported_formats()
+            .iter()
+            .filter(|fmt| fmt.code == code)
+            .cloned()
+            .collect::<HashSet<_>>();
+        let renderer_formats = Bind::<Dmabuf>::supported_formats(&renderer)
+            .expect("Dmabuf renderer without formats")
+            .iter()
+            .filter(|fmt| fmt.code == code)
+            .cloned()
+            .collect::<HashSet<_>>();
 
         trace!(logger, "Remaining plane formats: {:?}", plane_formats);
         trace!(logger, "Remaining renderer formats: {:?}", renderer_formats);
-        debug!(logger, "Remaining intersected formats: {:?}", plane_formats.intersection(&renderer_formats).collect::<HashSet<_>>());
-        
+        debug!(
+            logger,
+            "Remaining intersected formats: {:?}",
+            plane_formats
+                .intersection(&renderer_formats)
+                .collect::<HashSet<_>>()
+        );
+
         if plane_formats.is_empty() {
             return Err(Error::NoSupportedPlaneFormat);
         } else if renderer_formats.is_empty() {
@@ -74,38 +95,48 @@ where
             // Special case: if a format supports explicit LINEAR (but no implicit Modifiers)
             // and the other doesn't support any modifier, force LINEAR. This will force the allocator to
             // create a buffer with a LINEAR layout instead of an implicit modifier.
-            if 
-                (plane_formats.len() == 1 &&
-                    plane_formats.iter().next().unwrap().modifier == Modifier::Invalid
-                    && renderer_formats.iter().all(|x| x.modifier != Modifier::Invalid)
-                    && renderer_formats.iter().any(|x| x.modifier == Modifier::Linear)
-                ) || (renderer_formats.len() == 1 &&
-                    renderer_formats.iter().next().unwrap().modifier == Modifier::Invalid
+            if (plane_formats.len() == 1
+                && plane_formats.iter().next().unwrap().modifier == Modifier::Invalid
+                && renderer_formats.iter().all(|x| x.modifier != Modifier::Invalid)
+                && renderer_formats.iter().any(|x| x.modifier == Modifier::Linear))
+                || (renderer_formats.len() == 1
+                    && renderer_formats.iter().next().unwrap().modifier == Modifier::Invalid
                     && plane_formats.iter().all(|x| x.modifier != Modifier::Invalid)
-                    && plane_formats.iter().any(|x| x.modifier == Modifier::Linear)
-            ) {
+                    && plane_formats.iter().any(|x| x.modifier == Modifier::Linear))
+            {
                 vec![Format {
                     code,
                     modifier: Modifier::Linear,
                 }]
             } else {
-                plane_formats.intersection(&renderer_formats).cloned().collect::<Vec<_>>()
+                plane_formats
+                    .intersection(&renderer_formats)
+                    .cloned()
+                    .collect::<Vec<_>>()
             }
         };
         debug!(logger, "Testing Formats: {:?}", formats);
 
         // Test explicit formats first
         let drm = Arc::new(drm);
-        let iter = formats.iter().filter(|x| x.modifier != Modifier::Invalid && x.modifier != Modifier::Linear)
+        let iter = formats
+            .iter()
+            .filter(|x| x.modifier != Modifier::Invalid && x.modifier != Modifier::Linear)
             .chain(formats.iter().find(|x| x.modifier == Modifier::Linear))
-            .chain(formats.iter().find(|x| x.modifier == Modifier::Invalid)).cloned();
+            .chain(formats.iter().find(|x| x.modifier == Modifier::Invalid))
+            .cloned();
 
         DrmRenderSurface::new_internal(drm, allocator, renderer, iter, logger)
     }
 
     #[allow(clippy::type_complexity)]
-    fn new_internal(drm: Arc<DrmSurface<D>>, allocator: A, mut renderer: R, mut formats: impl Iterator<Item=Format>, logger: ::slog::Logger) -> Result<DrmRenderSurface<D, A, R, B>, Error<E1, E2, E3>>
-    {
+    fn new_internal(
+        drm: Arc<DrmSurface<D>>,
+        allocator: A,
+        mut renderer: R,
+        mut formats: impl Iterator<Item = Format>,
+        logger: ::slog::Logger,
+    ) -> Result<DrmRenderSurface<D, A, R, B>, Error<E1, E2, E3>> {
         let format = formats.next().ok_or(Error::NoSupportedPlaneFormat)?;
         let mode = drm.pending_mode();
 
@@ -117,16 +148,28 @@ where
 
         {
             let dmabuf: Dmabuf = (*buffer).clone();
-            match renderer.bind(dmabuf).map_err(Error::<E1, E2, E3>::RenderError)
-            .and_then(|_| renderer.begin(mode.size().0 as u32, mode.size().1 as u32, Transform::Normal).map_err(Error::RenderError))
-            .and_then(|_| renderer.clear([0.0, 0.0, 0.0, 1.0]).map_err(Error::RenderError))
-            .and_then(|_| renderer.finish().map_err(|_| Error::InitialRenderingError))
-            .and_then(|_| renderer.unbind().map_err(Error::RenderError))
+            match renderer
+                .bind(dmabuf)
+                .map_err(Error::<E1, E2, E3>::RenderError)
+                .and_then(|_| {
+                    renderer
+                        .begin(mode.size().0 as u32, mode.size().1 as u32, Transform::Normal)
+                        .map_err(Error::RenderError)
+                })
+                .and_then(|_| renderer.clear([0.0, 0.0, 0.0, 1.0]).map_err(Error::RenderError))
+                .and_then(|_| renderer.finish().map_err(|_| Error::InitialRenderingError))
+                .and_then(|_| renderer.unbind().map_err(Error::RenderError))
             {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(err) => {
                     warn!(logger, "Rendering failed with format {:?}: {}", format, err);
-                    return DrmRenderSurface::new_internal(drm, swapchain.allocator, renderer, formats, logger);
+                    return DrmRenderSurface::new_internal(
+                        drm,
+                        swapchain.allocator,
+                        renderer,
+                        formats,
+                        logger,
+                    );
                 }
             }
         }
@@ -135,8 +178,7 @@ where
         let fb = bo.userdata().unwrap().unwrap().fb;
         buffer.set_userdata(bo);
 
-        match drm.test_buffer(fb, &mode, true)
-        {
+        match drm.test_buffer(fb, &mode, true) {
             Ok(_) => {
                 debug!(logger, "Success, choosen format: {:?}", format);
                 let buffers = Buffers::new(drm.clone(), gbm, buffer);
@@ -148,18 +190,21 @@ where
                     buffers,
                     current_buffer: None,
                 })
-            },
+            }
             Err(err) => {
-                warn!(logger, "Mode-setting failed with buffer format {:?}: {}", format, err);
+                warn!(
+                    logger,
+                    "Mode-setting failed with buffer format {:?}: {}", format, err
+                );
                 DrmRenderSurface::new_internal(drm, swapchain.allocator, renderer, formats, logger)
             }
         }
     }
-    
+
     pub fn queue_frame(&mut self) -> Result<(), Error<E1, E2, E3>> {
         let mode = self.drm.pending_mode();
         let (width, height) = (mode.size().0 as u32, mode.size().1 as u32);
-        self.begin(width, height, Transform::Flipped180/* TODO */)
+        self.begin(width, height, Transform::Flipped180 /* TODO */)
     }
 
     pub fn drop_frame(&mut self) -> Result<(), SwapBuffersError> {
@@ -177,11 +222,11 @@ where
     pub fn frame_submitted(&mut self) -> Result<(), Error<E1, E2, E3>> {
         self.buffers.submitted()
     }
-    
+
     pub fn crtc(&self) -> crtc::Handle {
         self.drm.crtc()
     }
-    
+
     pub fn plane(&self) -> plane::Handle {
         self.drm.plane()
     }
@@ -219,13 +264,12 @@ where
     }
 }
 
-
 impl<D, A, B, T, R, E1, E2, E3> Renderer for DrmRenderSurface<D, A, R, B>
 where
     D: AsRawFd + 'static,
-    A: Allocator<B, Error=E1>,
-    B: Buffer + TryInto<Dmabuf, Error=E2>,
-    R: Bind<Dmabuf> + Renderer<Error=E3, TextureId=T>,
+    A: Allocator<B, Error = E1>,
+    B: Buffer + TryInto<Dmabuf, Error = E2>,
+    R: Bind<Dmabuf> + Renderer<Error = E3, TextureId = T>,
     T: Texture,
     E1: std::error::Error + 'static,
     E2: std::error::Error + 'static,
@@ -235,7 +279,10 @@ where
     type TextureId = T;
 
     #[cfg(feature = "image")]
-    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::TextureId, Self::Error> {
+    fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
+        &mut self,
+        image: &image::ImageBuffer<image::Rgba<u8>, C>,
+    ) -> Result<Self::TextureId, Self::Error> {
         self.renderer.import_bitmap(image).map_err(Error::RenderError)
     }
 
@@ -248,16 +295,16 @@ where
     fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::TextureId, Self::Error> {
         self.renderer.import_shm(buffer).map_err(Error::RenderError)
     }
-    
+
     #[cfg(feature = "wayland_frontend")]
     fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::TextureId, Self::Error> {
-        self.renderer.import_egl(buffer).map_err(Error::RenderError)       
+        self.renderer.import_egl(buffer).map_err(Error::RenderError)
     }
 
     fn destroy_texture(&mut self, texture: Self::TextureId) -> Result<(), Self::Error> {
         self.renderer.destroy_texture(texture).map_err(Error::RenderError)
     }
-    
+
     fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), Error<E1, E2, E3>> {
         if self.current_buffer.is_some() {
             return Ok(());
@@ -266,15 +313,24 @@ where
         let slot = self.swapchain.acquire()?.ok_or(Error::NoFreeSlotsError)?;
         self.renderer.bind((*slot).clone()).map_err(Error::RenderError)?;
         self.current_buffer = Some(slot);
-        self.renderer.begin(width, height, transform).map_err(Error::RenderError)
+        self.renderer
+            .begin(width, height, transform)
+            .map_err(Error::RenderError)
     }
 
-   fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error> {
+    fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error> {
         self.renderer.clear(color).map_err(Error::RenderError)
     }
-    
-    fn render_texture(&mut self, texture: &Self::TextureId, matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error> {
-        self.renderer.render_texture(texture, matrix, alpha).map_err(Error::RenderError)
+
+    fn render_texture(
+        &mut self,
+        texture: &Self::TextureId,
+        matrix: Matrix3<f32>,
+        alpha: f32,
+    ) -> Result<(), Self::Error> {
+        self.renderer
+            .render_texture(texture, matrix, alpha)
+            .map_err(Error::RenderError)
     }
 
     fn finish(&mut self) -> Result<(), SwapBuffersError> {
@@ -284,7 +340,10 @@ where
 
         let result = self.renderer.finish();
         if result.is_ok() {
-            match self.buffers.queue::<E1, E2, E3>(self.current_buffer.take().unwrap()) {
+            match self
+                .buffers
+                .queue::<E1, E2, E3>(self.current_buffer.take().unwrap())
+            {
                 Ok(()) => {}
                 Err(Error::DrmError(drm)) => return Err(drm.into()),
                 Err(Error::GbmError(err)) => return Err(SwapBuffersError::ContextLost(Box::new(err))),
@@ -318,7 +377,11 @@ impl<D> Buffers<D>
 where
     D: AsRawFd + 'static,
 {
-    pub fn new(drm: Arc<DrmSurface<D>>, gbm: GbmDevice<gbm::FdWrapper>, slot: Slot<Dmabuf, BufferObject<FbHandle<D>>>) -> Buffers<D> {
+    pub fn new(
+        drm: Arc<DrmSurface<D>>,
+        gbm: GbmDevice<gbm::FdWrapper>,
+        slot: Slot<Dmabuf, BufferObject<FbHandle<D>>>,
+    ) -> Buffers<D> {
         Buffers {
             drm,
             gbm,
@@ -328,7 +391,10 @@ where
         }
     }
 
-    pub fn queue<E1, E2, E3>(&mut self, slot: Slot<Dmabuf, BufferObject<FbHandle<D>>>) -> Result<(), Error<E1, E2, E3>>
+    pub fn queue<E1, E2, E3>(
+        &mut self,
+        slot: Slot<Dmabuf, BufferObject<FbHandle<D>>>,
+    ) -> Result<(), Error<E1, E2, E3>>
     where
         E1: std::error::Error + 'static,
         E2: std::error::Error + 'static,
@@ -347,7 +413,7 @@ where
         }
     }
 
-    pub fn submitted<E1, E2, E3>(&mut self) -> Result<(), Error<E1, E2, E3>> 
+    pub fn submitted<E1, E2, E3>(&mut self) -> Result<(), Error<E1, E2, E3>>
     where
         E1: std::error::Error + 'static,
         E2: std::error::Error + 'static,
@@ -364,7 +430,7 @@ where
         }
     }
 
-    fn submit<E1, E2, E3>(&mut self) -> Result<(), Error<E1, E2, E3>> 
+    fn submit<E1, E2, E3>(&mut self) -> Result<(), Error<E1, E2, E3>>
     where
         E1: std::error::Error + 'static,
         E2: std::error::Error + 'static,
@@ -386,7 +452,11 @@ where
     }
 }
 
-fn import_dmabuf<A, E1, E2, E3>(drm: &Arc<DrmSurface<A>>, gbm: &GbmDevice<gbm::FdWrapper>, buffer: &Dmabuf) -> Result<BufferObject<FbHandle<A>>, Error<E1, E2, E3>>
+fn import_dmabuf<A, E1, E2, E3>(
+    drm: &Arc<DrmSurface<A>>,
+    gbm: &GbmDevice<gbm::FdWrapper>,
+    buffer: &Dmabuf,
+) -> Result<BufferObject<FbHandle<A>>, Error<E1, E2, E3>>
 where
     A: AsRawFd + 'static,
     E1: std::error::Error + 'static,
@@ -399,32 +469,29 @@ where
         Modifier::Invalid => None,
         x => Some(x),
     };
-    
+
     let logger = match &*(*drm).internal {
         DrmSurfaceInternal::Atomic(surf) => surf.logger.clone(),
         DrmSurfaceInternal::Legacy(surf) => surf.logger.clone(),
     };
 
-    let fb = match
-        if modifier.is_some() {
-            let num = bo.plane_count().unwrap();
-            let modifiers = [
-                modifier,
-                if num > 1 { modifier } else { None },
-                if num > 2 { modifier } else { None },
-                if num > 3 { modifier } else { None },
-            ];
-            drm.add_planar_framebuffer(&bo, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
-        } else {
-            drm.add_planar_framebuffer(&bo, &[None, None, None, None], 0)
-        }
-    {
+    let fb = match if modifier.is_some() {
+        let num = bo.plane_count().unwrap();
+        let modifiers = [
+            modifier,
+            if num > 1 { modifier } else { None },
+            if num > 2 { modifier } else { None },
+            if num > 3 { modifier } else { None },
+        ];
+        drm.add_planar_framebuffer(&bo, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
+    } else {
+        drm.add_planar_framebuffer(&bo, &[None, None, None, None], 0)
+    } {
         Ok(fb) => fb,
         Err(source) => {
             // We only support this as a fallback of last resort for ARGB8888 visuals,
             // like xf86-video-modesetting does.
-            if drm::buffer::Buffer::format(&bo) != Fourcc::Argb8888
-            || bo.handles()[1].is_some() {
+            if drm::buffer::Buffer::format(&bo) != Fourcc::Argb8888 || bo.handles()[1].is_some() {
                 return Err(Error::DrmError(DrmError::Access {
                     errmsg: "Failed to add framebuffer",
                     dev: drm.dev_path(),
@@ -432,17 +499,15 @@ where
                 }));
             }
             debug!(logger, "Failed to add framebuffer, trying legacy method");
-            drm.add_framebuffer(&bo, 32, 32).map_err(|source| DrmError::Access {
-                errmsg: "Failed to add framebuffer",
-                dev: drm.dev_path(),
-                source,
-            })?
+            drm.add_framebuffer(&bo, 32, 32)
+                .map_err(|source| DrmError::Access {
+                    errmsg: "Failed to add framebuffer",
+                    dev: drm.dev_path(),
+                    source,
+                })?
         }
     };
-    bo.set_userdata(FbHandle {
-        drm: drm.clone(),
-        fb,
-    }).unwrap();
+    bo.set_userdata(FbHandle { drm: drm.clone(), fb }).unwrap();
 
     Ok(bo)
 }
@@ -471,21 +536,21 @@ where
     #[error("The swapchain encounted an error: {0}")]
     SwapchainError(#[from] SwapchainError<E1, E2>),
     #[error("The renderer encounted an error: {0}")]
-    RenderError(#[source] E3)
+    RenderError(#[source] E3),
 }
 
 impl<
-    E1: std::error::Error + 'static,
-    E2: std::error::Error + 'static,
-    E3: std::error::Error + Into<SwapBuffersError> + 'static,
-> From<Error<E1, E2, E3>> for SwapBuffersError {
+        E1: std::error::Error + 'static,
+        E2: std::error::Error + 'static,
+        E3: std::error::Error + Into<SwapBuffersError> + 'static,
+    > From<Error<E1, E2, E3>> for SwapBuffersError
+{
     fn from(err: Error<E1, E2, E3>) -> SwapBuffersError {
         match err {
             x @ Error::NoSupportedPlaneFormat
             | x @ Error::NoSupportedRendererFormat
             | x @ Error::FormatsNotCompatible
-            | x @ Error::InitialRenderingError
-            => SwapBuffersError::ContextLost(Box::new(x)),
+            | x @ Error::InitialRenderingError => SwapBuffersError::ContextLost(Box::new(x)),
             x @ Error::NoFreeSlotsError => SwapBuffersError::TemporaryFailure(Box::new(x)),
             Error::DrmError(err) => err.into(),
             Error::GbmError(err) => SwapBuffersError::ContextLost(Box::new(err)),

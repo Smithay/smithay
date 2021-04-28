@@ -9,9 +9,7 @@ use smithay::reexports::nix::libc::dev_t;
 use std::collections::HashMap;
 
 #[cfg(feature = "egl")]
-use smithay::backend::egl::{
-    display::EGLBufferReader, BufferAccessError as EGLBufferAccessError, EGLBuffer,
-};
+use smithay::backend::egl::{display::EGLBufferReader, BufferAccessError as EGLBufferAccessError, EGLBuffer};
 use smithay::{
     reexports::wayland_server::protocol::wl_buffer::WlBuffer,
     wayland::shm::{with_buffer_contents as shm_buffer_contents, BufferAccessError},
@@ -76,7 +74,7 @@ impl BufferUtils {
 
         let egl_buffer = match result {
             Ok(egl) => Some(egl),
-            Err(EGLBufferAccessError::NotManaged(_)) => { None },
+            Err(EGLBufferAccessError::NotManaged(_)) => None,
             Err(err) => {
                 error!(self.log, "EGL error"; "err" => format!("{:?}", err));
                 return Err(buffer);
@@ -112,7 +110,7 @@ pub struct BufferTextures<T> {
 #[cfg(feature = "udev")]
 impl<T: Texture> BufferTextures<T> {
     #[cfg(feature = "egl")]
-    pub fn load_texture<'a, R: Renderer<TextureId=T>>(
+    pub fn load_texture<'a, R: Renderer<TextureId = T>>(
         &'a mut self,
         id: u64,
         renderer: &mut R,
@@ -136,7 +134,7 @@ impl<T: Texture> BufferTextures<T> {
     }
 
     #[cfg(not(feature = "egl"))]
-    pub fn load_texture<'a, R: Renderer<Texture=T>>(
+    pub fn load_texture<'a, R: Renderer<Texture = T>>(
         &'a mut self,
         id: u64,
         renderer: &mut R,
@@ -149,14 +147,14 @@ impl<T: Texture> BufferTextures<T> {
         self.load_shm_texture(id, renderer, texture_destruction_callback)
     }
 
-    fn load_shm_texture<'a, R: Renderer<TextureId=T>>(
+    fn load_shm_texture<'a, R: Renderer<TextureId = T>>(
         &'a mut self,
         id: u64,
         renderer: &mut R,
         texture_destruction_callback: &Sender<T>,
     ) -> Result<&'a T, R::Error> {
         let texture = renderer.import_shm(&self.buffer)?;
-        
+
         if let Some(old_texture) = self.textures.insert(id, texture) {
             let _ = renderer.destroy_texture(old_texture)?;
         }

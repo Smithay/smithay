@@ -6,11 +6,14 @@ use drm::control::{
 
 use std::collections::HashSet;
 use std::os::unix::io::AsRawFd;
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex, RwLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex, RwLock,
+};
 
 use crate::backend::drm::{
-    device::{DevPath, DrmDeviceInternal},
     device::atomic::Mapping,
+    device::{DevPath, DrmDeviceInternal},
     error::Error,
 };
 
@@ -48,7 +51,11 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         let logger = logger.new(o!("smithay_module" => "backend_drm_atomic", "drm_module" => "surface"));
         info!(
             logger,
-            "Initializing drm surface ({:?}:{:?}) with mode {:?} and connectors {:?}", crtc, plane, mode, connectors
+            "Initializing drm surface ({:?}:{:?}) with mode {:?} and connectors {:?}",
+            crtc,
+            plane,
+            mode,
+            connectors
         );
 
         let crtc_info = fd.get_crtc(crtc).map_err(|source| Error::Access {
@@ -63,30 +70,25 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         // So we cheat, because it works and is easier to handle later.
         let current_mode = crtc_info.mode().unwrap_or_else(|| unsafe { std::mem::zeroed() });
         let current_blob = match crtc_info.mode() {
-            Some(mode) => fd
-                .create_property_blob(&mode)
-                .map_err(|source| Error::Access {
-                    errmsg: "Failed to create Property Blob for mode",
-                    dev: fd.dev_path(),
-                    source,
-                })?,
-            None => property::Value::Unknown(0),
-        };
-
-        let blob = fd
-            .create_property_blob(&mode)
-            .map_err(|source| Error::Access {
+            Some(mode) => fd.create_property_blob(&mode).map_err(|source| Error::Access {
                 errmsg: "Failed to create Property Blob for mode",
                 dev: fd.dev_path(),
                 source,
-            })?;
+            })?,
+            None => property::Value::Unknown(0),
+        };
 
-        let res_handles = fd.resource_handles()
-            .map_err(|source| Error::Access {
-                errmsg: "Error loading drm resources",
-                dev: fd.dev_path(),
-                source,
-            })?;
+        let blob = fd.create_property_blob(&mode).map_err(|source| Error::Access {
+            errmsg: "Failed to create Property Blob for mode",
+            dev: fd.dev_path(),
+            source,
+        })?;
+
+        let res_handles = fd.resource_handles().map_err(|source| Error::Access {
+            errmsg: "Error loading drm resources",
+            dev: fd.dev_path(),
+            source,
+        })?;
 
         // the current set of connectors are those, that already have the correct `CRTC_ID` set.
         // so we collect them for `current_state` and set the user-given once in `pending_state`.
@@ -94,8 +96,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         // If they don't match, `commit_pending` will return true and they will be changed on the next `commit`.
         let mut current_connectors = HashSet::new();
         for conn in res_handles.connectors() {
-            let crtc_prop = 
-                prop_mapping
+            let crtc_prop = prop_mapping
                 .0
                 .get(&conn)
                 .expect("Unknown handle")
@@ -105,8 +106,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                     name: "CRTC_ID",
                 })
                 .map(|x| *x)?;
-            if let (Ok(crtc_prop_info), Ok(props)) = (fd.get_property(crtc_prop), fd.get_properties(*conn))
-            {
+            if let (Ok(crtc_prop_info), Ok(props)) = (fd.get_property(crtc_prop), fd.get_properties(*conn)) {
                 let (ids, vals) = props.as_props_and_values();
                 for (&id, &val) in ids.iter().zip(vals.iter()) {
                     if id == crtc_prop {
@@ -152,14 +152,20 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
     // here we create a dumbbuffer for that purpose.
     fn create_test_buffer(&self, mode: &Mode) -> Result<framebuffer::Handle, Error> {
         let (w, h) = mode.size();
-        let db = self.fd
-            .create_dumb_buffer((w as u32, h as u32), crate::backend::allocator::Fourcc::Argb8888, 32)
+        let db = self
+            .fd
+            .create_dumb_buffer(
+                (w as u32, h as u32),
+                crate::backend::allocator::Fourcc::Argb8888,
+                32,
+            )
             .map_err(|source| Error::Access {
                 errmsg: "Failed to create dumb buffer",
                 dev: self.fd.dev_path(),
                 source,
             })?;
-        let fb = self.fd
+        let fb = self
+            .fd
             .add_framebuffer(&db, 32, 32)
             .map_err(|source| Error::Access {
                 errmsg: "Failed to create framebuffer",
@@ -198,13 +204,11 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             return Err(Error::DeviceInactive);
         }
 
-        let info = self.fd
-            .get_connector(conn)
-            .map_err(|source| Error::Access {
-                errmsg: "Error loading connector info",
-                dev: self.fd.dev_path(),
-                source,
-            })?;
+        let info = self.fd.get_connector(conn).map_err(|source| Error::Access {
+            errmsg: "Error loading connector info",
+            dev: self.fd.dev_path(),
+            source,
+        })?;
 
         let mut pending = self.pending.write().unwrap();
 
@@ -219,11 +223,12 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 Some(pending.mode),
                 Some(pending.blob),
             )?;
-            self.fd.atomic_commit(
-                &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
-                req,
-            )
-            .map_err(|_| Error::TestFailed(self.crtc))?;
+            self.fd
+                .atomic_commit(
+                    &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                    req,
+                )
+                .map_err(|_| Error::TestFailed(self.crtc))?;
 
             // seems to be, lets add the connector
             pending.connectors.insert(conn);
@@ -255,11 +260,12 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             Some(pending.mode),
             Some(pending.blob),
         )?;
-        self.fd.atomic_commit(
-            &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
-            req,
-        )
-        .map_err(|_| Error::TestFailed(self.crtc))?;
+        self.fd
+            .atomic_commit(
+                &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                req,
+            )
+            .map_err(|_| Error::TestFailed(self.crtc))?;
 
         // seems to be, lets remove the connector
         pending.connectors.remove(&conn);
@@ -293,11 +299,12 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             Some(pending.blob),
         )?;
 
-        self.fd.atomic_commit(
-            &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
-            req,
-        )
-        .map_err(|_| Error::TestFailed(self.crtc))?;
+        self.fd
+            .atomic_commit(
+                &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                req,
+            )
+            .map_err(|_| Error::TestFailed(self.crtc))?;
 
         pending.connectors = conns;
 
@@ -312,7 +319,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         let mut pending = self.pending.write().unwrap();
 
         // check if new config is supported
-        let new_blob = self.fd
+        let new_blob = self
+            .fd
             .create_property_blob(&mode)
             .map_err(|source| Error::Access {
                 errmsg: "Failed to create Property Blob for mode",
@@ -329,7 +337,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             Some(mode),
             Some(new_blob),
         )?;
-        if let Err(err) = self.fd
+        if let Err(err) = self
+            .fd
             .atomic_commit(
                 &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
                 req,
@@ -346,7 +355,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
 
         Ok(())
     }
-    
+
     pub fn commit_pending(&self) -> bool {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
@@ -403,7 +412,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 Some(pending.blob),
             )?;
 
-            if let Err(err) = self.fd
+            if let Err(err) = self
+                .fd
                 .atomic_commit(
                     &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
                     req.clone(),
@@ -429,7 +439,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         };
 
         debug!(self.logger, "Setting screen: {:?}", req);
-        let result = self.fd
+        let result = self
+            .fd
             .atomic_commit(
                 if event {
                     &[
@@ -441,10 +452,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                         AtomicCommitFlags::Nonblock,
                     ]
                 } else {
-                    &[
-                        AtomicCommitFlags::AllowModeset,
-                        AtomicCommitFlags::Nonblock,
-                    ]
+                    &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::Nonblock]
                 },
                 req,
             )
@@ -480,36 +488,38 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         // If we would set anything here, that would require a modeset, this would fail,
         // indicating a problem in our assumptions.
         trace!(self.logger, "Queueing page flip: {:?}", req);
-        self.fd.atomic_commit(
-            if event {
-                &[AtomicCommitFlags::PageFlipEvent, AtomicCommitFlags::Nonblock]
-            } else {
-                &[AtomicCommitFlags::Nonblock]
-            },
-            req,
-        )
-        .map_err(|source| Error::Access {
-            errmsg: "Page flip commit failed",
-            dev: self.fd.dev_path(),
-            source,
-        })?;
+        self.fd
+            .atomic_commit(
+                if event {
+                    &[AtomicCommitFlags::PageFlipEvent, AtomicCommitFlags::Nonblock]
+                } else {
+                    &[AtomicCommitFlags::Nonblock]
+                },
+                req,
+            )
+            .map_err(|source| Error::Access {
+                errmsg: "Page flip commit failed",
+                dev: self.fd.dev_path(),
+                source,
+            })?;
 
         Ok(())
     }
-    
+
     pub fn test_buffer(&self, fb: framebuffer::Handle, mode: &Mode) -> Result<bool, Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
 
-        let blob = self.fd
+        let blob = self
+            .fd
             .create_property_blob(&mode)
             .map_err(|source| Error::Access {
                 errmsg: "Failed to create Property Blob for mode",
                 dev: self.fd.dev_path(),
                 source,
             })?;
-        
+
         let current = self.state.read().unwrap();
         let pending = self.pending.read().unwrap();
 
@@ -524,10 +534,16 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             self.plane,
             Some(fb),
             Some(*mode),
-            Some(blob)
+            Some(blob),
         )?;
 
-        let result = self.fd.atomic_commit(&[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly], req).is_ok();
+        let result = self
+            .fd
+            .atomic_commit(
+                &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                req,
+            )
+            .is_ok();
         Ok(result)
     }
 
@@ -536,8 +552,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         handle: connector::Handle,
         name: &'static str,
     ) -> Result<property::Handle, Error> {
-        self
-            .prop_mapping
+        self.prop_mapping
             .0
             .get(&handle)
             .expect("Unknown handle")
@@ -549,9 +564,12 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             .map(|x| *x)
     }
 
-    pub(crate) fn crtc_prop_handle(&self, handle: crtc::Handle, name: &'static str) -> Result<property::Handle, Error> {
-        self
-            .prop_mapping
+    pub(crate) fn crtc_prop_handle(
+        &self,
+        handle: crtc::Handle,
+        name: &'static str,
+    ) -> Result<property::Handle, Error> {
+        self.prop_mapping
             .1
             .get(&handle)
             .expect("Unknown handle")
@@ -569,8 +587,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         handle: framebuffer::Handle,
         name: &'static str,
     ) -> Result<property::Handle, Error> {
-        self
-            .prop_mapping
+        self.prop_mapping
             .2
             .get(&handle)
             .expect("Unknown handle")
@@ -587,8 +604,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         handle: plane::Handle,
         name: &'static str,
     ) -> Result<property::Handle, Error> {
-        self
-            .prop_mapping
+        self.prop_mapping
             .3
             .get(&handle)
             .expect("Unknown handle")
@@ -657,7 +673,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 property::Value::Framebuffer(Some(fb)),
             );
         }
-        
+
         // we also need to connect the plane
         req.add_property(
             plane,
@@ -733,10 +749,12 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             property::Value::Framebuffer(None),
         );
 
-        self.fd.atomic_commit(&[AtomicCommitFlags::TestOnly], req.clone())
+        self.fd
+            .atomic_commit(&[AtomicCommitFlags::TestOnly], req.clone())
             .map_err(|_| Error::TestFailed(self.crtc))?;
 
-        self.fd.atomic_commit(&[AtomicCommitFlags::Nonblock], req)
+        self.fd
+            .atomic_commit(&[AtomicCommitFlags::Nonblock], req)
             .map_err(|source| Error::Access {
                 errmsg: "Failed to commit on clear_plane",
                 dev: self.fd.dev_path(),
@@ -763,10 +781,7 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmSurface<A> {
         // other ttys that use no cursor, might not clear it themselves.
         // This makes sure our cursor won't stay visible.
         if let Err(err) = self.clear_plane() {
-            warn!(
-                self.logger,
-                "Failed to clear plane on {:?}: {}", self.crtc, err
-            );
+            warn!(self.logger, "Failed to clear plane on {:?}: {}", self.crtc, err);
         }
 
         // disable connectors again

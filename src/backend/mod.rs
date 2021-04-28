@@ -18,8 +18,8 @@
 #![allow(missing_docs)]
 
 //pub mod graphics;
-pub mod input;
 pub mod allocator;
+pub mod input;
 pub mod renderer;
 
 #[cfg(feature = "backend_drm")]
