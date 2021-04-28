@@ -86,7 +86,7 @@ impl<A: AsRawFd + 'static> ControlDevice for DrmDeviceInternal<A> {}
 impl<A: AsRawFd + 'static> DrmDevice<A> {
     pub fn new<L>(fd: A, disable_connectors: bool, logger: L) -> Result<Self, Error>
     where
-        A: AsRawFd + Clone + 'static,
+        A: AsRawFd + 'static,
         L: Into<Option<::slog::Logger>>,
     {
         let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_drm"));
@@ -98,7 +98,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         let active = Arc::new(AtomicBool::new(true));
         let dev = Arc::new({
             let mut dev = FdWrapper {
-                fd: fd.clone(),
+                fd,
                 privileged: false,
                 logger: log.clone(),
             };
