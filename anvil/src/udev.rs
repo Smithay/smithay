@@ -5,7 +5,7 @@ use std::{
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
     rc::Rc,
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::{atomic::Ordering, Arc, Mutex, mpsc},
     time::Duration,
 };
 
@@ -494,6 +494,8 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 &self.logger,
             )));
 
+            // we leak this texture (we would need to call `destroy_texture` on Drop of DrmRenderer),
+            // but only on shutdown anyway, because we do not support hot-pluggin, so it does not really matter.
             let pointer_image = {
                 let context = EGLContext::new_shared(&egl, &context, self.logger.clone()).unwrap();
                 let mut renderer = unsafe { Gles2Renderer::new(context, self.logger.clone()).unwrap() };
@@ -508,6 +510,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 buffer_utils: self.buffer_utils.clone(),
                 compositor_token: self.compositor_token,
                 backends: backends.clone(),
+                texture_destruction_callback: mpsc::channel(),
                 window_map: self.window_map.clone(),
                 output_map: self.output_map.clone(),
                 pointer_location: self.pointer_location.clone(),
@@ -647,6 +650,7 @@ pub struct DrmRenderer {
     buffer_utils: BufferUtils,
     compositor_token: CompositorToken<Roles>,
     backends: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>>>>,
+    texture_destruction_callback: (mpsc::Sender<Gles2Texture>, mpsc::Receiver<Gles2Texture>),
     window_map: Rc<RefCell<MyWindowMap>>,
     output_map: Rc<RefCell<Vec<MyOutput>>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
@@ -672,6 +676,7 @@ impl DrmRenderer {
         if let Some(surface) = self.backends.borrow().get(&crtc) {
             let result = DrmRenderer::render_surface(
                   &mut *surface.borrow_mut(),
+                  &self.texture_destruction_callback.0,
                   &self.buffer_utils,
                   self.device_id,
                   crtc,
@@ -739,12 +744,17 @@ impl DrmRenderer {
                 self.window_map
                     .borrow()
                     .send_frames(self.start_time.elapsed().as_millis() as u32);
+                
+                while let Ok(texture) = self.texture_destruction_callback.1.try_recv() {
+                    let _ = surface.borrow_mut().destroy_texture(texture);
+                }
             }
         }
     }
 
     fn render_surface(
         surface: &mut RenderSurface,
+        texture_destruction_callback: &mpsc::Sender<Gles2Texture>,
         buffer_utils: &BufferUtils,
         device_id: dev_t,
         crtc: crtc::Handle,
@@ -777,6 +787,7 @@ impl DrmRenderer {
         draw_windows(
             surface,
             device_id,
+            texture_destruction_callback,
             buffer_utils,
             window_map,
             Some(Rectangle {
@@ -800,7 +811,7 @@ impl DrmRenderer {
             {
                 if let Some(ref wl_surface) = dnd_icon.as_ref() {
                     if wl_surface.as_ref().is_alive() {
-                        draw_dnd_icon(surface, device_id, buffer_utils, wl_surface, (ptr_x, ptr_y), compositor_token.clone(), logger);
+                        draw_dnd_icon(surface, device_id, texture_destruction_callback, buffer_utils, wl_surface, (ptr_x, ptr_y), compositor_token.clone(), logger);
                     }
                 }
             }
@@ -819,6 +830,7 @@ impl DrmRenderer {
                     draw_cursor(
                         surface,
                         device_id,
+                        texture_destruction_callback,
                         buffer_utils,
                         wl_surface,
                         (ptr_x, ptr_y),

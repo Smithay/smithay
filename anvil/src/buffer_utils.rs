@@ -1,5 +1,5 @@
 #[cfg(feature = "egl")]
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::mpsc::Sender};
 
 #[cfg(feature = "udev")]
 use smithay::backend::renderer::{Renderer, Texture};
@@ -86,6 +86,7 @@ impl BufferUtils {
         Ok(BufferTextures {
             buffer,
             textures: HashMap::new(),
+            callbacks: HashMap::new(),
             egl: egl_buffer, // I guess we need to keep this alive ?
         })
     }
@@ -103,6 +104,7 @@ impl BufferUtils {
 pub struct BufferTextures<T> {
     buffer: WlBuffer,
     pub textures: HashMap<dev_t, T>,
+    callbacks: HashMap<dev_t, Sender<T>>,
     #[cfg(feature = "egl")]
     egl: Option<EGLBuffer>,
 }
@@ -110,10 +112,11 @@ pub struct BufferTextures<T> {
 #[cfg(feature = "udev")]
 impl<T: Texture> BufferTextures<T> {
     #[cfg(feature = "egl")]
-    pub fn load_texture<'a, R: Renderer<Texture=T>>(
+    pub fn load_texture<'a, R: Renderer<TextureId=T>>(
         &'a mut self,
         id: u64,
         renderer: &mut R,
+        texture_destruction_callback: &Sender<T>,
     ) -> Result<&'a T, R::Error> {
         if self.textures.contains_key(&id) {
             return Ok(&self.textures[&id]);
@@ -122,10 +125,13 @@ impl<T: Texture> BufferTextures<T> {
         if let Some(buffer) = self.egl.as_ref() {
             //EGL buffer
             let texture = renderer.import_egl(&buffer)?;
-            self.textures.insert(id, texture);
+            if let Some(old_texture) = self.textures.insert(id, texture) {
+                let _ = renderer.destroy_texture(old_texture);
+            }
+            self.callbacks.insert(id, texture_destruction_callback.clone());
             Ok(&self.textures[&id])
         } else {
-            self.load_shm_texture(id, renderer)
+            self.load_shm_texture(id, renderer, texture_destruction_callback)
         }
     }
 
@@ -134,22 +140,27 @@ impl<T: Texture> BufferTextures<T> {
         &'a mut self,
         id: u64,
         renderer: &mut R,
+        texture_destruction_callback: &Sender<T>,
     ) -> Result<&'a T, R::Error> {
         if self.textures.contains_key(&id) {
             return Ok(&self.textures[&id]);
         }
 
-        self.load_shm_texture(id, renderer)
+        self.load_shm_texture(id, renderer, texture_destruction_callback)
     }
 
-    fn load_shm_texture<'a, R: Renderer<Texture=T>>(
+    fn load_shm_texture<'a, R: Renderer<TextureId=T>>(
         &'a mut self,
         id: u64,
         renderer: &mut R,
+        texture_destruction_callback: &Sender<T>,
     ) -> Result<&'a T, R::Error> {
         let texture = renderer.import_shm(&self.buffer)?;
         
-        self.textures.insert(id, texture);
+        if let Some(old_texture) = self.textures.insert(id, texture) {
+            let _ = renderer.destroy_texture(old_texture)?;
+        }
+        self.callbacks.insert(id, texture_destruction_callback.clone());
         Ok(&self.textures[&id])
     }
 }
@@ -157,6 +168,9 @@ impl<T: Texture> BufferTextures<T> {
 #[cfg(feature = "udev")]
 impl<T> Drop for BufferTextures<T> {
     fn drop(&mut self) {
-        self.buffer.release()
+        self.buffer.release();
+        for (id, texture) in self.textures.drain() {
+            self.callbacks.get(&id).unwrap().send(texture).unwrap();
+        }
     }
 }
