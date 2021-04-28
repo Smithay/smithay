@@ -32,10 +32,10 @@ pub fn draw_cursor<R, E, T>(
     (x, y): (i32, i32),
     token: MyCompositorToken,
     log: &Logger,
-)
+) -> Result<(), SwapBuffersError>
     where
         R: Renderer<Error=E, TextureId=T>,
-        E: std::error::Error,
+        E: std::error::Error + Into<SwapBuffersError>,
         T: Texture + 'static,
 {
     let (dx, dy) = match token.with_role_data::<CursorImageRole, _, _>(surface, |data| data.hotspot) {
@@ -48,7 +48,7 @@ pub fn draw_cursor<R, E, T>(
             (0, 0)
         }
     };
-    draw_surface_tree(renderer, renderer_id, texture_destruction_callback, buffer_utils, surface, (x - dx, y - dy), token, log);
+    draw_surface_tree(renderer, renderer_id, texture_destruction_callback, buffer_utils, surface, (x - dx, y - dy), token, log)
 }
 
 fn draw_surface_tree<R, E, T>(
@@ -60,12 +60,14 @@ fn draw_surface_tree<R, E, T>(
     location: (i32, i32),
     compositor_token: MyCompositorToken,
     log: &Logger,
-)
+) -> Result<(), SwapBuffersError>
     where
         R: Renderer<Error=E, TextureId=T>,
-        E: std::error::Error,
+        E: std::error::Error + Into<SwapBuffersError>,
         T: Texture + 'static,
 {
+    let mut result = Ok(());
+
     compositor_token.with_surface_tree_upward(
         root,
         (),
@@ -137,12 +139,16 @@ fn draw_surface_tree<R, E, T>(
                         y += sub_y;
                     }
                     let texture = buffer_textures.load_texture(renderer_id, renderer, texture_destruction_callback).unwrap();
-                    renderer.render_texture_at(texture, (x, y), Transform::Normal /* TODO */, 1.0);
+                    if let Err(err) = renderer.render_texture_at(texture, (x, y), Transform::Normal /* TODO */, 1.0) {
+                        result = Err(err.into());
+                    }
                 }
             }
         },
         |_, _, _, _| true,
     );
+
+    result
 }
 
 pub fn draw_windows<R, E, T>(
@@ -154,39 +160,43 @@ pub fn draw_windows<R, E, T>(
     output_rect: Option<Rectangle>,
     compositor_token: MyCompositorToken,
     log: &::slog::Logger,
-)
+) -> Result<(), SwapBuffersError>
     where
         R: Renderer<Error=E, TextureId=T>,
-        E: std::error::Error,
+        E: std::error::Error + Into<SwapBuffersError>,
         T: Texture + 'static,
 {
+    let mut result = Ok(());
+
     // redraw the frame, in a simple but inneficient way
-    {
-        window_map.with_windows_from_bottom_to_top(
-            |toplevel_surface, mut initial_place, bounding_box| {
-                // skip windows that do not overlap with a given output
-                if let Some(output) = output_rect {
-                    if !output.overlaps(bounding_box) {
-                        return;
-                    }
-                    initial_place.0 -= output.x;
+    window_map.with_windows_from_bottom_to_top(
+        |toplevel_surface, mut initial_place, bounding_box| {
+            // skip windows that do not overlap with a given output
+            if let Some(output) = output_rect {
+                if !output.overlaps(bounding_box) {
+                    return;
                 }
-                if let Some(wl_surface) = toplevel_surface.get_surface() {
-                    // this surface is a root of a subsurface tree that needs to be drawn
-                    draw_surface_tree(
-                        renderer,
-                        renderer_id,
-                        texture_destruction_callback,
-                        buffer_utils,
-                        &wl_surface,
-                        initial_place,
-                        compositor_token,
-                        log,
-                    );
+                initial_place.0 -= output.x;
+            }
+            if let Some(wl_surface) = toplevel_surface.get_surface() {
+                // this surface is a root of a subsurface tree that needs to be drawn
+                if let Err(err) = draw_surface_tree(
+                    renderer,
+                    renderer_id,
+                    texture_destruction_callback,
+                    buffer_utils,
+                    &wl_surface,
+                    initial_place,
+                    compositor_token,
+                    log,
+                ) {
+                    result = Err(err);
                 }
-            },
-        );
-    }
+            }
+        },
+    );
+    
+    result
 }
 
 pub fn draw_dnd_icon<R, E, T>(
@@ -198,10 +208,10 @@ pub fn draw_dnd_icon<R, E, T>(
     (x, y): (i32, i32),
     token: MyCompositorToken,
     log: &::slog::Logger,
-)
+) -> Result<(), SwapBuffersError>
     where
         R: Renderer<Error=E, TextureId=T>,
-        E: std::error::Error,
+        E: std::error::Error + Into<SwapBuffersError>,
         T: Texture + 'static,
 {
     if !token.has_role::<DnDIconRole>(surface) {
@@ -210,7 +220,7 @@ pub fn draw_dnd_icon<R, E, T>(
             "Trying to display as a dnd icon a surface that does not have the DndIcon role."
         );
     }
-    draw_surface_tree(renderer, renderer_id, texture_destruction_callback, buffer_utils, surface, (x, y), token, log);
+    draw_surface_tree(renderer, renderer_id, texture_destruction_callback, buffer_utils, surface, (x, y), token, log)
 }
 
 pub fn schedule_initial_render<R: Renderer + 'static, Data: 'static>(
