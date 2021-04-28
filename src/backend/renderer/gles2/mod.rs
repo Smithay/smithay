@@ -558,6 +558,17 @@ impl Renderer for Gles2Renderer {
         
         Ok(texture)
     }
+    
+    fn destroy_texture(&mut self, mut texture: Self::Texture) -> Result<(), Self::Error> {
+        self.make_current()?;
+
+        unsafe {
+            self.gl.DeleteTextures(1, &mut texture.texture);
+        }
+        self.egl.unbind()?;
+
+        Ok(())
+    }
 
 
     fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), Gles2Error> {

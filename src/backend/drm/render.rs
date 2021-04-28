@@ -251,6 +251,10 @@ where
     fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::Texture, Self::Error> {
         self.renderer.import_egl(buffer).map_err(Error::RenderError)       
     }
+
+    fn destroy_texture(&mut self, texture: Self::Texture) -> Result<(), Self::Error> {
+        self.renderer.destroy_texture(texture).map_err(Error::RenderError)
+    }
     
     fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), Error<E1, E2, E3>> {
         if self.current_buffer.is_some() {
