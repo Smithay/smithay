@@ -9,7 +9,7 @@ use crate::backend::drm::device::{DrmDevice, DrmDeviceInternal, FdWrapper};
 
 pub struct DumbBuffer<A: AsRawFd + 'static> {
     fd: Arc<FdWrapper<A>>,
-    handle: Handle,
+    pub handle: Handle,
     format: Format,
 }
 
