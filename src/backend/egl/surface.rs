@@ -98,15 +98,14 @@ impl EGLSurface {
         );
 
         if self.native.needs_recreation() || surface.is_null() || is_bad_surface {
-            let previous = self.surface.compare_and_swap(
+            let previous = self.surface.compare_exchange(
                 surface,
-                unsafe {
-                    self.native
-                        .create(&self.display, self.config_id, &self.surface_attributes)
-                        .map_err(SwapBuffersError::EGLCreateSurface)? as *mut _
-                },
+                self.native
+                    .create(&self.display, self.config_id, &self.surface_attributes)
+                    .map_err(SwapBuffersError::EGLCreateSurface)? as *mut _,
                 Ordering::SeqCst,
-            );
+                Ordering::SeqCst,
+            ).expect("The surface pointer changed in between?");
             if previous == surface && !surface.is_null() {
                 let _ = unsafe { ffi::egl::DestroySurface(**self.display, surface as *const _) };
             }

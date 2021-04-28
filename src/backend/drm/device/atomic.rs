@@ -52,7 +52,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         let plane_handles = dev.fd.plane_handles().map_err(|source| Error::Access {
             errmsg: "Error loading planes",
             dev: dev.fd.dev_path(),
-            source,
+            source
         })?;
         let planes = plane_handles.planes();
 
@@ -239,7 +239,7 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmDevice<A> {
                         req.add_raw_property((*handle).into(), prop_handle, val);
                     }
                 }
-            };
+            }
 
             add_multiple_props(&mut req, &self.old_state.0);
             add_multiple_props(&mut req, &self.old_state.1);

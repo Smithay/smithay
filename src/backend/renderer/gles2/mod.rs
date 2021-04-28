@@ -3,7 +3,7 @@ use std::ffi::CStr;
 use std::ptr;
 use std::rc::Rc;
 
-use cgmath::{prelude::*, Matrix3, Vector2};
+use cgmath::{prelude::*, Matrix3};
 
 mod shaders;
 use crate::backend::SwapBuffersError;

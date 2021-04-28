@@ -7,10 +7,10 @@ use drm::control::{Device as ControlDevice, Mode, crtc, connector, framebuffer, 
 
 pub(super) mod atomic;
 pub(super) mod legacy;
-use super::{error::Error, device::DevPath};
+use super::error::Error;
 use atomic::AtomicDrmSurface;
 use legacy::LegacyDrmSurface;
-use crate::backend::allocator::{Format, Fourcc, Modifier};
+use crate::backend::allocator::Format;
 
 pub struct DrmSurface<A: AsRawFd + 'static>
 {

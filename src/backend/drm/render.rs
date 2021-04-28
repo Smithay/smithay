@@ -22,7 +22,7 @@ pub struct DrmRenderSurface<
     R: Bind<Dmabuf>,
     B: Buffer + TryInto<Dmabuf>,
 > {
-    format: Fourcc,
+    _format: Format,
     buffers: Buffers<D>,
     current_buffer: Option<Slot<Dmabuf, BufferObject<FbHandle<D>>>>,
     swapchain: Swapchain<A, B, BufferObject<FbHandle<D>>, Dmabuf>,
@@ -56,7 +56,7 @@ where
 
         // select a format
         let plane_formats = drm.supported_formats().iter().filter(|fmt| fmt.code == code).cloned().collect::<HashSet<_>>();
-        let mut renderer_formats = Bind::<Dmabuf>::supported_formats(&renderer).expect("Dmabuf renderer without formats")
+        let renderer_formats = Bind::<Dmabuf>::supported_formats(&renderer).expect("Dmabuf renderer without formats")
             .iter().filter(|fmt| fmt.code == code).cloned().collect::<HashSet<_>>();
 
         trace!(logger, "Remaining plane formats: {:?}", plane_formats);
@@ -140,7 +140,7 @@ where
                 let buffers = Buffers::new(drm.clone(), gbm, buffer);
                 Ok(DrmRenderSurface {
                     drm,
-                    format: format.code,
+                    _format: format,
                     renderer,
                     swapchain,
                     buffers,

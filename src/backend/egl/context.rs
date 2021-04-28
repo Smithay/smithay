@@ -1,11 +1,9 @@
 //! EGL context related structs
 use std::os::raw::c_int;
-use std::ptr;
 use std::sync::atomic::Ordering;
 
 use super::{ffi, wrap_egl_call, Error, MakeCurrentError};
 use crate::backend::egl::display::{EGLDisplay, PixelFormat};
-use crate::backend::egl::native::EGLNativeSurface;
 use crate::backend::egl::EGLSurface;
 
 
