@@ -1,4 +1,7 @@
 #![warn(missing_docs, rust_2018_idioms)]
+// Allow acronyms like EGL
+#![allow(clippy::upper_case_acronyms)]
+
 //! **Smithay: the Wayland compositor smithy**
 //!
 //! Most entry points in the modules can take an optional [`slog::Logger`](::slog::Logger) as argument
@@ -6,9 +9,6 @@
 //! whether the `slog-stdlog` is enabled. If yes, the module will log to the global logger of the
 //! `log` crate. If not, the logs will discarded. This cargo feature is part of the default set of
 //! features of Smithay.
-
-// `error_chain!` can recurse deeply
-#![recursion_limit = "1024"]
 
 #[cfg_attr(feature = "backend_session", macro_use)]
 #[doc(hidden)]

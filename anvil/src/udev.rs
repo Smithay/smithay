@@ -436,7 +436,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                             self.logger.clone(),
                         ),
                         GbmDevice::new(
-                            fd.clone()
+                            fd
                         ),
                     )
                 }
@@ -513,7 +513,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 window_map: self.window_map.clone(),
                 output_map: self.output_map.clone(),
                 pointer_location: self.pointer_location.clone(),
-                pointer_image: pointer_image,
+                pointer_image,
                 cursor_status: self.cursor_status.clone(),
                 dnd_icon: self.dnd_icon.clone(),
                 logger: self.logger.clone(),
@@ -694,14 +694,12 @@ impl DrmRenderer {
                     match err {
                         SwapBuffersError::AlreadySwapped => false,
                         SwapBuffersError::TemporaryFailure(err) => {
-                            match err.downcast_ref::<DrmError>() {
-                                Some(&DrmError::DeviceInactive) => false,
+                            !matches!(err.downcast_ref::<DrmError>(),
+                                Some(&DrmError::DeviceInactive) |
                                 Some(&DrmError::Access {
                                     source: drm::SystemError::PermissionDenied,
                                     ..
-                                }) => false,
-                                _ => true,
-                            }
+                                }))
                         }
                         SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
                     };
@@ -751,6 +749,7 @@ impl DrmRenderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_surface(
         surface: &mut RenderSurface,
         texture_destruction_callback: &mpsc::Sender<Gles2Texture>,
@@ -795,7 +794,7 @@ impl DrmRenderer {
                 width: width as i32,
                 height: height as i32,
             }),
-            compositor_token.clone(),
+            *compositor_token,
             logger,
         )?;
 
@@ -810,7 +809,7 @@ impl DrmRenderer {
             {
                 if let Some(ref wl_surface) = dnd_icon.as_ref() {
                     if wl_surface.as_ref().is_alive() {
-                        draw_dnd_icon(surface, device_id, texture_destruction_callback, buffer_utils, wl_surface, (ptr_x, ptr_y), compositor_token.clone(), logger)?;
+                        draw_dnd_icon(surface, device_id, texture_destruction_callback, buffer_utils, wl_surface, (ptr_x, ptr_y), *compositor_token, logger)?;
                     }
                 }
             }
@@ -833,7 +832,7 @@ impl DrmRenderer {
                         buffer_utils,
                         wl_surface,
                         (ptr_x, ptr_y),
-                        compositor_token.clone(),
+                        *compositor_token,
                         logger,
                     )?;
                 } else {

@@ -559,11 +559,11 @@ impl Renderer for Gles2Renderer {
         Ok(texture)
     }
     
-    fn destroy_texture(&mut self, mut texture: Self::TextureId) -> Result<(), Self::Error> {
+    fn destroy_texture(&mut self, texture: Self::TextureId) -> Result<(), Self::Error> {
         self.make_current()?;
 
         unsafe {
-            self.gl.DeleteTextures(1, &mut texture.texture);
+            self.gl.DeleteTextures(1, &texture.texture);
         }
         self.egl.unbind()?;
 

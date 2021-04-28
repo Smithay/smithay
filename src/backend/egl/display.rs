@@ -217,9 +217,7 @@ impl EGLDisplay {
                 }
             };
 
-            reqs.create_attributes(&mut out, &self.logger)
-                .map_err(|()| Error::NoAvailablePixelFormat)?;
-
+            reqs.create_attributes(&mut out, &self.logger);
             out.push(ffi::egl::NONE as c_int);
             out
         };
@@ -363,10 +361,8 @@ impl EGLDisplay {
             return Err(Error::EglExtensionNotSupported(&["EGL_KHR_image_base", "EGL_EXT_image_dma_buf_import"]));
         }
 
-        if dmabuf.has_modifier() {
-            if !self.extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers") {
-                return Err(Error::EglExtensionNotSupported(&["EGL_EXT_image_dma_buf_import_modifiers"]));
-            }
+        if dmabuf.has_modifier() && !self.extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers") {
+            return Err(Error::EglExtensionNotSupported(&["EGL_EXT_image_dma_buf_import_modifiers"]));
         };
 
         let mut out: Vec<c_int> = Vec::with_capacity(50);
@@ -515,11 +511,11 @@ fn get_dmabuf_formats(display: &ffi::egl::types::EGLDisplay, extensions: &[Strin
         if num == 0 {
             texture_formats.insert(DrmFormat {
                 code: fourcc,
-                modifier: Modifier::Invalid.into()
+                modifier: Modifier::Invalid
             });
             render_formats.insert(DrmFormat {
                 code: fourcc,
-                modifier: Modifier::Invalid.into()
+                modifier: Modifier::Invalid
             });
         } else {
             let mut mods: Vec<u64> = Vec::with_capacity(num as usize);
@@ -650,10 +646,11 @@ impl EGLBufferReader {
 
         let mut images = Vec::with_capacity(format.num_planes());
         for i in 0..format.num_planes() {
-            let mut out = Vec::with_capacity(3);
-            out.push(ffi::egl::WAYLAND_PLANE_WL as i32);
-            out.push(i as i32);
-            out.push(ffi::egl::NONE as i32);
+            let out = [
+                ffi::egl::WAYLAND_PLANE_WL as i32,
+                i as i32,
+                ffi::egl::NONE as i32,
+            ];
 
             images.push({
                 wrap_egl_call(|| unsafe {
