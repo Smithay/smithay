@@ -34,6 +34,7 @@ pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
 }
 
 impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         fd: Arc<DrmDeviceInternal<A>>,
         active: Arc<AtomicBool>,

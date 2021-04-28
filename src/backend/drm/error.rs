@@ -60,22 +60,21 @@ pub enum Error {
     TestFailed(crtc::Handle),
 }
 
-impl Into<SwapBuffersError> for Error {
-    fn into(self) -> SwapBuffersError {
-        match self {
+impl From<Error> for SwapBuffersError {
+    fn from(err: Error) -> SwapBuffersError {
+        match err {
             x @ Error::DeviceInactive => SwapBuffersError::TemporaryFailure(Box::new(x)),
             Error::Access {
                 errmsg, dev, source, ..
-            } if match source {
-                drm::SystemError::PermissionDenied => true,
+            } if matches!(source,
+                drm::SystemError::PermissionDenied |
                 drm::SystemError::Unknown {
                     errno: nix::errno::Errno::EBUSY,
-                } => true,
+                } |
                 drm::SystemError::Unknown {
                     errno: nix::errno::Errno::EINTR,
-                } => true,
-                _ => false,
-            } =>
+                }
+            ) =>
             {
                 SwapBuffersError::TemporaryFailure(Box::new(Error::Access { errmsg, dev, source }))
             }

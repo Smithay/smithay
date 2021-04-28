@@ -103,7 +103,7 @@ where
     }
 
     pub fn acquire(&mut self) -> Result<Option<Slot<D, U>>, SwapchainError<E1, E2>> {
-        if let Some(free_slot) = self.slots.iter_mut().filter(|s| !s.acquired.load(Ordering::SeqCst)).next() {
+        if let Some(free_slot) = self.slots.iter_mut().find(|s| !s.acquired.load(Ordering::SeqCst)) {
             if free_slot.buffer.is_none() {
                 free_slot.buffer = Arc::new(Some(
                     self.allocator

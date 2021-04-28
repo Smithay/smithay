@@ -40,6 +40,7 @@ where
     E2: std::error::Error + 'static,
     E3: std::error::Error + 'static,
 {
+    #[allow(clippy::type_complexity)]
     pub fn new<L: Into<Option<::slog::Logger>>>(drm: DrmSurface<D>, allocator: A, renderer: R, log: L) -> Result<DrmRenderSurface<D, A, R, B>, Error<E1, E2, E3>>
     {
         // we cannot simply pick the first supported format of the intersection of *all* formats, because:
@@ -102,6 +103,7 @@ where
         DrmRenderSurface::new_internal(drm, allocator, renderer, iter, logger)
     }
 
+    #[allow(clippy::type_complexity)]
     fn new_internal(drm: Arc<DrmSurface<D>>, allocator: A, mut renderer: R, mut formats: impl Iterator<Item=Format>, logger: ::slog::Logger) -> Result<DrmRenderSurface<D, A, R, B>, Error<E1, E2, E3>>
     {
         let format = formats.next().ok_or(Error::NoSupportedPlaneFormat)?;

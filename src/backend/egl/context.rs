@@ -280,9 +280,6 @@ pub struct PixelFormatRequirements {
     /// Contains the minimum number of samples per pixel in the color, depth and stencil buffers.
     /// `None` means "don't care". Default is `None`. A value of `Some(0)` indicates that multisampling must not be enabled.
     pub multisampling: Option<u16>,
-    /// If `true`, only stereoscopic formats will be considered. If `false`, only non-stereoscopic formats.
-    /// The default is `false`.
-    pub stereoscopy: bool,
 }
 
 impl Default for PixelFormatRequirements {
@@ -296,14 +293,13 @@ impl Default for PixelFormatRequirements {
             stencil_bits: Some(8),
             double_buffer: Some(true),
             multisampling: None,
-            stereoscopy: false,
         }
     }
 }
 
 impl PixelFormatRequirements {
     /// Append the  requirements to the given attribute list
-    pub fn create_attributes(&self, out: &mut Vec<c_int>, logger: &slog::Logger) -> Result<(), ()> {
+    pub fn create_attributes(&self, out: &mut Vec<c_int>, logger: &slog::Logger) {
         if let Some(hardware_accelerated) = self.hardware_accelerated {
             out.push(ffi::egl::CONFIG_CAVEAT as c_int);
             out.push(if hardware_accelerated {
@@ -358,12 +354,5 @@ impl PixelFormatRequirements {
             out.push(ffi::egl::SAMPLES as c_int);
             out.push(multisampling as c_int);
         }
-
-        if self.stereoscopy {
-            error!(logger, "Stereoscopy is currently unsupported (sorry!)");
-            return Err(());
-        }
-
-        Ok(())
     }
 }

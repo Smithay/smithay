@@ -116,7 +116,7 @@ impl Dmabuf {
 
 impl WeakDmabuf {
     pub fn upgrade(&self) -> Option<Dmabuf> {
-        self.0.upgrade().map(|internal| Dmabuf(internal))
+        self.0.upgrade().map(Dmabuf)
     }
 }
 

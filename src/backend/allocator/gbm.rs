@@ -54,14 +54,16 @@ impl<T> std::convert::TryFrom<GbmBuffer<T>> for Dmabuf {
         //TODO switch to gbm_bo_get_plane_fd when it lands
         let mut iter = (0i32..planes).map(|i| buf.handle_for_plane(i));
         let first = iter.next().expect("Encountered a buffer with zero planes");
-        if iter.try_fold(first, |first, next| {
+        // check that all handles are the same
+        let handle = iter.try_fold(first, |first, next| {
             if let (Ok(next), Ok(first)) = (next, first) {
                 if unsafe { next.u64_ == first.u64_ } {
                     return Some(Ok(first));
                 }
             }
             None
-        }).is_none() {
+        });
+        if handle.is_none() {
             // GBM is lacking a function to get a FD for a given plane. Instead,
             // check all planes have the same handle. We can't use
             // drmPrimeHandleToFD because that messes up handle ref'counting in
