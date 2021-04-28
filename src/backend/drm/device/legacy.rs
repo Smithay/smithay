@@ -1,8 +1,11 @@
 use std::collections::HashMap;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::os::unix::io::AsRawFd;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
-use drm::control::{Device as ControlDevice, crtc, connector};
+use drm::control::{connector, crtc, Device as ControlDevice};
 
 use super::{DevPath, FdWrapper};
 use crate::backend::drm::error::Error;
@@ -15,24 +18,27 @@ pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
 }
 
 impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
-    pub fn new(fd: Arc<FdWrapper<A>>, active: Arc<AtomicBool>, disable_connectors: bool, logger: slog::Logger) -> Result<Self, Error>
-    {
+    pub fn new(
+        fd: Arc<FdWrapper<A>>,
+        active: Arc<AtomicBool>,
+        disable_connectors: bool,
+        logger: slog::Logger,
+    ) -> Result<Self, Error> {
         let mut dev = LegacyDrmDevice {
             fd,
             active,
             old_state: HashMap::new(),
             logger: logger.new(o!("smithay_module" => "backend_drm_legacy", "drm_module" => "device")),
         };
-        
+
         // Enumerate (and save) the current device state.
         // We need to keep the previous device configuration to restore the state later,
         // so we query everything, that we can set.
-        let res_handles = dev.fd.resource_handles()
-            .map_err(|source| Error::Access {
-                errmsg: "Error loading drm resources",
-                dev: dev.fd.dev_path(),
-                source,
-            })?;
+        let res_handles = dev.fd.resource_handles().map_err(|source| Error::Access {
+            errmsg: "Error loading drm resources",
+            dev: dev.fd.dev_path(),
+            source,
+        })?;
         for &con in res_handles.connectors() {
             let con_info = dev.fd.get_connector(con).map_err(|source| Error::Access {
                 errmsg: "Error loading connector info",
@@ -60,7 +66,6 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
             }
         }
 
-
         // If the user does not explicitly requests us to skip this,
         // we clear out the complete connector<->crtc mapping on device creation.
         //
@@ -83,17 +88,18 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
         })?;
         set_connector_state(&*self.fd, res_handles.connectors().iter().copied(), false)?;
 
-         for crtc in res_handles.crtcs() {
-             // null commit (necessary to trigger removal on the kernel side with the legacy api.)
-             self.fd.set_crtc(*crtc, None, (0, 0), &[], None)
-                 .map_err(|source| Error::Access {
-                     errmsg: "Error setting crtc",
-                     dev: self.fd.dev_path(),
-                     source,
-                 })?;
-         }
+        for crtc in res_handles.crtcs() {
+            // null commit (necessary to trigger removal on the kernel side with the legacy api.)
+            self.fd
+                .set_crtc(*crtc, None, (0, 0), &[], None)
+                .map_err(|source| Error::Access {
+                    errmsg: "Error setting crtc",
+                    dev: self.fd.dev_path(),
+                    source,
+                })?;
+        }
 
-         Ok(())
+        Ok(())
     }
 }
 
@@ -127,38 +133,32 @@ pub fn set_connector_state<D>(
     enabled: bool,
 ) -> Result<(), Error>
 where
-    D: ControlDevice
+    D: ControlDevice,
 {
     // for every connector...
     for conn in connectors {
-        let info = dev
-            .get_connector(conn)
-            .map_err(|source| Error::Access {
-                errmsg: "Failed to get connector infos",
-                dev: dev.dev_path(),
-                source,
-            })?;
+        let info = dev.get_connector(conn).map_err(|source| Error::Access {
+            errmsg: "Failed to get connector infos",
+            dev: dev.dev_path(),
+            source,
+        })?;
         // that is currently connected ...
         if info.state() == connector::State::Connected {
             // get a list of it's properties.
-            let props = dev
-                .get_properties(conn)
-                .map_err(|source| Error::Access {
-                    errmsg: "Failed to get properties for connector",
-                    dev: dev.dev_path(),
-                    source,
-                })?;
+            let props = dev.get_properties(conn).map_err(|source| Error::Access {
+                errmsg: "Failed to get properties for connector",
+                dev: dev.dev_path(),
+                source,
+            })?;
             let (handles, _) = props.as_props_and_values();
             // for every handle ...
             for handle in handles {
                 // get information of that property
-                let info = dev
-                    .get_property(*handle)
-                    .map_err(|source| Error::Access {
-                        errmsg: "Failed to get property of connector",
-                        dev: dev.dev_path(),
-                        source,
-                    })?;
+                let info = dev.get_property(*handle).map_err(|source| Error::Access {
+                    errmsg: "Failed to get property of connector",
+                    dev: dev.dev_path(),
+                    source,
+                })?;
                 // to find out, if we got the handle of the "DPMS" property ...
                 if info.name().to_str().map(|x| x == "DPMS").unwrap_or(false) {
                     // so we can use that to turn on / off the connector

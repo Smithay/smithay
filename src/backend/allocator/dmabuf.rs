@@ -1,6 +1,6 @@
 use super::{Buffer, Format, Modifier};
-use std::sync::{Arc, Weak};
 use std::os::unix::io::RawFd;
+use std::sync::{Arc, Weak};
 
 const MAX_PLANES: usize = 4;
 
@@ -68,9 +68,11 @@ impl Dmabuf {
         fds: &[RawFd],
     ) -> Option<Dmabuf> {
         if offsets.len() < planes
-        || strides.len() < planes
-        || fds.len() < planes
-        || planes == 0 || planes > MAX_PLANES {
+            || strides.len() < planes
+            || fds.len() < planes
+            || planes == 0
+            || planes > MAX_PLANES
+        {
             return None;
         }
 
@@ -82,9 +84,24 @@ impl Dmabuf {
 
         Some(Dmabuf(Arc::new(DmabufInternal {
             num_planes: planes,
-            offsets: [*offsets.next().unwrap(), *offsets.next().unwrap(), *offsets.next().unwrap(), *offsets.next().unwrap()],
-            strides: [*strides.next().unwrap(), *strides.next().unwrap(), *strides.next().unwrap(), *strides.next().unwrap()],
-            fds: [*fds.next().unwrap(), *fds.next().unwrap(), *fds.next().unwrap(), *fds.next().unwrap()],
+            offsets: [
+                *offsets.next().unwrap(),
+                *offsets.next().unwrap(),
+                *offsets.next().unwrap(),
+                *offsets.next().unwrap(),
+            ],
+            strides: [
+                *strides.next().unwrap(),
+                *strides.next().unwrap(),
+                *strides.next().unwrap(),
+                *strides.next().unwrap(),
+            ],
+            fds: [
+                *fds.next().unwrap(),
+                *fds.next().unwrap(),
+                *fds.next().unwrap(),
+                *fds.next().unwrap(),
+            ],
 
             width: src.width(),
             height: src.height(),
@@ -105,8 +122,7 @@ impl Dmabuf {
     }
 
     pub fn has_modifier(&self) -> bool {
-        self.0.format.modifier != Modifier::Invalid &&
-        self.0.format.modifier != Modifier::Linear 
+        self.0.format.modifier != Modifier::Invalid && self.0.format.modifier != Modifier::Linear
     }
 
     pub fn weak(&self) -> WeakDmabuf {

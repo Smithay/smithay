@@ -6,7 +6,6 @@ use super::{ffi, wrap_egl_call, Error, MakeCurrentError};
 use crate::backend::egl::display::{EGLDisplay, PixelFormat};
 use crate::backend::egl::EGLSurface;
 
-
 /// EGL context for rendering
 #[derive(Debug)]
 pub struct EGLContext {
@@ -20,10 +19,7 @@ unsafe impl Send for EGLContext {}
 unsafe impl Sync for EGLContext {}
 
 impl EGLContext {
-    pub fn new<L>(
-        display: &EGLDisplay,
-        log: L,
-    ) -> Result<EGLContext, Error>
+    pub fn new<L>(display: &EGLDisplay, log: L) -> Result<EGLContext, Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -43,17 +39,13 @@ impl EGLContext {
         Self::new_internal(display, None, Some((attributes, reqs)), log)
     }
 
-    pub fn new_shared<L>(
-        display: &EGLDisplay,
-        share: &EGLContext,
-        log: L,
-    ) -> Result<EGLContext, Error>
+    pub fn new_shared<L>(display: &EGLDisplay, share: &EGLContext, log: L) -> Result<EGLContext, Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
         Self::new_internal(display, Some(share), None, log)
     }
-    
+
     pub fn new_shared_with_config<L>(
         display: &EGLDisplay,
         share: &EGLContext,
@@ -82,13 +74,26 @@ impl EGLContext {
             Some((attributes, reqs)) => {
                 let (format, config_id) = display.choose_config(attributes, reqs)?;
                 (Some(format), config_id)
-            },
+            }
             None => {
-                if !display.extensions.iter().any(|x| x == "EGL_KHR_no_config_context") &&
-                   !display.extensions.iter().any(|x| x == "EGL_MESA_configless_context") &&
-                   !display.extensions.iter().any(|x| x == "EGL_KHR_surfaceless_context")
+                if !display
+                    .extensions
+                    .iter()
+                    .any(|x| x == "EGL_KHR_no_config_context")
+                    && !display
+                        .extensions
+                        .iter()
+                        .any(|x| x == "EGL_MESA_configless_context")
+                    && !display
+                        .extensions
+                        .iter()
+                        .any(|x| x == "EGL_KHR_surfaceless_context")
                 {
-                    return Err(Error::EglExtensionNotSupported(&["EGL_KHR_no_config_context", "EGL_MESA_configless_context", "EGL_KHR_surfaceless_context"]));
+                    return Err(Error::EglExtensionNotSupported(&[
+                        "EGL_KHR_no_config_context",
+                        "EGL_MESA_configless_context",
+                        "EGL_KHR_surfaceless_context",
+                    ]));
                 }
                 (None, ffi::egl::NO_CONFIG_KHR)
             }
@@ -99,7 +104,9 @@ impl EGLContext {
         if let Some((attributes, _)) = config {
             let version = attributes.version;
 
-            if display.egl_version >= (1, 5) || display.extensions.iter().any(|s| s == "EGL_KHR_create_context") {
+            if display.egl_version >= (1, 5)
+                || display.extensions.iter().any(|s| s == "EGL_KHR_create_context")
+            {
                 trace!(log, "Setting CONTEXT_MAJOR_VERSION to {}", version.0);
                 context_attributes.push(ffi::egl::CONTEXT_MAJOR_VERSION as i32);
                 context_attributes.push(version.0 as i32);
@@ -134,7 +141,9 @@ impl EGLContext {
             ffi::egl::CreateContext(
                 **display.display,
                 config_id,
-                shared.map(|context| context.context).unwrap_or(ffi::egl::NO_CONTEXT),
+                shared
+                    .map(|context| context.context)
+                    .unwrap_or(ffi::egl::NO_CONTEXT),
                 context_attributes.as_ptr(),
             )
         })
@@ -157,12 +166,13 @@ impl EGLContext {
     ///
     /// This function is marked unsafe, because the context cannot be made current
     /// on multiple threads.
-    pub unsafe fn make_current_with_surface(&self, surface: &EGLSurface) -> Result<(), MakeCurrentError>
-    {
+    pub unsafe fn make_current_with_surface(&self, surface: &EGLSurface) -> Result<(), MakeCurrentError> {
         let surface_ptr = surface.surface.load(Ordering::SeqCst);
-        wrap_egl_call(|| ffi::egl::MakeCurrent(**self.display.display, surface_ptr, surface_ptr, self.context))
-            .map(|_| ())
-            .map_err(Into::into)
+        wrap_egl_call(|| {
+            ffi::egl::MakeCurrent(**self.display.display, surface_ptr, surface_ptr, self.context)
+        })
+        .map(|_| ())
+        .map_err(Into::into)
     }
 
     /// Makes the OpenGL context the current context in the current thread with no surface bound.

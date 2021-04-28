@@ -2,28 +2,24 @@
 
 use crate::backend::egl::display::EGLDisplay;
 use crate::backend::{
-    egl::{context::GlAttributes, native, EGLContext, EGLSurface, EGLBuffer, Error as EGLError},
-    renderer::{
-        Renderer, Bind, Transform,
-        gles2::{Gles2Renderer, Gles2Error, Gles2Texture},
-    },
+    egl::{context::GlAttributes, native, EGLBuffer, EGLContext, EGLSurface, Error as EGLError},
     input::{
         Axis, AxisSource, Event as BackendEvent, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
         MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent,
         Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent, TouchMotionEvent, TouchSlot, TouchUpEvent,
         UnusedEvent,
     },
-};
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    time::Instant,
+    renderer::{
+        gles2::{Gles2Error, Gles2Renderer, Gles2Texture},
+        Bind, Renderer, Transform,
+    },
 };
 use cgmath::Matrix3;
+use std::{cell::RefCell, rc::Rc, time::Instant};
 use wayland_egl as wegl;
-use wayland_server::Display;
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::{wl_shm, wl_buffer};
+use wayland_server::protocol::{wl_buffer, wl_shm};
+use wayland_server::Display;
 use winit::{
     dpi::{LogicalPosition, LogicalSize, PhysicalSize},
     event::{
@@ -37,7 +33,7 @@ use winit::{
 };
 
 #[cfg(feature = "use_system_lib")]
-use crate::backend::egl::{display::EGLBufferReader};
+use crate::backend::egl::display::EGLBufferReader;
 
 /// Errors thrown by the `winit` backends
 #[derive(thiserror::Error, Debug)]
@@ -158,23 +154,33 @@ where
             let surface = unsafe {
                 wegl::WlEglSurface::new_from_raw(wl_surface as *mut _, size.width as i32, size.height as i32)
             };
-            EGLSurface::new(&display, context.pixel_format().unwrap(), reqs.double_buffer, context.config_id(), surface, log.clone())
-                .map_err(EGLError::CreationFailed)?
+            EGLSurface::new(
+                &display,
+                context.pixel_format().unwrap(),
+                reqs.double_buffer,
+                context.config_id(),
+                surface,
+                log.clone(),
+            )
+            .map_err(EGLError::CreationFailed)?
         } else if let Some(xlib_window) = winit_window.xlib_window().map(native::XlibWindow) {
             debug!(log, "Winit backend: X11");
-            EGLSurface::new(&display, context.pixel_format().unwrap(), reqs.double_buffer, context.config_id(), xlib_window, log.clone())
-                .map_err(EGLError::CreationFailed)?
+            EGLSurface::new(
+                &display,
+                context.pixel_format().unwrap(),
+                reqs.double_buffer,
+                context.config_id(),
+                xlib_window,
+                log.clone(),
+            )
+            .map_err(EGLError::CreationFailed)?
         } else {
             unreachable!("No backends for winit other then Wayland and X11 are supported")
         };
 
         let _ = context.unbind();
-        
-        (
-            display,
-            context,
-            surface,
-        )
+
+        (display, context, surface)
     };
 
     let size = Rc::new(RefCell::new(WindowSize {
@@ -250,7 +256,7 @@ impl WinitGraphicsBackend {
             let size = self.size.borrow();
             size.physical_size.into()
         };
-        
+
         self.renderer.bind(self.egl.clone())?;
         self.renderer.begin(width, height, Transform::Normal)
     }
@@ -259,12 +265,15 @@ impl WinitGraphicsBackend {
 impl Renderer for WinitGraphicsBackend {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
-    
+
     #[cfg(feature = "image")]
-    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::TextureId, Self::Error> {
+    fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
+        &mut self,
+        image: &image::ImageBuffer<image::Rgba<u8>, C>,
+    ) -> Result<Self::TextureId, Self::Error> {
         self.renderer.import_bitmap(image)
     }
-     
+
     #[cfg(feature = "wayland_frontend")]
     fn shm_formats(&self) -> &[wl_shm::Format] {
         Renderer::shm_formats(&self.renderer)
@@ -274,17 +283,22 @@ impl Renderer for WinitGraphicsBackend {
     fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::TextureId, Self::Error> {
         self.renderer.import_shm(buffer)
     }
-    
+
     #[cfg(feature = "wayland_frontend")]
     fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::TextureId, Self::Error> {
-        self.renderer.import_egl(buffer)        
+        self.renderer.import_egl(buffer)
     }
 
     fn destroy_texture(&mut self, texture: Self::TextureId) -> Result<(), Self::Error> {
         self.renderer.destroy_texture(texture)
     }
 
-    fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), <Self as Renderer>::Error> {
+    fn begin(
+        &mut self,
+        width: u32,
+        height: u32,
+        transform: Transform,
+    ) -> Result<(), <Self as Renderer>::Error> {
         self.renderer.bind(self.egl.clone())?;
         self.renderer.begin(width, height, transform)
     }
@@ -293,7 +307,12 @@ impl Renderer for WinitGraphicsBackend {
         self.renderer.clear(color)
     }
 
-    fn render_texture(&mut self, texture: &Self::TextureId, matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error> {
+    fn render_texture(
+        &mut self,
+        texture: &Self::TextureId,
+        matrix: Matrix3<f32>,
+        alpha: f32,
+    ) -> Result<(), Self::Error> {
         self.renderer.render_texture(texture, matrix, alpha)
     }
 

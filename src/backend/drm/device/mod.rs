@@ -1,24 +1,27 @@
-use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::convert::TryFrom;
-use std::sync::{Arc, atomic::AtomicBool};
-use std::path::PathBuf;
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::{atomic::AtomicBool, Arc};
 
 use calloop::{generic::Generic, InsertError, LoopHandle, Source};
-use drm::{Device as BasicDevice, ClientCapability, DriverCapability};
-use drm::control::{ResourceHandles, PlaneResourceHandles, Device as ControlDevice, Event, Mode, PlaneType, crtc, plane, connector, property};
+use drm::control::{
+    connector, crtc, plane, property, Device as ControlDevice, Event, Mode, PlaneResourceHandles, PlaneType,
+    ResourceHandles,
+};
+use drm::{ClientCapability, Device as BasicDevice, DriverCapability};
 use nix::libc::dev_t;
 use nix::sys::stat::fstat;
 
 pub(super) mod atomic;
 pub(super) mod legacy;
+use super::error::Error;
+use super::surface::{atomic::AtomicDrmSurface, legacy::LegacyDrmSurface, DrmSurface, DrmSurfaceInternal};
+use crate::backend::allocator::{Format, Fourcc, Modifier};
 use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
-use super::surface::{DrmSurface, DrmSurfaceInternal, atomic::AtomicDrmSurface, legacy::LegacyDrmSurface};
-use super::error::Error;
-use crate::backend::allocator::{Fourcc, Format, Modifier};
 
 pub struct DrmDevice<A: AsRawFd + 'static> {
     pub(super) dev_id: dev_t,
@@ -91,10 +94,8 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
     {
         let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_drm"));
         info!(log, "DrmDevice initializing");
-        
-        let dev_id = fstat(fd.as_raw_fd())
-            .map_err(Error::UnableToGetDeviceId)?
-            .st_rdev;
+
+        let dev_id = fstat(fd.as_raw_fd()).map_err(Error::UnableToGetDeviceId)?.st_rdev;
         let active = Arc::new(AtomicBool::new(true));
         let dev = Arc::new({
             let mut dev = FdWrapper {
@@ -115,7 +116,9 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             dev
         });
 
-        let has_universal_planes = dev.set_client_capability(ClientCapability::UniversalPlanes, true).is_ok();
+        let has_universal_planes = dev
+            .set_client_capability(ClientCapability::UniversalPlanes, true)
+            .is_ok();
         let resources = dev.resource_handles().map_err(|source| Error::Access {
             errmsg: "Error loading resource handles",
             dev: dev.dev_path(),
@@ -126,7 +129,12 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             dev: dev.dev_path(),
             source,
         })?;
-        let internal = Arc::new(DrmDevice::create_internal(dev, active, disable_connectors, log.clone())?);
+        let internal = Arc::new(DrmDevice::create_internal(
+            dev,
+            active,
+            disable_connectors,
+            log.clone(),
+        )?);
 
         Ok(DrmDevice {
             dev_id,
@@ -141,7 +149,12 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         })
     }
 
-    fn create_internal(dev: Arc<FdWrapper<A>>, active: Arc<AtomicBool>, disable_connectors: bool, log: ::slog::Logger) -> Result<DrmDeviceInternal<A>, Error> {
+    fn create_internal(
+        dev: Arc<FdWrapper<A>>,
+        active: Arc<AtomicBool>,
+        disable_connectors: bool,
+        log: ::slog::Logger,
+    ) -> Result<DrmDeviceInternal<A>, Error> {
         let force_legacy = std::env::var("SMITHAY_USE_LEGACY")
             .map(|x| {
                 x == "1" || x.to_lowercase() == "true" || x.to_lowercase() == "yes" || x.to_lowercase() == "y"
@@ -151,13 +164,15 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         if force_legacy {
             info!(log, "SMITHAY_USE_LEGACY is set. Forcing LegacyDrmDevice.");
         };
-        
-        Ok(if dev.set_client_capability(ClientCapability::Atomic, true).is_ok() && !force_legacy {
-            DrmDeviceInternal::Atomic(AtomicDrmDevice::new(dev, active, disable_connectors, log)?)
-        } else {
-            info!(log, "Falling back to LegacyDrmDevice");
-            DrmDeviceInternal::Legacy(LegacyDrmDevice::new(dev, active, disable_connectors, log)?)
-        })
+
+        Ok(
+            if dev.set_client_capability(ClientCapability::Atomic, true).is_ok() && !force_legacy {
+                DrmDeviceInternal::Atomic(AtomicDrmDevice::new(dev, active, disable_connectors, log)?)
+            } else {
+                info!(log, "Falling back to LegacyDrmDevice");
+                DrmDeviceInternal::Legacy(LegacyDrmDevice::new(dev, active, disable_connectors, log)?)
+            },
+        )
     }
 
     pub fn process_events(&mut self) {
@@ -196,7 +211,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             DrmDeviceInternal::Legacy(_) => false,
         }
     }
-    
+
     pub fn set_handler(&mut self, handler: impl DeviceHandler + 'static) {
         let handler = Some(Box::new(handler) as Box<dyn DeviceHandler + 'static>);
         *self.handler.borrow_mut() = handler;
@@ -219,14 +234,20 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             let info = self.get_plane(*plane).map_err(|source| Error::Access {
                 errmsg: "Failed to get plane information",
                 dev: self.dev_path(),
-                source,  
+                source,
             })?;
             let filter = info.possible_crtcs();
             if self.resources.filter_crtcs(filter).contains(crtc) {
                 match self.plane_type(*plane)? {
-                    PlaneType::Primary => { primary = Some(*plane); },
-                    PlaneType::Cursor => { cursor = Some(*plane); },
-                    PlaneType::Overlay => { overlay.push(*plane); },
+                    PlaneType::Primary => {
+                        primary = Some(*plane);
+                    }
+                    PlaneType::Cursor => {
+                        cursor = Some(*plane);
+                    }
+                    PlaneType::Overlay => {
+                        overlay.push(*plane);
+                    }
                 };
             }
         }
@@ -234,7 +255,11 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         Ok(Planes {
             primary: primary.expect("Crtc has no primary plane"),
             cursor,
-            overlay: if self.has_universal_planes { Some(overlay) } else { None },
+            overlay: if self.has_universal_planes {
+                Some(overlay)
+            } else {
+                None
+            },
         })
     }
 
@@ -242,14 +267,14 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         let props = self.get_properties(plane).map_err(|source| Error::Access {
             errmsg: "Failed to get properties of plane",
             dev: self.dev_path(),
-            source,  
+            source,
         })?;
         let (ids, vals) = props.as_props_and_values();
         for (&id, &val) in ids.iter().zip(vals.iter()) {
             let info = self.get_property(id).map_err(|source| Error::Access {
                 errmsg: "Failed to get property info",
                 dev: self.dev_path(),
-                source,  
+                source,
             })?;
             if info.name().to_str().map(|x| x == "type").unwrap_or(false) {
                 return Ok(match val {
@@ -262,21 +287,27 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         unreachable!()
     }
 
-    pub fn create_surface(&self, crtc: crtc::Handle, plane: plane::Handle, mode: Mode, connectors: &[connector::Handle]) -> Result<DrmSurface<A>, Error> {
+    pub fn create_surface(
+        &self,
+        crtc: crtc::Handle,
+        plane: plane::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
+    ) -> Result<DrmSurface<A>, Error> {
         if connectors.is_empty() {
             return Err(Error::SurfaceWithoutConnectors(crtc));
         }
-        
+
         let info = self.get_plane(plane).map_err(|source| Error::Access {
             errmsg: "Failed to get plane info",
             dev: self.dev_path(),
-            source
+            source,
         })?;
         let filter = info.possible_crtcs();
         if !self.resources.filter_crtcs(filter).contains(&crtc) {
             return Err(Error::PlaneNotCompatible(crtc, plane));
         }
-        
+
         let active = match &*self.internal {
             DrmDeviceInternal::Atomic(dev) => dev.active.clone(),
             DrmDeviceInternal::Legacy(dev) => dev.active.clone(),
@@ -288,13 +319,29 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
                 _ => unreachable!(),
             };
 
-            DrmSurfaceInternal::Atomic(AtomicDrmSurface::new(self.internal.clone(), active, crtc, plane, mapping, mode, connectors, self.logger.clone())?)
+            DrmSurfaceInternal::Atomic(AtomicDrmSurface::new(
+                self.internal.clone(),
+                active,
+                crtc,
+                plane,
+                mapping,
+                mode,
+                connectors,
+                self.logger.clone(),
+            )?)
         } else {
             if self.plane_type(plane)? != PlaneType::Primary {
                 return Err(Error::NonPrimaryPlane(plane));
             }
 
-            DrmSurfaceInternal::Legacy(LegacyDrmSurface::new(self.internal.clone(), active, crtc, mode, connectors, self.logger.clone())?)
+            DrmSurfaceInternal::Legacy(LegacyDrmSurface::new(
+                self.internal.clone(),
+                active,
+                crtc,
+                mode,
+                connectors,
+                self.logger.clone(),
+            )?)
         };
 
         // get plane formats
@@ -304,18 +351,25 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             source,
         })?;
         let mut formats = HashSet::new();
-        for code in plane_info.formats().iter().flat_map(|x| Fourcc::try_from(*x).ok()) {
+        for code in plane_info
+            .formats()
+            .iter()
+            .flat_map(|x| Fourcc::try_from(*x).ok())
+        {
             formats.insert(Format {
                 code,
                 modifier: Modifier::Invalid,
             });
         }
 
-        if let (Ok(1), &DrmSurfaceInternal::Atomic(ref surf)) = (self.get_driver_capability(DriverCapability::AddFB2Modifiers), &internal) {
+        if let (Ok(1), &DrmSurfaceInternal::Atomic(ref surf)) = (
+            self.get_driver_capability(DriverCapability::AddFB2Modifiers),
+            &internal,
+        ) {
             let set = self.get_properties(plane).map_err(|source| Error::Access {
                 errmsg: "Failed to query properties",
                 dev: self.dev_path(),
-                source
+                source,
             })?;
             if let Ok(prop) = surf.plane_prop_handle(plane, "IN_FORMATS") {
                 let prop_info = self.get_property(prop).map_err(|source| Error::Access {
@@ -324,7 +378,11 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
                     source,
                 })?;
                 let (handles, raw_values) = set.as_props_and_values();
-                let raw_value = raw_values[handles.iter().enumerate().find_map(|(i, handle)| if *handle == prop { Some(i) } else { None }).unwrap()];
+                let raw_value = raw_values[handles
+                    .iter()
+                    .enumerate()
+                    .find_map(|(i, handle)| if *handle == prop { Some(i) } else { None })
+                    .unwrap()];
                 if let property::Value::Blob(blob) = prop_info.value_type().convert_value(raw_value) {
                     let data = self.get_property_blob(blob).map_err(|source| Error::Access {
                         errmsg: "Failed to query property blob data",
@@ -337,8 +395,14 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
                         let fmt_mod_blob_ptr = data.as_ptr() as *const drm_ffi::drm_format_modifier_blob;
                         let fmt_mod_blob = &*fmt_mod_blob_ptr;
 
-                        let formats_ptr: *const u32 = fmt_mod_blob_ptr.cast::<u8>().offset(fmt_mod_blob.formats_offset as isize) as *const _;
-                        let modifiers_ptr: *const drm_ffi::drm_format_modifier = fmt_mod_blob_ptr.cast::<u8>().offset(fmt_mod_blob.modifiers_offset as isize) as *const _;
+                        let formats_ptr: *const u32 = fmt_mod_blob_ptr
+                            .cast::<u8>()
+                            .offset(fmt_mod_blob.formats_offset as isize)
+                            as *const _;
+                        let modifiers_ptr: *const drm_ffi::drm_format_modifier = fmt_mod_blob_ptr
+                            .cast::<u8>()
+                            .offset(fmt_mod_blob.modifiers_offset as isize)
+                            as *const _;
                         let formats_ptr = formats_ptr as *const u32;
                         let modifiers_ptr = modifiers_ptr as *const drm_ffi::drm_format_modifier;
 
@@ -346,13 +410,15 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
                             let mod_info = modifiers_ptr.offset(i as isize).read_unaligned();
                             for j in 0..64 {
                                 if mod_info.formats & (1u64 << j) != 0 {
-                                    let code = Fourcc::try_from(formats_ptr.offset((j + mod_info.offset) as isize).read_unaligned()).ok();
+                                    let code = Fourcc::try_from(
+                                        formats_ptr
+                                            .offset((j + mod_info.offset) as isize)
+                                            .read_unaligned(),
+                                    )
+                                    .ok();
                                     let modifier = Modifier::from(mod_info.modifier);
                                     if let Some(code) = code {
-                                        formats.insert(Format {
-                                            code,
-                                            modifier,
-                                        });
+                                        formats.insert(Format { code, modifier });
                                     }
                                 }
                             }
@@ -377,7 +443,10 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             });
         }
 
-        info!(self.logger, "Supported scan-out formats for plane ({:?}): {:?}", plane, formats);
+        info!(
+            self.logger,
+            "Supported scan-out formats for plane ({:?}): {:?}", plane, formats
+        );
 
         Ok(DrmSurface {
             crtc,

@@ -1,15 +1,15 @@
-use drm::control::{
-    connector, crtc, encoder, framebuffer, Device as ControlDevice, Mode,
-    PageFlipFlags,
-};
+use drm::control::{connector, crtc, encoder, framebuffer, Device as ControlDevice, Mode, PageFlipFlags};
 
 use std::collections::HashSet;
 use std::os::unix::io::AsRawFd;
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc, RwLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, RwLock,
+};
 
 use crate::backend::drm::{
-    device::{DevPath, DrmDeviceInternal},
     device::legacy::set_connector_state,
+    device::{DevPath, DrmDeviceInternal},
     error::Error,
 };
 
@@ -54,12 +54,11 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
         let current_mode = crtc_info.mode();
 
         let mut current_connectors = HashSet::new();
-        let res_handles = fd.resource_handles()
-            .map_err(|source| Error::Access {
-                errmsg: "Error loading drm resources",
-                dev: fd.dev_path(),
-                source,
-            })?;
+        let res_handles = fd.resource_handles().map_err(|source| Error::Access {
+            errmsg: "Error loading drm resources",
+            dev: fd.dev_path(),
+            source,
+        })?;
         for &con in res_handles.connectors() {
             let con_info = fd.get_connector(con).map_err(|source| Error::Access {
                 errmsg: "Error loading connector info",
@@ -179,7 +178,8 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
 
         // check the connectors to see if this mode is supported
         for connector in &pending.connectors {
-            if !self.fd
+            if !self
+                .fd
                 .get_connector(*connector)
                 .map_err(|source| Error::Access {
                     errmsg: "Error loading connector info",
@@ -229,7 +229,8 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
 
             if conn_removed {
                 // null commit (necessary to trigger removal on the kernel side with the legacy api.)
-                self.fd.set_crtc(self.crtc, None, (0, 0), &[], None)
+                self.fd
+                    .set_crtc(self.crtc, None, (0, 0), &[], None)
                     .map_err(|source| Error::Access {
                         errmsg: "Error setting crtc",
                         dev: self.fd.dev_path(),
@@ -253,22 +254,23 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
 
         debug!(self.logger, "Setting screen");
         // do a modeset and attach the given framebuffer
-        self.fd.set_crtc(
-            self.crtc,
-            Some(framebuffer),
-            (0, 0),
-            &pending
-                .connectors
-                .iter()
-                .copied()
-                .collect::<Vec<connector::Handle>>(),
-            Some(pending.mode),
-        )
-        .map_err(|source| Error::Access {
-            errmsg: "Error setting crtc",
-            dev: self.fd.dev_path(),
-            source,
-        })?;
+        self.fd
+            .set_crtc(
+                self.crtc,
+                Some(framebuffer),
+                (0, 0),
+                &pending
+                    .connectors
+                    .iter()
+                    .copied()
+                    .collect::<Vec<connector::Handle>>(),
+                Some(pending.mode),
+            )
+            .map_err(|source| Error::Access {
+                errmsg: "Error setting crtc",
+                dev: self.fd.dev_path(),
+                source,
+            })?;
 
         *current = pending.clone();
 
@@ -306,7 +308,11 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
             &*self.fd,
             self.crtc,
             framebuffer,
-            if event { &[PageFlipFlags::PageFlipEvent] } else { &[] },
+            if event {
+                &[PageFlipFlags::PageFlipEvent]
+            } else {
+                &[]
+            },
             None,
         )
         .map_err(|source| Error::Access {
@@ -320,21 +326,24 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
-        
+
         let pending = self.pending.read().unwrap();
-        
+
         debug!(self.logger, "Setting screen for buffer *testing*");
-        Ok(self.fd.set_crtc(
-            self.crtc,
-            Some(fb),
-            (0, 0),
-            &pending
-                .connectors
-                .iter()
-                .copied()
-                .collect::<Vec<connector::Handle>>(),
-            Some(*mode),
-        ).is_ok())
+        Ok(self
+            .fd
+            .set_crtc(
+                self.crtc,
+                Some(fb),
+                (0, 0),
+                &pending
+                    .connectors
+                    .iter()
+                    .copied()
+                    .collect::<Vec<connector::Handle>>(),
+                Some(*mode),
+            )
+            .is_ok())
     }
 
     // we use this function to verify, if a certain connector/mode combination
@@ -345,13 +354,11 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
     // Better would be some kind of test commit to ask the driver,
     // but that only exists for the atomic api.
     fn check_connector(&self, conn: connector::Handle, mode: &Mode) -> Result<bool, Error> {
-        let info = self.fd
-            .get_connector(conn)
-            .map_err(|source| Error::Access {
-                errmsg: "Error loading connector info",
-                dev: self.fd.dev_path(),
-                source,
-            })?;
+        let info = self.fd.get_connector(conn).map_err(|source| Error::Access {
+            errmsg: "Error loading connector info",
+            dev: self.fd.dev_path(),
+            source,
+        })?;
 
         // check if the connector can handle the current mode
         if info.modes().contains(mode) {
@@ -362,12 +369,11 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
                 .filter(|enc| enc.is_some())
                 .map(|enc| enc.unwrap())
                 .map(|encoder| {
-                    self.fd.get_encoder(encoder)
-                        .map_err(|source| Error::Access {
-                            errmsg: "Error loading encoder info",
-                            dev: self.fd.dev_path(),
-                            source,
-                        })
+                    self.fd.get_encoder(encoder).map_err(|source| Error::Access {
+                        errmsg: "Error loading encoder info",
+                        dev: self.fd.dev_path(),
+                        source,
+                    })
                 })
                 .collect::<Result<Vec<encoder::Info>, _>>()?;
 
@@ -406,9 +412,7 @@ impl<A: AsRawFd + 'static> Drop for LegacyDrmSurface<A> {
 
         // disable connectors again
         let current = self.state.read().unwrap();
-        if set_connector_state(&*self.fd, current.connectors.iter().copied(), false)
-           .is_ok()
-        {
+        if set_connector_state(&*self.fd, current.connectors.iter().copied(), false).is_ok() {
             // null commit
             let _ = self.fd.set_crtc(self.crtc, None, (0, 0), &[], None);
         }

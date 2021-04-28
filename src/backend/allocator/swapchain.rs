@@ -1,6 +1,9 @@
 use std::convert::TryInto;
-use std::sync::{Arc, Mutex, MutexGuard, atomic::{AtomicBool, Ordering}};
 use std::ops::Deref;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex, MutexGuard,
+};
 
 use crate::backend::allocator::{Allocator, Buffer, Format};
 
@@ -84,12 +87,12 @@ where
 
 impl<A, B, D, U, E1, E2> Swapchain<A, B, U, D>
 where
-    A: Allocator<B, Error=E1>,
-    B: Buffer + TryInto<D, Error=E2>,
+    A: Allocator<B, Error = E1>,
+    B: Buffer + TryInto<D, Error = E2>,
     D: Buffer,
     E1: std::error::Error + 'static,
     E2: std::error::Error + 'static,
-    U: 'static
+    U: 'static,
 {
     pub fn new(allocator: A, width: u32, height: u32, format: Format) -> Swapchain<A, B, U, D> {
         Swapchain {
@@ -107,8 +110,10 @@ where
             if free_slot.buffer.is_none() {
                 free_slot.buffer = Arc::new(Some(
                     self.allocator
-                    .create_buffer(self.width, self.height, self.format).map_err(SwapchainError::AllocationError)?
-                    .try_into().map_err(SwapchainError::ConversionError)?
+                        .create_buffer(self.width, self.height, self.format)
+                        .map_err(SwapchainError::AllocationError)?
+                        .try_into()
+                        .map_err(SwapchainError::ConversionError)?,
                 ));
             }
             assert!(free_slot.buffer.is_some());
@@ -116,7 +121,6 @@ where
             if !free_slot.acquired.swap(true, Ordering::SeqCst) {
                 return Ok(Some(free_slot.clone()));
             }
-
         }
 
         // no free slots

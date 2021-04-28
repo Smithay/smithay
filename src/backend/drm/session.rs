@@ -1,5 +1,8 @@
-use std::sync::{Arc, Weak, atomic::{AtomicBool, Ordering}};
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Weak,
+};
 
 use drm::Device as BasicDevice;
 use nix::libc::dev_t;
@@ -92,17 +95,17 @@ impl<A: AsRawFd + 'static> DrmDeviceObserver<A> {
                 }
             }
         }
-        
+
         // okay, the previous session/whatever might left the drm devices in any state...
         // lets fix that
         if let Err(err) = self.reset_state() {
             warn!(self.logger, "Unable to reset state after tty switch: {}", err);
             // TODO call drm-handler::error
         }
-        
+
         self.active.store(true, Ordering::SeqCst);
     }
-    
+
     fn reset_state(&mut self) -> Result<(), Error> {
         if let Some(dev) = self.dev.upgrade() {
             dev.reset_state()

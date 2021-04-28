@@ -1,7 +1,7 @@
 //use crate::backend::graphics::SwapBuffersError;
+use crate::backend::SwapBuffersError;
 use drm::control::{connector, crtc, plane, Mode, RawResourceHandle};
 use std::path::PathBuf;
-use crate::backend::SwapBuffersError;
 
 /// Errors thrown by the [`DrmDevice`](::backend::drm::DrmDevice)
 /// and the [`DrmSurface`](::backend::drm::DrmSurface).
@@ -66,14 +66,15 @@ impl From<Error> for SwapBuffersError {
             x @ Error::DeviceInactive => SwapBuffersError::TemporaryFailure(Box::new(x)),
             Error::Access {
                 errmsg, dev, source, ..
-            } if matches!(source,
-                drm::SystemError::PermissionDenied |
-                drm::SystemError::Unknown {
-                    errno: nix::errno::Errno::EBUSY,
-                } |
-                drm::SystemError::Unknown {
-                    errno: nix::errno::Errno::EINTR,
-                }
+            } if matches!(
+                source,
+                drm::SystemError::PermissionDenied
+                    | drm::SystemError::Unknown {
+                        errno: nix::errno::Errno::EBUSY,
+                    }
+                    | drm::SystemError::Unknown {
+                        errno: nix::errno::Errno::EINTR,
+                    }
             ) =>
             {
                 SwapBuffersError::TemporaryFailure(Box::new(Error::Access { errmsg, dev, source }))

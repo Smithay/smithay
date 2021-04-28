@@ -9,10 +9,10 @@ use nix::libc::c_int;
 
 use crate::backend::egl::{
     display::{EGLDisplay, EGLDisplayHandle, PixelFormat},
+    ffi,
     native::EGLNativeSurface,
-    ffi, EGLError, SwapBuffersError
+    EGLError, SwapBuffersError,
 };
-
 
 /// EGL surface of a given EGL context for rendering
 pub struct EGLSurface {
@@ -98,14 +98,17 @@ impl EGLSurface {
         );
 
         if self.native.needs_recreation() || surface.is_null() || is_bad_surface {
-            let previous = self.surface.compare_exchange(
-                surface,
-                self.native
-                    .create(&self.display, self.config_id, &self.surface_attributes)
-                    .map_err(SwapBuffersError::EGLCreateSurface)? as *mut _,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            ).expect("The surface pointer changed in between?");
+            let previous = self
+                .surface
+                .compare_exchange(
+                    surface,
+                    self.native
+                        .create(&self.display, self.config_id, &self.surface_attributes)
+                        .map_err(SwapBuffersError::EGLCreateSurface)? as *mut _,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .expect("The surface pointer changed in between?");
             if previous == surface && !surface.is_null() {
                 let _ = unsafe { ffi::egl::DestroySurface(**self.display, surface as *const _) };
             }
@@ -139,15 +142,15 @@ impl EGLSurface {
     pub fn pixel_format(&self) -> PixelFormat {
         self.pixel_format
     }
-    
+
     /// Tries to resize the underlying native surface.
-    /// 
+    ///
     /// The two first arguments (width, height) are the new size of the surface,
     /// the two others (dx, dy) represent the displacement of the top-left corner of the surface.
     /// It allows you to control the direction of the resizing if necessary.
-    /// 
+    ///
     /// Implementations may ignore the dx and dy arguments.
-    /// 
+    ///
     /// Returns true if the resize was successful.
     pub fn resize(&self, width: i32, height: i32, dx: i32, dy: i32) -> bool {
         self.native.resize(width, height, dx, dy)

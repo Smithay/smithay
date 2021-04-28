@@ -2,18 +2,17 @@ use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::sync::Arc;
 
+use drm::control::{connector, crtc, framebuffer, plane, Device as ControlDevice, Mode};
 use drm::Device as BasicDevice;
-use drm::control::{Device as ControlDevice, Mode, crtc, connector, framebuffer, plane};
 
 pub(super) mod atomic;
 pub(super) mod legacy;
 use super::error::Error;
+use crate::backend::allocator::Format;
 use atomic::AtomicDrmSurface;
 use legacy::LegacyDrmSurface;
-use crate::backend::allocator::Format;
 
-pub struct DrmSurface<A: AsRawFd + 'static>
-{
+pub struct DrmSurface<A: AsRawFd + 'static> {
     pub(super) crtc: crtc::Handle,
     pub(super) plane: plane::Handle,
     pub(super) internal: Arc<DrmSurfaceInternal<A>>,
@@ -46,7 +45,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     pub fn plane(&self) -> plane::Handle {
         self.plane
     }
-    
+
     /// Currently used [`connector`](drm::control::connector)s of this `Surface`
     pub fn current_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
         match &*self.internal {
@@ -185,12 +184,21 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
         &self.formats
     }
 
-    pub fn test_buffer(&self, fb: framebuffer::Handle, mode: &Mode, allow_screen_change: bool) -> Result<bool, Error> {
+    pub fn test_buffer(
+        &self,
+        fb: framebuffer::Handle,
+        mode: &Mode,
+        allow_screen_change: bool,
+    ) -> Result<bool, Error> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.test_buffer(fb, mode),
-            DrmSurfaceInternal::Legacy(surf) => if allow_screen_change {
-                surf.test_buffer(fb, mode)
-            } else { Ok(false) } // There is no test-commiting with the legacy interface
+            DrmSurfaceInternal::Legacy(surf) => {
+                if allow_screen_change {
+                    surf.test_buffer(fb, mode)
+                } else {
+                    Ok(false)
+                }
+            } // There is no test-commiting with the legacy interface
         }
     }
 }

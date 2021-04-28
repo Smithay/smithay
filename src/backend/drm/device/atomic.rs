@@ -1,9 +1,15 @@
 use std::collections::HashMap;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::os::unix::io::AsRawFd;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 use drm::control::atomic::AtomicModeReq;
-use drm::control::{Device as ControlDevice, AtomicCommitFlags, PropertyValueSet, ResourceHandle, crtc, connector, framebuffer, plane, property};
+use drm::control::{
+    connector, crtc, framebuffer, plane, property, AtomicCommitFlags, Device as ControlDevice,
+    PropertyValueSet, ResourceHandle,
+};
 
 use super::{DevPath, FdWrapper};
 use crate::backend::drm::error::Error;
@@ -31,8 +37,12 @@ pub struct AtomicDrmDevice<A: AsRawFd + 'static> {
 }
 
 impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
-    pub fn new(fd: Arc<FdWrapper<A>>, active: Arc<AtomicBool>, disable_connectors: bool, logger: ::slog::Logger) -> Result<Self, Error>
-    {
+    pub fn new(
+        fd: Arc<FdWrapper<A>>,
+        active: Arc<AtomicBool>,
+        disable_connectors: bool,
+        logger: ::slog::Logger,
+    ) -> Result<Self, Error> {
         let mut dev = AtomicDrmDevice {
             fd,
             active,
@@ -42,17 +52,16 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         };
 
         // Enumerate (and save) the current device state.
-        let res_handles = dev.fd.resource_handles()
-            .map_err(|source| Error::Access {
-                errmsg: "Error loading drm resources",
-                dev: dev.fd.dev_path(),
-                source,
-            })?;
+        let res_handles = dev.fd.resource_handles().map_err(|source| Error::Access {
+            errmsg: "Error loading drm resources",
+            dev: dev.fd.dev_path(),
+            source,
+        })?;
 
         let plane_handles = dev.fd.plane_handles().map_err(|source| Error::Access {
             errmsg: "Error loading planes",
             dev: dev.fd.dev_path(),
-            source
+            source,
         })?;
         let planes = plane_handles.planes();
 
@@ -77,7 +86,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         dev.old_state = old_state;
         dev.prop_mapping = mapping;
         trace!(dev.logger, "Mapping: {:#?}", dev.prop_mapping);
-        
+
         // If the user does not explicitly requests us to skip this,
         // we clear out the complete connector<->crtc mapping on device creation.
         //
@@ -167,12 +176,11 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         // on top of the state the previous compositor left the device in.
         // This is because we do commits per surface and not per device, so we do a global
         // commit here, to fix any conflicts.
-        let res_handles = self.fd.resource_handles()
-            .map_err(|source| Error::Access {
-                errmsg: "Error loading drm resources",
-                dev: self.fd.dev_path(),
-                source,
-            })?;
+        let res_handles = self.fd.resource_handles().map_err(|source| Error::Access {
+            errmsg: "Error loading drm resources",
+            dev: self.fd.dev_path(),
+            source,
+        })?;
 
         // Disable all connectors (otherwise we might run into conflicting commits when restarting the rendering loop)
         let mut req = AtomicModeReq::new();
@@ -206,13 +214,14 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             req.add_property(*crtc, *active_prop, property::Value::Boolean(false));
             req.add_property(*crtc, *mode_prop, property::Value::Unknown(0));
         }
-        self.fd.atomic_commit(&[AtomicCommitFlags::AllowModeset], req)
+        self.fd
+            .atomic_commit(&[AtomicCommitFlags::AllowModeset], req)
             .map_err(|source| Error::Access {
                 errmsg: "Failed to disable connectors",
                 dev: self.fd.dev_path(),
                 source,
             })?;
-        
+
         Ok(())
     }
 }

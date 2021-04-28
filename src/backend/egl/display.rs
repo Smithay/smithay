@@ -1,10 +1,10 @@
 //! Type safe native types for safe egl initialisation
 
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
+use std::sync::Arc;
 
 use nix::libc::c_int;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
@@ -12,13 +12,13 @@ use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
 #[cfg(feature = "use_system_lib")]
 use wayland_sys::server::wl_display;
 
-use crate::backend::allocator::{Buffer, dmabuf::Dmabuf, Fourcc, Modifier, Format as DrmFormat};
+use crate::backend::allocator::{dmabuf::Dmabuf, Buffer, Format as DrmFormat, Fourcc, Modifier};
 use crate::backend::egl::{
-    ffi::egl::types::EGLImage,
-    ffi, wrap_egl_call, EGLError, Error,
     context::{GlAttributes, PixelFormatRequirements},
-    native::{EGLNativeDisplay},
-    BufferAccessError, EGLBuffer, Format,
+    ffi,
+    ffi::egl::types::EGLImage,
+    native::EGLNativeDisplay,
+    wrap_egl_call, BufferAccessError, EGLBuffer, EGLError, Error, Format,
 };
 
 /// Wrapper around [`ffi::EGLDisplay`](ffi::egl::types::EGLDisplay) to ensure display is only destroyed
@@ -94,7 +94,7 @@ impl EGLDisplay {
                 return Err(Error::EglExtensionNotSupported(native.required_extensions()));
             }
         }
-        
+
         let (platform, native_ptr, attributes) = native.platform_display();
         // we create an EGLDisplay
         let display = unsafe {
@@ -355,62 +355,92 @@ impl EGLDisplay {
 
     /// Imports a dmabuf as an eglimage
     pub fn create_image_from_dmabuf(&self, dmabuf: &Dmabuf) -> Result<EGLImage, Error> {
-        if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base") &&
-           !self.extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import")
+        if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base")
+            && !self
+                .extensions
+                .iter()
+                .any(|s| s == "EGL_EXT_image_dma_buf_import")
         {
-            return Err(Error::EglExtensionNotSupported(&["EGL_KHR_image_base", "EGL_EXT_image_dma_buf_import"]));
+            return Err(Error::EglExtensionNotSupported(&[
+                "EGL_KHR_image_base",
+                "EGL_EXT_image_dma_buf_import",
+            ]));
         }
 
-        if dmabuf.has_modifier() && !self.extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers") {
-            return Err(Error::EglExtensionNotSupported(&["EGL_EXT_image_dma_buf_import_modifiers"]));
+        if dmabuf.has_modifier()
+            && !self
+                .extensions
+                .iter()
+                .any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers")
+        {
+            return Err(Error::EglExtensionNotSupported(&[
+                "EGL_EXT_image_dma_buf_import_modifiers",
+            ]));
         };
 
         let mut out: Vec<c_int> = Vec::with_capacity(50);
 
         out.extend(&[
-            ffi::egl::WIDTH as i32, dmabuf.width() as i32,
-            ffi::egl::HEIGHT as i32, dmabuf.height() as i32,
-            ffi::egl::LINUX_DRM_FOURCC_EXT as i32, dmabuf.format().code as u32 as i32,
+            ffi::egl::WIDTH as i32,
+            dmabuf.width() as i32,
+            ffi::egl::HEIGHT as i32,
+            dmabuf.height() as i32,
+            ffi::egl::LINUX_DRM_FOURCC_EXT as i32,
+            dmabuf.format().code as u32 as i32,
         ]);
-        
+
         let names = [
             [
                 ffi::egl::DMA_BUF_PLANE0_FD_EXT,
                 ffi::egl::DMA_BUF_PLANE0_OFFSET_EXT,
                 ffi::egl::DMA_BUF_PLANE0_PITCH_EXT,
                 ffi::egl::DMA_BUF_PLANE0_MODIFIER_LO_EXT,
-                ffi::egl::DMA_BUF_PLANE0_MODIFIER_HI_EXT
-            ], [
+                ffi::egl::DMA_BUF_PLANE0_MODIFIER_HI_EXT,
+            ],
+            [
                 ffi::egl::DMA_BUF_PLANE1_FD_EXT,
                 ffi::egl::DMA_BUF_PLANE1_OFFSET_EXT,
                 ffi::egl::DMA_BUF_PLANE1_PITCH_EXT,
                 ffi::egl::DMA_BUF_PLANE1_MODIFIER_LO_EXT,
-                ffi::egl::DMA_BUF_PLANE1_MODIFIER_HI_EXT
-            ], [
+                ffi::egl::DMA_BUF_PLANE1_MODIFIER_HI_EXT,
+            ],
+            [
                 ffi::egl::DMA_BUF_PLANE2_FD_EXT,
                 ffi::egl::DMA_BUF_PLANE2_OFFSET_EXT,
                 ffi::egl::DMA_BUF_PLANE2_PITCH_EXT,
                 ffi::egl::DMA_BUF_PLANE2_MODIFIER_LO_EXT,
-                ffi::egl::DMA_BUF_PLANE2_MODIFIER_HI_EXT
-            ], [
+                ffi::egl::DMA_BUF_PLANE2_MODIFIER_HI_EXT,
+            ],
+            [
                 ffi::egl::DMA_BUF_PLANE3_FD_EXT,
                 ffi::egl::DMA_BUF_PLANE3_OFFSET_EXT,
                 ffi::egl::DMA_BUF_PLANE3_PITCH_EXT,
                 ffi::egl::DMA_BUF_PLANE3_MODIFIER_LO_EXT,
-                ffi::egl::DMA_BUF_PLANE3_MODIFIER_HI_EXT
-            ]
+                ffi::egl::DMA_BUF_PLANE3_MODIFIER_HI_EXT,
+            ],
         ];
 
-        for (i, ((fd, offset), stride)) in dmabuf.handles().iter().zip(dmabuf.offsets()).zip(dmabuf.strides()).enumerate() {
+        for (i, ((fd, offset), stride)) in dmabuf
+            .handles()
+            .iter()
+            .zip(dmabuf.offsets())
+            .zip(dmabuf.strides())
+            .enumerate()
+        {
             out.extend(&[
-                names[i][0] as i32, *fd,
-                names[i][1] as i32, *offset as i32,
-                names[i][2] as i32, *stride as i32,
+                names[i][0] as i32,
+                *fd,
+                names[i][1] as i32,
+                *offset as i32,
+                names[i][2] as i32,
+                *stride as i32,
             ]);
             if dmabuf.has_modifier() {
                 out.extend(&[
-                    names[i][3] as i32, (Into::<u64>::into(dmabuf.format().modifier) & 0xFFFFFFFF) as i32,
-                    names[i][4] as i32, (Into::<u64>::into(dmabuf.format().modifier) >> 32) as i32,
+                    names[i][3] as i32,
+                    (Into::<u64>::into(dmabuf.format().modifier) & 0xFFFFFFFF) as i32,
+                    names[i][4] as i32,
+                    (Into::<u64>::into(dmabuf.format().modifier) >> 32) as i32,
                 ])
             }
         }
@@ -460,8 +490,11 @@ impl EGLDisplay {
     }
 }
 
-fn get_dmabuf_formats(display: &ffi::egl::types::EGLDisplay, extensions: &[String], log: &::slog::Logger) -> Result<(HashSet<DrmFormat>, HashSet<DrmFormat>), EGLError>
-{
+fn get_dmabuf_formats(
+    display: &ffi::egl::types::EGLDisplay,
+    extensions: &[String],
+    log: &::slog::Logger,
+) -> Result<(HashSet<DrmFormat>, HashSet<DrmFormat>), EGLError> {
     use std::convert::TryFrom;
 
     if !extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import") {
@@ -475,11 +508,11 @@ fn get_dmabuf_formats(display: &ffi::egl::types::EGLDisplay, extensions: &[Strin
         // supported; it's the intended way to just try to create buffers.
         // Just a guess but better than not supporting dmabufs at all,
         // given that the modifiers extension isn't supported everywhere.
-        if !extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers") {
-            vec![
-                Fourcc::Argb8888,
-                Fourcc::Xrgb8888,
-            ]
+        if !extensions
+            .iter()
+            .any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers")
+        {
+            vec![Fourcc::Argb8888, Fourcc::Xrgb8888]
         } else {
             let mut num = 0i32;
             wrap_egl_call(|| unsafe {
@@ -490,12 +523,20 @@ fn get_dmabuf_formats(display: &ffi::egl::types::EGLDisplay, extensions: &[Strin
             }
             let mut formats: Vec<u32> = Vec::with_capacity(num as usize);
             wrap_egl_call(|| unsafe {
-                ffi::egl::QueryDmaBufFormatsEXT(*display, num, formats.as_mut_ptr() as *mut _, &mut num as *mut _)
+                ffi::egl::QueryDmaBufFormatsEXT(
+                    *display,
+                    num,
+                    formats.as_mut_ptr() as *mut _,
+                    &mut num as *mut _,
+                )
             })?;
             unsafe {
                 formats.set_len(num as usize);
             }
-            formats.into_iter().flat_map(|x| Fourcc::try_from(x).ok()).collect::<Vec<_>>()
+            formats
+                .into_iter()
+                .flat_map(|x| Fourcc::try_from(x).ok())
+                .collect::<Vec<_>>()
         }
     };
 
@@ -505,24 +546,38 @@ fn get_dmabuf_formats(display: &ffi::egl::types::EGLDisplay, extensions: &[Strin
     for fourcc in formats {
         let mut num = 0i32;
         wrap_egl_call(|| unsafe {
-            ffi::egl::QueryDmaBufModifiersEXT(*display, fourcc as i32, 0, std::ptr::null_mut(), std::ptr::null_mut(), &mut num as *mut _)
+            ffi::egl::QueryDmaBufModifiersEXT(
+                *display,
+                fourcc as i32,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut num as *mut _,
+            )
         })?;
 
         if num == 0 {
             texture_formats.insert(DrmFormat {
                 code: fourcc,
-                modifier: Modifier::Invalid
+                modifier: Modifier::Invalid,
             });
             render_formats.insert(DrmFormat {
                 code: fourcc,
-                modifier: Modifier::Invalid
+                modifier: Modifier::Invalid,
             });
         } else {
             let mut mods: Vec<u64> = Vec::with_capacity(num as usize);
             let mut external: Vec<ffi::egl::types::EGLBoolean> = Vec::with_capacity(num as usize);
 
             wrap_egl_call(|| unsafe {
-                ffi::egl::QueryDmaBufModifiersEXT(*display, fourcc as i32, num, mods.as_mut_ptr(), external.as_mut_ptr(), &mut num as *mut _)
+                ffi::egl::QueryDmaBufModifiersEXT(
+                    *display,
+                    fourcc as i32,
+                    num,
+                    mods.as_mut_ptr(),
+                    external.as_mut_ptr(),
+                    &mut num as *mut _,
+                )
             })?;
 
             unsafe {
@@ -572,10 +627,7 @@ impl fmt::Debug for EGLBufferReader {
 #[cfg(feature = "use_system_lib")]
 impl EGLBufferReader {
     fn new(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display) -> Self {
-        Self {
-            display,
-            wayland,
-        }
+        Self { display, wayland }
     }
 
     /// Try to receive [`EGLImages`] from a given [`WlBuffer`].
@@ -605,9 +657,15 @@ impl EGLBufferReader {
             x if x == ffi::egl::TEXTURE_RGB as i32 => Format::RGB,
             x if x == ffi::egl::TEXTURE_RGBA as i32 => Format::RGBA,
             ffi::egl::TEXTURE_EXTERNAL_WL => Format::External,
-            ffi::egl::TEXTURE_Y_UV_WL => return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_UV)),
-            ffi::egl::TEXTURE_Y_U_V_WL => return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_U_V)),
-            ffi::egl::TEXTURE_Y_XUXV_WL => return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_XUXV)),
+            ffi::egl::TEXTURE_Y_UV_WL => {
+                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_UV))
+            }
+            ffi::egl::TEXTURE_Y_U_V_WL => {
+                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_U_V))
+            }
+            ffi::egl::TEXTURE_Y_XUXV_WL => {
+                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_XUXV))
+            }
             x => panic!("EGL returned invalid texture type: {}", x),
         };
 
@@ -646,11 +704,7 @@ impl EGLBufferReader {
 
         let mut images = Vec::with_capacity(format.num_planes());
         for i in 0..format.num_planes() {
-            let out = [
-                ffi::egl::WAYLAND_PLANE_WL as i32,
-                i as i32,
-                ffi::egl::NONE as i32,
-            ];
+            let out = [ffi::egl::WAYLAND_PLANE_WL as i32, i as i32, ffi::egl::NONE as i32];
 
             images.push({
                 wrap_egl_call(|| unsafe {

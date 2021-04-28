@@ -255,7 +255,11 @@ where
                 for f in &*formats {
                     dmabuf.format(f.format as u32);
                     if version >= 3 {
-                        dmabuf.modifier(f.format as u32, (Into::<u64>::into(f.modifier) >> 32) as u32, Into::<u64>::into(f.modifier) as u32);
+                        dmabuf.modifier(
+                            f.format as u32,
+                            (Into::<u64>::into(f.modifier) >> 32) as u32,
+                            Into::<u64>::into(f.modifier) as u32,
+                        );
                     }
                 }
             },

@@ -6,28 +6,18 @@ extern crate slog;
 use slog::Drain;
 use smithay::{
     backend::{
-        allocator::{Format, Fourcc, Modifier, Swapchain, Slot, dumb::DumbBuffer},
-        drm::{
-            DrmError,
-            DrmDevice, DrmSurface,
-            DeviceHandler,
-            device_bind,
-        }
+        allocator::{dumb::DumbBuffer, Format, Fourcc, Modifier, Slot, Swapchain},
+        drm::{device_bind, DeviceHandler, DrmDevice, DrmError, DrmSurface},
     },
     reexports::{
         calloop::EventLoop,
-        drm::{
-            control::{
-                connector::State as ConnectorState, crtc, framebuffer,
-                Device as ControlDevice,
-            },
-        },
+        drm::control::{connector::State as ConnectorState, crtc, framebuffer, Device as ControlDevice},
     },
 };
 use std::{
     fs::{File, OpenOptions},
-    os::unix::io::{AsRawFd, RawFd},
     io::Error as IoError,
+    os::unix::io::{AsRawFd, RawFd},
     rc::Rc,
     sync::Mutex,
 };
@@ -54,10 +44,11 @@ fn main() {
     let mut options = OpenOptions::new();
     options.read(true);
     options.write(true);
-    let fd = FdWrapper { file: Rc::new(options.open("/dev/dri/card0").unwrap()) };
+    let fd = FdWrapper {
+        file: Rc::new(options.open("/dev/dri/card0").unwrap()),
+    };
 
-    let mut device =
-        DrmDevice::new(fd.clone(), true, log.clone()).unwrap();
+    let mut device = DrmDevice::new(fd.clone(), true, log.clone()).unwrap();
 
     // Get a set of all modesetting resource handles (excluding planes):
     let res_handles = ControlDevice::resource_handles(&device).unwrap();
@@ -105,12 +96,20 @@ fn main() {
      */
     let (w, h) = mode.size();
     let allocator = DrmDevice::new(fd, false, log.clone()).unwrap();
-    let mut swapchain = Swapchain::new(allocator, w.into(), h.into(), Format { code: Fourcc::Argb8888, modifier: Modifier::Invalid });
+    let mut swapchain = Swapchain::new(
+        allocator,
+        w.into(),
+        h.into(),
+        Format {
+            code: Fourcc::Argb8888,
+            modifier: Modifier::Invalid,
+        },
+    );
     let first_buffer: Slot<DumbBuffer<FdWrapper>, _> = swapchain.acquire().unwrap().unwrap();
     let framebuffer = surface.add_framebuffer(&first_buffer.handle, 32, 32).unwrap();
     first_buffer.set_userdata(framebuffer);
 
-    // Get the device as an allocator into the 
+    // Get the device as an allocator into the
     device.set_handler(DrmHandlerImpl {
         swapchain,
         current: first_buffer,
@@ -133,7 +132,8 @@ fn main() {
 }
 
 pub struct DrmHandlerImpl {
-    swapchain: Swapchain<DrmDevice<FdWrapper>, DumbBuffer<FdWrapper>, framebuffer::Handle, DumbBuffer<FdWrapper>>,
+    swapchain:
+        Swapchain<DrmDevice<FdWrapper>, DumbBuffer<FdWrapper>, framebuffer::Handle, DumbBuffer<FdWrapper>>,
     current: Slot<DumbBuffer<FdWrapper>, framebuffer::Handle>,
     surface: Rc<DrmSurface<FdWrapper>>,
 }

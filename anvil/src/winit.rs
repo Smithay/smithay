@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 //#[cfg(feature = "egl")]
 //use smithay::backend::egl::EGLGraphicsBackend;
 use smithay::{
-    backend::{renderer::Renderer, input::InputBackend, winit, SwapBuffersError},
+    backend::{input::InputBackend, renderer::Renderer, winit, SwapBuffersError},
     reexports::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
@@ -16,9 +16,9 @@ use smithay::{
 
 use slog::Logger;
 
-use crate::state::AnvilState;
 use crate::buffer_utils::BufferUtils;
 use crate::drawing::*;
+use crate::state::AnvilState;
 
 pub fn run_winit(
     display: Rc<RefCell<Display>>,
@@ -111,10 +111,22 @@ pub fn run_winit(
         // drawing logic
         {
             renderer.begin().expect("Failed to render frame");
-            renderer.clear([0.8, 0.8, 0.9, 1.0]).expect("Failed to clear frame");
+            renderer
+                .clear([0.8, 0.8, 0.9, 1.0])
+                .expect("Failed to clear frame");
 
             // draw the windows
-            draw_windows(&mut renderer, 0, &texture_send, &buffer_utils, &*state.window_map.borrow(), None, state.ctoken, &log).expect("Failed to renderer windows");
+            draw_windows(
+                &mut renderer,
+                0,
+                &texture_send,
+                &buffer_utils,
+                &*state.window_map.borrow(),
+                None,
+                state.ctoken,
+                &log,
+            )
+            .expect("Failed to renderer windows");
 
             let (x, y) = *state.pointer_location.borrow();
             // draw the dnd icon if any
@@ -122,7 +134,17 @@ pub fn run_winit(
                 let guard = state.dnd_icon.lock().unwrap();
                 if let Some(ref surface) = *guard {
                     if surface.as_ref().is_alive() {
-                        draw_dnd_icon(&mut renderer, 0, &texture_send, &buffer_utils, surface, (x as i32, y as i32), state.ctoken, &log).expect("Failed to render dnd icon");
+                        draw_dnd_icon(
+                            &mut renderer,
+                            0,
+                            &texture_send,
+                            &buffer_utils,
+                            surface,
+                            (x as i32, y as i32),
+                            state.ctoken,
+                            &log,
+                        )
+                        .expect("Failed to render dnd icon");
                     }
                 }
             }
@@ -137,11 +159,21 @@ pub fn run_winit(
                 if reset {
                     *guard = CursorImageStatus::Default;
                 }
-                
+
                 // draw as relevant
                 if let CursorImageStatus::Image(ref surface) = *guard {
                     renderer.window().set_cursor_visible(false);
-                    draw_cursor(&mut renderer, 0, &texture_send, &buffer_utils, surface, (x as i32, y as i32), state.ctoken, &log).expect("Failed to render cursor");
+                    draw_cursor(
+                        &mut renderer,
+                        0,
+                        &texture_send,
+                        &buffer_utils,
+                        surface,
+                        (x as i32, y as i32),
+                        state.ctoken,
+                        &log,
+                    )
+                    .expect("Failed to render cursor");
                 } else {
                     renderer.window().set_cursor_visible(true);
                 }
@@ -152,7 +184,6 @@ pub fn run_winit(
                 state.running.store(false, Ordering::SeqCst);
             }
         }
-
 
         if event_loop
             .dispatch(Some(Duration::from_millis(16)), &mut state)
