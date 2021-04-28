@@ -5,18 +5,20 @@ extern crate slog;
 
 use slog::Drain;
 use smithay::{
-    backend::drm::{
-        common::Error,
-        device_bind,
-        legacy::{LegacyDrmDevice, LegacyDrmSurface},
-        Device, DeviceHandler, RawSurface,
+    backend::{
+        allocator::{Format, Fourcc, Modifier, Swapchain, Slot, dumb::DumbBuffer},
+        drm::{
+            DrmError,
+            DrmDevice, DrmSurface,
+            DeviceHandler,
+            device_bind,
+        }
     },
     reexports::{
         calloop::EventLoop,
         drm::{
-            buffer::format::PixelFormat,
             control::{
-                connector::State as ConnectorState, crtc, dumbbuffer::DumbBuffer, framebuffer,
+                connector::State as ConnectorState, crtc, framebuffer,
                 Device as ControlDevice,
             },
         },
@@ -24,10 +26,22 @@ use smithay::{
 };
 use std::{
     fs::{File, OpenOptions},
+    os::unix::io::{AsRawFd, RawFd},
     io::Error as IoError,
     rc::Rc,
     sync::Mutex,
 };
+
+#[derive(Clone)]
+struct FdWrapper {
+    file: Rc<File>,
+}
+
+impl AsRawFd for FdWrapper {
+    fn as_raw_fd(&self) -> RawFd {
+        self.file.as_raw_fd()
+    }
+}
 
 fn main() {
     let log = slog::Logger::root(Mutex::new(slog_term::term_full().fuse()).fuse(), o!());
@@ -40,17 +54,19 @@ fn main() {
     let mut options = OpenOptions::new();
     options.read(true);
     options.write(true);
+    let fd = FdWrapper { file: Rc::new(options.open("/dev/dri/card0").unwrap()) };
+
     let mut device =
-        LegacyDrmDevice::new(options.open("/dev/dri/card0").unwrap(), true, log.clone()).unwrap();
+        DrmDevice::new(fd.clone(), true, log.clone()).unwrap();
 
     // Get a set of all modesetting resource handles (excluding planes):
-    let res_handles = Device::resource_handles(&device).unwrap();
+    let res_handles = ControlDevice::resource_handles(&device).unwrap();
 
     // Use first connected connector
     let connector_info = res_handles
         .connectors()
         .iter()
-        .map(|conn| device.get_connector_info(*conn).unwrap())
+        .map(|conn| device.get_connector(*conn).unwrap())
         .find(|conn| conn.state() == ConnectorState::Connected)
         .unwrap();
 
@@ -61,7 +77,7 @@ fn main() {
         .filter_map(|&e| e)
         .next()
         .unwrap();
-    let encoder_info = device.get_encoder_info(encoder).unwrap();
+    let encoder_info = device.get_encoder(encoder).unwrap();
 
     // use the connected crtc if any
     let crtc = encoder_info
@@ -72,10 +88,13 @@ fn main() {
     // Assuming we found a good connector and loaded the info into `connector_info`
     let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
 
+    // We just use one plane, the primary one
+    let plane = device.planes(&crtc).unwrap().primary;
+
     // Initialize the hardware backend
     let surface = Rc::new(
         device
-            .create_surface(crtc, mode, &[connector_info.handle()])
+            .create_surface(crtc, plane, mode, &[connector_info.handle()])
             .unwrap(),
     );
 
@@ -85,19 +104,16 @@ fn main() {
      * But they are very slow, this is just for demonstration purposes.
      */
     let (w, h) = mode.size();
-    let front_buffer = device
-        .create_dumb_buffer((w as u32, h as u32), PixelFormat::XRGB8888)
-        .unwrap();
-    let front_framebuffer = device.add_framebuffer(&front_buffer).unwrap();
-    let back_buffer = device
-        .create_dumb_buffer((w as u32, h as u32), PixelFormat::XRGB8888)
-        .unwrap();
-    let back_framebuffer = device.add_framebuffer(&back_buffer).unwrap();
+    let allocator = DrmDevice::new(fd, false, log.clone()).unwrap();
+    let mut swapchain = Swapchain::new(allocator, w.into(), h.into(), Format { code: Fourcc::Argb8888, modifier: Modifier::Invalid });
+    let first_buffer: Slot<DumbBuffer<FdWrapper>, _> = swapchain.acquire().unwrap().unwrap();
+    let framebuffer = surface.add_framebuffer(&first_buffer.handle, 32, 32).unwrap();
+    first_buffer.set_userdata(framebuffer);
 
+    // Get the device as an allocator into the 
     device.set_handler(DrmHandlerImpl {
-        current: front_framebuffer,
-        front: (front_buffer, front_framebuffer),
-        back: (back_buffer, back_framebuffer),
+        swapchain,
+        current: first_buffer,
         surface: surface.clone(),
     });
 
@@ -110,46 +126,44 @@ fn main() {
         .unwrap();
 
     // Start rendering
-    if surface.commit_pending() {
-        surface.commit(front_framebuffer).unwrap();
-    }
+    surface.commit(framebuffer, true).unwrap();
 
     // Run
     event_loop.run(None, &mut (), |_| {}).unwrap();
 }
 
 pub struct DrmHandlerImpl {
-    front: (DumbBuffer, framebuffer::Handle),
-    back: (DumbBuffer, framebuffer::Handle),
-    current: framebuffer::Handle,
-    surface: Rc<LegacyDrmSurface<File>>,
+    swapchain: Swapchain<DrmDevice<FdWrapper>, DumbBuffer<FdWrapper>, framebuffer::Handle, DumbBuffer<FdWrapper>>,
+    current: Slot<DumbBuffer<FdWrapper>, framebuffer::Handle>,
+    surface: Rc<DrmSurface<FdWrapper>>,
 }
 
 impl DeviceHandler for DrmHandlerImpl {
-    type Device = LegacyDrmDevice<File>;
-
     fn vblank(&mut self, _crtc: crtc::Handle) {
         {
-            // Swap and map buffer
-            let mut mapping = if self.current == self.front.1 {
-                self.current = self.back.1;
-                self.surface.map_dumb_buffer(&mut self.back.0).unwrap()
-            } else {
-                self.current = self.front.1;
-                self.surface.map_dumb_buffer(&mut self.front.0).unwrap()
-            };
+            // Next buffer
+            let next = self.swapchain.acquire().unwrap().unwrap();
+            if next.userdata().is_none() {
+                let fb = self.surface.add_framebuffer(&next.handle, 32, 32).unwrap();
+                next.set_userdata(fb);
+            }
 
             // now we could render to the mapping via software rendering.
             // this example just sets some grey color
 
+            let mut db = next.handle;
+            let mut mapping = self.surface.map_dumb_buffer(&mut db).unwrap();
             for x in mapping.as_mut() {
                 *x = 128;
             }
+            self.current = next;
         }
-        RawSurface::page_flip(&*self.surface, self.current).unwrap();
+
+        let fb = self.current.userdata().unwrap();
+        self.surface.page_flip(fb, true).unwrap();
     }
 
-    fn error(&mut self, error: Error) {
+    fn error(&mut self, error: DrmError) {
         panic!("{:?}", error);
     }
 }

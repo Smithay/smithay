@@ -20,6 +20,7 @@ drm = { version = "^0.4.0-alpha1", git = "https://github.com/drakulix/drm-rs", b
 drm-ffi = { version = "^0.4.0-alpha1", git = "https://github.com/drakulix/drm-rs", branch = "next", optional = true }
 gbm = { version = "^0.6.0", git = "https://github.com/drakulix/gbm.rs", branch = "develop", optional = true, default-features = false, features = ["drm-support"] }
 input = { version = "0.5", default-features = false, optional = true }
+image = { version = "0.23.14", default-features = false, optional = true }
 lazy_static = "1"
 libc = "0.2.70"
 libloading = "0.7.0"
@@ -62,9 +63,5 @@ xwayland = ["wayland_frontend"]
 test_all_features = ["default"]
 
 [[example]]
-name = "raw_legacy_drm"
-required-features = ["backend_drm"]
-
-[[example]]
-name = "raw_atomic_drm"
+name = "raw_drm"
 required-features = ["backend_drm"]
