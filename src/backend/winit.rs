@@ -258,10 +258,10 @@ impl WinitGraphicsBackend {
 
 impl Renderer for WinitGraphicsBackend {
     type Error = Gles2Error;
-    type Texture = Gles2Texture;
+    type TextureId = Gles2Texture;
     
     #[cfg(feature = "image")]
-    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::Texture, Self::Error> {
+    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::TextureId, Self::Error> {
         self.renderer.import_bitmap(image)
     }
      
@@ -271,16 +271,16 @@ impl Renderer for WinitGraphicsBackend {
     }
 
     #[cfg(feature = "wayland_frontend")]
-    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error> {
+    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::TextureId, Self::Error> {
         self.renderer.import_shm(buffer)
     }
     
     #[cfg(feature = "wayland_frontend")]
-    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::Texture, Self::Error> {
+    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::TextureId, Self::Error> {
         self.renderer.import_egl(buffer)        
     }
 
-    fn destroy_texture(&mut self, texture: Self::Texture) -> Result<(), Self::Error> {
+    fn destroy_texture(&mut self, texture: Self::TextureId) -> Result<(), Self::Error> {
         self.renderer.destroy_texture(texture)
     }
 
@@ -293,7 +293,7 @@ impl Renderer for WinitGraphicsBackend {
         self.renderer.clear(color)
     }
 
-    fn render_texture(&mut self, texture: &Self::Texture, matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error> {
+    fn render_texture(&mut self, texture: &Self::TextureId, matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error> {
         self.renderer.render_texture(texture, matrix, alpha)
     }
 

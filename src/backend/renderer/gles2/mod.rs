@@ -426,7 +426,7 @@ static TEX_COORDS: [ffi::types::GLfloat; 8] = [
 
 impl Renderer for Gles2Renderer {
     type Error = Gles2Error;
-    type Texture = Gles2Texture;
+    type TextureId = Gles2Texture;
 
     #[cfg(feature = "wayland_frontend")]
     fn shm_formats(&self) -> &[wl_shm::Format] {
@@ -439,7 +439,7 @@ impl Renderer for Gles2Renderer {
     }
     
     #[cfg(feature = "image")]
-    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::Texture, Self::Error> {
+    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::TextureId, Self::Error> {
         self.make_current()?;
         
         let mut tex = 0;
@@ -467,7 +467,7 @@ impl Renderer for Gles2Renderer {
     
 
     #[cfg(feature = "wayland_frontend")]
-    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error> {
+    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::TextureId, Self::Error> {
         use crate::wayland::shm::with_buffer_contents;
 
         with_buffer_contents(&buffer, |slice, data| {
@@ -522,7 +522,7 @@ impl Renderer for Gles2Renderer {
     }
     
     #[cfg(feature = "wayland_frontend")]
-    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::Texture, Self::Error> {
+    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::TextureId, Self::Error> {
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
@@ -559,7 +559,7 @@ impl Renderer for Gles2Renderer {
         Ok(texture)
     }
     
-    fn destroy_texture(&mut self, mut texture: Self::Texture) -> Result<(), Self::Error> {
+    fn destroy_texture(&mut self, mut texture: Self::TextureId) -> Result<(), Self::Error> {
         self.make_current()?;
 
         unsafe {
@@ -612,7 +612,7 @@ impl Renderer for Gles2Renderer {
         Ok(())
     }
 
-    fn render_texture(&mut self, tex: &Self::Texture, mut matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error> {
+    fn render_texture(&mut self, tex: &Self::TextureId, mut matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error> {
         self.make_current()?;
         if self.current_projection.is_none() {
             return Err(Gles2Error::UnconstraintRenderingOperation);

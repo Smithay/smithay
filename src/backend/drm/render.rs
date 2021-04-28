@@ -223,17 +223,17 @@ where
     D: AsRawFd + 'static,
     A: Allocator<B, Error=E1>,
     B: Buffer + TryInto<Dmabuf, Error=E2>,
-    R: Bind<Dmabuf> + Renderer<Error=E3, Texture=T>,
+    R: Bind<Dmabuf> + Renderer<Error=E3, TextureId=T>,
     T: Texture,
     E1: std::error::Error + 'static,
     E2: std::error::Error + 'static,
     E3: std::error::Error + 'static,
 {
     type Error = Error<E1, E2, E3>;
-    type Texture = T;
+    type TextureId = T;
 
     #[cfg(feature = "image")]
-    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::Texture, Self::Error> {
+    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::TextureId, Self::Error> {
         self.renderer.import_bitmap(image).map_err(Error::RenderError)
     }
 
@@ -243,16 +243,16 @@ where
     }
 
     #[cfg(feature = "wayland_frontend")]
-    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error> {
+    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::TextureId, Self::Error> {
         self.renderer.import_shm(buffer).map_err(Error::RenderError)
     }
     
     #[cfg(feature = "wayland_frontend")]
-    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::Texture, Self::Error> {
+    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::TextureId, Self::Error> {
         self.renderer.import_egl(buffer).map_err(Error::RenderError)       
     }
 
-    fn destroy_texture(&mut self, texture: Self::Texture) -> Result<(), Self::Error> {
+    fn destroy_texture(&mut self, texture: Self::TextureId) -> Result<(), Self::Error> {
         self.renderer.destroy_texture(texture).map_err(Error::RenderError)
     }
     
@@ -271,7 +271,7 @@ where
         self.renderer.clear(color).map_err(Error::RenderError)
     }
     
-    fn render_texture(&mut self, texture: &Self::Texture, matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error> {
+    fn render_texture(&mut self, texture: &Self::TextureId, matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error> {
         self.renderer.render_texture(texture, matrix, alpha).map_err(Error::RenderError)
     }
 

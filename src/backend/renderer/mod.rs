@@ -134,27 +134,27 @@ pub trait Texture {
 
 pub trait Renderer {
     type Error: Error;
-    type Texture: Texture;
+    type TextureId: Texture;
 
     #[cfg(feature = "image")]
-    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::Texture, Self::Error>; 
+    fn import_bitmap<C: std::ops::Deref<Target=[u8]>>(&mut self, image: &image::ImageBuffer<image::Rgba<u8>, C>) -> Result<Self::TextureId, Self::Error>; 
     #[cfg(feature = "wayland_frontend")]
     fn shm_formats(&self) -> &[wl_shm::Format] {
         // Mandatory
         &[wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888]
     }
     #[cfg(feature = "wayland_frontend")]
-    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::Texture, Self::Error>;
+    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::TextureId, Self::Error>;
     #[cfg(feature = "wayland_frontend")]
-    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::Texture, Self::Error>;
-    fn destroy_texture(&mut self, texture: Self::Texture) -> Result<(), Self::Error>;
+    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::TextureId, Self::Error>;
+    fn destroy_texture(&mut self, texture: Self::TextureId) -> Result<(), Self::Error>;
 
     fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), <Self as Renderer>::Error>;
     fn finish(&mut self) -> Result<(), SwapBuffersError>;
     
     fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error>;
-    fn render_texture(&mut self, texture: &Self::Texture, matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error>;
-    fn render_texture_at(&mut self, texture: &Self::Texture, pos: (i32, i32), transform: Transform, alpha: f32) -> Result<(), Self::Error> {
+    fn render_texture(&mut self, texture: &Self::TextureId, matrix: Matrix3<f32>, alpha: f32) -> Result<(), Self::Error>;
+    fn render_texture_at(&mut self, texture: &Self::TextureId, pos: (i32, i32), transform: Transform, alpha: f32) -> Result<(), Self::Error> {
         let mut mat = Matrix3::<f32>::identity();
         
         // position and scale
