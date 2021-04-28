@@ -31,8 +31,8 @@ features = [ "composite" ]
 gl_generator = "0.14"
 
 [features]
-default = [ "winit", "udev", "logind", "xwayland" ]
-egl = [ "smithay/use_system_lib" ]
+default = [ "winit", "udev", "logind", "egl", "xwayland" ]
+egl = [ "smithay/use_system_lib", "smithay/backend_egl" ]
 winit = [ "smithay/backend_winit" ]
 udev = [ "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_drm", "smithay/backend_gbm", "smithay/backend_egl", "smithay/backend_session", "input", "image", "smithay/image"]
 logind = [ "smithay/backend_session_logind" ]
