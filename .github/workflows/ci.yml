@@ -17,16 +17,13 @@ jobs:
         - ''
         - backend_winit
         - backend_drm
-        - backend_drm_legacy
-        - backend_drm_gbm
-        - backend_drm_eglstream
-        - backend_drm_egl
+        - backend_gbm
+        - backend_egl
         - backend_libinput
         - backend_udev
         - backend_session
         - backend_session_logind
         - renderer_gl
-        - renderer_glium
         - wayland_frontend
         - xwayland
         - default
