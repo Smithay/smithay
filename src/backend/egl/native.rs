@@ -16,8 +16,11 @@ use winit::window::Window as WinitWindow;
 #[cfg(feature = "backend_gbm")]
 use gbm::{AsRaw, Device as GbmDevice};
 
+/// Trait describing platform specific functionality to create a valid `EGLDisplay` using the `EGL_EXT_platform_base`(https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt) extension.
 pub trait EGLNativeDisplay: Send {
+    /// Required extensions to use this platform
     fn required_extensions(&self) -> &'static [&'static str];
+    /// Type, Raw handle and attributes used to call [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)
     fn platform_display(&self) -> (ffi::egl::types::EGLenum, *mut c_void, Vec<ffi::EGLint>);
     /// Type of surfaces created
     fn surface_type(&self) -> ffi::EGLint {

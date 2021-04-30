@@ -12,6 +12,7 @@ use crate::backend::allocator::Format;
 use atomic::AtomicDrmSurface;
 use legacy::LegacyDrmSurface;
 
+/// An open crtc + plane combination that can be used for scan-out
 pub struct DrmSurface<A: AsRawFd + 'static> {
     pub(super) crtc: crtc::Handle,
     pub(super) plane: plane::Handle,
@@ -180,10 +181,19 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
         }
     }
 
+    /// Returns a set of supported pixel formats for attached buffers
     pub fn supported_formats(&self) -> &HashSet<Format> {
         &self.formats
     }
 
+    /// Tests is a framebuffer can be used with this surface.
+    ///
+    /// # Arguments
+    ///
+    /// - `fb` - Framebuffer handle that has an attached buffer, that shall be tested
+    /// - `mode` - The mode that should be used to display the buffer
+    /// - `allow_screen_change` - If an actual screen change is permitted to carry out this test.
+    ///    If the test cannot be performed otherwise, this function returns false.
     pub fn test_buffer(
         &self,
         fb: framebuffer::Handle,

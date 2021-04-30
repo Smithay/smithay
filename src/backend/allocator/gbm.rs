@@ -1,3 +1,5 @@
+//! Module for Buffers created using [libgbm](reexports::gbm)
+
 use super::{dmabuf::Dmabuf, Allocator, Buffer, Format, Fourcc, Modifier};
 use gbm::{BufferObject as GbmBuffer, BufferObjectFlags, Device as GbmDevice};
 use std::os::unix::io::AsRawFd;
@@ -40,12 +42,16 @@ impl<T> Buffer for GbmBuffer<T> {
     }
 }
 
+/// Errors during conversion to a dmabuf handle from a gbm buffer object
 #[derive(thiserror::Error, Debug)]
 pub enum GbmConvertError {
+    /// The gbm device was destroyed
     #[error("The gbm device was destroyed")]
     DeviceDestroyed(#[from] gbm::DeviceDestroyedError),
+    /// The buffer consists out of multiple file descriptions, which is currently unsupported
     #[error("Buffer consists out of multiple file descriptors, which is currently unsupported")]
     UnsupportedBuffer,
+    /// The conversion returned an invalid file descriptor
     #[error("Buffer returned invalid file descriptor")]
     InvalidFD,
 }
@@ -94,6 +100,7 @@ impl<T> std::convert::TryFrom<GbmBuffer<T>> for Dmabuf {
 }
 
 impl Dmabuf {
+    /// Import a Dmabuf using libgbm, creating a gbm Buffer Object to the same underlying data.
     pub fn import<A: AsRawFd + 'static, T>(
         &self,
         gbm: &GbmDevice<A>,

@@ -29,6 +29,14 @@ pub struct EGLSurface {
 unsafe impl Send for EGLSurface {}
 
 impl EGLSurface {
+    /// Create a new `EGLSurface`.
+    ///
+    /// Requires:
+    /// - A EGLDisplay supported by the corresponding plattform matching the surface type
+    /// - A pixel format
+    /// - An (optional) preference for double_buffering
+    /// - A valid `EGLConfig` (see `EGLContext::config_id()`)
+    /// - An (optional) Logger
     pub fn new<N, L>(
         display: &EGLDisplay,
         pixel_format: PixelFormat,
