@@ -18,6 +18,13 @@ use crate::backend::egl::EGLBuffer;
 use crate::backend::renderer::{Bind, Renderer, Texture, Transform};
 use crate::backend::SwapBuffersError;
 
+/// Simplified by limited abstraction to link single [`DrmSurface`]s to renderers.
+///
+/// # Use-case
+///
+/// In some scenarios it might be enough to use of a drm-surface as the one and only target
+/// of a single renderer. In these cases `DrmRenderSurface` provides a way to quickly
+/// get up and running without manually handling and binding buffers.
 pub struct DrmRenderSurface<
     D: AsRawFd + 'static,
     A: Allocator<B>,
@@ -42,6 +49,15 @@ where
     E2: std::error::Error + 'static,
     E3: std::error::Error + 'static,
 {
+    /// Create a new `DrmRendererSurface` from a given compatible combination
+    /// of a surface, an allocator and a renderer.
+    ///
+    /// To sucessfully call this function, you need to have a renderer,
+    /// which can render into a Dmabuf, and an allocator, which can create
+    /// a buffer type, which can be converted into a Dmabuf.
+    ///
+    /// The function will futhermore check for compatibility by enumerating
+    /// supported pixel formats and choosing an appropriate one.
     #[allow(clippy::type_complexity)]
     pub fn new<L: Into<Option<::slog::Logger>>>(
         drm: DrmSurface<D>,
@@ -201,12 +217,17 @@ where
         }
     }
 
+    /// Shortcut to [`Renderer::begin`] with the pending mode as dimensions.
     pub fn queue_frame(&mut self) -> Result<(), Error<E1, E2, E3>> {
         let mode = self.drm.pending_mode();
         let (width, height) = (mode.size().0 as u32, mode.size().1 as u32);
-        self.begin(width, height, Transform::Flipped180 /* TODO */)
+        self.begin(width, height, Transform::Normal)
     }
 
+    /// Shortcut to abort the current frame.
+    ///
+    /// Allows [`DrmRenderSurface::queue_frame`] or [`Renderer::begin`] to be called again
+    /// without displaying the current rendering context to the user.
     pub fn drop_frame(&mut self) -> Result<(), SwapBuffersError> {
         if self.current_buffer.is_none() {
             return Ok(());
@@ -219,46 +240,86 @@ where
         result
     }
 
+    /// Marks the current frame as submitted.
+    ///
+    /// Needs to be called, after the vblank event of the matching [`DrmDevice`](super::DrmDevice)
+    /// was received after calling [`Renderer::finish`] on this surface. Otherwise the rendering
+    /// will run out of buffers eventually.
     pub fn frame_submitted(&mut self) -> Result<(), Error<E1, E2, E3>> {
         self.buffers.submitted()
     }
 
+    /// Returns the underlying [`crtc`](drm::control::crtc) of this surface
     pub fn crtc(&self) -> crtc::Handle {
         self.drm.crtc()
     }
 
+    /// Returns the underlying [`plane`](drm::control::plane) of this surface
     pub fn plane(&self) -> plane::Handle {
         self.drm.plane()
     }
 
+    /// Currently used [`connector`](drm::control::connector)s of this `Surface`
     pub fn current_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
         self.drm.current_connectors()
     }
 
+    /// Returns the pending [`connector`](drm::control::connector)s
+    /// used after the next [`commit`](Surface::commit) of this [`Surface`]
     pub fn pending_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
         self.drm.pending_connectors()
     }
 
+    /// Tries to add a new [`connector`](drm::control::connector)
+    /// to be used after the next commit.
+    ///
+    /// **Warning**: You need to make sure, that the connector is not used with another surface
+    /// or was properly removed via `remove_connector` + `commit` before adding it to another surface.
+    /// Behavior if failing to do so is undefined, but might result in rendering errors or the connector
+    /// getting removed from the other surface without updating it's internal state.
+    ///
+    /// Fails if the `connector` is not compatible with the underlying [`crtc`](drm::control::crtc)
+    /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
+    /// or is not compatible with the currently pending
+    /// [`Mode`](drm::control::Mode).
     pub fn add_connector(&self, connector: connector::Handle) -> Result<(), Error<E1, E2, E3>> {
         self.drm.add_connector(connector).map_err(Error::DrmError)
     }
 
+    /// Tries to mark a [`connector`](drm::control::connector)
+    /// for removal on the next commit.    
     pub fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error<E1, E2, E3>> {
         self.drm.remove_connector(connector).map_err(Error::DrmError)
     }
 
+    /// Tries to replace the current connector set with the newly provided one on the next commit.
+    ///
+    /// Fails if one new `connector` is not compatible with the underlying [`crtc`](drm::control::crtc)
+    /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
+    /// or is not compatible with the currently pending
+    /// [`Mode`](drm::control::Mode).    
     pub fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error<E1, E2, E3>> {
         self.drm.set_connectors(connectors).map_err(Error::DrmError)
     }
 
+    /// Returns the currently active [`Mode`](drm::control::Mode)
+    /// of the underlying [`crtc`](drm::control::crtc)    
     pub fn current_mode(&self) -> Mode {
         self.drm.current_mode()
     }
 
+    /// Returns the currently pending [`Mode`](drm::control::Mode)
+    /// to be used after the next commit.    
     pub fn pending_mode(&self) -> Mode {
         self.drm.pending_mode()
     }
 
+    /// Tries to set a new [`Mode`](drm::control::Mode)
+    /// to be used after the next commit.
+    ///
+    /// Fails if the mode is not compatible with the underlying
+    /// [`crtc`](drm::control::crtc) or any of the
+    /// pending [`connector`](drm::control::connector)s.
     pub fn use_mode(&self, mode: Mode) -> Result<(), Error<E1, E2, E3>> {
         self.drm.use_mode(mode).map_err(Error::DrmError)
     }
@@ -305,7 +366,7 @@ where
         self.renderer.destroy_texture(texture).map_err(Error::RenderError)
     }
 
-    fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), Error<E1, E2, E3>> {
+    fn begin(&mut self, width: u32, height: u32, _transform: Transform) -> Result<(), Error<E1, E2, E3>> {
         if self.current_buffer.is_some() {
             return Ok(());
         }
@@ -314,7 +375,7 @@ where
         self.renderer.bind((*slot).clone()).map_err(Error::RenderError)?;
         self.current_buffer = Some(slot);
         self.renderer
-            .begin(width, height, transform)
+            .begin(width, height, Transform::Flipped180 /* TODO: add Add<Transform> implementation to add and correct _transform here */)
             .map_err(Error::RenderError)
     }
 
@@ -512,6 +573,7 @@ where
     Ok(bo)
 }
 
+/// Errors thrown by a [`DrmRenderSurface`]
 #[derive(Debug, thiserror::Error)]
 pub enum Error<E1, E2, E3>
 where
@@ -519,22 +581,31 @@ where
     E2: std::error::Error + 'static,
     E3: std::error::Error + 'static,
 {
+    /// No supported pixel format for the given plane could be determined
     #[error("No supported plane buffer format found")]
     NoSupportedPlaneFormat,
+    /// No supported pixel format for the given renderer could be determined
     #[error("No supported renderer buffer format found")]
     NoSupportedRendererFormat,
+    /// The supported pixel formats of the renderer and plane are incompatible
     #[error("Supported plane and renderer buffer formats are incompatible")]
     FormatsNotCompatible,
+    /// The swapchain is exhausted, you need to call `frame_submitted`
     #[error("Failed to allocate a new buffer")]
     NoFreeSlotsError,
+    /// Failed to renderer using the given renderer
     #[error("Failed to render test frame")]
     InitialRenderingError,
+    /// Error accessing the drm device
     #[error("The underlying drm surface encounted an error: {0}")]
     DrmError(#[from] DrmError),
+    /// Error importing the rendered buffer to libgbm for scan-out
     #[error("The underlying gbm device encounted an error: {0}")]
     GbmError(#[from] std::io::Error),
+    /// Error allocating or converting newly created buffers
     #[error("The swapchain encounted an error: {0}")]
     SwapchainError(#[from] SwapchainError<E1, E2>),
+    /// Error during rendering
     #[error("The renderer encounted an error: {0}")]
     RenderError(#[source] E3),
 }

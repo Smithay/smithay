@@ -19,6 +19,7 @@ unsafe impl Send for EGLContext {}
 unsafe impl Sync for EGLContext {}
 
 impl EGLContext {
+    /// Creates a new configless `EGLContext` from a given `EGLDisplay`
     pub fn new<L>(display: &EGLDisplay, log: L) -> Result<EGLContext, Error>
     where
         L: Into<Option<::slog::Logger>>,
@@ -26,7 +27,7 @@ impl EGLContext {
         Self::new_internal(display, None, None, log)
     }
 
-    /// Create a new [`EGLContext`] from a given [`NativeDisplay`](native::NativeDisplay)
+    /// Create a new [`EGLContext`] from a given `EGLDisplay` and configuration requirements
     pub fn new_with_config<L>(
         display: &EGLDisplay,
         attributes: GlAttributes,
@@ -39,6 +40,7 @@ impl EGLContext {
         Self::new_internal(display, None, Some((attributes, reqs)), log)
     }
 
+    /// Create a new configless `EGLContext` from a given `EGLDisplay` sharing resources with another context
     pub fn new_shared<L>(display: &EGLDisplay, share: &EGLContext, log: L) -> Result<EGLContext, Error>
     where
         L: Into<Option<::slog::Logger>>,
@@ -46,6 +48,7 @@ impl EGLContext {
         Self::new_internal(display, Some(share), None, log)
     }
 
+    /// Create a new `EGLContext` from a given `EGLDisplay` and configuration requirements sharing resources with another context
     pub fn new_shared_with_config<L>(
         display: &EGLDisplay,
         share: &EGLContext,

@@ -1,3 +1,5 @@
+//! Implementation of the rendering traits using OpenGL ES 2
+
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::ptr;
@@ -35,7 +37,7 @@ struct Gles2Program {
     attrib_tex_coords: ffi::types::GLint,
 }
 
-// TODO: drop?
+/// A handle to a GLES2 texture
 pub struct Gles2Texture {
     texture: ffi::types::GLuint,
     texture_kind: usize,
@@ -67,6 +69,7 @@ struct Gles2Buffer {
     _dmabuf: Dmabuf,
 }
 
+/// A renderer utilizing OpenGL ES 2
 pub struct Gles2Renderer {
     buffers: Vec<WeakGles2Buffer>,
     target_buffer: Option<Gles2Buffer>,
@@ -80,29 +83,39 @@ pub struct Gles2Renderer {
     _not_send: *mut (),
 }
 
+/// Error returned during rendering using GL ES
 #[derive(thiserror::Error, Debug)]
 pub enum Gles2Error {
+    /// A shader could not be compiled
     #[error("Failed to compile Shader: {0}")]
     ShaderCompileError(&'static str),
+    /// A program could not be linked
     #[error("Failed to link Program")]
     ProgramLinkError,
+    /// A framebuffer could not be bound
     #[error("Failed to bind Framebuffer")]
     FramebufferBindingError,
+    /// Required GL functions could not be loaded
     #[error("Failed to load GL functions from EGL")]
     GLFunctionLoaderError,
-    /// The required GL extension is not supported by the underlying implementation
+    /// Required GL extension are not supported by the underlying implementation
     #[error("None of the following GL extensions is supported by the underlying GL implementation, at least one is required: {0:?}")]
     GLExtensionNotSupported(&'static [&'static str]),
+    /// The underlying egl context could not be activated
     #[error("Failed to active egl context")]
     ContextActivationError(#[from] crate::backend::egl::MakeCurrentError),
+    ///The given dmabuf could not be converted to an EGLImage for framebuffer use
     #[error("Failed to convert dmabuf to EGLImage")]
     BindBufferEGLError(#[source] crate::backend::egl::Error),
+    /// The given buffer has an unsupported pixel format
     #[error("Unsupported pixel format: {0:?}")]
     #[cfg(feature = "wayland_frontend")]
     UnsupportedPixelFormat(wl_shm::Format),
+    /// The given buffer was not accessible
     #[error("Error accessing the buffer ({0:?})")]
     #[cfg(feature = "wayland_frontend")]
     BufferAccessError(crate::wayland::shm::BufferAccessError),
+    /// This rendering operation was called without a previous `begin`-call
     #[error("Call begin before doing any rendering operations")]
     UnconstraintRenderingOperation,
 }
@@ -220,6 +233,19 @@ unsafe fn texture_program(gl: &ffi::Gles2, frag: &'static str) -> Result<Gles2Pr
 }
 
 impl Gles2Renderer {
+    /// Creates a new OpenGL ES 2 renderer from a given [`EGLContext`](backend::egl::EGLBuffer).
+    ///
+    /// # Safety
+    ///
+    /// This operation will cause undefined behavior if the given EGLContext is active in another thread.
+    ///
+    /// # Implementation details
+    ///
+    /// - Texture handles created by the resulting renderer are valid for every rendered created with an
+    /// `EGLContext` shared with the given one (see `EGLContext::new_shared`) and can be used and destroyed on
+    /// any of these renderers.
+    /// - This renderer has no default framebuffer, use `Bind::bind` before rendering.
+    /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
     pub unsafe fn new<L>(context: EGLContext, logger: L) -> Result<Gles2Renderer, Gles2Error>
     where
         L: Into<Option<::slog::Logger>>,

@@ -52,9 +52,12 @@ pub enum Error {
     RendererCreationError(#[from] Gles2Error),
 }
 
+/// Size properties of a winit window
 #[derive(Debug, Clone)]
 pub struct WindowSize {
+    /// Pixel side of the window
     pub physical_size: PhysicalSize<u32>,
+    /// Scaling factor of the window
     pub scale_factor: f64,
 }
 
@@ -239,18 +242,26 @@ pub enum WinitEvent {
 
 #[cfg(feature = "use_system_lib")]
 impl WinitGraphicsBackend {
+    /// Bind a `wl_display` to allow hardware-accelerated clients using `wl_drm`.
+    ///
+    /// Returns an `EGLBufferReader` used to access the contents of these buffers.
+    ///
+    /// *Note*: Only on implementation of `wl_drm` can be bound by a single wayland display.
     pub fn bind_wl_display(&self, wl_display: &Display) -> Result<EGLBufferReader, EGLError> {
         self.display.bind_wl_display(wl_display)
     }
 
+    /// Window size of the underlying window
     pub fn window_size(&self) -> WindowSize {
         self.size.borrow().clone()
     }
 
+    /// Reference to the underlying window
     pub fn window(&self) -> &WinitWindow {
         &*self.window
     }
 
+    /// Shortcut to `Renderer::begin` with the current window dimensions.
     pub fn begin(&mut self) -> Result<(), Gles2Error> {
         let (width, height) = {
             let size = self.size.borrow();

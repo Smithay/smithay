@@ -23,6 +23,7 @@ use crate::backend::allocator::{Format, Fourcc, Modifier};
 use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
 
+/// An open drm device
 pub struct DrmDevice<A: AsRawFd + 'static> {
     pub(super) dev_id: dev_t,
     pub(crate) internal: Arc<DrmDeviceInternal<A>>,
@@ -87,6 +88,23 @@ impl<A: AsRawFd + 'static> BasicDevice for DrmDeviceInternal<A> {}
 impl<A: AsRawFd + 'static> ControlDevice for DrmDeviceInternal<A> {}
 
 impl<A: AsRawFd + 'static> DrmDevice<A> {
+    /// Create a new [`DrmDevice`] from an open drm node
+    ///
+    /// # Arguments
+    ///
+    /// - `fd` - Open drm node
+    /// - `disable_connectors` - Setting this to true will initialize all connectors \
+    ///     as disabled on device creation. smithay enables connectors, when attached \
+    ///     to a surface, and disables them, when detached. Setting this to `false` \
+    ///     requires usage of `drm-rs` to disable unused connectors to prevent them \
+    ///     showing garbage, but will also prevent flickering of already turned on \
+    ///     connectors (assuming you won't change the resolution).
+    /// - `logger` - Optional [`slog::Logger`] to be used by this device.
+    ///
+    /// # Return
+    ///
+    /// Returns an error if the file is no valid drm node or the device is not accessible.
+
     pub fn new<L>(fd: A, disable_connectors: bool, logger: L) -> Result<Self, Error>
     where
         A: AsRawFd + 'static,
@@ -175,6 +193,13 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         )
     }
 
+    /// Processes any open events of the underlying file descriptor.
+    ///
+    /// You should not call this function manually, but rather use
+    /// [`device_bind`] to register the device
+    /// to an [`EventLoop`](calloop::EventLoop)
+    /// and call this function when the device becomes readable
+    /// to synchronize your rendering to the vblank events of the open crtc's
     pub fn process_events(&mut self) {
         match self.receive_events() {
             Ok(events) => {
@@ -205,6 +230,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         }
     }
 
+    /// Returns if the underlying implementation uses atomic-modesetting or not.
     pub fn is_atomic(&self) -> bool {
         match *self.internal {
             DrmDeviceInternal::Atomic(_) => true,
@@ -212,19 +238,25 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         }
     }
 
+    /// Assigns a [`DeviceHandler`] called during event processing.
+    ///
+    /// See [`device_bind`] and [`DeviceHandler`]
     pub fn set_handler(&mut self, handler: impl DeviceHandler + 'static) {
         let handler = Some(Box::new(handler) as Box<dyn DeviceHandler + 'static>);
         *self.handler.borrow_mut() = handler;
     }
 
+    /// Clear a set [`DeviceHandler`](trait.DeviceHandler.html), if any
     pub fn clear_handler(&mut self) {
         self.handler.borrow_mut().take();
     }
 
+    /// Returns a list of crtcs for this device
     pub fn crtcs(&self) -> &[crtc::Handle] {
         self.resources.crtcs()
     }
 
+    /// Returns a set of available planes for a given crtc
     pub fn planes(&self, crtc: &crtc::Handle) -> Result<Planes, Error> {
         let mut primary = None;
         let mut cursor = None;
@@ -287,6 +319,22 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         unreachable!()
     }
 
+    /// Creates a new rendering surface.
+    ///
+    /// # Arguments
+    ///
+    /// Initialization of surfaces happens through the types provided by
+    /// [`drm-rs`](drm).
+    ///
+    /// - [`crtc`](drm::control::crtc)s represent scanout engines of the device pointing to one framebuffer. \
+    ///     Their responsibility is to read the data of the framebuffer and export it into an "Encoder". \
+    ///     The number of crtc's represent the number of independant output devices the hardware may handle.
+    /// - [`plane`](drm::control::plane)s represent a single plane on a crtc, which is composite together with
+    ///     other planes on the same crtc to present the final image.
+    /// - [`mode`](drm::control::Mode) describes the resolution and rate of images produced by the crtc and \
+    ///     has to be compatible with the provided `connectors`.
+    /// - [`connectors`] - List of connectors driven by the crtc. At least one(!) connector needs to be \
+    ///     attached to a crtc in smithay.
     pub fn create_surface(
         &self,
         crtc: crtc::Handle,
@@ -456,14 +504,19 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         })
     }
 
+    /// Returns the device_id of the underlying drm node
     pub fn device_id(&self) -> dev_t {
         self.dev_id
     }
 }
 
+/// A set of planes as supported by a crtc
 pub struct Planes {
+    /// The primary plane of the crtc
     pub primary: plane::Handle,
+    /// The cursor plane of the crtc, if available
     pub cursor: Option<plane::Handle>,
+    /// Overlay planes supported by the crtc, if available
     pub overlay: Option<Vec<plane::Handle>>,
 }
 

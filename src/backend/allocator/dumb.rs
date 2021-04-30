@@ -1,3 +1,5 @@
+//! Module for [DumbBuffer](https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#dumb-buffer-objects) buffers
+
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 
@@ -7,9 +9,10 @@ use drm::control::{dumbbuffer::DumbBuffer as Handle, Device as ControlDevice};
 use super::{Allocator, Buffer, Format};
 use crate::backend::drm::device::{DrmDevice, DrmDeviceInternal, FdWrapper};
 
+/// Wrapper around raw DumbBuffer handles.
 pub struct DumbBuffer<A: AsRawFd + 'static> {
     fd: Arc<FdWrapper<A>>,
-    pub handle: Handle,
+    handle: Handle,
     format: Format,
 }
 
@@ -46,6 +49,16 @@ impl<A: AsRawFd + 'static> Buffer for DumbBuffer<A> {
 
     fn format(&self) -> Format {
         self.format
+    }
+}
+
+impl<A: AsRawFd + 'static> DumbBuffer<A> {
+    /// Raw handle to the underlying buffer.
+    ///
+    /// Note: This handle will become invalid, once the `DumbBuffer` wrapper is dropped
+    /// or the device used to create is closed. Do not copy this handle and assume it keeps being valid.
+    pub fn handle(&self) -> &Handle {
+        &self.handle
     }
 }
 

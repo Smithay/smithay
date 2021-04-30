@@ -14,10 +14,6 @@
 //! - winit
 //! - libinput
 
-// TODO TEMPORARY
-#![allow(missing_docs)]
-
-//pub mod graphics;
 pub mod allocator;
 pub mod input;
 pub mod renderer;

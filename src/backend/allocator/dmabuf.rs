@@ -1,3 +1,5 @@
+//! Module for [dmabuf](https://01.org/linuxgraphics/gfx-docs/drm/driver-api/dma-buf.html) buffers.
+
 use super::{Buffer, Format, Modifier};
 use std::os::unix::io::RawFd;
 use std::sync::{Arc, Weak};
@@ -15,9 +17,11 @@ pub(crate) struct DmabufInternal {
 }
 
 #[derive(Clone)]
+/// Strong reference to a dmabuf handle
 pub struct Dmabuf(pub(crate) Arc<DmabufInternal>);
 
 #[derive(Clone)]
+/// Weak reference to a dmabuf handle
 pub struct WeakDmabuf(pub(crate) Weak<DmabufInternal>);
 
 impl PartialEq for Dmabuf {
@@ -109,28 +113,36 @@ impl Dmabuf {
         })))
     }
 
+    /// Return raw handles of the planes of this buffer
     pub fn handles(&self) -> &[RawFd] {
         self.0.fds.split_at(self.0.num_planes).0
     }
 
+    /// Return offsets for the planes of this buffer
     pub fn offsets(&self) -> &[u32] {
         self.0.offsets.split_at(self.0.num_planes).0
     }
 
+    /// Return strides for the planes of this buffer
     pub fn strides(&self) -> &[u32] {
         self.0.strides.split_at(self.0.num_planes).0
     }
 
+    /// Check if this buffer format has any vendor-specific modifiers set or is implicit/linear
     pub fn has_modifier(&self) -> bool {
         self.0.format.modifier != Modifier::Invalid && self.0.format.modifier != Modifier::Linear
     }
 
+    /// Create a weak reference to this dmabuf
     pub fn weak(&self) -> WeakDmabuf {
         WeakDmabuf(Arc::downgrade(&self.0))
     }
 }
 
 impl WeakDmabuf {
+    /// Try to upgrade to a strong reference of this buffer.
+    ///
+    /// Fails if no strong references exist anymore and the handle was already closed.
     pub fn upgrade(&self) -> Option<Dmabuf> {
         self.0.upgrade().map(Dmabuf)
     }
