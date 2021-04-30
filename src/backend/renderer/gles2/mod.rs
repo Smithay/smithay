@@ -1,6 +1,7 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
 use std::collections::HashSet;
+use std::fmt;
 use std::ffi::CStr;
 use std::ptr;
 use std::rc::Rc;
@@ -38,6 +39,7 @@ struct Gles2Program {
 }
 
 /// A handle to a GLES2 texture
+#[derive(Debug)]
 pub struct Gles2Texture {
     texture: ffi::types::GLuint,
     texture_kind: usize,
@@ -56,7 +58,7 @@ impl Texture for Gles2Texture {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct WeakGles2Buffer {
     dmabuf: WeakDmabuf,
     image: EGLImage,
@@ -64,6 +66,7 @@ struct WeakGles2Buffer {
     fbo: ffi::types::GLuint,
 }
 
+#[derive(Debug)]
 struct Gles2Buffer {
     internal: WeakGles2Buffer,
     _dmabuf: Dmabuf,
@@ -81,6 +84,22 @@ pub struct Gles2Renderer {
     egl: EGLContext,
     logger: Option<*mut ::slog::Logger>,
     _not_send: *mut (),
+}
+
+impl fmt::Debug for Gles2Renderer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Gles2Renderer")
+         .field("buffers", &self.buffers)
+         .field("target_buffer", &self.target_buffer)
+         .field("target_surface", &self.target_surface)
+         .field("current_projection", &self.current_projection)
+         .field("extensions", &self.extensions)
+         .field("programs", &self.programs)
+         // ffi::Gles2 does not implement Debug
+         .field("egl", &self.egl)
+         .field("logger", &self.logger)
+         .finish()
+    }
 }
 
 /// Error returned during rendering using GL ES

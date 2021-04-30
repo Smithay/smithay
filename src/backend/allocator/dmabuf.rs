@@ -6,6 +6,7 @@ use std::sync::{Arc, Weak};
 
 const MAX_PLANES: usize = 4;
 
+#[derive(Debug)]
 pub(crate) struct DmabufInternal {
     pub num_planes: usize,
     pub offsets: [u32; MAX_PLANES],
@@ -16,11 +17,11 @@ pub(crate) struct DmabufInternal {
     pub format: Format,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 /// Strong reference to a dmabuf handle
 pub struct Dmabuf(pub(crate) Arc<DmabufInternal>);
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 /// Weak reference to a dmabuf handle
 pub struct WeakDmabuf(pub(crate) Weak<DmabufInternal>);
 

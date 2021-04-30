@@ -74,7 +74,7 @@ struct LogindSessionImpl {
 // DBusConnection does not implement debug, so we have to impl Debug manually
 impl fmt::Debug for LogindSessionImpl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LogindSessionImpl ")
+        f.debug_struct("LogindSessionImpl")
             .field("session_id", &self.session_id)
             .field("conn", &"...")
             .field("session_path", &self.session_path)

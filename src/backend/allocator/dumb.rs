@@ -1,5 +1,6 @@
 //! Module for [DumbBuffer](https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#dumb-buffer-objects) buffers
 
+use std::fmt;
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 
@@ -14,6 +15,15 @@ pub struct DumbBuffer<A: AsRawFd + 'static> {
     fd: Arc<FdWrapper<A>>,
     handle: Handle,
     format: Format,
+}
+
+impl<A: AsRawFd + 'static> fmt::Debug for DumbBuffer<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DumbBuffer")
+         .field("handle", &self.handle)
+         .field("format", &self.format)
+         .finish()
+    }
 }
 
 impl<A: AsRawFd + 'static> Allocator<DumbBuffer<A>> for DrmDevice<A> {

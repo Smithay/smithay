@@ -27,7 +27,7 @@ use winit::{
         TouchPhase, WindowEvent,
     },
     event_loop::{ControlFlow, EventLoop},
-    platform::desktop::EventLoopExtDesktop,
+    platform::run_return::EventLoopExtRunReturn,
     platform::unix::WindowExtUnix,
     window::{Window as WinitWindow, WindowBuilder},
 };
