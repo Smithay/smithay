@@ -1,5 +1,6 @@
 //! EGL surface related structs
 
+use std::fmt;
 use std::sync::{
     atomic::{AtomicPtr, Ordering},
     Arc,
@@ -24,6 +25,21 @@ pub struct EGLSurface {
     surface_attributes: Vec<c_int>,
     logger: ::slog::Logger,
 }
+
+impl fmt::Debug for EGLSurface {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EGLSurface")
+         .field("display", &self.display)
+         // native does not necessarily implement Debug
+         .field("surface", &self.surface)
+         .field("config_id", &self.config_id)
+         .field("pixel_format", &self.pixel_format)
+         .field("surface_attributes", &self.surface_attributes)
+         .field("logger", &self.logger)
+         .finish()
+    }
+}
+
 // safe because EGLConfig can be moved between threads
 // and the other types are thread-safe
 unsafe impl Send for EGLSurface {}

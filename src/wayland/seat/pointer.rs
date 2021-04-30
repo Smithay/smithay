@@ -59,7 +59,7 @@ struct PointerInternal {
 // image_callback does not implement debug, so we have to impl Debug manually
 impl fmt::Debug for PointerInternal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point")
+        f.debug_struct("PointerInternal")
             .field("known_pointers", &self.known_pointers)
             .field("focus", &self.focus)
             .field("pending_focus", &self.pending_focus)

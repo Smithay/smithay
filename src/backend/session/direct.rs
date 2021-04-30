@@ -164,7 +164,7 @@ pub struct DirectSessionNotifier {
 
 impl fmt::Debug for DirectSessionNotifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point")
+        f.debug_struct("DirectSessionNotifier")
             .field("tty", &self.tty)
             .field("active", &self.active)
             .field("signaler", &self.signaler)

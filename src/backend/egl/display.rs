@@ -1,6 +1,7 @@
 //! Type safe native types for safe egl initialisation
 
 use std::collections::HashSet;
+use std::fmt;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
@@ -50,7 +51,7 @@ impl Drop for EGLDisplayHandle {
 }
 
 /// [`EGLDisplay`] represents an initialised EGL environment
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct EGLDisplay {
     pub(crate) display: Arc<EGLDisplayHandle>,
     pub(crate) egl_version: (i32, i32),
