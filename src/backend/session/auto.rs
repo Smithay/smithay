@@ -103,7 +103,7 @@ impl AutoSession {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let logger = crate::slog_or_stdlog(logger)
+        let logger = crate::slog_or_fallback(logger)
             .new(o!("smithay_module" => "backend_session_auto", "session_type" => "auto"));
 
         info!(logger, "Trying to create tty session");
