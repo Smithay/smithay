@@ -66,20 +66,16 @@ impl BufferUtils {
 
     #[cfg(feature = "egl")]
     pub fn load_buffer<T>(&self, buffer: WlBuffer) -> Result<BufferTextures<T>, WlBuffer> {
-        let result = if let Some(reader) = &self.egl_buffer_reader.borrow().as_ref() {
-            reader.egl_buffer_contents(&buffer)
-        } else {
-            return Err(buffer);
-        };
-
-        let egl_buffer = match result {
-            Ok(egl) => Some(egl),
-            Err(EGLBufferAccessError::NotManaged(_)) => None,
-            Err(err) => {
-                error!(self.log, "EGL error"; "err" => format!("{:?}", err));
-                return Err(buffer);
+        let egl_buffer = if let Some(reader) = &self.egl_buffer_reader.borrow().as_ref() {
+            match reader.egl_buffer_contents(&buffer) {
+                Ok(egl) => Some(egl),
+                Err(EGLBufferAccessError::NotManaged(_)) => None,
+                Err(err) => {
+                    error!(self.log, "EGL error"; "err" => format!("{:?}", err));
+                    return Err(buffer);
+                }
             }
-        };
+        } else { None };
 
         Ok(BufferTextures {
             buffer,
