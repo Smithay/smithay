@@ -1,5 +1,6 @@
 #[cfg(feature = "egl")]
-use std::{cell::RefCell, rc::Rc, sync::mpsc::Sender};
+use std::{cell::RefCell, rc::Rc};
+use std::sync::mpsc::Sender;
 
 #[cfg(feature = "udev")]
 use smithay::backend::renderer::{Renderer, Texture};
@@ -90,6 +91,7 @@ impl BufferUtils {
         Ok(BufferTextures {
             buffer,
             textures: HashMap::new(),
+            callbacks: HashMap::new(),
         })
     }
 }
@@ -130,7 +132,7 @@ impl<T: Texture> BufferTextures<T> {
     }
 
     #[cfg(not(feature = "egl"))]
-    pub fn load_texture<'a, R: Renderer<Texture = T>>(
+    pub fn load_texture<'a, R: Renderer<TextureId = T>>(
         &'a mut self,
         id: u64,
         renderer: &mut R,
