@@ -2,10 +2,12 @@
 
 use std::collections::HashSet;
 use std::ffi::CStr;
+use std::fmt;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use libc::c_void;
 use nix::libc::c_int;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
 use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
@@ -61,6 +63,85 @@ pub struct EGLDisplay {
     logger: slog::Logger,
 }
 
+fn select_platform_display<N: EGLNativeDisplay + 'static>(
+    native: &N,
+    log: &::slog::Logger,
+) -> Result<*const c_void, Error> {
+    let dp_extensions = unsafe {
+        let p = wrap_egl_call(|| ffi::egl::QueryString(ffi::egl::NO_DISPLAY, ffi::egl::EXTENSIONS as i32))
+            .map_err(Error::InitFailed)?; //TODO EGL_EXT_client_extensions not supported
+
+        // this possibility is available only with EGL 1.5 or EGL_EXT_platform_base, otherwise
+        // `eglQueryString` returns an error
+        if p.is_null() {
+            return Err(Error::EglExtensionNotSupported(&["EGL_EXT_platform_base"]));
+        } else {
+            let p = CStr::from_ptr(p);
+            let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
+            list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
+        }
+    };
+    debug!(log, "Supported EGL client extensions: {:?}", dp_extensions);
+
+    for platform in native.supported_platforms() {
+        debug!(log, "Trying EGL platform: {}", platform.platform_name);
+
+        let log = log.new(o!("platform" => format!("{:?}", platform)));
+
+        let missing_extensions = platform
+            .required_extensions
+            .iter()
+            .filter(|ext| !dp_extensions.iter().any(|x| x == *ext))
+            .collect::<Vec<_>>();
+
+        if !missing_extensions.is_empty() {
+            info!(
+                log,
+                "Skipping EGL platform because one or more required extensions are not supported. Missing extensions: {:?}", missing_extensions
+            );
+            continue;
+        }
+
+        let display = unsafe {
+            wrap_egl_call(|| {
+                ffi::egl::GetPlatformDisplayEXT(
+                    platform.platform,
+                    platform.native_display,
+                    platform.attrib_list.as_ptr(),
+                )
+            })
+            .map_err(Error::DisplayCreationError)
+        };
+
+        let display = match display {
+            Ok(display) => {
+                if display == ffi::egl::NO_DISPLAY {
+                    info!(log, "Skipping platform because the display is not supported");
+                    continue;
+                }
+
+                display
+            }
+            Err(err) => {
+                info!(
+                    log,
+                    "Skipping platform because of an display creation error: {:?}", err
+                );
+                continue;
+            }
+        };
+
+        info!(
+            log,
+            "Successfully selected EGL platform: {}", platform.platform_name
+        );
+        return Ok(display);
+    }
+
+    crit!(log, "Unable to find suitable EGL platform");
+    Err(Error::DisplayNotSupported)
+}
+
 impl EGLDisplay {
     /// Create a new [`EGLDisplay`] from a given [`NativeDisplay`](native::NativeDisplay)
     pub fn new<N, L>(native: &N, logger: L) -> Result<EGLDisplay, Error>
@@ -71,39 +152,8 @@ impl EGLDisplay {
         let log = crate::slog_or_fallback(logger.into()).new(o!("smithay_module" => "backend_egl"));
         ffi::make_sure_egl_is_loaded();
 
-        // the first step is to query the list of extensions without any display, if supported
-        let dp_extensions = unsafe {
-            let p =
-                wrap_egl_call(|| ffi::egl::QueryString(ffi::egl::NO_DISPLAY, ffi::egl::EXTENSIONS as i32))
-                    .map_err(Error::InitFailed)?; //TODO EGL_EXT_client_extensions not supported
-
-            // this possibility is available only with EGL 1.5 or EGL_EXT_platform_base, otherwise
-            // `eglQueryString` returns an error
-            if p.is_null() {
-                return Err(Error::EglExtensionNotSupported(&["EGL_EXT_platform_base"]));
-            } else {
-                let p = CStr::from_ptr(p);
-                let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
-                list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
-            }
-        };
-        debug!(log, "Supported EGL client extensions: {:?}", dp_extensions);
-
-        for ext in native.required_extensions() {
-            if !dp_extensions.iter().any(|x| x == ext) {
-                return Err(Error::EglExtensionNotSupported(native.required_extensions()));
-            }
-        }
-
-        let (platform, native_ptr, attributes) = native.platform_display();
         // we create an EGLDisplay
-        let display = unsafe {
-            wrap_egl_call(|| ffi::egl::GetPlatformDisplayEXT(platform, native_ptr, attributes.as_ptr()))
-                .map_err(Error::DisplayCreationError)?
-        };
-        if display == ffi::egl::NO_DISPLAY {
-            return Err(Error::DisplayNotSupported);
-        }
+        let display = select_platform_display(native, &log)?;
 
         // We can then query the egl api version
         let egl_version = {

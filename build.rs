@@ -20,6 +20,7 @@ fn gl_generate() {
                 "EGL_EXT_platform_base",
                 "EGL_EXT_platform_x11",
                 "EGL_EXT_platform_wayland",
+                "EGL_KHR_platform_gbm",
                 "EGL_MESA_platform_gbm",
                 "EGL_WL_bind_wayland_display",
                 "EGL_KHR_image_base",
