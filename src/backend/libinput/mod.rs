@@ -16,7 +16,6 @@ use input::event;
 use std::path::Path;
 use std::{
     collections::hash_map::HashMap,
-    fmt,
     io::Error as IoError,
     os::unix::io::{AsRawFd, RawFd},
 };

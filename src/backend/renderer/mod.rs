@@ -246,6 +246,7 @@ pub trait Renderer {
     }
 }
 
+/// Returns the dimensions of a wl_buffer
 #[cfg(all(feature = "wayland_frontend", feature = "backend_egl"))]
 pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer, egl_buffer_reader: Option<&EGLBufferReader>) -> Option<(i32, i32)> {
     if let Some((w, h)) = egl_buffer_reader.as_ref().and_then(|x| x.egl_buffer_dimensions(&buffer)) {
@@ -257,6 +258,7 @@ pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer, egl_buffer_reader: Option
     }
 }
 
+/// Returns the dimensions of a wl_buffer
 #[cfg(all(feature = "wayland_frontend", not(feature = "backend_egl")))]
 pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)> {
     use crate::backend::allocator::Buffer;

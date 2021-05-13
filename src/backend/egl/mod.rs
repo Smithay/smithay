@@ -211,7 +211,7 @@ pub enum TextureCreationError {
 /// Texture format types
 #[repr(i32)]
 #[allow(non_camel_case_types)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Format {
     /// RGB format
     RGB = ffi::egl::TEXTURE_RGB as i32,
@@ -268,6 +268,11 @@ impl EGLBuffer {
         } else {
             Some(self.images[plane])
         }
+    }
+
+    /// Returns the underlying images
+    pub fn into_images(mut self) -> Vec<EGLImage> {
+        self.images.drain(..).collect()
     }
 }
 

@@ -1,7 +1,6 @@
 //! Type safe native types for safe egl initialisation
 
 use std::collections::HashSet;
-use std::fmt;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
