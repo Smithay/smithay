@@ -11,11 +11,9 @@ use wayland_server::protocol::{wl_buffer, wl_shm};
 
 use super::{device::DevPath, surface::DrmSurfaceInternal, DrmError, DrmSurface};
 use crate::backend::{
-    allocator::{
-        dmabuf::{AsDmabuf, Dmabuf}, Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain,
-    },
+    allocator::{dmabuf::{AsDmabuf, Dmabuf}, Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain},
+    egl::display::EGLBufferReader,
 };
-use crate::backend::egl::EGLBuffer;
 use crate::backend::renderer::{Bind, Renderer, Texture, Transform};
 use crate::backend::SwapBuffersError;
 
@@ -354,19 +352,10 @@ where
     }
 
     #[cfg(feature = "wayland_frontend")]
-    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::TextureId, Self::Error> {
-        self.renderer.import_shm(buffer).map_err(Error::RenderError)
+    fn import_buffer(&mut self, buffer: &wl_buffer::WlBuffer, egl: Option<&EGLBufferReader>) -> Result<Self::TextureId, Self::Error> {
+        self.renderer.import_buffer(buffer, egl).map_err(Error::RenderError)
     }
-
-    #[cfg(feature = "wayland_frontend")]
-    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::TextureId, Self::Error> {
-        self.renderer.import_egl(buffer).map_err(Error::RenderError)
-    }
-
-    fn destroy_texture(&mut self, texture: Self::TextureId) -> Result<(), Self::Error> {
-        self.renderer.destroy_texture(texture).map_err(Error::RenderError)
-    }
-
+    
     fn begin(&mut self, width: u32, height: u32, _transform: Transform) -> Result<(), Error<E1, E2, E3>> {
         if self.current_buffer.is_some() {
             return Ok(());

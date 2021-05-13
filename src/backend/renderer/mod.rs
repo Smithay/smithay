@@ -17,8 +17,8 @@ use wayland_server::protocol::{wl_buffer, wl_shm};
 use crate::backend::SwapBuffersError;
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
-#[cfg(feature = "wayland_frontend")]
-use crate::backend::egl::EGLBuffer;
+#[cfg(all(feature = "wayland_frontend", feature = "backend_egl"))]
+use crate::backend::egl::display::EGLBufferReader;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Possible transformations to two-dimensional planes
@@ -164,39 +164,19 @@ pub trait Renderer {
         &[wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888]
     }
 
-    /// Import a given shared memory buffer into the renderer.
+
+    /// Import a given buffer into the renderer.
     ///
     /// Returns a texture_id, which can be used with `render_texture(_at)` or implementation-specific functions.
     ///
-    /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it,
-    /// and needs to be freed by calling `destroy_texture` on this renderer to avoid a resource leak.
+    /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
     ///
     /// This operation needs no bound or default rendering target.
     ///
     /// The implementation defines, if the id keeps being valid, if the buffer is released,
     /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
     #[cfg(feature = "wayland_frontend")]
-    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::TextureId, Self::Error>;
-
-    /// Import a given egl-backed memory buffer into the renderer.
-    ///
-    /// Returns a texture_id, which can be used with `render_texture(_at)` or implementation-specific functions.
-    ///
-    /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it,
-    /// and needs to be freed by calling `destroy_texture` on this renderer to avoid a resource leak.
-    ///
-    /// This operation needs no bound or default rendering target.
-    ///
-    /// The implementation defines, if the id keeps being valid, if the buffer is released,
-    /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
-    #[cfg(feature = "wayland_frontend")]
-    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::TextureId, Self::Error>;
-
-    /// Deallocate the given texture.
-    ///
-    /// In case the texture type of this renderer is cloneable or copyable, those handles will also become invalid
-    /// and destroy calls with one of these handles might error out as the texture is already freed.
-    fn destroy_texture(&mut self, texture: Self::TextureId) -> Result<(), Self::Error>;
+    fn import_buffer(&mut self, buffer: &wl_buffer::WlBuffer, egl: Option<&EGLBufferReader>) -> Result<Self::TextureId, Self::Error>;
 
     /// Initialize a rendering context on the current rendering target with given dimensions and transformation.
     ///
@@ -263,5 +243,27 @@ pub trait Renderer {
         mat = mat * Matrix3::from_translation(Vector2::new(-0.5, -0.5));
 
         self.render_texture(texture, mat, alpha)
+    }
+}
+
+#[cfg(all(feature = "wayland_frontend", feature = "backend_egl"))]
+pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer, egl_buffer_reader: Option<&EGLBufferReader>) -> Option<(i32, i32)> {
+    if let Some((w, h)) = egl_buffer_reader.as_ref().and_then(|x| x.egl_buffer_dimensions(&buffer)) {
+        Some((w, h))
+    } else if let Ok((w, h)) = crate::wayland::shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height)) {
+        Some((w, h))
+    } else {
+        None
+    }
+}
+
+#[cfg(all(feature = "wayland_frontend", not(feature = "backend_egl")))]
+pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)> {
+    use crate::backend::allocator::Buffer;
+
+    if let Ok((w, h)) = crate::wayland::shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height)) {
+        Some((w, h))
+    } else {
+        None
     }
 }

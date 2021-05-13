@@ -2,7 +2,7 @@
 
 use crate::backend::egl::display::EGLDisplay;
 use crate::backend::{
-    egl::{context::GlAttributes, native, EGLBuffer, EGLContext, EGLSurface, Error as EGLError},
+    egl::{context::GlAttributes, native, EGLContext, EGLSurface, Error as EGLError},
     input::{
         Axis, AxisSource, Event as BackendEvent, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
         MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent,
@@ -291,17 +291,8 @@ impl Renderer for WinitGraphicsBackend {
     }
 
     #[cfg(feature = "wayland_frontend")]
-    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::TextureId, Self::Error> {
-        self.renderer.import_shm(buffer)
-    }
-
-    #[cfg(feature = "wayland_frontend")]
-    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::TextureId, Self::Error> {
-        self.renderer.import_egl(buffer)
-    }
-
-    fn destroy_texture(&mut self, texture: Self::TextureId) -> Result<(), Self::Error> {
-        self.renderer.destroy_texture(texture)
+    fn import_buffer(&mut self, buffer: &wl_buffer::WlBuffer, egl: Option<&EGLBufferReader>) -> Result<Self::TextureId, Self::Error> {
+        self.renderer.import_buffer(buffer, egl)
     }
 
     fn begin(

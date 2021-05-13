@@ -1,10 +1,15 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
 use std::{collections::HashSet, os::raw::c_char};
+use std::cell::RefCell;
 use std::fmt;
 use std::ffi::CStr;
 use std::ptr;
 use std::rc::Rc;
+use std::sync::{
+    atomic::{Ordering, AtomicUsize},
+    mpsc::{Sender, Receiver, channel}
+};
 
 use cgmath::{prelude::*, Matrix3};
 
@@ -15,7 +20,7 @@ use crate::backend::allocator::{
     Format,
 };
 use crate::backend::egl::{
-    ffi::egl::types::EGLImage, EGLBuffer, EGLContext, EGLSurface, Format as EGLFormat, MakeCurrentError,
+    ffi::egl::types::EGLImage, EGLBuffer, EGLContext, EGLSurface, Format as EGLFormat, MakeCurrentError, display::EGLBufferReader,
 };
 use crate::backend::SwapBuffersError;
 
@@ -26,6 +31,8 @@ use wayland_server::protocol::{wl_buffer, wl_shm};
 pub mod ffi {
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
 }
+
+static RENDERER_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug)]
 struct Gles2Program {
@@ -39,22 +46,32 @@ struct Gles2Program {
 }
 
 /// A handle to a GLES2 texture
+#[derive(Debug, Clone)]
+pub struct Gles2Texture(Rc<Gles2TextureInternal>);
+
 #[derive(Debug)]
-pub struct Gles2Texture {
+struct Gles2TextureInternal {
     texture: ffi::types::GLuint,
     texture_kind: usize,
     is_external: bool,
     y_inverted: bool,
     width: u32,
     height: u32,
+    destruction_callback_sender: Sender<ffi::types::GLuint>,
+}
+
+impl Drop for Gles2TextureInternal {
+    fn drop(&mut self) {
+        let _ = self.destruction_callback_sender.send(self.texture);
+    }
 }
 
 impl Texture for Gles2Texture {
     fn width(&self) -> u32 {
-        self.width
+        self.0.width
     }
     fn height(&self) -> u32 {
-        self.height
+        self.0.height
     }
 }
 
@@ -74,6 +91,7 @@ struct Gles2Buffer {
 
 /// A renderer utilizing OpenGL ES 2
 pub struct Gles2Renderer {
+    id: usize,
     buffers: Vec<WeakGles2Buffer>,
     target_buffer: Option<Gles2Buffer>,
     target_surface: Option<Rc<EGLSurface>>,
@@ -82,6 +100,8 @@ pub struct Gles2Renderer {
     programs: [Gles2Program; shaders::FRAGMENT_COUNT],
     gl: ffi::Gles2,
     egl: EGLContext,
+    destruction_callback: Receiver<ffi::types::GLuint>,
+    destruction_callback_sender: Sender<ffi::types::GLuint>,
     logger: Option<*mut ::slog::Logger>,
     _not_send: *mut (),
 }
@@ -89,6 +109,7 @@ pub struct Gles2Renderer {
 impl fmt::Debug for Gles2Renderer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Gles2Renderer")
+         .field("id", &self.id)
          .field("buffers", &self.buffers)
          .field("target_buffer", &self.target_buffer)
          .field("target_surface", &self.target_surface)
@@ -134,6 +155,10 @@ pub enum Gles2Error {
     #[error("Error accessing the buffer ({0:?})")]
     #[cfg(feature = "wayland_frontend")]
     BufferAccessError(crate::wayland::shm::BufferAccessError),
+    /// The given egl buffer was not accessible
+    #[error("Error accessing the buffer ({0:?})")]
+    #[cfg(feature = "wayland_frontend")]
+    EGLBufferAccessError(crate::backend::egl::BufferAccessError),
     /// This rendering operation was called without a previous `begin`-call
     #[error("Call begin before doing any rendering operations")]
     UnconstraintRenderingOperation,
@@ -151,7 +176,8 @@ impl From<Gles2Error> for SwapBuffersError {
             x @ Gles2Error::FramebufferBindingError
             | x @ Gles2Error::BindBufferEGLError(_)
             | x @ Gles2Error::UnsupportedPixelFormat(_)
-            | x @ Gles2Error::BufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            | x @ Gles2Error::BufferAccessError(_)
+            | x @ Gles2Error::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
 }
@@ -336,16 +362,20 @@ impl Gles2Renderer {
             texture_program(&gl, shaders::FRAGMENT_SHADER_EXTERNAL)?,
         ];
 
+        let (tx, rx) = channel();
         let renderer = Gles2Renderer {
+            id: RENDERER_COUNTER.fetch_add(1, Ordering::SeqCst),
             gl,
             egl: context,
             extensions: exts,
             programs,
-            logger,
             target_buffer: None,
             target_surface: None,
             buffers: Vec::new(),
             current_projection: None,
+            destruction_callback: rx,
+            destruction_callback_sender: tx,
+            logger,
             _not_send: std::ptr::null_mut(),
         };
         renderer.egl.unbind()?;
@@ -361,6 +391,176 @@ impl Gles2Renderer {
             }
         }
         Ok(())
+    }
+
+    fn cleanup(&mut self) -> Result<(), Gles2Error> {
+        self.make_current()?;
+        for texture in self.destruction_callback.try_iter() {
+            unsafe {
+                self.gl.DeleteTextures(1, &texture);
+            }
+        }
+        Ok(())
+    }
+}
+
+struct BufferCache {
+    cache: Vec<Option<BufferCacheVariant>>,
+}
+
+enum BufferCacheVariant {
+   Egl(Option<EglCache>),
+   Shm(Option<ShmCache>), 
+}
+
+struct EglCache {
+    buf: Option<EGLBuffer>,
+    texture: Gles2Texture,
+}
+
+struct ShmCache {
+    texture: Gles2Texture,
+}
+
+impl Gles2Renderer {
+    #[cfg(feature = "wayland_frontend")]
+    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer, cache: &mut Option<ShmCache>) -> Result<Gles2Texture, Gles2Error> {
+        use crate::wayland::shm::with_buffer_contents;
+
+        with_buffer_contents(&buffer, |slice, data| {
+            self.make_current()?;
+
+            let offset = data.offset as i32;
+            let width = data.width as i32;
+            let height = data.height as i32;
+            let stride = data.stride as i32;
+
+            // number of bytes per pixel
+            // TODO: compute from data.format
+            let pixelsize = 4i32;
+
+            // ensure consistency, the SHM handler of smithay should ensure this
+            assert!((offset + (height - 1) * stride + width * pixelsize) as usize <= slice.len());
+
+            let (gl_format, shader_idx) = match data.format {
+                wl_shm::Format::Abgr8888 => (ffi::RGBA, 0),
+                wl_shm::Format::Xbgr8888 => (ffi::RGBA, 1),
+                wl_shm::Format::Argb8888 => (ffi::BGRA_EXT, 2),
+                wl_shm::Format::Xrgb8888 => (ffi::BGRA_EXT, 3),
+                format => return Err(Gles2Error::UnsupportedPixelFormat(format)),
+            };
+
+            let texture = cache.as_ref().map(|x| x.texture.clone()).unwrap_or_else(|| {
+                let mut tex = 0;
+                unsafe { self.gl.GenTextures(1, &mut tex) };
+                Gles2Texture(Rc::new(Gles2TextureInternal {
+                    texture: tex,
+                    texture_kind: shader_idx,
+                    is_external: false,
+                    y_inverted: false,
+                    width: width as u32,
+                    height: height as u32,
+                    destruction_callback_sender: self.destruction_callback_sender.clone(),
+                }))
+            });
+
+            unsafe {
+                self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
+
+                self.gl
+                    .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
+                self.gl
+                    .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+                self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, stride / pixelsize);
+                self.gl.TexImage2D(
+                    ffi::TEXTURE_2D,
+                    0,
+                    gl_format as i32,
+                    width,
+                    height,
+                    0,
+                    ffi::RGBA,
+                    ffi::UNSIGNED_BYTE as u32,
+                    slice.as_ptr() as *const _,
+                );
+
+                self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
+                self.gl.BindTexture(ffi::TEXTURE_2D, 0);
+            }
+
+            self.egl.unbind()?;
+
+            *cache = Some(ShmCache {
+                texture: texture.clone(),
+            });
+
+            Ok(texture)
+        })
+        .map_err(Gles2Error::BufferAccessError)?
+    }
+
+    #[cfg(feature = "wayland_frontend")]
+    fn import_egl(&mut self, buffer: &wl_buffer::WlBuffer, reader: &EGLBufferReader, cache: &mut Option<EglCache>) -> Result<Gles2Texture, Gles2Error> {
+        if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
+            return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
+        }
+
+        self.make_current()?;
+        let egl_buffer = cache.as_mut().and_then(|x| x.buf.take()).map(Ok).unwrap_or_else(|| {
+            reader.egl_buffer_contents(&buffer)
+        }).map_err(Gles2Error::EGLBufferAccessError)?;
+
+        // we do not need to re-import external textures
+        if egl_buffer.format == EGLFormat::External && cache.is_some() {
+            return Ok(cache.as_ref().map(|x| x.texture.clone()).unwrap());
+        }
+
+        let tex = self.import_egl_image(egl_buffer.image(0).unwrap(), egl_buffer.format == EGLFormat::External, cache.as_ref().map(|x| x.texture.0.texture))?;
+        let texture = cache.as_ref().map(|x| x.texture.clone()).unwrap_or_else(|| {
+            Gles2Texture(Rc::new(Gles2TextureInternal {
+                texture: tex,
+                texture_kind: match egl_buffer.format {
+                    EGLFormat::RGB => 3,
+                    EGLFormat::RGBA => 2,
+                    EGLFormat::External => 4,
+                    _ => unreachable!("EGLBuffer currenly does not expose multi-planar buffers to us"),
+                },
+                is_external: egl_buffer.format == EGLFormat::External,
+                y_inverted: egl_buffer.y_inverted,
+                width: egl_buffer.width,
+                height: egl_buffer.height,
+                destruction_callback_sender: self.destruction_callback_sender.clone(),
+            }))
+        });
+        self.egl.unbind()?;
+
+        *cache = Some(EglCache {
+            buf: Some(egl_buffer),
+            texture: texture.clone(),
+        });
+
+        Ok(texture)
+    }
+
+    fn import_egl_image(&self, image: EGLImage, is_external: bool, tex: Option<u32>) -> Result<u32, Gles2Error> {
+        let tex = tex.unwrap_or_else(|| unsafe {
+            let mut tex = 0;
+            self.gl.GenTextures(1, &mut tex);
+            tex
+        });
+        let target = if is_external {
+            ffi::TEXTURE_EXTERNAL_OES
+        } else {
+            ffi::TEXTURE_2D
+        };
+        unsafe {
+            self.gl.BindTexture(target, tex);
+
+            self.gl
+                .EGLImageTargetTexture2DOES(target, image);
+        }
+
+        Ok(tex)
     }
 }
 
@@ -393,7 +593,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
         let buffer = self
             .buffers
             .iter()
-            .find(|buffer| dmabuf == buffer.dmabuf)
+            .find(|buffer| if let Some(dma) = buffer.dmabuf.upgrade() { dma == dmabuf } else { false })
             .map(|buf| {
                 let dmabuf = buf
                     .dmabuf
@@ -559,140 +759,69 @@ impl Renderer for Gles2Renderer {
             self.gl.BindTexture(ffi::TEXTURE_2D, 0);
         }
 
-        let texture = Gles2Texture {
+        let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
             texture: tex,
             texture_kind: 2,
             is_external: false,
             y_inverted: false,
             width: image.width(),
             height: image.height(),
-        };
+            destruction_callback_sender: self.destruction_callback_sender.clone(),
+        }));
         self.egl.unbind()?;
 
         Ok(texture)
     }
 
+
     #[cfg(feature = "wayland_frontend")]
-    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Self::TextureId, Self::Error> {
-        use crate::wayland::shm::with_buffer_contents;
+    fn import_buffer(&mut self, buffer: &wl_buffer::WlBuffer, egl: Option<&EGLBufferReader>) -> Result<Self::TextureId, Self::Error> {
+        // init cache if not existing
+        let cache_cell = match buffer.as_ref().user_data().get::<Rc<RefCell<BufferCache>>>() {
+            Some(cache) => cache.clone(),
+            None => {
+                let cache = BufferCache {
+                    cache: Vec::with_capacity(self.id+1),
+                };
 
-        with_buffer_contents(&buffer, |slice, data| {
-            self.make_current()?;
-
-            let offset = data.offset as i32;
-            let width = data.width as i32;
-            let height = data.height as i32;
-            let stride = data.stride as i32;
-
-            // number of bytes per pixel
-            // TODO: compute from data.format
-            let pixelsize = 4i32;
-
-            // ensure consistency, the SHM handler of smithay should ensure this
-            assert!((offset + (height - 1) * stride + width * pixelsize) as usize <= slice.len());
-
-            let (gl_format, shader_idx) = match data.format {
-                wl_shm::Format::Abgr8888 => (ffi::RGBA, 0),
-                wl_shm::Format::Xbgr8888 => (ffi::RGBA, 1),
-                wl_shm::Format::Argb8888 => (ffi::BGRA_EXT, 2),
-                wl_shm::Format::Xrgb8888 => (ffi::BGRA_EXT, 3),
-                format => return Err(Gles2Error::UnsupportedPixelFormat(format)),
-            };
-
-            let mut tex = 0;
-            unsafe {
-                self.gl.GenTextures(1, &mut tex);
-                self.gl.BindTexture(ffi::TEXTURE_2D, tex);
-
-                self.gl
-                    .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
-                self.gl
-                    .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
-                self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, stride / pixelsize);
-                self.gl.TexImage2D(
-                    ffi::TEXTURE_2D,
-                    0,
-                    gl_format as i32,
-                    width,
-                    height,
-                    0,
-                    gl_format,
-                    ffi::UNSIGNED_BYTE as u32,
-                    slice.as_ptr() as *const _,
-                );
-
-                self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
-                self.gl.BindTexture(ffi::TEXTURE_2D, 0);
+                let data: Rc<RefCell<BufferCache>> = Rc::new(RefCell::new(cache));
+                let result = data.clone();
+                buffer.as_ref().user_data().set(|| data);
+                result
             }
-
-            let texture = Gles2Texture {
-                texture: tex,
-                texture_kind: shader_idx,
-                is_external: false,
-                y_inverted: false,
-                width: width as u32,
-                height: height as u32,
-            };
-            self.egl.unbind()?;
-
-            Ok(texture)
-        })
-        .map_err(Gles2Error::BufferAccessError)?
-    }
-
-    #[cfg(feature = "wayland_frontend")]
-    fn import_egl(&mut self, buffer: &EGLBuffer) -> Result<Self::TextureId, Self::Error> {
-        if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
-            return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
-        }
-
-        self.make_current()?;
-
-        let mut tex = 0;
-        let target = if buffer.format == EGLFormat::External {
-            ffi::TEXTURE_EXTERNAL_OES
-        } else {
-            ffi::TEXTURE_2D
         };
-        unsafe {
-            self.gl.GenTextures(1, &mut tex);
-            self.gl.BindTexture(target, tex);
-
-            self.gl
-                .EGLImageTargetTexture2DOES(target, buffer.image(0).unwrap());
+        
+        // init cache
+        let mut cache = cache_cell.borrow_mut();
+        while cache.cache.len() < self.id {
+            cache.cache.push(None);
         }
 
-        let texture = Gles2Texture {
-            texture: tex,
-            texture_kind: match buffer.format {
-                EGLFormat::RGB => 3,
-                EGLFormat::RGBA => 2,
-                EGLFormat::External => 4,
-                _ => unreachable!("EGLBuffer currenly does not expose multi-planar buffers to us"),
-            },
-            is_external: buffer.format == EGLFormat::External,
-            y_inverted: buffer.y_inverted,
-            width: buffer.width,
-            height: buffer.height,
-        };
-        self.egl.unbind()?;
-
-        Ok(texture)
-    }
-
-    fn destroy_texture(&mut self, texture: Self::TextureId) -> Result<(), Self::Error> {
-        self.make_current()?;
-
-        unsafe {
-            self.gl.DeleteTextures(1, &texture.texture);
+        if cache.cache.len() == self.id {
+            cache.cache.push(Some(
+                if egl.and_then(|egl| egl.egl_buffer_dimensions(&buffer)).is_some() {
+                    BufferCacheVariant::Egl(None)
+                } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
+                    BufferCacheVariant::Shm(None)
+                } else {
+                    unreachable!("Completely unknown buffer format. How did we got here?");
+                }
+            ));
         }
-        self.egl.unbind()?;
-
-        Ok(())
+    
+        // delegate for different buffer types
+        match cache.cache[self.id].as_mut() {
+            Some(BufferCacheVariant::Egl(cache)) => self.import_egl(&buffer, egl.unwrap(), cache),
+            Some(BufferCacheVariant::Shm(cache)) => self.import_shm(&buffer, cache),
+            _ => unreachable!(),
+        }
     }
 
     fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), Gles2Error> {
         self.make_current()?;
+        // delayed destruction until the next frame rendering.
+        self.cleanup()?;
+
         unsafe {
             self.gl.Viewport(0, 0, width as i32, height as i32);
 
@@ -746,7 +875,7 @@ impl Renderer for Gles2Renderer {
         //apply output transformation
         matrix = self.current_projection.as_ref().unwrap() * matrix;
 
-        let target = if tex.is_external {
+        let target = if tex.0.is_external {
             ffi::TEXTURE_EXTERNAL_OES
         } else {
             ffi::TEXTURE_2D
@@ -755,27 +884,27 @@ impl Renderer for Gles2Renderer {
         // render
         unsafe {
             self.gl.ActiveTexture(ffi::TEXTURE0);
-            self.gl.BindTexture(target, tex.texture);
+            self.gl.BindTexture(target, tex.0.texture);
             self.gl
                 .TexParameteri(target, ffi::TEXTURE_MIN_FILTER, ffi::LINEAR as i32);
-            self.gl.UseProgram(self.programs[tex.texture_kind].program);
+            self.gl.UseProgram(self.programs[tex.0.texture_kind].program);
 
-            self.gl.Uniform1i(self.programs[tex.texture_kind].uniform_tex, 0);
+            self.gl.Uniform1i(self.programs[tex.0.texture_kind].uniform_tex, 0);
             self.gl.UniformMatrix3fv(
-                self.programs[tex.texture_kind].uniform_matrix,
+                self.programs[tex.0.texture_kind].uniform_matrix,
                 1,
                 ffi::FALSE,
                 matrix.as_ptr(),
             );
             self.gl.Uniform1i(
-                self.programs[tex.texture_kind].uniform_invert_y,
-                if tex.y_inverted { 1 } else { 0 },
+                self.programs[tex.0.texture_kind].uniform_invert_y,
+                if tex.0.y_inverted { 1 } else { 0 },
             );
             self.gl
-                .Uniform1f(self.programs[tex.texture_kind].uniform_alpha, alpha);
+                .Uniform1f(self.programs[tex.0.texture_kind].uniform_alpha, alpha);
 
             self.gl.VertexAttribPointer(
-                self.programs[tex.texture_kind].attrib_position as u32,
+                self.programs[tex.0.texture_kind].attrib_position as u32,
                 2,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -783,7 +912,7 @@ impl Renderer for Gles2Renderer {
                 VERTS.as_ptr() as *const _,
             );
             self.gl.VertexAttribPointer(
-                self.programs[tex.texture_kind].attrib_tex_coords as u32,
+                self.programs[tex.0.texture_kind].attrib_tex_coords as u32,
                 2,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -792,16 +921,16 @@ impl Renderer for Gles2Renderer {
             );
 
             self.gl
-                .EnableVertexAttribArray(self.programs[tex.texture_kind].attrib_position as u32);
+                .EnableVertexAttribArray(self.programs[tex.0.texture_kind].attrib_position as u32);
             self.gl
-                .EnableVertexAttribArray(self.programs[tex.texture_kind].attrib_tex_coords as u32);
+                .EnableVertexAttribArray(self.programs[tex.0.texture_kind].attrib_tex_coords as u32);
 
             self.gl.DrawArrays(ffi::TRIANGLE_STRIP, 0, 4);
 
             self.gl
-                .DisableVertexAttribArray(self.programs[tex.texture_kind].attrib_position as u32);
+                .DisableVertexAttribArray(self.programs[tex.0.texture_kind].attrib_position as u32);
             self.gl
-                .DisableVertexAttribArray(self.programs[tex.texture_kind].attrib_tex_coords as u32);
+                .DisableVertexAttribArray(self.programs[tex.0.texture_kind].attrib_tex_coords as u32);
 
             self.gl.BindTexture(target, 0);
         }
