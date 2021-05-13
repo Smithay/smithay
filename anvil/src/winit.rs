@@ -11,6 +11,11 @@ use smithay::{
         seat::CursorImageStatus,
     },
 };
+#[cfg(feature = "egl")]
+use smithay::{
+    backend::renderer::ImportDma,
+    wayland::dmabuf::init_dmabuf_global,
+};
 
 use slog::Logger;
 
@@ -40,6 +45,11 @@ pub fn run_winit(
     #[cfg(feature = "egl")]
     if reader.is_some() {
         info!(log, "EGL hardware-acceleration enabled");
+        let dmabuf_formats = renderer.borrow_mut().renderer().dmabuf_formats().cloned().collect::<Vec<_>>();
+        let renderer = renderer.clone();
+        init_dmabuf_global(&mut *display.borrow_mut(), dmabuf_formats, move |buffer, _| {
+            renderer.borrow_mut().renderer().import_dmabuf(buffer).is_ok()
+        }, log.clone());
     };
 
     let (w, h): (u32, u32) = renderer.borrow().window_size().physical_size.into();
