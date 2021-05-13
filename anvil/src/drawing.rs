@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use slog::Logger;
 use smithay::{
     backend::{
-        renderer::{Frame, Renderer, Texture, Transform, ImportShm, BufferType, buffer_type},
+        renderer::{Frame, Renderer, Texture, Transform, ImportShm, ImportDma, BufferType, buffer_type},
         SwapBuffersError,
     },
     reexports::wayland_server::protocol::{wl_buffer, wl_surface},
@@ -19,7 +19,7 @@ use smithay::{
 #[cfg(feature = "egl")]
 use smithay::backend::{
     egl::display::EGLBufferReader,
-    renderer::ImportEgl
+    renderer::ImportEgl,
 };
 // hacky...
 #[cfg(not(feature = "egl"))]
@@ -53,7 +53,7 @@ pub fn draw_cursor<R, E, F, T>(
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportShm + ImportEgl,
+    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportShm + ImportEgl + ImportDma,
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
@@ -91,7 +91,7 @@ fn draw_surface_tree<R, E, F, T>(
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportShm + ImportEgl,
+    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportShm + ImportEgl + ImportDma,
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
@@ -130,6 +130,7 @@ where
                             },
                             #[cfg(feature = "egl")]
                             Some(BufferType::Egl) => Some(renderer.import_egl_buffer(&buffer, egl_buffer_reader.unwrap())),
+                            Some(BufferType::Dma) => Some(renderer.import_dma_buffer(&buffer)),
                             _ => {
                                 error!(log, "Unknown buffer format for: {:?}", buffer);
                                 None
@@ -209,7 +210,7 @@ pub fn draw_windows<R, E, F, T>(
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportShm + ImportEgl,
+    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportShm + ImportEgl + ImportDma,
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
@@ -256,7 +257,7 @@ pub fn draw_dnd_icon<R, E, F, T>(
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportShm + ImportEgl,
+    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportShm + ImportEgl + ImportDma,
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,

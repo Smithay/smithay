@@ -12,8 +12,6 @@ use std::{
 use image::{ImageBuffer, Rgba};
 use slog::Logger;
 
-#[cfg(feature = "egl")]
-use smithay::backend::{drm::DevPath, egl::display::EGLBufferReader, udev::primary_gpu};
 use smithay::{
     backend::{
         drm::{DrmDevice, DrmError, DrmEvent, DrmRenderSurface},
@@ -21,7 +19,7 @@ use smithay::{
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             gles2::{Gles2Renderer, Gles2Texture},
-            Frame, Renderer, Transform,
+            Frame, Renderer, Transform
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
         udev::{UdevBackend, UdevEvent},
@@ -56,6 +54,11 @@ use smithay::{
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
     },
+};
+#[cfg(feature = "egl")]
+use smithay::{
+    backend::{drm::DevPath, egl::display::EGLBufferReader, udev::primary_gpu, renderer::ImportDma},
+    wayland::dmabuf::init_dmabuf_global,
 };
 
 use crate::drawing::*;
@@ -177,6 +180,33 @@ pub fn run_udev(
         .unwrap();
     for (dev, path) in udev_backend.device_list() {
         state.device_added(dev, path.into())
+    }
+
+    // init dmabuf support with format list from all gpus
+    // TODO: We need to update this list, when the set of gpus changes
+    // TODO2: This does not necessarily depend on egl, but mesa makes no use of it without wl_drm right now
+    #[cfg(feature = "egl")]
+    {
+        let mut formats = Vec::new();
+        for backend_data in state.backend_data.backends.values() {
+            let surfaces = backend_data.surfaces.borrow_mut();
+            if let Some(surface) = surfaces.values().next() {
+                formats.extend(surface.borrow_mut().renderer().dmabuf_formats().cloned());
+            }
+        }
+        
+        init_dmabuf_global(&mut *display.borrow_mut(), formats, |buffer, mut ddata| {
+            let anvil_state = ddata.get::<AnvilState<UdevData>>().unwrap();
+            for backend_data in anvil_state.backend_data.backends.values() {
+                let surfaces = backend_data.surfaces.borrow_mut();
+                if let Some(surface) = surfaces.values().next() {
+                    if surface.borrow_mut().renderer().import_dmabuf(buffer).is_ok() {
+                        return true;
+                    }
+                }
+            }
+            false
+        }, log.clone());
     }
 
     let udev_event_source = event_loop
