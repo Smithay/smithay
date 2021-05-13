@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::convert::TryInto;
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 
@@ -11,8 +10,10 @@ use gbm::{BufferObject, BufferObjectFlags, Device as GbmDevice};
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
 use super::{device::DevPath, surface::DrmSurfaceInternal, DrmError, DrmSurface};
-use crate::backend::allocator::{
-    dmabuf::Dmabuf, Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain, SwapchainError,
+use crate::backend::{
+    allocator::{
+        dmabuf::{AsDmabuf, Dmabuf}, Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain,
+    },
 };
 use crate::backend::egl::EGLBuffer;
 use crate::backend::renderer::{Bind, Renderer, Texture, Transform};
@@ -29,12 +30,12 @@ pub struct DrmRenderSurface<
     D: AsRawFd + 'static,
     A: Allocator<B>,
     R: Bind<Dmabuf>,
-    B: Buffer + TryInto<Dmabuf>,
+    B: Buffer,
 > {
     _format: Format,
-    buffers: Buffers<D>,
-    current_buffer: Option<Slot<Dmabuf, BufferObject<FbHandle<D>>>>,
-    swapchain: Swapchain<A, B, BufferObject<FbHandle<D>>, Dmabuf>,
+    buffers: Buffers<D, B>,
+    current_buffer: Option<(Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>, Dmabuf)>,
+    swapchain: Swapchain<A, B, (Dmabuf, BufferObject<FbHandle<D>>)>,
     renderer: R,
     drm: Arc<DrmSurface<D>>,
 }
@@ -43,7 +44,7 @@ impl<D, A, B, R, E1, E2, E3> DrmRenderSurface<D, A, R, B>
 where
     D: AsRawFd + 'static,
     A: Allocator<B, Error = E1>,
-    B: Buffer + TryInto<Dmabuf, Error = E2>,
+    B: Buffer + AsDmabuf<Error=E2>,
     R: Bind<Dmabuf> + Renderer<Error = E3>,
     E1: std::error::Error + 'static,
     E2: std::error::Error + 'static,
@@ -160,12 +161,12 @@ where
         let mut swapchain = Swapchain::new(allocator, mode.size().0 as u32, mode.size().1 as u32, format);
 
         // Test format
-        let buffer = swapchain.acquire()?.unwrap();
+        let buffer = swapchain.acquire().map_err(Error::SwapchainError)?.unwrap();
+        let dmabuf = buffer.export().map_err(Error::AsDmabufError)?;
 
         {
-            let dmabuf: Dmabuf = (*buffer).clone();
             match renderer
-                .bind(dmabuf)
+                .bind(dmabuf.clone())
                 .map_err(Error::<E1, E2, E3>::RenderError)
                 .and_then(|_| {
                     renderer
@@ -190,9 +191,9 @@ where
             }
         }
 
-        let bo = import_dmabuf(&drm, &gbm, &*buffer)?;
+        let bo = import_dmabuf(&drm, &gbm, &dmabuf)?;
         let fb = bo.userdata().unwrap().unwrap().fb;
-        buffer.set_userdata(bo);
+        buffer.set_userdata((dmabuf, bo));
 
         match drm.test_buffer(fb, &mode, true) {
             Ok(_) => {
@@ -329,7 +330,7 @@ impl<D, A, B, T, R, E1, E2, E3> Renderer for DrmRenderSurface<D, A, R, B>
 where
     D: AsRawFd + 'static,
     A: Allocator<B, Error = E1>,
-    B: Buffer + TryInto<Dmabuf, Error = E2>,
+    B: Buffer + AsDmabuf<Error=E2>,
     R: Bind<Dmabuf> + Renderer<Error = E3, TextureId = T>,
     T: Texture,
     E1: std::error::Error + 'static,
@@ -371,9 +372,13 @@ where
             return Ok(());
         }
 
-        let slot = self.swapchain.acquire()?.ok_or(Error::NoFreeSlotsError)?;
-        self.renderer.bind((*slot).clone()).map_err(Error::RenderError)?;
-        self.current_buffer = Some(slot);
+        let slot = self.swapchain.acquire().map_err(Error::SwapchainError)?.ok_or(Error::NoFreeSlotsError)?;
+        let dmabuf = match &*slot.userdata() {
+            Some((buf, _)) => buf.clone(),
+            None =>  (*slot).export().map_err(Error::AsDmabufError)?,
+        };
+        self.renderer.bind(dmabuf.clone()).map_err(Error::RenderError)?;
+        self.current_buffer = Some((slot, dmabuf));
         self.renderer
             .begin(width, height, Transform::Flipped180 /* TODO: add Add<Transform> implementation to add and correct _transform here */)
             .map_err(Error::RenderError)
@@ -401,9 +406,10 @@ where
 
         let result = self.renderer.finish();
         if result.is_ok() {
+            let (slot, dmabuf) = self.current_buffer.take().unwrap();
             match self
                 .buffers
-                .queue::<E1, E2, E3>(self.current_buffer.take().unwrap())
+                .queue::<E1, E2, E3>(slot, dmabuf)
             {
                 Ok(()) => {}
                 Err(Error::DrmError(drm)) => return Err(drm.into()),
@@ -426,23 +432,24 @@ impl<A: AsRawFd + 'static> Drop for FbHandle<A> {
     }
 }
 
-struct Buffers<D: AsRawFd + 'static> {
+struct Buffers<D: AsRawFd + 'static, B: Buffer> {
     gbm: GbmDevice<gbm::FdWrapper>,
     drm: Arc<DrmSurface<D>>,
-    _current_fb: Slot<Dmabuf, BufferObject<FbHandle<D>>>,
-    pending_fb: Option<Slot<Dmabuf, BufferObject<FbHandle<D>>>>,
-    queued_fb: Option<Slot<Dmabuf, BufferObject<FbHandle<D>>>>,
+    _current_fb: Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>,
+    pending_fb: Option<Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>>,
+    queued_fb: Option<Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>>,
 }
 
-impl<D> Buffers<D>
+impl<D, B> Buffers<D, B>
 where
+    B: Buffer + AsDmabuf,
     D: AsRawFd + 'static,
 {
     pub fn new(
         drm: Arc<DrmSurface<D>>,
         gbm: GbmDevice<gbm::FdWrapper>,
-        slot: Slot<Dmabuf, BufferObject<FbHandle<D>>>,
-    ) -> Buffers<D> {
+        slot: Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>,
+    ) -> Buffers<D, B> {
         Buffers {
             drm,
             gbm,
@@ -454,16 +461,18 @@ where
 
     pub fn queue<E1, E2, E3>(
         &mut self,
-        slot: Slot<Dmabuf, BufferObject<FbHandle<D>>>,
+        slot: Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>,
+        dmabuf: Dmabuf,
     ) -> Result<(), Error<E1, E2, E3>>
     where
+        B: AsDmabuf<Error=E2>,
         E1: std::error::Error + 'static,
         E2: std::error::Error + 'static,
         E3: std::error::Error + 'static,
     {
         if slot.userdata().is_none() {
-            let bo = import_dmabuf(&self.drm, &self.gbm, &*slot)?;
-            slot.set_userdata(bo);
+            let bo = import_dmabuf(&self.drm, &self.gbm, &dmabuf)?;
+            slot.set_userdata((dmabuf, bo));
         }
 
         self.queued_fb = Some(slot);
@@ -499,7 +508,7 @@ where
     {
         // yes it does not look like it, but both of these lines should be safe in all cases.
         let slot = self.queued_fb.take().unwrap();
-        let fb = slot.userdata().as_ref().unwrap().userdata().unwrap().unwrap().fb;
+        let fb = slot.userdata().as_ref().unwrap().1.userdata().unwrap().unwrap().fb;
 
         let flip = if self.drm.commit_pending() {
             self.drm.commit(fb, true)
@@ -604,7 +613,10 @@ where
     GbmError(#[from] std::io::Error),
     /// Error allocating or converting newly created buffers
     #[error("The swapchain encounted an error: {0}")]
-    SwapchainError(#[from] SwapchainError<E1, E2>),
+    SwapchainError(#[source] E1),
+    /// Error exporting as Dmabuf
+    #[error("The allocated buffer could not be exported as a dmabuf: {0}")]
+    AsDmabufError(#[source] E2),
     /// Error during rendering
     #[error("The renderer encounted an error: {0}")]
     RenderError(#[source] E3),
@@ -626,6 +638,7 @@ impl<
             Error::DrmError(err) => err.into(),
             Error::GbmError(err) => SwapBuffersError::ContextLost(Box::new(err)),
             Error::SwapchainError(err) => SwapBuffersError::ContextLost(Box::new(err)),
+            Error::AsDmabufError(err) => SwapBuffersError::ContextLost(Box::new(err)),
             Error::RenderError(err) => err.into(),
         }
     }
