@@ -69,26 +69,26 @@ mod tests {
 
     #[test]
     fn test_3_2_greater_3_0() {
-        assert!(GlVersion::new(3,2) > GlVersion::new(3,0))
+        assert!(GlVersion::new(3, 2) > GlVersion::new(3, 0))
     }
 
     #[test]
     fn test_3_0_greater_or_equal_3_0() {
-        assert!(GlVersion::new(3,0) >= GlVersion::new(3,0))
+        assert!(GlVersion::new(3, 0) >= GlVersion::new(3, 0))
     }
 
     #[test]
     fn test_3_0_less_or_equal_3_0() {
-        assert!(GlVersion::new(3,0) <= GlVersion::new(3,0))
+        assert!(GlVersion::new(3, 0) <= GlVersion::new(3, 0))
     }
 
     #[test]
     fn test_3_0_eq_3_0() {
-        assert!(GlVersion::new(3,0) == GlVersion::new(3,0))
+        assert!(GlVersion::new(3, 0) == GlVersion::new(3, 0))
     }
 
     #[test]
     fn test_2_0_less_3_0() {
-        assert!(GlVersion::new(2,0) < GlVersion::new(3,0))
+        assert!(GlVersion::new(2, 0) < GlVersion::new(3, 0))
     }
 }
