@@ -27,12 +27,14 @@ use smithay::{
 use smithay::backend::session::{auto::AutoSession, Session};
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::XWayland;
+#[cfg(feature = "egl")]
+use smithay::backend::egl::display::EGLBufferReader;
 
 #[cfg(feature = "udev")]
 use crate::udev::MyOutput;
 #[cfg(feature = "xwayland")]
 use crate::xwayland::XWm;
-use crate::{buffer_utils::BufferUtils, shell::init_shell};
+use crate::shell::init_shell;
 
 pub struct AnvilState {
     pub socket_name: String,
@@ -63,7 +65,7 @@ impl AnvilState {
     pub fn init(
         display: Rc<RefCell<Display>>,
         handle: LoopHandle<AnvilState>,
-        buffer_utils: BufferUtils,
+        #[cfg(feature = "egl")] egl_reader: Rc<RefCell<Option<EGLBufferReader>>>,
         #[cfg(feature = "udev")] session: Option<AutoSession>,
         #[cfg(not(feature = "udev"))] _session: Option<()>,
         #[cfg(feature = "udev")] output_map: Option<Rc<RefCell<Vec<MyOutput>>>>,
@@ -96,7 +98,10 @@ impl AnvilState {
 
         init_shm_global(&mut display.borrow_mut(), vec![], log.clone());
 
-        let shell_handles = init_shell(&mut display.borrow_mut(), buffer_utils, log.clone());
+        #[cfg(feature = "egl")]
+        let shell_handles = init_shell(&mut display.borrow_mut(), egl_reader, log.clone());
+        #[cfg(not(feature = "egl"))]
+        let shell_handles = init_shell(&mut display.borrow_mut(), log.clone());
 
         let socket_name = display
             .borrow_mut()

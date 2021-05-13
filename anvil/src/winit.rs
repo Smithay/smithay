@@ -1,7 +1,5 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
-//#[cfg(feature = "egl")]
-//use smithay::backend::egl::EGLGraphicsBackend;
 use smithay::{
     backend::{input::InputBackend, renderer::Renderer, winit, SwapBuffersError},
     reexports::{
@@ -16,7 +14,6 @@ use smithay::{
 
 use slog::Logger;
 
-use crate::buffer_utils::BufferUtils;
 use crate::drawing::*;
 use crate::state::AnvilState;
 
@@ -25,26 +22,22 @@ pub fn run_winit(
     event_loop: &mut EventLoop<AnvilState>,
     log: Logger,
 ) -> Result<(), ()> {
-    let (mut renderer, mut input) = winit::init(log.clone()).map_err(|err| {
+    let (renderer, mut input) = winit::init(log.clone()).map_err(|err| {
         slog::crit!(log, "Failed to initialize Winit backend: {}", err);
     })?;
+    let renderer = Rc::new(RefCell::new(renderer));
 
     #[cfg(feature = "egl")]
-    let egl_buffer_reader = Rc::new(RefCell::new(
-        if let Ok(egl_buffer_reader) = renderer.bind_wl_display(&display.borrow()) {
-            info!(log, "EGL hardware-acceleration enabled");
-            Some(egl_buffer_reader)
-        } else {
-            None
-        },
-    ));
-
-    #[cfg(feature = "egl")]
-    let buffer_utils = BufferUtils::new(egl_buffer_reader, log.clone());
+    let reader = renderer.borrow().bind_wl_display(&display.borrow()).ok();
     #[cfg(not(feature = "egl"))]
-    let buffer_utils = BufferUtils::new(log.clone());
+    let reader = None;
 
-    let (w, h): (u32, u32) = renderer.window_size().physical_size.into();
+    #[cfg(feature = "egl")]
+    if reader.is_some() {
+        info!(log, "EGL hardware-acceleration enabled");
+    };
+
+    let (w, h): (u32, u32) = renderer.borrow().window_size().physical_size.into();
 
     /*
      * Initialize the globals
@@ -53,7 +46,8 @@ pub fn run_winit(
     let mut state = AnvilState::init(
         display.clone(),
         event_loop.handle(),
-        buffer_utils.clone(),
+        #[cfg(feature = "egl")]
+        Rc::new(RefCell::new(reader.clone())),
         None,
         None,
         log.clone(),
@@ -91,7 +85,6 @@ pub fn run_winit(
 
     info!(log, "Initialization completed, starting the main loop.");
 
-    let (texture_send, texture_receive) = std::sync::mpsc::channel();
     while state.running.load(Ordering::SeqCst) {
         if input
             .dispatch_new_events(|event, _| state.process_input_event(event))
@@ -110,6 +103,8 @@ pub fn run_winit(
 
         // drawing logic
         {
+            let mut renderer = renderer.borrow_mut();
+
             renderer.begin().expect("Failed to render frame");
             renderer
                 .clear([0.8, 0.8, 0.9, 1.0])
@@ -117,10 +112,8 @@ pub fn run_winit(
 
             // draw the windows
             draw_windows(
-                &mut renderer,
-                0,
-                &texture_send,
-                &buffer_utils,
+                &mut *renderer,
+                reader.as_ref(),
                 &*state.window_map.borrow(),
                 None,
                 state.ctoken,
@@ -135,11 +128,9 @@ pub fn run_winit(
                 if let Some(ref surface) = *guard {
                     if surface.as_ref().is_alive() {
                         draw_dnd_icon(
-                            &mut renderer,
-                            0,
-                            &texture_send,
-                            &buffer_utils,
+                            &mut *renderer,
                             surface,
+                            reader.as_ref(),
                             (x as i32, y as i32),
                             state.ctoken,
                             &log,
@@ -164,11 +155,9 @@ pub fn run_winit(
                 if let CursorImageStatus::Image(ref surface) = *guard {
                     renderer.window().set_cursor_visible(false);
                     draw_cursor(
-                        &mut renderer,
-                        0,
-                        &texture_send,
-                        &buffer_utils,
+                        &mut *renderer,
                         surface,
+                        reader.as_ref(),
                         (x as i32, y as i32),
                         state.ctoken,
                         &log,
@@ -193,10 +182,6 @@ pub fn run_winit(
         } else {
             display.borrow_mut().flush_clients(&mut state);
             state.window_map.borrow_mut().refresh();
-        }
-
-        while let Ok(texture) = texture_receive.try_recv() {
-            let _ = renderer.destroy_texture(texture);
         }
     }
 

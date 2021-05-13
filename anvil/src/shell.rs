@@ -5,6 +5,7 @@ use std::{
 };
 
 use smithay::{
+    backend::renderer::buffer_dimensions,
     reexports::{
         wayland_protocols::xdg_shell::server::xdg_toplevel,
         wayland_server::{
@@ -32,11 +33,10 @@ use smithay::{
         Serial,
     },
 };
+#[cfg(feature = "egl")]
+use smithay::backend::egl::display::EGLBufferReader;
 
-use crate::{
-    buffer_utils::BufferUtils,
-    window_map::{Kind as SurfaceKind, WindowMap},
-};
+use crate::window_map::{Kind as SurfaceKind, WindowMap};
 
 #[cfg(feature = "xwayland")]
 use crate::xwayland::X11SurfaceRole;
@@ -308,7 +308,12 @@ pub struct ShellHandles {
     pub window_map: Rc<RefCell<MyWindowMap>>,
 }
 
-pub fn init_shell(display: &mut Display, buffer_utils: BufferUtils, log: ::slog::Logger) -> ShellHandles {
+pub fn init_shell(
+    display: &mut Display,
+    #[cfg(feature = "egl")]
+    egl_reader: Rc<RefCell<Option<EGLBufferReader>>>,
+    log: ::slog::Logger
+) -> ShellHandles {
     // TODO: this is awkward...
     let almost_window_map = Rc::new(RefCell::new(None::<Rc<RefCell<MyWindowMap>>>));
     let almost_window_map_compositor = almost_window_map.clone();
@@ -320,7 +325,14 @@ pub fn init_shell(display: &mut Display, buffer_utils: BufferUtils, log: ::slog:
             SurfaceEvent::Commit => {
                 let window_map = almost_window_map_compositor.borrow();
                 let window_map = window_map.as_ref().unwrap();
-                surface_commit(&surface, ctoken, &buffer_utils, &*window_map)
+                #[cfg(feature = "egl")]
+                {
+                    surface_commit(&surface, ctoken, egl_reader.borrow().as_ref(), &*window_map)
+                }
+                #[cfg(not(feature = "egl"))]
+                {
+                    surface_commit(&surface, ctoken, &*window_map)
+                }
             }
         },
         log.clone(),
@@ -782,7 +794,8 @@ impl SurfaceData {
 fn surface_commit(
     surface: &wl_surface::WlSurface,
     token: CompositorToken<Roles>,
-    buffer_utils: &BufferUtils,
+    #[cfg(feature = "egl")]
+    egl_reader: Option<&EGLBufferReader>,
     window_map: &RefCell<MyWindowMap>,
 ) {
     #[cfg(feature = "xwayland")]
@@ -834,7 +847,14 @@ fn surface_commit(
         match attributes.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
-                next_state.dimensions = buffer_utils.dimensions(&buffer);
+                #[cfg(feature = "egl")]
+                {
+                    next_state.dimensions = buffer_dimensions(&buffer, egl_reader);
+                }
+                #[cfg(not(feature = "egl"))]
+                {
+                    next_state.dimensions = buffer_dimensions(&buffer, None);
+                }
                 next_state.buffer = Some(buffer);
             }
             Some(BufferAssignment::Removed) => {

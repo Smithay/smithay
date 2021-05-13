@@ -5,7 +5,7 @@ use std::{
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
     rc::Rc,
-    sync::{atomic::Ordering, mpsc, Arc, Mutex},
+    sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
 };
 
@@ -14,15 +14,15 @@ use slog::Logger;
 
 use smithay::{
     backend::{
-        drm::{device_bind, DevPath, DeviceHandler, DrmDevice, DrmError, DrmRenderSurface},
-        egl::{display::EGLBufferReader, EGLContext, EGLDisplay},
+        drm::{device_bind, DeviceHandler, DrmDevice, DrmError, DrmRenderSurface},
+        egl::{EGLContext, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             gles2::{Gles2Renderer, Gles2Texture},
             Renderer, Transform,
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
-        udev::{primary_gpu, UdevBackend, UdevEvent},
+        udev::{UdevBackend, UdevEvent},
         SwapBuffersError,
     },
     reexports::{
@@ -56,8 +56,11 @@ use smithay::{
         seat::CursorImageStatus,
     },
 };
+#[cfg(feature = "egl")]
+use smithay::{
+    backend::{drm::DevPath, egl::display::EGLBufferReader, udev::primary_gpu},
+};
 
-use crate::buffer_utils::BufferUtils;
 use crate::drawing::*;
 use crate::shell::{MyWindowMap, Roles};
 use crate::state::AnvilState;
@@ -87,11 +90,6 @@ pub fn run_udev(
     #[cfg(feature = "egl")]
     let egl_buffer_reader = Rc::new(RefCell::new(None));
 
-    #[cfg(feature = "egl")]
-    let buffer_utils = BufferUtils::new(egl_buffer_reader.clone(), log.clone());
-    #[cfg(not(feature = "egl"))]
-    let buffer_utils = BufferUtils::new(log.clone());
-
     let output_map = Rc::new(RefCell::new(Vec::new()));
 
     /*
@@ -106,7 +104,8 @@ pub fn run_udev(
     let mut state = AnvilState::init(
         display.clone(),
         event_loop.handle(),
-        buffer_utils.clone(),
+        #[cfg(feature = "egl")]
+        egl_buffer_reader.clone(),
         Some(session),
         Some(output_map.clone()),
         log.clone(),
@@ -115,21 +114,19 @@ pub fn run_udev(
     /*
      * Initialize the udev backend
      */
-    let primary_gpu = primary_gpu(&state.seat_name).unwrap_or_default();
-
     let bytes = include_bytes!("../resources/cursor2.rgba");
     let udev_backend = UdevBackend::new(state.seat_name.clone(), log.clone()).map_err(|_| ())?;
 
     let mut udev_handler = UdevHandlerImpl {
         compositor_token: state.ctoken,
-        buffer_utils,
         #[cfg(feature = "egl")]
         egl_buffer_reader,
         session: state.session.clone().unwrap(),
         backends: HashMap::new(),
         output_map,
         display: display.clone(),
-        primary_gpu,
+        #[cfg(feature = "egl")]
+        primary_gpu: primary_gpu(&state.seat_name).unwrap_or_default(),
         window_map: state.window_map.clone(),
         pointer_location: state.pointer_location.clone(),
         pointer_image: ImageBuffer::from_raw(64, 64, bytes.to_vec()).unwrap(),
@@ -282,12 +279,12 @@ struct BackendData {
 
 struct UdevHandlerImpl<Data: 'static> {
     compositor_token: CompositorToken<Roles>,
-    buffer_utils: BufferUtils,
     #[cfg(feature = "egl")]
     egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
     session: AutoSession,
     backends: HashMap<dev_t, BackendData>,
     display: Rc<RefCell<Display>>,
+    #[cfg(feature = "egl")]
     primary_gpu: Option<PathBuf>,
     window_map: Rc<RefCell<MyWindowMap>>,
     output_map: Rc<RefCell<Vec<MyOutput>>>,
@@ -453,10 +450,12 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 }
             };
 
+            #[cfg(feature = "egl")]
+            let is_primary = path.canonicalize().ok() == self.primary_gpu;
             // init hardware acceleration on the primary gpu.
             #[cfg(feature = "egl")]
             {
-                if path.canonicalize().ok() == self.primary_gpu {
+                if is_primary {
                     info!(
                         self.logger,
                         "Initializing EGL Hardware Acceleration via {:?}", path
@@ -501,10 +500,10 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
             // to introduce reference cycles with Rc. Be sure about your drop order
             let renderer = Rc::new(DrmRenderer {
                 device_id,
-                buffer_utils: self.buffer_utils.clone(),
+                #[cfg(feature = "egl")]
+                egl_buffer_reader: if is_primary { self.egl_buffer_reader.borrow().clone() } else { None },
                 compositor_token: self.compositor_token,
                 backends: backends.clone(),
-                texture_destruction_callback: mpsc::channel(),
                 window_map: self.window_map.clone(),
                 output_map: self.output_map.clone(),
                 pointer_location: self.pointer_location.clone(),
@@ -595,12 +594,12 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 .borrow_mut()
                 .retain(|output| output.device_id != device);
 
-            let device = self.loop_handle.remove(backend_data.event_source).unwrap();
+            let _device = self.loop_handle.remove(backend_data.event_source).unwrap();
 
             // don't use hardware acceleration anymore, if this was the primary gpu
             #[cfg(feature = "egl")]
             {
-                if device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
+                if _device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
                     *self.egl_buffer_reader.borrow_mut() = None;
                 }
             }
@@ -641,10 +640,10 @@ impl<Data: 'static> DrmRendererSessionListener<Data> {
 
 pub struct DrmRenderer {
     device_id: dev_t,
-    buffer_utils: BufferUtils,
+    #[cfg(feature = "egl")]
+    egl_buffer_reader: Option<EGLBufferReader>,
     compositor_token: CompositorToken<Roles>,
     backends: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>>>>,
-    texture_destruction_callback: (mpsc::Sender<Gles2Texture>, mpsc::Receiver<Gles2Texture>),
     window_map: Rc<RefCell<MyWindowMap>>,
     output_map: Rc<RefCell<Vec<MyOutput>>>,
     pointer_location: Rc<RefCell<(f64, f64)>>,
@@ -670,8 +669,8 @@ impl DrmRenderer {
         if let Some(surface) = self.backends.borrow().get(&crtc) {
             let result = DrmRenderer::render_surface(
                 &mut *surface.borrow_mut(),
-                &self.texture_destruction_callback.0,
-                &self.buffer_utils,
+                #[cfg(feature = "egl")]
+                self.egl_buffer_reader.as_ref(),
                 self.device_id,
                 crtc,
                 &mut *self.window_map.borrow_mut(),
@@ -735,10 +734,6 @@ impl DrmRenderer {
                 self.window_map
                     .borrow()
                     .send_frames(self.start_time.elapsed().as_millis() as u32);
-
-                while let Ok(texture) = self.texture_destruction_callback.1.try_recv() {
-                    let _ = surface.borrow_mut().destroy_texture(texture);
-                }
             }
         }
     }
@@ -746,8 +741,8 @@ impl DrmRenderer {
     #[allow(clippy::too_many_arguments)]
     fn render_surface(
         surface: &mut RenderSurface,
-        texture_destruction_callback: &mpsc::Sender<Gles2Texture>,
-        buffer_utils: &BufferUtils,
+        #[cfg(feature = "egl")]
+        egl_buffer_reader: Option<&EGLBufferReader>,
         device_id: dev_t,
         crtc: crtc::Handle,
         window_map: &mut MyWindowMap,
@@ -759,6 +754,9 @@ impl DrmRenderer {
         cursor_status: &mut CursorImageStatus,
         logger: &slog::Logger,
     ) -> Result<(), SwapBuffersError> {
+        #[cfg(not(feature = "egl"))]
+        let egl_buffer_reader = None;
+
         surface.frame_submitted()?;
 
         // get output coordinates
@@ -778,9 +776,7 @@ impl DrmRenderer {
         // draw the surfaces
         draw_windows(
             surface,
-            device_id,
-            texture_destruction_callback,
-            buffer_utils,
+            egl_buffer_reader,
             window_map,
             Some(Rectangle {
                 x: x as i32,
@@ -805,10 +801,8 @@ impl DrmRenderer {
                     if wl_surface.as_ref().is_alive() {
                         draw_dnd_icon(
                             surface,
-                            device_id,
-                            texture_destruction_callback,
-                            buffer_utils,
                             wl_surface,
+                            egl_buffer_reader,
                             (ptr_x, ptr_y),
                             *compositor_token,
                             logger,
@@ -830,10 +824,8 @@ impl DrmRenderer {
                 if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
                     draw_cursor(
                         surface,
-                        device_id,
-                        texture_destruction_callback,
-                        buffer_utils,
                         wl_surface,
+                        egl_buffer_reader,
                         (ptr_x, ptr_y),
                         *compositor_token,
                         logger,

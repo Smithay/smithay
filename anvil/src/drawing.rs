@@ -1,12 +1,15 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::{cell::RefCell, rc::Rc, sync::mpsc::Sender};
+use std::{cell::RefCell, rc::Rc};
 
 use slog::Logger;
 use smithay::{
-    backend::renderer::{Renderer, Texture, Transform},
-    backend::SwapBuffersError,
-    reexports::{calloop::LoopHandle, wayland_server::protocol::wl_surface},
+    backend::{
+        egl::display::EGLBufferReader,
+        renderer::{Renderer, Texture, Transform},
+        SwapBuffersError,
+    },
+    reexports::{calloop::LoopHandle, wayland_server::protocol::{wl_buffer,wl_surface}},
     utils::Rectangle,
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
@@ -15,15 +18,23 @@ use smithay::{
     },
 };
 
-use crate::buffer_utils::{BufferTextures, BufferUtils};
 use crate::shell::{MyCompositorToken, MyWindowMap, SurfaceData};
+
+struct BufferTextures<T> {
+    buffer: wl_buffer::WlBuffer,
+    texture: T,
+}
+
+impl<T> Drop for BufferTextures<T> {
+    fn drop(&mut self) {
+        self.buffer.release();
+    }
+}
 
 pub fn draw_cursor<R, E, T>(
     renderer: &mut R,
-    renderer_id: u64,
-    texture_destruction_callback: &Sender<T>,
-    buffer_utils: &BufferUtils,
     surface: &wl_surface::WlSurface,
+    egl_buffer_reader: Option<&EGLBufferReader>,
     (x, y): (i32, i32),
     token: MyCompositorToken,
     log: &Logger,
@@ -45,10 +56,8 @@ where
     };
     draw_surface_tree(
         renderer,
-        renderer_id,
-        texture_destruction_callback,
-        buffer_utils,
         surface,
+        egl_buffer_reader,
         (x - dx, y - dy),
         token,
         log,
@@ -57,10 +66,8 @@ where
 
 fn draw_surface_tree<R, E, T>(
     renderer: &mut R,
-    renderer_id: u64,
-    texture_destruction_callback: &Sender<T>,
-    buffer_utils: &BufferUtils,
     root: &wl_surface::WlSurface,
+    egl_buffer_reader: Option<&EGLBufferReader>,
     location: (i32, i32),
     compositor_token: MyCompositorToken,
     log: &Logger,
@@ -81,12 +88,13 @@ where
                 let mut data = data.borrow_mut();
                 if data.texture.is_none() {
                     if let Some(buffer) = data.current_state.buffer.take() {
-                        match buffer_utils.load_buffer::<R::TextureId>(buffer) {
-                            Ok(m) => data.texture = Some(Box::new(m) as Box<dyn std::any::Any + 'static>),
+                        match renderer.import_buffer(&buffer, egl_buffer_reader) {
+                            Ok(m) => data.texture = Some(Box::new(BufferTextures { buffer, texture: m }) as Box<dyn std::any::Any + 'static>),
                             // there was an error reading the buffer, release it, we
                             // already logged the error
                             Err(err) => {
                                 warn!(log, "Error loading buffer: {:?}", err);
+                                buffer.release();
                             }
                         };
                     }
@@ -135,7 +143,7 @@ where
             if let Some(ref data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
                 let (sub_x, sub_y) = data.current_state.sub_location;
-                if let Some(buffer_textures) = data
+                if let Some(texture) = data
                     .texture
                     .as_mut()
                     .and_then(|x| x.downcast_mut::<BufferTextures<T>>())
@@ -146,11 +154,8 @@ where
                         x += sub_x;
                         y += sub_y;
                     }
-                    let texture = buffer_textures
-                        .load_texture(renderer_id, renderer, texture_destruction_callback)
-                        .unwrap();
                     if let Err(err) =
-                        renderer.render_texture_at(texture, (x, y), Transform::Normal /* TODO */, 1.0)
+                        renderer.render_texture_at(&texture.texture, (x, y), Transform::Normal /* TODO */, 1.0)
                     {
                         result = Err(err.into());
                     }
@@ -165,9 +170,7 @@ where
 
 pub fn draw_windows<R, E, T>(
     renderer: &mut R,
-    renderer_id: u64,
-    texture_destruction_callback: &Sender<T>,
-    buffer_utils: &BufferUtils,
+    egl_buffer_reader: Option<&EGLBufferReader>,
     window_map: &MyWindowMap,
     output_rect: Option<Rectangle>,
     compositor_token: MyCompositorToken,
@@ -193,10 +196,8 @@ where
             // this surface is a root of a subsurface tree that needs to be drawn
             if let Err(err) = draw_surface_tree(
                 renderer,
-                renderer_id,
-                texture_destruction_callback,
-                buffer_utils,
                 &wl_surface,
+                egl_buffer_reader,
                 initial_place,
                 compositor_token,
                 log,
@@ -211,10 +212,8 @@ where
 
 pub fn draw_dnd_icon<R, E, T>(
     renderer: &mut R,
-    renderer_id: u64,
-    texture_destruction_callback: &Sender<T>,
-    buffer_utils: &BufferUtils,
     surface: &wl_surface::WlSurface,
+    egl_buffer_reader: Option<&EGLBufferReader>,
     (x, y): (i32, i32),
     token: MyCompositorToken,
     log: &::slog::Logger,
@@ -232,10 +231,8 @@ where
     }
     draw_surface_tree(
         renderer,
-        renderer_id,
-        texture_destruction_callback,
-        buffer_utils,
         surface,
+        egl_buffer_reader,
         (x, y),
         token,
         log,
