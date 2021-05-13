@@ -609,26 +609,16 @@ fn get_dmabuf_formats(
 ///
 /// Can be created by using [`EGLGraphicsBackend::bind_wl_display`].
 #[cfg(feature = "use_system_lib")]
+#[derive(Debug, Clone)]
 pub struct EGLBufferReader {
     display: Arc<EGLDisplayHandle>,
-    wayland: *mut wl_display,
-}
-
-// Gles2 does not implement debug, so we have to impl Debug manually
-#[cfg(feature = "use_system_lib")]
-impl fmt::Debug for EGLBufferReader {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EGLBufferReader")
-            .field("display", &self.display)
-            .field("wayland", &self.wayland)
-            .finish()
-    }
+    wayland: Option<Arc<*mut wl_display>>,
 }
 
 #[cfg(feature = "use_system_lib")]
 impl EGLBufferReader {
     fn new(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display) -> Self {
-        Self { display, wayland }
+        Self { display, wayland: Some(Arc::new(wayland)) }
     }
 
     /// Try to receive [`EGLImages`] from a given [`WlBuffer`].
@@ -767,10 +757,12 @@ impl EGLBufferReader {
 #[cfg(feature = "use_system_lib")]
 impl Drop for EGLBufferReader {
     fn drop(&mut self) {
-        if !self.wayland.is_null() {
-            unsafe {
-                // ignore errors on drop
-                ffi::egl::UnbindWaylandDisplayWL(**self.display, self.wayland as _);
+        if let Ok(wayland) = Arc::try_unwrap(self.wayland.take().unwrap()) {
+            if !wayland.is_null() {
+                unsafe {
+                    // ignore errors on drop
+                    ffi::egl::UnbindWaylandDisplayWL(**self.display, wayland as _);
+                }
             }
         }
     }
