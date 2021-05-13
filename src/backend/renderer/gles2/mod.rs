@@ -1,6 +1,6 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
-use std::collections::HashSet;
+use std::{collections::HashSet, os::raw::c_char};
 use std::fmt;
 use std::ffi::CStr;
 use std::ptr;
@@ -189,7 +189,7 @@ unsafe fn compile_shader(
     gl.ShaderSource(
         shader,
         1,
-        &src.as_ptr() as *const *const u8 as *const *const i8,
+        &src.as_ptr() as *const *const u8 as *const *const ffi::types::GLchar,
         &(src.len() as i32) as *const _,
     );
     gl.CompileShader(shader);
@@ -242,12 +242,12 @@ unsafe fn texture_program(gl: &ffi::Gles2, frag: &'static str) -> Result<Gles2Pr
 
     Ok(Gles2Program {
         program,
-        uniform_tex: gl.GetUniformLocation(program, tex.as_ptr() as *const i8),
-        uniform_matrix: gl.GetUniformLocation(program, matrix.as_ptr() as *const i8),
-        uniform_invert_y: gl.GetUniformLocation(program, invert_y.as_ptr() as *const i8),
-        uniform_alpha: gl.GetUniformLocation(program, alpha.as_ptr() as *const i8),
-        attrib_position: gl.GetAttribLocation(program, position.as_ptr() as *const i8),
-        attrib_tex_coords: gl.GetAttribLocation(program, tex_coords.as_ptr() as *const i8),
+        uniform_tex: gl.GetUniformLocation(program, tex.as_ptr() as *const ffi::types::GLchar),
+        uniform_matrix: gl.GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
+        uniform_invert_y: gl.GetUniformLocation(program, invert_y.as_ptr() as *const ffi::types::GLchar),
+        uniform_alpha: gl.GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
+        attrib_position: gl.GetAttribLocation(program, position.as_ptr() as *const ffi::types::GLchar),
+        attrib_tex_coords: gl.GetAttribLocation(program, tex_coords.as_ptr() as *const ffi::types::GLchar),
     })
 }
 
@@ -275,7 +275,7 @@ impl Gles2Renderer {
 
         let (gl, exts, logger) = {
             let gl = ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _);
-            let ext_ptr = gl.GetString(ffi::EXTENSIONS) as *const i8;
+            let ext_ptr = gl.GetString(ffi::EXTENSIONS) as *const c_char;
             if ext_ptr.is_null() {
                 return Err(Gles2Error::GLFunctionLoaderError);
             }
@@ -290,17 +290,17 @@ impl Gles2Renderer {
             info!(
                 log,
                 "GL Version: {:?}",
-                CStr::from_ptr(gl.GetString(ffi::VERSION) as *const i8)
+                CStr::from_ptr(gl.GetString(ffi::VERSION) as *const c_char)
             );
             info!(
                 log,
                 "GL Vendor: {:?}",
-                CStr::from_ptr(gl.GetString(ffi::VENDOR) as *const i8)
+                CStr::from_ptr(gl.GetString(ffi::VENDOR) as *const c_char)
             );
             info!(
                 log,
                 "GL Renderer: {:?}",
-                CStr::from_ptr(gl.GetString(ffi::RENDERER) as *const i8)
+                CStr::from_ptr(gl.GetString(ffi::RENDERER) as *const c_char)
             );
             info!(log, "Supported GL Extensions: {:?}", exts);
 
