@@ -1,6 +1,6 @@
 //! Module for Buffers created using [libgbm](reexports::gbm)
 
-use super::{dmabuf::Dmabuf, Allocator, Buffer, Format, Fourcc, Modifier};
+use super::{dmabuf::{AsDmabuf, Dmabuf}, Allocator, Buffer, Format, Fourcc, Modifier};
 use gbm::{BufferObject as GbmBuffer, BufferObjectFlags, Device as GbmDevice};
 use std::os::unix::io::AsRawFd;
 
@@ -56,14 +56,14 @@ pub enum GbmConvertError {
     InvalidFD,
 }
 
-impl<T> std::convert::TryFrom<GbmBuffer<T>> for Dmabuf {
+impl<T> AsDmabuf for GbmBuffer<T> {
     type Error = GbmConvertError;
 
-    fn try_from(buf: GbmBuffer<T>) -> Result<Self, GbmConvertError> {
-        let planes = buf.plane_count()? as i32;
+    fn export(&self) -> Result<Dmabuf, GbmConvertError> {
+        let planes = self.plane_count()? as i32;
 
         //TODO switch to gbm_bo_get_plane_fd when it lands
-        let mut iter = (0i32..planes).map(|i| buf.handle_for_plane(i));
+        let mut iter = (0i32..planes).map(|i| self.handle_for_plane(i));
         let first = iter.next().expect("Encountered a buffer with zero planes");
         // check that all handles are the same
         let handle = iter.try_fold(first, |first, next| {
@@ -82,20 +82,20 @@ impl<T> std::convert::TryFrom<GbmBuffer<T>> for Dmabuf {
             return Err(GbmConvertError::UnsupportedBuffer); //TODO
         }
 
-        let fds = [buf.fd()?, 0, 0, 0];
+        let fds = [self.fd()?, 0, 0, 0];
         //if fds.iter().any(|fd| fd == 0) {
         if fds[0] < 0 {
             return Err(GbmConvertError::InvalidFD);
         }
 
         let offsets = (0i32..planes)
-            .map(|i| buf.offset(i))
+            .map(|i| self.offset(i))
             .collect::<Result<Vec<u32>, gbm::DeviceDestroyedError>>()?;
         let strides = (0i32..planes)
-            .map(|i| buf.stride_for_plane(i))
+            .map(|i| self.stride_for_plane(i))
             .collect::<Result<Vec<u32>, gbm::DeviceDestroyedError>>()?;
 
-        Ok(Dmabuf::new(buf, planes as usize, &offsets, &strides, &fds).unwrap())
+        Ok(Dmabuf::new(self, planes as usize, &offsets, &strides, &fds).unwrap())
     }
 }
 

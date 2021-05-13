@@ -66,7 +66,7 @@ impl Buffer for Dmabuf {
 
 impl Dmabuf {
     pub(crate) fn new(
-        src: impl Buffer,
+        src: &impl Buffer,
         planes: usize,
         offsets: &[u32],
         strides: &[u32],
@@ -156,5 +156,22 @@ impl Drop for DmabufInternal {
                 let _ = nix::unistd::close(*fd);
             }
         }
+    }
+}
+
+/// Buffer that can be exported as Dmabufs
+pub trait AsDmabuf {
+    /// Error type returned, if exporting fails
+    type Error;
+
+    /// Export this buffer as a new Dmabuf
+    fn export(&self) -> Result<Dmabuf, Self::Error>;
+}
+
+impl AsDmabuf for Dmabuf {
+    type Error = ();
+
+    fn export(&self) -> Result<Dmabuf, ()> {
+        Ok(self.clone())
     }
 }
