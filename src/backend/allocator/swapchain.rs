@@ -1,4 +1,3 @@
-use std::convert::TryInto;
 use std::ops::Deref;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -37,16 +36,15 @@ pub const SLOT_CAP: usize = 4;
 /// you can store then in the buffer slots userdata, where it gets freed, if the buffer gets allocated, but
 /// is still valid, if the buffer was just re-used. So instead of creating a framebuffer handle for each new
 /// buffer, you can skip creation, if the userdata already contains a framebuffer handle.
-pub struct Swapchain<A: Allocator<B>, B: Buffer + TryInto<B>, U: 'static, D: Buffer = B> {
+pub struct Swapchain<A: Allocator<B>, B: Buffer, U: 'static> {
     /// Allocator used by the swapchain
     pub allocator: A,
-    _original_buffer_format: std::marker::PhantomData<B>,
 
     width: u32,
     height: u32,
     format: Format,
 
-    slots: [Slot<D, U>; SLOT_CAP],
+    slots: [Slot<B, U>; SLOT_CAP],
 }
 
 /// Slot of a swapchain containing an allocated buffer and its userdata.
@@ -110,35 +108,16 @@ impl<B: Buffer, U: 'static> Drop for Slot<B, U> {
     }
 }
 
-/// Error that can happen on acquiring a buffer
-#[derive(Debug, thiserror::Error)]
-pub enum SwapchainError<E1, E2>
+impl<A, B, U> Swapchain<A, B, U>
 where
-    E1: std::error::Error + 'static,
-    E2: std::error::Error + 'static,
-{
-    /// The allocator returned an error
-    #[error("Failed to allocate a new buffer: {0}")]
-    AllocationError(#[source] E1),
-    /// The buffer could not be successfully converted into the desired format
-    #[error("Failed to convert a new buffer: {0}")]
-    ConversionError(#[source] E2),
-}
-
-impl<A, B, D, U, E1, E2> Swapchain<A, B, U, D>
-where
-    A: Allocator<B, Error = E1>,
-    B: Buffer + TryInto<D, Error = E2>,
-    D: Buffer,
-    E1: std::error::Error + 'static,
-    E2: std::error::Error + 'static,
+    A: Allocator<B>,
+    B: Buffer,
     U: 'static,
 {
     /// Create a new swapchain with the desired allocator and dimensions and pixel format for the created buffers.
-    pub fn new(allocator: A, width: u32, height: u32, format: Format) -> Swapchain<A, B, U, D> {
+    pub fn new(allocator: A, width: u32, height: u32, format: Format) -> Swapchain<A, B, U> {
         Swapchain {
             allocator,
-            _original_buffer_format: std::marker::PhantomData,
             width,
             height,
             format,
@@ -150,15 +129,12 @@ where
     ///
     /// The swapchain has an internal maximum of four re-usable buffers.
     /// This function returns the first free one.
-    pub fn acquire(&mut self) -> Result<Option<Slot<D, U>>, SwapchainError<E1, E2>> {
+    pub fn acquire(&mut self) -> Result<Option<Slot<B, U>>, A::Error> {
         if let Some(free_slot) = self.slots.iter_mut().find(|s| !s.acquired.load(Ordering::SeqCst)) {
             if free_slot.buffer.is_none() {
                 free_slot.buffer = Arc::new(Some(
                     self.allocator
-                        .create_buffer(self.width, self.height, self.format)
-                        .map_err(SwapchainError::AllocationError)?
-                        .try_into()
-                        .map_err(SwapchainError::ConversionError)?,
+                        .create_buffer(self.width, self.height, self.format)?
                 ));
             }
             assert!(free_slot.buffer.is_some());

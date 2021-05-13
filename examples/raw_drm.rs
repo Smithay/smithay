@@ -133,7 +133,7 @@ fn main() {
 
 pub struct DrmHandlerImpl {
     swapchain:
-        Swapchain<DrmDevice<FdWrapper>, DumbBuffer<FdWrapper>, framebuffer::Handle, DumbBuffer<FdWrapper>>,
+        Swapchain<DrmDevice<FdWrapper>, DumbBuffer<FdWrapper>, framebuffer::Handle>,
     current: Slot<DumbBuffer<FdWrapper>, framebuffer::Handle>,
     surface: Rc<DrmSurface<FdWrapper>>,
 }

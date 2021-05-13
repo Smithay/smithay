@@ -22,7 +22,7 @@ pub mod dumb;
 pub mod gbm;
 
 mod swapchain;
-pub use swapchain::{Slot, Swapchain, SwapchainError};
+pub use swapchain::{Slot, Swapchain};
 
 pub use drm_fourcc::{
     DrmFormat as Format, DrmFourcc as Fourcc, DrmModifier as Modifier, DrmVendor as Vendor,
