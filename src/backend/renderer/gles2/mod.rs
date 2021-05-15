@@ -10,10 +10,13 @@ use std::sync::{
     mpsc::{channel, Receiver, Sender},
 };
 use std::{collections::HashSet, os::raw::c_char};
+use std::convert::TryFrom;
 
 use cgmath::{prelude::*, Matrix3};
 
 mod shaders;
+mod version;
+
 use super::{Bind, Renderer, Texture, Transform, Unbind};
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
@@ -331,6 +334,11 @@ impl Gles2Renderer {
             );
             info!(log, "Supported GL Extensions: {:?}", exts);
 
+            let gl_version = version::GlVersion::try_from(&gl).unwrap_or_else(|_| {
+                warn!(log, "Failed to detect GLES version, defaulting to 2.0");
+                version::GLES_2_0
+            });
+
             // required for the manditory wl_shm formats
             if !exts.iter().any(|ext| ext == "GL_EXT_texture_format_BGRA8888") {
                 return Err(Gles2Error::GLExtensionNotSupported(&[
@@ -338,7 +346,7 @@ impl Gles2Renderer {
                 ]));
             }
             // required for buffers without linear memory layout
-            if !exts.iter().any(|ext| ext == "GL_EXT_unpack_subimage") {
+            if gl_version < version::GLES_3_0 && !exts.iter().any(|ext| ext == "GL_EXT_unpack_subimage") {
                 return Err(Gles2Error::GLExtensionNotSupported(&["GL_EXT_unpack_subimage"]));
             }
 
