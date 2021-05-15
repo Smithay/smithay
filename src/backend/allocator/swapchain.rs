@@ -132,10 +132,11 @@ where
     pub fn acquire(&mut self) -> Result<Option<Slot<B, U>>, A::Error> {
         if let Some(free_slot) = self.slots.iter_mut().find(|s| !s.acquired.load(Ordering::SeqCst)) {
             if free_slot.buffer.is_none() {
-                free_slot.buffer = Arc::new(Some(
-                    self.allocator
-                        .create_buffer(self.width, self.height, self.format)?
-                ));
+                free_slot.buffer = Arc::new(Some(self.allocator.create_buffer(
+                    self.width,
+                    self.height,
+                    self.format,
+                )?));
             }
             assert!(free_slot.buffer.is_some());
 

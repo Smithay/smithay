@@ -4,6 +4,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+#[cfg(feature = "egl")]
+use smithay::backend::egl::display::EGLBufferReader;
 use smithay::{
     backend::renderer::buffer_dimensions,
     reexports::{
@@ -33,8 +35,6 @@ use smithay::{
         Serial,
     },
 };
-#[cfg(feature = "egl")]
-use smithay::backend::egl::display::EGLBufferReader;
 
 use crate::window_map::{Kind as SurfaceKind, WindowMap};
 
@@ -310,9 +310,8 @@ pub struct ShellHandles {
 
 pub fn init_shell(
     display: &mut Display,
-    #[cfg(feature = "egl")]
-    egl_reader: Rc<RefCell<Option<EGLBufferReader>>>,
-    log: ::slog::Logger
+    #[cfg(feature = "egl")] egl_reader: Rc<RefCell<Option<EGLBufferReader>>>,
+    log: ::slog::Logger,
 ) -> ShellHandles {
     // TODO: this is awkward...
     let almost_window_map = Rc::new(RefCell::new(None::<Rc<RefCell<MyWindowMap>>>));
@@ -794,8 +793,7 @@ impl SurfaceData {
 fn surface_commit(
     surface: &wl_surface::WlSurface,
     token: CompositorToken<Roles>,
-    #[cfg(feature = "egl")]
-    egl_reader: Option<&EGLBufferReader>,
+    #[cfg(feature = "egl")] egl_reader: Option<&EGLBufferReader>,
     window_map: &RefCell<MyWindowMap>,
 ) {
     #[cfg(feature = "xwayland")]

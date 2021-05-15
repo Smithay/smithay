@@ -23,18 +23,18 @@ use smithay::{
     },
 };
 
+#[cfg(feature = "egl")]
+use smithay::backend::egl::display::EGLBufferReader;
 #[cfg(feature = "udev")]
 use smithay::backend::session::{auto::AutoSession, Session};
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::XWayland;
-#[cfg(feature = "egl")]
-use smithay::backend::egl::display::EGLBufferReader;
 
+use crate::shell::init_shell;
 #[cfg(feature = "udev")]
 use crate::udev::MyOutput;
 #[cfg(feature = "xwayland")]
 use crate::xwayland::XWm;
-use crate::shell::init_shell;
 
 pub struct AnvilState {
     pub socket_name: String,

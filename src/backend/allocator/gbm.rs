@@ -1,6 +1,9 @@
 //! Module for Buffers created using [libgbm](reexports::gbm)
 
-use super::{dmabuf::{AsDmabuf, Dmabuf}, Allocator, Buffer, Format, Fourcc, Modifier};
+use super::{
+    dmabuf::{AsDmabuf, Dmabuf},
+    Allocator, Buffer, Format, Fourcc, Modifier,
+};
 use gbm::{BufferObject as GbmBuffer, BufferObjectFlags, Device as GbmDevice};
 use std::os::unix::io::AsRawFd;
 

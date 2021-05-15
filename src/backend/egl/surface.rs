@@ -29,14 +29,14 @@ pub struct EGLSurface {
 impl fmt::Debug for EGLSurface {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EGLSurface")
-         .field("display", &self.display)
-         // native does not necessarily implement Debug
-         .field("surface", &self.surface)
-         .field("config_id", &self.config_id)
-         .field("pixel_format", &self.pixel_format)
-         .field("surface_attributes", &self.surface_attributes)
-         .field("logger", &self.logger)
-         .finish()
+            .field("display", &self.display)
+            // native does not necessarily implement Debug
+            .field("surface", &self.surface)
+            .field("config_id", &self.config_id)
+            .field("pixel_format", &self.pixel_format)
+            .field("surface_attributes", &self.surface_attributes)
+            .field("logger", &self.logger)
+            .finish()
     }
 }
 

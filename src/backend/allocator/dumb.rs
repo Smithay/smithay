@@ -20,9 +20,9 @@ pub struct DumbBuffer<A: AsRawFd + 'static> {
 impl<A: AsRawFd + 'static> fmt::Debug for DumbBuffer<A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DumbBuffer")
-         .field("handle", &self.handle)
-         .field("format", &self.format)
-         .finish()
+            .field("handle", &self.handle)
+            .field("format", &self.format)
+            .finish()
     }
 }
 

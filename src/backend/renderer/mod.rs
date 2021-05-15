@@ -164,7 +164,6 @@ pub trait Renderer {
         &[wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888]
     }
 
-
     /// Import a given buffer into the renderer.
     ///
     /// Returns a texture_id, which can be used with `render_texture(_at)` or implementation-specific functions.
@@ -176,7 +175,11 @@ pub trait Renderer {
     /// The implementation defines, if the id keeps being valid, if the buffer is released,
     /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
     #[cfg(feature = "wayland_frontend")]
-    fn import_buffer(&mut self, buffer: &wl_buffer::WlBuffer, egl: Option<&EGLBufferReader>) -> Result<Self::TextureId, Self::Error>;
+    fn import_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        egl: Option<&EGLBufferReader>,
+    ) -> Result<Self::TextureId, Self::Error>;
 
     /// Initialize a rendering context on the current rendering target with given dimensions and transformation.
     ///
@@ -248,10 +251,18 @@ pub trait Renderer {
 
 /// Returns the dimensions of a wl_buffer
 #[cfg(all(feature = "wayland_frontend", feature = "backend_egl"))]
-pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer, egl_buffer_reader: Option<&EGLBufferReader>) -> Option<(i32, i32)> {
-    if let Some((w, h)) = egl_buffer_reader.as_ref().and_then(|x| x.egl_buffer_dimensions(&buffer)) {
+pub fn buffer_dimensions(
+    buffer: &wl_buffer::WlBuffer,
+    egl_buffer_reader: Option<&EGLBufferReader>,
+) -> Option<(i32, i32)> {
+    if let Some((w, h)) = egl_buffer_reader
+        .as_ref()
+        .and_then(|x| x.egl_buffer_dimensions(&buffer))
+    {
         Some((w, h))
-    } else if let Ok((w, h)) = crate::wayland::shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height)) {
+    } else if let Ok((w, h)) =
+        crate::wayland::shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height))
+    {
         Some((w, h))
     } else {
         None
@@ -263,7 +274,9 @@ pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer, egl_buffer_reader: Option
 pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)> {
     use crate::backend::allocator::Buffer;
 
-    if let Ok((w, h)) = crate::wayland::shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height)) {
+    if let Ok((w, h)) =
+        crate::wayland::shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height))
+    {
         Some((w, h))
     } else {
         None

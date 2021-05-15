@@ -12,6 +12,8 @@ use std::{
 use image::{ImageBuffer, Rgba};
 use slog::Logger;
 
+#[cfg(feature = "egl")]
+use smithay::backend::{drm::DevPath, egl::display::EGLBufferReader, udev::primary_gpu};
 use smithay::{
     backend::{
         drm::{device_bind, DeviceHandler, DrmDevice, DrmError, DrmRenderSurface},
@@ -55,10 +57,6 @@ use smithay::{
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
     },
-};
-#[cfg(feature = "egl")]
-use smithay::{
-    backend::{drm::DevPath, egl::display::EGLBufferReader, udev::primary_gpu},
 };
 
 use crate::drawing::*;
@@ -501,7 +499,11 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
             let renderer = Rc::new(DrmRenderer {
                 device_id,
                 #[cfg(feature = "egl")]
-                egl_buffer_reader: if is_primary { self.egl_buffer_reader.borrow().clone() } else { None },
+                egl_buffer_reader: if is_primary {
+                    self.egl_buffer_reader.borrow().clone()
+                } else {
+                    None
+                },
                 compositor_token: self.compositor_token,
                 backends: backends.clone(),
                 window_map: self.window_map.clone(),
@@ -741,8 +743,7 @@ impl DrmRenderer {
     #[allow(clippy::too_many_arguments)]
     fn render_surface(
         surface: &mut RenderSurface,
-        #[cfg(feature = "egl")]
-        egl_buffer_reader: Option<&EGLBufferReader>,
+        #[cfg(feature = "egl")] egl_buffer_reader: Option<&EGLBufferReader>,
         device_id: dev_t,
         crtc: crtc::Handle,
         window_map: &mut MyWindowMap,

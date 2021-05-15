@@ -1,15 +1,15 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
-use std::{collections::HashSet, os::raw::c_char};
 use std::cell::RefCell;
-use std::fmt;
 use std::ffi::CStr;
+use std::fmt;
 use std::ptr;
 use std::rc::Rc;
 use std::sync::{
-    atomic::{Ordering, AtomicUsize},
-    mpsc::{Sender, Receiver, channel}
+    atomic::{AtomicUsize, Ordering},
+    mpsc::{channel, Receiver, Sender},
 };
+use std::{collections::HashSet, os::raw::c_char};
 
 use cgmath::{prelude::*, Matrix3};
 
@@ -20,7 +20,8 @@ use crate::backend::allocator::{
     Format,
 };
 use crate::backend::egl::{
-    ffi::egl::types::EGLImage, EGLBuffer, EGLContext, EGLSurface, Format as EGLFormat, MakeCurrentError, display::EGLBufferReader,
+    display::EGLBufferReader, ffi::egl::types::EGLImage, EGLBuffer, EGLContext, EGLSurface,
+    Format as EGLFormat, MakeCurrentError,
 };
 use crate::backend::SwapBuffersError;
 
@@ -109,17 +110,17 @@ pub struct Gles2Renderer {
 impl fmt::Debug for Gles2Renderer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Gles2Renderer")
-         .field("id", &self.id)
-         .field("buffers", &self.buffers)
-         .field("target_buffer", &self.target_buffer)
-         .field("target_surface", &self.target_surface)
-         .field("current_projection", &self.current_projection)
-         .field("extensions", &self.extensions)
-         .field("programs", &self.programs)
-         // ffi::Gles2 does not implement Debug
-         .field("egl", &self.egl)
-         .field("logger", &self.logger)
-         .finish()
+            .field("id", &self.id)
+            .field("buffers", &self.buffers)
+            .field("target_buffer", &self.target_buffer)
+            .field("target_surface", &self.target_surface)
+            .field("current_projection", &self.current_projection)
+            .field("extensions", &self.extensions)
+            .field("programs", &self.programs)
+            // ffi::Gles2 does not implement Debug
+            .field("egl", &self.egl)
+            .field("logger", &self.logger)
+            .finish()
     }
 }
 
@@ -409,8 +410,8 @@ struct BufferCache {
 }
 
 enum BufferCacheVariant {
-   Egl(Option<EglCache>),
-   Shm(Option<ShmCache>), 
+    Egl(Option<EglCache>),
+    Shm(Option<ShmCache>),
 }
 
 struct EglCache {
@@ -424,7 +425,11 @@ struct ShmCache {
 
 impl Gles2Renderer {
     #[cfg(feature = "wayland_frontend")]
-    fn import_shm(&mut self, buffer: &wl_buffer::WlBuffer, cache: &mut Option<ShmCache>) -> Result<Gles2Texture, Gles2Error> {
+    fn import_shm(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        cache: &mut Option<ShmCache>,
+    ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;
 
         with_buffer_contents(&buffer, |slice, data| {
@@ -500,22 +505,34 @@ impl Gles2Renderer {
     }
 
     #[cfg(feature = "wayland_frontend")]
-    fn import_egl(&mut self, buffer: &wl_buffer::WlBuffer, reader: &EGLBufferReader, cache: &mut Option<EglCache>) -> Result<Gles2Texture, Gles2Error> {
+    fn import_egl(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        reader: &EGLBufferReader,
+        cache: &mut Option<EglCache>,
+    ) -> Result<Gles2Texture, Gles2Error> {
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
 
         self.make_current()?;
-        let egl_buffer = cache.as_mut().and_then(|x| x.buf.take()).map(Ok).unwrap_or_else(|| {
-            reader.egl_buffer_contents(&buffer)
-        }).map_err(Gles2Error::EGLBufferAccessError)?;
+        let egl_buffer = cache
+            .as_mut()
+            .and_then(|x| x.buf.take())
+            .map(Ok)
+            .unwrap_or_else(|| reader.egl_buffer_contents(&buffer))
+            .map_err(Gles2Error::EGLBufferAccessError)?;
 
         // we do not need to re-import external textures
         if egl_buffer.format == EGLFormat::External && cache.is_some() {
             return Ok(cache.as_ref().map(|x| x.texture.clone()).unwrap());
         }
 
-        let tex = self.import_egl_image(egl_buffer.image(0).unwrap(), egl_buffer.format == EGLFormat::External, cache.as_ref().map(|x| x.texture.0.texture))?;
+        let tex = self.import_egl_image(
+            egl_buffer.image(0).unwrap(),
+            egl_buffer.format == EGLFormat::External,
+            cache.as_ref().map(|x| x.texture.0.texture),
+        )?;
         let texture = cache.as_ref().map(|x| x.texture.clone()).unwrap_or_else(|| {
             Gles2Texture(Rc::new(Gles2TextureInternal {
                 texture: tex,
@@ -542,7 +559,12 @@ impl Gles2Renderer {
         Ok(texture)
     }
 
-    fn import_egl_image(&self, image: EGLImage, is_external: bool, tex: Option<u32>) -> Result<u32, Gles2Error> {
+    fn import_egl_image(
+        &self,
+        image: EGLImage,
+        is_external: bool,
+        tex: Option<u32>,
+    ) -> Result<u32, Gles2Error> {
         let tex = tex.unwrap_or_else(|| unsafe {
             let mut tex = 0;
             self.gl.GenTextures(1, &mut tex);
@@ -556,8 +578,7 @@ impl Gles2Renderer {
         unsafe {
             self.gl.BindTexture(target, tex);
 
-            self.gl
-                .EGLImageTargetTexture2DOES(target, image);
+            self.gl.EGLImageTargetTexture2DOES(target, image);
         }
 
         Ok(tex)
@@ -593,7 +614,13 @@ impl Bind<Dmabuf> for Gles2Renderer {
         let buffer = self
             .buffers
             .iter()
-            .find(|buffer| if let Some(dma) = buffer.dmabuf.upgrade() { dma == dmabuf } else { false })
+            .find(|buffer| {
+                if let Some(dma) = buffer.dmabuf.upgrade() {
+                    dma == dmabuf
+                } else {
+                    false
+                }
+            })
             .map(|buf| {
                 let dmabuf = buf
                     .dmabuf
@@ -773,15 +800,18 @@ impl Renderer for Gles2Renderer {
         Ok(texture)
     }
 
-
     #[cfg(feature = "wayland_frontend")]
-    fn import_buffer(&mut self, buffer: &wl_buffer::WlBuffer, egl: Option<&EGLBufferReader>) -> Result<Self::TextureId, Self::Error> {
+    fn import_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        egl: Option<&EGLBufferReader>,
+    ) -> Result<Self::TextureId, Self::Error> {
         // init cache if not existing
         let cache_cell = match buffer.as_ref().user_data().get::<Rc<RefCell<BufferCache>>>() {
             Some(cache) => cache.clone(),
             None => {
                 let cache = BufferCache {
-                    cache: Vec::with_capacity(self.id+1),
+                    cache: Vec::with_capacity(self.id + 1),
                 };
 
                 let data: Rc<RefCell<BufferCache>> = Rc::new(RefCell::new(cache));
@@ -790,7 +820,7 @@ impl Renderer for Gles2Renderer {
                 result
             }
         };
-        
+
         // init cache
         let mut cache = cache_cell.borrow_mut();
         while cache.cache.len() < self.id {
@@ -805,10 +835,10 @@ impl Renderer for Gles2Renderer {
                     BufferCacheVariant::Shm(None)
                 } else {
                     unreachable!("Completely unknown buffer format. How did we got here?");
-                }
+                },
             ));
         }
-    
+
         // delegate for different buffer types
         match cache.cache[self.id].as_mut() {
             Some(BufferCacheVariant::Egl(cache)) => self.import_egl(&buffer, egl.unwrap(), cache),
@@ -889,7 +919,8 @@ impl Renderer for Gles2Renderer {
                 .TexParameteri(target, ffi::TEXTURE_MIN_FILTER, ffi::LINEAR as i32);
             self.gl.UseProgram(self.programs[tex.0.texture_kind].program);
 
-            self.gl.Uniform1i(self.programs[tex.0.texture_kind].uniform_tex, 0);
+            self.gl
+                .Uniform1i(self.programs[tex.0.texture_kind].uniform_tex, 0);
             self.gl.UniformMatrix3fv(
                 self.programs[tex.0.texture_kind].uniform_matrix,
                 1,

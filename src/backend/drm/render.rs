@@ -10,12 +10,15 @@ use gbm::{BufferObject, BufferObjectFlags, Device as GbmDevice};
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
 use super::{device::DevPath, surface::DrmSurfaceInternal, DrmError, DrmSurface};
-use crate::backend::{
-    allocator::{dmabuf::{AsDmabuf, Dmabuf}, Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain},
-    egl::display::EGLBufferReader,
-};
 use crate::backend::renderer::{Bind, Renderer, Texture, Transform};
 use crate::backend::SwapBuffersError;
+use crate::backend::{
+    allocator::{
+        dmabuf::{AsDmabuf, Dmabuf},
+        Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain,
+    },
+    egl::display::EGLBufferReader,
+};
 
 /// Simplified by limited abstraction to link single [`DrmSurface`]s to renderers.
 ///
@@ -24,12 +27,7 @@ use crate::backend::SwapBuffersError;
 /// In some scenarios it might be enough to use of a drm-surface as the one and only target
 /// of a single renderer. In these cases `DrmRenderSurface` provides a way to quickly
 /// get up and running without manually handling and binding buffers.
-pub struct DrmRenderSurface<
-    D: AsRawFd + 'static,
-    A: Allocator<B>,
-    R: Bind<Dmabuf>,
-    B: Buffer,
-> {
+pub struct DrmRenderSurface<D: AsRawFd + 'static, A: Allocator<B>, R: Bind<Dmabuf>, B: Buffer> {
     _format: Format,
     buffers: Buffers<D, B>,
     current_buffer: Option<(Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>, Dmabuf)>,
@@ -42,7 +40,7 @@ impl<D, A, B, R, E1, E2, E3> DrmRenderSurface<D, A, R, B>
 where
     D: AsRawFd + 'static,
     A: Allocator<B, Error = E1>,
-    B: Buffer + AsDmabuf<Error=E2>,
+    B: Buffer + AsDmabuf<Error = E2>,
     R: Bind<Dmabuf> + Renderer<Error = E3>,
     E1: std::error::Error + 'static,
     E2: std::error::Error + 'static,
@@ -328,7 +326,7 @@ impl<D, A, B, T, R, E1, E2, E3> Renderer for DrmRenderSurface<D, A, R, B>
 where
     D: AsRawFd + 'static,
     A: Allocator<B, Error = E1>,
-    B: Buffer + AsDmabuf<Error=E2>,
+    B: Buffer + AsDmabuf<Error = E2>,
     R: Bind<Dmabuf> + Renderer<Error = E3, TextureId = T>,
     T: Texture,
     E1: std::error::Error + 'static,
@@ -352,19 +350,29 @@ where
     }
 
     #[cfg(feature = "wayland_frontend")]
-    fn import_buffer(&mut self, buffer: &wl_buffer::WlBuffer, egl: Option<&EGLBufferReader>) -> Result<Self::TextureId, Self::Error> {
-        self.renderer.import_buffer(buffer, egl).map_err(Error::RenderError)
+    fn import_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        egl: Option<&EGLBufferReader>,
+    ) -> Result<Self::TextureId, Self::Error> {
+        self.renderer
+            .import_buffer(buffer, egl)
+            .map_err(Error::RenderError)
     }
-    
+
     fn begin(&mut self, width: u32, height: u32, _transform: Transform) -> Result<(), Error<E1, E2, E3>> {
         if self.current_buffer.is_some() {
             return Ok(());
         }
 
-        let slot = self.swapchain.acquire().map_err(Error::SwapchainError)?.ok_or(Error::NoFreeSlotsError)?;
+        let slot = self
+            .swapchain
+            .acquire()
+            .map_err(Error::SwapchainError)?
+            .ok_or(Error::NoFreeSlotsError)?;
         let dmabuf = match &*slot.userdata() {
             Some((buf, _)) => buf.clone(),
-            None =>  (*slot).export().map_err(Error::AsDmabufError)?,
+            None => (*slot).export().map_err(Error::AsDmabufError)?,
         };
         self.renderer.bind(dmabuf.clone()).map_err(Error::RenderError)?;
         self.current_buffer = Some((slot, dmabuf));
@@ -396,10 +404,7 @@ where
         let result = self.renderer.finish();
         if result.is_ok() {
             let (slot, dmabuf) = self.current_buffer.take().unwrap();
-            match self
-                .buffers
-                .queue::<E1, E2, E3>(slot, dmabuf)
-            {
+            match self.buffers.queue::<E1, E2, E3>(slot, dmabuf) {
                 Ok(()) => {}
                 Err(Error::DrmError(drm)) => return Err(drm.into()),
                 Err(Error::GbmError(err)) => return Err(SwapBuffersError::ContextLost(Box::new(err))),
@@ -454,7 +459,7 @@ where
         dmabuf: Dmabuf,
     ) -> Result<(), Error<E1, E2, E3>>
     where
-        B: AsDmabuf<Error=E2>,
+        B: AsDmabuf<Error = E2>,
         E1: std::error::Error + 'static,
         E2: std::error::Error + 'static,
         E3: std::error::Error + 'static,
@@ -497,7 +502,15 @@ where
     {
         // yes it does not look like it, but both of these lines should be safe in all cases.
         let slot = self.queued_fb.take().unwrap();
-        let fb = slot.userdata().as_ref().unwrap().1.userdata().unwrap().unwrap().fb;
+        let fb = slot
+            .userdata()
+            .as_ref()
+            .unwrap()
+            .1
+            .userdata()
+            .unwrap()
+            .unwrap()
+            .fb;
 
         let flip = if self.drm.commit_pending() {
             self.drm.commit(fb, true)

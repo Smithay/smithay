@@ -9,7 +9,10 @@ use smithay::{
         renderer::{Renderer, Texture, Transform},
         SwapBuffersError,
     },
-    reexports::{calloop::LoopHandle, wayland_server::protocol::{wl_buffer,wl_surface}},
+    reexports::{
+        calloop::LoopHandle,
+        wayland_server::protocol::{wl_buffer, wl_surface},
+    },
     utils::Rectangle,
     wayland::{
         compositor::{roles::Role, SubsurfaceRole, TraversalAction},
@@ -54,14 +57,7 @@ where
             (0, 0)
         }
     };
-    draw_surface_tree(
-        renderer,
-        surface,
-        egl_buffer_reader,
-        (x - dx, y - dy),
-        token,
-        log,
-    )
+    draw_surface_tree(renderer, surface, egl_buffer_reader, (x - dx, y - dy), token, log)
 }
 
 fn draw_surface_tree<R, E, T>(
@@ -89,7 +85,10 @@ where
                 if data.texture.is_none() {
                     if let Some(buffer) = data.current_state.buffer.take() {
                         match renderer.import_buffer(&buffer, egl_buffer_reader) {
-                            Ok(m) => data.texture = Some(Box::new(BufferTextures { buffer, texture: m }) as Box<dyn std::any::Any + 'static>),
+                            Ok(m) => {
+                                data.texture = Some(Box::new(BufferTextures { buffer, texture: m })
+                                    as Box<dyn std::any::Any + 'static>)
+                            }
                             // there was an error reading the buffer, release it, we
                             // already logged the error
                             Err(err) => {
@@ -154,9 +153,12 @@ where
                         x += sub_x;
                         y += sub_y;
                     }
-                    if let Err(err) =
-                        renderer.render_texture_at(&texture.texture, (x, y), Transform::Normal /* TODO */, 1.0)
-                    {
+                    if let Err(err) = renderer.render_texture_at(
+                        &texture.texture,
+                        (x, y),
+                        Transform::Normal, /* TODO */
+                        1.0,
+                    ) {
                         result = Err(err.into());
                     }
                 }
@@ -229,14 +231,7 @@ where
             "Trying to display as a dnd icon a surface that does not have the DndIcon role."
         );
     }
-    draw_surface_tree(
-        renderer,
-        surface,
-        egl_buffer_reader,
-        (x, y),
-        token,
-        log,
-    )
+    draw_surface_tree(renderer, surface, egl_buffer_reader, (x, y), token, log)
 }
 
 pub fn schedule_initial_render<R: Renderer + 'static, Data: 'static>(

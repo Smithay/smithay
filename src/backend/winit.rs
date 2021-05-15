@@ -291,7 +291,11 @@ impl Renderer for WinitGraphicsBackend {
     }
 
     #[cfg(feature = "wayland_frontend")]
-    fn import_buffer(&mut self, buffer: &wl_buffer::WlBuffer, egl: Option<&EGLBufferReader>) -> Result<Self::TextureId, Self::Error> {
+    fn import_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        egl: Option<&EGLBufferReader>,
+    ) -> Result<Self::TextureId, Self::Error> {
         self.renderer.import_buffer(buffer, egl)
     }
 

@@ -617,7 +617,10 @@ pub struct EGLBufferReader {
 #[cfg(feature = "use_system_lib")]
 impl EGLBufferReader {
     fn new(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display) -> Self {
-        Self { display, wayland: Some(Arc::new(wayland)) }
+        Self {
+            display,
+            wayland: Some(Arc::new(wayland)),
+        }
     }
 
     /// Try to receive [`EGLImages`] from a given [`WlBuffer`].
