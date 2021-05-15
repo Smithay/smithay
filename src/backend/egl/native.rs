@@ -16,6 +16,44 @@ use winit::window::Window as WinitWindow;
 #[cfg(feature = "backend_gbm")]
 use gbm::{AsRaw, Device as GbmDevice};
 
+/// Create a `EGLPlatform<'a>` for the provided platform.
+///
+/// # Arguments
+///
+/// * `platform` - The platform defined in `ffi::egl::`
+/// * `native_display` - The native display raw pointer which can be casted to `*mut c_void`
+/// * `required_extensions` - The name of the required EGL Extension for this platform
+///
+/// # Optional Arguments
+/// * `attrib_list` - A list of `ffi::EGLint` like defined in the EGL Extension
+///
+/// # Examples
+///
+/// ```
+/// // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_gbm.txt
+/// egl_platform!(PLATFORM_GBM_KHR, self.as_raw(), &["EGL_KHR_platform_gbm"])
+/// ```
+#[macro_export]
+macro_rules! egl_platform {
+    ($platform:ident, $native_display:expr, $required_extensions:expr) => {
+        egl_platform!(
+            $platform,
+            $native_display,
+            $required_extensions,
+            vec![ffi::egl::NONE as ffi::EGLint]
+        );
+    };
+    ($platform:ident, $native_display:expr, $required_extensions:expr, $attrib_list:expr) => {
+        EGLPlatform::new(
+            ffi::egl::$platform,
+            stringify!($platform),
+            $native_display as *mut _,
+            $attrib_list,
+            $required_extensions,
+        )
+    };
+}
+
 /// Type, Raw handle and attributes used to call [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)  
 pub struct EGLPlatform<'a> {
     /// Required extensions to use this platform
@@ -31,6 +69,40 @@ pub struct EGLPlatform<'a> {
     _phantom: PhantomData<&'a c_void>,
 }
 
+impl<'a> EGLPlatform<'a> {
+    /// Create a `EGLPlatform<'a>` for the provided platform.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - The platform defined in `ffi::egl::`
+    /// * `platform_name` - A human readable representation of the platform
+    /// * `native_display` - The native display raw pointer which can be casted to `*mut c_void`
+    /// * `attrib_list` - A list of `ffi::EGLint` like defined in the EGL Extension
+    /// * `required_extensions` - The names of the required EGL Extensions for this platform
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// EGLPlatform::new(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, vec![ffi::egl::NONE as ffi::EGLint], &["EGL_KHR_platform_gbm"])
+    /// ```
+    pub fn new(
+        platform: ffi::egl::types::EGLenum,
+        platform_name: &'static str,
+        native_display: *mut c_void,
+        attrib_list: Vec<ffi::EGLint>,
+        required_extensions: &'static [&'static str],
+    ) -> Self {
+        EGLPlatform {
+            platform,
+            platform_name,
+            native_display,
+            attrib_list,
+            required_extensions,
+            _phantom: PhantomData,
+        }
+    }
+}
+
 impl<'a> Debug for EGLPlatform<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EGLPlatform")
@@ -42,7 +114,7 @@ impl<'a> Debug for EGLPlatform<'a> {
 
 /// Trait describing platform specific functionality to create a valid `EGLDisplay` using the `EGL_EXT_platform_base`(https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt) extension.
 pub trait EGLNativeDisplay: Send {
-    /// List of supported platforms that can be used to create a display using [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt) 
+    /// List of supported platforms that can be used to create a display using [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)
     fn supported_platforms<'a>(&'a self) -> Vec<EGLPlatform<'a>>;
 
     /// Type of surfaces created
@@ -55,22 +127,10 @@ pub trait EGLNativeDisplay: Send {
 impl<A: AsRawFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
     fn supported_platforms<'a>(&'a self) -> Vec<EGLPlatform<'a>> {
         vec![
-            EGLPlatform {
-                required_extensions: &["EGL_KHR_platform_gbm"],
-                platform_name: "PLATFORM_GBM_KHR",
-                platform: ffi::egl::PLATFORM_GBM_KHR,
-                native_display: self.as_raw() as *mut _,
-                attrib_list: vec![ffi::egl::NONE as ffi::EGLint],
-                _phantom: PhantomData,
-            },
-            EGLPlatform {
-                required_extensions: &["EGL_MESA_platform_gbm"],
-                platform_name: "PLATFORM_GBM_MESA",
-                platform: ffi::egl::PLATFORM_GBM_MESA,
-                native_display: self.as_raw() as *mut _,
-                attrib_list: vec![ffi::egl::NONE as ffi::EGLint],
-                _phantom: PhantomData,
-            },
+            // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_gbm.txt
+            egl_platform!(PLATFORM_GBM_KHR, self.as_raw(), &["EGL_KHR_platform_gbm"]),
+            // see: https://www.khronos.org/registry/EGL/extensions/MESA/EGL_MESA_platform_gbm.txt
+            egl_platform!(PLATFORM_GBM_MESA, self.as_raw(), &["EGL_MESA_platform_gbm"]),
         ]
     }
 }
@@ -79,23 +139,19 @@ impl<A: AsRawFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
 impl EGLNativeDisplay for WinitWindow {
     fn supported_platforms<'a>(&'a self) -> Vec<EGLPlatform<'a>> {
         if let Some(display) = self.wayland_display() {
-            vec![EGLPlatform {
-                required_extensions: &["EGL_EXT_platform_wayland"],
-                platform_name: "PLATFORM_WAYLAND_EXT",
-                platform: ffi::egl::PLATFORM_WAYLAND_EXT,
-                native_display: display as *mut _,
-                attrib_list: vec![ffi::egl::NONE as ffi::EGLint],
-                _phantom: PhantomData,
-            }]
+            vec![
+                // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_wayland.txt
+                egl_platform!(PLATFORM_WAYLAND_KHR, display, &["EGL_KHR_platform_wayland"]),
+                // see: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_wayland.txt
+                egl_platform!(PLATFORM_WAYLAND_EXT, display, &["EGL_EXT_platform_wayland"]),
+            ]
         } else if let Some(display) = self.xlib_display() {
-            vec![EGLPlatform {
-                required_extensions: &["EGL_EXT_platform_x11"],
-                platform_name: "PLATFORM_X11_EXT",
-                platform: ffi::egl::PLATFORM_X11_EXT,
-                native_display: display as *mut _,
-                attrib_list: vec![ffi::egl::NONE as ffi::EGLint],
-                _phantom: PhantomData,
-            }]
+            vec![
+                // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_x11.txt
+                egl_platform!(PLATFORM_X11_KHR, display, &["EGL_KHR_platform_x11"]),
+                // see: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_x11.txt
+                egl_platform!(PLATFORM_X11_EXT, display, &["EGL_EXT_platform_x11"]),
+            ]
         } else {
             unreachable!("No backends for winit other then Wayland and X11 are supported")
         }
