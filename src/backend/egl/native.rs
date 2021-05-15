@@ -29,9 +29,12 @@ use gbm::{AsRaw, Device as GbmDevice};
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
+/// use smithay::backend::egl::{ffi, native::EGLPlatform};
+/// use smithay::egl_platform;
+///
 /// // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_gbm.txt
-/// egl_platform!(PLATFORM_GBM_KHR, self.as_raw(), &["EGL_KHR_platform_gbm"])
+/// egl_platform!(PLATFORM_GBM_KHR, native_display, &["EGL_KHR_platform_gbm"]);
 /// ```
 #[macro_export]
 macro_rules! egl_platform {
@@ -82,8 +85,10 @@ impl<'a> EGLPlatform<'a> {
     ///
     /// # Examples
     ///
-    /// ```
-    /// EGLPlatform::new(ffi::egl::PLATFORM_GBM_KHR, display as *mut _, vec![ffi::egl::NONE as ffi::EGLint], &["EGL_KHR_platform_gbm"])
+    /// ```ignore
+    /// use smithay::backend::egl::{ffi, native::EGLPlatform};
+    ///
+    /// EGLPlatform::new(ffi::egl::PLATFORM_GBM_KHR, "PLATFORM_GBM_KHR", native_display as *mut _, vec![ffi::egl::NONE as ffi::EGLint], &["EGL_KHR_platform_gbm"]);
     /// ```
     pub fn new(
         platform: ffi::egl::types::EGLenum,
