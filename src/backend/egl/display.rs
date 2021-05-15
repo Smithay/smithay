@@ -598,8 +598,8 @@ fn get_dmabuf_formats(
         }
     }
 
-    info!(log, "Supported dmabuf import formats: {:?}", texture_formats);
-    info!(log, "Supported dmabuf render formats: {:?}", render_formats);
+    trace!(log, "Supported dmabuf import formats: {:?}", texture_formats);
+    trace!(log, "Supported dmabuf render formats: {:?}", render_formats);
 
     Ok((texture_formats, render_formats))
 }
