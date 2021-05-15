@@ -103,11 +103,11 @@ where
         } else if renderer_formats.is_empty() {
             return Err(Error::NoSupportedRendererFormat);
         }
-
         let formats = {
             // Special case: if a format supports explicit LINEAR (but no implicit Modifiers)
-            // and the other doesn't support any modifier, force LINEAR. This will force the allocator to
-            // create a buffer with a LINEAR layout instead of an implicit modifier.
+            // and the other doesn't support any modifier, force Implicit.
+            // This should at least result in a working pipeline possibly with a linear buffer,
+            // but we cannot be sure.
             if (plane_formats.len() == 1
                 && plane_formats.iter().next().unwrap().modifier == Modifier::Invalid
                 && renderer_formats.iter().all(|x| x.modifier != Modifier::Invalid)
@@ -119,7 +119,7 @@ where
             {
                 vec![Format {
                     code,
-                    modifier: Modifier::Linear,
+                    modifier: Modifier::Invalid,
                 }]
             } else {
                 plane_formats
