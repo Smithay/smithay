@@ -184,7 +184,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         };
 
         Ok(
-            if dev.set_client_capability(ClientCapability::Atomic, true).is_ok() && !force_legacy {
+            if !force_legacy && dev.set_client_capability(ClientCapability::Atomic, true).is_ok() {
                 DrmDeviceInternal::Atomic(AtomicDrmDevice::new(dev, active, disable_connectors, log)?)
             } else {
                 info!(log, "Falling back to LegacyDrmDevice");
