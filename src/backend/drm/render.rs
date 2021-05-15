@@ -88,8 +88,8 @@ where
             .cloned()
             .collect::<HashSet<_>>();
 
-        trace!(logger, "Remaining plane formats: {:?}", plane_formats);
-        trace!(logger, "Remaining renderer formats: {:?}", renderer_formats);
+        debug!(logger, "Remaining plane formats: {:?}", plane_formats);
+        debug!(logger, "Remaining renderer formats: {:?}", renderer_formats);
         debug!(
             logger,
             "Remaining intersected formats: {:?}",
