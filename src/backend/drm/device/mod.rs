@@ -491,7 +491,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             });
         }
 
-        info!(
+        trace!(
             self.logger,
             "Supported scan-out formats for plane ({:?}): {:?}", plane, formats
         );
