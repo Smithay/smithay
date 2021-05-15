@@ -217,7 +217,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
             } // There is no test-commiting with the legacy interface
         }
     }
-    
+
     /// Re-evaluates the current state of the crtc.
     ///
     /// Usually you do not need to call this, but if the state of

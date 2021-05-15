@@ -1,6 +1,7 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
 use std::cell::RefCell;
+use std::convert::TryFrom;
 use std::ffi::CStr;
 use std::fmt;
 use std::ptr;
@@ -10,7 +11,6 @@ use std::sync::{
     mpsc::{channel, Receiver, Sender},
 };
 use std::{collections::HashSet, os::raw::c_char};
-use std::convert::TryFrom;
 
 use cgmath::{prelude::*, Matrix3};
 

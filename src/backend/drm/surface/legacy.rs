@@ -92,7 +92,7 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
             "Initializing drm surface with mode {:?} and connectors {:?}", mode, connectors
         );
 
-        let state = State::current_state(&*fd, crtc)?; 
+        let state = State::current_state(&*fd, crtc)?;
         let pending = State {
             mode,
             connectors: connectors.iter().copied().collect(),
@@ -402,8 +402,11 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
             Ok(false)
         }
     }
-    
-    pub(crate) fn reset_state<B: AsRawFd + ControlDevice + 'static>(&self, fd: Option<&B>) -> Result<(), Error> {
+
+    pub(crate) fn reset_state<B: AsRawFd + ControlDevice + 'static>(
+        &self,
+        fd: Option<&B>,
+    ) -> Result<(), Error> {
         *self.state.write().unwrap() = if let Some(fd) = fd {
             State::current_state(fd, self.crtc)?
         } else {

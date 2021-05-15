@@ -410,9 +410,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             });
         }
 
-        if let Ok(1) = 
-            self.get_driver_capability(DriverCapability::AddFB2Modifiers)
-        {
+        if let Ok(1) = self.get_driver_capability(DriverCapability::AddFB2Modifiers) {
             let set = self.get_properties(plane).map_err(|source| Error::Access {
                 errmsg: "Failed to query properties",
                 dev: self.dev_path(),
@@ -420,17 +418,20 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             })?;
             let (handles, _) = set.as_props_and_values();
             // for every handle ...
-            let prop = handles.iter().find(|handle| {
-                // get information of that property
-                if let Some(info) = self.get_property(**handle).ok() {
-                    // to find out, if we got the handle of the "IN_FORMATS" property ...
-                    if info.name().to_str().map(|x| x == "IN_FORMATS").unwrap_or(false) {
-                        // so we can use that to get formats
-                        return true;
+            let prop = handles
+                .iter()
+                .find(|handle| {
+                    // get information of that property
+                    if let Some(info) = self.get_property(**handle).ok() {
+                        // to find out, if we got the handle of the "IN_FORMATS" property ...
+                        if info.name().to_str().map(|x| x == "IN_FORMATS").unwrap_or(false) {
+                            // so we can use that to get formats
+                            return true;
+                        }
                     }
-                }
-                false
-            }).copied();
+                    false
+                })
+                .copied();
             if let Some(prop) = prop {
                 let prop_info = self.get_property(prop).map_err(|source| Error::Access {
                     errmsg: "Failed to query property",
@@ -505,7 +506,9 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
 
         trace!(
             self.logger,
-            "Supported scan-out formats for plane ({:?}): {:?}", plane, formats
+            "Supported scan-out formats for plane ({:?}): {:?}",
+            plane,
+            formats
         );
 
         Ok(DrmSurface {

@@ -25,7 +25,11 @@ pub struct State {
 }
 
 impl State {
-    fn current_state<A: AsRawFd + ControlDevice>(fd: &A, crtc: crtc::Handle, prop_mapping: &Mapping) -> Result<Self, Error> {
+    fn current_state<A: AsRawFd + ControlDevice>(
+        fd: &A,
+        crtc: crtc::Handle,
+        prop_mapping: &Mapping,
+    ) -> Result<Self, Error> {
         let crtc_info = fd.get_crtc(crtc).map_err(|source| Error::Access {
             errmsg: "Error loading crtc info",
             dev: fd.dev_path(),
@@ -131,7 +135,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             errmsg: "Failed to create Property Blob for mode",
             dev: fd.dev_path(),
             source,
-        })?;        
+        })?;
         let pending = State {
             mode,
             blob,
@@ -767,8 +771,10 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             })
     }
 
-    
-    pub(crate) fn reset_state<B: AsRawFd + ControlDevice + 'static>(&self, fd: Option<&B>) -> Result<(), Error> {
+    pub(crate) fn reset_state<B: AsRawFd + ControlDevice + 'static>(
+        &self,
+        fd: Option<&B>,
+    ) -> Result<(), Error> {
         *self.state.write().unwrap() = if let Some(fd) = fd {
             State::current_state(fd, self.crtc, &self.prop_mapping)?
         } else {

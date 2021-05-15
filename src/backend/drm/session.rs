@@ -4,7 +4,10 @@ use std::sync::{
     Arc, Weak,
 };
 
-use drm::{Device as BasicDevice, control::{crtc, Device as ControlDevice}};
+use drm::{
+    control::{crtc, Device as ControlDevice},
+    Device as BasicDevice,
+};
 use nix::libc::dev_t;
 use nix::sys::stat;
 
@@ -140,8 +143,8 @@ impl<A: AsRawFd + 'static> DrmSurfaceObserver<A> {
             SessionSignal::ActivateSession => self.activate(None),
             SessionSignal::ActivateDevice { major, minor, new_fd } => {
                 self.activate(Some((major, minor, new_fd)))
-            },
-            _ => {},
+            }
+            _ => {}
         }
     }
 
@@ -162,7 +165,10 @@ impl<A: AsRawFd + 'static> DrmSurfaceObserver<A> {
                 DrmSurfaceInternal::Atomic(surf) => surf.reset_state(fd.as_ref()),
                 DrmSurfaceInternal::Legacy(surf) => surf.reset_state(fd.as_ref()),
             } {
-                warn!(self.logger, "Failed to reset state of surface ({:?}/{:?}): {}", self.dev_id, self.crtc, err);
+                warn!(
+                    self.logger,
+                    "Failed to reset state of surface ({:?}/{:?}): {}", self.dev_id, self.crtc, err
+                );
             }
         }
     }
