@@ -19,30 +19,8 @@ pub struct State {
     pub connectors: HashSet<connector::Handle>,
 }
 
-pub struct LegacyDrmSurface<A: AsRawFd + 'static> {
-    pub(super) fd: Arc<DrmDeviceInternal<A>>,
-    pub(super) active: Arc<AtomicBool>,
-    crtc: crtc::Handle,
-    state: RwLock<State>,
-    pending: RwLock<State>,
-    pub(crate) logger: ::slog::Logger,
-}
-
-impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
-    pub fn new(
-        fd: Arc<DrmDeviceInternal<A>>,
-        active: Arc<AtomicBool>,
-        crtc: crtc::Handle,
-        mode: Mode,
-        connectors: &[connector::Handle],
-        logger: ::slog::Logger,
-    ) -> Result<Self, Error> {
-        let logger = logger.new(o!("smithay_module" => "backend_drm_legacy", "drm_module" => "surface"));
-        info!(
-            logger,
-            "Initializing drm surface with mode {:?} and connectors {:?}", mode, connectors
-        );
-
+impl State {
+    fn current_state<A: AsRawFd + ControlDevice>(fd: &A, crtc: crtc::Handle) -> Result<Self, Error> {
         // Try to enumarate the current state to set the initial state variable correctly.
         // We need an accurate state to handle `commit_pending`.
         let crtc_info = fd.get_crtc(crtc).map_err(|source| Error::Access {
@@ -83,10 +61,38 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
         // A better fix would probably be making mode an `Option`, but that would mean
         // we need to be sure, we require a mode to always be set without relying on the compiler.
         // So we cheat, because it works and is easier to handle later.
-        let state = State {
+        Ok(State {
             mode: current_mode.unwrap_or_else(|| unsafe { std::mem::zeroed() }),
             connectors: current_connectors,
-        };
+        })
+    }
+}
+
+pub struct LegacyDrmSurface<A: AsRawFd + 'static> {
+    pub(super) fd: Arc<DrmDeviceInternal<A>>,
+    pub(super) active: Arc<AtomicBool>,
+    crtc: crtc::Handle,
+    state: RwLock<State>,
+    pending: RwLock<State>,
+    pub(crate) logger: ::slog::Logger,
+}
+
+impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
+    pub fn new(
+        fd: Arc<DrmDeviceInternal<A>>,
+        active: Arc<AtomicBool>,
+        crtc: crtc::Handle,
+        mode: Mode,
+        connectors: &[connector::Handle],
+        logger: ::slog::Logger,
+    ) -> Result<Self, Error> {
+        let logger = logger.new(o!("smithay_module" => "backend_drm_legacy", "drm_module" => "surface"));
+        info!(
+            logger,
+            "Initializing drm surface with mode {:?} and connectors {:?}", mode, connectors
+        );
+
+        let state = State::current_state(&*fd, crtc)?; 
         let pending = State {
             mode,
             connectors: connectors.iter().copied().collect(),
@@ -395,6 +401,15 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
         } else {
             Ok(false)
         }
+    }
+    
+    pub(crate) fn reset_state<B: AsRawFd + ControlDevice + 'static>(&self, fd: Option<&B>) -> Result<(), Error> {
+        *self.state.write().unwrap() = if let Some(fd) = fd {
+            State::current_state(fd, self.crtc)?
+        } else {
+            State::current_state(&*self.fd, self.crtc)?
+        };
+        Ok(())
     }
 }
 

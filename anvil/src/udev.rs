@@ -303,6 +303,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
         context: &EGLContext,
         display: &mut Display,
         output_map: &mut Vec<MyOutput>,
+        signaler: &Signaler<SessionSignal>,
         logger: &::slog::Logger,
     ) -> HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>> {
         // Get a set of all modesetting resource handles (excluding planes):
@@ -360,7 +361,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                                 continue;
                             }
                         };
-                        let surface = match device.create_surface(
+                        let mut surface = match device.create_surface(
                             crtc,
                             primary,
                             connector_info.modes()[0],
@@ -372,6 +373,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                                 continue;
                             }
                         };
+                        surface.link(signaler.clone());
                         let renderer =
                             match DrmRenderSurface::new(surface, gbm.clone(), renderer, logger.clone()) {
                                 Ok(renderer) => renderer,
@@ -480,6 +482,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 &context,
                 &mut *self.display.borrow_mut(),
                 &mut *self.output_map.borrow_mut(),
+                &self.signaler,
                 &self.logger,
             )));
 
@@ -562,6 +565,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
             let loop_handle = self.loop_handle.clone();
             let mut display = self.display.borrow_mut();
             let mut output_map = self.output_map.borrow_mut();
+            let signaler = self.signaler.clone();
             output_map.retain(|output| output.device_id != device);
             self.loop_handle
                 .with_source(&backend_data.event_source, |source| {
@@ -573,6 +577,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                         &backend_data.context,
                         &mut *display,
                         &mut *output_map,
+                        &signaler,
                         &logger,
                     );
 

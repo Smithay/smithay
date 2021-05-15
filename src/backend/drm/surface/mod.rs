@@ -1,9 +1,12 @@
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::sync::Arc;
 
 use drm::control::{connector, crtc, framebuffer, plane, Device as ControlDevice, Mode};
 use drm::Device as BasicDevice;
+
+use nix::libc::dev_t;
 
 pub(super) mod atomic;
 pub(super) mod legacy;
@@ -14,10 +17,13 @@ use legacy::LegacyDrmSurface;
 
 /// An open crtc + plane combination that can be used for scan-out
 pub struct DrmSurface<A: AsRawFd + 'static> {
+    pub(super) dev_id: dev_t,
     pub(super) crtc: crtc::Handle,
     pub(super) plane: plane::Handle,
     pub(super) internal: Arc<DrmSurfaceInternal<A>>,
     pub(super) formats: HashSet<Format>,
+    #[cfg(feature = "backend_session")]
+    pub(super) links: RefCell<Vec<crate::signaling::SignalToken>>,
 }
 
 pub enum DrmSurfaceInternal<A: AsRawFd + 'static> {
@@ -209,6 +215,18 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
                     Ok(false)
                 }
             } // There is no test-commiting with the legacy interface
+        }
+    }
+    
+    /// Re-evaluates the current state of the crtc.
+    ///
+    /// Usually you do not need to call this, but if the state of
+    /// the crtc is modified elsewhere and you need to reset the
+    /// initial state of this surface, you may call this function.
+    pub fn reset_state(&self) -> Result<(), Error> {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.reset_state::<Self>(None),
+            DrmSurfaceInternal::Legacy(surf) => surf.reset_state::<Self>(None),
         }
     }
 }

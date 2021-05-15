@@ -509,10 +509,13 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         );
 
         Ok(DrmSurface {
+            dev_id: self.dev_id,
             crtc,
             plane,
             internal: Arc::new(internal),
             formats,
+            #[cfg(feature = "backend_session")]
+            links: RefCell::new(Vec::new()),
         })
     }
 
@@ -530,15 +533,6 @@ pub struct Planes {
     pub cursor: Option<plane::Handle>,
     /// Overlay planes supported by the crtc, if available
     pub overlay: Option<Vec<plane::Handle>>,
-}
-
-impl<A: AsRawFd + 'static> DrmDeviceInternal<A> {
-    pub(super) fn reset_state(&self) -> Result<(), Error> {
-        match self {
-            DrmDeviceInternal::Atomic(dev) => dev.reset_state(),
-            DrmDeviceInternal::Legacy(dev) => dev.reset_state(),
-        }
-    }
 }
 
 /// Trait to receive events of a bound [`DrmDevice`]

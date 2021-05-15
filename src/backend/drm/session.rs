@@ -4,12 +4,12 @@ use std::sync::{
     Arc, Weak,
 };
 
-use drm::Device as BasicDevice;
+use drm::{Device as BasicDevice, control::{crtc, Device as ControlDevice}};
 use nix::libc::dev_t;
 use nix::sys::stat;
 
 use super::device::{DrmDevice, DrmDeviceInternal};
-use super::error::Error;
+use super::surface::{DrmSurface, DrmSurfaceInternal};
 use crate::{
     backend::session::Signal as SessionSignal,
     signaling::{Linkable, Signaler},
@@ -96,21 +96,74 @@ impl<A: AsRawFd + 'static> DrmDeviceObserver<A> {
             }
         }
 
-        // okay, the previous session/whatever might left the drm devices in any state...
-        // lets fix that
-        if let Err(err) = self.reset_state() {
-            warn!(self.logger, "Unable to reset state after tty switch: {}", err);
-            // TODO call drm-handler::error
-        }
-
         self.active.store(true, Ordering::SeqCst);
     }
+}
 
-    fn reset_state(&mut self) -> Result<(), Error> {
-        if let Some(dev) = self.dev.upgrade() {
-            dev.reset_state()
-        } else {
-            Ok(())
+pub struct DrmSurfaceObserver<A: AsRawFd + 'static> {
+    dev_id: dev_t,
+    crtc: crtc::Handle,
+    surf: Weak<DrmSurfaceInternal<A>>,
+    logger: ::slog::Logger,
+}
+
+struct FdHack(RawFd);
+impl AsRawFd for FdHack {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0
+    }
+}
+impl BasicDevice for FdHack {}
+impl ControlDevice for FdHack {}
+
+impl<A: AsRawFd + 'static> Linkable<SessionSignal> for DrmSurface<A> {
+    fn link(&mut self, signaler: Signaler<SessionSignal>) {
+        let logger = match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.logger.clone(),
+            DrmSurfaceInternal::Legacy(surf) => surf.logger.clone(),
+        };
+        let mut observer = DrmSurfaceObserver {
+            dev_id: self.dev_id,
+            crtc: self.crtc(),
+            surf: Arc::downgrade(&self.internal),
+            logger: logger.new(o!("drm_module" => "observer")),
+        };
+
+        let token = signaler.register(move |signal| observer.signal(*signal));
+        self.links.borrow_mut().push(token);
+    }
+}
+
+impl<A: AsRawFd + 'static> DrmSurfaceObserver<A> {
+    fn signal(&mut self, signal: SessionSignal) {
+        match signal {
+            SessionSignal::ActivateSession => self.activate(None),
+            SessionSignal::ActivateDevice { major, minor, new_fd } => {
+                self.activate(Some((major, minor, new_fd)))
+            },
+            _ => {},
+        }
+    }
+
+    fn activate(&mut self, devnum: Option<(u32, u32, Option<RawFd>)>) {
+        if let Some(surf) = self.surf.upgrade() {
+            // The device will reset the _fd, but the observer order is not deterministic,
+            // so we might need to use it anyway.
+            let fd = if let Some((major, minor, fd)) = devnum {
+                if major as u64 != stat::major(self.dev_id) || minor as u64 != stat::minor(self.dev_id) {
+                    return;
+                }
+                fd.map(FdHack)
+            } else {
+                None
+            };
+
+            if let Err(err) = match &*surf {
+                DrmSurfaceInternal::Atomic(surf) => surf.reset_state(fd.as_ref()),
+                DrmSurfaceInternal::Legacy(surf) => surf.reset_state(fd.as_ref()),
+            } {
+                warn!(self.logger, "Failed to reset state of surface ({:?}/{:?}): {}", self.dev_id, self.crtc, err);
+            }
         }
     }
 }

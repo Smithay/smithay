@@ -24,40 +24,8 @@ pub struct State {
     pub connectors: HashSet<connector::Handle>,
 }
 
-pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
-    pub(super) fd: Arc<DrmDeviceInternal<A>>,
-    pub(super) active: Arc<AtomicBool>,
-    crtc: crtc::Handle,
-    plane: plane::Handle,
-    prop_mapping: Mapping,
-    state: RwLock<State>,
-    pending: RwLock<State>,
-    test_buffer: Mutex<Option<(DumbBuffer, framebuffer::Handle)>>,
-    pub(crate) logger: ::slog::Logger,
-}
-
-impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        fd: Arc<DrmDeviceInternal<A>>,
-        active: Arc<AtomicBool>,
-        crtc: crtc::Handle,
-        plane: plane::Handle,
-        prop_mapping: Mapping,
-        mode: Mode,
-        connectors: &[connector::Handle],
-        logger: ::slog::Logger,
-    ) -> Result<Self, Error> {
-        let logger = logger.new(o!("smithay_module" => "backend_drm_atomic", "drm_module" => "surface"));
-        info!(
-            logger,
-            "Initializing drm surface ({:?}:{:?}) with mode {:?} and connectors {:?}",
-            crtc,
-            plane,
-            mode,
-            connectors
-        );
-
+impl State {
+    fn current_state<A: AsRawFd + ControlDevice>(fd: &A, crtc: crtc::Handle, prop_mapping: &Mapping) -> Result<Self, Error> {
         let crtc_info = fd.get_crtc(crtc).map_err(|source| Error::Access {
             errmsg: "Error loading crtc info",
             dev: fd.dev_path(),
@@ -77,12 +45,6 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             })?,
             None => property::Value::Unknown(0),
         };
-
-        let blob = fd.create_property_blob(&mode).map_err(|source| Error::Access {
-            errmsg: "Failed to create Property Blob for mode",
-            dev: fd.dev_path(),
-            source,
-        })?;
 
         let res_handles = fd.resource_handles().map_err(|source| Error::Access {
             errmsg: "Error loading drm resources",
@@ -122,11 +84,54 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 }
             }
         }
-        let state = State {
+        Ok(State {
             mode: current_mode,
             blob: current_blob,
             connectors: current_connectors,
-        };
+        })
+    }
+}
+
+pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
+    pub(super) fd: Arc<DrmDeviceInternal<A>>,
+    pub(super) active: Arc<AtomicBool>,
+    crtc: crtc::Handle,
+    plane: plane::Handle,
+    prop_mapping: Mapping,
+    state: RwLock<State>,
+    pending: RwLock<State>,
+    test_buffer: Mutex<Option<(DumbBuffer, framebuffer::Handle)>>,
+    pub(crate) logger: ::slog::Logger,
+}
+
+impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        fd: Arc<DrmDeviceInternal<A>>,
+        active: Arc<AtomicBool>,
+        crtc: crtc::Handle,
+        plane: plane::Handle,
+        prop_mapping: Mapping,
+        mode: Mode,
+        connectors: &[connector::Handle],
+        logger: ::slog::Logger,
+    ) -> Result<Self, Error> {
+        let logger = logger.new(o!("smithay_module" => "backend_drm_atomic", "drm_module" => "surface"));
+        info!(
+            logger,
+            "Initializing drm surface ({:?}:{:?}) with mode {:?} and connectors {:?}",
+            crtc,
+            plane,
+            mode,
+            connectors
+        );
+
+        let state = State::current_state(&*fd, crtc, &prop_mapping)?;
+        let blob = fd.create_property_blob(&mode).map_err(|source| Error::Access {
+            errmsg: "Failed to create Property Blob for mode",
+            dev: fd.dev_path(),
+            source,
+        })?;        
         let pending = State {
             mode,
             blob,
@@ -760,6 +765,16 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 dev: self.fd.dev_path(),
                 source,
             })
+    }
+
+    
+    pub(crate) fn reset_state<B: AsRawFd + ControlDevice + 'static>(&self, fd: Option<&B>) -> Result<(), Error> {
+        *self.state.write().unwrap() = if let Some(fd) = fd {
+            State::current_state(fd, self.crtc, &self.prop_mapping)?
+        } else {
+            State::current_state(&*self.fd, self.crtc, &self.prop_mapping)?
+        };
+        Ok(())
     }
 }
 
