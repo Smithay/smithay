@@ -86,7 +86,7 @@ where
                 let mut data = data.borrow_mut();
                 if data.texture.is_none() {
                     if let Some(buffer) = data.current_state.buffer.take() {
-                        match renderer.import_buffer(&buffer, Some(&attributes), egl_buffer_reader) {
+                        match renderer.import_buffer(&buffer, Some(&attributes.damage), egl_buffer_reader) {
                             Ok(m) => {
                                 let buffer = if smithay::wayland::shm::with_buffer_contents(&buffer, |_,_| ()).is_ok() {
                                     buffer.release();

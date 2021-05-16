@@ -15,7 +15,7 @@ use crate::backend::{
     },
 };
 #[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::SurfaceAttributes;
+use crate::wayland::compositor::Damage;
 use cgmath::Matrix3;
 use std::{cell::RefCell, rc::Rc, time::Instant};
 use wayland_egl as wegl;
@@ -296,10 +296,10 @@ impl Renderer for WinitGraphicsBackend {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&SurfaceAttributes>,
+        damage: Option<&Damage>,
         egl: Option<&EGLBufferReader>,
     ) -> Result<Self::TextureId, Self::Error> {
-        self.renderer.import_buffer(buffer, surface, egl)
+        self.renderer.import_buffer(buffer, damage, egl)
     }
 
     fn begin(

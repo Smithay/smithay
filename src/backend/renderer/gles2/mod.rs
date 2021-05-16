@@ -1,11 +1,12 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
+#[cfg(feature = "wayland_frontend")]
 use std::cell::RefCell;
 use std::convert::TryFrom;
 use std::ffi::CStr;
 use std::fmt;
 use std::ptr;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     mpsc::{channel, Receiver, Sender},
@@ -23,15 +24,17 @@ use crate::backend::allocator::{
     Format,
 };
 use crate::backend::egl::{
-    display::EGLBufferReader, ffi::egl::types::EGLImage, EGLBuffer, EGLContext, EGLSurface,
+    display::EGLBufferReader, ffi::egl::{self as ffi_egl, types::EGLImage}, EGLContext, EGLSurface,
     Format as EGLFormat, MakeCurrentError,
 };
 use crate::backend::SwapBuffersError;
 
 #[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::{SurfaceAttributes, Damage};
+use crate::wayland::compositor::Damage;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
+#[cfg(feature = "wayland_frontend")]
+use wayland_commons::user_data::UserDataMap;
 
 #[allow(clippy::all, missing_docs)]
 pub mod ffi {
@@ -63,13 +66,26 @@ struct Gles2TextureInternal {
     y_inverted: bool,
     width: u32,
     height: u32,
-    destruction_callback_sender: Sender<ffi::types::GLuint>,
+    #[cfg(feature = "wayland_frontend")]
+    buffer: Option<wl_buffer::WlBuffer>,
+    egl_images: Option<Vec<EGLImage>>,
+    destruction_callback_sender: Sender<CleanupResource>,
 }
 
 impl Drop for Gles2TextureInternal {
     fn drop(&mut self) {
-        let _ = self.destruction_callback_sender.send(self.texture);
+        let _ = self.destruction_callback_sender.send(CleanupResource::Texture(self.texture));
+        if let Some(images) = self.egl_images.take() {
+            for image in images {
+                let _ = self.destruction_callback_sender.send(CleanupResource::EGLImage(image));
+            }
+        }
     }
+}
+
+enum CleanupResource {
+    Texture(ffi::types::GLuint),
+    EGLImage(EGLImage),
 }
 
 impl Texture for Gles2Texture {
@@ -104,10 +120,11 @@ pub struct Gles2Renderer {
     current_projection: Option<Matrix3<f32>>,
     extensions: Vec<String>,
     programs: [Gles2Program; shaders::FRAGMENT_COUNT],
+    textures: Vec<Weak<Gles2TextureInternal>>,
     gl: ffi::Gles2,
     egl: EGLContext,
-    destruction_callback: Receiver<ffi::types::GLuint>,
-    destruction_callback_sender: Sender<ffi::types::GLuint>,
+    destruction_callback: Receiver<CleanupResource>,
+    destruction_callback_sender: Sender<CleanupResource>,
     logger: Option<*mut ::slog::Logger>,
     _not_send: *mut (),
 }
@@ -386,6 +403,7 @@ impl Gles2Renderer {
             target_buffer: None,
             target_surface: None,
             buffers: Vec::new(),
+            textures: Vec::new(),
             current_projection: None,
             destruction_callback: rx,
             destruction_callback_sender: tx,
@@ -409,25 +427,19 @@ impl Gles2Renderer {
 
     fn cleanup(&mut self) -> Result<(), Gles2Error> {
         self.make_current()?;
-        for texture in self.destruction_callback.try_iter() {
-            unsafe {
-                self.gl.DeleteTextures(1, &texture);
+        self.textures.retain(|tex| tex.upgrade().is_some());
+        for resource in self.destruction_callback.try_iter() {
+            match resource {
+                CleanupResource::Texture(texture) => unsafe {
+                    self.gl.DeleteTextures(1, &texture);
+                },
+                CleanupResource::EGLImage(image) => unsafe {
+                    ffi_egl::DestroyImageKHR(**self.egl.display.display, image);
+                }
             }
         }
         Ok(())
     }
-}
-
-struct BufferCache {
-    cache: Vec<Option<BufferCacheVariant>>,
-}
-
-enum BufferCacheVariant {
-    Egl(Option<EGLBuffer>),
-}
-
-struct SurfaceCache {
-    texture: Vec<Option<Gles2Texture>>,
 }
 
 impl Gles2Renderer {
@@ -435,7 +447,6 @@ impl Gles2Renderer {
     fn import_shm(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        cache: &mut Option<Gles2Texture>,
         mut damage: Option<crate::utils::Rectangle>,
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;
@@ -463,26 +474,25 @@ impl Gles2Renderer {
                 format => return Err(Gles2Error::UnsupportedPixelFormat(format)),
             };
 
-            let texture = cache.as_ref().cloned().unwrap_or_else(|| {
+            let texture = self.existing_texture(&buffer)?.unwrap_or_else(|| {
                 let mut tex = 0;
                 unsafe { self.gl.GenTextures(1, &mut tex) };
-                // new texture, upload in full
+                // different buffer, upload in full
                 damage = None;
-                Gles2Texture(Rc::new(Gles2TextureInternal {
+                let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
                     texture: tex,
                     texture_kind: shader_idx,
                     is_external: false,
                     y_inverted: false,
                     width: width as u32,
                     height: height as u32,
+                    buffer: Some(buffer.clone()),
+                    egl_images: None,
                     destruction_callback_sender: self.destruction_callback_sender.clone(),
-                }))
+                }));
+                self.textures.push(Rc::downgrade(&texture.0));
+                texture
             });
-
-            // new buffer has a different format, upload in full
-            if shader_idx != texture.0.texture_kind {
-                damage = None;
-            }
 
             unsafe {
                 self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
@@ -527,8 +537,6 @@ impl Gles2Renderer {
             }
 
             self.egl.unbind()?;
-
-            *cache = Some(texture.clone());
             Ok(texture)
         })
         .map_err(Gles2Error::BufferAccessError)?
@@ -539,59 +547,74 @@ impl Gles2Renderer {
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         reader: &EGLBufferReader,
-        buffer_cache: &mut Option<EGLBuffer>,
-        texture_cache: &mut Option<Gles2Texture>,
     ) -> Result<Gles2Texture, Gles2Error> {
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
 
-        self.make_current()?;
-        let old_buffer = buffer_cache.take();
-        let new_buffer = reader
-            .egl_buffer_contents(&buffer)
-            .map_err(Gles2Error::EGLBufferAccessError)?;
+        self.existing_texture(buffer)?.map(Ok).unwrap_or_else(|| {
+            self.make_current()?;
 
-        // we do not need to re-import external textures
-        if let Some(old_buffer) = old_buffer {
-            if old_buffer.format == EGLFormat::External
-                && new_buffer.format == EGLFormat::External
-                && old_buffer.image(0) == new_buffer.image(0)
-            // good enough
-            {
-                if let Some(texture) = texture_cache.as_ref().cloned() {
-                    *buffer_cache = Some(new_buffer);
-                    return Ok(texture);
-                }
-            }
-        }
+            let egl = reader
+                .egl_buffer_contents(&buffer)
+                .map_err(Gles2Error::EGLBufferAccessError)?;
 
-        let tex = self.import_egl_image(
-            new_buffer.image(0).unwrap(),
-            new_buffer.format == EGLFormat::External,
-            texture_cache.as_ref().map(|x| x.0.texture),
-        )?;
-        let texture = texture_cache.as_ref().cloned().unwrap_or_else(|| {
-            Gles2Texture(Rc::new(Gles2TextureInternal {
+            let tex = self.import_egl_image(
+                egl.image(0).unwrap(),
+                egl.format == EGLFormat::External,
+                None,
+            )?;
+
+            let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
                 texture: tex,
-                texture_kind: match new_buffer.format {
+                texture_kind: match egl.format {
                     EGLFormat::RGB => 1,
                     EGLFormat::RGBA => 0,
                     EGLFormat::External => 2,
                     _ => unreachable!("EGLBuffer currenly does not expose multi-planar buffers to us"),
                 },
-                is_external: new_buffer.format == EGLFormat::External,
-                y_inverted: new_buffer.y_inverted,
-                width: new_buffer.width,
-                height: new_buffer.height,
+                is_external: egl.format == EGLFormat::External,
+                y_inverted: egl.y_inverted,
+                width: egl.width,
+                height: egl.height,
+                buffer: Some(buffer.clone()),
+                egl_images: Some(egl.into_images()),
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
-            }))
-        });
-        self.egl.unbind()?;
+            }));
 
-        *buffer_cache = Some(new_buffer);
-        *texture_cache = Some(texture.clone());
-        Ok(texture)
+            self.egl.unbind()?;
+            self.textures.push(Rc::downgrade(&texture.0));
+            Ok(texture)
+        })
+    }
+
+    fn existing_texture(
+        &self,
+        buffer: &wl_buffer::WlBuffer,
+    ) -> Result<Option<Gles2Texture>, Gles2Error> {
+        let existing_texture = self.textures.iter().find(|tex| {
+            if let Some(texture) = tex.upgrade() {
+                if let Some(old_buffer) = texture.buffer.as_ref() {
+                    return old_buffer == buffer;
+                }
+            }
+            false
+        }).and_then(|tex| tex.upgrade());
+
+        if let Some(texture) = existing_texture {
+            if texture.is_external {
+                Ok(Some(Gles2Texture(texture)))
+            } else {
+                if let Some(egl_images) = texture.egl_images.as_ref() {
+                    self.make_current()?;
+                    let tex = Some(texture.texture);
+                    self.import_egl_image(egl_images[0], false, tex)?;
+                }
+                Ok(Some(Gles2Texture(texture)))
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     fn import_egl_image(
@@ -828,6 +851,8 @@ impl Renderer for Gles2Renderer {
             y_inverted: false,
             width: image.width(),
             height: image.height(),
+            buffer: None,
+            egl_images: None,
             destruction_callback_sender: self.destruction_callback_sender.clone(),
         }));
         self.egl.unbind()?;
@@ -839,78 +864,36 @@ impl Renderer for Gles2Renderer {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&SurfaceAttributes>,
+        damage: Option<&Damage>,
         egl: Option<&EGLBufferReader>,
     ) -> Result<Self::TextureId, Self::Error> {
-        // init cache if not existing
-        let buffer_cell = match buffer.as_ref().user_data().get::<Rc<RefCell<BufferCache>>>() {
-            Some(cache) => cache.clone(),
-            None => {
-                let cache = BufferCache {
-                    cache: Vec::with_capacity(self.id + 1),
-                };
-
-                let data: Rc<RefCell<BufferCache>> = Rc::new(RefCell::new(cache));
-                let result = data.clone();
-                buffer.as_ref().user_data().set(|| data);
-                result
-            }
-        };
-        let mut cache = buffer_cell.borrow_mut();
-        while cache.cache.len() <= self.id {
-            cache.cache.push(None);
-        }
-
-        if let Some(attributes) = surface {
-            let texture_cell = match attributes.user_data.get::<Rc<RefCell<SurfaceCache>>>() {
-                Some(cache) => cache.clone(),
-                None => {
-                    let cache = SurfaceCache {
-                        texture: Vec::with_capacity(self.id + 1),
-                    };
-
-                    let data: Rc<RefCell<SurfaceCache>> = Rc::new(RefCell::new(cache));
-                    let result = data.clone();
-                    attributes.user_data.insert_if_missing(|| data);
-                    result
-                }
-            };
-            let mut cache = texture_cell.borrow_mut();
-            while cache.texture.len() <= self.id {
-                cache.texture.push(None);
-            }
-        }
-
-        // init buffer cache variants
-        if cache.cache[self.id].is_none() {
-            if egl.and_then(|egl| egl.egl_buffer_dimensions(&buffer)).is_some() {
-                cache.cache[self.id] = Some(BufferCacheVariant::Egl(None));
-            }
-        }
-
-        // delegate for different buffer types
-        let mut texture_cache_tmp = surface
-            .and_then(|a| a.user_data.get::<Rc<RefCell<SurfaceCache>>>())
-            .map(|cache| cache.borrow_mut());
-        let mut temporary_none = None;
-        let texture_cache = texture_cache_tmp
-            .as_mut()
-            .map(|cache| &mut cache.texture[self.id])
-            .unwrap_or(&mut temporary_none);
-        if egl.and_then(|egl| egl.egl_buffer_dimensions(&buffer)).is_some() {
-            let buffer_cache = match &mut cache.cache[self.id] {
-                Some(BufferCacheVariant::Egl(cache)) => cache,
-                _ => unreachable!(),
-            };
-            self.import_egl(&buffer, egl.unwrap(), buffer_cache, texture_cache)
+        let texture = if egl.and_then(|egl| egl.egl_buffer_dimensions(&buffer)).is_some() {
+            self.import_egl(&buffer, egl.unwrap())
         } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
-            self.import_shm(&buffer, texture_cache, surface.and_then(|surf| match surf.damage {
-                Damage::Buffer(rect) => Some(rect),
-                _ => None,
+            self.import_shm(&buffer, damage.and_then(|damage| match damage {
+                Damage::Buffer(rect) => Some(*rect),
+                _ => None
             }))
         } else {
             Err(Gles2Error::UnknownBufferType)
+        }?;
+
+        // we want to keep the texture alive for as long as the buffer is alive.
+        // otherwise `existing_texture` will not work,
+        // if the user does not keep the texture alive long enough.
+        buffer.as_ref().user_data().set_threadsafe(|| UserDataMap::new());
+        if let Some(map) = buffer.as_ref().user_data().get::<UserDataMap>() {
+            map.insert_if_missing(|| Vec::<RefCell<Option<Gles2Texture>>>::new());
+            if let Some(vec) = map.get::<RefCell<Vec<Option<Gles2Texture>>>>() {
+                let mut vec = vec.borrow_mut();
+                while vec.len() < self.id {
+                    vec.push(None);
+                }
+                vec[self.id] = Some(texture.clone());
+            }
         }
+
+        Ok(texture)
     }
 
     fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), Gles2Error> {

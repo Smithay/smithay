@@ -3,7 +3,7 @@ use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 
 #[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::SurfaceAttributes;
+use crate::wayland::compositor::Damage;
 use cgmath::Matrix3;
 use drm::buffer::PlanarBuffer;
 use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
@@ -355,11 +355,11 @@ where
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&SurfaceAttributes>,
+        damage: Option<&Damage>,
         egl: Option<&EGLBufferReader>,
     ) -> Result<Self::TextureId, Self::Error> {
         self.renderer
-            .import_buffer(buffer, surface, egl)
+            .import_buffer(buffer, damage, egl)
             .map_err(Error::RenderError)
     }
 
