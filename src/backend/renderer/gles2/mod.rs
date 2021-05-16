@@ -29,7 +29,7 @@ use crate::backend::egl::{
 use crate::backend::SwapBuffersError;
 
 #[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::SurfaceAttributes;
+use crate::wayland::compositor::{SurfaceAttributes, Damage};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
@@ -436,6 +436,7 @@ impl Gles2Renderer {
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         cache: &mut Option<Gles2Texture>,
+        mut damage: Option<crate::utils::Rectangle>,
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;
 
@@ -465,6 +466,8 @@ impl Gles2Renderer {
             let texture = cache.as_ref().cloned().unwrap_or_else(|| {
                 let mut tex = 0;
                 unsafe { self.gl.GenTextures(1, &mut tex) };
+                // new texture, upload in full
+                damage = None;
                 Gles2Texture(Rc::new(Gles2TextureInternal {
                     texture: tex,
                     texture_kind: shader_idx,
@@ -476,6 +479,11 @@ impl Gles2Renderer {
                 }))
             });
 
+            // new buffer has a different format, upload in full
+            if shader_idx != texture.0.texture_kind {
+                damage = None;
+            }
+
             unsafe {
                 self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
 
@@ -484,17 +492,35 @@ impl Gles2Renderer {
                 self.gl
                     .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
                 self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, stride / pixelsize);
-                self.gl.TexImage2D(
-                    ffi::TEXTURE_2D,
-                    0,
-                    gl_format as i32,
-                    width,
-                    height,
-                    0,
-                    gl_format,
-                    ffi::UNSIGNED_BYTE as u32,
-                    slice.as_ptr().offset(offset as isize) as *const _,
-                );
+                if let Some(region) = damage {
+                    self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.x);
+                    self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.y);
+                    self.gl.TexSubImage2D(
+                        ffi::TEXTURE_2D,
+                        0,
+                        region.x,
+                        region.y,
+                        region.width,
+                        region.height,
+                        gl_format,
+                        ffi::UNSIGNED_BYTE as u32,
+                        slice.as_ptr().offset(offset as isize) as *const _,
+                    );
+                    self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
+                    self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
+                } else {
+                    self.gl.TexImage2D(
+                        ffi::TEXTURE_2D,
+                        0,
+                        gl_format as i32,
+                        width,
+                        height,
+                        0,
+                        gl_format,
+                        ffi::UNSIGNED_BYTE as u32,
+                        slice.as_ptr().offset(offset as isize) as *const _,
+                    );
+                }
 
                 self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
                 self.gl.BindTexture(ffi::TEXTURE_2D, 0);
@@ -878,7 +904,10 @@ impl Renderer for Gles2Renderer {
             };
             self.import_egl(&buffer, egl.unwrap(), buffer_cache, texture_cache)
         } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
-            self.import_shm(&buffer, texture_cache)
+            self.import_shm(&buffer, texture_cache, surface.and_then(|surf| match surf.damage {
+                Damage::Buffer(rect) => Some(rect),
+                _ => None,
+            }))
         } else {
             Err(Gles2Error::UnknownBufferType)
         }
