@@ -138,7 +138,7 @@ fn select_platform_display<N: EGLNativeDisplay + 'static>(
         return Ok(display);
     }
 
-    crit!(log, "Unable to find suitable EGL platform");
+    error!(log, "Unable to find suitable EGL platform");
     Err(Error::DisplayNotSupported)
 }
 
