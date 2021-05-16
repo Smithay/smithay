@@ -84,7 +84,7 @@ where
                 let mut data = data.borrow_mut();
                 if data.texture.is_none() {
                     if let Some(buffer) = data.current_state.buffer.take() {
-                        match renderer.import_buffer(&buffer, egl_buffer_reader) {
+                        match renderer.import_buffer(&buffer, Some(&attributes), egl_buffer_reader) {
                             Ok(m) => {
                                 data.texture = Some(Box::new(BufferTextures { buffer, texture: m })
                                     as Box<dyn std::any::Any + 'static>)

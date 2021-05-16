@@ -10,6 +10,8 @@
 use std::collections::HashSet;
 use std::error::Error;
 
+#[cfg(feature = "wayland_frontend")]
+use crate::wayland::compositor::SurfaceAttributes;
 use cgmath::{prelude::*, Matrix3, Vector2};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
@@ -178,6 +180,7 @@ pub trait Renderer {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
+        surface: Option<&SurfaceAttributes>,
         egl: Option<&EGLBufferReader>,
     ) -> Result<Self::TextureId, Self::Error>;
 

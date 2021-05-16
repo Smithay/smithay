@@ -29,6 +29,8 @@ use crate::backend::egl::{
 use crate::backend::SwapBuffersError;
 
 #[cfg(feature = "wayland_frontend")]
+use crate::wayland::compositor::SurfaceAttributes;
+#[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
 #[allow(clippy::all, missing_docs)]
@@ -163,6 +165,10 @@ pub enum Gles2Error {
     #[error("Error accessing the buffer ({0:?})")]
     #[cfg(feature = "wayland_frontend")]
     EGLBufferAccessError(crate::backend::egl::BufferAccessError),
+    /// The buffer backend is unknown or unsupported
+    #[error("Error accessing the buffer")]
+    #[cfg(feature = "wayland_frontend")]
+    UnknownBufferType,
     /// This rendering operation was called without a previous `begin`-call
     #[error("Call begin before doing any rendering operations")]
     UnconstraintRenderingOperation,
@@ -180,6 +186,7 @@ impl From<Gles2Error> for SwapBuffersError {
             x @ Gles2Error::FramebufferBindingError
             | x @ Gles2Error::BindBufferEGLError(_)
             | x @ Gles2Error::UnsupportedPixelFormat(_)
+            | x @ Gles2Error::UnknownBufferType
             | x @ Gles2Error::BufferAccessError(_)
             | x @ Gles2Error::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
@@ -418,17 +425,11 @@ struct BufferCache {
 }
 
 enum BufferCacheVariant {
-    Egl(Option<EglCache>),
-    Shm(Option<ShmCache>),
+    Egl(Option<EGLBuffer>),
 }
 
-struct EglCache {
-    buf: Option<EGLBuffer>,
-    texture: Gles2Texture,
-}
-
-struct ShmCache {
-    texture: Gles2Texture,
+struct SurfaceCache {
+    texture: Vec<Option<Gles2Texture>>,
 }
 
 impl Gles2Renderer {
@@ -436,7 +437,7 @@ impl Gles2Renderer {
     fn import_shm(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        cache: &mut Option<ShmCache>,
+        cache: &mut Option<Gles2Texture>,
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;
 
@@ -463,7 +464,7 @@ impl Gles2Renderer {
                 format => return Err(Gles2Error::UnsupportedPixelFormat(format)),
             };
 
-            let texture = cache.as_ref().map(|x| x.texture.clone()).unwrap_or_else(|| {
+            let texture = cache.as_ref().cloned().unwrap_or_else(|| {
                 let mut tex = 0;
                 unsafe { self.gl.GenTextures(1, &mut tex) };
                 Gles2Texture(Rc::new(Gles2TextureInternal {
@@ -503,10 +504,7 @@ impl Gles2Renderer {
 
             self.egl.unbind()?;
 
-            *cache = Some(ShmCache {
-                texture: texture.clone(),
-            });
-
+            *cache = Some(texture.clone());
             Ok(texture)
         })
         .map_err(Gles2Error::BufferAccessError)?
@@ -517,53 +515,58 @@ impl Gles2Renderer {
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         reader: &EGLBufferReader,
-        cache: &mut Option<EglCache>,
+        buffer_cache: &mut Option<EGLBuffer>,
+        texture_cache: &mut Option<Gles2Texture>,
     ) -> Result<Gles2Texture, Gles2Error> {
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
 
         self.make_current()?;
-        let egl_buffer = cache
-            .as_mut()
-            .and_then(|x| x.buf.take())
-            .map(Ok)
-            .unwrap_or_else(|| reader.egl_buffer_contents(&buffer))
+        let old_buffer = buffer_cache.take();
+        let new_buffer = reader
+            .egl_buffer_contents(&buffer)
             .map_err(Gles2Error::EGLBufferAccessError)?;
 
         // we do not need to re-import external textures
-        if egl_buffer.format == EGLFormat::External && cache.is_some() {
-            return Ok(cache.as_ref().map(|x| x.texture.clone()).unwrap());
+        if let Some(old_buffer) = old_buffer {
+            if old_buffer.format == EGLFormat::External
+                && new_buffer.format == EGLFormat::External
+                && old_buffer.image(0) == new_buffer.image(0)
+            // good enough
+            {
+                if let Some(texture) = texture_cache.as_ref().cloned() {
+                    *buffer_cache = Some(new_buffer);
+                    return Ok(texture);
+                }
+            }
         }
 
         let tex = self.import_egl_image(
-            egl_buffer.image(0).unwrap(),
-            egl_buffer.format == EGLFormat::External,
-            cache.as_ref().map(|x| x.texture.0.texture),
+            new_buffer.image(0).unwrap(),
+            new_buffer.format == EGLFormat::External,
+            texture_cache.as_ref().map(|x| x.0.texture),
         )?;
-        let texture = cache.as_ref().map(|x| x.texture.clone()).unwrap_or_else(|| {
+        let texture = texture_cache.as_ref().cloned().unwrap_or_else(|| {
             Gles2Texture(Rc::new(Gles2TextureInternal {
                 texture: tex,
-                texture_kind: match egl_buffer.format {
+                texture_kind: match new_buffer.format {
                     EGLFormat::RGB => 3,
                     EGLFormat::RGBA => 2,
                     EGLFormat::External => 4,
                     _ => unreachable!("EGLBuffer currenly does not expose multi-planar buffers to us"),
                 },
-                is_external: egl_buffer.format == EGLFormat::External,
-                y_inverted: egl_buffer.y_inverted,
-                width: egl_buffer.width,
-                height: egl_buffer.height,
+                is_external: new_buffer.format == EGLFormat::External,
+                y_inverted: new_buffer.y_inverted,
+                width: new_buffer.width,
+                height: new_buffer.height,
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
             }))
         });
         self.egl.unbind()?;
 
-        *cache = Some(EglCache {
-            buf: Some(egl_buffer),
-            texture: texture.clone(),
-        });
-
+        *buffer_cache = Some(new_buffer);
+        *texture_cache = Some(texture.clone());
         Ok(texture)
     }
 
@@ -812,10 +815,11 @@ impl Renderer for Gles2Renderer {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
+        surface: Option<&SurfaceAttributes>,
         egl: Option<&EGLBufferReader>,
     ) -> Result<Self::TextureId, Self::Error> {
         // init cache if not existing
-        let cache_cell = match buffer.as_ref().user_data().get::<Rc<RefCell<BufferCache>>>() {
+        let buffer_cell = match buffer.as_ref().user_data().get::<Rc<RefCell<BufferCache>>>() {
             Some(cache) => cache.clone(),
             None => {
                 let cache = BufferCache {
@@ -828,30 +832,57 @@ impl Renderer for Gles2Renderer {
                 result
             }
         };
-
-        // init cache
-        let mut cache = cache_cell.borrow_mut();
-        while cache.cache.len() < self.id {
+        let mut cache = buffer_cell.borrow_mut();
+        while cache.cache.len() <= self.id {
             cache.cache.push(None);
         }
 
-        if cache.cache.len() == self.id {
-            cache.cache.push(Some(
-                if egl.and_then(|egl| egl.egl_buffer_dimensions(&buffer)).is_some() {
-                    BufferCacheVariant::Egl(None)
-                } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
-                    BufferCacheVariant::Shm(None)
-                } else {
-                    unreachable!("Completely unknown buffer format. How did we got here?");
-                },
-            ));
+        if let Some(attributes) = surface {
+            let texture_cell = match attributes.user_data.get::<Rc<RefCell<SurfaceCache>>>() {
+                Some(cache) => cache.clone(),
+                None => {
+                    let cache = SurfaceCache {
+                        texture: Vec::with_capacity(self.id + 1),
+                    };
+
+                    let data: Rc<RefCell<SurfaceCache>> = Rc::new(RefCell::new(cache));
+                    let result = data.clone();
+                    attributes.user_data.insert_if_missing(|| data);
+                    result
+                }
+            };
+            let mut cache = texture_cell.borrow_mut();
+            while cache.texture.len() <= self.id {
+                cache.texture.push(None);
+            }
+        }
+
+        // init buffer cache variants
+        if cache.cache[self.id].is_none() {
+            if egl.and_then(|egl| egl.egl_buffer_dimensions(&buffer)).is_some() {
+                cache.cache[self.id] = Some(BufferCacheVariant::Egl(None));
+            }
         }
 
         // delegate for different buffer types
-        match cache.cache[self.id].as_mut() {
-            Some(BufferCacheVariant::Egl(cache)) => self.import_egl(&buffer, egl.unwrap(), cache),
-            Some(BufferCacheVariant::Shm(cache)) => self.import_shm(&buffer, cache),
-            _ => unreachable!(),
+        let mut texture_cache_tmp = surface
+            .and_then(|a| a.user_data.get::<Rc<RefCell<SurfaceCache>>>())
+            .map(|cache| cache.borrow_mut());
+        let mut temporary_none = None;
+        let texture_cache = texture_cache_tmp
+            .as_mut()
+            .map(|cache| &mut cache.texture[self.id])
+            .unwrap_or(&mut temporary_none);
+        if egl.and_then(|egl| egl.egl_buffer_dimensions(&buffer)).is_some() {
+            let buffer_cache = match &mut cache.cache[self.id] {
+                Some(BufferCacheVariant::Egl(cache)) => cache,
+                _ => unreachable!(),
+            };
+            self.import_egl(&buffer, egl.unwrap(), buffer_cache, texture_cache)
+        } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
+            self.import_shm(&buffer, texture_cache)
+        } else {
+            Err(Gles2Error::UnknownBufferType)
         }
     }
 
