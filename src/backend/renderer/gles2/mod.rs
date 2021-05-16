@@ -493,7 +493,7 @@ impl Gles2Renderer {
                     0,
                     gl_format,
                     ffi::UNSIGNED_BYTE as u32,
-                    slice.as_ptr() as *const _,
+                    slice.as_ptr().offset(offset as isize) as *const _,
                 );
 
                 self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
