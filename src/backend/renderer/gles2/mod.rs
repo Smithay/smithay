@@ -373,8 +373,6 @@ impl Gles2Renderer {
         let programs = [
             texture_program(&gl, shaders::FRAGMENT_SHADER_ABGR)?,
             texture_program(&gl, shaders::FRAGMENT_SHADER_XBGR)?,
-            texture_program(&gl, shaders::FRAGMENT_SHADER_BGRA)?,
-            texture_program(&gl, shaders::FRAGMENT_SHADER_BGRX)?,
             texture_program(&gl, shaders::FRAGMENT_SHADER_EXTERNAL)?,
         ];
 
@@ -459,8 +457,8 @@ impl Gles2Renderer {
             let (gl_format, shader_idx) = match data.format {
                 wl_shm::Format::Abgr8888 => (ffi::RGBA, 0),
                 wl_shm::Format::Xbgr8888 => (ffi::RGBA, 1),
-                wl_shm::Format::Argb8888 => (ffi::BGRA_EXT, 2),
-                wl_shm::Format::Xrgb8888 => (ffi::BGRA_EXT, 3),
+                wl_shm::Format::Argb8888 => (ffi::BGRA_EXT, 0),
+                wl_shm::Format::Xrgb8888 => (ffi::BGRA_EXT, 1),
                 format => return Err(Gles2Error::UnsupportedPixelFormat(format)),
             };
 
@@ -493,7 +491,7 @@ impl Gles2Renderer {
                     width,
                     height,
                     0,
-                    ffi::RGBA,
+                    gl_format,
                     ffi::UNSIGNED_BYTE as u32,
                     slice.as_ptr() as *const _,
                 );
@@ -551,9 +549,9 @@ impl Gles2Renderer {
             Gles2Texture(Rc::new(Gles2TextureInternal {
                 texture: tex,
                 texture_kind: match new_buffer.format {
-                    EGLFormat::RGB => 3,
-                    EGLFormat::RGBA => 2,
-                    EGLFormat::External => 4,
+                    EGLFormat::RGB => 1,
+                    EGLFormat::RGBA => 0,
+                    EGLFormat::External => 2,
                     _ => unreachable!("EGLBuffer currenly does not expose multi-planar buffers to us"),
                 },
                 is_external: new_buffer.format == EGLFormat::External,

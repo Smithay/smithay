@@ -17,7 +17,7 @@ void main() {
     }
 }"#;
 
-pub const FRAGMENT_COUNT: usize = 5;
+pub const FRAGMENT_COUNT: usize = 3;
 
 pub const FRAGMENT_SHADER_ABGR: &str = r#"
 #version 100
@@ -26,11 +26,7 @@ uniform sampler2D tex;
 uniform float alpha;
 varying vec2 v_tex_coords;
 void main() {
-    vec4 color = texture2D(tex, v_tex_coords);
-    gl_FragColor.r = color.w;
-    gl_FragColor.g = color.z;
-    gl_FragColor.b = color.y;
-    gl_FragColor.a = color.x * alpha;
+    gl_FragColor = texture2D(tex, v_tex_coords) * alpha;
 }
 "#;
 
@@ -41,41 +37,7 @@ uniform sampler2D tex;
 uniform float alpha;
 varying vec2 v_tex_coords;
 void main() {
-    vec4 color = texture2D(tex, v_tex_coords);
-    gl_FragColor.r = color.w;
-    gl_FragColor.g = color.z;
-    gl_FragColor.b = color.y;
-    gl_FragColor.a = alpha;
-}
-"#;
-
-pub const FRAGMENT_SHADER_BGRA: &str = r#"
-#version 100
-precision mediump float;
-uniform sampler2D tex;
-uniform float alpha;
-varying vec2 v_tex_coords;
-void main() {
-    vec4 color = texture2D(tex, v_tex_coords);
-    gl_FragColor.r = color.z;
-    gl_FragColor.g = color.y;
-    gl_FragColor.b = color.x;
-    gl_FragColor.a = color.w * alpha;
-}
-"#;
-
-pub const FRAGMENT_SHADER_BGRX: &str = r#"
-#version 100
-precision mediump float;
-uniform sampler2D tex;
-uniform float alpha;
-varying vec2 v_tex_coords;
-void main() {
-    vec4 color = texture2D(tex, v_tex_coords);
-    gl_FragColor.r = color.z;
-    gl_FragColor.g = color.y;
-    gl_FragColor.b = color.x;
-    gl_FragColor.a = alpha;
+    gl_FragColor = vec4(texture2D(tex, v_tex_coords).rgb, 1.0) * alpha;
 }
 "#;
 
