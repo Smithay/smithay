@@ -24,13 +24,15 @@ use smithay::{
 use crate::shell::{MyCompositorToken, MyWindowMap, SurfaceData};
 
 struct BufferTextures<T> {
-    buffer: wl_buffer::WlBuffer,
+    buffer: Option<wl_buffer::WlBuffer>,
     texture: T,
 }
 
 impl<T> Drop for BufferTextures<T> {
     fn drop(&mut self) {
-        self.buffer.release();
+        if let Some(buffer) = self.buffer.take() {
+            buffer.release();
+        }
     }
 }
 
@@ -86,6 +88,12 @@ where
                     if let Some(buffer) = data.current_state.buffer.take() {
                         match renderer.import_buffer(&buffer, Some(&attributes), egl_buffer_reader) {
                             Ok(m) => {
+                                let buffer = if smithay::wayland::shm::with_buffer_contents(&buffer, |_,_| ()).is_ok() {
+                                    buffer.release();
+                                    None
+                                } else {
+                                    Some(buffer)
+                                };
                                 data.texture = Some(Box::new(BufferTextures { buffer, texture: m })
                                     as Box<dyn std::any::Any + 'static>)
                             }
