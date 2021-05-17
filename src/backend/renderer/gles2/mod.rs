@@ -125,7 +125,8 @@ pub struct Gles2Renderer {
     egl: EGLContext,
     destruction_callback: Receiver<CleanupResource>,
     destruction_callback_sender: Sender<CleanupResource>,
-    logger: Option<*mut ::slog::Logger>,
+    logger_ptr: Option<*mut ::slog::Logger>,
+    logger: ::slog::Logger,
     _not_send: *mut (),
 }
 
@@ -327,7 +328,7 @@ impl Gles2Renderer {
 
         context.make_current()?;
 
-        let (gl, exts, logger) = {
+        let (gl, exts, logger_ptr) = {
             let gl = ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _);
             let ext_ptr = gl.GetString(ffi::EXTENSIONS) as *const c_char;
             if ext_ptr.is_null() {
@@ -407,7 +408,8 @@ impl Gles2Renderer {
             current_projection: None,
             destruction_callback: rx,
             destruction_callback_sender: tx,
-            logger,
+            logger_ptr,
+            logger: log,
             _not_send: std::ptr::null_mut(),
         };
         renderer.egl.unbind()?;
@@ -777,8 +779,8 @@ impl Drop for Gles2Renderer {
                     self.gl.Disable(ffi::DEBUG_OUTPUT);
                     self.gl.DebugMessageCallback(None, ptr::null());
                 }
-                if let Some(logger) = self.logger {
-                    let _ = Box::from_raw(logger);
+                if let Some(logger_ptr) = self.logger_ptr {
+                    let _ = Box::from_raw(logger_ptr);
                 }
 
                 let _ = self.egl.unbind();
