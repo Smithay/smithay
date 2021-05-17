@@ -3,10 +3,11 @@
 #[cfg(feature = "wayland_frontend")]
 use std::cell::RefCell;
 use std::convert::TryFrom;
+use std::collections::HashMap;
 use std::ffi::CStr;
 use std::fmt;
 use std::ptr;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     mpsc::{channel, Receiver, Sender},
@@ -111,6 +112,23 @@ struct Gles2Buffer {
     _dmabuf: Dmabuf,
 }
 
+struct BufferEntry {
+    id: u32,
+    buffer: wl_buffer::WlBuffer,
+}
+
+impl std::hash::Hash for BufferEntry {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        self.id.hash(hasher);
+    }
+}
+impl PartialEq for BufferEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.buffer == other.buffer
+    }
+}
+impl Eq for BufferEntry {}
+
 /// A renderer utilizing OpenGL ES 2
 pub struct Gles2Renderer {
     id: usize,
@@ -120,7 +138,7 @@ pub struct Gles2Renderer {
     current_projection: Option<Matrix3<f32>>,
     extensions: Vec<String>,
     programs: [Gles2Program; shaders::FRAGMENT_COUNT],
-    textures: Vec<Weak<Gles2TextureInternal>>,
+    textures: HashMap<BufferEntry, Gles2Texture>,
     gl: ffi::Gles2,
     egl: EGLContext,
     destruction_callback: Receiver<CleanupResource>,
@@ -404,7 +422,7 @@ impl Gles2Renderer {
             target_buffer: None,
             target_surface: None,
             buffers: Vec::new(),
-            textures: Vec::new(),
+            textures: HashMap::new(),
             current_projection: None,
             destruction_callback: rx,
             destruction_callback_sender: tx,
@@ -429,7 +447,7 @@ impl Gles2Renderer {
 
     fn cleanup(&mut self) -> Result<(), Gles2Error> {
         self.make_current()?;
-        self.textures.retain(|tex| tex.upgrade().is_some());
+        self.textures.retain(|entry, tex| entry.buffer.as_ref().is_alive());
         for resource in self.destruction_callback.try_iter() {
             match resource {
                 CleanupResource::Texture(texture) => unsafe {
@@ -492,7 +510,7 @@ impl Gles2Renderer {
                     egl_images: None,
                     destruction_callback_sender: self.destruction_callback_sender.clone(),
                 }));
-                self.textures.push(Rc::downgrade(&texture.0));
+                self.textures.insert(BufferEntry { id: buffer.as_ref().id(), buffer: buffer.clone() }, texture.clone());
                 texture
             });
 
@@ -585,7 +603,7 @@ impl Gles2Renderer {
             }));
 
             self.egl.unbind()?;
-            self.textures.push(Rc::downgrade(&texture.0));
+            self.textures.insert(BufferEntry { id: buffer.as_ref().id(), buffer: buffer.clone() }, texture.clone());
             Ok(texture)
         })
     }
@@ -594,25 +612,25 @@ impl Gles2Renderer {
         &self,
         buffer: &wl_buffer::WlBuffer,
     ) -> Result<Option<Gles2Texture>, Gles2Error> {
-        let existing_texture = self.textures.iter().find(|tex| {
-            if let Some(texture) = tex.upgrade() {
-                if let Some(old_buffer) = texture.buffer.as_ref() {
-                    return old_buffer == buffer;
-                }
-            }
-            false
-        }).and_then(|tex| tex.upgrade());
+        let existing_texture = self.textures.iter().find(|(old_buffer, _)| {
+            &old_buffer.buffer == buffer
+        }).map(|(_, tex)| tex.clone());
 
         if let Some(texture) = existing_texture {
-            if texture.is_external {
-                Ok(Some(Gles2Texture(texture)))
+            trace!(self.logger, "Re-using texture {:?} for {:?}", texture.0.texture, buffer);
+            if texture.0.is_external {
+                Ok(Some(texture))
             } else {
-                if let Some(egl_images) = texture.egl_images.as_ref() {
+                if let Some(egl_images) = texture.0.egl_images.as_ref() {
+                    if egl_images[0] == ffi_egl::NO_IMAGE_KHR {
+                        return Ok(None);
+                    }
                     self.make_current()?;
-                    let tex = Some(texture.texture);
+                    let tex = Some(texture.0.texture);
                     self.import_egl_image(egl_images[0], false, tex)?;
+                    self.egl.unbind()?;
                 }
-                Ok(Some(Gles2Texture(texture)))
+                Ok(Some(texture))
             }
         } else {
             Ok(None)
@@ -637,8 +655,8 @@ impl Gles2Renderer {
         };
         unsafe {
             self.gl.BindTexture(target, tex);
-
             self.gl.EGLImageTargetTexture2DOES(target, image);
+            self.gl.BindTexture(target, 0);
         }
 
         Ok(tex)
