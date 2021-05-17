@@ -846,7 +846,7 @@ impl Renderer for Gles2Renderer {
 
         let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
             texture: tex,
-            texture_kind: 2,
+            texture_kind: 0,
             is_external: false,
             y_inverted: false,
             width: image.width(),
