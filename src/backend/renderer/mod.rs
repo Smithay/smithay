@@ -176,7 +176,7 @@ pub trait Renderer {
     ///
     /// The implementation defines, if the id keeps being valid, if the buffer is released,
     /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
-    #[cfg(feature = "wayland_frontend")]
+    #[cfg(all(feature = "wayland_frontend", feature = "backend_egl"))]
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
