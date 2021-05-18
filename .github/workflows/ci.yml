@@ -55,7 +55,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --features "${{ matrix.features }}"
+          args: --no-default-features --features "${{ matrix.features }}"
       
       - name: Test all
         if: matrix.features == 'all'
@@ -103,7 +103,7 @@ jobs:
       - name: Test features
         if: matrix.features != 'all'
         working-directory: ./anvil
-        run: cargo test --features "${{ matrix.features }}"
+        run: cargo test --no-default-features --features "${{ matrix.features }}"
       
       - name: Test all
         if: matrix.features == 'all'
