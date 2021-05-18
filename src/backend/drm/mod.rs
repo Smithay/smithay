@@ -62,12 +62,16 @@
 
 pub(crate) mod device;
 pub(self) mod error;
+#[cfg(feature = "backend_gbm")]
 mod render;
+#[cfg(feature = "backend_session")]
 pub(self) mod session;
 pub(self) mod surface;
 
 pub use device::{device_bind, DevPath, DeviceHandler, DrmDevice, DrmSource, Planes};
 pub use error::Error as DrmError;
+#[cfg(feature = "backend_gbm")]
 pub use render::{DrmRenderSurface, Error as DrmRenderError};
-pub use session::DrmDeviceObserver;
+#[cfg(feature = "backend_session")]
+pub use session::{DrmDeviceObserver, DrmSurfaceObserver};
 pub use surface::DrmSurface;

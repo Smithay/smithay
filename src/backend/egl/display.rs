@@ -20,8 +20,10 @@ use crate::backend::egl::{
     ffi,
     ffi::egl::types::EGLImage,
     native::EGLNativeDisplay,
-    wrap_egl_call, BufferAccessError, EGLBuffer, EGLError, Error, Format,
+    wrap_egl_call, EGLError, Error, Format,
 };
+#[cfg(feature = "wayland_frontend")]
+use crate::backend::egl::{BufferAccessError, EGLBuffer};
 
 /// Wrapper around [`ffi::EGLDisplay`](ffi::egl::types::EGLDisplay) to ensure display is only destroyed
 /// once all resources bound to it have been dropped.

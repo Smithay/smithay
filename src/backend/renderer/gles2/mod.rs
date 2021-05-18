@@ -25,13 +25,16 @@ use crate::backend::allocator::{
     Format,
 };
 use crate::backend::egl::{
-    display::EGLBufferReader, ffi::egl::{self as ffi_egl, types::EGLImage}, EGLContext, EGLSurface,
+    ffi::egl::{self as ffi_egl, types::EGLImage}, EGLContext, EGLSurface,
     Format as EGLFormat, MakeCurrentError,
 };
 use crate::backend::SwapBuffersError;
 
 #[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::Damage;
+use crate::{
+    backend::egl::display::EGLBufferReader,
+    wayland::compositor::Damage,
+};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
 #[cfg(feature = "wayland_frontend")]
@@ -112,21 +115,25 @@ struct Gles2Buffer {
     _dmabuf: Dmabuf,
 }
 
+#[cfg(feature = "wayland_frontend")]
 struct BufferEntry {
     id: u32,
     buffer: wl_buffer::WlBuffer,
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl std::hash::Hash for BufferEntry {
     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
         self.id.hash(hasher);
     }
 }
+#[cfg(feature = "wayland_frontend")]
 impl PartialEq for BufferEntry {
     fn eq(&self, other: &Self) -> bool {
         self.buffer == other.buffer
     }
 }
+#[cfg(feature = "wayland_frontend")]
 impl Eq for BufferEntry {}
 
 /// A renderer utilizing OpenGL ES 2
@@ -138,6 +145,7 @@ pub struct Gles2Renderer {
     current_projection: Option<Matrix3<f32>>,
     extensions: Vec<String>,
     programs: [Gles2Program; shaders::FRAGMENT_COUNT],
+    #[cfg(feature = "wayland_frontend")]
     textures: HashMap<BufferEntry, Gles2Texture>,
     gl: ffi::Gles2,
     egl: EGLContext,
@@ -211,6 +219,7 @@ pub enum Gles2Error {
 }
 
 impl From<Gles2Error> for SwapBuffersError {
+    #[cfg(feature = "wayland_frontend")]
     fn from(err: Gles2Error) -> SwapBuffersError {
         match err {
             x @ Gles2Error::ShaderCompileError(_)
@@ -225,6 +234,19 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::UnknownBufferType
             | x @ Gles2Error::BufferAccessError(_)
             | x @ Gles2Error::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
+        }
+    }
+    #[cfg(not(feature = "wayland_frontend"))]
+    fn from(err: Gles2Error) -> SwapBuffersError {
+        match err {
+            x @ Gles2Error::ShaderCompileError(_)
+            | x @ Gles2Error::ProgramLinkError
+            | x @ Gles2Error::GLFunctionLoaderError
+            | x @ Gles2Error::GLExtensionNotSupported(_)
+            | x @ Gles2Error::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
+            Gles2Error::ContextActivationError(err) => err.into(),
+            x @ Gles2Error::FramebufferBindingError
+            | x @ Gles2Error::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
 }
@@ -422,6 +444,7 @@ impl Gles2Renderer {
             target_buffer: None,
             target_surface: None,
             buffers: Vec::new(),
+            #[cfg(feature = "wayland_frontend")]
             textures: HashMap::new(),
             current_projection: None,
             destruction_callback: rx,
@@ -447,6 +470,7 @@ impl Gles2Renderer {
 
     fn cleanup(&mut self) -> Result<(), Gles2Error> {
         self.make_current()?;
+        #[cfg(feature = "wayland_frontend")]
         self.textures.retain(|entry, tex| entry.buffer.as_ref().is_alive());
         for resource in self.destruction_callback.try_iter() {
             match resource {
@@ -523,6 +547,7 @@ impl Gles2Renderer {
                     .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
                 self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, stride / pixelsize);
                 if let Some(region) = damage {
+                    trace!(self.logger, "Uploading partial shm texture for {:?}", buffer);
                     self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.x);
                     self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.y);
                     self.gl.TexSubImage2D(
@@ -539,6 +564,7 @@ impl Gles2Renderer {
                     self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
                     self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
                 } else {
+                    trace!(self.logger, "Uploading shm texture for {:?}", buffer);
                     self.gl.TexImage2D(
                         ffi::TEXTURE_2D,
                         0,
@@ -608,6 +634,7 @@ impl Gles2Renderer {
         })
     }
 
+    #[cfg(feature = "wayland_frontend")]
     fn existing_texture(
         &self,
         buffer: &wl_buffer::WlBuffer,

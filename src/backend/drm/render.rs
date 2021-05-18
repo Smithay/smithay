@@ -19,6 +19,7 @@ use crate::backend::{
         dmabuf::{AsDmabuf, Dmabuf},
         Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain,
     },
+    #[cfg(all(feature = "backend_egl", feature = "wayland_frontend"))]
     egl::display::EGLBufferReader,
 };
 
@@ -351,7 +352,7 @@ where
         self.renderer.shm_formats()
     }
 
-    #[cfg(feature = "wayland_frontend")]
+    #[cfg(all(feature = "backend_egl", feature = "wayland_frontend"))]
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
