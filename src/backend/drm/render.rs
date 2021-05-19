@@ -19,9 +19,9 @@ use crate::backend::{
         dmabuf::{AsDmabuf, Dmabuf},
         Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain,
     },
-    #[cfg(all(feature = "backend_egl", feature = "wayland_frontend"))]
-    egl::display::EGLBufferReader,
 };
+#[cfg(all(feature = "backend_egl", feature = "wayland_frontend"))]
+use crate::backend::egl::display::EGLBufferReader;
 
 /// Simplified by limited abstraction to link single [`DrmSurface`]s to renderers.
 ///
