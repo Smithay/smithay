@@ -330,15 +330,6 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 .collect::<Vec<EncoderInfo>>();
             'outer: for encoder_info in encoder_infos {
                 for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
-                    // TODO cursor
-                    let primary = match device.planes(&crtc) {
-                        Ok(planes) => planes.primary,
-                        Err(err) => {
-                            warn!(logger, "Failed to enumerate planes: {}", err);
-                            continue;
-                        }
-                    };
-
                     if let Entry::Vacant(entry) = backends.entry(crtc) {
                         info!(
                             logger,
@@ -363,7 +354,6 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                         };
                         let mut surface = match device.create_surface(
                             crtc,
-                            primary,
                             connector_info.modes()[0],
                             &[connector_info.handle()],
                         ) {

@@ -1,17 +1,23 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::sync::Arc;
 
-use drm::control::{connector, crtc, framebuffer, plane, Device as ControlDevice, Mode};
-use drm::Device as BasicDevice;
+use drm::control::{connector, crtc, framebuffer, plane, property, Device as ControlDevice, Mode};
+use drm::{Device as BasicDevice, DriverCapability};
 
 use nix::libc::dev_t;
 
 pub(super) mod atomic;
 pub(super) mod legacy;
-use super::error::Error;
-use crate::backend::allocator::Format;
+use super::{
+    error::Error,
+    Planes, PlaneType,
+    plane_type, planes,
+    device::DevPath,
+};
+use crate::backend::allocator::{Format, Fourcc, Modifier};
 use atomic::AtomicDrmSurface;
 use legacy::LegacyDrmSurface;
 
@@ -19,9 +25,9 @@ use legacy::LegacyDrmSurface;
 pub struct DrmSurface<A: AsRawFd + 'static> {
     pub(super) dev_id: dev_t,
     pub(super) crtc: crtc::Handle,
-    pub(super) plane: plane::Handle,
+    pub(super) primary: plane::Handle,
     pub(super) internal: Arc<DrmSurfaceInternal<A>>,
-    pub(super) formats: HashSet<Format>,
+    pub(super) has_universal_planes: bool,
     #[cfg(feature = "backend_session")]
     pub(super) links: RefCell<Vec<crate::signaling::SignalToken>>,
 }
@@ -48,9 +54,9 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
         self.crtc
     }
 
-    /// Returns the underlying [`plane`](drm::control::plane) of this surface
+    /// Returns the underlying primary [`plane`](drm::control::plane) of this surface
     pub fn plane(&self) -> plane::Handle {
-        self.plane
+        self.primary
     }
 
     /// Currently used [`connector`](drm::control::connector)s of this `Surface`
@@ -142,6 +148,35 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
         }
     }
 
+    /// Tries to setup a cursor or overlay [`Plane`](drm::control::plane)
+    /// to be set at the next commit/page_flip with the given position and size.
+    /// 
+    /// Planes can have arbitrary hardware constraints, that cannot be expressed in the api,
+    /// like supporting only positions at even or odd values, allowing only certain sizes or disallowing overlapping planes.
+    /// Using planes should therefor be done in a best-efford manner. Failures on `page_flip` or `commit`
+    /// should be expected and alternative code paths without the usage of planes prepared.
+    /// 
+    /// Fails if tests for the given plane fail, if the underlying
+    /// implementation does not support the use of planes or if the plane
+    /// is not supported by this crtc.
+    pub fn use_plane(&self, plane: plane::Handle, position: (i32, i32), size: (u32, u32)) -> Result<(), Error> {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.use_plane(plane, position, size),
+            DrmSurfaceInternal::Legacy(_) => Err(Error::NonPrimaryPlane(plane)),
+        }
+    }
+
+    /// Disables the given plane.
+    /// 
+    /// Errors if the plane is not supported by this crtc or if the underlying
+    /// implementation does not support the use of planes.
+    pub fn clear_plane(&self, plane: plane::Handle) -> Result<(), Error> {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.clear_plane(plane),
+            DrmSurfaceInternal::Legacy(_) => Err(Error::NonPrimaryPlane(plane)),
+        }
+    }
+
     /// Returns true whenever any state changes are pending to be commited
     ///
     /// The following functions may trigger a pending commit:
@@ -165,10 +200,17 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     /// but will trigger a `vblank` event once done.
     /// Make sure to [set a `DeviceHandler`](Device::set_handler) and
     /// [register the belonging `Device`](device_bind) before to receive the event in time.
-    pub fn commit(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
+    pub fn commit<'a>(&self, mut framebuffers: impl Iterator<Item=&'a (framebuffer::Handle, plane::Handle)>, event: bool) -> Result<(), Error> {
         match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => surf.commit(framebuffer, event),
-            DrmSurfaceInternal::Legacy(surf) => surf.commit(framebuffer, event),
+            DrmSurfaceInternal::Atomic(surf) => surf.commit(framebuffers, event),
+            DrmSurfaceInternal::Legacy(surf) => if let Some((fb, plane)) = framebuffers.next() {
+                if plane_type(self, *plane)? != PlaneType::Primary {
+                    return Err(Error::NonPrimaryPlane(*plane));
+                }
+                surf.commit(*fb, event)
+            } else {
+                Ok(())
+            },
         }
     }
 
@@ -180,16 +222,151 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     /// This operation is not blocking and will produce a `vblank` event once swapping is done.
     /// Make sure to [set a `DeviceHandler`](Device::set_handler) and
     /// [register the belonging `Device`](device_bind) before to receive the event in time.
-    pub fn page_flip(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
+    pub fn page_flip<'a>(&self, mut framebuffers: impl Iterator<Item=&'a (framebuffer::Handle, plane::Handle)>, event: bool) -> Result<(), Error> {
         match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => surf.page_flip(framebuffer, event),
-            DrmSurfaceInternal::Legacy(surf) => surf.page_flip(framebuffer, event),
+            DrmSurfaceInternal::Atomic(surf) => surf.page_flip(framebuffers, event),
+            DrmSurfaceInternal::Legacy(surf) => if let Some((fb, plane)) = framebuffers.next() {
+                if plane_type(self, *plane)? != PlaneType::Primary {
+                    return Err(Error::NonPrimaryPlane(*plane));
+                }
+                surf.page_flip(*fb, event)
+            } else {
+                Ok(())
+            },
         }
     }
 
     /// Returns a set of supported pixel formats for attached buffers
-    pub fn supported_formats(&self) -> &HashSet<Format> {
-        &self.formats
+    pub fn supported_formats(&self, plane: plane::Handle) -> Result<HashSet<Format>, Error> {
+        // get plane formats
+        let plane_info = self.get_plane(plane).map_err(|source| Error::Access {
+            errmsg: "Error loading plane info",
+            dev: self.dev_path(),
+            source,
+        })?;
+        let mut formats = HashSet::new();
+        for code in plane_info
+            .formats()
+            .iter()
+            .flat_map(|x| Fourcc::try_from(*x).ok())
+        {
+            formats.insert(Format {
+                code,
+                modifier: Modifier::Invalid,
+            });
+        }
+
+        if let Ok(1) = self.get_driver_capability(DriverCapability::AddFB2Modifiers) {
+            let set = self.get_properties(plane).map_err(|source| Error::Access {
+                errmsg: "Failed to query properties",
+                dev: self.dev_path(),
+                source,
+            })?;
+            let (handles, _) = set.as_props_and_values();
+            // for every handle ...
+            let prop = handles
+                .iter()
+                .find(|handle| {
+                    // get information of that property
+                    if let Some(info) = self.get_property(**handle).ok() {
+                        // to find out, if we got the handle of the "IN_FORMATS" property ...
+                        if info.name().to_str().map(|x| x == "IN_FORMATS").unwrap_or(false) {
+                            // so we can use that to get formats
+                            return true;
+                        }
+                    }
+                    false
+                })
+                .copied();
+            if let Some(prop) = prop {
+                let prop_info = self.get_property(prop).map_err(|source| Error::Access {
+                    errmsg: "Failed to query property",
+                    dev: self.dev_path(),
+                    source,
+                })?;
+                let (handles, raw_values) = set.as_props_and_values();
+                let raw_value = raw_values[handles
+                    .iter()
+                    .enumerate()
+                    .find_map(|(i, handle)| if *handle == prop { Some(i) } else { None })
+                    .unwrap()];
+                if let property::Value::Blob(blob) = prop_info.value_type().convert_value(raw_value) {
+                    let data = self.get_property_blob(blob).map_err(|source| Error::Access {
+                        errmsg: "Failed to query property blob data",
+                        dev: self.dev_path(),
+                        source,
+                    })?;
+                    // be careful here, we have no idea about the alignment inside the blob, so always copy using `read_unaligned`,
+                    // although slice::from_raw_parts would be so much nicer to iterate and to read.
+                    unsafe {
+                        let fmt_mod_blob_ptr = data.as_ptr() as *const drm_ffi::drm_format_modifier_blob;
+                        let fmt_mod_blob = &*fmt_mod_blob_ptr;
+
+                        let formats_ptr: *const u32 = fmt_mod_blob_ptr
+                            .cast::<u8>()
+                            .offset(fmt_mod_blob.formats_offset as isize)
+                            as *const _;
+                        let modifiers_ptr: *const drm_ffi::drm_format_modifier = fmt_mod_blob_ptr
+                            .cast::<u8>()
+                            .offset(fmt_mod_blob.modifiers_offset as isize)
+                            as *const _;
+                        let formats_ptr = formats_ptr as *const u32;
+                        let modifiers_ptr = modifiers_ptr as *const drm_ffi::drm_format_modifier;
+
+                        for i in 0..fmt_mod_blob.count_modifiers {
+                            let mod_info = modifiers_ptr.offset(i as isize).read_unaligned();
+                            for j in 0..64 {
+                                if mod_info.formats & (1u64 << j) != 0 {
+                                    let code = Fourcc::try_from(
+                                        formats_ptr
+                                            .offset((j + mod_info.offset) as isize)
+                                            .read_unaligned(),
+                                    )
+                                    .ok();
+                                    let modifier = Modifier::from(mod_info.modifier);
+                                    if let Some(code) = code {
+                                        formats.insert(Format { code, modifier });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if plane_type(self, plane)? == PlaneType::Cursor {
+            // Force a LINEAR layout for the cursor if the driver doesn't support modifiers
+            for format in formats.clone() {
+                formats.insert(Format {
+                    code: format.code,
+                    modifier: Modifier::Linear,
+                });
+            }
+        }
+
+        if formats.is_empty() {
+            formats.insert(Format {
+                code: Fourcc::Argb8888,
+                modifier: Modifier::Invalid,
+            });
+        }
+
+        let logger = match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => &surf.logger,
+            DrmSurfaceInternal::Legacy(surf) => &surf.logger,
+        };
+        trace!(
+            logger,
+            "Supported scan-out formats for plane ({:?}): {:?}",
+            plane,
+            formats
+        );
+
+        Ok(formats)
+    }
+
+    /// Returns a set of available planes for this surface
+    pub fn planes(&self) -> Result<Planes, Error> {
+        planes(self, &self.crtc, self.has_universal_planes)
     }
 
     /// Tests is a framebuffer can be used with this surface.
@@ -215,6 +392,32 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
                     Ok(false)
                 }
             } // There is no test-commiting with the legacy interface
+        }
+    }
+    
+    /// Tests is a framebuffer can be used with this surface and a given plane.
+    ///
+    /// # Arguments
+    ///
+    /// - `fb` - Framebuffer handle that has an attached buffer, that shall be tested
+    /// - `plane` - The plane that should be used to display the buffer
+    ///     (only works for *cursor* and *overlay* planes - for primary planes use `test_buffer`)
+    /// - `position` - The position of the plane
+    /// - `size` - The size of the plane
+    /// 
+    /// If the test cannot be performed, this function returns false.
+    /// This is always the case for non-atomic surfaces.
+    pub fn test_plane_buffer(
+        &self,
+        fb: framebuffer::Handle,
+        plane: plane::Handle,
+        position: (i32, i32),
+        size: (u32, u32),
+    ) -> Result<bool, Error> {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.test_plane_buffer(fb, plane, position, size),
+            DrmSurfaceInternal::Legacy(surf) => { Ok(false) }
+            // There is no test-commiting with the legacy interface
         }
     }
 

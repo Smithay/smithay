@@ -181,6 +181,11 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             dev: self.fd.dev_path(),
             source,
         })?;
+        let plane_handles = self.fd.plane_handles().map_err(|source| Error::Access {
+            errmsg: "Error loading drm plane resources",
+            dev: self.fd.dev_path(),
+            source,
+        })?;
 
         // Disable all connectors (otherwise we might run into conflicting commits when restarting the rendering loop)
         let mut req = AtomicModeReq::new();
@@ -193,6 +198,26 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
                 .get("CRTC_ID")
                 .expect("Unknown property CRTC_ID");
             req.add_property(*conn, *prop, property::Value::CRTC(None));
+        }
+        // Disable all planes
+        for plane in plane_handles.planes() {
+            let prop = self
+                .prop_mapping
+                .3
+                .get(&plane)
+                .expect("Unknown handle")
+                .get("CRTC_ID")
+                .expect("Unknown property CRTC_ID");
+            req.add_property(*plane, *prop, property::Value::CRTC(None));
+
+            let prop = self
+                .prop_mapping
+                .3
+                .get(&plane)
+                .expect("Unknown handle")
+                .get("FB_ID")
+                .expect("Unknown property FB_ID");
+            req.add_property(*plane, *prop, property::Value::Framebuffer(None));
         }
         // A crtc without a connector has no mode, we also need to reset that.
         // Otherwise the commit will not be accepted.

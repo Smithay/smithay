@@ -68,10 +68,100 @@ mod render;
 pub(self) mod session;
 pub(self) mod surface;
 
-pub use device::{device_bind, DevPath, DeviceHandler, DrmDevice, DrmSource, Planes};
+pub use device::{device_bind, DevPath, DeviceHandler, DrmDevice, DrmSource};
 pub use error::Error as DrmError;
 #[cfg(feature = "backend_gbm")]
 pub use render::{DrmRenderSurface, Error as DrmRenderError};
 #[cfg(feature = "backend_session")]
 pub use session::{DrmDeviceObserver, DrmSurfaceObserver};
 pub use surface::DrmSurface;
+
+use drm::control::{plane, crtc, Device as ControlDevice, PlaneType};
+
+/// A set of planes as supported by a crtc
+pub struct Planes {
+    /// The primary plane of the crtc (automatically selected for [DrmDevice::create_surface])
+    pub primary: plane::Handle,
+    /// The cursor plane of the crtc, if available
+    pub cursor: Option<plane::Handle>,
+    /// Overlay planes supported by the crtc, if available
+    pub overlay: Option<Vec<plane::Handle>>,
+}
+
+fn planes(dev: &impl ControlDevice, crtc: &crtc::Handle, has_universal_planes: bool) -> Result<Planes, DrmError> {
+    let mut primary = None;
+    let mut cursor = None;
+    let mut overlay = Vec::new();
+    
+    let planes = dev.plane_handles().map_err(|source| DrmError::Access {
+        errmsg: "Error loading plane handles",
+        dev: dev.dev_path(),
+        source,
+    })?;
+
+    let resources = dev.resource_handles().map_err(|source| DrmError::Access {
+        errmsg: "Error loading resource handles",
+        dev: dev.dev_path(),
+        source,
+    })?;       
+
+    for plane in planes.planes() {
+        let info = dev.get_plane(*plane).map_err(|source| DrmError::Access {
+            errmsg: "Failed to get plane information",
+            dev: dev.dev_path(),
+            source,
+        })?;
+        let filter = info.possible_crtcs();
+        if resources.filter_crtcs(filter).contains(crtc) {
+            match plane_type(dev, *plane)? {
+                PlaneType::Primary => {
+                    primary = Some(*plane);
+                }
+                PlaneType::Cursor => {
+                    cursor = Some(*plane);
+                }
+                PlaneType::Overlay => {
+                    overlay.push(*plane);
+                }
+            };
+        }
+    }
+
+    Ok(Planes {
+        primary: primary.expect("Crtc has no primary plane"),
+        cursor: if has_universal_planes {
+            cursor
+        } else {
+            None
+        },
+        overlay: if has_universal_planes && !overlay.is_empty() {
+            Some(overlay)
+        } else {
+            None
+        },
+    })
+}
+
+fn plane_type(dev: &impl ControlDevice, plane: plane::Handle) -> Result<PlaneType, DrmError> {
+    let props = dev.get_properties(plane).map_err(|source| DrmError::Access {
+        errmsg: "Failed to get properties of plane",
+        dev: dev.dev_path(),
+        source,
+    })?;
+    let (ids, vals) = props.as_props_and_values();
+    for (&id, &val) in ids.iter().zip(vals.iter()) {
+        let info = dev.get_property(id).map_err(|source| DrmError::Access {
+            errmsg: "Failed to get property info",
+            dev: dev.dev_path(),
+            source,
+        })?;
+        if info.name().to_str().map(|x| x == "type").unwrap_or(false) {
+            return Ok(match val {
+                x if x == (PlaneType::Primary as u64) => PlaneType::Primary,
+                x if x == (PlaneType::Cursor as u64) => PlaneType::Cursor,
+                _ => PlaneType::Overlay,
+            });
+        }
+    }
+    unreachable!()
+}

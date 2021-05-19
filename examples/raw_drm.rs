@@ -79,13 +79,10 @@ fn main() {
     // Assuming we found a good connector and loaded the info into `connector_info`
     let mode = connector_info.modes()[0]; // Use first mode (usually highest resoltion, but in reality you should filter and sort and check and match with other connectors, if you use more then one.)
 
-    // We just use one plane, the primary one
-    let plane = device.planes(&crtc).unwrap().primary;
-
     // Initialize the hardware backend
     let surface = Rc::new(
         device
-            .create_surface(crtc, plane, mode, &[connector_info.handle()])
+            .create_surface(crtc, mode, &[connector_info.handle()])
             .unwrap(),
     );
 
@@ -125,7 +122,7 @@ fn main() {
         .unwrap();
 
     // Start rendering
-    surface.commit(framebuffer, true).unwrap();
+    surface.commit([(framebuffer, surface.plane())].iter(), true).unwrap();
 
     // Run
     event_loop.run(None, &mut (), |_| {}).unwrap();
@@ -161,7 +158,7 @@ impl DeviceHandler for DrmHandlerImpl {
         }
 
         let fb = self.current.userdata().unwrap();
-        self.surface.page_flip(fb, true).unwrap();
+        self.surface.page_flip([(fb, self.surface.plane())].iter(), true).unwrap();
     }
 
     fn error(&mut self, error: DrmError) {

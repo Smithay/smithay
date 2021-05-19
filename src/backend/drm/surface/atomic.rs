@@ -96,11 +96,21 @@ impl State {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct PlaneInfo {
+    handle: plane::Handle,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+}
+
 pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
     pub(super) fd: Arc<DrmDeviceInternal<A>>,
     pub(super) active: Arc<AtomicBool>,
     crtc: crtc::Handle,
     plane: plane::Handle,
+    additional_planes: Mutex<Vec<PlaneInfo>>,
     prop_mapping: Mapping,
     state: RwLock<State>,
     pending: RwLock<State>,
@@ -147,6 +157,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             active,
             crtc,
             plane,
+            additional_planes: Mutex::new(Vec::new()),
             prop_mapping,
             state: RwLock::new(state),
             pending: RwLock::new(pending),
@@ -159,8 +170,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
 
     // we need a framebuffer to do test commits, which we use to verify our pending state.
     // here we create a dumbbuffer for that purpose.
-    fn create_test_buffer(&self, mode: &Mode) -> Result<framebuffer::Handle, Error> {
-        let (w, h) = mode.size();
+    fn create_test_buffer(&self, size: (u16, u16)) -> Result<framebuffer::Handle, Error> {
+        let (w, h) = size;
         let db = self
             .fd
             .create_dumb_buffer(
@@ -228,7 +239,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 &mut [conn].iter(),
                 &mut [].iter(),
                 self.plane,
-                Some(self.create_test_buffer(&pending.mode)?),
+                &[],
+                Some([(self.create_test_buffer(pending.mode.size())?, self.plane)].iter()),
                 Some(pending.mode),
                 Some(pending.blob),
             )?;
@@ -265,7 +277,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             &mut [].iter(),
             &mut [conn].iter(),
             self.plane,
-            Some(self.create_test_buffer(&pending.mode)?),
+            &[],
+            Some([(self.create_test_buffer(pending.mode.size())?, self.plane)].iter()),
             Some(pending.mode),
             Some(pending.blob),
         )?;
@@ -303,7 +316,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             &mut added,
             &mut removed,
             self.plane,
-            Some(self.create_test_buffer(&pending.mode)?),
+            &[],
+            Some([(self.create_test_buffer(pending.mode.size())?, self.plane)].iter()),
             Some(pending.mode),
             Some(pending.blob),
         )?;
@@ -337,12 +351,13 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 source,
             })?;
 
-        let test_fb = Some(self.create_test_buffer(&pending.mode)?);
+        let test_fb = self.create_test_buffer(pending.mode.size())?;
         let req = self.build_request(
             &mut pending.connectors.iter(),
             &mut [].iter(),
             self.plane,
-            test_fb,
+            &[],
+            Some([(test_fb, self.plane)].iter()),
             Some(mode),
             Some(new_blob),
         )?;
@@ -364,12 +379,56 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
 
         Ok(())
     }
+    
+    pub fn use_plane(&self, plane: plane::Handle, position: (i32, i32), size: (u32, u32)) -> Result<(), Error> {
+        let info = PlaneInfo {
+            handle: plane,
+            x: position.0,
+            y: position.1,
+            w: size.0,
+            h: size.1,
+        };
+
+        let mut planes = self.additional_planes.lock().unwrap();
+        let mut new_planes = planes.clone();
+        new_planes.push(info);
+
+        let pending = self.pending.write().unwrap();
+        let req = self.build_request(
+            &mut pending.connectors.iter(),
+            &mut [].iter(),
+            self.plane,
+            &new_planes,
+            Some([(self.create_test_buffer(pending.mode.size())?, self.plane)]
+                .iter()
+                .chain(new_planes.iter().map(|info| {
+                    match self.create_test_buffer((info.w as u16, info.h as u16)) {
+                        Ok(test_buff) => Ok((test_buff, info.handle)),
+                        Err(err) => Err(err),
+                    }
+                }).collect::<Result<Vec<_>, _>>()?.iter())
+            ),
+            Some(pending.mode),
+            Some(pending.blob),
+        )?;
+        self
+            .fd
+            .atomic_commit(
+                &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                req,
+            )
+            .map_err(|_| Error::TestFailed(self.crtc))?;
+
+        *planes = new_planes;
+
+        Ok(())
+    }
 
     pub fn commit_pending(&self) -> bool {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
 
-    pub fn commit(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
+    pub fn commit<'a>(&self, framebuffers: impl Iterator<Item=&'a (framebuffer::Handle, plane::Handle)>, event: bool) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -416,7 +475,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 &mut added,
                 &mut removed,
                 self.plane,
-                Some(framebuffer),
+                &*self.additional_planes.lock().unwrap(),
+                Some(framebuffers),
                 Some(pending.mode),
                 Some(pending.blob),
             )?;
@@ -478,7 +538,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         result
     }
 
-    pub fn page_flip(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
+    pub fn page_flip<'a>(&self, framebuffers: impl Iterator<Item=&'a (framebuffer::Handle, plane::Handle)>, event: bool) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -488,7 +548,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             &mut [].iter(),
             &mut [].iter(),
             self.plane,
-            Some(framebuffer),
+            &*self.additional_planes.lock().unwrap(),
+            Some(framebuffers),
             None,
             None,
         )?;
@@ -541,9 +602,42 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             &mut added,
             &mut removed,
             self.plane,
-            Some(fb),
+            &[],
+            Some([(fb, self.plane)].iter()),
             Some(*mode),
             Some(blob),
+        )?;
+
+        let result = self
+            .fd
+            .atomic_commit(
+                &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                req,
+            )
+            .is_ok();
+        Ok(result)
+    }
+
+    pub fn test_plane_buffer(&self, fb: framebuffer::Handle, plane: plane::Handle, position: (i32, i32), size: (u32, u32)) -> Result<bool, Error> {
+        if !self.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
+        let pending = self.pending.read().unwrap();
+        let req = self.build_request(
+            &mut pending.connectors.iter(),
+            &mut [].iter(),
+            self.plane,
+            &[PlaneInfo {
+                handle: plane,
+                x: position.0,
+                y: position.1,
+                w: size.0,
+                h: size.1,
+            }],
+            Some([(fb, self.plane), (fb, plane)].iter()),
+            Some(pending.mode),
+            Some(pending.blob),
         )?;
 
         let result = self
@@ -626,12 +720,13 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
     }
 
     // If a mode is set a matching blob needs to be set (the inverse is not true)
-    pub fn build_request(
+    pub fn build_request<'a>(
         &self,
         new_connectors: &mut dyn Iterator<Item = &connector::Handle>,
         removed_connectors: &mut dyn Iterator<Item = &connector::Handle>,
-        plane: plane::Handle,
-        framebuffer: Option<framebuffer::Handle>,
+        primary: plane::Handle,
+        planes: &[PlaneInfo],
+        framebuffers: Option<impl Iterator<Item=&'a (framebuffer::Handle, plane::Handle)>>,
         mode: Option<Mode>,
         blob: Option<property::Value<'static>>,
     ) -> Result<AtomicModeReq, Error> {
@@ -674,65 +769,113 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             property::Value::Boolean(true),
         );
 
-        // and we need to set the framebuffer for our primary plane
-        if let Some(fb) = framebuffer {
-            req.add_property(
-                plane,
-                self.plane_prop_handle(plane, "FB_ID")?,
-                property::Value::Framebuffer(Some(fb)),
-            );
+        // and we need to set the framebuffers for our planes
+        if let Some(fbs) = framebuffers {
+            for (fb, plane) in fbs {
+                req.add_property(
+                    *plane,
+                    self.plane_prop_handle(*plane, "FB_ID")?,
+                    property::Value::Framebuffer(Some(*fb)),
+                );
+            }
         }
 
-        // we also need to connect the plane
+        // we also need to connect the primary plane
         req.add_property(
-            plane,
-            self.plane_prop_handle(plane, "CRTC_ID")?,
+            primary,
+            self.plane_prop_handle(primary, "CRTC_ID")?,
             property::Value::CRTC(Some(self.crtc)),
         );
 
-        // if there is a new mode, we should also make sure the plane is sized correctly
+        // if there is a new mode, we should also make sure the primary plane is sized correctly
         if let Some(mode) = mode {
             req.add_property(
-                plane,
-                self.plane_prop_handle(plane, "SRC_X")?,
+                primary,
+                self.plane_prop_handle(primary, "SRC_X")?,
                 property::Value::UnsignedRange(0),
             );
             req.add_property(
-                plane,
-                self.plane_prop_handle(plane, "SRC_Y")?,
+                primary,
+                self.plane_prop_handle(primary, "SRC_Y")?,
                 property::Value::UnsignedRange(0),
             );
             req.add_property(
-                plane,
-                self.plane_prop_handle(plane, "SRC_W")?,
+                primary,
+                self.plane_prop_handle(primary, "SRC_W")?,
                 // these are 16.16. fixed point
                 property::Value::UnsignedRange((mode.size().0 as u64) << 16),
             );
             req.add_property(
-                plane,
-                self.plane_prop_handle(plane, "SRC_H")?,
+                primary,
+                self.plane_prop_handle(primary, "SRC_H")?,
                 property::Value::UnsignedRange((mode.size().1 as u64) << 16),
             );
             // we can map parts of the plane onto different coordinated on the crtc, but we just use a 1:1 mapping.
             req.add_property(
-                plane,
-                self.plane_prop_handle(plane, "CRTC_X")?,
+                primary,
+                self.plane_prop_handle(primary, "CRTC_X")?,
                 property::Value::SignedRange(0),
             );
             req.add_property(
-                plane,
-                self.plane_prop_handle(plane, "CRTC_Y")?,
+                primary,
+                self.plane_prop_handle(primary, "CRTC_Y")?,
                 property::Value::SignedRange(0),
             );
             req.add_property(
-                plane,
-                self.plane_prop_handle(plane, "CRTC_W")?,
+                primary,
+                self.plane_prop_handle(primary, "CRTC_W")?,
                 property::Value::UnsignedRange(mode.size().0 as u64),
             );
             req.add_property(
-                plane,
-                self.plane_prop_handle(plane, "CRTC_H")?,
+                primary,
+                self.plane_prop_handle(primary, "CRTC_H")?,
                 property::Value::UnsignedRange(mode.size().1 as u64),
+            );
+        }
+        
+        // and finally the others
+        for plane_info in planes {
+            req.add_property(
+                plane_info.handle,
+                self.plane_prop_handle(plane_info.handle, "SRC_X")?,
+                property::Value::UnsignedRange(0),
+            );
+            req.add_property(
+                plane_info.handle,
+                self.plane_prop_handle(plane_info.handle, "SRC_Y")?,
+                property::Value::UnsignedRange(0),
+            );
+            req.add_property(
+                plane_info.handle,
+                self.plane_prop_handle(plane_info.handle, "SRC_W")?,
+                // these are 16.16. fixed point
+                property::Value::UnsignedRange((plane_info.w as u64) << 16),
+            );
+            req.add_property(
+                plane_info.handle,
+                self.plane_prop_handle(plane_info.handle, "SRC_H")?,
+                property::Value::UnsignedRange((plane_info.h as u64) << 16),
+            );
+            // we can map parts of the plane onto different coordinated on the crtc, but we just use a 1:1 mapping.
+            req.add_property(
+                plane_info.handle,
+                self.plane_prop_handle(plane_info.handle, "CRTC_X")?,
+                property::Value::SignedRange(plane_info.x as i64),
+            );
+            req.add_property(
+                plane_info.handle,
+                self.plane_prop_handle(plane_info.handle, "CRTC_Y")?,
+                property::Value::SignedRange(plane_info.y as i64),
+            );
+            req.add_property(
+                plane_info.handle,
+                self.plane_prop_handle(plane_info.handle, "CRTC_W")?,
+                property::Value::UnsignedRange(plane_info.w as u64),
+            );
+            req.add_property(
+                plane_info.handle,
+                self.plane_prop_handle(plane_info.handle, "CRTC_H")?,
+                property::Value::UnsignedRange(plane_info.h as u64),
             );
         }
 
@@ -743,7 +886,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
     // this is mostly used to remove the contents quickly, e.g. on tty switch,
     // as other compositors might not make use of other planes,
     // leaving our e.g. cursor or overlays as a relict of a better time on the screen.
-    pub fn clear_plane(&self) -> Result<(), Error> {
+    pub fn clear_plane(&self, plane: plane::Handle) -> Result<(), Error> {
         let mut req = AtomicModeReq::new();
 
         req.add_property(
@@ -758,17 +901,19 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             property::Value::Framebuffer(None),
         );
 
-        self.fd
-            .atomic_commit(&[AtomicCommitFlags::TestOnly], req.clone())
-            .map_err(|_| Error::TestFailed(self.crtc))?;
-
-        self.fd
+        let result = self.fd
             .atomic_commit(&[AtomicCommitFlags::Nonblock], req)
             .map_err(|source| Error::Access {
                 errmsg: "Failed to commit on clear_plane",
                 dev: self.fd.dev_path(),
                 source,
-            })
+            });
+
+        if result.is_ok() {
+            self.additional_planes.lock().unwrap().retain(|info| info.handle != plane);
+        }
+
+        result
     }
 
     pub(crate) fn reset_state<B: AsRawFd + ControlDevice + 'static>(
@@ -801,8 +946,13 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmSurface<A> {
 
         // other ttys that use no cursor, might not clear it themselves.
         // This makes sure our cursor won't stay visible.
-        if let Err(err) = self.clear_plane() {
-            warn!(self.logger, "Failed to clear plane on {:?}: {}", self.crtc, err);
+        if let Err(err) = self.clear_plane(self.plane) {
+            warn!(self.logger, "Failed to clear plane {:?} on {:?}: {}", self.plane, self.crtc, err);
+        }
+        for plane_info in self.additional_planes.lock().unwrap().iter() {
+            if let Err(err) = self.clear_plane(plane_info.handle) {
+                warn!(self.logger, "Failed to clear plane {:?} on {:?}: {}", plane_info.handle, self.crtc, err);
+            }
         }
 
         // disable connectors again

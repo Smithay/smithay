@@ -79,7 +79,7 @@ where
 
         // select a format
         let plane_formats = drm
-            .supported_formats()
+            .supported_formats(drm.plane())?
             .iter()
             .filter(|fmt| fmt.code == code)
             .cloned()
@@ -517,9 +517,9 @@ where
             .fb;
 
         let flip = if self.drm.commit_pending() {
-            self.drm.commit(fb, true)
+            self.drm.commit([(fb, self.drm.plane())].iter(), true)
         } else {
-            self.drm.page_flip(fb, true)
+            self.drm.page_flip([(fb, self.drm.plane())].iter(), true)
         };
         if flip.is_ok() {
             self.pending_fb = Some(slot);

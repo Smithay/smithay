@@ -1,6 +1,4 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
-use std::convert::TryFrom;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -8,18 +6,17 @@ use std::sync::{atomic::AtomicBool, Arc};
 
 use calloop::{generic::Generic, InsertError, LoopHandle, Source};
 use drm::control::{
-    connector, crtc, plane, property, Device as ControlDevice, Event, Mode, PlaneResourceHandles, PlaneType,
+    connector, crtc, Device as ControlDevice, Event, Mode,
     ResourceHandles,
 };
-use drm::{ClientCapability, Device as BasicDevice, DriverCapability};
+use drm::{ClientCapability, Device as BasicDevice};
 use nix::libc::dev_t;
 use nix::sys::stat::fstat;
 
 pub(super) mod atomic;
 pub(super) mod legacy;
-use super::error::Error;
+use super::{error::Error, Planes, planes};
 use super::surface::{atomic::AtomicDrmSurface, legacy::LegacyDrmSurface, DrmSurface, DrmSurfaceInternal};
-use crate::backend::allocator::{Format, Fourcc, Modifier};
 use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
 
@@ -32,7 +29,6 @@ pub struct DrmDevice<A: AsRawFd + 'static> {
     pub(super) links: RefCell<Vec<crate::signaling::SignalToken>>,
     has_universal_planes: bool,
     resources: ResourceHandles,
-    planes: PlaneResourceHandles,
     pub(super) logger: ::slog::Logger,
 }
 
@@ -142,11 +138,6 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             dev: dev.dev_path(),
             source,
         })?;
-        let planes = dev.plane_handles().map_err(|source| Error::Access {
-            errmsg: "Error loading plane handles",
-            dev: dev.dev_path(),
-            source,
-        })?;
         let internal = Arc::new(DrmDevice::create_internal(
             dev,
             active,
@@ -162,7 +153,6 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             links: RefCell::new(Vec::new()),
             has_universal_planes,
             resources,
-            planes,
             logger: log,
         })
     }
@@ -258,65 +248,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
 
     /// Returns a set of available planes for a given crtc
     pub fn planes(&self, crtc: &crtc::Handle) -> Result<Planes, Error> {
-        let mut primary = None;
-        let mut cursor = None;
-        let mut overlay = Vec::new();
-
-        for plane in self.planes.planes() {
-            let info = self.get_plane(*plane).map_err(|source| Error::Access {
-                errmsg: "Failed to get plane information",
-                dev: self.dev_path(),
-                source,
-            })?;
-            let filter = info.possible_crtcs();
-            if self.resources.filter_crtcs(filter).contains(crtc) {
-                match self.plane_type(*plane)? {
-                    PlaneType::Primary => {
-                        primary = Some(*plane);
-                    }
-                    PlaneType::Cursor => {
-                        cursor = Some(*plane);
-                    }
-                    PlaneType::Overlay => {
-                        overlay.push(*plane);
-                    }
-                };
-            }
-        }
-
-        Ok(Planes {
-            primary: primary.expect("Crtc has no primary plane"),
-            cursor,
-            overlay: if self.has_universal_planes {
-                Some(overlay)
-            } else {
-                None
-            },
-        })
-    }
-
-    fn plane_type(&self, plane: plane::Handle) -> Result<PlaneType, Error> {
-        let props = self.get_properties(plane).map_err(|source| Error::Access {
-            errmsg: "Failed to get properties of plane",
-            dev: self.dev_path(),
-            source,
-        })?;
-        let (ids, vals) = props.as_props_and_values();
-        for (&id, &val) in ids.iter().zip(vals.iter()) {
-            let info = self.get_property(id).map_err(|source| Error::Access {
-                errmsg: "Failed to get property info",
-                dev: self.dev_path(),
-                source,
-            })?;
-            if info.name().to_str().map(|x| x == "type").unwrap_or(false) {
-                return Ok(match val {
-                    x if x == (PlaneType::Primary as u64) => PlaneType::Primary,
-                    x if x == (PlaneType::Cursor as u64) => PlaneType::Cursor,
-                    _ => PlaneType::Overlay,
-                });
-            }
-        }
-        unreachable!()
+        planes(self, crtc, self.has_universal_planes)
     }
 
     /// Creates a new rendering surface.
@@ -338,7 +270,6 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
     pub fn create_surface(
         &self,
         crtc: crtc::Handle,
-        plane: plane::Handle,
         mode: Mode,
         connectors: &[connector::Handle],
     ) -> Result<DrmSurface<A>, Error> {
@@ -346,6 +277,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             return Err(Error::SurfaceWithoutConnectors(crtc));
         }
 
+        let plane = planes(self, &crtc, self.has_universal_planes)?.primary;
         let info = self.get_plane(plane).map_err(|source| Error::Access {
             errmsg: "Failed to get plane info",
             dev: self.dev_path(),
@@ -378,10 +310,6 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
                 self.logger.clone(),
             )?)
         } else {
-            if self.plane_type(plane)? != PlaneType::Primary {
-                return Err(Error::NonPrimaryPlane(plane));
-            }
-
             DrmSurfaceInternal::Legacy(LegacyDrmSurface::new(
                 self.internal.clone(),
                 active,
@@ -392,131 +320,12 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             )?)
         };
 
-        // get plane formats
-        let plane_info = self.get_plane(plane).map_err(|source| Error::Access {
-            errmsg: "Error loading plane info",
-            dev: self.dev_path(),
-            source,
-        })?;
-        let mut formats = HashSet::new();
-        for code in plane_info
-            .formats()
-            .iter()
-            .flat_map(|x| Fourcc::try_from(*x).ok())
-        {
-            formats.insert(Format {
-                code,
-                modifier: Modifier::Invalid,
-            });
-        }
-
-        if let Ok(1) = self.get_driver_capability(DriverCapability::AddFB2Modifiers) {
-            let set = self.get_properties(plane).map_err(|source| Error::Access {
-                errmsg: "Failed to query properties",
-                dev: self.dev_path(),
-                source,
-            })?;
-            let (handles, _) = set.as_props_and_values();
-            // for every handle ...
-            let prop = handles
-                .iter()
-                .find(|handle| {
-                    // get information of that property
-                    if let Some(info) = self.get_property(**handle).ok() {
-                        // to find out, if we got the handle of the "IN_FORMATS" property ...
-                        if info.name().to_str().map(|x| x == "IN_FORMATS").unwrap_or(false) {
-                            // so we can use that to get formats
-                            return true;
-                        }
-                    }
-                    false
-                })
-                .copied();
-            if let Some(prop) = prop {
-                let prop_info = self.get_property(prop).map_err(|source| Error::Access {
-                    errmsg: "Failed to query property",
-                    dev: self.dev_path(),
-                    source,
-                })?;
-                let (handles, raw_values) = set.as_props_and_values();
-                let raw_value = raw_values[handles
-                    .iter()
-                    .enumerate()
-                    .find_map(|(i, handle)| if *handle == prop { Some(i) } else { None })
-                    .unwrap()];
-                if let property::Value::Blob(blob) = prop_info.value_type().convert_value(raw_value) {
-                    let data = self.get_property_blob(blob).map_err(|source| Error::Access {
-                        errmsg: "Failed to query property blob data",
-                        dev: self.dev_path(),
-                        source,
-                    })?;
-                    // be careful here, we have no idea about the alignment inside the blob, so always copy using `read_unaligned`,
-                    // although slice::from_raw_parts would be so much nicer to iterate and to read.
-                    unsafe {
-                        let fmt_mod_blob_ptr = data.as_ptr() as *const drm_ffi::drm_format_modifier_blob;
-                        let fmt_mod_blob = &*fmt_mod_blob_ptr;
-
-                        let formats_ptr: *const u32 = fmt_mod_blob_ptr
-                            .cast::<u8>()
-                            .offset(fmt_mod_blob.formats_offset as isize)
-                            as *const _;
-                        let modifiers_ptr: *const drm_ffi::drm_format_modifier = fmt_mod_blob_ptr
-                            .cast::<u8>()
-                            .offset(fmt_mod_blob.modifiers_offset as isize)
-                            as *const _;
-                        let formats_ptr = formats_ptr as *const u32;
-                        let modifiers_ptr = modifiers_ptr as *const drm_ffi::drm_format_modifier;
-
-                        for i in 0..fmt_mod_blob.count_modifiers {
-                            let mod_info = modifiers_ptr.offset(i as isize).read_unaligned();
-                            for j in 0..64 {
-                                if mod_info.formats & (1u64 << j) != 0 {
-                                    let code = Fourcc::try_from(
-                                        formats_ptr
-                                            .offset((j + mod_info.offset) as isize)
-                                            .read_unaligned(),
-                                    )
-                                    .ok();
-                                    let modifier = Modifier::from(mod_info.modifier);
-                                    if let Some(code) = code {
-                                        formats.insert(Format { code, modifier });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else if self.plane_type(plane)? == PlaneType::Cursor {
-            // Force a LINEAR layout for the cursor if the driver doesn't support modifiers
-            for format in formats.clone() {
-                formats.insert(Format {
-                    code: format.code,
-                    modifier: Modifier::Linear,
-                });
-            }
-        }
-
-        if formats.is_empty() {
-            formats.insert(Format {
-                code: Fourcc::Argb8888,
-                modifier: Modifier::Invalid,
-            });
-        }
-
-        trace!(
-            self.logger,
-            "Supported scan-out formats for plane ({:?}): {:?}",
-            plane,
-            formats
-        );
-
         Ok(DrmSurface {
             dev_id: self.dev_id,
             crtc,
-            plane,
+            primary: plane,
             internal: Arc::new(internal),
-            formats,
+            has_universal_planes: self.has_universal_planes,
             #[cfg(feature = "backend_session")]
             links: RefCell::new(Vec::new()),
         })
@@ -528,15 +337,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
     }
 }
 
-/// A set of planes as supported by a crtc
-pub struct Planes {
-    /// The primary plane of the crtc
-    pub primary: plane::Handle,
-    /// The cursor plane of the crtc, if available
-    pub cursor: Option<plane::Handle>,
-    /// Overlay planes supported by the crtc, if available
-    pub overlay: Option<Vec<plane::Handle>>,
-}
+
 
 /// Trait to receive events of a bound [`DrmDevice`]
 ///
