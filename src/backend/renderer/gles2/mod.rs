@@ -1069,6 +1069,21 @@ impl Renderer for Gles2Renderer {
         self.make_current()?;
         unsafe {
             self.gl.Flush();
+            // We need to wait for the previously submitted GL commands to complete
+            // or otherwise the buffer could be submitted to the drm surface while
+            // still writing to the buffer which results in flickering on the screen.
+            // The proper solution would be to create a fence just before calling
+            // glFlush that the backend can use to wait for the commands to be finished.
+            // In case of a drm atomic backend the fence could be supplied by using the
+            // IN_FENCE_FD property.
+            // See https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#explicit-fencing-properties for
+            // the topic on submitting a IN_FENCE_FD and the mesa kmskube example 
+            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c
+            // especially here
+            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L147
+            // and here
+            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L235
+            self.gl.Finish();
             self.gl.Disable(ffi::BLEND);
         }
 
