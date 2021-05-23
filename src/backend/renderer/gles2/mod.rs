@@ -2,8 +2,8 @@
 
 #[cfg(feature = "wayland_frontend")]
 use std::cell::RefCell;
-use std::convert::TryFrom;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::ffi::CStr;
 use std::fmt;
 use std::ptr;
@@ -25,20 +25,17 @@ use crate::backend::allocator::{
     Format,
 };
 use crate::backend::egl::{
-    ffi::egl::{self as ffi_egl, types::EGLImage}, EGLContext, EGLSurface,
-    Format as EGLFormat, MakeCurrentError,
+    ffi::egl::{self as ffi_egl, types::EGLImage},
+    EGLContext, EGLSurface, Format as EGLFormat, MakeCurrentError,
 };
 use crate::backend::SwapBuffersError;
 
 #[cfg(feature = "wayland_frontend")]
-use crate::{
-    backend::egl::display::EGLBufferReader,
-    wayland::compositor::Damage,
-};
-#[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::{wl_buffer, wl_shm};
+use crate::{backend::egl::display::EGLBufferReader, wayland::compositor::Damage};
 #[cfg(feature = "wayland_frontend")]
 use wayland_commons::user_data::UserDataMap;
+#[cfg(feature = "wayland_frontend")]
+use wayland_server::protocol::{wl_buffer, wl_shm};
 
 #[allow(clippy::all, missing_docs)]
 pub mod ffi {
@@ -78,10 +75,14 @@ struct Gles2TextureInternal {
 
 impl Drop for Gles2TextureInternal {
     fn drop(&mut self) {
-        let _ = self.destruction_callback_sender.send(CleanupResource::Texture(self.texture));
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::Texture(self.texture));
         if let Some(images) = self.egl_images.take() {
             for image in images {
-                let _ = self.destruction_callback_sender.send(CleanupResource::EGLImage(image));
+                let _ = self
+                    .destruction_callback_sender
+                    .send(CleanupResource::EGLImage(image));
             }
         }
     }
@@ -245,8 +246,9 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::GLExtensionNotSupported(_)
             | x @ Gles2Error::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
             Gles2Error::ContextActivationError(err) => err.into(),
-            x @ Gles2Error::FramebufferBindingError
-            | x @ Gles2Error::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            x @ Gles2Error::FramebufferBindingError | x @ Gles2Error::BindBufferEGLError(_) => {
+                SwapBuffersError::TemporaryFailure(Box::new(x))
+            }
         }
     }
 }
@@ -471,7 +473,8 @@ impl Gles2Renderer {
     fn cleanup(&mut self) -> Result<(), Gles2Error> {
         self.make_current()?;
         #[cfg(feature = "wayland_frontend")]
-        self.textures.retain(|entry, tex| entry.buffer.as_ref().is_alive());
+        self.textures
+            .retain(|entry, _tex| entry.buffer.as_ref().is_alive());
         for resource in self.destruction_callback.try_iter() {
             match resource {
                 CleanupResource::Texture(texture) => unsafe {
@@ -479,7 +482,7 @@ impl Gles2Renderer {
                 },
                 CleanupResource::EGLImage(image) => unsafe {
                     ffi_egl::DestroyImageKHR(**self.egl.display.display, image);
-                }
+                },
             }
         }
         Ok(())
@@ -534,7 +537,13 @@ impl Gles2Renderer {
                     egl_images: None,
                     destruction_callback_sender: self.destruction_callback_sender.clone(),
                 }));
-                self.textures.insert(BufferEntry { id: buffer.as_ref().id(), buffer: buffer.clone() }, texture.clone());
+                self.textures.insert(
+                    BufferEntry {
+                        id: buffer.as_ref().id(),
+                        buffer: buffer.clone(),
+                    },
+                    texture.clone(),
+                );
                 texture
             });
 
@@ -598,53 +607,55 @@ impl Gles2Renderer {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
 
-        self.existing_texture(buffer)?.map(Ok).unwrap_or_else(|| {
-            self.make_current()?;
+        // We can not use the caching logic for textures here as the
+        // egl buffers a potentially managed external which will fail the
+        // clean up check if the buffer is still alive. For wl_drm the
+        // is_alive check will always return true and the cache entry
+        // will never be cleaned up.
+        self.make_current()?;
 
-            let egl = reader
-                .egl_buffer_contents(&buffer)
-                .map_err(Gles2Error::EGLBufferAccessError)?;
+        let egl = reader
+            .egl_buffer_contents(&buffer)
+            .map_err(Gles2Error::EGLBufferAccessError)?;
 
-            let tex = self.import_egl_image(
-                egl.image(0).unwrap(),
-                egl.format == EGLFormat::External,
-                None,
-            )?;
+        let tex = self.import_egl_image(egl.image(0).unwrap(), egl.format == EGLFormat::External, None)?;
 
-            let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
-                texture: tex,
-                texture_kind: match egl.format {
-                    EGLFormat::RGB => 1,
-                    EGLFormat::RGBA => 0,
-                    EGLFormat::External => 2,
-                    _ => unreachable!("EGLBuffer currenly does not expose multi-planar buffers to us"),
-                },
-                is_external: egl.format == EGLFormat::External,
-                y_inverted: egl.y_inverted,
-                width: egl.width,
-                height: egl.height,
-                buffer: Some(buffer.clone()),
-                egl_images: Some(egl.into_images()),
-                destruction_callback_sender: self.destruction_callback_sender.clone(),
-            }));
+        let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
+            texture: tex,
+            texture_kind: match egl.format {
+                EGLFormat::RGB => 1,
+                EGLFormat::RGBA => 0,
+                EGLFormat::External => 2,
+                _ => unreachable!("EGLBuffer currenly does not expose multi-planar buffers to us"),
+            },
+            is_external: egl.format == EGLFormat::External,
+            y_inverted: egl.y_inverted,
+            width: egl.width,
+            height: egl.height,
+            buffer: Some(buffer.clone()),
+            egl_images: Some(egl.into_images()),
+            destruction_callback_sender: self.destruction_callback_sender.clone(),
+        }));
 
-            self.egl.unbind()?;
-            self.textures.insert(BufferEntry { id: buffer.as_ref().id(), buffer: buffer.clone() }, texture.clone());
-            Ok(texture)
-        })
+        self.egl.unbind()?;
+        Ok(texture)
     }
 
     #[cfg(feature = "wayland_frontend")]
-    fn existing_texture(
-        &self,
-        buffer: &wl_buffer::WlBuffer,
-    ) -> Result<Option<Gles2Texture>, Gles2Error> {
-        let existing_texture = self.textures.iter().find(|(old_buffer, _)| {
-            &old_buffer.buffer == buffer
-        }).map(|(_, tex)| tex.clone());
+    fn existing_texture(&self, buffer: &wl_buffer::WlBuffer) -> Result<Option<Gles2Texture>, Gles2Error> {
+        let existing_texture = self
+            .textures
+            .iter()
+            .find(|(old_buffer, _)| &old_buffer.buffer == buffer)
+            .map(|(_, tex)| tex.clone());
 
         if let Some(texture) = existing_texture {
-            trace!(self.logger, "Re-using texture {:?} for {:?}", texture.0.texture, buffer);
+            trace!(
+                self.logger,
+                "Re-using texture {:?} for {:?}",
+                texture.0.texture,
+                buffer
+            );
             if texture.0.is_external {
                 Ok(Some(texture))
             } else {
@@ -917,10 +928,13 @@ impl Renderer for Gles2Renderer {
         let texture = if egl.and_then(|egl| egl.egl_buffer_dimensions(&buffer)).is_some() {
             self.import_egl(&buffer, egl.unwrap())
         } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
-            self.import_shm(&buffer, damage.and_then(|damage| match damage {
-                Damage::Buffer(rect) => Some(*rect),
-                _ => None
-            }))
+            self.import_shm(
+                &buffer,
+                damage.and_then(|damage| match damage {
+                    Damage::Buffer(rect) => Some(*rect),
+                    _ => None,
+                }),
+            )
         } else {
             Err(Gles2Error::UnknownBufferType)
         }?;
@@ -1077,7 +1091,7 @@ impl Renderer for Gles2Renderer {
             // In case of a drm atomic backend the fence could be supplied by using the
             // IN_FENCE_FD property.
             // See https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#explicit-fencing-properties for
-            // the topic on submitting a IN_FENCE_FD and the mesa kmskube example 
+            // the topic on submitting a IN_FENCE_FD and the mesa kmskube example
             // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c
             // especially here
             // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L147
