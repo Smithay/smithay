@@ -677,7 +677,7 @@ pub struct CommitedState {
     pub buffer: Option<wl_buffer::WlBuffer>,
     pub input_region: Option<RegionAttributes>,
     pub dimensions: Option<(i32, i32)>,
-    pub frame_callback: Option<wl_callback::WlCallback>,
+    pub frame_callbacks: Vec<wl_callback::WlCallback>,
     pub sub_location: (i32, i32),
 }
 
@@ -734,12 +734,6 @@ impl SurfaceData {
                 buffer.release();
             }
         }
-        // ping the previous callback if relevant
-        if into.frame_callback != next.frame_callback {
-            if let Some(callback) = into.frame_callback.take() {
-                callback.done(0);
-            }
-        }
 
         *into = next;
         new_buffer
@@ -784,7 +778,7 @@ impl SurfaceData {
 
     /// Send the frame callback if it had been requested
     pub fn send_frame(&mut self, time: u32) {
-        if let Some(callback) = self.current_state.frame_callback.take() {
+        for callback in self.current_state.frame_callbacks.drain(..) {
             callback.done(time);
         }
     }
@@ -863,12 +857,10 @@ fn surface_commit(
             None => {}
         }
 
-        if let Some(frame_cb) = attributes.frame_callback.take() {
-            if let Some(old_cb) = next_state.frame_callback.take() {
-                old_cb.done(0);
-            }
-            next_state.frame_callback = Some(frame_cb);
-        }
+        // Append the current frame callbacks to the next state
+        next_state
+            .frame_callbacks
+            .extend(attributes.frame_callbacks.drain(..));
 
         data.apply_cache(next_state);
 
