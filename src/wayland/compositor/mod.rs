@@ -156,14 +156,22 @@ pub struct SurfaceAttributes {
     /// Hint provided by the client to suggest that only this part
     /// of the surface was changed and needs to be redrawn
     pub damage: Vec<Damage>,
-    /// The frame callback associated with this surface for the commit
+    /// The frame callbacks associated with this surface for the commit
     ///
-    /// The be triggered to notify the client about when it would be a
-    /// good time to start drawing its next frame.
+    /// The server must send the notifications so that a client
+    /// will not send excessive updates, while still allowing
+    /// the highest possible update rate for clients that wait for the reply
+    /// before drawing again. The server should give some time for the client
+    /// to draw and commit after sending the frame callback events to let it
+    /// hit the next output refresh.
+    ///
+    /// A server should avoid signaling the frame callbacks if the
+    /// surface is not visible in any way, e.g. the surface is off-screen,
+    /// or completely obscured by other opaque surfaces.
     ///
     /// An example possibility would be to trigger it once the frame
     /// associated with this commit has been displayed on the screen.
-    pub frame_callback: Option<wl_callback::WlCallback>,
+    pub frame_callbacks: Vec<wl_callback::WlCallback>,
     /// User-controlled data
     ///
     /// This is your field to host whatever you need.
@@ -180,7 +188,7 @@ impl fmt::Debug for SurfaceAttributes {
             .field("opaque_region", &self.opaque_region)
             .field("input_region", &self.input_region)
             .field("damage", &self.damage)
-            .field("frame_callback", &self.frame_callback)
+            .field("frame_callbacks", &self.frame_callbacks)
             .field("user_data", &"...")
             .finish()
     }
@@ -195,7 +203,7 @@ impl Default for SurfaceAttributes {
             opaque_region: None,
             input_region: None,
             damage: Vec::new(),
-            frame_callback: None,
+            frame_callbacks: Vec::new(),
             user_data: UserDataMap::new(),
         }
     }

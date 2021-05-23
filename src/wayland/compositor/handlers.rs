@@ -83,7 +83,7 @@ where
             }
             wl_surface::Request::Frame { callback } => {
                 SurfaceData::<R>::with_data(&surface, move |d| {
-                    d.frame_callback = Some((*callback).clone());
+                    d.frame_callbacks.push((*callback).clone());
                 });
             }
             wl_surface::Request::SetOpaqueRegion { region } => {
