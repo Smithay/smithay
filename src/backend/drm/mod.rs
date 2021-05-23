@@ -85,7 +85,7 @@ pub struct Planes {
     /// The cursor plane of the crtc, if available
     pub cursor: Option<plane::Handle>,
     /// Overlay planes supported by the crtc, if available
-    pub overlay: Option<Vec<plane::Handle>>,
+    pub overlay: Vec<plane::Handle>,
 }
 
 fn planes(dev: &impl ControlDevice, crtc: &crtc::Handle, has_universal_planes: bool) -> Result<Planes, DrmError> {
@@ -134,10 +134,10 @@ fn planes(dev: &impl ControlDevice, crtc: &crtc::Handle, has_universal_planes: b
         } else {
             None
         },
-        overlay: if has_universal_planes && !overlay.is_empty() {
-            Some(overlay)
+        overlay: if has_universal_planes {
+            overlay
         } else {
-            None
+            Vec::new()
         },
     })
 }

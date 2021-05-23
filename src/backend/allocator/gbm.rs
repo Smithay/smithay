@@ -1,10 +1,14 @@
-//! Module for Buffers created using [libgbm](reexports::gbm)
+//! Module for Buffers created using [libgbm](reexports::gbm).
+//! 
+//! The re-exported `GbmDevice` implements the [`Allocator`](super::Allocator) trait
+//! and `GbmBuffer` satisfies the [`Buffer`](super::Buffer) trait while also allowing
+//! conversions to and from [dmabufs](super::dmabuf).
 
 use super::{
     dmabuf::{AsDmabuf, Dmabuf},
     Allocator, Buffer, Format, Fourcc, Modifier,
 };
-use gbm::{BufferObject as GbmBuffer, BufferObjectFlags, Device as GbmDevice};
+pub use gbm::{BufferObject as GbmBuffer, BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
 use std::os::unix::io::AsRawFd;
 
 impl<A: AsRawFd + 'static, T> Allocator<GbmBuffer<T>> for GbmDevice<A> {
@@ -12,9 +16,9 @@ impl<A: AsRawFd + 'static, T> Allocator<GbmBuffer<T>> for GbmDevice<A> {
 
     fn create_buffer(&mut self, width: u32, height: u32, format: Format) -> std::io::Result<GbmBuffer<T>> {
         if format.modifier == Modifier::Invalid || format.modifier == Modifier::Linear {
-            let mut usage = BufferObjectFlags::SCANOUT | BufferObjectFlags::RENDERING;
+            let mut usage = GbmBufferFlags::SCANOUT | GbmBufferFlags::RENDERING;
             if format.modifier == Modifier::Linear {
-                usage |= BufferObjectFlags::LINEAR;
+                usage |= GbmBufferFlags::LINEAR;
             }
             self.create_buffer_object(width, height, format.code, usage)
         } else {
@@ -104,10 +108,10 @@ impl<T> AsDmabuf for GbmBuffer<T> {
 
 impl Dmabuf {
     /// Import a Dmabuf using libgbm, creating a gbm Buffer Object to the same underlying data.
-    pub fn import<A: AsRawFd + 'static, T>(
+    pub fn import_to<A: AsRawFd + 'static, T>(
         &self,
         gbm: &GbmDevice<A>,
-        usage: BufferObjectFlags,
+        usage: GbmBufferFlags,
     ) -> std::io::Result<GbmBuffer<T>> {
         let buf = &*self.0;
         if self.has_modifier() || buf.num_planes > 1 || buf.offsets[0] != 0 {
@@ -130,7 +134,7 @@ impl Dmabuf {
                 buf.strides[0],
                 buf.format.code,
                 if buf.format.modifier == Modifier::Linear {
-                    usage | BufferObjectFlags::LINEAR
+                    usage | GbmBufferFlags::LINEAR
                 } else {
                     usage
                 },

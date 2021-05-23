@@ -104,7 +104,7 @@ fn main() {
     );
     let first_buffer: Slot<DumbBuffer<FdWrapper>, _> = swapchain.acquire().unwrap().unwrap();
     let framebuffer = surface.add_framebuffer(first_buffer.handle(), 32, 32).unwrap();
-    first_buffer.set_userdata(framebuffer);
+    *first_buffer.userdata() = Some(framebuffer);
 
     // Get the device as an allocator into the
     device.set_handler(DrmHandlerImpl {
@@ -141,7 +141,7 @@ impl DeviceHandler for DrmHandlerImpl {
             let next = self.swapchain.acquire().unwrap().unwrap();
             if next.userdata().is_none() {
                 let fb = self.surface.add_framebuffer(next.handle(), 32, 32).unwrap();
-                next.set_userdata(fb);
+                *next.userdata() = Some(fb);
             }
 
             // now we could render to the mapping via software rendering.

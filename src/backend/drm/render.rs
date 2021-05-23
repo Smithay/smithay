@@ -192,7 +192,7 @@ where
 
         let bo = import_dmabuf(&drm, &gbm, &dmabuf)?;
         let fb = bo.userdata().unwrap().unwrap().fb;
-        buffer.set_userdata((dmabuf, bo));
+        *buffer.userdata() = Some((dmabuf, bo));
 
         match drm.test_buffer(fb, &mode, true) {
             Ok(_) => {
@@ -470,7 +470,7 @@ where
     {
         if slot.userdata().is_none() {
             let bo = import_dmabuf(&self.drm, &self.gbm, &dmabuf)?;
-            slot.set_userdata((dmabuf, bo));
+            *slot.userdata() = Some((dmabuf, bo));
         }
 
         self.queued_fb = Some(slot);
@@ -540,7 +540,7 @@ where
     E3: std::error::Error + 'static,
 {
     // TODO check userdata and return early
-    let mut bo = buffer.import(&gbm, BufferObjectFlags::SCANOUT)?;
+    let mut bo = buffer.import_to(&gbm, BufferObjectFlags::SCANOUT)?;
     let modifier = match bo.modifier().unwrap() {
         Modifier::Invalid => None,
         x => Some(x),

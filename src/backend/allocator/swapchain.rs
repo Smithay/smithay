@@ -32,10 +32,9 @@ pub const SLOT_CAP: usize = 4;
 /// You then hold on to the returned buffer during rendering and swapping and free it once it is displayed.
 /// Efficient re-use of the buffers is done by the swapchain.
 ///
-/// If you have associated resources for each buffer, that can also be re-used (e.g. framebuffer Handles for a `DrmDevice`),
-/// you can store then in the buffer slots userdata, where it gets freed, if the buffer gets allocated, but
-/// is still valid, if the buffer was just re-used. So instead of creating a framebuffer handle for each new
-/// buffer, you can skip creation, if the userdata already contains a framebuffer handle.
+/// If you have associated resources for each buffer that can be reused (e.g. framebuffer `Handle`s for a `DrmDevice`),
+/// you can store then in the `Slot`s userdata field. If a buffer is re-used, its userdata is preserved for the next time
+/// it is returned by `acquire()`.
 pub struct Swapchain<A: Allocator<B>, B: Buffer, U: 'static> {
     /// Allocator used by the swapchain
     pub allocator: A,
@@ -44,7 +43,7 @@ pub struct Swapchain<A: Allocator<B>, B: Buffer, U: 'static> {
     height: u32,
     format: Format,
 
-    slots: [Slot<B, U>; SLOT_CAP],
+    slots: [Arc<InternalSlot<B, U>>; SLOT_CAP],
 }
 
 /// Slot of a swapchain containing an allocated buffer and its userdata.
@@ -52,45 +51,27 @@ pub struct Swapchain<A: Allocator<B>, B: Buffer, U: 'static> {
 /// Can be cloned and passed around freely, the buffer is marked for re-use
 /// once all copies are dropped. Holding on to this struct will block the
 /// buffer in the swapchain.
-pub struct Slot<B: Buffer, U: 'static> {
-    buffer: Arc<Option<B>>,
-    acquired: Arc<AtomicBool>,
-    userdata: Arc<Mutex<Option<U>>>,
+pub struct Slot<B: Buffer, U: 'static>(Arc<InternalSlot<B, U>>);
+
+struct InternalSlot<B: Buffer, U: 'static> {
+    buffer: Option<B>,
+    acquired: AtomicBool,
+    userdata: Mutex<Option<U>>,
 }
 
 impl<B: Buffer, U: 'static> Slot<B, U> {
-    /// Set userdata for this slot.
-    pub fn set_userdata(&self, data: U) -> Option<U> {
-        self.userdata.lock().unwrap().replace(data)
-    }
-
     /// Retrieve userdata for this slot.
     pub fn userdata(&self) -> MutexGuard<'_, Option<U>> {
-        self.userdata.lock().unwrap()
-    }
-
-    /// Clear userdata contained in this slot.
-    pub fn clear_userdata(&self) -> Option<U> {
-        self.userdata.lock().unwrap().take()
+        self.0.userdata.lock().unwrap()
     }
 }
 
-impl<B: Buffer, U: 'static> Default for Slot<B, U> {
+impl<B: Buffer, U: 'static> Default for InternalSlot<B, U> {
     fn default() -> Self {
-        Slot {
-            buffer: Arc::new(None),
-            acquired: Arc::new(AtomicBool::new(false)),
-            userdata: Arc::new(Mutex::new(None)),
-        }
-    }
-}
-
-impl<B: Buffer, U: 'static> Clone for Slot<B, U> {
-    fn clone(&self) -> Self {
-        Slot {
-            buffer: self.buffer.clone(),
-            acquired: self.acquired.clone(),
-            userdata: self.userdata.clone(),
+        InternalSlot {
+            buffer: None,
+            acquired: AtomicBool::new(false),
+            userdata: Mutex::new(None),
         }
     }
 }
@@ -98,13 +79,13 @@ impl<B: Buffer, U: 'static> Clone for Slot<B, U> {
 impl<B: Buffer, U: 'static> Deref for Slot<B, U> {
     type Target = B;
     fn deref(&self) -> &B {
-        Option::as_ref(&*self.buffer).unwrap()
+        Option::as_ref(&self.0.buffer).unwrap()
     }
 }
 
 impl<B: Buffer, U: 'static> Drop for Slot<B, U> {
     fn drop(&mut self) {
-        self.acquired.store(false, Ordering::SeqCst);
+        self.0.acquired.store(false, Ordering::SeqCst);
     }
 }
 
@@ -130,19 +111,17 @@ where
     /// The swapchain has an internal maximum of four re-usable buffers.
     /// This function returns the first free one.
     pub fn acquire(&mut self) -> Result<Option<Slot<B, U>>, A::Error> {
-        if let Some(free_slot) = self.slots.iter_mut().find(|s| !s.acquired.load(Ordering::SeqCst)) {
+        if let Some(free_slot) = self.slots.iter_mut().find(|s| !s.acquired.swap(true, Ordering::SeqCst)) {
             if free_slot.buffer.is_none() {
-                free_slot.buffer = Arc::new(Some(self.allocator.create_buffer(
+                let mut free_slot = Arc::get_mut(free_slot).expect("Acquired was false, but Arc is not unique?");
+                free_slot.buffer = Some(self.allocator.create_buffer(
                     self.width,
                     self.height,
                     self.format,
-                )?));
+                )?);
             }
             assert!(free_slot.buffer.is_some());
-
-            if !free_slot.acquired.swap(true, Ordering::SeqCst) {
-                return Ok(Some(free_slot.clone()));
-            }
+            return Ok(Some(Slot(free_slot.clone())));
         }
 
         // no free slots
