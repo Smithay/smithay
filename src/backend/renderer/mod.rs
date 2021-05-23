@@ -140,12 +140,67 @@ pub trait Texture {
     fn height(&self) -> u32;
 }
 
+pub trait Frame {
+    /// Error type returned by the rendering operations of this renderer.
+    type Error: Error;
+    /// Texture Handle type used by this renderer.
+    type TextureId: Texture;
+
+    /// Clear the complete current target with a single given color.
+    ///
+    /// This operation is only valid in between a `begin` and `finish`-call.
+    /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
+    fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error>;
+    /// Render a texture to the current target using given projection matrix and alpha.
+    ///
+    /// This operation is only valid in between a `begin` and `finish`-call.
+    /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
+    fn render_texture(
+        &mut self,
+        texture: &Self::TextureId,
+        matrix: Matrix3<f32>,
+        alpha: f32,
+    ) -> Result<(), Self::Error>;
+    /// Render a texture to the current target as a flat 2d-plane at a given
+    /// position, applying the given transformation with the given alpha value.
+    ///
+    /// This operation is only valid in between a `begin` and `finish`-call.
+    /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
+    fn render_texture_at(
+        &mut self,
+        texture: &Self::TextureId,
+        pos: (i32, i32),
+        transform: Transform,
+        alpha: f32,
+    ) -> Result<(), Self::Error> {
+        let mut mat = Matrix3::<f32>::identity();
+
+        // position and scale
+        let size = texture.size();
+        mat = mat * Matrix3::from_translation(Vector2::new(pos.0 as f32, pos.1 as f32));
+        mat = mat * Matrix3::from_nonuniform_scale(size.0 as f32, size.1 as f32);
+
+        //apply surface transformation
+        mat = mat * Matrix3::from_translation(Vector2::new(0.5, 0.5));
+        if transform == Transform::Normal {
+            assert_eq!(mat, mat * transform.invert().matrix());
+            assert_eq!(transform.matrix(), Matrix3::<f32>::identity());
+        }
+        mat = mat * transform.invert().matrix();
+        mat = mat * Matrix3::from_translation(Vector2::new(-0.5, -0.5));
+
+        self.render_texture(texture, mat, alpha)
+    }
+}
+
 /// Abstraction of commonly used rendering operations for compositors.
 pub trait Renderer {
     /// Error type returned by the rendering operations of this renderer.
     type Error: Error;
     /// Texture Handle type used by this renderer.
     type TextureId: Texture;
+    
+    type Frame: Frame<Error=Self::Error, TextureId=Self::TextureId>;
 
     /// Import a given bitmap into the renderer.
     ///
@@ -196,64 +251,16 @@ pub trait Renderer {
     /// - There was a previous `begin`-call, which was not terminated by `finish`.
     /// - This renderer implements `Bind`, no target was bound *and* has no default target.
     /// - (Renderers not implementing `Bind` always have a default target.)
-    fn begin(
+    fn render<F, R>(
         &mut self,
         width: u32,
         height: u32,
         transform: Transform,
-    ) -> Result<(), <Self as Renderer>::Error>;
-
-    /// Finish a renderering context, previously started by `begin`.
-    ///
-    /// After this operation is finished the current rendering target contains a sucessfully rendered image.
-    /// If the image is immediently shown to the user depends on the target.
-    fn finish(&mut self) -> Result<(), SwapBuffersError>;
-
-    /// Clear the complete current target with a single given color.
-    ///
-    /// This operation is only valid in between a `begin` and `finish`-call.
-    /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
-    fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error>;
-    /// Render a texture to the current target using given projection matrix and alpha.
-    ///
-    /// This operation is only valid in between a `begin` and `finish`-call.
-    /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
-    fn render_texture(
-        &mut self,
-        texture: &Self::TextureId,
-        matrix: Matrix3<f32>,
-        alpha: f32,
-    ) -> Result<(), Self::Error>;
-    /// Render a texture to the current target as a flat 2d-plane at a given
-    /// position, applying the given transformation with the given alpha value.
-    ///
-    /// This operation is only valid in between a `begin` and `finish`-call.
-    /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
-    fn render_texture_at(
-        &mut self,
-        texture: &Self::TextureId,
-        pos: (i32, i32),
-        transform: Transform,
-        alpha: f32,
-    ) -> Result<(), Self::Error> {
-        let mut mat = Matrix3::<f32>::identity();
-
-        // position and scale
-        let size = texture.size();
-        mat = mat * Matrix3::from_translation(Vector2::new(pos.0 as f32, pos.1 as f32));
-        mat = mat * Matrix3::from_nonuniform_scale(size.0 as f32, size.1 as f32);
-
-        //apply surface transformation
-        mat = mat * Matrix3::from_translation(Vector2::new(0.5, 0.5));
-        if transform == Transform::Normal {
-            assert_eq!(mat, mat * transform.invert().matrix());
-            assert_eq!(transform.matrix(), Matrix3::<f32>::identity());
-        }
-        mat = mat * transform.invert().matrix();
-        mat = mat * Matrix3::from_translation(Vector2::new(-0.5, -0.5));
-
-        self.render_texture(texture, mat, alpha)
-    }
+        rendering: F,
+    ) -> Result<R, Self::Error>
+      where
+        F: FnOnce(&mut Self, &mut Self::Frame) -> R
+    ;
 }
 
 /// Returns the dimensions of a wl_buffer

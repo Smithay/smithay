@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 use smithay::{
-    backend::{input::InputBackend, renderer::Renderer, winit, SwapBuffersError},
+    backend::{input::InputBackend, renderer::Frame, winit, SwapBuffersError},
     reexports::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
@@ -82,6 +82,7 @@ pub fn run_winit(
     });
 
     let start_time = std::time::Instant::now();
+    let mut cursor_visible = true;
 
     info!(log, "Initialization completed, starting the main loop.");
 
@@ -98,70 +99,75 @@ pub fn run_winit(
         {
             let mut renderer = renderer.borrow_mut();
 
-            renderer.begin().expect("Failed to render frame");
-            renderer
-                .clear([0.8, 0.8, 0.9, 1.0])
-                .expect("Failed to clear frame");
 
-            // draw the windows
-            draw_windows(
-                &mut *renderer,
-                reader.as_ref(),
-                &*state.window_map.borrow(),
-                None,
-                state.ctoken,
-                &log,
-            )
-            .expect("Failed to renderer windows");
+            let result = renderer.render(|renderer, frame| {
+                frame.clear([0.8, 0.8, 0.9, 1.0])?;
 
-            let (x, y) = *state.pointer_location.borrow();
-            // draw the dnd icon if any
-            {
-                let guard = state.dnd_icon.lock().unwrap();
-                if let Some(ref surface) = *guard {
-                    if surface.as_ref().is_alive() {
-                        draw_dnd_icon(
-                            &mut *renderer,
+                // draw the windows
+                draw_windows(
+                    renderer,
+                    frame,
+                    reader.as_ref(),
+                    &*state.window_map.borrow(),
+                    None,
+                    state.ctoken,
+                    &log,
+                )?;
+
+                let (x, y) = *state.pointer_location.borrow();
+                // draw the dnd icon if any
+                {
+                    let guard = state.dnd_icon.lock().unwrap();
+                    if let Some(ref surface) = *guard {
+                        if surface.as_ref().is_alive() {
+                            draw_dnd_icon(
+                                renderer,
+                                frame,
+                                surface,
+                                reader.as_ref(),
+                                (x as i32, y as i32),
+                                state.ctoken,
+                                &log,
+                            )?;
+                        }
+                    }
+                }
+                // draw the cursor as relevant
+                {
+                    let mut guard = state.cursor_status.lock().unwrap();
+                    // reset the cursor if the surface is no longer alive
+                    let mut reset = false;
+                    if let CursorImageStatus::Image(ref surface) = *guard {
+                        reset = !surface.as_ref().is_alive();
+                    }
+                    if reset {
+                        *guard = CursorImageStatus::Default;
+                    }
+
+                    // draw as relevant
+                    if let CursorImageStatus::Image(ref surface) = *guard {
+                        cursor_visible = false;
+                        draw_cursor(
+                            renderer,
+                            frame,
                             surface,
                             reader.as_ref(),
                             (x as i32, y as i32),
                             state.ctoken,
                             &log,
-                        )
-                        .expect("Failed to render dnd icon");
+                        )?;
+                    } else {
+                        cursor_visible = true;
                     }
                 }
-            }
-            // draw the cursor as relevant
-            {
-                let mut guard = state.cursor_status.lock().unwrap();
-                // reset the cursor if the surface is no longer alive
-                let mut reset = false;
-                if let CursorImageStatus::Image(ref surface) = *guard {
-                    reset = !surface.as_ref().is_alive();
-                }
-                if reset {
-                    *guard = CursorImageStatus::Default;
-                }
 
-                // draw as relevant
-                if let CursorImageStatus::Image(ref surface) = *guard {
-                    renderer.window().set_cursor_visible(false);
-                    draw_cursor(
-                        &mut *renderer,
-                        surface,
-                        reader.as_ref(),
-                        (x as i32, y as i32),
-                        state.ctoken,
-                        &log,
-                    )
-                    .expect("Failed to render cursor");
-                } else {
-                    renderer.window().set_cursor_visible(true);
-                }
-            }
+                Ok(())
+            }).map_err(Into::<SwapBuffersError>::into)
+            .and_then(|x| x.into());
+            
+            renderer.window().set_cursor_visible(cursor_visible);
 
-            if let Err(SwapBuffersError::ContextLost(err)) = renderer.finish() {
+            if let Err(SwapBuffersError::ContextLost(err)) = result {
                 error!(log, "Critical Rendering Error: {}", err);
                 state.running.store(false, Ordering::SeqCst);
             }

@@ -6,7 +6,7 @@ use slog::Logger;
 use smithay::{
     backend::{
         egl::display::EGLBufferReader,
-        renderer::{Renderer, Texture, Transform},
+        renderer::{Frame, Renderer, Texture, Transform},
         SwapBuffersError,
     },
     reexports::{
@@ -36,8 +36,9 @@ impl<T> Drop for BufferTextures<T> {
     }
 }
 
-pub fn draw_cursor<R, E, T>(
+pub fn draw_cursor<R, E, F, T>(
     renderer: &mut R,
+    frame: &mut F,
     surface: &wl_surface::WlSurface,
     egl_buffer_reader: Option<&EGLBufferReader>,
     (x, y): (i32, i32),
@@ -45,7 +46,8 @@ pub fn draw_cursor<R, E, T>(
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T>,
+    R: Renderer<Error = E, TextureId = T, Frame=F>,
+    F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
 {
@@ -59,11 +61,12 @@ where
             (0, 0)
         }
     };
-    draw_surface_tree(renderer, surface, egl_buffer_reader, (x - dx, y - dy), token, log)
+    draw_surface_tree(renderer, frame, surface, egl_buffer_reader, (x - dx, y - dy), token, log)
 }
 
-fn draw_surface_tree<R, E, T>(
+fn draw_surface_tree<R, E, F, T>(
     renderer: &mut R,
+    frame: &mut F,
     root: &wl_surface::WlSurface,
     egl_buffer_reader: Option<&EGLBufferReader>,
     location: (i32, i32),
@@ -71,7 +74,8 @@ fn draw_surface_tree<R, E, T>(
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T>,
+    R: Renderer<Error = E, TextureId = T, Frame=F>,
+    F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
 {
@@ -79,8 +83,8 @@ where
 
     compositor_token.with_surface_tree_upward(
         root,
-        (),
-        |_surface, attributes, _, _| {
+        location,
+        |_surface, attributes, role, &(mut x, mut y)| {
             // Pull a new buffer if available
             if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
@@ -107,31 +111,7 @@ where
                     }
                 }
                 // Now, should we be drawn ?
-                if data.texture.is_some() {
-                    TraversalAction::DoChildren(())
-                } else {
-                    // we are not displayed, so our children are neither
-                    TraversalAction::SkipChildren
-                }
-            } else {
-                // we are not displayed, so our children are neither
-                TraversalAction::SkipChildren
-            }
-        },
-        |_, _, _, _| {},
-        |_, _, _, _| true,
-    );
-
-    compositor_token.with_surface_tree_upward(
-        root,
-        location,
-        |_surface, attributes, role, &(mut x, mut y)| {
-            // Pull a new buffer if available
-            if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
-                let data = data.borrow();
-                // Now, should we be drawn ?
-                if data.texture.is_some() {
-                    // if yes, also process the children
+                if data.texture.is_some() {// if yes, also process the children
                     if Role::<SubsurfaceRole>::has(role) {
                         x += data.current_state.sub_location.0;
                         y += data.current_state.sub_location.1;
@@ -161,7 +141,7 @@ where
                         x += sub_x;
                         y += sub_y;
                     }
-                    if let Err(err) = renderer.render_texture_at(
+                    if let Err(err) = frame.render_texture_at(
                         &texture.texture,
                         (x, y),
                         Transform::Normal, /* TODO */
@@ -178,8 +158,9 @@ where
     result
 }
 
-pub fn draw_windows<R, E, T>(
+pub fn draw_windows<R, E, F, T>(
     renderer: &mut R,
+    frame: &mut F,
     egl_buffer_reader: Option<&EGLBufferReader>,
     window_map: &MyWindowMap,
     output_rect: Option<Rectangle>,
@@ -187,7 +168,8 @@ pub fn draw_windows<R, E, T>(
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T>,
+    R: Renderer<Error = E, TextureId = T, Frame=F>,
+    F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
 {
@@ -206,6 +188,7 @@ where
             // this surface is a root of a subsurface tree that needs to be drawn
             if let Err(err) = draw_surface_tree(
                 renderer,
+                frame,
                 &wl_surface,
                 egl_buffer_reader,
                 initial_place,
@@ -220,8 +203,9 @@ where
     result
 }
 
-pub fn draw_dnd_icon<R, E, T>(
+pub fn draw_dnd_icon<R, E, F, T>(
     renderer: &mut R,
+    frame: &mut F,
     surface: &wl_surface::WlSurface,
     egl_buffer_reader: Option<&EGLBufferReader>,
     (x, y): (i32, i32),
@@ -229,7 +213,8 @@ pub fn draw_dnd_icon<R, E, T>(
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T>,
+    R: Renderer<Error = E, TextureId = T, Frame=F>,
+    F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
 {
@@ -239,39 +224,5 @@ where
             "Trying to display as a dnd icon a surface that does not have the DndIcon role."
         );
     }
-    draw_surface_tree(renderer, surface, egl_buffer_reader, (x, y), token, log)
-}
-
-pub fn schedule_initial_render<R: Renderer + 'static, Data: 'static>(
-    renderer: Rc<RefCell<R>>,
-    evt_handle: &LoopHandle<Data>,
-    logger: ::slog::Logger,
-) where
-    <R as Renderer>::Error: Into<SwapBuffersError>,
-{
-    let result = {
-        let mut renderer = renderer.borrow_mut();
-        // Does not matter if we render an empty frame
-        renderer
-            .begin(1, 1, Transform::Normal)
-            .map_err(Into::<SwapBuffersError>::into)
-            .and_then(|_| {
-                renderer
-                    .clear([0.8, 0.8, 0.9, 1.0])
-                    .map_err(Into::<SwapBuffersError>::into)
-            })
-            .and_then(|_| renderer.finish())
-    };
-    if let Err(err) = result {
-        match err {
-            SwapBuffersError::AlreadySwapped => {}
-            SwapBuffersError::TemporaryFailure(err) => {
-                // TODO dont reschedule after 3(?) retries
-                warn!(logger, "Failed to submit page_flip: {}", err);
-                let handle = evt_handle.clone();
-                evt_handle.insert_idle(move |_| schedule_initial_render(renderer, &handle, logger));
-            }
-            SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
-        }
-    }
+    draw_surface_tree(renderer, frame, surface, egl_buffer_reader, (x, y), token, log)
 }

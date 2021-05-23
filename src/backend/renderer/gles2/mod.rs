@@ -19,7 +19,7 @@ use cgmath::{prelude::*, Matrix3};
 mod shaders;
 mod version;
 
-use super::{Bind, Renderer, Texture, Transform, Unbind};
+use super::{Bind, Frame, Renderer, Texture, Transform, Unbind};
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
     Format,
@@ -48,7 +48,7 @@ pub mod ffi {
 // cannot assume, that resources between two renderers are (and even can be) shared.
 static RENDERER_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Gles2Program {
     program: ffi::types::GLuint,
     uniform_tex: ffi::types::GLint,
@@ -147,18 +147,24 @@ pub struct Gles2Renderer {
     buffers: Vec<WeakGles2Buffer>,
     target_buffer: Option<Gles2Buffer>,
     target_surface: Option<Rc<EGLSurface>>,
-    current_projection: Option<Matrix3<f32>>,
     extensions: Vec<String>,
     programs: [Gles2Program; shaders::FRAGMENT_COUNT],
     #[cfg(feature = "wayland_frontend")]
     textures: HashMap<BufferEntry, Gles2Texture>,
-    gl: ffi::Gles2,
     egl: EGLContext,
+    gl: ffi::Gles2,
     destruction_callback: Receiver<CleanupResource>,
     destruction_callback_sender: Sender<CleanupResource>,
     logger_ptr: Option<*mut ::slog::Logger>,
     logger: ::slog::Logger,
     _not_send: *mut (),
+}
+
+/// Handle to the currently rendered frame during [`Gles2Renderer::render`](Renderer::render)
+pub struct Gles2Frame {
+    current_projection: Matrix3<f32>,
+    gl: ffi::Gles2,
+    programs: [Gles2Program; shaders::FRAGMENT_COUNT],
 }
 
 impl fmt::Debug for Gles2Renderer {
@@ -168,7 +174,6 @@ impl fmt::Debug for Gles2Renderer {
             .field("buffers", &self.buffers)
             .field("target_buffer", &self.target_buffer)
             .field("target_surface", &self.target_surface)
-            .field("current_projection", &self.current_projection)
             .field("extensions", &self.extensions)
             .field("programs", &self.programs)
             // ffi::Gles2 does not implement Debug
@@ -453,7 +458,6 @@ impl Gles2Renderer {
             buffers: Vec::new(),
             #[cfg(feature = "wayland_frontend")]
             textures: HashMap::new(),
-            current_projection: None,
             destruction_callback: rx,
             destruction_callback_sender: tx,
             logger_ptr,
@@ -596,7 +600,6 @@ impl Gles2Renderer {
                 self.gl.BindTexture(ffi::TEXTURE_2D, 0);
             }
 
-            self.egl.unbind()?;
             Ok(texture)
         })
         .map_err(Gles2Error::BufferAccessError)?
@@ -671,7 +674,6 @@ impl Gles2Renderer {
                     self.make_current()?;
                     let tex = Some(texture.0.texture);
                     self.import_egl_image(egl_images[0], false, tex)?;
-                    self.egl.unbind()?;
                 }
                 Ok(Some(texture))
             }
@@ -867,6 +869,7 @@ static TEX_COORDS: [ffi::types::GLfloat; 8] = [
 impl Renderer for Gles2Renderer {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
+    type Frame = Gles2Frame;
 
     #[cfg(feature = "wayland_frontend")]
     fn shm_formats(&self) -> &[wl_shm::Format] {
@@ -962,7 +965,15 @@ impl Renderer for Gles2Renderer {
         Ok(texture)
     }
 
-    fn begin(&mut self, width: u32, height: u32, transform: Transform) -> Result<(), Gles2Error> {
+    fn render<F, R>(
+        &mut self,
+        width: u32, height: u32,
+        transform: Transform,
+        rendering: F,
+    ) -> Result<R, Self::Error>
+    where
+        F: FnOnce(&mut Self, &mut Self::Frame) -> R
+    {
         self.make_current()?;
         // delayed destruction until the next frame rendering.
         self.cleanup()?;
@@ -991,13 +1002,44 @@ impl Renderer for Gles2Renderer {
         renderer[2][0] = -(1.0f32.copysign(renderer[0][0] + renderer[1][0]));
         renderer[2][1] = -(1.0f32.copysign(renderer[0][1] + renderer[1][1]));
 
-        // output transformation passed in by the user
-        self.current_projection = Some(transform.matrix() * renderer);
-        Ok(())
+        let mut frame = Gles2Frame {
+            gl: self.gl.clone(),
+            programs: self.programs.clone(),
+            // output transformation passed in by the user
+            current_projection: transform.matrix() * renderer,
+        };
+
+        let result = rendering(self, &mut frame);
+        
+        unsafe {
+            self.gl.Flush();
+            // We need to wait for the previously submitted GL commands to complete
+            // or otherwise the buffer could be submitted to the drm surface while
+            // still writing to the buffer which results in flickering on the screen.
+            // The proper solution would be to create a fence just before calling
+            // glFlush that the backend can use to wait for the commands to be finished.
+            // In case of a drm atomic backend the fence could be supplied by using the
+            // IN_FENCE_FD property.
+            // See https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#explicit-fencing-properties for
+            // the topic on submitting a IN_FENCE_FD and the mesa kmskube example 
+            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c
+            // especially here
+            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L147
+            // and here
+            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L235
+            self.gl.Finish();
+            self.gl.Disable(ffi::BLEND);
+        }
+
+        Ok(result)
     }
+}
+
+impl Frame for Gles2Frame {
+    type Error = Gles2Error;
+    type TextureId = Gles2Texture;
 
     fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error> {
-        self.make_current()?;
         unsafe {
             self.gl.ClearColor(color[0], color[1], color[2], color[3]);
             self.gl.Clear(ffi::COLOR_BUFFER_BIT);
@@ -1012,13 +1054,8 @@ impl Renderer for Gles2Renderer {
         mut matrix: Matrix3<f32>,
         alpha: f32,
     ) -> Result<(), Self::Error> {
-        self.make_current()?;
-        if self.current_projection.is_none() {
-            return Err(Gles2Error::UnconstraintRenderingOperation);
-        }
-
         //apply output transformation
-        matrix = self.current_projection.as_ref().unwrap() * matrix;
+        matrix = self.current_projection * matrix;
 
         let target = if tex.0.is_external {
             ffi::TEXTURE_EXTERNAL_OES
@@ -1080,33 +1117,6 @@ impl Renderer for Gles2Renderer {
 
             self.gl.BindTexture(target, 0);
         }
-
-        Ok(())
-    }
-
-    fn finish(&mut self) -> Result<(), crate::backend::SwapBuffersError> {
-        self.make_current()?;
-        unsafe {
-            self.gl.Flush();
-            // We need to wait for the previously submitted GL commands to complete
-            // or otherwise the buffer could be submitted to the drm surface while
-            // still writing to the buffer which results in flickering on the screen.
-            // The proper solution would be to create a fence just before calling
-            // glFlush that the backend can use to wait for the commands to be finished.
-            // In case of a drm atomic backend the fence could be supplied by using the
-            // IN_FENCE_FD property.
-            // See https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#explicit-fencing-properties for
-            // the topic on submitting a IN_FENCE_FD and the mesa kmskube example
-            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c
-            // especially here
-            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L147
-            // and here
-            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L235
-            self.gl.Finish();
-            self.gl.Disable(ffi::BLEND);
-        }
-
-        self.current_projection = None;
 
         Ok(())
     }

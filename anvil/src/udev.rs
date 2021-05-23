@@ -21,7 +21,7 @@ use smithay::{
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             gles2::{Gles2Renderer, Gles2Texture},
-            Renderer, Transform,
+            Frame, Renderer, Transform,
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
         udev::{UdevBackend, UdevEvent},
@@ -528,10 +528,10 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 .unwrap();
 
             trace!(self.logger, "Backends: {:?}", backends.borrow().keys());
-            for renderer in backends.borrow_mut().values() {
+            for backend in backends.borrow_mut().values() {
                 // render first frame
                 trace!(self.logger, "Scheduling frame");
-                schedule_initial_render(renderer.clone(), &self.loop_handle, self.logger.clone());
+                schedule_initial_render(backend.clone(), &self.loop_handle, self.logger.clone());
             }
 
             self.backends.insert(
@@ -767,70 +767,108 @@ impl DrmRenderer {
             .unwrap_or((0, 0)); // in this case the output will be removed.
 
         // and draw in sync with our monitor
-        surface.queue_frame()?;
-        surface.clear([0.8, 0.8, 0.9, 1.0])?;
-        // draw the surfaces
-        draw_windows(
-            surface,
-            egl_buffer_reader,
-            window_map,
-            Some(Rectangle {
-                x: x as i32,
-                y: y as i32,
-                width: width as i32,
-                height: height as i32,
-            }),
-            *compositor_token,
-            logger,
-        )?;
+        surface.render(|renderer, frame| {
+            frame.clear([0.8, 0.8, 0.9, 1.0])?;
+            // draw the surfaces
+            draw_windows(
+                renderer,
+                frame,
+                egl_buffer_reader,
+                window_map,
+                Some(Rectangle {
+                    x: x as i32,
+                    y: y as i32,
+                    width: width as i32,
+                    height: height as i32,
+                }),
+                *compositor_token,
+                logger,
+            )?;
 
-        // get pointer coordinates
-        let (ptr_x, ptr_y) = *pointer_location;
-        let ptr_x = ptr_x.trunc().abs() as i32 - x as i32;
-        let ptr_y = ptr_y.trunc().abs() as i32 - y as i32;
+            // get pointer coordinates
+            let (ptr_x, ptr_y) = *pointer_location;
+            let ptr_x = ptr_x.trunc().abs() as i32 - x as i32;
+            let ptr_y = ptr_y.trunc().abs() as i32 - y as i32;
 
-        // set cursor
-        if ptr_x >= 0 && ptr_x < width as i32 && ptr_y >= 0 && ptr_y < height as i32 {
-            // draw the dnd icon if applicable
-            {
-                if let Some(ref wl_surface) = dnd_icon.as_ref() {
-                    if wl_surface.as_ref().is_alive() {
-                        draw_dnd_icon(
-                            surface,
+            // set cursor
+            if ptr_x >= 0 && ptr_x < width as i32 && ptr_y >= 0 && ptr_y < height as i32 {
+                // draw the dnd icon if applicable
+                {
+                    if let Some(ref wl_surface) = dnd_icon.as_ref() {
+                        if wl_surface.as_ref().is_alive() {
+                            draw_dnd_icon(
+                                renderer,
+                                frame,
+                                wl_surface,
+                                egl_buffer_reader,
+                                (ptr_x, ptr_y),
+                                *compositor_token,
+                                logger,
+                            )?;
+                        }
+                    }
+                }
+                // draw the cursor as relevant
+                {
+                    // reset the cursor if the surface is no longer alive
+                    let mut reset = false;
+                    if let CursorImageStatus::Image(ref surface) = *cursor_status {
+                        reset = !surface.as_ref().is_alive();
+                    }
+                    if reset {
+                        *cursor_status = CursorImageStatus::Default;
+                    }
+
+                    if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
+                        draw_cursor(
+                            renderer,
+                            frame,
                             wl_surface,
                             egl_buffer_reader,
                             (ptr_x, ptr_y),
                             *compositor_token,
                             logger,
                         )?;
+                    } else {
+                        frame.render_texture_at(pointer_image, (ptr_x, ptr_y), Transform::Normal, 1.0)?;
                     }
                 }
             }
-            // draw the cursor as relevant
-            {
-                // reset the cursor if the surface is no longer alive
-                let mut reset = false;
-                if let CursorImageStatus::Image(ref surface) = *cursor_status {
-                    reset = !surface.as_ref().is_alive();
-                }
-                if reset {
-                    *cursor_status = CursorImageStatus::Default;
-                }
 
-                if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
-                    draw_cursor(
-                        surface,
-                        wl_surface,
-                        egl_buffer_reader,
-                        (ptr_x, ptr_y),
-                        *compositor_token,
-                        logger,
-                    )?;
-                } else {
-                    surface.render_texture_at(pointer_image, (ptr_x, ptr_y), Transform::Normal, 1.0)?;
-                }
+            Ok(())
+        }).map_err(Into::<SwapBuffersError>::into)
+        .and_then(|x| x)
+        .map_err(Into::<SwapBuffersError>::into)
+    }
+}
+
+fn schedule_initial_render<Data: 'static>(
+    renderer: Rc<RefCell<RenderSurface>>,
+    evt_handle: &LoopHandle<Data>,
+    logger: ::slog::Logger,
+) {
+    let result = {
+        let mut renderer = renderer.borrow_mut();
+        // Does not matter if we render an empty frame
+        renderer
+            .render(|_, frame| {
+                frame
+                    .clear([0.8, 0.8, 0.9, 1.0])
+                    .map_err(Into::<SwapBuffersError>::into)
+            })
+            .map_err(Into::<SwapBuffersError>::into)
+            .and_then(|x| x.map_err(Into::<SwapBuffersError>::into))
+    };
+    if let Err(err) = result {
+        match err {
+            SwapBuffersError::AlreadySwapped => {}
+            SwapBuffersError::TemporaryFailure(err) => {
+                // TODO dont reschedule after 3(?) retries
+                warn!(logger, "Failed to submit page_flip: {}", err);
+                let handle = evt_handle.clone();
+                evt_handle.insert_idle(move |_| schedule_initial_render(renderer, &handle, logger));
             }
+            SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
         }
-        surface.finish()
     }
 }

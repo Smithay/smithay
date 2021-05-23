@@ -2,17 +2,12 @@ use std::collections::HashSet;
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 
-#[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::Damage;
-use cgmath::Matrix3;
 use drm::buffer::PlanarBuffer;
 use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
 use gbm::{BufferObject, BufferObjectFlags, Device as GbmDevice};
-#[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::{wl_buffer, wl_shm};
 
 use super::{device::DevPath, surface::DrmSurfaceInternal, DrmError, DrmSurface};
-use crate::backend::renderer::{Bind, Renderer, Texture, Transform};
+use crate::backend::renderer::{Bind, Frame, Renderer, Texture, Transform};
 use crate::backend::SwapBuffersError;
 use crate::backend::{
     allocator::{
@@ -20,8 +15,6 @@ use crate::backend::{
         Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain,
     },
 };
-#[cfg(all(feature = "backend_egl", feature = "wayland_frontend"))]
-use crate::backend::egl::display::EGLBufferReader;
 
 /// Simplified by limited abstraction to link single [`DrmSurface`]s to renderers.
 ///
@@ -33,7 +26,6 @@ use crate::backend::egl::display::EGLBufferReader;
 pub struct DrmRenderSurface<D: AsRawFd + 'static, A: Allocator<B>, R: Bind<Dmabuf>, B: Buffer> {
     _format: Format,
     buffers: Buffers<D, B>,
-    current_buffer: Option<(Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>, Dmabuf)>,
     swapchain: Swapchain<A, B, (Dmabuf, BufferObject<FbHandle<D>>)>,
     renderer: R,
     drm: Arc<DrmSurface<D>>,
@@ -169,11 +161,11 @@ where
                 .map_err(Error::<E1, E2, E3>::RenderError)
                 .and_then(|_| {
                     renderer
-                        .begin(mode.size().0 as u32, mode.size().1 as u32, Transform::Normal)
+                        .render(mode.size().0 as u32, mode.size().1 as u32, Transform::Normal, |_, frame| {
+                            frame.clear([0.0, 0.0, 0.0, 1.0])
+                        })
                         .map_err(Error::RenderError)
                 })
-                .and_then(|_| renderer.clear([0.0, 0.0, 0.0, 1.0]).map_err(Error::RenderError))
-                .and_then(|_| renderer.finish().map_err(|_| Error::InitialRenderingError))
                 .and_then(|_| renderer.unbind().map_err(Error::RenderError))
             {
                 Ok(_) => {}
@@ -204,7 +196,6 @@ where
                     renderer,
                     swapchain,
                     buffers,
-                    current_buffer: None,
                 })
             }
             Err(err) => {
@@ -217,34 +208,53 @@ where
         }
     }
 
-    /// Shortcut to [`Renderer::begin`] with the pending mode as dimensions.
-    pub fn queue_frame(&mut self) -> Result<(), Error<E1, E2, E3>> {
-        let mode = self.drm.pending_mode();
-        let (width, height) = (mode.size().0 as u32, mode.size().1 as u32);
-        self.begin(width, height, Transform::Normal)
+    /// Access the underlying renderer
+    pub fn renderer(&mut self) -> &mut R {
+        &mut self.renderer
     }
 
-    /// Shortcut to abort the current frame.
-    ///
-    /// Allows [`DrmRenderSurface::queue_frame`] or [`Renderer::begin`] to be called again
-    /// without displaying the current rendering context to the user.
-    pub fn drop_frame(&mut self) -> Result<(), SwapBuffersError> {
-        if self.current_buffer.is_none() {
-            return Ok(());
+    /// Shortcut to [`Renderer::render`] with the pending mode as dimensions
+    /// and this surface set a the rendering target.
+    pub fn render<F, S>(&mut self, rendering: F) -> Result<S, Error<E1, E2, E3>>
+    where
+        F: FnOnce(&mut R, &mut <R as Renderer>::Frame) -> S
+    {
+        let mode = self.drm.pending_mode();
+        let (width, height) = (mode.size().0 as u32, mode.size().1 as u32);
+        let slot = self
+            .swapchain
+            .acquire()
+            .map_err(Error::SwapchainError)?
+            .ok_or(Error::NoFreeSlotsError)?;
+        let dmabuf = match &*slot.userdata() {
+            Some((buf, _)) => buf.clone(),
+            None => (*slot).export().map_err(Error::AsDmabufError)?,
+        };
+        self.renderer.bind(dmabuf.clone()).map_err(Error::RenderError)?;
+
+        let result = self.renderer
+            .render(
+                width, height,
+                Transform::Flipped180 /* TODO: add Add<Transform> implementation to add and correct _transform here */,
+                rendering,
+            )
+            .map_err(Error::RenderError)?;
+        
+        match self.buffers.queue::<E1, E2, E3>(slot, dmabuf) {
+            Ok(()) => {}
+            Err(Error::DrmError(drm)) => return Err(drm.into()),
+            Err(Error::GbmError(err)) => return Err(err.into()),
+            _ => unreachable!(),
         }
 
-        // finish the renderer in case it needs it
-        let result = self.renderer.finish();
-        // but do not queue the buffer, drop it in any case
-        let _ = self.current_buffer.take();
-        result
+        Ok(result)
     }
 
     /// Marks the current frame as submitted.
     ///
     /// Needs to be called, after the vblank event of the matching [`DrmDevice`](super::DrmDevice)
-    /// was received after calling [`Renderer::finish`] on this surface. Otherwise the rendering
-    /// will run out of buffers eventually.
+    /// was received after calling [`DrmRenderSurface::render`] on this surface.
+    /// Otherwise the rendering will run out of buffers eventually.
     pub fn frame_submitted(&mut self) -> Result<(), Error<E1, E2, E3>> {
         self.buffers.submitted()
     }
@@ -322,100 +332,6 @@ where
     /// pending [`connector`](drm::control::connector)s.
     pub fn use_mode(&self, mode: Mode) -> Result<(), Error<E1, E2, E3>> {
         self.drm.use_mode(mode).map_err(Error::DrmError)
-    }
-}
-
-impl<D, A, B, T, R, E1, E2, E3> Renderer for DrmRenderSurface<D, A, R, B>
-where
-    D: AsRawFd + 'static,
-    A: Allocator<B, Error = E1>,
-    B: Buffer + AsDmabuf<Error = E2>,
-    R: Bind<Dmabuf> + Renderer<Error = E3, TextureId = T>,
-    T: Texture,
-    E1: std::error::Error + 'static,
-    E2: std::error::Error + 'static,
-    E3: std::error::Error + 'static,
-{
-    type Error = Error<E1, E2, E3>;
-    type TextureId = T;
-
-    #[cfg(feature = "image")]
-    fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
-        &mut self,
-        image: &image::ImageBuffer<image::Rgba<u8>, C>,
-    ) -> Result<Self::TextureId, Self::Error> {
-        self.renderer.import_bitmap(image).map_err(Error::RenderError)
-    }
-
-    #[cfg(feature = "wayland_frontend")]
-    fn shm_formats(&self) -> &[wl_shm::Format] {
-        self.renderer.shm_formats()
-    }
-
-    #[cfg(all(feature = "backend_egl", feature = "wayland_frontend"))]
-    fn import_buffer(
-        &mut self,
-        buffer: &wl_buffer::WlBuffer,
-        damage: Option<&Damage>,
-        egl: Option<&EGLBufferReader>,
-    ) -> Result<Self::TextureId, Self::Error> {
-        self.renderer
-            .import_buffer(buffer, damage, egl)
-            .map_err(Error::RenderError)
-    }
-
-    fn begin(&mut self, width: u32, height: u32, _transform: Transform) -> Result<(), Error<E1, E2, E3>> {
-        if self.current_buffer.is_some() {
-            return Ok(());
-        }
-
-        let slot = self
-            .swapchain
-            .acquire()
-            .map_err(Error::SwapchainError)?
-            .ok_or(Error::NoFreeSlotsError)?;
-        let dmabuf = match &*slot.userdata() {
-            Some((buf, _)) => buf.clone(),
-            None => (*slot).export().map_err(Error::AsDmabufError)?,
-        };
-        self.renderer.bind(dmabuf.clone()).map_err(Error::RenderError)?;
-        self.current_buffer = Some((slot, dmabuf));
-        self.renderer
-            .begin(width, height, Transform::Flipped180 /* TODO: add Add<Transform> implementation to add and correct _transform here */)
-            .map_err(Error::RenderError)
-    }
-
-    fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error> {
-        self.renderer.clear(color).map_err(Error::RenderError)
-    }
-
-    fn render_texture(
-        &mut self,
-        texture: &Self::TextureId,
-        matrix: Matrix3<f32>,
-        alpha: f32,
-    ) -> Result<(), Self::Error> {
-        self.renderer
-            .render_texture(texture, matrix, alpha)
-            .map_err(Error::RenderError)
-    }
-
-    fn finish(&mut self) -> Result<(), SwapBuffersError> {
-        if self.current_buffer.is_none() {
-            return Err(SwapBuffersError::AlreadySwapped);
-        }
-
-        let result = self.renderer.finish();
-        if result.is_ok() {
-            let (slot, dmabuf) = self.current_buffer.take().unwrap();
-            match self.buffers.queue::<E1, E2, E3>(slot, dmabuf) {
-                Ok(()) => {}
-                Err(Error::DrmError(drm)) => return Err(drm.into()),
-                Err(Error::GbmError(err)) => return Err(SwapBuffersError::ContextLost(Box::new(err))),
-                _ => unreachable!(),
-            }
-        }
-        result
     }
 }
 

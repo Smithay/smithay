@@ -10,17 +10,12 @@ use crate::backend::{
         UnusedEvent,
     },
     renderer::{
-        gles2::{Gles2Error, Gles2Renderer, Gles2Texture},
-        Bind, Renderer, Transform,
+        gles2::{Gles2Error, Gles2Renderer, Gles2Frame, Gles2Texture},
+        Bind, Unbind, Frame, Renderer, Transform,
     },
 };
-#[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::Damage;
-use cgmath::Matrix3;
 use std::{cell::RefCell, rc::Rc, time::Instant};
 use wayland_egl as wegl;
-#[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::{wl_buffer, wl_shm};
 use wayland_server::Display;
 use winit::{
     dpi::{LogicalPosition, LogicalSize, PhysicalSize},
@@ -259,72 +254,27 @@ impl WinitGraphicsBackend {
         &*self.window
     }
 
-    /// Shortcut to `Renderer::begin` with the current window dimensions.
-    pub fn begin(&mut self) -> Result<(), Gles2Error> {
+    /// Access the underlying renderer
+    pub fn renderer(&mut self) -> &mut Gles2Renderer {
+        &mut self.renderer
+    }
+
+    /// Shortcut to `Renderer::render` with the current window dimensions
+    /// and this window set as the rendering target.
+    pub fn render<F, R>(&mut self, rendering: F) -> Result<R, crate::backend::SwapBuffersError>
+    where
+        F: FnOnce(&mut Gles2Renderer, &mut Gles2Frame) -> R
+    {
         let (width, height) = {
             let size = self.size.borrow();
             size.physical_size.into()
         };
 
         self.renderer.bind(self.egl.clone())?;
-        self.renderer.begin(width, height, Transform::Normal)
-    }
-}
-
-impl Renderer for WinitGraphicsBackend {
-    type Error = Gles2Error;
-    type TextureId = Gles2Texture;
-
-    #[cfg(feature = "image")]
-    fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
-        &mut self,
-        image: &image::ImageBuffer<image::Rgba<u8>, C>,
-    ) -> Result<Self::TextureId, Self::Error> {
-        self.renderer.import_bitmap(image)
-    }
-
-    #[cfg(feature = "wayland_frontend")]
-    fn shm_formats(&self) -> &[wl_shm::Format] {
-        Renderer::shm_formats(&self.renderer)
-    }
-
-    #[cfg(feature = "wayland_frontend")]
-    fn import_buffer(
-        &mut self,
-        buffer: &wl_buffer::WlBuffer,
-        damage: Option<&Damage>,
-        egl: Option<&EGLBufferReader>,
-    ) -> Result<Self::TextureId, Self::Error> {
-        self.renderer.import_buffer(buffer, damage, egl)
-    }
-
-    fn begin(
-        &mut self,
-        width: u32,
-        height: u32,
-        transform: Transform,
-    ) -> Result<(), <Self as Renderer>::Error> {
-        self.renderer.bind(self.egl.clone())?;
-        self.renderer.begin(width, height, transform)
-    }
-
-    fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error> {
-        self.renderer.clear(color)
-    }
-
-    fn render_texture(
-        &mut self,
-        texture: &Self::TextureId,
-        matrix: Matrix3<f32>,
-        alpha: f32,
-    ) -> Result<(), Self::Error> {
-        self.renderer.render_texture(texture, matrix, alpha)
-    }
-
-    fn finish(&mut self) -> Result<(), crate::backend::SwapBuffersError> {
-        self.renderer.finish()?;
+        let result = self.renderer.render(width, height, Transform::Normal, rendering)?;
         self.egl.swap_buffers()?;
-        Ok(())
+        self.renderer.unbind()?;
+        Ok(result)
     }
 }
 
