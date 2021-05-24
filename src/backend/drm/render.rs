@@ -2,8 +2,6 @@ use std::collections::HashSet;
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 
-#[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::Damage;
 use cgmath::Matrix3;
 use drm::buffer::PlanarBuffer;
 use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
@@ -20,6 +18,7 @@ use crate::backend::{
         Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain,
     },
 };
+use crate::utils::Rectangle;
 #[cfg(all(feature = "backend_egl", feature = "wayland_frontend"))]
 use crate::backend::egl::display::EGLBufferReader;
 
@@ -356,7 +355,7 @@ where
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        damage: Option<&Damage>,
+        damage: &[Rectangle],
         egl: Option<&EGLBufferReader>,
     ) -> Result<Self::TextureId, Self::Error> {
         self.renderer

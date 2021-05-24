@@ -15,7 +15,7 @@ use smithay::{
     },
     utils::Rectangle,
     wayland::{
-        compositor::{roles::Role, SubsurfaceRole, TraversalAction},
+        compositor::{roles::Role, SubsurfaceRole, TraversalAction, Damage},
         data_device::DnDIconRole,
         seat::CursorImageRole,
     },
@@ -86,7 +86,11 @@ where
                 let mut data = data.borrow_mut();
                 if data.texture.is_none() {
                     if let Some(buffer) = data.current_state.buffer.take() {
-                        match renderer.import_buffer(&buffer, Some(&attributes.damage), egl_buffer_reader) {
+                        let damage = attributes.damage.iter().map(|dmg| match dmg {
+                            Damage::Buffer(rect) => *rect,
+                            Damage::Surface(rect) => rect.scale(attributes.buffer_scale),
+                        }).collect::<Vec<_>>();
+                        match renderer.import_buffer(&buffer, &damage, egl_buffer_reader) {
                             Ok(m) => {
                                 let buffer = if smithay::wayland::shm::with_buffer_contents(&buffer, |_,_| ()).is_ok() {
                                     buffer.release();

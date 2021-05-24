@@ -78,7 +78,7 @@ where
             }
             wl_surface::Request::Damage { x, y, width, height } => {
                 SurfaceData::<R>::with_data(&surface, |d| {
-                    d.damage = Damage::Surface(Rectangle { x, y, width, height })
+                    d.damage.push(Damage::Surface(Rectangle { x, y, width, height }));
                 });
             }
             wl_surface::Request::Frame { callback } => {
@@ -113,7 +113,7 @@ where
             }
             wl_surface::Request::DamageBuffer { x, y, width, height } => {
                 SurfaceData::<R>::with_data(&surface, |d| {
-                    d.damage = Damage::Buffer(Rectangle { x, y, width, height })
+                    d.damage.push(Damage::Buffer(Rectangle { x, y, width, height }))
                 });
             }
             wl_surface::Request::Destroy => {
