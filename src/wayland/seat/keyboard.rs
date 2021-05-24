@@ -319,7 +319,7 @@ impl KeyboardHandle {
     /// returns false, the input will not be sent to the client. This mechanism can be used to
     /// implement compositor-level key bindings for example.
     ///
-    /// The module [`wayland::seat::keysyms`](::wayland::seat::keysyms) exposes definitions of all possible keysyms
+    /// The module [`crate::wayland::seat::keysyms`] exposes definitions of all possible keysyms
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
     pub fn input<F>(&self, keycode: u32, state: KeyState, serial: Serial, time: u32, filter: F)
     where

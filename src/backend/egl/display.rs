@@ -2,7 +2,6 @@
 
 use std::collections::HashSet;
 use std::ffi::CStr;
-use std::fmt;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -145,7 +144,7 @@ fn select_platform_display<N: EGLNativeDisplay + 'static>(
 }
 
 impl EGLDisplay {
-    /// Create a new [`EGLDisplay`] from a given [`NativeDisplay`](native::NativeDisplay)
+    /// Create a new [`EGLDisplay`] from a given [`EGLNativeDisplay`]
     pub fn new<N, L>(native: &N, logger: L) -> Result<EGLDisplay, Error>
     where
         N: EGLNativeDisplay + 'static,
@@ -213,7 +212,7 @@ impl EGLDisplay {
         })
     }
 
-    /// Finds a compatible [`EGLConfig`] for a given set of requirements
+    /// Finds a compatible EGLConfig for a given set of requirements
     pub fn choose_config(
         &self,
         attributes: GlAttributes,
@@ -524,10 +523,10 @@ impl EGLDisplay {
     ///
     /// ## Errors
     ///
-    /// This might return [`EglExtensionNotSupported`](ErrorKind::EglExtensionNotSupported)
+    /// This might return [`EglExtensionNotSupported`](Error::EglExtensionNotSupported)
     /// if binding is not supported by the EGL implementation.
     ///
-    /// This might return [`OtherEGLDisplayAlreadyBound`](ErrorKind::OtherEGLDisplayAlreadyBound)
+    /// This might return [`OtherEGLDisplayAlreadyBound`](Error::OtherEGLDisplayAlreadyBound)
     /// if called for the same [`Display`] multiple times, as only one egl display may be bound at any given time.
     #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
     pub fn bind_wl_display(&self, display: &Display) -> Result<EGLBufferReader, Error> {
@@ -656,9 +655,9 @@ fn get_dmabuf_formats(
     Ok((texture_formats, render_formats))
 }
 
-/// Type to receive [`EGLImages`] for EGL-based [`WlBuffer`]s.
+/// Type to receive [`EGLBuffer`] for EGL-based [`WlBuffer`]s.
 ///
-/// Can be created by using [`EGLGraphicsBackend::bind_wl_display`].
+/// Can be created by using [`EGLDisplay::bind_wl_display`].
 #[cfg(feature = "use_system_lib")]
 #[derive(Debug, Clone)]
 pub struct EGLBufferReader {
@@ -675,11 +674,10 @@ impl EGLBufferReader {
         }
     }
 
-    /// Try to receive [`EGLImages`] from a given [`WlBuffer`].
+    /// Try to receive [`EGLBuffer`] from a given [`WlBuffer`].
     ///
-    /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](::wayland::shm))
-    /// a [`BufferAccessError::NotManaged`](::backend::egl::BufferAccessError::NotManaged) is returned with the original buffer
-    /// to render it another way.
+    /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](crate::wayland::shm))
+    /// a [`BufferAccessError::NotManaged`](crate::backend::egl::BufferAccessError::NotManaged) is returned.
     pub fn egl_buffer_contents(
         &self,
         buffer: &WlBuffer,
@@ -777,7 +775,7 @@ impl EGLBufferReader {
 
     /// Try to receive the dimensions of a given [`WlBuffer`].
     ///
-    /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](::wayland::shm)) or the
+    /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](crate::wayland::shm)) or the
     /// context has been lost, `None` is returned.
     pub fn egl_buffer_dimensions(&self, buffer: &WlBuffer) -> Option<(i32, i32)> {
         let mut width: i32 = 0;

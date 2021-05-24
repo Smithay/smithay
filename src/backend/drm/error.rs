@@ -1,10 +1,9 @@
-//use crate::backend::graphics::SwapBuffersError;
 use crate::backend::SwapBuffersError;
 use drm::control::{connector, crtc, plane, Mode, RawResourceHandle};
 use std::path::PathBuf;
 
-/// Errors thrown by the [`DrmDevice`](::backend::drm::DrmDevice)
-/// and the [`DrmSurface`](::backend::drm::DrmSurface).
+/// Errors thrown by the [`DrmDevice`](crate::backend::drm::DrmDevice)
+/// and the [`DrmSurface`](crate::backend::drm::DrmSurface).
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     /// Unable to acquire DRM master

@@ -528,7 +528,7 @@ pub trait InputBackend: Sized {
     /// Access the input configuration interface
     fn input_config(&mut self) -> &mut Self::InputConfig;
 
-    /// Processes new events of the underlying backend and drives the [`InputHandler`].
+    /// Processes new events and calls the provided callback.
     ///
     /// The callback can only assume its second argument to be usable if the event is
     /// `InputEvent::ConfigChanged`.

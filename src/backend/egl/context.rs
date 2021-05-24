@@ -139,7 +139,6 @@ impl EGLContext {
         context_attributes.push(ffi::egl::NONE as i32);
 
         trace!(log, "Creating EGL context...");
-        // TODO: Support shared contexts
         let context = wrap_egl_call(|| unsafe {
             ffi::egl::CreateContext(
                 **display.display,

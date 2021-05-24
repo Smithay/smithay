@@ -18,10 +18,7 @@ use crate::{
     signaling::{Linkable, Signaler},
 };
 
-/// [`SessionObserver`](SessionObserver)
-/// linked to the [`DrmDevice`](DrmDevice)
-/// it was created from.
-pub struct DrmDeviceObserver<A: AsRawFd + 'static> {
+struct DrmDeviceObserver<A: AsRawFd + 'static> {
     dev_id: dev_t,
     dev: Weak<DrmDeviceInternal<A>>,
     privileged: bool,
@@ -103,7 +100,7 @@ impl<A: AsRawFd + 'static> DrmDeviceObserver<A> {
     }
 }
 
-pub struct DrmSurfaceObserver<A: AsRawFd + 'static> {
+struct DrmSurfaceObserver<A: AsRawFd + 'static> {
     dev_id: dev_t,
     crtc: crtc::Handle,
     surf: Weak<DrmSurfaceInternal<A>>,

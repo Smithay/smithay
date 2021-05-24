@@ -1,11 +1,11 @@
 //!
 //! Provides `udev` related functionality for automated device scanning.
 //!
-//! This module mainly provides the [`UdevBackend`](::backend::udev::UdevBackend), which
+//! This module mainly provides the [`UdevBackend`], which
 //! monitors available DRM devices and acts as an event source, generating events whenever these
 //! devices change.
 //!
-//! *Note:* Once inserted into the event loop, the [`UdevBackend`](::backend::udev::UdevBackend) will
+//! *Note:* Once inserted into the event loop, the [`UdevBackend`] will
 //! only notify you about *changes* in the device list. To get an initial snapshot of the state during
 //! your initialization, you need to call its `device_list` method.
 //!
@@ -218,8 +218,8 @@ pub enum UdevEvent {
 
 /// Returns the path of the primary GPU device if any
 ///
-/// Might be used for filtering in [`UdevHandler::device_added`] or for manual
-/// [`LegacyDrmDevice`](::backend::drm::legacy::LegacyDrmDevice) initialization.
+/// Might be used for filtering of [`UdevEvent::Added`] or for manual
+/// [`DrmDevice`](crate::backend::drm::DrmDevice) initialization.
 pub fn primary_gpu<S: AsRef<str>>(seat: S) -> IoResult<Option<PathBuf>> {
     let mut enumerator = Enumerator::new()?;
     enumerator.match_subsystem("drm")?;
@@ -252,7 +252,7 @@ pub fn primary_gpu<S: AsRef<str>>(seat: S) -> IoResult<Option<PathBuf>> {
 
 /// Returns the paths of all available GPU devices
 ///
-/// Might be used for manual  [`LegacyDrmDevice`](::backend::drm::legacy::LegacyDrmDevice)
+/// Might be used for manual  [`DrmDevice`](crate::backend::drm::DrmDevice)
 /// initialization.
 pub fn all_gpus<S: AsRef<str>>(seat: S) -> IoResult<Vec<PathBuf>> {
     let mut enumerator = Enumerator::new()?;

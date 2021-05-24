@@ -1,5 +1,5 @@
 //!
-//! Implementation of the [`Session`](::backend::session::Session) trait through the logind dbus interface.
+//! Implementation of the [`Session`](crate::backend::session::Session) trait through the logind dbus interface.
 //!
 //! This requires systemd and dbus to be available and started on the system.
 //!
@@ -7,31 +7,31 @@
 //!
 //! ### Initialization
 //!
-//! To initialize a session just call [`LogindSession::new`](::backend::session::dbus::logind::LogindSession::new).
+//! To initialize a session just call [`LogindSession::new`].
 //! A new session will be opened, if the call is successful and will be closed once the
-//! [`LogindSessionNotifier`](::backend::session::dbus::logind::LogindSessionNotifier) is dropped.
+//! [`LogindSessionNotifier`] is dropped.
 //!
 //! ### Usage of the session
 //!
-//! The session may be used to open devices manually through the [`Session`](::backend::session::Session) interface
+//! The session may be used to open devices manually through the [`Session`](crate::backend::session::Session) interface
 //! or be passed to other objects that need it to open devices themselves.
-//! The [`LogindSession`](::backend::session::dbus::logind::LogindSession) is clonable
+//! The [`LogindSession`] is clonable
 //! and may be passed to multiple devices easily.
 //!
-//! Examples for those are e.g. the [`LibinputInputBackend`](::backend::libinput::LibinputInputBackend)
-//! (its context might be initialized through a [`Session`](::backend::session::Session) via the
-//! [`LibinputSessionInterface`](::backend::libinput::LibinputSessionInterface)).
+//! Examples for those are e.g. the [`LibinputInputBackend`](crate::backend::libinput::LibinputInputBackend)
+//! (its context might be initialized through a [`Session`](crate::backend::session::Session) via the
+//! [`LibinputSessionInterface`](crate::backend::libinput::LibinputSessionInterface)).
 //!
 //! ### Usage of the session notifier
 //!
 //! The notifier might be used to pause device access, when the session gets paused (e.g. by
-//! switching the tty via [`LogindSession::change_vt`](::backend::session::Session::change_vt))
+//! switching the tty via [`LogindSession::change_vt`](crate::backend::session::Session::change_vt))
 //! and to automatically enable it again, when the session becomes active again.
 //!
 //! It is crucial to avoid errors during that state. Examples for object that might be registered
-//! for notifications are the [`Libinput`](input::Libinput) context or the [`Device`](::backend::drm::Device).
+//! for notifications are the [`Libinput`](input::Libinput) context or the [`DrmDevice`](crate::backend::drm::DrmDevice).
 //!
-//! The [`LogindSessionNotifier`](::backend::session::dbus::logind::LogindSessionNotifier) is to be inserted into
+//! The [`LogindSessionNotifier`] is to be inserted into
 //! a calloop event source to have its events processed.
 
 use crate::{
@@ -93,7 +93,7 @@ pub struct LogindSession {
     seat: String,
 }
 
-/// [`SessionNotifier`] via the logind dbus interface
+/// Notifier for the logind dbus interface
 #[derive(Debug, Clone)]
 pub struct LogindSessionNotifier {
     internal: Rc<LogindSessionImpl>,

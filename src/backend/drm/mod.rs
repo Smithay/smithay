@@ -22,7 +22,7 @@
 //!
 //! A [`framebuffer`](drm::control::framebuffer) represents a buffer you may be rendering to, see `Surface` below.
 //!
-//! A [`plane`](drm::controll::plane) adds another layer on top of the crtcs, which allow us to layer multiple images on top of each other more efficiently
+//! A [`plane`](drm::control::plane) adds another layer on top of the crtcs, which allow us to layer multiple images on top of each other more efficiently
 //! then by combining the rendered images in the rendering phase, e.g. via OpenGL. Planes can be explicitly used by the user.
 //! Every device has at least one primary plane used to display an image to the whole crtc. Additionally cursor and overlay planes may be present.
 //! Cursor planes are usually very restricted in size and meant to be used for hardware cursors, while overlay planes may
@@ -57,8 +57,8 @@
 //! The drm infrastructure makes no assumptions about the used renderer and does not interface with them directly.
 //! It just provides a way to create framebuffers from various buffer types (mainly `DumbBuffer`s and hardware-backed gbm `BufferObject`s).
 //!
-//! Buffer management and details about the various types can be found in the [`allocator`-Module](backend::allocator) and
-//! renderering abstractions, which can target these buffers can be found in the [`renderer`-Module](backend::renderer).
+//! Buffer management and details about the various types can be found in the [`allocator`-Module](crate::backend::allocator) and
+//! renderering abstractions, which can target these buffers can be found in the [`renderer`-Module](crate::backend::renderer).
 
 pub(crate) mod device;
 pub(self) mod error;
@@ -72,8 +72,6 @@ pub use device::{device_bind, DevPath, DeviceHandler, DrmDevice, DrmSource};
 pub use error::Error as DrmError;
 #[cfg(feature = "backend_gbm")]
 pub use render::{DrmRenderSurface, Error as DrmRenderError};
-#[cfg(feature = "backend_session")]
-pub use session::{DrmDeviceObserver, DrmSurfaceObserver};
 pub use surface::DrmSurface;
 
 use drm::control::{plane, crtc, Device as ControlDevice, PlaneType};

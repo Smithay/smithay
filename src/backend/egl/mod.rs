@@ -11,11 +11,11 @@
 //! The types of this module can be used to initialize hardware acceleration rendering
 //! based on EGL for clients as it may enabled usage of `EGLImage` based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)s.
 //!
-//! To use it bind any backend implementing the [`EGLGraphicsBackend`](::backend::egl::EGLGraphicsBackend) trait, that shall do the
+//! To use it bind the [`EGLDisplay`] trait, that shall do the
 //! rendering (so pick a fast one), to the [`wayland_server::Display`] of your compositor.
 //! Note only one backend may be bound to any [`Display`](wayland_server::Display) at any time.
 //!
-//! You may then use the resulting [`EGLDisplay`](::backend::egl::EGLDisplay) to receive [`EGLImages`](::backend::egl::EGLImages)
+//! You may then use the resulting [`EGLDisplay`] to receive [`EGLBuffer`]
 //! of an EGL-based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer) for rendering.
 
 /*
@@ -238,7 +238,7 @@ impl Format {
     }
 }
 
-/// Images of the EGL-based [`WlBuffer`].
+/// Images of the EGL-based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer).
 #[cfg(feature = "wayland_frontend")]
 #[derive(Debug)]
 pub struct EGLBuffer {

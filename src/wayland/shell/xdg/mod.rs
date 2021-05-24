@@ -21,8 +21,8 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this handler, simple use the [`xdg_shell_init`](::wayland::shell::xdg::xdg_shell_init) function provided in this
-//! module. You will need to provide it the [`CompositorToken`](::wayland::compositor::CompositorToken)
+//! To initialize this handler, simple use the [`xdg_shell_init`] function provided in this
+//! module. You will need to provide it the [`CompositorToken`](crate::wayland::compositor::CompositorToken)
 //! you retrieved from an instantiation of the compositor global provided by smithay.
 //!
 //! ```no_run
@@ -69,21 +69,21 @@
 //!
 //! There are mainly 3 kind of objects that you'll manipulate from this implementation:
 //!
-//! - [`ShellClient`](::wayland::shell::xdg::ShellClient):
+//! - [`ShellClient`]:
 //!   This is a handle representing an instantiation of a shell global
 //!   you can associate client-wise metadata to it (this is the `MyShellData` type in
 //!   the example above).
-//! - [`ToplevelSurface`](::wayland::shell::xdg::ToplevelSurface):
+//! - [`ToplevelSurface`]:
 //!   This is a handle representing a toplevel surface, you can
 //!   retrieve a list of all currently alive toplevel surface from the
-//!   [`ShellState`](::wayland::shell::xdg::ShellState).
-//! - [`PopupSurface`](::wayland::shell::xdg::PopupSurface):
+//!   [`ShellState`].
+//! - [`PopupSurface`]:
 //!   This is a handle representing a popup/tooltip surface. Similarly,
 //!   you can get a list of all currently alive popup surface from the
-//!   [`ShellState`](::wayland::shell::xdg::ShellState).
+//!   [`ShellState`].
 //!
 //! You'll obtain these objects though two means: either via the callback methods of
-//! the subhandler you provided, or via methods on the [`ShellState`](::wayland::shell::xdg::ShellState)
+//! the subhandler you provided, or via methods on the [`ShellState`]
 //! that you are given (in an `Arc<Mutex<_>>`) as return value of the `init` function.
 
 use crate::utils::Rectangle;

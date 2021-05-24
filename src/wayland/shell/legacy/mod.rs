@@ -23,8 +23,8 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this handler, simple use the [`wl_shell_init`](::wayland::shell::legacy::wl_shell_init)
-//! function provided in this module. You will need to provide it the [`CompositorToken`](::wayland::compositor::CompositorToken)
+//! To initialize this handler, simple use the [`wl_shell_init`]
+//! function provided in this module. You will need to provide it the [`CompositorToken`](crate::wayland::compositor::CompositorToken)
 //! you retrieved from an instantiation of the compositor handler provided by smithay.
 //!
 //! ```no_run

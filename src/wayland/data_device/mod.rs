@@ -6,9 +6,9 @@
 //!
 //! This module provides 2 main freestanding functions:
 //!
-//! - [`init_data_device`](::wayland::data_device::init_data_device): this function must be called
+//! - [`init_data_device`]: this function must be called
 //!   during the compositor startup to initialize the data device logic
-//! - [`set_data_device_focus`](::wayland::data_device::set_data_device_focus): this function sets
+//! - [`set_data_device_focus`]: this function sets
 //!   the data device focus for a given seat; you'd typically call it whenever the keyboard focus
 //!   changes, to follow it (for example in the focus hook of your keyboards)
 //!
@@ -18,11 +18,11 @@
 //! The module also provides additionnal mechanisms allowing your compositor to see and interact with
 //! the contents of the data device:
 //!
-//! - You can provide a callback closure to [`init_data_device`](::wayland::data_device::init_data_device)
+//! - You can provide a callback closure to [`init_data_device`]
 //!   to peek into the the actions of your clients
-//! - the freestanding function [`set_data_device_selection`](::wayland::data_device::set_data_device_selection)
+//! - the freestanding function [`set_data_device_selection`]
 //!   allows you to set the contents of the selection for your clients
-//! - the freestanding function [`start_dnd`](::wayland::data_device::start_dnd) allows you to initiate a drag'n'drop event from the compositor
+//! - the freestanding function [`start_dnd`] allows you to initiate a drag'n'drop event from the compositor
 //!   itself and receive interactions of clients with it via an other dedicated callback.
 //!
 //! The module also defines the `DnDIconRole` that you need to insert into your compositor roles enum, to

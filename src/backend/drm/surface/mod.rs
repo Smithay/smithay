@@ -68,7 +68,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     }
 
     /// Returns the pending [`connector`](drm::control::connector)s
-    /// used after the next [`commit`](Surface::commit) of this [`Surface`]
+    /// used after the next [`commit`](DrmSurface::commit) of this [`DrmSurface`]
     pub fn pending_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.pending_connectors(),
@@ -180,9 +180,9 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     /// Returns true whenever any state changes are pending to be commited
     ///
     /// The following functions may trigger a pending commit:
-    /// - [`add_connector`](Surface::add_connector)
-    /// - [`remove_connector`](Surface::remove_connector)
-    /// - [`use_mode`](Surface::use_mode)
+    /// - [`add_connector`](DrmSurface::add_connector)
+    /// - [`remove_connector`](DrmSurface::remove_connector)
+    /// - [`use_mode`](DrmSurface::use_mode)
     pub fn commit_pending(&self) -> bool {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.commit_pending(),
@@ -194,12 +194,12 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     ///
     /// *Note*: This will trigger a full modeset on the underlying device,
     /// potentially causing some flickering. Check before performing this
-    /// operation if a commit really is necessary using [`commit_pending`](RawSurface::commit_pending).
+    /// operation if a commit really is necessary using [`commit_pending`](DrmSurface::commit_pending).
     ///
     /// This operation is not necessarily blocking until the crtc is in the desired state,
     /// but will trigger a `vblank` event once done.
-    /// Make sure to [set a `DeviceHandler`](Device::set_handler) and
-    /// [register the belonging `Device`](device_bind) before to receive the event in time.
+    /// Make sure to [set a `DeviceHandler`](crate::backend::drm::DrmDevice::set_handler) and
+    /// [register the belonging `Device`](crate::backend::drm::device_bind) before to receive the event in time.
     pub fn commit<'a>(&self, mut framebuffers: impl Iterator<Item=&'a (framebuffer::Handle, plane::Handle)>, event: bool) -> Result<(), Error> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.commit(framebuffers, event),
@@ -220,8 +220,8 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     /// This will not cause the crtc to modeset.
     ///
     /// This operation is not blocking and will produce a `vblank` event once swapping is done.
-    /// Make sure to [set a `DeviceHandler`](Device::set_handler) and
-    /// [register the belonging `Device`](device_bind) before to receive the event in time.
+    /// Make sure to [set a `DeviceHandler`](crate::backend::drm::DrmDevice::set_handler) and
+    /// [register the belonging `DrmDevice`](crate::backend::drm::device_bind) before to receive the event in time.
     pub fn page_flip<'a>(&self, mut framebuffers: impl Iterator<Item=&'a (framebuffer::Handle, plane::Handle)>, event: bool) -> Result<(), Error> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.page_flip(framebuffers, event),
@@ -416,7 +416,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     ) -> Result<bool, Error> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.test_plane_buffer(fb, plane, position, size),
-            DrmSurfaceInternal::Legacy(surf) => { Ok(false) }
+            DrmSurfaceInternal::Legacy(_) => { Ok(false) }
             // There is no test-commiting with the legacy interface
         }
     }

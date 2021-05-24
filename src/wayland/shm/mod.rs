@@ -35,7 +35,7 @@
 //!
 //! Then, when you have a [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)
 //! and need to retrieve its contents, use the
-//! [`with_buffer_contents`](::wayland::shm::with_buffer_contents) function to do it:
+//! [`with_buffer_contents`] function to do it:
 //!
 //! ```
 //! # extern crate wayland_server;

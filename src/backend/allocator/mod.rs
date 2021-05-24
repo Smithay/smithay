@@ -4,12 +4,12 @@
 //! buffer creation and handling from various sources.
 //!
 //! Allocators provided:
-//! - Dumb Buffers through [`backend::drm::DrmDevice`]
-//! - Gbm Buffers through [`reexports::gbm::Device`]
+//! - Dumb Buffers through [`crate::backend::drm::DrmDevice`]
+//! - Gbm Buffers through [`::gbm::Device`]
 //!
 //! Buffer types supported:
 //! - [DumbBuffers](dumb::DumbBuffer)
-//! - [gbm BufferObjects](reexports::gbm::BufferObject)
+//! - [GbmBuffers](::gbm::BufferObject)
 //! - [DmaBufs](dmabuf::Dmabuf)
 //!
 //! Helpers:

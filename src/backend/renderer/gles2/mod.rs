@@ -349,7 +349,7 @@ unsafe fn texture_program(gl: &ffi::Gles2, frag: &'static str) -> Result<Gles2Pr
 }
 
 impl Gles2Renderer {
-    /// Creates a new OpenGL ES 2 renderer from a given [`EGLContext`](backend::egl::EGLBuffer).
+    /// Creates a new OpenGL ES 2 renderer from a given [`EGLContext`](crate::backend::egl::EGLBuffer).
     ///
     /// # Safety
     ///

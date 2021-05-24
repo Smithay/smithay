@@ -73,13 +73,13 @@
 //! as well as implement a few trait for it, allowing it to be used by
 //! all smithay handlers:
 //!
-//! - The trait [`RoleType`](::wayland::compositor::roles::RoleType),
+//! - The trait [`RoleType`](RoleType),
 //!   which defines it as a type handling roles
-//! - For each of your roles, the trait [`Role<Token>`](::wayland::compositor::roles::Role)
+//! - For each of your roles, the trait [`Role<Token>`](Role)
 //!   (where `Token` is your token type), marking its ability to handle this given role.
 //!
 //! All handlers that handle a specific role will require you to provide
-//! them with a [`CompositorToken<U, R, H>`](::wayland::compositor::CompositorToken)
+//! them with a [`CompositorToken<U, R, H>`](crate::wayland::compositor::CompositorToken)
 //! where `R: Role<TheToken>`.
 //!
 //! See the documentation of these traits for their specific definition and
@@ -115,7 +115,7 @@ pub trait RoleType {
 /// ```
 ///
 /// The methods of this trait are mirrored on
-/// [`CompositorToken`](::wayland::compositor::CompositorToken) for easy
+/// [`CompositorToken`](crate::wayland::compositor::CompositorToken) for easy
 /// access to the role data of the surfaces.
 ///
 /// Note that if a role is automatically handled for you by a Handler provided

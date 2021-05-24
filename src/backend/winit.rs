@@ -63,8 +63,7 @@ pub struct WindowSize {
     pub scale_factor: f64,
 }
 
-/// Window with an active EGL Context created by `winit`. Implements the
-/// [`EGLGraphicsBackend`] and [`GLGraphicsBackend`] graphics backend trait
+/// Window with an active EGL Context created by `winit`. Implements the [`Renderer`] trait
 #[derive(Debug)]
 pub struct WinitGraphicsBackend {
     renderer: Gles2Renderer,
@@ -90,8 +89,7 @@ pub struct WinitInputBackend {
     size: Rc<RefCell<WindowSize>>,
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the [`EGLGraphicsBackend`]
-/// and [`GLGraphicsBackend`] graphics backend trait and a corresponding [`WinitInputBackend`],
+/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait and a corresponding [`WinitInputBackend`],
 /// which implements the [`InputBackend`] trait
 pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitInputBackend), Error>
 where
@@ -106,8 +104,7 @@ where
     )
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the [`EGLGraphicsBackend`]
-/// and [`GLGraphicsBackend`] graphics backend trait, from a given [`WindowBuilder`]
+/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait, from a given [`WindowBuilder`]
 /// struct and a corresponding [`WinitInputBackend`], which implements the [`InputBackend`] trait
 pub fn init_from_builder<L>(
     builder: WindowBuilder,
@@ -128,8 +125,7 @@ where
     )
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the [`EGLGraphicsBackend`]
-/// and [`GLGraphicsBackend`] graphics backend trait, from a given [`WindowBuilder`]
+/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait, from a given [`WindowBuilder`]
 /// struct, as well as given [`GlAttributes`] for further customization of the rendering pipeline and a
 /// corresponding [`WinitInputBackend`], which implements the [`InputBackend`] trait.
 pub fn init_from_builder_with_gl_attr<L>(
@@ -629,11 +625,10 @@ impl InputBackend for WinitInputBackend {
         unsafe { &mut CONFIG }
     }
 
-    /// Processes new events of the underlying event loop to drive the set [`InputHandler`].
+    /// Processes new events of the underlying event loop and calls the provided callback.
     ///
     /// You need to periodically call this function to keep the underlying event loop and
-    /// [`WinitWindow`] active. Otherwise the window may no respond to user interaction and no
-    /// input events will be received by a set [`InputHandler`].
+    /// [`WinitWindow`] active. Otherwise the window may no respond to user interaction.
     ///
     /// Returns an error if the [`WinitWindow`] the window has been closed. Calling
     /// `dispatch_new_events` again after the [`WinitWindow`] has been closed is considered an

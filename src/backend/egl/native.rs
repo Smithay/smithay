@@ -207,7 +207,7 @@ pub unsafe trait EGLNativeSurface: Send + Sync {
     }
 
     /// Adds additional semantics when calling
-    /// [EGLSurface::swap_buffers](::backend::egl::surface::EGLSurface::swap_buffers)
+    /// [EGLSurface::swap_buffers](crate::backend::egl::surface::EGLSurface::swap_buffers)
     ///
     /// Only implement if required by the backend.
     fn swap_buffers(
