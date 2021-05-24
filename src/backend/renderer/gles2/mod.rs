@@ -28,10 +28,10 @@ use crate::backend::egl::{
     ffi::egl::{self as ffi_egl, types::EGLImage},
     EGLContext, EGLSurface, Format as EGLFormat, MakeCurrentError,
 };
-use crate::backend::SwapBuffersError;
+use crate::{backend::SwapBuffersError, utils::Rectangle};
 
 #[cfg(feature = "wayland_frontend")]
-use crate::{backend::egl::display::EGLBufferReader, wayland::compositor::Damage};
+use crate::backend::egl::display::EGLBufferReader;
 #[cfg(feature = "wayland_frontend")]
 use wayland_commons::user_data::UserDataMap;
 #[cfg(feature = "wayland_frontend")]
@@ -503,7 +503,7 @@ impl Gles2Renderer {
     fn import_shm(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        mut damage: Option<crate::utils::Rectangle>,
+        mut damage: &[crate::utils::Rectangle],
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;
 
@@ -534,7 +534,7 @@ impl Gles2Renderer {
                 let mut tex = 0;
                 unsafe { self.gl.GenTextures(1, &mut tex) };
                 // different buffer, upload in full
-                damage = None;
+                damage = &[];
                 let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
                     texture: tex,
                     texture_kind: shader_idx,
@@ -564,7 +564,7 @@ impl Gles2Renderer {
                 self.gl
                     .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
                 self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, stride / pixelsize);
-                if let Some(region) = damage {
+                for region in damage {
                     trace!(self.logger, "Uploading partial shm texture for {:?}", buffer);
                     self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.x);
                     self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.y);
@@ -581,19 +581,6 @@ impl Gles2Renderer {
                     );
                     self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
                     self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
-                } else {
-                    trace!(self.logger, "Uploading shm texture for {:?}", buffer);
-                    self.gl.TexImage2D(
-                        ffi::TEXTURE_2D,
-                        0,
-                        gl_format as i32,
-                        width,
-                        height,
-                        0,
-                        gl_format,
-                        ffi::UNSIGNED_BYTE as u32,
-                        slice.as_ptr().offset(offset as isize) as *const _,
-                    );
                 }
 
                 self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
@@ -930,7 +917,7 @@ impl Renderer for Gles2Renderer {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        damage: Option<&Damage>,
+        damage: &[Rectangle],
         egl: Option<&EGLBufferReader>,
     ) -> Result<Self::TextureId, Self::Error> {
         let texture = if egl.and_then(|egl| egl.egl_buffer_dimensions(&buffer)).is_some() {
@@ -938,10 +925,7 @@ impl Renderer for Gles2Renderer {
         } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
             self.import_shm(
                 &buffer,
-                damage.and_then(|damage| match damage {
-                    Damage::Buffer(rect) => Some(*rect),
-                    _ => None,
-                }),
+                damage,
             )
         } else {
             Err(Gles2Error::UnknownBufferType)

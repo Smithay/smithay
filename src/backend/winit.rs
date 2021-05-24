@@ -28,6 +28,7 @@ use winit::{
     platform::unix::WindowExtUnix,
     window::{Window as WinitWindow, WindowBuilder},
 };
+use crate::utils::Rectangle;
 
 #[cfg(feature = "use_system_lib")]
 use crate::backend::egl::display::EGLBufferReader;

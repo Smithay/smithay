@@ -87,12 +87,10 @@ use wayland_server::{
     Display, Filter, Global, UserDataMap,
 };
 
-/// Description of which part of a surface
+/// Description of a part of a surface that
 /// should be considered damaged and needs to be redrawn
 #[derive(Debug)]
 pub enum Damage {
-    /// The whole surface must be considered damaged (this is the default)
-    Full,
     /// A rectangle containing the damaged zone, in surface coordinates
     Surface(Rectangle),
     /// A rectangle containing the damaged zone, in buffer coordinates
@@ -157,7 +155,7 @@ pub struct SurfaceAttributes {
     ///
     /// Hint provided by the client to suggest that only this part
     /// of the surface was changed and needs to be redrawn
-    pub damage: Damage,
+    pub damage: Vec<Damage>,
     /// The frame callback associated with this surface for the commit
     ///
     /// The be triggered to notify the client about when it would be a
@@ -196,7 +194,7 @@ impl Default for SurfaceAttributes {
             buffer_transform: wl_output::Transform::Normal,
             opaque_region: None,
             input_region: None,
-            damage: Damage::Full,
+            damage: Vec::new(),
             frame_callback: None,
             user_data: UserDataMap::new(),
         }
