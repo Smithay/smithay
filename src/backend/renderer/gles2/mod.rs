@@ -28,10 +28,13 @@ use crate::backend::egl::{
     ffi::egl::{self as ffi_egl, types::EGLImage},
     EGLContext, EGLSurface, Format as EGLFormat, MakeCurrentError,
 };
-use crate::{backend::SwapBuffersError, utils::Rectangle};
+use crate::{backend::SwapBuffersError};
 
 #[cfg(feature = "wayland_frontend")]
-use crate::backend::egl::display::EGLBufferReader;
+use crate::{
+    backend::egl::display::EGLBufferReader,
+    wayland::compositor::{Damage, SurfaceAttributes},
+};
 #[cfg(feature = "wayland_frontend")]
 use wayland_commons::user_data::UserDataMap;
 #[cfg(feature = "wayland_frontend")]
@@ -150,7 +153,7 @@ pub struct Gles2Renderer {
     extensions: Vec<String>,
     programs: [Gles2Program; shaders::FRAGMENT_COUNT],
     #[cfg(feature = "wayland_frontend")]
-    textures: HashMap<BufferEntry, Gles2Texture>,
+    dmabuf_cache: HashMap<BufferEntry, Gles2Texture>,
     egl: EGLContext,
     gl: ffi::Gles2,
     destruction_callback: Receiver<CleanupResource>,
@@ -457,7 +460,7 @@ impl Gles2Renderer {
             target_surface: None,
             buffers: Vec::new(),
             #[cfg(feature = "wayland_frontend")]
-            textures: HashMap::new(),
+            dmabuf_cache: HashMap::new(),
             destruction_callback: rx,
             destruction_callback_sender: tx,
             logger_ptr,
@@ -482,7 +485,7 @@ impl Gles2Renderer {
     fn cleanup(&mut self) -> Result<(), Gles2Error> {
         self.make_current()?;
         #[cfg(feature = "wayland_frontend")]
-        self.textures
+        self.dmabuf_cache
             .retain(|entry, _tex| entry.buffer.as_ref().is_alive());
         for resource in self.destruction_callback.try_iter() {
             match resource {
@@ -503,7 +506,7 @@ impl Gles2Renderer {
     fn import_shm(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        mut damage: &[crate::utils::Rectangle],
+        surface: &SurfaceAttributes,
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;
 
@@ -530,31 +533,30 @@ impl Gles2Renderer {
                 format => return Err(Gles2Error::UnsupportedPixelFormat(format)),
             };
 
-            let texture = self.existing_texture(&buffer)?.unwrap_or_else(|| {
-                let mut tex = 0;
-                unsafe { self.gl.GenTextures(1, &mut tex) };
-                // different buffer, upload in full
-                damage = &[];
-                let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
-                    texture: tex,
-                    texture_kind: shader_idx,
-                    is_external: false,
-                    y_inverted: false,
-                    width: width as u32,
-                    height: height as u32,
-                    buffer: Some(buffer.clone()),
-                    egl_images: None,
-                    destruction_callback_sender: self.destruction_callback_sender.clone(),
-                }));
-                self.textures.insert(
-                    BufferEntry {
-                        id: buffer.as_ref().id(),
-                        buffer: buffer.clone(),
-                    },
-                    texture.clone(),
-                );
-                texture
-            });
+            let mut upload_full = false;
+            
+            let texture = Gles2Texture(
+                // why not store a `Gles2Texture`? because the user might do so.
+                // this is guaranteed a non-public internal type, so we are good.
+                surface.user_data.get::<Rc<Gles2TextureInternal>>().cloned().unwrap_or_else(|| {
+                    let mut tex = 0;
+                    unsafe { self.gl.GenTextures(1, &mut tex) };
+                    // new texture, upload in full
+                    upload_full = true;
+                    let texture = Rc::new(Gles2TextureInternal {
+                        texture: tex,
+                        texture_kind: shader_idx,
+                        is_external: false,
+                        y_inverted: false,
+                        width: width as u32,
+                        height: height as u32,
+                        buffer: Some(buffer.clone()),
+                        egl_images: None,
+                        destruction_callback_sender: self.destruction_callback_sender.clone(),
+                    });
+                    texture
+                })
+            );
 
             unsafe {
                 self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
@@ -564,23 +566,44 @@ impl Gles2Renderer {
                 self.gl
                     .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
                 self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, stride / pixelsize);
-                for region in damage {
-                    trace!(self.logger, "Uploading partial shm texture for {:?}", buffer);
-                    self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.x);
-                    self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.y);
-                    self.gl.TexSubImage2D(
+                    
+                    
+                if upload_full {
+                    trace!(self.logger, "Uploading shm texture for {:?}", buffer);
+                    self.gl.TexImage2D(
                         ffi::TEXTURE_2D,
                         0,
-                        region.x,
-                        region.y,
-                        region.width,
-                        region.height,
+                        gl_format as i32,
+                        width,
+                        height,
+                        0,
                         gl_format,
                         ffi::UNSIGNED_BYTE as u32,
                         slice.as_ptr().offset(offset as isize) as *const _,
                     );
-                    self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
-                    self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
+                } else {
+                    for region in surface.damage.iter().map(|dmg| match dmg {
+                        Damage::Buffer(rect) => *rect,
+                        // TODO also apply transformations
+                        Damage::Surface(rect) => rect.scale(surface.buffer_scale),
+                    }) {
+                        trace!(self.logger, "Uploading partial shm texture for {:?}", buffer);
+                        self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.x);
+                        self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.y);
+                        self.gl.TexSubImage2D(
+                            ffi::TEXTURE_2D,
+                            0,
+                            region.x,
+                            region.y,
+                            region.width,
+                            region.height,
+                            gl_format,
+                            ffi::UNSIGNED_BYTE as u32,
+                            slice.as_ptr().offset(offset as isize) as *const _,
+                        );
+                        self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
+                        self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
+                    }
                 }
 
                 self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
@@ -632,14 +655,13 @@ impl Gles2Renderer {
             destruction_callback_sender: self.destruction_callback_sender.clone(),
         }));
 
-        self.egl.unbind()?;
         Ok(texture)
     }
 
     #[cfg(feature = "wayland_frontend")]
-    fn existing_texture(&self, buffer: &wl_buffer::WlBuffer) -> Result<Option<Gles2Texture>, Gles2Error> {
+    fn existing_dmabuf_texture(&self, buffer: &wl_buffer::WlBuffer) -> Result<Option<Gles2Texture>, Gles2Error> {
         let existing_texture = self
-            .textures
+            .dmabuf_cache
             .iter()
             .find(|(old_buffer, _)| &old_buffer.buffer == buffer)
             .map(|(_, tex)| tex.clone());
@@ -917,7 +939,7 @@ impl Renderer for Gles2Renderer {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        damage: &[Rectangle],
+        surface: &SurfaceAttributes,
         egl: Option<&EGLBufferReader>,
     ) -> Result<Self::TextureId, Self::Error> {
         let texture = if egl.and_then(|egl| egl.egl_buffer_dimensions(&buffer)).is_some() {
@@ -925,7 +947,7 @@ impl Renderer for Gles2Renderer {
         } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
             self.import_shm(
                 &buffer,
-                damage,
+                surface,
             )
         } else {
             Err(Gles2Error::UnknownBufferType)

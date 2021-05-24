@@ -90,11 +90,7 @@ where
                 let mut data = data.borrow_mut();
                 if data.texture.is_none() {
                     if let Some(buffer) = data.current_state.buffer.take() {
-                        let damage = attributes.damage.iter().map(|dmg| match dmg {
-                            Damage::Buffer(rect) => *rect,
-                            Damage::Surface(rect) => rect.scale(attributes.buffer_scale),
-                        }).collect::<Vec<_>>();
-                        match renderer.import_buffer(&buffer, &damage, egl_buffer_reader) {
+                        match renderer.import_buffer(&buffer, &attributes, egl_buffer_reader) {
                             Ok(m) => {
                                 let buffer = if smithay::wayland::shm::with_buffer_contents(&buffer, |_,_| ()).is_ok() {
                                     buffer.release();
