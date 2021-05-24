@@ -42,6 +42,10 @@ pub mod ffi {
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
 }
 
+// This static is used to assign every created Renderer a unique ID (until is overflows...).
+//
+// This id is used to differenciate between user_data of different renderers, because one
+// cannot assume, that resources between two renderers are (and even can be) shared.
 static RENDERER_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug)]
@@ -361,6 +365,7 @@ impl Gles2Renderer {
     /// `EGLContext` shared with the given one (see `EGLContext::new_shared`) and can be used and destroyed on
     /// any of these renderers.
     /// - This renderer has no default framebuffer, use `Bind::bind` before rendering.
+    /// - Binding a new target, while another one is already bound, will replace the current target.
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
     pub unsafe fn new<L>(context: EGLContext, logger: L) -> Result<Gles2Renderer, Gles2Error>
     where

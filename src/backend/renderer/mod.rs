@@ -108,6 +108,10 @@ impl From<wayland_server::protocol::wl_output::Transform> for Transform {
 /// Abstraction for Renderers, that can render into different targets
 pub trait Bind<Target>: Unbind {
     /// Bind a given rendering target, which will contain the rendering results until `unbind` is called.
+    /// 
+    /// Binding to target, while another one is already bound, is rendering defined.
+    /// Some renderers might happily replace the current target, while other might drop the call
+    /// or throw an error.
     fn bind(&mut self, target: Target) -> Result<(), <Self as Renderer>::Error>;
     /// Supported pixel formats for given targets, if applicable.
     fn supported_formats(&self) -> Option<HashSet<crate::backend::allocator::Format>> {
