@@ -734,16 +734,32 @@ impl EGLBufferReader {
         })
         .map_err(BufferAccessError::NotManaged)?;
 
-        let mut inverted: i32 = 0;
-        wrap_egl_call(|| unsafe {
-            ffi::egl::QueryWaylandBufferWL(
-                **self.display,
-                buffer.as_ref().c_ptr() as _,
-                ffi::egl::WAYLAND_Y_INVERTED_WL,
-                &mut inverted,
-            )
-        })
-        .map_err(BufferAccessError::NotManaged)?;
+        let y_inverted = {
+            let mut inverted: i32 = 0;
+
+            // Query the egl buffer with EGL_WAYLAND_Y_INVERTED_WL to retrieve the
+            // buffer orientation.
+            // The call can either fail, succeed with EGL_TRUE or succeed with EGL_FALSE.
+            // The specification for eglQuery defines that unsupported attributes shall return
+            // EGL_FALSE. In case of EGL_WAYLAND_Y_INVERTED_WL the specification defines that
+            // if EGL_FALSE is returned the value of inverted should be assumed as EGL_TRUE.
+            //
+            // see: https://www.khronos.org/registry/EGL/extensions/WL/EGL_WL_bind_wayland_display.txt
+            match wrap_egl_call(|| unsafe {
+                ffi::egl::QueryWaylandBufferWL(
+                    **self.display,
+                    buffer.as_ref().c_ptr() as _,
+                    ffi::egl::WAYLAND_Y_INVERTED_WL,
+                    &mut inverted,
+                )
+            })
+            .map_err(BufferAccessError::NotManaged)?
+            {
+                ffi::egl::TRUE => inverted != 0,
+                ffi::egl::FALSE => true,
+                _ => unreachable!(),
+            }
+        };
 
         let mut images = Vec::with_capacity(format.num_planes());
         for i in 0..format.num_planes() {
@@ -767,7 +783,9 @@ impl EGLBufferReader {
             display: self.display.clone(),
             width: width as u32,
             height: height as u32,
-            y_inverted: inverted != 0,
+            // y_inverted is negated here because the gles2 renderer
+            // already inverts the buffer during rendering.
+            y_inverted: !y_inverted,
             format,
             images,
         })
