@@ -1,5 +1,5 @@
 //! Module for Buffers created using [libgbm](gbm).
-//! 
+//!
 //! The re-exported [`GbmDevice`](gbm::Device) implements the [`Allocator`](super::Allocator) trait
 //! and [`GbmBuffer`](gbm::BufferObject) satisfies the [`Buffer`](super::Buffer) trait while also allowing
 //! conversions to and from [dmabufs](super::dmabuf).

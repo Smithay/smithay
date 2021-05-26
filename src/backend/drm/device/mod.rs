@@ -5,18 +5,15 @@ use std::rc::Rc;
 use std::sync::{atomic::AtomicBool, Arc};
 
 use calloop::{generic::Generic, InsertError, LoopHandle, Source};
-use drm::control::{
-    connector, crtc, Device as ControlDevice, Event, Mode,
-    ResourceHandles,
-};
+use drm::control::{connector, crtc, Device as ControlDevice, Event, Mode, ResourceHandles};
 use drm::{ClientCapability, Device as BasicDevice};
 use nix::libc::dev_t;
 use nix::sys::stat::fstat;
 
 pub(super) mod atomic;
 pub(super) mod legacy;
-use super::{error::Error, Planes, planes};
 use super::surface::{atomic::AtomicDrmSurface, legacy::LegacyDrmSurface, DrmSurface, DrmSurfaceInternal};
+use super::{error::Error, planes, Planes};
 use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
 
@@ -336,8 +333,6 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         self.dev_id
     }
 }
-
-
 
 /// Trait to receive events of a bound [`DrmDevice`]
 ///

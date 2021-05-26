@@ -74,7 +74,7 @@ pub use error::Error as DrmError;
 pub use render::{DrmRenderSurface, Error as DrmRenderError};
 pub use surface::DrmSurface;
 
-use drm::control::{plane, crtc, Device as ControlDevice, PlaneType};
+use drm::control::{crtc, plane, Device as ControlDevice, PlaneType};
 
 /// A set of planes as supported by a crtc
 pub struct Planes {
@@ -86,11 +86,15 @@ pub struct Planes {
     pub overlay: Vec<plane::Handle>,
 }
 
-fn planes(dev: &impl ControlDevice, crtc: &crtc::Handle, has_universal_planes: bool) -> Result<Planes, DrmError> {
+fn planes(
+    dev: &impl ControlDevice,
+    crtc: &crtc::Handle,
+    has_universal_planes: bool,
+) -> Result<Planes, DrmError> {
     let mut primary = None;
     let mut cursor = None;
     let mut overlay = Vec::new();
-    
+
     let planes = dev.plane_handles().map_err(|source| DrmError::Access {
         errmsg: "Error loading plane handles",
         dev: dev.dev_path(),
@@ -101,7 +105,7 @@ fn planes(dev: &impl ControlDevice, crtc: &crtc::Handle, has_universal_planes: b
         errmsg: "Error loading resource handles",
         dev: dev.dev_path(),
         source,
-    })?;       
+    })?;
 
     for plane in planes.planes() {
         let info = dev.get_plane(*plane).map_err(|source| DrmError::Access {
@@ -127,16 +131,8 @@ fn planes(dev: &impl ControlDevice, crtc: &crtc::Handle, has_universal_planes: b
 
     Ok(Planes {
         primary: primary.expect("Crtc has no primary plane"),
-        cursor: if has_universal_planes {
-            cursor
-        } else {
-            None
-        },
-        overlay: if has_universal_planes {
-            overlay
-        } else {
-            Vec::new()
-        },
+        cursor: if has_universal_planes { cursor } else { None },
+        overlay: if has_universal_planes { overlay } else { Vec::new() },
     })
 }
 

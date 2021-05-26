@@ -28,7 +28,7 @@ use crate::backend::egl::{
     ffi::egl::{self as ffi_egl, types::EGLImage},
     EGLContext, EGLSurface, Format as EGLFormat, MakeCurrentError,
 };
-use crate::{backend::SwapBuffersError};
+use crate::backend::SwapBuffersError;
 
 #[cfg(feature = "wayland_frontend")]
 use crate::{
@@ -534,28 +534,32 @@ impl Gles2Renderer {
             };
 
             let mut upload_full = false;
-            
+
             let texture = Gles2Texture(
                 // why not store a `Gles2Texture`? because the user might do so.
                 // this is guaranteed a non-public internal type, so we are good.
-                surface.user_data.get::<Rc<Gles2TextureInternal>>().cloned().unwrap_or_else(|| {
-                    let mut tex = 0;
-                    unsafe { self.gl.GenTextures(1, &mut tex) };
-                    // new texture, upload in full
-                    upload_full = true;
-                    let texture = Rc::new(Gles2TextureInternal {
-                        texture: tex,
-                        texture_kind: shader_idx,
-                        is_external: false,
-                        y_inverted: false,
-                        width: width as u32,
-                        height: height as u32,
-                        buffer: Some(buffer.clone()),
-                        egl_images: None,
-                        destruction_callback_sender: self.destruction_callback_sender.clone(),
-                    });
-                    texture
-                })
+                surface
+                    .user_data
+                    .get::<Rc<Gles2TextureInternal>>()
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        let mut tex = 0;
+                        unsafe { self.gl.GenTextures(1, &mut tex) };
+                        // new texture, upload in full
+                        upload_full = true;
+                        let texture = Rc::new(Gles2TextureInternal {
+                            texture: tex,
+                            texture_kind: shader_idx,
+                            is_external: false,
+                            y_inverted: false,
+                            width: width as u32,
+                            height: height as u32,
+                            buffer: Some(buffer.clone()),
+                            egl_images: None,
+                            destruction_callback_sender: self.destruction_callback_sender.clone(),
+                        });
+                        texture
+                    }),
             );
 
             unsafe {
@@ -566,8 +570,7 @@ impl Gles2Renderer {
                 self.gl
                     .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
                 self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, stride / pixelsize);
-                    
-                    
+
                 if upload_full {
                     trace!(self.logger, "Uploading shm texture for {:?}", buffer);
                     self.gl.TexImage2D(
@@ -659,7 +662,10 @@ impl Gles2Renderer {
     }
 
     #[cfg(feature = "wayland_frontend")]
-    fn existing_dmabuf_texture(&self, buffer: &wl_buffer::WlBuffer) -> Result<Option<Gles2Texture>, Gles2Error> {
+    fn existing_dmabuf_texture(
+        &self,
+        buffer: &wl_buffer::WlBuffer,
+    ) -> Result<Option<Gles2Texture>, Gles2Error> {
         let existing_texture = self
             .dmabuf_cache
             .iter()
@@ -945,10 +951,7 @@ impl Renderer for Gles2Renderer {
         let texture = if egl.and_then(|egl| egl.egl_buffer_dimensions(&buffer)).is_some() {
             self.import_egl(&buffer, egl.unwrap())
         } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
-            self.import_shm(
-                &buffer,
-                surface,
-            )
+            self.import_shm(&buffer, surface)
         } else {
             Err(Gles2Error::UnknownBufferType)
         }?;
@@ -973,12 +976,13 @@ impl Renderer for Gles2Renderer {
 
     fn render<F, R>(
         &mut self,
-        width: u32, height: u32,
+        width: u32,
+        height: u32,
         transform: Transform,
         rendering: F,
     ) -> Result<R, Self::Error>
     where
-        F: FnOnce(&mut Self, &mut Self::Frame) -> R
+        F: FnOnce(&mut Self, &mut Self::Frame) -> R,
     {
         self.make_current()?;
         // delayed destruction until the next frame rendering.
@@ -1016,7 +1020,7 @@ impl Renderer for Gles2Renderer {
         };
 
         let result = rendering(self, &mut frame);
-        
+
         unsafe {
             self.gl.Flush();
             // We need to wait for the previously submitted GL commands to complete
@@ -1027,7 +1031,7 @@ impl Renderer for Gles2Renderer {
             // In case of a drm atomic backend the fence could be supplied by using the
             // IN_FENCE_FD property.
             // See https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#explicit-fencing-properties for
-            // the topic on submitting a IN_FENCE_FD and the mesa kmskube example 
+            // the topic on submitting a IN_FENCE_FD and the mesa kmskube example
             // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c
             // especially here
             // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L147

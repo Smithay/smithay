@@ -11,12 +11,7 @@ use nix::libc::dev_t;
 
 pub(super) mod atomic;
 pub(super) mod legacy;
-use super::{
-    error::Error,
-    Planes, PlaneType,
-    plane_type, planes,
-    device::DevPath,
-};
+use super::{device::DevPath, error::Error, plane_type, planes, PlaneType, Planes};
 use crate::backend::allocator::{Format, Fourcc, Modifier};
 use atomic::AtomicDrmSurface;
 use legacy::LegacyDrmSurface;
@@ -150,16 +145,21 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
 
     /// Tries to setup a cursor or overlay [`Plane`](drm::control::plane)
     /// to be set at the next commit/page_flip with the given position and size.
-    /// 
+    ///
     /// Planes can have arbitrary hardware constraints, that cannot be expressed in the api,
     /// like supporting only positions at even or odd values, allowing only certain sizes or disallowing overlapping planes.
     /// Using planes should therefor be done in a best-efford manner. Failures on `page_flip` or `commit`
     /// should be expected and alternative code paths without the usage of planes prepared.
-    /// 
+    ///
     /// Fails if tests for the given plane fail, if the underlying
     /// implementation does not support the use of planes or if the plane
     /// is not supported by this crtc.
-    pub fn use_plane(&self, plane: plane::Handle, position: (i32, i32), size: (u32, u32)) -> Result<(), Error> {
+    pub fn use_plane(
+        &self,
+        plane: plane::Handle,
+        position: (i32, i32),
+        size: (u32, u32),
+    ) -> Result<(), Error> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.use_plane(plane, position, size),
             DrmSurfaceInternal::Legacy(_) => Err(Error::NonPrimaryPlane(plane)),
@@ -167,7 +167,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     }
 
     /// Disables the given plane.
-    /// 
+    ///
     /// Errors if the plane is not supported by this crtc or if the underlying
     /// implementation does not support the use of planes.
     pub fn clear_plane(&self, plane: plane::Handle) -> Result<(), Error> {
@@ -200,17 +200,23 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     /// but will trigger a `vblank` event once done.
     /// Make sure to [set a `DeviceHandler`](crate::backend::drm::DrmDevice::set_handler) and
     /// [register the belonging `Device`](crate::backend::drm::device_bind) before to receive the event in time.
-    pub fn commit<'a>(&self, mut framebuffers: impl Iterator<Item=&'a (framebuffer::Handle, plane::Handle)>, event: bool) -> Result<(), Error> {
+    pub fn commit<'a>(
+        &self,
+        mut framebuffers: impl Iterator<Item = &'a (framebuffer::Handle, plane::Handle)>,
+        event: bool,
+    ) -> Result<(), Error> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.commit(framebuffers, event),
-            DrmSurfaceInternal::Legacy(surf) => if let Some((fb, plane)) = framebuffers.next() {
-                if plane_type(self, *plane)? != PlaneType::Primary {
-                    return Err(Error::NonPrimaryPlane(*plane));
+            DrmSurfaceInternal::Legacy(surf) => {
+                if let Some((fb, plane)) = framebuffers.next() {
+                    if plane_type(self, *plane)? != PlaneType::Primary {
+                        return Err(Error::NonPrimaryPlane(*plane));
+                    }
+                    surf.commit(*fb, event)
+                } else {
+                    Ok(())
                 }
-                surf.commit(*fb, event)
-            } else {
-                Ok(())
-            },
+            }
         }
     }
 
@@ -222,17 +228,23 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     /// This operation is not blocking and will produce a `vblank` event once swapping is done.
     /// Make sure to [set a `DeviceHandler`](crate::backend::drm::DrmDevice::set_handler) and
     /// [register the belonging `DrmDevice`](crate::backend::drm::device_bind) before to receive the event in time.
-    pub fn page_flip<'a>(&self, mut framebuffers: impl Iterator<Item=&'a (framebuffer::Handle, plane::Handle)>, event: bool) -> Result<(), Error> {
+    pub fn page_flip<'a>(
+        &self,
+        mut framebuffers: impl Iterator<Item = &'a (framebuffer::Handle, plane::Handle)>,
+        event: bool,
+    ) -> Result<(), Error> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.page_flip(framebuffers, event),
-            DrmSurfaceInternal::Legacy(surf) => if let Some((fb, plane)) = framebuffers.next() {
-                if plane_type(self, *plane)? != PlaneType::Primary {
-                    return Err(Error::NonPrimaryPlane(*plane));
+            DrmSurfaceInternal::Legacy(surf) => {
+                if let Some((fb, plane)) = framebuffers.next() {
+                    if plane_type(self, *plane)? != PlaneType::Primary {
+                        return Err(Error::NonPrimaryPlane(*plane));
+                    }
+                    surf.page_flip(*fb, event)
+                } else {
+                    Ok(())
                 }
-                surf.page_flip(*fb, event)
-            } else {
-                Ok(())
-            },
+            }
         }
     }
 
@@ -394,7 +406,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
             } // There is no test-commiting with the legacy interface
         }
     }
-    
+
     /// Tests is a framebuffer can be used with this surface and a given plane.
     ///
     /// # Arguments
@@ -404,7 +416,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     ///     (only works for *cursor* and *overlay* planes - for primary planes use `test_buffer`)
     /// - `position` - The position of the plane
     /// - `size` - The size of the plane
-    /// 
+    ///
     /// If the test cannot be performed, this function returns false.
     /// This is always the case for non-atomic surfaces.
     pub fn test_plane_buffer(
@@ -416,8 +428,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     ) -> Result<bool, Error> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.test_plane_buffer(fb, plane, position, size),
-            DrmSurfaceInternal::Legacy(_) => { Ok(false) }
-            // There is no test-commiting with the legacy interface
+            DrmSurfaceInternal::Legacy(_) => Ok(false), // There is no test-commiting with the legacy interface
         }
     }
 

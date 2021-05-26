@@ -379,8 +379,13 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
 
         Ok(())
     }
-    
-    pub fn use_plane(&self, plane: plane::Handle, position: (i32, i32), size: (u32, u32)) -> Result<(), Error> {
+
+    pub fn use_plane(
+        &self,
+        plane: plane::Handle,
+        position: (i32, i32),
+        size: (u32, u32),
+    ) -> Result<(), Error> {
         let info = PlaneInfo {
             handle: plane,
             x: position.0,
@@ -399,20 +404,26 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             &mut [].iter(),
             self.plane,
             &new_planes,
-            Some([(self.create_test_buffer(pending.mode.size())?, self.plane)]
-                .iter()
-                .chain(new_planes.iter().map(|info| {
-                    match self.create_test_buffer((info.w as u16, info.h as u16)) {
-                        Ok(test_buff) => Ok((test_buff, info.handle)),
-                        Err(err) => Err(err),
-                    }
-                }).collect::<Result<Vec<_>, _>>()?.iter())
+            Some(
+                [(self.create_test_buffer(pending.mode.size())?, self.plane)]
+                    .iter()
+                    .chain(
+                        new_planes
+                            .iter()
+                            .map(
+                                |info| match self.create_test_buffer((info.w as u16, info.h as u16)) {
+                                    Ok(test_buff) => Ok((test_buff, info.handle)),
+                                    Err(err) => Err(err),
+                                },
+                            )
+                            .collect::<Result<Vec<_>, _>>()?
+                            .iter(),
+                    ),
             ),
             Some(pending.mode),
             Some(pending.blob),
         )?;
-        self
-            .fd
+        self.fd
             .atomic_commit(
                 &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
                 req,
@@ -428,7 +439,11 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
 
-    pub fn commit<'a>(&self, framebuffers: impl Iterator<Item=&'a (framebuffer::Handle, plane::Handle)>, event: bool) -> Result<(), Error> {
+    pub fn commit<'a>(
+        &self,
+        framebuffers: impl Iterator<Item = &'a (framebuffer::Handle, plane::Handle)>,
+        event: bool,
+    ) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -538,7 +553,11 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         result
     }
 
-    pub fn page_flip<'a>(&self, framebuffers: impl Iterator<Item=&'a (framebuffer::Handle, plane::Handle)>, event: bool) -> Result<(), Error> {
+    pub fn page_flip<'a>(
+        &self,
+        framebuffers: impl Iterator<Item = &'a (framebuffer::Handle, plane::Handle)>,
+        event: bool,
+    ) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -618,7 +637,13 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         Ok(result)
     }
 
-    pub fn test_plane_buffer(&self, fb: framebuffer::Handle, plane: plane::Handle, position: (i32, i32), size: (u32, u32)) -> Result<bool, Error> {
+    pub fn test_plane_buffer(
+        &self,
+        fb: framebuffer::Handle,
+        plane: plane::Handle,
+        position: (i32, i32),
+        size: (u32, u32),
+    ) -> Result<bool, Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -726,7 +751,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         removed_connectors: &mut dyn Iterator<Item = &connector::Handle>,
         primary: plane::Handle,
         planes: &[PlaneInfo],
-        framebuffers: Option<impl Iterator<Item=&'a (framebuffer::Handle, plane::Handle)>>,
+        framebuffers: Option<impl Iterator<Item = &'a (framebuffer::Handle, plane::Handle)>>,
         mode: Option<Mode>,
         blob: Option<property::Value<'static>>,
     ) -> Result<AtomicModeReq, Error> {
@@ -832,7 +857,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 property::Value::UnsignedRange(mode.size().1 as u64),
             );
         }
-        
+
         // and finally the others
         for plane_info in planes {
             req.add_property(
@@ -901,7 +926,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             property::Value::Framebuffer(None),
         );
 
-        let result = self.fd
+        let result = self
+            .fd
             .atomic_commit(&[AtomicCommitFlags::Nonblock], req)
             .map_err(|source| Error::Access {
                 errmsg: "Failed to commit on clear_plane",
@@ -910,7 +936,10 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             });
 
         if result.is_ok() {
-            self.additional_planes.lock().unwrap().retain(|info| info.handle != plane);
+            self.additional_planes
+                .lock()
+                .unwrap()
+                .retain(|info| info.handle != plane);
         }
 
         result
@@ -947,11 +976,17 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmSurface<A> {
         // other ttys that use no cursor, might not clear it themselves.
         // This makes sure our cursor won't stay visible.
         if let Err(err) = self.clear_plane(self.plane) {
-            warn!(self.logger, "Failed to clear plane {:?} on {:?}: {}", self.plane, self.crtc, err);
+            warn!(
+                self.logger,
+                "Failed to clear plane {:?} on {:?}: {}", self.plane, self.crtc, err
+            );
         }
         for plane_info in self.additional_planes.lock().unwrap().iter() {
             if let Err(err) = self.clear_plane(plane_info.handle) {
-                warn!(self.logger, "Failed to clear plane {:?} on {:?}: {}", plane_info.handle, self.crtc, err);
+                warn!(
+                    self.logger,
+                    "Failed to clear plane {:?} on {:?}: {}", plane_info.handle, self.crtc, err
+                );
             }
         }
 

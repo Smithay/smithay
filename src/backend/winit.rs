@@ -10,10 +10,11 @@ use crate::backend::{
         UnusedEvent,
     },
     renderer::{
-        gles2::{Gles2Error, Gles2Renderer, Gles2Frame, Gles2Texture},
-        Bind, Unbind, Frame, Renderer, Transform,
+        gles2::{Gles2Error, Gles2Frame, Gles2Renderer, Gles2Texture},
+        Bind, Frame, Renderer, Transform, Unbind,
     },
 };
+use crate::utils::Rectangle;
 use std::{cell::RefCell, rc::Rc, time::Instant};
 use wayland_egl as wegl;
 use wayland_server::Display;
@@ -28,7 +29,6 @@ use winit::{
     platform::unix::WindowExtUnix,
     window::{Window as WinitWindow, WindowBuilder},
 };
-use crate::utils::Rectangle;
 
 #[cfg(feature = "use_system_lib")]
 use crate::backend::egl::display::EGLBufferReader;
@@ -264,7 +264,7 @@ impl WinitGraphicsBackend {
     /// and this window set as the rendering target.
     pub fn render<F, R>(&mut self, rendering: F) -> Result<R, crate::backend::SwapBuffersError>
     where
-        F: FnOnce(&mut Gles2Renderer, &mut Gles2Frame) -> R
+        F: FnOnce(&mut Gles2Renderer, &mut Gles2Frame) -> R,
     {
         let (width, height) = {
             let size = self.size.borrow();
@@ -272,7 +272,9 @@ impl WinitGraphicsBackend {
         };
 
         self.renderer.bind(self.egl.clone())?;
-        let result = self.renderer.render(width, height, Transform::Normal, rendering)?;
+        let result = self
+            .renderer
+            .render(width, height, Transform::Normal, rendering)?;
         self.egl.swap_buffers()?;
         self.renderer.unbind()?;
         Ok(result)

@@ -10,11 +10,11 @@
 use std::collections::HashSet;
 use std::error::Error;
 
+#[cfg(feature = "wayland_frontend")]
+use crate::wayland::compositor::SurfaceAttributes;
 use cgmath::{prelude::*, Matrix3, Vector2};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
-#[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::SurfaceAttributes;
 
 use crate::{backend::SwapBuffersError, utils::Rectangle};
 #[cfg(feature = "renderer_gl")]
@@ -108,7 +108,7 @@ impl From<wayland_server::protocol::wl_output::Transform> for Transform {
 /// Abstraction for Renderers, that can render into different targets
 pub trait Bind<Target>: Unbind {
     /// Bind a given rendering target, which will contain the rendering results until `unbind` is called.
-    /// 
+    ///
     /// Binding to target, while another one is already bound, is rendering defined.
     /// Some renderers might happily replace the current target, while other might drop the call
     /// or throw an error.
@@ -199,8 +199,8 @@ pub trait Renderer {
     type Error: Error;
     /// Texture Handle type used by this renderer.
     type TextureId: Texture;
-    
-    type Frame: Frame<Error=Self::Error, TextureId=Self::TextureId>;
+
+    type Frame: Frame<Error = Self::Error, TextureId = Self::TextureId>;
 
     /// Import a given bitmap into the renderer.
     ///
@@ -261,9 +261,8 @@ pub trait Renderer {
         transform: Transform,
         rendering: F,
     ) -> Result<R, Self::Error>
-      where
-        F: FnOnce(&mut Self, &mut Self::Frame) -> R
-    ;
+    where
+        F: FnOnce(&mut Self, &mut Self::Frame) -> R;
 }
 
 /// Returns the dimensions of a wl_buffer

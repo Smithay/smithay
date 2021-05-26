@@ -90,7 +90,9 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
 
         for crtc in res_handles.crtcs() {
             #[allow(deprecated)]
-            let _ = self.fd.set_cursor(*crtc, Option::<&drm::control::dumbbuffer::DumbBuffer>::None);
+            let _ = self
+                .fd
+                .set_cursor(*crtc, Option::<&drm::control::dumbbuffer::DumbBuffer>::None);
             // null commit (necessary to trigger removal on the kernel side with the legacy api.)
             self.fd
                 .set_crtc(*crtc, None, (0, 0), &[], None)

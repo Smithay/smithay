@@ -7,14 +7,12 @@ use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
 use gbm::{BufferObject, BufferObjectFlags, Device as GbmDevice};
 
 use super::{device::DevPath, surface::DrmSurfaceInternal, DrmError, DrmSurface};
+use crate::backend::allocator::{
+    dmabuf::{AsDmabuf, Dmabuf},
+    Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain,
+};
 use crate::backend::renderer::{Bind, Frame, Renderer, Texture, Transform};
 use crate::backend::SwapBuffersError;
-use crate::backend::{
-    allocator::{
-        dmabuf::{AsDmabuf, Dmabuf},
-        Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain,
-    },
-};
 
 /// Simplified by limited abstraction to link single [`DrmSurface`]s to renderers.
 ///
@@ -161,9 +159,12 @@ where
                 .map_err(Error::<E1, E2, E3>::RenderError)
                 .and_then(|_| {
                     renderer
-                        .render(mode.size().0 as u32, mode.size().1 as u32, Transform::Normal, |_, frame| {
-                            frame.clear([0.0, 0.0, 0.0, 1.0])
-                        })
+                        .render(
+                            mode.size().0 as u32,
+                            mode.size().1 as u32,
+                            Transform::Normal,
+                            |_, frame| frame.clear([0.0, 0.0, 0.0, 1.0]),
+                        )
                         .map_err(Error::RenderError)
                 })
                 .and_then(|_| renderer.unbind().map_err(Error::RenderError))
@@ -217,7 +218,7 @@ where
     /// and this surface set a the rendering target.
     pub fn render<F, S>(&mut self, rendering: F) -> Result<S, Error<E1, E2, E3>>
     where
-        F: FnOnce(&mut R, &mut <R as Renderer>::Frame) -> S
+        F: FnOnce(&mut R, &mut <R as Renderer>::Frame) -> S,
     {
         let mode = self.drm.pending_mode();
         let (width, height) = (mode.size().0 as u32, mode.size().1 as u32);
@@ -239,7 +240,7 @@ where
                 rendering,
             )
             .map_err(Error::RenderError)?;
-        
+
         match self.buffers.queue::<E1, E2, E3>(slot, dmabuf) {
             Ok(()) => {}
             Err(Error::DrmError(drm)) => return Err(drm.into()),

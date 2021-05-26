@@ -111,9 +111,14 @@ where
     /// The swapchain has an internal maximum of four re-usable buffers.
     /// This function returns the first free one.
     pub fn acquire(&mut self) -> Result<Option<Slot<B, U>>, A::Error> {
-        if let Some(free_slot) = self.slots.iter_mut().find(|s| !s.acquired.swap(true, Ordering::SeqCst)) {
+        if let Some(free_slot) = self
+            .slots
+            .iter_mut()
+            .find(|s| !s.acquired.swap(true, Ordering::SeqCst))
+        {
             if free_slot.buffer.is_none() {
-                let mut free_slot = Arc::get_mut(free_slot).expect("Acquired was false, but Arc is not unique?");
+                let mut free_slot =
+                    Arc::get_mut(free_slot).expect("Acquired was false, but Arc is not unique?");
                 free_slot.buffer = Some(self.allocator.create_buffer(
                     self.width,
                     self.height,

@@ -122,7 +122,9 @@ fn main() {
         .unwrap();
 
     // Start rendering
-    surface.commit([(framebuffer, surface.plane())].iter(), true).unwrap();
+    surface
+        .commit([(framebuffer, surface.plane())].iter(), true)
+        .unwrap();
 
     // Run
     event_loop.run(None, &mut (), |_| {}).unwrap();
@@ -158,7 +160,9 @@ impl DeviceHandler for DrmHandlerImpl {
         }
 
         let fb = self.current.userdata().unwrap();
-        self.surface.page_flip([(fb, self.surface.plane())].iter(), true).unwrap();
+        self.surface
+            .page_flip([(fb, self.surface.plane())].iter(), true)
+            .unwrap();
     }
 
     fn error(&mut self, error: DrmError) {

@@ -15,7 +15,7 @@ use smithay::{
     },
     utils::Rectangle,
     wayland::{
-        compositor::{roles::Role, SubsurfaceRole, TraversalAction, Damage},
+        compositor::{roles::Role, Damage, SubsurfaceRole, TraversalAction},
         data_device::DnDIconRole,
         seat::CursorImageRole,
     },
@@ -46,7 +46,7 @@ pub fn draw_cursor<R, E, F, T>(
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T, Frame=F>,
+    R: Renderer<Error = E, TextureId = T, Frame = F>,
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
@@ -61,7 +61,15 @@ where
             (0, 0)
         }
     };
-    draw_surface_tree(renderer, frame, surface, egl_buffer_reader, (x - dx, y - dy), token, log)
+    draw_surface_tree(
+        renderer,
+        frame,
+        surface,
+        egl_buffer_reader,
+        (x - dx, y - dy),
+        token,
+        log,
+    )
 }
 
 fn draw_surface_tree<R, E, F, T>(
@@ -74,7 +82,7 @@ fn draw_surface_tree<R, E, F, T>(
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T, Frame=F>,
+    R: Renderer<Error = E, TextureId = T, Frame = F>,
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
@@ -92,7 +100,12 @@ where
                     if let Some(buffer) = data.current_state.buffer.take() {
                         match renderer.import_buffer(&buffer, &attributes, egl_buffer_reader) {
                             Ok(m) => {
-                                let buffer = if smithay::wayland::shm::with_buffer_contents(&buffer, |_,_| ()).is_ok() {
+                                let buffer = if smithay::wayland::shm::with_buffer_contents(
+                                    &buffer,
+                                    |_, _| (),
+                                )
+                                .is_ok()
+                                {
                                     buffer.release();
                                     None
                                 } else {
@@ -111,7 +124,8 @@ where
                     }
                 }
                 // Now, should we be drawn ?
-                if data.texture.is_some() {// if yes, also process the children
+                if data.texture.is_some() {
+                    // if yes, also process the children
                     if Role::<SubsurfaceRole>::has(role) {
                         x += data.current_state.sub_location.0;
                         y += data.current_state.sub_location.1;
@@ -168,7 +182,7 @@ pub fn draw_windows<R, E, F, T>(
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T, Frame=F>,
+    R: Renderer<Error = E, TextureId = T, Frame = F>,
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
@@ -213,7 +227,7 @@ pub fn draw_dnd_icon<R, E, F, T>(
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T, Frame=F>,
+    R: Renderer<Error = E, TextureId = T, Frame = F>,
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,

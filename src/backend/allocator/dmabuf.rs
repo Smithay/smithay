@@ -1,12 +1,12 @@
 //! Module for [dmabuf](https://01.org/linuxgraphics/gfx-docs/drm/driver-api/dma-buf.html) buffers.
-//! 
+//!
 //! `Dmabuf`s act alike to smart pointers and can be freely cloned and passed around.
 //! Once the last `Dmabuf` reference is dropped, its file descriptor is closed and
 //! underlying resources are freed.
-//! 
+//!
 //! If you want to hold on to a potentially alive dmabuf without blocking the free up
 //! of the underlying resouces, you may `downgrade` a `Dmabuf` reference to a `WeakDmabuf`.
-//! 
+//!
 //! This can be especially useful in resources where other parts of the stack should decide upon
 //! the lifetime of the buffer. E.g. when you are only caching associated resources for a dmabuf.
 

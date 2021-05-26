@@ -99,28 +99,55 @@ pub fn run_winit(
         {
             let mut renderer = renderer.borrow_mut();
 
+            let result = renderer
+                .render(|renderer, frame| {
+                    frame.clear([0.8, 0.8, 0.9, 1.0])?;
 
-            let result = renderer.render(|renderer, frame| {
-                frame.clear([0.8, 0.8, 0.9, 1.0])?;
+                    // draw the windows
+                    draw_windows(
+                        renderer,
+                        frame,
+                        reader.as_ref(),
+                        &*state.window_map.borrow(),
+                        None,
+                        state.ctoken,
+                        &log,
+                    )?;
 
-                // draw the windows
-                draw_windows(
-                    renderer,
-                    frame,
-                    reader.as_ref(),
-                    &*state.window_map.borrow(),
-                    None,
-                    state.ctoken,
-                    &log,
-                )?;
+                    let (x, y) = *state.pointer_location.borrow();
+                    // draw the dnd icon if any
+                    {
+                        let guard = state.dnd_icon.lock().unwrap();
+                        if let Some(ref surface) = *guard {
+                            if surface.as_ref().is_alive() {
+                                draw_dnd_icon(
+                                    renderer,
+                                    frame,
+                                    surface,
+                                    reader.as_ref(),
+                                    (x as i32, y as i32),
+                                    state.ctoken,
+                                    &log,
+                                )?;
+                            }
+                        }
+                    }
+                    // draw the cursor as relevant
+                    {
+                        let mut guard = state.cursor_status.lock().unwrap();
+                        // reset the cursor if the surface is no longer alive
+                        let mut reset = false;
+                        if let CursorImageStatus::Image(ref surface) = *guard {
+                            reset = !surface.as_ref().is_alive();
+                        }
+                        if reset {
+                            *guard = CursorImageStatus::Default;
+                        }
 
-                let (x, y) = *state.pointer_location.borrow();
-                // draw the dnd icon if any
-                {
-                    let guard = state.dnd_icon.lock().unwrap();
-                    if let Some(ref surface) = *guard {
-                        if surface.as_ref().is_alive() {
-                            draw_dnd_icon(
+                        // draw as relevant
+                        if let CursorImageStatus::Image(ref surface) = *guard {
+                            cursor_visible = false;
+                            draw_cursor(
                                 renderer,
                                 frame,
                                 surface,
@@ -129,42 +156,16 @@ pub fn run_winit(
                                 state.ctoken,
                                 &log,
                             )?;
+                        } else {
+                            cursor_visible = true;
                         }
                     }
-                }
-                // draw the cursor as relevant
-                {
-                    let mut guard = state.cursor_status.lock().unwrap();
-                    // reset the cursor if the surface is no longer alive
-                    let mut reset = false;
-                    if let CursorImageStatus::Image(ref surface) = *guard {
-                        reset = !surface.as_ref().is_alive();
-                    }
-                    if reset {
-                        *guard = CursorImageStatus::Default;
-                    }
 
-                    // draw as relevant
-                    if let CursorImageStatus::Image(ref surface) = *guard {
-                        cursor_visible = false;
-                        draw_cursor(
-                            renderer,
-                            frame,
-                            surface,
-                            reader.as_ref(),
-                            (x as i32, y as i32),
-                            state.ctoken,
-                            &log,
-                        )?;
-                    } else {
-                        cursor_visible = true;
-                    }
-                }
+                    Ok(())
+                })
+                .map_err(Into::<SwapBuffersError>::into)
+                .and_then(|x| x.into());
 
-                Ok(())
-            }).map_err(Into::<SwapBuffersError>::into)
-            .and_then(|x| x.into());
-            
             renderer.window().set_cursor_visible(cursor_visible);
 
             if let Err(SwapBuffersError::ContextLost(err)) = result {
