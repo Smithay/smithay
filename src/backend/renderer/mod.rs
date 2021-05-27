@@ -11,12 +11,11 @@ use std::collections::HashSet;
 use std::error::Error;
 
 #[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::SurfaceAttributes;
+use crate::{utils::Rectangle, wayland::compositor::SurfaceAttributes};
 use cgmath::{prelude::*, Matrix3, Vector2};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
-use crate::{backend::SwapBuffersError, utils::Rectangle};
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
 #[cfg(all(feature = "wayland_frontend", feature = "backend_egl"))]
@@ -236,13 +235,16 @@ pub trait Renderer {
     /// The implementation defines, if the id keeps being valid, if the buffer is released,
     /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
     ///
+    /// If provided the `SurfaceAttributes` can be used to do caching of rendering resources and is generally recommended.
+    ///
     /// The `damage` argument provides a list of rectangle locating parts of the buffer that need to be updated. When provided
-    /// with an empty list `&[]`, the renderer is allows to not update the texture at all.
+    /// with an empty list `&[]`, the renderer is allowed to not update the texture at all.
     #[cfg(all(feature = "wayland_frontend", feature = "backend_egl"))]
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: &SurfaceAttributes,
+        surface: Option<&SurfaceAttributes>,
+        damage: &[Rectangle],
         egl: Option<&EGLBufferReader>,
     ) -> Result<Self::TextureId, Self::Error>;
 

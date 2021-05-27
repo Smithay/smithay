@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::{cell::RefCell, rc::Rc};
+use std::cell::RefCell;
 
 use slog::Logger;
 use smithay::{
@@ -9,10 +9,7 @@ use smithay::{
         renderer::{Frame, Renderer, Texture, Transform},
         SwapBuffersError,
     },
-    reexports::{
-        calloop::LoopHandle,
-        wayland_server::protocol::{wl_buffer, wl_surface},
-    },
+    reexports::wayland_server::protocol::{wl_buffer, wl_surface},
     utils::Rectangle,
     wayland::{
         compositor::{roles::Role, Damage, SubsurfaceRole, TraversalAction},
@@ -98,7 +95,16 @@ where
                 let mut data = data.borrow_mut();
                 if data.texture.is_none() {
                     if let Some(buffer) = data.current_state.buffer.take() {
-                        match renderer.import_buffer(&buffer, &attributes, egl_buffer_reader) {
+                        let damage = attributes
+                            .damage
+                            .iter()
+                            .map(|dmg| match dmg {
+                                Damage::Buffer(rect) => *rect,
+                                // TODO also apply transformations
+                                Damage::Surface(rect) => rect.scale(attributes.buffer_scale),
+                            })
+                            .collect::<Vec<_>>();
+                        match renderer.import_buffer(&buffer, Some(&attributes), &damage, egl_buffer_reader) {
                             Ok(m) => {
                                 let buffer = if smithay::wayland::shm::with_buffer_contents(
                                     &buffer,
