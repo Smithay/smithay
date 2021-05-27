@@ -10,11 +10,10 @@ use crate::backend::{
         UnusedEvent,
     },
     renderer::{
-        gles2::{Gles2Error, Gles2Frame, Gles2Renderer, Gles2Texture},
-        Bind, Frame, Renderer, Transform, Unbind,
+        gles2::{Gles2Error, Gles2Frame, Gles2Renderer},
+        Bind, Renderer, Transform, Unbind,
     },
 };
-use crate::utils::Rectangle;
 use std::{cell::RefCell, rc::Rc, time::Instant};
 use wayland_egl as wegl;
 use wayland_server::Display;

@@ -11,7 +11,7 @@ use crate::backend::allocator::{
     dmabuf::{AsDmabuf, Dmabuf},
     Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain,
 };
-use crate::backend::renderer::{Bind, Frame, Renderer, Texture, Transform};
+use crate::backend::renderer::{Bind, Frame, Renderer, Transform};
 use crate::backend::SwapBuffersError;
 
 /// Simplified by limited abstraction to link single [`DrmSurface`]s to renderers.
