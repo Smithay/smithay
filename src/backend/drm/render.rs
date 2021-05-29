@@ -22,7 +22,6 @@ use crate::backend::SwapBuffersError;
 /// of a single renderer. In these cases `DrmRenderSurface` provides a way to quickly
 /// get up and running without manually handling and binding buffers.
 pub struct DrmRenderSurface<D: AsRawFd + 'static, A: Allocator<B>, R: Bind<Dmabuf>, B: Buffer> {
-    _format: Format,
     buffers: Buffers<D, B>,
     swapchain: Swapchain<A, B, (Dmabuf, BufferObject<FbHandle<D>>)>,
     renderer: R,
@@ -52,7 +51,7 @@ where
     pub fn new<L: Into<Option<::slog::Logger>>>(
         drm: DrmSurface<D>,
         allocator: A,
-        renderer: R,
+        mut renderer: R,
         log: L,
     ) -> Result<DrmRenderSurface<D, A, R, B>, Error<E1, E2, E3>> {
         // we cannot simply pick the first supported format of the intersection of *all* formats, because:
@@ -123,88 +122,79 @@ where
         };
         debug!(logger, "Testing Formats: {:?}", formats);
 
-        // Test explicit formats first
         let drm = Arc::new(drm);
-        let iter = formats
-            .iter()
-            .filter(|x| x.modifier != Modifier::Invalid && x.modifier != Modifier::Linear)
-            .chain(formats.iter().find(|x| x.modifier == Modifier::Linear))
-            .chain(formats.iter().find(|x| x.modifier == Modifier::Invalid))
-            .cloned();
+        let modifiers = formats.iter().map(|x| x.modifier).collect::<Vec<_>>();
 
-        DrmRenderSurface::new_internal(drm, allocator, renderer, iter, logger)
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn new_internal(
-        drm: Arc<DrmSurface<D>>,
-        allocator: A,
-        mut renderer: R,
-        mut formats: impl Iterator<Item = Format>,
-        logger: ::slog::Logger,
-    ) -> Result<DrmRenderSurface<D, A, R, B>, Error<E1, E2, E3>> {
-        let format = formats.next().ok_or(Error::NoSupportedPlaneFormat)?;
         let mode = drm.pending_mode();
 
         let gbm = unsafe { GbmDevice::new_from_fd(drm.as_raw_fd())? };
-        let mut swapchain = Swapchain::new(allocator, mode.size().0 as u32, mode.size().1 as u32, format);
+        let mut swapchain = Swapchain::new(
+            allocator,
+            mode.size().0 as u32,
+            mode.size().1 as u32,
+            code,
+            modifiers,
+        );
 
         // Test format
         let buffer = swapchain.acquire().map_err(Error::SwapchainError)?.unwrap();
         let dmabuf = buffer.export().map_err(Error::AsDmabufError)?;
+        let format = Format {
+            code,
+            modifier: buffer.format().modifier, // no guarantee
+                                                // that this is stable across allocations, but
+                                                // we want to print that here for debugging proposes.
+                                                // It has no further use.
+        };
 
+        match renderer
+            .bind(dmabuf.clone())
+            .map_err(Error::<E1, E2, E3>::RenderError)
+            .and_then(|_| {
+                renderer
+                    .render(
+                        mode.size().0 as u32,
+                        mode.size().1 as u32,
+                        Transform::Normal,
+                        |_, frame| frame.clear([0.0, 0.0, 0.0, 1.0]),
+                    )
+                    .map_err(Error::RenderError)
+            })
+            .and_then(|_| renderer.unbind().map_err(Error::RenderError))
         {
-            match renderer
-                .bind(dmabuf.clone())
-                .map_err(Error::<E1, E2, E3>::RenderError)
-                .and_then(|_| {
-                    renderer
-                        .render(
-                            mode.size().0 as u32,
-                            mode.size().1 as u32,
-                            Transform::Normal,
-                            |_, frame| frame.clear([0.0, 0.0, 0.0, 1.0]),
-                        )
-                        .map_err(Error::RenderError)
-                })
-                .and_then(|_| renderer.unbind().map_err(Error::RenderError))
-            {
-                Ok(_) => {}
-                Err(err) => {
-                    warn!(logger, "Rendering failed with format {:?}: {}", format, err);
-                    return DrmRenderSurface::new_internal(
-                        drm,
-                        swapchain.allocator,
-                        renderer,
-                        formats,
-                        logger,
-                    );
-                }
-            }
-        }
-
-        let bo = import_dmabuf(&drm, &gbm, &dmabuf)?;
-        let fb = bo.userdata().unwrap().unwrap().fb;
-        *buffer.userdata() = Some((dmabuf, bo));
-
-        match drm.test_buffer(fb, &mode, true) {
             Ok(_) => {
-                debug!(logger, "Success, choosen format: {:?}", format);
-                let buffers = Buffers::new(drm.clone(), gbm, buffer);
-                Ok(DrmRenderSurface {
-                    drm,
-                    _format: format,
-                    renderer,
-                    swapchain,
-                    buffers,
-                })
+                let bo = import_dmabuf(&drm, &gbm, &dmabuf)?;
+                let fb = bo.userdata().unwrap().unwrap().fb;
+                *buffer.userdata() = Some((dmabuf, bo));
+
+                match drm.test_buffer(fb, &mode, true) {
+                    Ok(_) => {
+                        debug!(logger, "Success, choosen format: {:?}", format);
+                        let buffers = Buffers::new(drm.clone(), gbm, buffer);
+                        Ok(DrmRenderSurface {
+                            drm,
+                            renderer,
+                            swapchain,
+                            buffers,
+                        })
+                    }
+                    Err(err) => {
+                        warn!(
+                            logger,
+                            "Mode-setting failed with automatically selected buffer format {:?}: {}",
+                            format,
+                            err
+                        );
+                        Err(err).map_err(Into::into)
+                    }
+                }
             }
             Err(err) => {
                 warn!(
                     logger,
-                    "Mode-setting failed with buffer format {:?}: {}", format, err
+                    "Rendering failed with automatically selected format {:?}: {}", format, err
                 );
-                DrmRenderSurface::new_internal(drm, swapchain.allocator, renderer, formats, logger)
+                Err(err)
             }
         }
     }

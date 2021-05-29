@@ -6,7 +6,7 @@ extern crate slog;
 use slog::Drain;
 use smithay::{
     backend::{
-        allocator::{dumb::DumbBuffer, Format, Fourcc, Modifier, Slot, Swapchain},
+        allocator::{dumb::DumbBuffer, Fourcc, Slot, Swapchain},
         drm::{device_bind, DeviceHandler, DrmDevice, DrmError, DrmSurface},
     },
     reexports::{
@@ -93,14 +93,18 @@ fn main() {
      */
     let (w, h) = mode.size();
     let allocator = DrmDevice::new(fd, false, log.clone()).unwrap();
+    let mods = surface
+        .supported_formats(surface.plane())
+        .expect("Unable to readout formats for surface")
+        .iter()
+        .filter_map(|format| if format.code == Fourcc::Argb8888 { Some(format.modifier) } else { None })
+        .collect::<Vec<_>>();
     let mut swapchain = Swapchain::new(
         allocator,
         w.into(),
         h.into(),
-        Format {
-            code: Fourcc::Argb8888,
-            modifier: Modifier::Invalid,
-        },
+        Fourcc::Argb8888,
+        mods,
     );
     let first_buffer: Slot<DumbBuffer<FdWrapper>, _> = swapchain.acquire().unwrap().unwrap();
     let framebuffer = surface.add_framebuffer(first_buffer.handle(), 32, 32).unwrap();
