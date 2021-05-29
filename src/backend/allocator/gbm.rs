@@ -14,20 +14,26 @@ use std::os::unix::io::AsRawFd;
 impl<A: AsRawFd + 'static, T> Allocator<GbmBuffer<T>> for GbmDevice<A> {
     type Error = std::io::Error;
 
-    fn create_buffer(&mut self, width: u32, height: u32, format: Format) -> std::io::Result<GbmBuffer<T>> {
-        if format.modifier == Modifier::Invalid || format.modifier == Modifier::Linear {
-            let mut usage = GbmBufferFlags::SCANOUT | GbmBufferFlags::RENDERING;
-            if format.modifier == Modifier::Linear {
-                usage |= GbmBufferFlags::LINEAR;
+    fn create_buffer(
+        &mut self,
+        width: u32,
+        height: u32,
+        fourcc: Fourcc,
+        modifiers: &[Modifier],
+    ) -> Result<GbmBuffer<T>, Self::Error> {
+        match self.create_buffer_object_with_modifiers(width, height, fourcc, modifiers.iter().copied()) {
+            Ok(bo) => Ok(bo),
+            Err(err) => {
+                if modifiers.contains(&Modifier::Invalid) || modifiers.contains(&Modifier::Linear) {
+                    let mut usage = GbmBufferFlags::SCANOUT | GbmBufferFlags::RENDERING;
+                    if !modifiers.contains(&Modifier::Invalid) {
+                        usage |= GbmBufferFlags::LINEAR;
+                    }
+                    self.create_buffer_object(width, height, fourcc, usage)
+                } else {
+                    Err(err)
+                }
             }
-            self.create_buffer_object(width, height, format.code, usage)
-        } else {
-            self.create_buffer_object_with_modifiers(
-                width,
-                height,
-                format.code,
-                Some(format.modifier).into_iter(),
-            )
         }
     }
 }

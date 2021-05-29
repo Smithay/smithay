@@ -49,5 +49,11 @@ pub trait Allocator<B: Buffer> {
     type Error: std::error::Error;
 
     /// Try to create a buffer with the given dimensions and pixel format
-    fn create_buffer(&mut self, width: u32, height: u32, format: Format) -> Result<B, Self::Error>;
+    fn create_buffer(
+        &mut self,
+        width: u32,
+        height: u32,
+        fourcc: Fourcc,
+        modifiers: &[Modifier],
+    ) -> Result<B, Self::Error>;
 }

@@ -4,7 +4,7 @@ use std::sync::{
     Arc, Mutex, MutexGuard,
 };
 
-use crate::backend::allocator::{Allocator, Buffer, Format};
+use crate::backend::allocator::{Allocator, Buffer, Fourcc, Modifier};
 
 pub const SLOT_CAP: usize = 4;
 
@@ -41,7 +41,8 @@ pub struct Swapchain<A: Allocator<B>, B: Buffer, U: 'static> {
 
     width: u32,
     height: u32,
-    format: Format,
+    fourcc: Fourcc,
+    modifiers: Vec<Modifier>,
 
     slots: [Arc<InternalSlot<B, U>>; SLOT_CAP],
 }
@@ -96,12 +97,19 @@ where
     U: 'static,
 {
     /// Create a new swapchain with the desired allocator and dimensions and pixel format for the created buffers.
-    pub fn new(allocator: A, width: u32, height: u32, format: Format) -> Swapchain<A, B, U> {
+    pub fn new(
+        allocator: A,
+        width: u32,
+        height: u32,
+        fourcc: Fourcc,
+        modifiers: Vec<Modifier>,
+    ) -> Swapchain<A, B, U> {
         Swapchain {
             allocator,
             width,
             height,
-            format,
+            fourcc,
+            modifiers,
             slots: Default::default(),
         }
     }
@@ -122,7 +130,8 @@ where
                 free_slot.buffer = Some(self.allocator.create_buffer(
                     self.width,
                     self.height,
-                    self.format,
+                    self.fourcc,
+                    &self.modifiers,
                 )?);
             }
             assert!(free_slot.buffer.is_some());

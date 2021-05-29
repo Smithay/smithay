@@ -7,7 +7,7 @@ use std::sync::Arc;
 use drm::buffer::Buffer as DrmBuffer;
 use drm::control::{dumbbuffer::DumbBuffer as Handle, Device as ControlDevice};
 
-use super::{Allocator, Buffer, Format};
+use super::{Allocator, Buffer, Format, Fourcc, Modifier};
 use crate::backend::drm::device::{DrmDevice, DrmDeviceInternal, FdWrapper};
 
 /// Wrapper around raw DumbBuffer handles.
@@ -33,9 +33,19 @@ impl<A: AsRawFd + 'static> Allocator<DumbBuffer<A>> for DrmDevice<A> {
         &mut self,
         width: u32,
         height: u32,
-        format: Format,
+        fourcc: Fourcc,
+        modifiers: &[Modifier],
     ) -> Result<DumbBuffer<A>, Self::Error> {
-        let handle = self.create_dumb_buffer((width, height), format.code, 32 /* TODO */)?;
+        // dumb buffers are always linear
+        if modifiers
+            .iter()
+            .find(|x| **x == Modifier::Invalid || **x == Modifier::Linear)
+            .is_none()
+        {
+            return Err(drm::SystemError::InvalidArgument);
+        }
+
+        let handle = self.create_dumb_buffer((width, height), fourcc, 32 /* TODO */)?;
 
         Ok(DumbBuffer {
             fd: match &*self.internal {
@@ -43,7 +53,10 @@ impl<A: AsRawFd + 'static> Allocator<DumbBuffer<A>> for DrmDevice<A> {
                 DrmDeviceInternal::Legacy(dev) => dev.fd.clone(),
             },
             handle,
-            format,
+            format: Format {
+                code: fourcc,
+                modifier: Modifier::Linear,
+            },
         })
     }
 }
