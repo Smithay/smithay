@@ -139,6 +139,7 @@ pub trait Texture {
     fn height(&self) -> u32;
 }
 
+/// Helper trait for [`Renderer`], which defines a rendering api for a currently in-progress frame during [`Renderer::render`].
 pub trait Frame {
     /// Error type returned by the rendering operations of this renderer.
     type Error: Error;
@@ -198,7 +199,7 @@ pub trait Renderer {
     type Error: Error;
     /// Texture Handle type used by this renderer.
     type TextureId: Texture;
-
+    /// Type representing a currently in-progress frame during the [`Renderer::render`]-call
     type Frame: Frame<Error = Self::Error, TextureId = Self::TextureId>;
 
     /// Import a given bitmap into the renderer.
