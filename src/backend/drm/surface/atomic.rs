@@ -531,12 +531,17 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                         // on the atomic api we can modeset and trigger a page_flip event on the same call!
                         AtomicCommitFlags::PageFlipEvent,
                         AtomicCommitFlags::AllowModeset,
-                        // we also do not need to wait for completion, like with `set_crtc`.
-                        // and have tested this already, so we do not expect any errors later down the line.
-                        AtomicCommitFlags::Nonblock,
+                        // we also *should* not need to wait for completion, like with `set_crtc`,
+                        // because we have tested this exact commit already, so we do not expect any errors later down the line.
+                        //
+                        // but there is always an exception and `amdgpu` can fail in interesting ways with this flag set...
+                        // https://gitlab.freedesktop.org/drm/amd/-/issues?scope=all&utf8=%E2%9C%93&state=opened&search=drm_atomic_helper_wait_for_flip_done
+                        //
+                        // so we skip this flag:
+                        // AtomicCommitFlags::Nonblock,
                     ]
                 } else {
-                    &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::Nonblock]
+                    &[AtomicCommitFlags::AllowModeset]
                 },
                 req,
             )
