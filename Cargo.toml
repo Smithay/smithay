@@ -13,12 +13,14 @@ members = [ "anvil" ]
 [dependencies]
 bitflags = "1"
 calloop = "0.6.2"
+cgmath = "0.18.0"
 dbus = { version = "0.9.0", optional = true }
-drm = { version = "^0.4.0", git = "https://github.com/drakulix/drm-rs", branch = "develop", optional = true }
-gbm = { version = "^0.6.0", git = "https://github.com/drakulix/gbm.rs", branch = "thread-safe", optional = true, default-features = false, features = ["drm-support"] }
-glium = { version = "0.29.0", optional = true, default-features = false }
-image = { version = "0.23.0", optional = true, default-features = false }
+drm-fourcc = "^2.1.1"
+drm = { version = "0.4.0", optional = true }
+drm-ffi = { version = "0.1.0", optional = true }
+gbm = { version = "0.6.0", optional = true, default-features = false, features = ["drm-support"] }
 input = { version = "0.5", default-features = false, optional = true }
+image = { version = "0.23.14", default-features = false, optional = true }
 lazy_static = "1"
 libc = "0.2.70"
 libloading = "0.7.0"
@@ -35,8 +37,7 @@ wayland-server = { version = "0.28.3", optional = true }
 wayland-sys = { version = "0.28", optional = true }
 winit = { version = "0.24.0", optional = true }
 xkbcommon = "0.4.0"
-# TODO: remove as soon as drm-rs provides an error implementing Error
-failure = { version = "0.1", optional = true }
+scan_fmt = { version = "0.2", default-features = false }
 
 [dev-dependencies]
 slog-term = "2.3"
@@ -46,27 +47,22 @@ gl_generator = { version = "0.14", optional = true }
 pkg-config = { version = "0.3.17", optional = true }
 
 [features]
-default = ["backend_winit", "backend_drm_legacy", "backend_drm_atomic", "backend_drm_gbm", "backend_drm_eglstream", "backend_drm_egl", "backend_libinput", "backend_udev", "backend_session_logind", "renderer_glium", "xwayland", "wayland_frontend", "slog-stdlog"]
+default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_logind", "backend_winit", "renderer_gl", "xwayland", "wayland_frontend", "slog-stdlog"]
 backend_winit = ["winit", "wayland-server/dlopen", "backend_egl", "wayland-egl", "renderer_gl", "use_system_lib"]
-backend_drm = ["drm", "failure"]
-backend_drm_atomic = ["backend_drm"]
-backend_drm_legacy = ["backend_drm"]
-backend_drm_gbm = ["backend_drm", "gbm", "image"]
-backend_drm_eglstream = ["backend_drm", "backend_egl"]
-backend_drm_egl = ["backend_drm", "backend_egl"]
+backend_drm = ["drm", "drm-ffi"]
+backend_gbm = ["gbm"]
 backend_egl = ["gl_generator"]
 backend_libinput = ["input"]
 backend_session = []
 backend_udev = ["udev"]
 backend_session_logind = ["dbus", "backend_session", "pkg-config"]
 backend_session_elogind = ["backend_session_logind"]
-renderer_gl = ["gl_generator"]
-renderer_glium = ["renderer_gl", "glium"]
+renderer_gl = ["gl_generator", "backend_egl"]
 use_system_lib = ["wayland_frontend", "wayland-sys", "wayland-server/use_system_lib"]
 wayland_frontend = ["wayland-server", "wayland-commons", "wayland-protocols", "tempfile"]
 xwayland = ["wayland_frontend"]
 test_all_features = ["default"]
 
 [[example]]
-name = "raw_legacy_drm"
-required-features = ["backend_drm_legacy"]
+name = "raw_drm"
+required-features = ["backend_drm"]

@@ -75,16 +75,18 @@ use wayland_protocols::unstable::linux_dmabuf::v1::server::{
 };
 use wayland_server::{protocol::wl_buffer, Display, Filter, Global, Main};
 
+use crate::backend::allocator::{Fourcc, Modifier};
+
 /// Representation of a Dmabuf format, as advertized to the client
 #[derive(Debug)]
 pub struct Format {
     /// The format identifier.
-    pub format: ::drm::buffer::format::PixelFormat,
+    pub format: Fourcc,
     /// The supported dmabuf layout modifier.
     ///
     /// This is an opaque token. Drivers use this token to express tiling, compression, etc. driver-specific
     /// modifications to the base format defined by the DRM fourcc code.
-    pub modifier: u64,
+    pub modifier: Modifier,
     /// Number of planes used by this format
     pub plane_count: u32,
 }
@@ -251,9 +253,13 @@ where
 
                 // send the supported formats
                 for f in &*formats {
-                    dmabuf.format(f.format.as_raw());
+                    dmabuf.format(f.format as u32);
                     if version >= 3 {
-                        dmabuf.modifier(f.format.as_raw(), (f.modifier >> 32) as u32, f.modifier as u32);
+                        dmabuf.modifier(
+                            f.format as u32,
+                            (Into::<u64>::into(f.modifier) >> 32) as u32,
+                            Into::<u64>::into(f.modifier) as u32,
+                        );
                     }
                 }
             },
@@ -424,7 +430,7 @@ fn buffer_basic_checks(
 ) -> bool {
     // protocol_checks:
     // This must be a known format
-    let format = match formats.iter().find(|f| f.format.as_raw() == format) {
+    let format = match formats.iter().find(|f| f.format as u32 == format) {
         Some(f) => f,
         None => {
             params.as_ref().post_error(

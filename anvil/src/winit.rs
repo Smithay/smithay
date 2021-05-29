@@ -1,13 +1,10 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
-#[cfg(feature = "egl")]
-use smithay::backend::egl::EGLGraphicsBackend;
 use smithay::{
-    backend::{graphics::gl::GLGraphicsBackend, input::InputBackend, winit},
+    backend::{input::InputBackend, renderer::Frame, winit, SwapBuffersError},
     reexports::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
-        winit::window::CursorIcon,
     },
     wayland::{
         output::{Mode, Output, PhysicalProperties},
@@ -17,8 +14,7 @@ use smithay::{
 
 use slog::Logger;
 
-use crate::buffer_utils::BufferUtils;
-use crate::glium_drawer::GliumDrawer;
+use crate::drawing::*;
 use crate::state::AnvilState;
 
 pub fn run_winit(
@@ -29,24 +25,19 @@ pub fn run_winit(
     let (renderer, mut input) = winit::init(log.clone()).map_err(|err| {
         slog::crit!(log, "Failed to initialize Winit backend: {}", err);
     })?;
+    let renderer = Rc::new(RefCell::new(renderer));
 
     #[cfg(feature = "egl")]
-    let egl_buffer_reader = Rc::new(RefCell::new(
-        if let Ok(egl_buffer_reader) = renderer.bind_wl_display(&display.borrow()) {
-            info!(log, "EGL hardware-acceleration enabled");
-            Some(egl_buffer_reader)
-        } else {
-            None
-        },
-    ));
-
-    #[cfg(feature = "egl")]
-    let buffer_utils = BufferUtils::new(egl_buffer_reader, log.clone());
+    let reader = renderer.borrow().bind_wl_display(&display.borrow()).ok();
     #[cfg(not(feature = "egl"))]
-    let buffer_utils = BufferUtils::new(log.clone());
+    let reader = None;
 
-    let (w, h) = renderer.get_framebuffer_dimensions();
-    let drawer = GliumDrawer::init(renderer, buffer_utils.clone(), log.clone());
+    #[cfg(feature = "egl")]
+    if reader.is_some() {
+        info!(log, "EGL hardware-acceleration enabled");
+    };
+
+    let (w, h): (u32, u32) = renderer.borrow().window_size().physical_size.into();
 
     /*
      * Initialize the globals
@@ -55,7 +46,8 @@ pub fn run_winit(
     let mut state = AnvilState::init(
         display.clone(),
         event_loop.handle(),
-        buffer_utils,
+        #[cfg(feature = "egl")]
+        Rc::new(RefCell::new(reader.clone())),
         None,
         None,
         log.clone(),
@@ -90,13 +82,97 @@ pub fn run_winit(
     });
 
     let start_time = std::time::Instant::now();
+    let mut cursor_visible = true;
 
     info!(log, "Initialization completed, starting the main loop.");
 
     while state.running.load(Ordering::SeqCst) {
-        input
+        if input
             .dispatch_new_events(|event, _| state.process_input_event(event))
-            .unwrap();
+            .is_err()
+        {
+            state.running.store(false, Ordering::SeqCst);
+            break;
+        }
+
+        // drawing logic
+        {
+            let mut renderer = renderer.borrow_mut();
+
+            let result = renderer
+                .render(|renderer, frame| {
+                    frame.clear([0.8, 0.8, 0.9, 1.0])?;
+
+                    // draw the windows
+                    draw_windows(
+                        renderer,
+                        frame,
+                        reader.as_ref(),
+                        &*state.window_map.borrow(),
+                        None,
+                        state.ctoken,
+                        &log,
+                    )?;
+
+                    let (x, y) = *state.pointer_location.borrow();
+                    // draw the dnd icon if any
+                    {
+                        let guard = state.dnd_icon.lock().unwrap();
+                        if let Some(ref surface) = *guard {
+                            if surface.as_ref().is_alive() {
+                                draw_dnd_icon(
+                                    renderer,
+                                    frame,
+                                    surface,
+                                    reader.as_ref(),
+                                    (x as i32, y as i32),
+                                    state.ctoken,
+                                    &log,
+                                )?;
+                            }
+                        }
+                    }
+                    // draw the cursor as relevant
+                    {
+                        let mut guard = state.cursor_status.lock().unwrap();
+                        // reset the cursor if the surface is no longer alive
+                        let mut reset = false;
+                        if let CursorImageStatus::Image(ref surface) = *guard {
+                            reset = !surface.as_ref().is_alive();
+                        }
+                        if reset {
+                            *guard = CursorImageStatus::Default;
+                        }
+
+                        // draw as relevant
+                        if let CursorImageStatus::Image(ref surface) = *guard {
+                            cursor_visible = false;
+                            draw_cursor(
+                                renderer,
+                                frame,
+                                surface,
+                                reader.as_ref(),
+                                (x as i32, y as i32),
+                                state.ctoken,
+                                &log,
+                            )?;
+                        } else {
+                            cursor_visible = true;
+                        }
+                    }
+
+                    Ok(())
+                })
+                .map_err(Into::<SwapBuffersError>::into)
+                .and_then(|x| x.into());
+
+            renderer.window().set_cursor_visible(cursor_visible);
+
+            if let Err(SwapBuffersError::ContextLost(err)) = result {
+                error!(log, "Critical Rendering Error: {}", err);
+                state.running.store(false, Ordering::SeqCst);
+            }
+        }
 
         // Send frame events so that client start drawing their next frame
         state
@@ -104,49 +180,6 @@ pub fn run_winit(
             .borrow()
             .send_frames(start_time.elapsed().as_millis() as u32);
         display.borrow_mut().flush_clients(&mut state);
-
-        // drawing logic
-        {
-            use glium::Surface;
-            let mut frame = drawer.draw();
-            frame.clear(None, Some((0.8, 0.8, 0.9, 1.0)), false, Some(1.0), None);
-
-            // draw the windows
-            drawer.draw_windows(&mut frame, &*state.window_map.borrow(), None, state.ctoken);
-
-            let (x, y) = *state.pointer_location.borrow();
-            // draw the dnd icon if any
-            {
-                let guard = state.dnd_icon.lock().unwrap();
-                if let Some(ref surface) = *guard {
-                    if surface.as_ref().is_alive() {
-                        drawer.draw_dnd_icon(&mut frame, surface, (x as i32, y as i32), state.ctoken);
-                    }
-                }
-            }
-            // draw the cursor as relevant
-            {
-                let mut guard = state.cursor_status.lock().unwrap();
-                // reset the cursor if the surface is no longer alive
-                let mut reset = false;
-                if let CursorImageStatus::Image(ref surface) = *guard {
-                    reset = !surface.as_ref().is_alive();
-                }
-                if reset {
-                    *guard = CursorImageStatus::Default;
-                }
-                // draw as relevant
-                if let CursorImageStatus::Image(ref surface) = *guard {
-                    drawer.draw_software_cursor(&mut frame, surface, (x as i32, y as i32), state.ctoken);
-                } else {
-                    drawer.draw_hardware_cursor(&CursorIcon::Default, (0, 0), (x as i32, y as i32));
-                }
-            }
-
-            if let Err(err) = frame.finish() {
-                error!(log, "Error during rendering: {:?}", err);
-            }
-        }
 
         if event_loop
             .dispatch(Some(Duration::from_millis(16)), &mut state)

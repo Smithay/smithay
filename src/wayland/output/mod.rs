@@ -7,11 +7,11 @@
 //!
 //! # How to use it
 //!
-//! You need to instantiate an [`Output`](::wayland::output::Output)
+//! You need to instantiate an [`Output`]
 //! for each output global you want to advertise to clients.
 //!
-//! Just add it to your Display using the [`Output::new(..)`](::wayland::output::Output::new)
-//! method. You can use the returned [`Output`](::wayland::output::Output) to change
+//! Just add it to your Display using the [`Output::new(..)`](Output::new)
+//! method. You can use the returned [`Output`] to change
 //! the properties of your output (if the current resolution mode changes for example),
 //! it'll automatically forward any changes to the clients.
 //!

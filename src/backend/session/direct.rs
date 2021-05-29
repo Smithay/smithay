@@ -27,8 +27,8 @@
 //! The session may be used to open devices manually through the [`Session`] interface
 //! or be passed to other objects that need it to open devices themselves.
 //!
-//! Examples for those are e.g. the [`LibinputInputBackend`](::backend::libinput::LibinputInputBackend)
-//! (its context might be initialized through a [`Session`] via the [`LibinputSessionInterface`](::backend::libinput::LibinputSessionInterface)).
+//! Examples for those are e.g. the [`LibinputInputBackend`](crate::backend::libinput::LibinputInputBackend)
+//! (its context might be initialized through a [`Session`] via the [`LibinputSessionInterface`](crate::backend::libinput::LibinputSessionInterface)).
 //!
 //! In case you want to pass the same [`Session`] to multiple objects, [`Session`] is implement for
 //! every `Rc<RefCell<Session>>` or `Arc<Mutex<Session>>`.
@@ -36,13 +36,13 @@
 //! ### Usage of the session notifier
 //!
 //! The notifier might be used to pause device access, when the session gets paused (e.g. by
-//! switching the tty via [`DirectSession::change_vt`](::backend::session::Session::change_vt))
+//! switching the tty via [`DirectSession::change_vt`](crate::backend::session::Session::change_vt))
 //! and to automatically enable it again, when the session becomes active again.
 //!
 //! It is crucial to avoid errors during that state. Examples for object that might be registered
-//! for notifications are the [`Libinput`](input::Libinput) context or the [`Device`](::backend::drm::Device).
+//! for notifications are the [`Libinput`](input::Libinput) context or the [`DrmDevice`](crate::backend::drm::DrmDevice).
 //!
-//! The [`DirectSessionNotifier`](::backend::session::direct::DirectSessionNotifier) is to be inserted into
+//! The [`DirectSessionNotifier`] is to be inserted into
 //! a calloop event source to have its events processed.
 
 use super::{AsErrno, Session, Signal as SessionSignal};
@@ -152,7 +152,7 @@ pub struct DirectSession {
     logger: ::slog::Logger,
 }
 
-/// [`SessionNotifier`] via the virtual terminal direct kernel interface
+/// Notifier of the virtual terminal direct kernel interface
 pub struct DirectSessionNotifier {
     tty: RawFd,
     active: Arc<AtomicBool>,
@@ -164,7 +164,7 @@ pub struct DirectSessionNotifier {
 
 impl fmt::Debug for DirectSessionNotifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point")
+        f.debug_struct("DirectSessionNotifier")
             .field("tty", &self.tty)
             .field("active", &self.active)
             .field("signaler", &self.signaler)
@@ -367,7 +367,7 @@ impl Drop for DirectSession {
     }
 }
 
-/// Ids of registered [`SessionObserver`]s of the [`DirectSessionNotifier`]
+/// Ids of registered observers of the [`DirectSessionNotifier`]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Id(usize);
 

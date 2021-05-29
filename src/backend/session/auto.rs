@@ -5,30 +5,30 @@
 //!
 //! ### Initialization
 //!
-//! To initialize a session just call [`AutoSession::new`](::backend::session::auto::AutoSession::new).
+//! To initialize a session just call [`AutoSession::new`].
 //! A new session will be opened, if the any available interface is successful and will be closed once the
-//! [`AutoSessionNotifier`](::backend::session::auto::AutoSessionNotifier) is dropped.
+//! [`AutoSessionNotifier`] is dropped.
 //!
 //! ### Usage of the session
 //!
 //! The session may be used to open devices manually through the [`Session`] interface
 //! or be passed to other objects that need it to open devices themselves.
-//! The [`AutoSession`](::backend::session::auto::AutoSession) is clonable
+//! The [`AutoSession`] is clonable
 //! and may be passed to multiple devices easily.
 //!
-//! Examples for those are e.g. the [`LibinputInputBackend`](::backend::libinput::LibinputInputBackend)
-//! (its context might be initialized through a [`Session`] via the [`LibinputSessionInterface`](::backend::libinput::LibinputSessionInterface)).
+//! Examples for those are e.g. the [`LibinputInputBackend`](crate::backend::libinput::LibinputInputBackend)
+//! (its context might be initialized through a [`Session`] via the [`LibinputSessionInterface`](crate::backend::libinput::LibinputSessionInterface)).
 //!
 //! ### Usage of the session notifier
 //!
 //! The notifier might be used to pause device access, when the session gets paused (e.g. by
-//! switching the tty via [`AutoSession::change_vt`](::backend::session::Session::change_vt))
+//! switching the tty via [`AutoSession::change_vt`](crate::backend::session::Session::change_vt))
 //! and to automatically enable it again, when the session becomes active again.
 //!
 //! It is crucial to avoid errors during that state. Examples for object that might be registered
-//! for notifications are the [`Libinput`](input::Libinput) context or the [`Device`](::backend::drm::Device).
+//! for notifications are the [`Libinput`](input::Libinput) context or the [`DrmDevice`](crate::backend::drm::DrmDevice).
 //!
-//! The [`AutoSessionNotifier`](::backend::session::auto::AutoSessionNotifier) is to be inserted into
+//! The [`AutoSessionNotifier`] is to be inserted into
 //! a calloop event source to have its events processed.
 
 #[cfg(feature = "backend_session_logind")]
@@ -53,7 +53,7 @@ pub enum AutoSession {
     Direct(Rc<RefCell<DirectSession>>),
 }
 
-/// [`SessionNotifier`] using the best available interface
+/// Notifier using the best available interface
 #[derive(Debug)]
 pub enum AutoSessionNotifier {
     /// Logind session notifier

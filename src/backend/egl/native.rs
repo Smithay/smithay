@@ -1,10 +1,10 @@
 //! Type safe native types for safe context/surface creation
 
-use super::{
-    display::EGLDisplayHandle, ffi, wrap_egl_call, EGLError, Error, SurfaceCreationError, SwapBuffersError,
-};
+use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, SwapBuffersError};
 use nix::libc::{c_int, c_void};
-use std::sync::Arc;
+#[cfg(feature = "backend_gbm")]
+use std::os::unix::io::AsRawFd;
+use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
 #[cfg(feature = "backend_winit")]
 use wayland_egl as wegl;
@@ -13,186 +13,152 @@ use winit::platform::unix::WindowExtUnix;
 #[cfg(feature = "backend_winit")]
 use winit::window::Window as WinitWindow;
 
-/// Trait for typed backend variants (X11/Wayland/GBM)
-pub trait Backend {
-    /// Surface type created by this backend
-    type Surface: NativeSurface<Error = Self::Error>;
-    /// Error type thrown by the surface creation in case of failure.
-    type Error: ::std::error::Error + Send + 'static;
+#[cfg(feature = "backend_gbm")]
+use gbm::{AsRaw, Device as GbmDevice};
 
-    /// Return an [`EGLDisplay`](ffi::egl::types::EGLDisplay) based on this backend
-    ///
-    /// # Safety
-    ///
-    /// The returned [`EGLDisplay`](ffi::egl::types::EGLDisplay) needs to be a valid pointer for EGL,
-    /// but there is no way to test that.
-    unsafe fn get_display<F: Fn(&str) -> bool>(
-        display: ffi::NativeDisplayType,
-        attribs: &[ffi::EGLint],
-        has_dp_extension: F,
-        log: ::slog::Logger,
-    ) -> Result<ffi::egl::types::EGLDisplay, EGLError>;
+/// Create a `EGLPlatform<'a>` for the provided platform.
+///
+/// # Arguments
+///
+/// * `platform` - The platform defined in `ffi::egl::`
+/// * `native_display` - The native display raw pointer which can be casted to `*mut c_void`
+/// * `required_extensions` - The name of the required EGL Extension for this platform
+///
+/// # Optional Arguments
+/// * `attrib_list` - A list of `ffi::EGLint` like defined in the EGL Extension
+///
+/// # Examples
+///
+/// ```ignore
+/// use smithay::backend::egl::{ffi, native::EGLPlatform};
+/// use smithay::egl_platform;
+///
+/// // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_gbm.txt
+/// egl_platform!(PLATFORM_GBM_KHR, native_display, &["EGL_KHR_platform_gbm"]);
+/// ```
+#[macro_export]
+macro_rules! egl_platform {
+    ($platform:ident, $native_display:expr, $required_extensions:expr) => {
+        egl_platform!(
+            $platform,
+            $native_display,
+            $required_extensions,
+            vec![ffi::egl::NONE as ffi::EGLint]
+        );
+    };
+    ($platform:ident, $native_display:expr, $required_extensions:expr, $attrib_list:expr) => {
+        EGLPlatform::new(
+            ffi::egl::$platform,
+            stringify!($platform),
+            $native_display as *mut _,
+            $attrib_list,
+            $required_extensions,
+        )
+    };
 }
 
-#[cfg(feature = "backend_winit")]
-#[derive(Debug)]
-/// Wayland backend type
-pub enum Wayland {}
-#[cfg(feature = "backend_winit")]
-impl Backend for Wayland {
-    type Surface = wegl::WlEglSurface;
-    type Error = Error;
+/// Type, Raw handle and attributes used to call [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)  
+pub struct EGLPlatform<'a> {
+    /// Required extensions to use this platform
+    pub required_extensions: &'static [&'static str],
+    /// Human readable name of the platform
+    pub platform_name: &'static str,
+    /// Platform type used to call [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)
+    pub platform: ffi::egl::types::EGLenum,
+    /// Raw native display handle used to call [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)
+    pub native_display: *mut c_void,
+    /// Attributes used to call [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)
+    pub attrib_list: Vec<ffi::EGLint>,
+    _phantom: PhantomData<&'a c_void>,
+}
 
-    unsafe fn get_display<F>(
-        display: ffi::NativeDisplayType,
-        attribs: &[ffi::EGLint],
-        has_dp_extension: F,
-        log: ::slog::Logger,
-    ) -> Result<ffi::egl::types::EGLDisplay, EGLError>
-    where
-        F: Fn(&str) -> bool,
-    {
-        if has_dp_extension("EGL_KHR_platform_wayland") && ffi::egl::GetPlatformDisplay::is_loaded() {
-            trace!(log, "EGL Display Initialization via EGL_KHR_platform_wayland");
-            let attribs = attribs.iter().map(|x| *x as isize).collect::<Vec<_>>();
-            wrap_egl_call(|| {
-                ffi::egl::GetPlatformDisplay(
-                    ffi::egl::PLATFORM_WAYLAND_KHR,
-                    display as *mut _,
-                    attribs.as_ptr(),
-                )
-            })
-        } else if has_dp_extension("EGL_EXT_platform_wayland") && ffi::egl::GetPlatformDisplayEXT::is_loaded()
-        {
-            trace!(log, "EGL Display Initialization via EGL_EXT_platform_wayland");
-            wrap_egl_call(|| {
-                ffi::egl::GetPlatformDisplayEXT(
-                    ffi::egl::PLATFORM_WAYLAND_EXT,
-                    display as *mut _,
-                    attribs.as_ptr(),
-                )
-            })
-        } else {
-            trace!(log, "Default EGL Display Initialization via GetDisplay");
-            wrap_egl_call(|| ffi::egl::GetDisplay(display as *mut _))
+impl<'a> EGLPlatform<'a> {
+    /// Create a `EGLPlatform<'a>` for the provided platform.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - The platform defined in `ffi::egl::`
+    /// * `platform_name` - A human readable representation of the platform
+    /// * `native_display` - The native display raw pointer which can be casted to `*mut c_void`
+    /// * `attrib_list` - A list of `ffi::EGLint` like defined in the EGL Extension
+    /// * `required_extensions` - The names of the required EGL Extensions for this platform
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use smithay::backend::egl::{ffi, native::EGLPlatform};
+    ///
+    /// EGLPlatform::new(ffi::egl::PLATFORM_GBM_KHR, "PLATFORM_GBM_KHR", native_display as *mut _, vec![ffi::egl::NONE as ffi::EGLint], &["EGL_KHR_platform_gbm"]);
+    /// ```
+    pub fn new(
+        platform: ffi::egl::types::EGLenum,
+        platform_name: &'static str,
+        native_display: *mut c_void,
+        attrib_list: Vec<ffi::EGLint>,
+        required_extensions: &'static [&'static str],
+    ) -> Self {
+        EGLPlatform {
+            platform,
+            platform_name,
+            native_display,
+            attrib_list,
+            required_extensions,
+            _phantom: PhantomData,
         }
     }
 }
 
-#[cfg(feature = "backend_winit")]
-#[derive(Debug)]
-/// Typed Xlib window for the `X11` backend
-pub struct XlibWindow(u64);
-#[cfg(feature = "backend_winit")]
-/// X11 backend type
-#[derive(Debug)]
-pub enum X11 {}
-#[cfg(feature = "backend_winit")]
-impl Backend for X11 {
-    type Surface = XlibWindow;
-    type Error = Error;
-
-    unsafe fn get_display<F>(
-        display: ffi::NativeDisplayType,
-        attribs: &[ffi::EGLint],
-        has_dp_extension: F,
-        log: ::slog::Logger,
-    ) -> Result<ffi::egl::types::EGLDisplay, EGLError>
-    where
-        F: Fn(&str) -> bool,
-    {
-        if has_dp_extension("EGL_KHR_platform_x11") && ffi::egl::GetPlatformDisplay::is_loaded() {
-            trace!(log, "EGL Display Initialization via EGL_KHR_platform_x11");
-            let attribs = attribs.iter().map(|x| *x as isize).collect::<Vec<_>>();
-            wrap_egl_call(|| {
-                ffi::egl::GetPlatformDisplay(ffi::egl::PLATFORM_X11_KHR, display as *mut _, attribs.as_ptr())
-            })
-        } else if has_dp_extension("EGL_EXT_platform_x11") && ffi::egl::GetPlatformDisplayEXT::is_loaded() {
-            trace!(log, "EGL Display Initialization via EGL_EXT_platform_x11");
-            wrap_egl_call(|| {
-                ffi::egl::GetPlatformDisplayEXT(
-                    ffi::egl::PLATFORM_X11_EXT,
-                    display as *mut _,
-                    attribs.as_ptr(),
-                )
-            })
-        } else {
-            trace!(log, "Default EGL Display Initialization via GetDisplay");
-            wrap_egl_call(|| ffi::egl::GetDisplay(display as *mut _))
-        }
+impl<'a> Debug for EGLPlatform<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EGLPlatform")
+            .field("platform_name", &self.platform_name)
+            .field("required_extensions", &self.required_extensions)
+            .finish()
     }
 }
 
-/// Trait for types returning Surfaces which can be used to initialize [`EGLSurface`](super::EGLSurface)s
-///
-/// ## Unsafety
-///
-/// The returned [`NativeDisplayType`](super::ffi::NativeDisplayType) must be valid for EGL and there is no way to test that.
-pub unsafe trait NativeDisplay<B: Backend> {
-    /// Arguments used to surface creation.
-    type Arguments;
-    /// Because one type might implement multiple [`Backend`]s this function must be called to check
-    /// if the expected [`Backend`] is used at runtime.
-    fn is_backend(&self) -> bool;
-    /// Return a raw pointer EGL will accept for context creation.
-    fn ptr(&self) -> Result<ffi::NativeDisplayType, Error>;
-    /// Return attributes that might be used by `B::get_display`
-    ///
-    /// Default implementation returns an empty list
-    fn attributes(&self) -> Vec<ffi::EGLint> {
-        vec![ffi::egl::NONE as ffi::EGLint]
-    }
+/// Trait describing platform specific functionality to create a valid `EGLDisplay` using the `EGL_EXT_platform_base`(https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt) extension.
+pub trait EGLNativeDisplay: Send {
+    /// List of supported platforms that can be used to create a display using [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)
+    fn supported_platforms<'a>(&'a self) -> Vec<EGLPlatform<'a>>;
+
     /// Type of surfaces created
     fn surface_type(&self) -> ffi::EGLint {
         ffi::egl::WINDOW_BIT as ffi::EGLint
     }
-    /// Create a surface
-    fn create_surface(&mut self, args: Self::Arguments) -> Result<B::Surface, B::Error>;
 }
 
-#[cfg(feature = "backend_winit")]
-unsafe impl NativeDisplay<X11> for WinitWindow {
-    type Arguments = ();
-
-    fn is_backend(&self) -> bool {
-        self.xlib_display().is_some()
-    }
-
-    fn ptr(&self) -> Result<ffi::NativeDisplayType, Error> {
-        self.xlib_display()
-            .map(|ptr| ptr as *const _)
-            .ok_or(Error::NonMatchingBackend("X11"))
-    }
-
-    fn create_surface(&mut self, _args: ()) -> Result<XlibWindow, Error> {
-        self.xlib_window()
-            .map(XlibWindow)
-            .ok_or(Error::NonMatchingBackend("X11"))
+#[cfg(feature = "backend_gbm")]
+impl<A: AsRawFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
+    fn supported_platforms<'a>(&'a self) -> Vec<EGLPlatform<'a>> {
+        vec![
+            // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_gbm.txt
+            egl_platform!(PLATFORM_GBM_KHR, self.as_raw(), &["EGL_KHR_platform_gbm"]),
+            // see: https://www.khronos.org/registry/EGL/extensions/MESA/EGL_MESA_platform_gbm.txt
+            egl_platform!(PLATFORM_GBM_MESA, self.as_raw(), &["EGL_MESA_platform_gbm"]),
+        ]
     }
 }
 
 #[cfg(feature = "backend_winit")]
-unsafe impl NativeDisplay<Wayland> for WinitWindow {
-    type Arguments = ();
-
-    fn is_backend(&self) -> bool {
-        self.wayland_display().is_some()
-    }
-
-    fn ptr(&self) -> Result<ffi::NativeDisplayType, Error> {
-        self.wayland_display()
-            .map(|ptr| ptr as *const _)
-            .ok_or(Error::NonMatchingBackend("Wayland"))
-    }
-
-    fn create_surface(&mut self, _args: ()) -> Result<wegl::WlEglSurface, Error> {
-        if let Some(surface) = self.wayland_surface() {
-            let size = self.inner_size();
-            Ok(unsafe {
-                wegl::WlEglSurface::new_from_raw(surface as *mut _, size.width as i32, size.height as i32)
-            })
+impl EGLNativeDisplay for WinitWindow {
+    fn supported_platforms<'a>(&'a self) -> Vec<EGLPlatform<'a>> {
+        if let Some(display) = self.wayland_display() {
+            vec![
+                // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_wayland.txt
+                egl_platform!(PLATFORM_WAYLAND_KHR, display, &["EGL_KHR_platform_wayland"]),
+                // see: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_wayland.txt
+                egl_platform!(PLATFORM_WAYLAND_EXT, display, &["EGL_EXT_platform_wayland"]),
+            ]
+        } else if let Some(display) = self.xlib_display() {
+            vec![
+                // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_x11.txt
+                egl_platform!(PLATFORM_X11_KHR, display, &["EGL_KHR_platform_x11"]),
+                // see: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_x11.txt
+                egl_platform!(PLATFORM_X11_EXT, display, &["EGL_EXT_platform_x11"]),
+            ]
         } else {
-            Err(Error::NonMatchingBackend("Wayland"))
+            unreachable!("No backends for winit other then Wayland and X11 are supported")
         }
     }
 }
@@ -203,22 +169,19 @@ unsafe impl NativeDisplay<Wayland> for WinitWindow {
 ///
 /// The returned [`NativeWindowType`](ffi::NativeWindowType) must be valid for EGL
 /// and there is no way to test that.
-pub unsafe trait NativeSurface {
+pub unsafe trait EGLNativeSurface: Send + Sync {
     /// Error type thrown by the surface creation in case of failure.
-    type Error: ::std::error::Error + Send + 'static;
     /// Create an EGLSurface from the internal native type.
     ///
     /// Must be able to deal with re-creation of existing resources,
     /// if `needs_recreation` can return `true`.
     ///
-    /// # Safety
-    /// This is usually an unsafe operation returning a raw pointer.
-    unsafe fn create(
+    fn create(
         &self,
         display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
         surface_attributes: &[c_int],
-    ) -> Result<*const c_void, SurfaceCreationError<Self::Error>>;
+    ) -> Result<*const c_void, super::EGLError>;
 
     /// Will be called to check if any internal resources will need
     /// to be recreated. Old resources must be used until `create`
@@ -230,15 +193,28 @@ pub unsafe trait NativeSurface {
         false
     }
 
+    /// If the surface supports resizing you may implement and use this function.
+    ///
+    /// The two first arguments (width, height) are the new size of the surface,
+    /// the two others (dx, dy) represent the displacement of the top-left corner of the surface.
+    /// It allows you to control the direction of the resizing if necessary.
+    ///
+    /// Implementations may ignore the dx and dy arguments.
+    ///
+    /// Returns true if the resize was successful.
+    fn resize(&self, _width: i32, _height: i32, _dx: i32, _dy: i32) -> bool {
+        false
+    }
+
     /// Adds additional semantics when calling
-    /// [EGLSurface::swap_buffers](::backend::egl::surface::EGLSurface::swap_buffers)
+    /// [EGLSurface::swap_buffers](crate::backend::egl::surface::EGLSurface::swap_buffers)
     ///
     /// Only implement if required by the backend.
     fn swap_buffers(
         &self,
         display: &Arc<EGLDisplayHandle>,
         surface: ffi::egl::types::EGLSurface,
-    ) -> Result<(), SwapBuffersError<Self::Error>> {
+    ) -> Result<(), SwapBuffersError> {
         wrap_egl_call(|| unsafe {
             ffi::egl::SwapBuffers(***display, surface as *const _);
         })
@@ -247,45 +223,49 @@ pub unsafe trait NativeSurface {
 }
 
 #[cfg(feature = "backend_winit")]
-unsafe impl NativeSurface for XlibWindow {
-    type Error = Error;
+/// Typed Xlib window for the `X11` backend
+pub struct XlibWindow(pub u64);
 
-    unsafe fn create(
+#[cfg(feature = "backend_winit")]
+unsafe impl EGLNativeSurface for XlibWindow {
+    fn create(
         &self,
         display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
         surface_attributes: &[c_int],
-    ) -> Result<*const c_void, SurfaceCreationError<Error>> {
-        wrap_egl_call(|| {
-            ffi::egl::CreateWindowSurface(
+    ) -> Result<*const c_void, super::EGLError> {
+        wrap_egl_call(|| unsafe {
+            let mut id = self.0;
+            ffi::egl::CreatePlatformWindowSurfaceEXT(
                 display.handle,
                 config_id,
-                self.0 as *const _,
+                (&mut id) as *mut u64 as *mut _,
                 surface_attributes.as_ptr(),
             )
         })
-        .map_err(SurfaceCreationError::EGLSurfaceCreationFailed)
     }
 }
 
 #[cfg(feature = "backend_winit")]
-unsafe impl NativeSurface for wegl::WlEglSurface {
-    type Error = Error;
-
-    unsafe fn create(
+unsafe impl EGLNativeSurface for wegl::WlEglSurface {
+    fn create(
         &self,
         display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
         surface_attributes: &[c_int],
-    ) -> Result<*const c_void, SurfaceCreationError<Error>> {
-        wrap_egl_call(|| {
-            ffi::egl::CreateWindowSurface(
+    ) -> Result<*const c_void, super::EGLError> {
+        wrap_egl_call(|| unsafe {
+            ffi::egl::CreatePlatformWindowSurfaceEXT(
                 display.handle,
                 config_id,
-                self.ptr() as *const _,
+                self.ptr() as *mut _,
                 surface_attributes.as_ptr(),
             )
         })
-        .map_err(SurfaceCreationError::EGLSurfaceCreationFailed)
+    }
+
+    fn resize(&self, width: i32, height: i32, dx: i32, dy: i32) -> bool {
+        wegl::WlEglSurface::resize(self, width, height, dx, dy);
+        true
     }
 }

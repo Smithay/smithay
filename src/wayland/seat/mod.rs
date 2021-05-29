@@ -35,8 +35,8 @@
 //! Currently, only pointer and keyboard capabilities are supported by
 //! smithay.
 //!
-//! You can add these capabilities via methods of the [`Seat`](::wayland::seat::Seat) struct:
-//! [`add_keyboard`](::wayland::seat::Seat::add_keyboard), [`add_pointer`](::wayland::seat::Seat::add_pointer).
+//! You can add these capabilities via methods of the [`Seat`] struct:
+//! [`add_keyboard`](Seat::add_keyboard), [`add_pointer`](Seat::add_pointer).
 //! These methods return handles that can be cloned and sent across thread, so you can keep one around
 //! in your event-handling code to forward inputs to your clients.
 

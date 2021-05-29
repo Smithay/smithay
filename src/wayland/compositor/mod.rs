@@ -23,7 +23,7 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this implementation, use the [`compositor_init`](::wayland::compositor::compositor_init)
+//! To initialize this implementation, use the [`compositor_init`]
 //! method provided by this module. It'll require you to first define as few things, as shown in
 //! this example:
 //!
@@ -56,16 +56,16 @@
 //!
 //! As you can see in the previous example, in the end we are retrieving a token from
 //! the `init` function. This token is necessary to retrieve the metadata associated with
-//! a surface. It can be cloned. See [`CompositorToken`](::wayland::compositor::CompositorToken)
+//! a surface. It can be cloned. See [`CompositorToken`]
 //! for the details of what it enables you.
 //!
-//! The surface metadata is held in the [`SurfaceAttributes`](::wayland::compositor::SurfaceAttributes)
+//! The surface metadata is held in the [`SurfaceAttributes`]
 //! struct. In contains double-buffered state pending from the client as defined by the protocol for
 //! [`wl_surface`](wayland_server::protocol::wl_surface), as well as your user-defined type holding
 //! any data you need to have associated with a struct. See its documentation for details.
 //!
-//! This [`CompositorToken`](::wayland::compositor::CompositorToken) also provides access to the metadata associated with the role of the
-//! surfaces. See the documentation of the [`roles`](::wayland::compositor::roles) submodule
+//! This [`CompositorToken`] also provides access to the metadata associated with the role of the
+//! surfaces. See the documentation of the [`roles`] submodule
 //! for a detailed explanation.
 
 use std::{cell::RefCell, fmt, rc::Rc, sync::Mutex};
@@ -87,12 +87,10 @@ use wayland_server::{
     Display, Filter, Global, UserDataMap,
 };
 
-/// Description of which part of a surface
+/// Description of a part of a surface that
 /// should be considered damaged and needs to be redrawn
 #[derive(Debug)]
 pub enum Damage {
-    /// The whole surface must be considered damaged (this is the default)
-    Full,
     /// A rectangle containing the damaged zone, in surface coordinates
     Surface(Rectangle),
     /// A rectangle containing the damaged zone, in buffer coordinates
@@ -123,7 +121,7 @@ pub enum BufferAssignment {
 /// Data associated with a surface, aggregated by the handlers
 ///
 /// Most of the fields of this struct represent a double-buffered state, which
-/// should only be applied once a [`commit`](::wayland::compositor::SurfaceEvent::Commit)
+/// should only be applied once a [`commit`](SurfaceEvent::Commit)
 /// request is received from the surface.
 ///
 /// You are responsible for setting those values as you see fit to avoid
@@ -157,7 +155,7 @@ pub struct SurfaceAttributes {
     ///
     /// Hint provided by the client to suggest that only this part
     /// of the surface was changed and needs to be redrawn
-    pub damage: Damage,
+    pub damage: Vec<Damage>,
     /// The frame callback associated with this surface for the commit
     ///
     /// The be triggered to notify the client about when it would be a
@@ -196,7 +194,7 @@ impl Default for SurfaceAttributes {
             buffer_transform: wl_output::Transform::Normal,
             opaque_region: None,
             input_region: None,
-            damage: Damage::Full,
+            damage: Vec::new(),
             frame_callback: None,
             user_data: UserDataMap::new(),
         }

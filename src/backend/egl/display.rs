@@ -1,31 +1,28 @@
 //! Type safe native types for safe egl initialisation
 
-#[cfg(feature = "use_system_lib")]
-use crate::backend::egl::EGLGraphicsBackend;
-use crate::backend::egl::{
-    ffi, get_proc_address, native, wrap_egl_call, BufferAccessError, EGLContext, EGLError, EGLImages,
-    EGLSurface, Error, Format, SurfaceCreationError,
-};
+use std::collections::HashSet;
+use std::ffi::CStr;
+use std::mem::MaybeUninit;
+use std::ops::Deref;
 use std::sync::Arc;
 
+use libc::c_void;
 use nix::libc::c_int;
-
-#[cfg(feature = "wayland_frontend")]
+#[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
 use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
 #[cfg(feature = "use_system_lib")]
 use wayland_sys::server::wl_display;
 
-use crate::backend::egl::context::{GlAttributes, PixelFormatRequirements};
-#[cfg(feature = "renderer_gl")]
-use crate::backend::graphics::gl::ffi as gl_ffi;
-use crate::backend::graphics::PixelFormat;
-use std::cell::{Ref, RefCell, RefMut};
-use std::ffi::CStr;
-use std::marker::PhantomData;
-use std::mem::MaybeUninit;
-
-use std::fmt;
-use std::ops::Deref;
+use crate::backend::allocator::{dmabuf::Dmabuf, Buffer, Format as DrmFormat, Fourcc, Modifier};
+use crate::backend::egl::{
+    context::{GlAttributes, PixelFormatRequirements},
+    ffi,
+    ffi::egl::types::EGLImage,
+    native::EGLNativeDisplay,
+    wrap_egl_call, EGLError, Error, Format,
+};
+#[cfg(feature = "wayland_frontend")]
+use crate::backend::egl::{BufferAccessError, EGLBuffer};
 
 /// Wrapper around [`ffi::EGLDisplay`](ffi::egl::types::EGLDisplay) to ensure display is only destroyed
 /// once all resources bound to it have been dropped.
@@ -56,59 +53,108 @@ impl Drop for EGLDisplayHandle {
 }
 
 /// [`EGLDisplay`] represents an initialised EGL environment
-#[derive(Debug)]
-pub struct EGLDisplay<B: native::Backend, N: native::NativeDisplay<B>> {
-    native: RefCell<N>,
+#[derive(Debug, Clone)]
+pub struct EGLDisplay {
     pub(crate) display: Arc<EGLDisplayHandle>,
     pub(crate) egl_version: (i32, i32),
     pub(crate) extensions: Vec<String>,
+    pub(crate) dmabuf_import_formats: HashSet<DrmFormat>,
+    pub(crate) dmabuf_render_formats: HashSet<DrmFormat>,
+    surface_type: ffi::EGLint,
     logger: slog::Logger,
-    _backend: PhantomData<B>,
 }
 
-impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
-    /// Create a new [`EGLDisplay`] from a given [`NativeDisplay`](native::NativeDisplay)
-    pub fn new<L>(native: N, logger: L) -> Result<EGLDisplay<B, N>, Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = crate::slog_or_fallback(logger.into()).new(o!("smithay_module" => "renderer_egl"));
-        let ptr = native.ptr()?;
-        let egl_attribs = native.attributes();
+fn select_platform_display<N: EGLNativeDisplay + 'static>(
+    native: &N,
+    log: &::slog::Logger,
+) -> Result<*const c_void, Error> {
+    let dp_extensions = unsafe {
+        let p = wrap_egl_call(|| ffi::egl::QueryString(ffi::egl::NO_DISPLAY, ffi::egl::EXTENSIONS as i32))
+            .map_err(Error::InitFailed)?; //TODO EGL_EXT_client_extensions not supported
 
-        ffi::make_sure_egl_is_loaded();
+        // this possibility is available only with EGL 1.5 or EGL_EXT_platform_base, otherwise
+        // `eglQueryString` returns an error
+        if p.is_null() {
+            return Err(Error::EglExtensionNotSupported(&["EGL_EXT_platform_base"]));
+        } else {
+            let p = CStr::from_ptr(p);
+            let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
+            list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
+        }
+    };
+    debug!(log, "Supported EGL client extensions: {:?}", dp_extensions);
 
-        // the first step is to query the list of extensions without any display, if supported
-        let dp_extensions = unsafe {
-            let p =
-                wrap_egl_call(|| ffi::egl::QueryString(ffi::egl::NO_DISPLAY, ffi::egl::EXTENSIONS as i32))
-                    .map_err(Error::InitFailed)?;
+    for platform in native.supported_platforms() {
+        debug!(log, "Trying EGL platform: {}", platform.platform_name);
 
-            // this possibility is available only with EGL 1.5 or EGL_EXT_platform_base, otherwise
-            // `eglQueryString` returns an error
-            if p.is_null() {
-                vec![]
-            } else {
-                let p = CStr::from_ptr(p);
-                let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
-                list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
+        let log = log.new(o!("platform" => format!("{:?}", platform)));
+
+        let missing_extensions = platform
+            .required_extensions
+            .iter()
+            .filter(|ext| !dp_extensions.iter().any(|x| x == *ext))
+            .collect::<Vec<_>>();
+
+        if !missing_extensions.is_empty() {
+            info!(
+                log,
+                "Skipping EGL platform because one or more required extensions are not supported. Missing extensions: {:?}", missing_extensions
+            );
+            continue;
+        }
+
+        let display = unsafe {
+            wrap_egl_call(|| {
+                ffi::egl::GetPlatformDisplayEXT(
+                    platform.platform,
+                    platform.native_display,
+                    platform.attrib_list.as_ptr(),
+                )
+            })
+            .map_err(Error::DisplayCreationError)
+        };
+
+        let display = match display {
+            Ok(display) => {
+                if display == ffi::egl::NO_DISPLAY {
+                    info!(log, "Skipping platform because the display is not supported");
+                    continue;
+                }
+
+                display
+            }
+            Err(err) => {
+                info!(
+                    log,
+                    "Skipping platform because of an display creation error: {:?}", err
+                );
+                continue;
             }
         };
-        debug!(log, "EGL No-Display Extensions: {:?}", dp_extensions);
+
+        info!(
+            log,
+            "Successfully selected EGL platform: {}", platform.platform_name
+        );
+        return Ok(display);
+    }
+
+    error!(log, "Unable to find suitable EGL platform");
+    Err(Error::DisplayNotSupported)
+}
+
+impl EGLDisplay {
+    /// Create a new [`EGLDisplay`] from a given [`EGLNativeDisplay`]
+    pub fn new<N, L>(native: &N, logger: L) -> Result<EGLDisplay, Error>
+    where
+        N: EGLNativeDisplay + 'static,
+        L: Into<Option<::slog::Logger>>,
+    {
+        let log = crate::slog_or_fallback(logger.into()).new(o!("smithay_module" => "backend_egl"));
+        ffi::make_sure_egl_is_loaded();
 
         // we create an EGLDisplay
-        let display = unsafe {
-            B::get_display(
-                ptr,
-                &egl_attribs,
-                |e: &str| dp_extensions.iter().any(|s| s == e),
-                log.clone(),
-            )
-            .map_err(Error::DisplayCreationError)?
-        };
-        if display == ffi::egl::NO_DISPLAY {
-            return Err(Error::DisplayNotSupported);
-        }
+        let display = select_platform_display(native, &log)?;
 
         // We can then query the egl api version
         let egl_version = {
@@ -143,7 +189,10 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         } else {
             vec![]
         };
-        info!(log, "EGL Extensions: {:?}", extensions);
+        info!(log, "Supported EGL display extensions: {:?}", extensions);
+
+        let (dmabuf_import_formats, dmabuf_render_formats) =
+            get_dmabuf_formats(&display, &extensions, &log).map_err(Error::DisplayCreationError)?;
 
         // egl <= 1.2 does not support OpenGL ES (maybe we want to support OpenGL in the future?)
         if egl_version <= (1, 2) {
@@ -153,16 +202,17 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
             .map_err(|source| Error::OpenGlesNotSupported(Some(source)))?;
 
         Ok(EGLDisplay {
-            native: RefCell::new(native),
             display: Arc::new(EGLDisplayHandle { handle: display }),
+            surface_type: native.surface_type(),
             egl_version,
             extensions,
+            dmabuf_import_formats,
+            dmabuf_render_formats,
             logger: log,
-            _backend: PhantomData,
         })
     }
 
-    /// Finds a compatible [`EGLConfig`] for a given set of requirements
+    /// Finds a compatible EGLConfig for a given set of requirements
     pub fn choose_config(
         &self,
         attributes: GlAttributes,
@@ -170,7 +220,6 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
     ) -> Result<(PixelFormat, ffi::egl::types::EGLConfig), Error> {
         let descriptor = {
             let mut out: Vec<c_int> = Vec::with_capacity(37);
-            let surface_type = self.native.borrow().surface_type();
 
             if self.egl_version >= (1, 2) {
                 trace!(self.logger, "Setting COLOR_BUFFER_TYPE to RGB_BUFFER");
@@ -178,15 +227,13 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                 out.push(ffi::egl::RGB_BUFFER as c_int);
             }
 
-            trace!(self.logger, "Setting SURFACE_TYPE to {}", surface_type);
+            trace!(self.logger, "Setting SURFACE_TYPE to {}", self.surface_type);
 
             out.push(ffi::egl::SURFACE_TYPE as c_int);
-            // TODO: Some versions of Mesa report a BAD_ATTRIBUTE error
-            // if we ask for PBUFFER_BIT as well as WINDOW_BIT
-            out.push(surface_type);
+            out.push(self.surface_type);
 
             match attributes.version {
-                Some((3, _)) => {
+                (3, _) => {
                     if self.egl_version < (1, 3) {
                         error!(
                             self.logger,
@@ -201,7 +248,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                     out.push(ffi::egl::CONFORMANT as c_int);
                     out.push(ffi::egl::OPENGL_ES3_BIT as c_int);
                 }
-                Some((2, _)) => {
+                (2, _) => {
                     if self.egl_version < (1, 3) {
                         error!(
                             self.logger,
@@ -216,17 +263,12 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                     out.push(ffi::egl::CONFORMANT as c_int);
                     out.push(ffi::egl::OPENGL_ES2_BIT as c_int);
                 }
-                Some(ver) => {
+                ver => {
                     return Err(Error::OpenGlVersionNotSupported(ver));
-                }
-                None => {
-                    return Err(Error::OpenGlVersionNotSupported((0, 0)));
                 }
             };
 
-            reqs.create_attributes(&mut out, &self.logger)
-                .map_err(|()| Error::NoAvailablePixelFormat)?;
-
+            reqs.create_attributes(&mut out, &self.logger);
             out.push(ffi::egl::NONE as c_int);
             out
         };
@@ -325,7 +367,7 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
                 .map_err(Error::ConfigFailed)?;
                 value.assume_init()
             }};
-        };
+        }
 
         // return the format that was selected for our config
         let desc = unsafe {
@@ -352,44 +394,6 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         Ok((desc, config_id))
     }
 
-    /// Create a new [`EGLContext`](::backend::egl::EGLContext)
-    pub fn create_context(
-        &self,
-        attributes: GlAttributes,
-        reqs: PixelFormatRequirements,
-    ) -> Result<EGLContext, Error> {
-        EGLContext::new(&self, attributes, reqs, self.logger.clone())
-    }
-
-    /// Creates a surface for rendering
-    pub fn create_surface(
-        &self,
-        pixel_format: PixelFormat,
-        double_buffer: Option<bool>,
-        config: ffi::egl::types::EGLConfig,
-        args: N::Arguments,
-    ) -> Result<EGLSurface<B::Surface>, SurfaceCreationError<B::Error>> {
-        trace!(self.logger, "Creating EGL window surface.");
-        let surface = self
-            .native
-            .borrow_mut()
-            .create_surface(args)
-            .map_err(SurfaceCreationError::NativeSurfaceCreationFailed)?;
-
-        EGLSurface::new(
-            self.display.clone(),
-            pixel_format,
-            double_buffer,
-            config,
-            surface,
-            self.logger.clone(),
-        )
-        .map(|x| {
-            debug!(self.logger, "EGL surface successfully created");
-            x
-        })
-    }
-
     /// Returns the runtime egl version of this display
     pub fn get_egl_version(&self) -> (i32, i32) {
         self.egl_version
@@ -400,28 +404,118 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLDisplay<B, N> {
         self.extensions.clone()
     }
 
-    /// Borrow the underlying native display.
-    ///
-    /// This follows the same semantics as [`std::cell:RefCell`](std::cell::RefCell).
-    /// Multiple read-only borrows are possible. Borrowing the
-    /// backend while there is a mutable reference will panic.
-    pub fn borrow(&self) -> Ref<'_, N> {
-        self.native.borrow()
+    /// Imports a dmabuf as an eglimage
+    pub fn create_image_from_dmabuf(&self, dmabuf: &Dmabuf) -> Result<EGLImage, Error> {
+        if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base")
+            && !self
+                .extensions
+                .iter()
+                .any(|s| s == "EGL_EXT_image_dma_buf_import")
+        {
+            return Err(Error::EglExtensionNotSupported(&[
+                "EGL_KHR_image_base",
+                "EGL_EXT_image_dma_buf_import",
+            ]));
+        }
+
+        if dmabuf.has_modifier()
+            && !self
+                .extensions
+                .iter()
+                .any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers")
+        {
+            return Err(Error::EglExtensionNotSupported(&[
+                "EGL_EXT_image_dma_buf_import_modifiers",
+            ]));
+        };
+
+        let mut out: Vec<c_int> = Vec::with_capacity(50);
+
+        out.extend(&[
+            ffi::egl::WIDTH as i32,
+            dmabuf.width() as i32,
+            ffi::egl::HEIGHT as i32,
+            dmabuf.height() as i32,
+            ffi::egl::LINUX_DRM_FOURCC_EXT as i32,
+            dmabuf.format().code as u32 as i32,
+        ]);
+
+        let names = [
+            [
+                ffi::egl::DMA_BUF_PLANE0_FD_EXT,
+                ffi::egl::DMA_BUF_PLANE0_OFFSET_EXT,
+                ffi::egl::DMA_BUF_PLANE0_PITCH_EXT,
+                ffi::egl::DMA_BUF_PLANE0_MODIFIER_LO_EXT,
+                ffi::egl::DMA_BUF_PLANE0_MODIFIER_HI_EXT,
+            ],
+            [
+                ffi::egl::DMA_BUF_PLANE1_FD_EXT,
+                ffi::egl::DMA_BUF_PLANE1_OFFSET_EXT,
+                ffi::egl::DMA_BUF_PLANE1_PITCH_EXT,
+                ffi::egl::DMA_BUF_PLANE1_MODIFIER_LO_EXT,
+                ffi::egl::DMA_BUF_PLANE1_MODIFIER_HI_EXT,
+            ],
+            [
+                ffi::egl::DMA_BUF_PLANE2_FD_EXT,
+                ffi::egl::DMA_BUF_PLANE2_OFFSET_EXT,
+                ffi::egl::DMA_BUF_PLANE2_PITCH_EXT,
+                ffi::egl::DMA_BUF_PLANE2_MODIFIER_LO_EXT,
+                ffi::egl::DMA_BUF_PLANE2_MODIFIER_HI_EXT,
+            ],
+            [
+                ffi::egl::DMA_BUF_PLANE3_FD_EXT,
+                ffi::egl::DMA_BUF_PLANE3_OFFSET_EXT,
+                ffi::egl::DMA_BUF_PLANE3_PITCH_EXT,
+                ffi::egl::DMA_BUF_PLANE3_MODIFIER_LO_EXT,
+                ffi::egl::DMA_BUF_PLANE3_MODIFIER_HI_EXT,
+            ],
+        ];
+
+        for (i, ((fd, offset), stride)) in dmabuf
+            .handles()
+            .iter()
+            .zip(dmabuf.offsets())
+            .zip(dmabuf.strides())
+            .enumerate()
+        {
+            out.extend(&[
+                names[i][0] as i32,
+                *fd,
+                names[i][1] as i32,
+                *offset as i32,
+                names[i][2] as i32,
+                *stride as i32,
+            ]);
+            if dmabuf.has_modifier() {
+                out.extend(&[
+                    names[i][3] as i32,
+                    (Into::<u64>::into(dmabuf.format().modifier) & 0xFFFFFFFF) as i32,
+                    names[i][4] as i32,
+                    (Into::<u64>::into(dmabuf.format().modifier) >> 32) as i32,
+                ])
+            }
+        }
+
+        out.push(ffi::egl::NONE as i32);
+
+        unsafe {
+            let image = ffi::egl::CreateImageKHR(
+                **self.display,
+                ffi::egl::NO_CONTEXT,
+                ffi::egl::LINUX_DMA_BUF_EXT,
+                std::ptr::null(),
+                out.as_ptr(),
+            );
+
+            if image == ffi::egl::NO_IMAGE_KHR {
+                Err(Error::EGLImageCreationFailed)
+            } else {
+                // TODO check for external
+                Ok(image)
+            }
+        }
     }
 
-    /// Borrow the underlying native display mutably.
-    ///
-    /// This follows the same semantics as [`std::cell:RefCell`](std::cell::RefCell).
-    /// Holding any other borrow while trying to borrow the backend
-    /// mutably will panic. Note that EGL will borrow the display
-    /// mutably during surface creation.
-    pub fn borrow_mut(&self) -> RefMut<'_, N> {
-        self.native.borrow_mut()
-    }
-}
-
-#[cfg(feature = "use_system_lib")]
-impl<B: native::Backend, N: native::NativeDisplay<B>> EGLGraphicsBackend for EGLDisplay<B, N> {
     /// Binds this EGL display to the given Wayland display.
     ///
     /// This will allow clients to utilize EGL to create hardware-accelerated
@@ -429,12 +523,13 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLGraphicsBackend for EGL
     ///
     /// ## Errors
     ///
-    /// This might return [`EglExtensionNotSupported`](ErrorKind::EglExtensionNotSupported)
+    /// This might return [`EglExtensionNotSupported`](Error::EglExtensionNotSupported)
     /// if binding is not supported by the EGL implementation.
     ///
-    /// This might return [`OtherEGLDisplayAlreadyBound`](ErrorKind::OtherEGLDisplayAlreadyBound)
+    /// This might return [`OtherEGLDisplayAlreadyBound`](Error::OtherEGLDisplayAlreadyBound)
     /// if called for the same [`Display`] multiple times, as only one egl display may be bound at any given time.
-    fn bind_wl_display(&self, display: &Display) -> Result<EGLBufferReader, Error> {
+    #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
+    pub fn bind_wl_display(&self, display: &Display) -> Result<EGLBufferReader, Error> {
         if !self.extensions.iter().any(|s| s == "EGL_WL_bind_wayland_display") {
             return Err(Error::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
         }
@@ -446,51 +541,147 @@ impl<B: native::Backend, N: native::NativeDisplay<B>> EGLGraphicsBackend for EGL
     }
 }
 
-/// Type to receive [`EGLImages`] for EGL-based [`WlBuffer`]s.
-///
-/// Can be created by using [`EGLGraphicsBackend::bind_wl_display`].
-#[cfg(feature = "use_system_lib")]
-pub struct EGLBufferReader {
-    display: Arc<EGLDisplayHandle>,
-    wayland: *mut wl_display,
-    #[cfg(feature = "renderer_gl")]
-    gl: gl_ffi::Gles2,
+fn get_dmabuf_formats(
+    display: &ffi::egl::types::EGLDisplay,
+    extensions: &[String],
+    log: &::slog::Logger,
+) -> Result<(HashSet<DrmFormat>, HashSet<DrmFormat>), EGLError> {
+    use std::convert::TryFrom;
+
+    if !extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import") {
+        warn!(log, "Dmabuf import extension not available");
+        return Ok((HashSet::new(), HashSet::new()));
+    }
+
+    let formats = {
+        // when we only have the image_dmabuf_import extension we can't query
+        // which formats are supported. These two are on almost always
+        // supported; it's the intended way to just try to create buffers.
+        // Just a guess but better than not supporting dmabufs at all,
+        // given that the modifiers extension isn't supported everywhere.
+        if !extensions
+            .iter()
+            .any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers")
+        {
+            vec![Fourcc::Argb8888, Fourcc::Xrgb8888]
+        } else {
+            let mut num = 0i32;
+            wrap_egl_call(|| unsafe {
+                ffi::egl::QueryDmaBufFormatsEXT(*display, 0, std::ptr::null_mut(), &mut num as *mut _)
+            })?;
+            if num == 0 {
+                return Ok((HashSet::new(), HashSet::new()));
+            }
+            let mut formats: Vec<u32> = Vec::with_capacity(num as usize);
+            wrap_egl_call(|| unsafe {
+                ffi::egl::QueryDmaBufFormatsEXT(
+                    *display,
+                    num,
+                    formats.as_mut_ptr() as *mut _,
+                    &mut num as *mut _,
+                )
+            })?;
+            unsafe {
+                formats.set_len(num as usize);
+            }
+            formats
+                .into_iter()
+                .flat_map(|x| Fourcc::try_from(x).ok())
+                .collect::<Vec<_>>()
+        }
+    };
+
+    let mut texture_formats = HashSet::new();
+    let mut render_formats = HashSet::new();
+
+    for fourcc in formats {
+        let mut num = 0i32;
+        wrap_egl_call(|| unsafe {
+            ffi::egl::QueryDmaBufModifiersEXT(
+                *display,
+                fourcc as i32,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut num as *mut _,
+            )
+        })?;
+
+        if num == 0 {
+            texture_formats.insert(DrmFormat {
+                code: fourcc,
+                modifier: Modifier::Invalid,
+            });
+            render_formats.insert(DrmFormat {
+                code: fourcc,
+                modifier: Modifier::Invalid,
+            });
+        } else {
+            let mut mods: Vec<u64> = Vec::with_capacity(num as usize);
+            let mut external: Vec<ffi::egl::types::EGLBoolean> = Vec::with_capacity(num as usize);
+
+            wrap_egl_call(|| unsafe {
+                ffi::egl::QueryDmaBufModifiersEXT(
+                    *display,
+                    fourcc as i32,
+                    num,
+                    mods.as_mut_ptr(),
+                    external.as_mut_ptr(),
+                    &mut num as *mut _,
+                )
+            })?;
+
+            unsafe {
+                mods.set_len(num as usize);
+                external.set_len(num as usize);
+            }
+
+            for (modifier, external_only) in mods.into_iter().zip(external.into_iter()) {
+                let format = DrmFormat {
+                    code: fourcc,
+                    modifier: Modifier::from(modifier),
+                };
+                texture_formats.insert(format);
+                if external_only == 0 {
+                    render_formats.insert(format);
+                }
+            }
+        }
+    }
+
+    trace!(log, "Supported dmabuf import formats: {:?}", texture_formats);
+    trace!(log, "Supported dmabuf render formats: {:?}", render_formats);
+
+    Ok((texture_formats, render_formats))
 }
 
-// Gles2 does not implement debug, so we have to impl Debug manually
+/// Type to receive [`EGLBuffer`] for EGL-based [`WlBuffer`]s.
+///
+/// Can be created by using [`EGLDisplay::bind_wl_display`].
 #[cfg(feature = "use_system_lib")]
-impl fmt::Debug for EGLBufferReader {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EGLBufferReader")
-            .field("display", &self.display)
-            .field("wayland", &self.wayland)
-            .finish()
-    }
+#[derive(Debug, Clone)]
+pub struct EGLBufferReader {
+    display: Arc<EGLDisplayHandle>,
+    wayland: Option<Arc<*mut wl_display>>,
 }
 
 #[cfg(feature = "use_system_lib")]
 impl EGLBufferReader {
     fn new(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display) -> Self {
-        #[cfg(feature = "renderer_gl")]
-        let gl = gl_ffi::Gles2::load_with(|s| get_proc_address(s) as *const _);
-
         Self {
             display,
-            wayland,
-            #[cfg(feature = "renderer_gl")]
-            gl,
+            wayland: Some(Arc::new(wayland)),
         }
     }
 
-    /// Try to receive [`EGLImages`] from a given [`WlBuffer`].
+    /// Try to receive [`EGLBuffer`] from a given [`WlBuffer`].
     ///
-    /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](::wayland::shm))
-    /// a [`BufferAccessError::NotManaged`](::backend::egl::BufferAccessError::NotManaged) is returned with the original buffer
-    /// to render it another way.
+    /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](crate::wayland::shm))
+    /// a [`BufferAccessError::NotManaged`](crate::backend::egl::BufferAccessError::NotManaged) is returned.
     pub fn egl_buffer_contents(
         &self,
         buffer: &WlBuffer,
-    ) -> ::std::result::Result<EGLImages, BufferAccessError> {
+    ) -> ::std::result::Result<EGLBuffer, BufferAccessError> {
         let mut format: i32 = 0;
         let query = wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
@@ -509,9 +700,15 @@ impl EGLBufferReader {
             x if x == ffi::egl::TEXTURE_RGB as i32 => Format::RGB,
             x if x == ffi::egl::TEXTURE_RGBA as i32 => Format::RGBA,
             ffi::egl::TEXTURE_EXTERNAL_WL => Format::External,
-            ffi::egl::TEXTURE_Y_UV_WL => Format::Y_UV,
-            ffi::egl::TEXTURE_Y_U_V_WL => Format::Y_U_V,
-            ffi::egl::TEXTURE_Y_XUXV_WL => Format::Y_XUXV,
+            ffi::egl::TEXTURE_Y_UV_WL => {
+                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_UV))
+            }
+            ffi::egl::TEXTURE_Y_U_V_WL => {
+                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_U_V))
+            }
+            ffi::egl::TEXTURE_Y_XUXV_WL => {
+                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_XUXV))
+            }
             x => panic!("EGL returned invalid texture type: {}", x),
         };
 
@@ -537,23 +734,36 @@ impl EGLBufferReader {
         })
         .map_err(BufferAccessError::NotManaged)?;
 
-        let mut inverted: i32 = 0;
-        wrap_egl_call(|| unsafe {
-            ffi::egl::QueryWaylandBufferWL(
-                **self.display,
-                buffer.as_ref().c_ptr() as _,
-                ffi::egl::WAYLAND_Y_INVERTED_WL,
-                &mut inverted,
-            )
-        })
-        .map_err(BufferAccessError::NotManaged)?;
+        let y_inverted = {
+            let mut inverted: i32 = 0;
+
+            // Query the egl buffer with EGL_WAYLAND_Y_INVERTED_WL to retrieve the
+            // buffer orientation.
+            // The call can either fail, succeed with EGL_TRUE or succeed with EGL_FALSE.
+            // The specification for eglQuery defines that unsupported attributes shall return
+            // EGL_FALSE. In case of EGL_WAYLAND_Y_INVERTED_WL the specification defines that
+            // if EGL_FALSE is returned the value of inverted should be assumed as EGL_TRUE.
+            //
+            // see: https://www.khronos.org/registry/EGL/extensions/WL/EGL_WL_bind_wayland_display.txt
+            match wrap_egl_call(|| unsafe {
+                ffi::egl::QueryWaylandBufferWL(
+                    **self.display,
+                    buffer.as_ref().c_ptr() as _,
+                    ffi::egl::WAYLAND_Y_INVERTED_WL,
+                    &mut inverted,
+                )
+            })
+            .map_err(BufferAccessError::NotManaged)?
+            {
+                ffi::egl::TRUE => inverted != 0,
+                ffi::egl::FALSE => true,
+                _ => unreachable!(),
+            }
+        };
 
         let mut images = Vec::with_capacity(format.num_planes());
         for i in 0..format.num_planes() {
-            let mut out = Vec::with_capacity(3);
-            out.push(ffi::egl::WAYLAND_PLANE_WL as i32);
-            out.push(i as i32);
-            out.push(ffi::egl::NONE as i32);
+            let out = [ffi::egl::WAYLAND_PLANE_WL as i32, i as i32, ffi::egl::NONE as i32];
 
             images.push({
                 wrap_egl_call(|| unsafe {
@@ -569,21 +779,21 @@ impl EGLBufferReader {
             });
         }
 
-        Ok(EGLImages {
+        Ok(EGLBuffer {
             display: self.display.clone(),
             width: width as u32,
             height: height as u32,
-            y_inverted: inverted != 0,
+            // y_inverted is negated here because the gles2 renderer
+            // already inverts the buffer during rendering.
+            y_inverted: !y_inverted,
             format,
             images,
-            #[cfg(feature = "renderer_gl")]
-            gl: self.gl.clone(),
         })
     }
 
     /// Try to receive the dimensions of a given [`WlBuffer`].
     ///
-    /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](::wayland::shm)) or the
+    /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](crate::wayland::shm)) or the
     /// context has been lost, `None` is returned.
     pub fn egl_buffer_dimensions(&self, buffer: &WlBuffer) -> Option<(i32, i32)> {
         let mut width: i32 = 0;
@@ -617,11 +827,34 @@ impl EGLBufferReader {
 #[cfg(feature = "use_system_lib")]
 impl Drop for EGLBufferReader {
     fn drop(&mut self) {
-        if !self.wayland.is_null() {
-            unsafe {
-                // ignore errors on drop
-                ffi::egl::UnbindWaylandDisplayWL(**self.display, self.wayland as _);
+        if let Ok(wayland) = Arc::try_unwrap(self.wayland.take().unwrap()) {
+            if !wayland.is_null() {
+                unsafe {
+                    // ignore errors on drop
+                    ffi::egl::UnbindWaylandDisplayWL(**self.display, wayland as _);
+                }
             }
         }
     }
+}
+
+/// Describes the pixel format of a framebuffer
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PixelFormat {
+    /// is the format hardware accelerated
+    pub hardware_accelerated: bool,
+    /// number of bits used for colors
+    pub color_bits: u8,
+    /// number of bits used for alpha channel
+    pub alpha_bits: u8,
+    /// number of bits used for depth channel
+    pub depth_bits: u8,
+    /// number of bits used for stencil buffer
+    pub stencil_bits: u8,
+    /// is stereoscopy enabled
+    pub stereoscopy: bool,
+    /// number of samples used for multisampling if enabled
+    pub multisampling: Option<u16>,
+    /// is srgb enabled
+    pub srgb: bool,
 }

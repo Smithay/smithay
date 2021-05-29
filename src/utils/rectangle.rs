@@ -13,13 +13,13 @@ pub struct Rectangle {
 
 impl Rectangle {
     /// Checks whether given point is inside a rectangle
-    pub fn contains(&self, point: (i32, i32)) -> bool {
+    pub fn contains(self, point: (i32, i32)) -> bool {
         let (x, y) = point;
         (x >= self.x) && (x < self.x + self.width) && (y >= self.y) && (y < self.y + self.height)
     }
 
     /// Checks whether a given rectangle overlaps with this one
-    pub fn overlaps(&self, other: &Rectangle) -> bool {
+    pub fn overlaps(self, other: &Rectangle) -> bool {
         // if the rectangle is not outside of the other
         // they must overlap
         !(
@@ -32,5 +32,15 @@ impl Rectangle {
             // self is below of other
             ||  self.y > other.y + other.height
         )
+    }
+
+    /// Scales the dimensions of this rectangle by given factor
+    pub fn scale(self, factor: i32) -> Rectangle {
+        Rectangle {
+            x: self.x * factor,
+            y: self.y * factor,
+            width: self.width * factor,
+            height: self.height * factor,
+        }
     }
 }
