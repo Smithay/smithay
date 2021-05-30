@@ -16,7 +16,7 @@ use slog::Logger;
 use smithay::backend::{drm::DevPath, egl::display::EGLBufferReader, udev::primary_gpu};
 use smithay::{
     backend::{
-        drm::{device_bind, DeviceHandler, DrmDevice, DrmError, DrmRenderSurface},
+        drm::{DrmDevice, DrmError, DrmEvent, DrmRenderSurface},
         egl::{EGLContext, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
@@ -29,9 +29,8 @@ use smithay::{
     },
     reexports::{
         calloop::{
-            generic::Generic,
             timer::{Timer, TimerHandle},
-            EventLoop, LoopHandle, Source,
+            Dispatcher, EventLoop, LoopHandle, RegistrationToken,
         },
         drm::{
             self,
@@ -71,9 +70,17 @@ impl AsRawFd for SessionFd {
     }
 }
 
+pub struct UdevData {}
+
+impl Default for UdevData {
+    fn default() -> UdevData {
+        UdevData {}
+    }
+}
+
 pub fn run_udev(
     display: Rc<RefCell<Display>>,
-    event_loop: &mut EventLoop<AnvilState>,
+    event_loop: &mut EventLoop<'static, AnvilState<UdevData>>,
     log: Logger,
 ) -> Result<(), ()> {
     let name = display
@@ -272,10 +279,11 @@ struct BackendData {
     context: EGLContext,
     egl: EGLDisplay,
     gbm: GbmDevice<SessionFd>,
-    event_source: Source<Generic<DrmDevice<SessionFd>>>,
+    registration_token: RegistrationToken,
+    event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, AnvilState<UdevData>>,
 }
 
-struct UdevHandlerImpl<Data: 'static> {
+struct UdevHandlerImpl {
     compositor_token: CompositorToken<Roles>,
     #[cfg(feature = "egl")]
     egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
@@ -290,12 +298,12 @@ struct UdevHandlerImpl<Data: 'static> {
     pointer_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     cursor_status: Arc<Mutex<CursorImageStatus>>,
     dnd_icon: Arc<Mutex<Option<wl_surface::WlSurface>>>,
-    loop_handle: LoopHandle<Data>,
+    loop_handle: LoopHandle<'static, AnvilState<UdevData>>,
     signaler: Signaler<SessionSignal>,
     logger: ::slog::Logger,
 }
 
-impl<Data: 'static> UdevHandlerImpl<Data> {
+impl UdevHandlerImpl {
     pub fn scan_connectors(
         device: &mut DrmDevice<SessionFd>,
         gbm: &GbmDevice<SessionFd>,
@@ -392,7 +400,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
     }
 }
 
-impl<Data: 'static> UdevHandlerImpl<Data> {
+impl UdevHandlerImpl {
     fn device_added(&mut self, device_id: dev_t, path: PathBuf) {
         // Try to open the device
         if let Some((mut device, gbm)) = self
@@ -465,7 +473,7 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 }
             };
 
-            let backends = Rc::new(RefCell::new(UdevHandlerImpl::<Data>::scan_connectors(
+            let backends = Rc::new(RefCell::new(UdevHandlerImpl::scan_connectors(
                 &mut device,
                 &gbm,
                 &egl,
@@ -516,15 +524,22 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => listener.activate(),
                 _ => {}
             });
-            device.set_handler(DrmHandlerImpl {
+            let mut drm_handler = DrmHandlerImpl {
                 renderer,
                 loop_handle: self.loop_handle.clone(),
-            });
+            };
 
             device.link(self.signaler.clone());
             let dev_id = device.device_id();
-            let event_source = device_bind(&self.loop_handle, device)
-                .map_err(|e| -> IoError { e.into() })
+            let event_dispatcher = Dispatcher::new(device, move |event, _, _| match event {
+                DrmEvent::VBlank(crtc) => drm_handler.vblank(crtc),
+                DrmEvent::Error(error) => {
+                    error!(drm_handler.renderer.logger, "{:?}", error);
+                }
+            });
+            let registration_token = self
+                .loop_handle
+                .register_dispatcher(event_dispatcher.clone())
                 .unwrap();
 
             trace!(self.logger, "Backends: {:?}", backends.borrow().keys());
@@ -538,7 +553,8 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 dev_id,
                 BackendData {
                     _restart_token: restart_token,
-                    event_source,
+                    registration_token,
+                    event_dispatcher,
                     surfaces: backends,
                     egl,
                     context,
@@ -557,26 +573,25 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
             let mut output_map = self.output_map.borrow_mut();
             let signaler = self.signaler.clone();
             output_map.retain(|output| output.device_id != device);
-            self.loop_handle
-                .with_source(&backend_data.event_source, |source| {
-                    let mut backends = backend_data.surfaces.borrow_mut();
-                    *backends = UdevHandlerImpl::<Data>::scan_connectors(
-                        &mut source.file,
-                        &backend_data.gbm,
-                        &backend_data.egl,
-                        &backend_data.context,
-                        &mut *display,
-                        &mut *output_map,
-                        &signaler,
-                        &logger,
-                    );
 
-                    for renderer in backends.values() {
-                        let logger = logger.clone();
-                        // render first frame
-                        schedule_initial_render(renderer.clone(), &loop_handle, logger);
-                    }
-                });
+            let mut source = backend_data.event_dispatcher.as_source_mut();
+            let mut backends = backend_data.surfaces.borrow_mut();
+            *backends = UdevHandlerImpl::scan_connectors(
+                &mut *source,
+                &backend_data.gbm,
+                &backend_data.egl,
+                &backend_data.context,
+                &mut *display,
+                &mut *output_map,
+                &signaler,
+                &logger,
+            );
+
+            for renderer in backends.values() {
+                let logger = logger.clone();
+                // render first frame
+                schedule_initial_render(renderer.clone(), &loop_handle, logger);
+            }
         }
     }
 
@@ -591,7 +606,8 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
                 .borrow_mut()
                 .retain(|output| output.device_id != device);
 
-            let _device = self.loop_handle.remove(backend_data.event_source).unwrap();
+            let _device = self.loop_handle.remove(backend_data.registration_token);
+            let _device = backend_data.event_dispatcher.into_source_inner();
 
             // don't use hardware acceleration anymore, if this was the primary gpu
             #[cfg(feature = "egl")]
@@ -607,22 +623,18 @@ impl<Data: 'static> UdevHandlerImpl<Data> {
 
 pub struct DrmHandlerImpl<Data: 'static> {
     renderer: Rc<DrmRenderer>,
-    loop_handle: LoopHandle<Data>,
+    loop_handle: LoopHandle<'static, Data>,
 }
 
-impl<Data: 'static> DeviceHandler for DrmHandlerImpl<Data> {
+impl<Data: 'static> DrmHandlerImpl<Data> {
     fn vblank(&mut self, crtc: crtc::Handle) {
         self.renderer.clone().render(crtc, None, Some(&self.loop_handle))
-    }
-
-    fn error(&mut self, error: DrmError) {
-        error!(self.renderer.logger, "{:?}", error);
     }
 }
 
 pub struct DrmRendererSessionListener<Data: 'static> {
     renderer: Rc<DrmRenderer>,
-    loop_handle: LoopHandle<Data>,
+    loop_handle: LoopHandle<'static, Data>,
 }
 
 impl<Data: 'static> DrmRendererSessionListener<Data> {
@@ -652,7 +664,7 @@ pub struct DrmRenderer {
 }
 
 impl DrmRenderer {
-    fn render_all<Data: 'static>(self: Rc<Self>, evt_handle: Option<&LoopHandle<Data>>) {
+    fn render_all<Data: 'static>(self: Rc<Self>, evt_handle: Option<&LoopHandle<'static, Data>>) {
         for crtc in self.backends.borrow().keys() {
             self.clone().render(*crtc, None, evt_handle);
         }
@@ -661,7 +673,7 @@ impl DrmRenderer {
         self: Rc<Self>,
         crtc: crtc::Handle,
         timer: Option<TimerHandle<(std::rc::Weak<DrmRenderer>, crtc::Handle)>>,
-        evt_handle: Option<&LoopHandle<Data>>,
+        evt_handle: Option<&LoopHandle<'static, Data>>,
     ) {
         if let Some(surface) = self.backends.borrow().get(&crtc) {
             let result = DrmRenderer::render_surface(
@@ -716,7 +728,7 @@ impl DrmRenderer {
                                         renderer.render(
                                             crtc,
                                             Some(handle.clone()),
-                                            Option::<&LoopHandle<Data>>::None,
+                                            Option::<&LoopHandle<'static, Data>>::None,
                                         );
                                     }
                                 })
@@ -846,7 +858,7 @@ impl DrmRenderer {
 
 fn schedule_initial_render<Data: 'static>(
     renderer: Rc<RefCell<RenderSurface>>,
-    evt_handle: &LoopHandle<Data>,
+    evt_handle: &LoopHandle<'static, Data>,
     logger: ::slog::Logger,
 ) {
     let result = {

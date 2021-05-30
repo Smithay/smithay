@@ -17,9 +17,17 @@ use slog::Logger;
 use crate::drawing::*;
 use crate::state::AnvilState;
 
+pub struct WinitData;
+
+impl Default for WinitData {
+    fn default() -> WinitData {
+        WinitData
+    }
+}
+
 pub fn run_winit(
     display: Rc<RefCell<Display>>,
-    event_loop: &mut EventLoop<AnvilState>,
+    event_loop: &mut EventLoop<'static, AnvilState<WinitData>>,
     log: Logger,
 ) -> Result<(), ()> {
     let (renderer, mut input) = winit::init(log.clone()).map_err(|err| {

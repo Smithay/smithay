@@ -469,11 +469,11 @@ impl EventSource for LibinputInputBackend {
     }
 
     fn register(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
-        poll.register(self.as_raw_fd(), Interest::Readable, Mode::Level, token)
+        poll.register(self.as_raw_fd(), Interest::READ, Mode::Level, token)
     }
 
     fn reregister(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
-        poll.reregister(self.as_raw_fd(), Interest::Readable, Mode::Level, token)
+        poll.reregister(self.as_raw_fd(), Interest::READ, Mode::Level, token)
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> std::io::Result<()> {

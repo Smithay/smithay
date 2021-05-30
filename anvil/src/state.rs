@@ -9,10 +9,7 @@ use std::{
 
 use smithay::{
     reexports::{
-        calloop::{
-            generic::{Fd, Generic},
-            Interest, LoopHandle, Mode, Source,
-        },
+        calloop::{generic::Generic, Interest, LoopHandle, Mode, RegistrationToken},
         wayland_server::{protocol::wl_surface::WlSurface, Display},
     },
     wayland::{
@@ -36,11 +33,12 @@ use crate::udev::MyOutput;
 #[cfg(feature = "xwayland")]
 use crate::xwayland::XWm;
 
-pub struct AnvilState {
+pub struct AnvilState<Backend> {
+    pub backend: Backend,
     pub socket_name: String,
     pub running: Arc<AtomicBool>,
     pub display: Rc<RefCell<Display>>,
-    pub handle: LoopHandle<AnvilState>,
+    pub handle: LoopHandle<'static, AnvilState<Backend>>,
     pub ctoken: CompositorToken<crate::shell::Roles>,
     pub window_map: Rc<RefCell<crate::window_map::WindowMap<crate::shell::Roles>>>,
     pub dnd_icon: Arc<Mutex<Option<WlSurface>>>,
@@ -56,30 +54,30 @@ pub struct AnvilState {
     #[cfg(feature = "udev")]
     pub session: Option<AutoSession>,
     // things we must keep alive
-    _wayland_event_source: Source<Generic<Fd>>,
+    _wayland_event_source: RegistrationToken,
     #[cfg(feature = "xwayland")]
-    _xwayland: XWayland<XWm>,
+    _xwayland: XWayland<XWm<Backend>>,
 }
 
-impl AnvilState {
+impl<Backend: Default + 'static> AnvilState<Backend> {
     pub fn init(
         display: Rc<RefCell<Display>>,
-        handle: LoopHandle<AnvilState>,
+        handle: LoopHandle<'static, AnvilState<Backend>>,
         #[cfg(feature = "egl")] egl_reader: Rc<RefCell<Option<EGLBufferReader>>>,
         #[cfg(feature = "udev")] session: Option<AutoSession>,
         #[cfg(not(feature = "udev"))] _session: Option<()>,
         #[cfg(feature = "udev")] output_map: Option<Rc<RefCell<Vec<MyOutput>>>>,
         #[cfg(not(feature = "udev"))] _output_map: Option<()>,
         log: slog::Logger,
-    ) -> AnvilState {
+    ) -> AnvilState<Backend> {
         // init the wayland connection
         let _wayland_event_source = handle
             .insert_source(
-                Generic::from_fd(display.borrow().get_poll_fd(), Interest::Readable, Mode::Level),
+                Generic::from_fd(display.borrow().get_poll_fd(), Interest::READ, Mode::Level),
                 {
                     let display = display.clone();
                     let log = log.clone();
-                    move |_, _, state: &mut AnvilState| {
+                    move |_, _, state: &mut AnvilState<Backend>| {
                         let mut display = display.borrow_mut();
                         match display.dispatch(std::time::Duration::from_millis(0), state) {
                             Ok(_) => Ok(()),
@@ -176,6 +174,7 @@ impl AnvilState {
         };
 
         AnvilState {
+            backend: Default::default(),
             running: Arc::new(AtomicBool::new(true)),
             display,
             handle,
