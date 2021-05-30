@@ -15,13 +15,13 @@ use smithay::{
 use slog::Logger;
 
 use crate::drawing::*;
-use crate::state::AnvilState;
+use crate::state::{AnvilState, Backend};
 
 pub struct WinitData;
 
-impl Default for WinitData {
-    fn default() -> WinitData {
-        WinitData
+impl Backend for WinitData {
+    fn seat_name(&self) -> String {
+        String::from("winit")
     }
 }
 
@@ -54,10 +54,9 @@ pub fn run_winit(
     let mut state = AnvilState::init(
         display.clone(),
         event_loop.handle(),
+        WinitData,
         #[cfg(feature = "egl")]
         Rc::new(RefCell::new(reader.clone())),
-        None,
-        None,
         log.clone(),
     );
 

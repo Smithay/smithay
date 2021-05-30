@@ -60,7 +60,7 @@ use smithay::{
 
 use crate::drawing::*;
 use crate::shell::{MyWindowMap, Roles};
-use crate::state::AnvilState;
+use crate::state::{AnvilState, Backend};
 
 #[derive(Clone)]
 pub struct SessionFd(RawFd);
@@ -70,11 +70,19 @@ impl AsRawFd for SessionFd {
     }
 }
 
-pub struct UdevData {}
+pub struct UdevData {
+    pub output_map: Rc<RefCell<Vec<MyOutput>>>,
+    pub session: AutoSession,
+    #[cfg(feature = "egl")]
+    primary_gpu: Option<PathBuf>,
+    backends: HashMap<dev_t, BackendData>,
+    signaler: Signaler<SessionSignal>,
+    pointer_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
+}
 
-impl Default for UdevData {
-    fn default() -> UdevData {
-        UdevData {}
+impl Backend for UdevData {
+    fn seat_name(&self) -> String {
+        self.session.seat()
     }
 }
 
@@ -106,41 +114,29 @@ pub fn run_udev(
     /*
      * Initialize the compositor
      */
+    let pointer_bytes = include_bytes!("../resources/cursor2.rgba");
+    let primary_gpu = primary_gpu(&session.seat()).unwrap_or_default();
+    let data = UdevData {
+        session,
+        output_map: output_map.clone(),
+        primary_gpu,
+        backends: HashMap::new(),
+        signaler: session_signal.clone(),
+        pointer_image: ImageBuffer::from_raw(64, 64, pointer_bytes.to_vec()).unwrap(),
+    };
     let mut state = AnvilState::init(
         display.clone(),
         event_loop.handle(),
+        data,
         #[cfg(feature = "egl")]
         egl_buffer_reader.clone(),
-        Some(session),
-        Some(output_map.clone()),
         log.clone(),
     );
 
     /*
      * Initialize the udev backend
      */
-    let bytes = include_bytes!("../resources/cursor2.rgba");
     let udev_backend = UdevBackend::new(state.seat_name.clone(), log.clone()).map_err(|_| ())?;
-
-    let mut udev_handler = UdevHandlerImpl {
-        compositor_token: state.ctoken,
-        #[cfg(feature = "egl")]
-        egl_buffer_reader,
-        session: state.session.clone().unwrap(),
-        backends: HashMap::new(),
-        output_map,
-        display: display.clone(),
-        #[cfg(feature = "egl")]
-        primary_gpu: primary_gpu(&state.seat_name).unwrap_or_default(),
-        window_map: state.window_map.clone(),
-        pointer_location: state.pointer_location.clone(),
-        pointer_image: ImageBuffer::from_raw(64, 64, bytes.to_vec()).unwrap(),
-        cursor_status: state.cursor_status.clone(),
-        dnd_icon: state.dnd_icon.clone(),
-        loop_handle: event_loop.handle(),
-        signaler: session_signal.clone(),
-        logger: log.clone(),
-    };
 
     /*
      * Initialize a fake output (we render one screen to every device in this example)
@@ -150,7 +146,7 @@ pub fn run_udev(
      * Initialize libinput backend
      */
     let mut libinput_context = Libinput::new_with_udev::<LibinputSessionInterface<AutoSession>>(
-        state.session.clone().unwrap().into(),
+        state.backend_data.session.clone().into(),
     );
     libinput_context.udev_assign_seat(&state.seat_name).unwrap();
     let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
@@ -170,15 +166,15 @@ pub fn run_udev(
         .insert_source(notifier, |(), &mut (), _anvil_state| {})
         .unwrap();
     for (dev, path) in udev_backend.device_list() {
-        udev_handler.device_added(dev, path.into())
+        state.device_added(dev, path.into())
     }
 
     let udev_event_source = event_loop
         .handle()
-        .insert_source(udev_backend, move |event, _, _state| match event {
-            UdevEvent::Added { device_id, path } => udev_handler.device_added(device_id, path),
-            UdevEvent::Changed { device_id } => udev_handler.device_changed(device_id),
-            UdevEvent::Removed { device_id } => udev_handler.device_removed(device_id),
+        .insert_source(udev_backend, move |event, _, state| match event {
+            UdevEvent::Added { device_id, path } => state.device_added(device_id, path),
+            UdevEvent::Changed { device_id } => state.device_changed(device_id),
+            UdevEvent::Removed { device_id } => state.device_removed(device_id),
         })
         .map_err(|e| -> IoError { e.into() })
         .unwrap();
@@ -283,127 +279,106 @@ struct BackendData {
     event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, AnvilState<UdevData>>,
 }
 
-struct UdevHandlerImpl {
-    compositor_token: CompositorToken<Roles>,
-    #[cfg(feature = "egl")]
-    egl_buffer_reader: Rc<RefCell<Option<EGLBufferReader>>>,
-    session: AutoSession,
-    backends: HashMap<dev_t, BackendData>,
-    display: Rc<RefCell<Display>>,
-    #[cfg(feature = "egl")]
-    primary_gpu: Option<PathBuf>,
-    window_map: Rc<RefCell<MyWindowMap>>,
-    output_map: Rc<RefCell<Vec<MyOutput>>>,
-    pointer_location: Rc<RefCell<(f64, f64)>>,
-    pointer_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
-    cursor_status: Arc<Mutex<CursorImageStatus>>,
-    dnd_icon: Arc<Mutex<Option<wl_surface::WlSurface>>>,
-    loop_handle: LoopHandle<'static, AnvilState<UdevData>>,
-    signaler: Signaler<SessionSignal>,
-    logger: ::slog::Logger,
-}
+pub fn scan_connectors(
+    device: &mut DrmDevice<SessionFd>,
+    gbm: &GbmDevice<SessionFd>,
+    egl: &EGLDisplay,
+    context: &EGLContext,
+    display: &mut Display,
+    output_map: &mut Vec<MyOutput>,
+    signaler: &Signaler<SessionSignal>,
+    logger: &::slog::Logger,
+) -> HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>> {
+    // Get a set of all modesetting resource handles (excluding planes):
+    let res_handles = device.resource_handles().unwrap();
 
-impl UdevHandlerImpl {
-    pub fn scan_connectors(
-        device: &mut DrmDevice<SessionFd>,
-        gbm: &GbmDevice<SessionFd>,
-        egl: &EGLDisplay,
-        context: &EGLContext,
-        display: &mut Display,
-        output_map: &mut Vec<MyOutput>,
-        signaler: &Signaler<SessionSignal>,
-        logger: &::slog::Logger,
-    ) -> HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>> {
-        // Get a set of all modesetting resource handles (excluding planes):
-        let res_handles = device.resource_handles().unwrap();
+    // Use first connected connector
+    let connector_infos: Vec<ConnectorInfo> = res_handles
+        .connectors()
+        .iter()
+        .map(|conn| device.get_connector(*conn).unwrap())
+        .filter(|conn| conn.state() == ConnectorState::Connected)
+        .inspect(|conn| info!(logger, "Connected: {:?}", conn.interface()))
+        .collect();
 
-        // Use first connected connector
-        let connector_infos: Vec<ConnectorInfo> = res_handles
-            .connectors()
+    let mut backends = HashMap::new();
+
+    // very naive way of finding good crtc/encoder/connector combinations. This problem is np-complete
+    for connector_info in connector_infos {
+        let encoder_infos = connector_info
+            .encoders()
             .iter()
-            .map(|conn| device.get_connector(*conn).unwrap())
-            .filter(|conn| conn.state() == ConnectorState::Connected)
-            .inspect(|conn| info!(logger, "Connected: {:?}", conn.interface()))
-            .collect();
+            .filter_map(|e| *e)
+            .flat_map(|encoder_handle| device.get_encoder(encoder_handle))
+            .collect::<Vec<EncoderInfo>>();
+        'outer: for encoder_info in encoder_infos {
+            for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
+                if let Entry::Vacant(entry) = backends.entry(crtc) {
+                    info!(
+                        logger,
+                        "Trying to setup connector {:?}-{} with crtc {:?}",
+                        connector_info.interface(),
+                        connector_info.interface_id(),
+                        crtc,
+                    );
+                    let context = match EGLContext::new_shared(egl, context, logger.clone()) {
+                        Ok(context) => context,
+                        Err(err) => {
+                            warn!(logger, "Failed to create EGLContext: {}", err);
+                            continue;
+                        }
+                    };
+                    let renderer = match unsafe { Gles2Renderer::new(context, logger.clone()) } {
+                        Ok(renderer) => renderer,
+                        Err(err) => {
+                            warn!(logger, "Failed to create Gles2 Renderer: {}", err);
+                            continue;
+                        }
+                    };
+                    let mut surface = match device.create_surface(
+                        crtc,
+                        connector_info.modes()[0],
+                        &[connector_info.handle()],
+                    ) {
+                        Ok(surface) => surface,
+                        Err(err) => {
+                            warn!(logger, "Failed to create drm surface: {}", err);
+                            continue;
+                        }
+                    };
+                    surface.link(signaler.clone());
+                    let renderer = match DrmRenderSurface::new(surface, gbm.clone(), renderer, logger.clone())
+                    {
+                        Ok(renderer) => renderer,
+                        Err(err) => {
+                            warn!(logger, "Failed to create rendering surface: {}", err);
+                            continue;
+                        }
+                    };
 
-        let mut backends = HashMap::new();
+                    output_map.push(MyOutput::new(
+                        display,
+                        device.device_id(),
+                        crtc,
+                        connector_info,
+                        logger.clone(),
+                    ));
 
-        // very naive way of finding good crtc/encoder/connector combinations. This problem is np-complete
-        for connector_info in connector_infos {
-            let encoder_infos = connector_info
-                .encoders()
-                .iter()
-                .filter_map(|e| *e)
-                .flat_map(|encoder_handle| device.get_encoder(encoder_handle))
-                .collect::<Vec<EncoderInfo>>();
-            'outer: for encoder_info in encoder_infos {
-                for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
-                    if let Entry::Vacant(entry) = backends.entry(crtc) {
-                        info!(
-                            logger,
-                            "Trying to setup connector {:?}-{} with crtc {:?}",
-                            connector_info.interface(),
-                            connector_info.interface_id(),
-                            crtc,
-                        );
-                        let context = match EGLContext::new_shared(egl, context, logger.clone()) {
-                            Ok(context) => context,
-                            Err(err) => {
-                                warn!(logger, "Failed to create EGLContext: {}", err);
-                                continue;
-                            }
-                        };
-                        let renderer = match unsafe { Gles2Renderer::new(context, logger.clone()) } {
-                            Ok(renderer) => renderer,
-                            Err(err) => {
-                                warn!(logger, "Failed to create Gles2 Renderer: {}", err);
-                                continue;
-                            }
-                        };
-                        let mut surface = match device.create_surface(
-                            crtc,
-                            connector_info.modes()[0],
-                            &[connector_info.handle()],
-                        ) {
-                            Ok(surface) => surface,
-                            Err(err) => {
-                                warn!(logger, "Failed to create drm surface: {}", err);
-                                continue;
-                            }
-                        };
-                        surface.link(signaler.clone());
-                        let renderer =
-                            match DrmRenderSurface::new(surface, gbm.clone(), renderer, logger.clone()) {
-                                Ok(renderer) => renderer,
-                                Err(err) => {
-                                    warn!(logger, "Failed to create rendering surface: {}", err);
-                                    continue;
-                                }
-                            };
-
-                        output_map.push(MyOutput::new(
-                            display,
-                            device.device_id(),
-                            crtc,
-                            connector_info,
-                            logger.clone(),
-                        ));
-
-                        entry.insert(Rc::new(RefCell::new(renderer)));
-                        break 'outer;
-                    }
+                    entry.insert(Rc::new(RefCell::new(renderer)));
+                    break 'outer;
                 }
             }
         }
-
-        backends
     }
+
+    backends
 }
 
-impl UdevHandlerImpl {
+impl AnvilState<UdevData> {
     fn device_added(&mut self, device_id: dev_t, path: PathBuf) {
         // Try to open the device
         if let Some((mut device, gbm)) = self
+            .backend_data
             .session
             .open(
                 &path,
@@ -414,14 +389,14 @@ impl UdevHandlerImpl {
                 match {
                     let fd = SessionFd(fd);
                     (
-                        DrmDevice::new(fd.clone(), true, self.logger.clone()),
+                        DrmDevice::new(fd.clone(), true, self.log.clone()),
                         GbmDevice::new(fd),
                     )
                 } {
                     (Ok(drm), Ok(gbm)) => Some((drm, gbm)),
                     (Err(err), _) => {
                         warn!(
-                            self.logger,
+                            self.log,
                             "Skipping device {:?}, because of drm error: {}", device_id, err
                         );
                         None
@@ -429,7 +404,7 @@ impl UdevHandlerImpl {
                     (_, Err(err)) => {
                         // TODO try DumbBuffer allocator in this case
                         warn!(
-                            self.logger,
+                            self.log,
                             "Skipping device {:?}, because of gbm error: {}", device_id, err
                         );
                         None
@@ -437,11 +412,11 @@ impl UdevHandlerImpl {
                 }
             })
         {
-            let egl = match EGLDisplay::new(&gbm, self.logger.clone()) {
+            let egl = match EGLDisplay::new(&gbm, self.log.clone()) {
                 Ok(display) => display,
                 Err(err) => {
                     warn!(
-                        self.logger,
+                        self.log,
                         "Skipping device {:?}, because of egl display error: {}", device_id, err
                     );
                     return;
@@ -449,48 +424,45 @@ impl UdevHandlerImpl {
             };
 
             #[cfg(feature = "egl")]
-            let is_primary = path.canonicalize().ok() == self.primary_gpu;
+            let is_primary = path.canonicalize().ok() == self.backend_data.primary_gpu;
             // init hardware acceleration on the primary gpu.
             #[cfg(feature = "egl")]
             {
                 if is_primary {
-                    info!(
-                        self.logger,
-                        "Initializing EGL Hardware Acceleration via {:?}", path
-                    );
-                    *self.egl_buffer_reader.borrow_mut() = egl.bind_wl_display(&*self.display.borrow()).ok();
+                    info!(self.log, "Initializing EGL Hardware Acceleration via {:?}", path);
+                    *self.egl_reader.borrow_mut() = egl.bind_wl_display(&*self.display.borrow()).ok();
                 }
             }
 
-            let context = match EGLContext::new(&egl, self.logger.clone()) {
+            let context = match EGLContext::new(&egl, self.log.clone()) {
                 Ok(context) => context,
                 Err(err) => {
                     warn!(
-                        self.logger,
+                        self.log,
                         "Skipping device {:?}, because of egl context error: {}", device_id, err
                     );
                     return;
                 }
             };
 
-            let backends = Rc::new(RefCell::new(UdevHandlerImpl::scan_connectors(
+            let backends = Rc::new(RefCell::new(scan_connectors(
                 &mut device,
                 &gbm,
                 &egl,
                 &context,
                 &mut *self.display.borrow_mut(),
-                &mut *self.output_map.borrow_mut(),
-                &self.signaler,
-                &self.logger,
+                &mut *self.backend_data.output_map.borrow_mut(),
+                &self.backend_data.signaler,
+                &self.log,
             )));
 
             // we leak this texture (we would need to call `destroy_texture` on Drop of DrmRenderer),
             // but only on shutdown anyway, because we do not support hot-pluggin, so it does not really matter.
             let pointer_image = {
-                let context = EGLContext::new_shared(&egl, &context, self.logger.clone()).unwrap();
-                let mut renderer = unsafe { Gles2Renderer::new(context, self.logger.clone()).unwrap() };
+                let context = EGLContext::new_shared(&egl, &context, self.log.clone()).unwrap();
+                let mut renderer = unsafe { Gles2Renderer::new(context, self.log.clone()).unwrap() };
                 renderer
-                    .import_bitmap(&self.pointer_image)
+                    .import_bitmap(&self.backend_data.pointer_image)
                     .expect("Failed to load pointer")
             };
 
@@ -501,35 +473,35 @@ impl UdevHandlerImpl {
                 device_id,
                 #[cfg(feature = "egl")]
                 egl_buffer_reader: if is_primary {
-                    self.egl_buffer_reader.borrow().clone()
+                    self.egl_reader.borrow().clone()
                 } else {
                     None
                 },
-                compositor_token: self.compositor_token,
+                compositor_token: self.ctoken,
                 backends: backends.clone(),
                 window_map: self.window_map.clone(),
-                output_map: self.output_map.clone(),
+                output_map: self.backend_data.output_map.clone(),
                 pointer_location: self.pointer_location.clone(),
                 pointer_image,
                 cursor_status: self.cursor_status.clone(),
                 dnd_icon: self.dnd_icon.clone(),
-                logger: self.logger.clone(),
+                logger: self.log.clone(),
                 start_time: std::time::Instant::now(),
             });
             let mut listener = DrmRendererSessionListener {
                 renderer: renderer.clone(),
-                loop_handle: self.loop_handle.clone(),
+                loop_handle: self.handle.clone(),
             };
-            let restart_token = self.signaler.register(move |signal| match signal {
+            let restart_token = self.backend_data.signaler.register(move |signal| match signal {
                 SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => listener.activate(),
                 _ => {}
             });
             let mut drm_handler = DrmHandlerImpl {
                 renderer,
-                loop_handle: self.loop_handle.clone(),
+                loop_handle: self.handle.clone(),
             };
 
-            device.link(self.signaler.clone());
+            device.link(self.backend_data.signaler.clone());
             let dev_id = device.device_id();
             let event_dispatcher = Dispatcher::new(device, move |event, _, _| match event {
                 DrmEvent::VBlank(crtc) => drm_handler.vblank(crtc),
@@ -537,19 +509,16 @@ impl UdevHandlerImpl {
                     error!(drm_handler.renderer.logger, "{:?}", error);
                 }
             });
-            let registration_token = self
-                .loop_handle
-                .register_dispatcher(event_dispatcher.clone())
-                .unwrap();
+            let registration_token = self.handle.register_dispatcher(event_dispatcher.clone()).unwrap();
 
-            trace!(self.logger, "Backends: {:?}", backends.borrow().keys());
+            trace!(self.log, "Backends: {:?}", backends.borrow().keys());
             for backend in backends.borrow_mut().values() {
                 // render first frame
-                trace!(self.logger, "Scheduling frame");
-                schedule_initial_render(backend.clone(), &self.loop_handle, self.logger.clone());
+                trace!(self.log, "Scheduling frame");
+                schedule_initial_render(backend.clone(), &self.handle, self.log.clone());
             }
 
-            self.backends.insert(
+            self.backend_data.backends.insert(
                 dev_id,
                 BackendData {
                     _restart_token: restart_token,
@@ -566,17 +535,17 @@ impl UdevHandlerImpl {
 
     fn device_changed(&mut self, device: dev_t) {
         //quick and dirty, just re-init all backends
-        if let Some(ref mut backend_data) = self.backends.get_mut(&device) {
-            let logger = self.logger.clone();
-            let loop_handle = self.loop_handle.clone();
+        if let Some(ref mut backend_data) = self.backend_data.backends.get_mut(&device) {
+            let logger = self.log.clone();
+            let loop_handle = self.handle.clone();
             let mut display = self.display.borrow_mut();
-            let mut output_map = self.output_map.borrow_mut();
-            let signaler = self.signaler.clone();
+            let mut output_map = self.backend_data.output_map.borrow_mut();
+            let signaler = self.backend_data.signaler.clone();
             output_map.retain(|output| output.device_id != device);
 
             let mut source = backend_data.event_dispatcher.as_source_mut();
             let mut backends = backend_data.surfaces.borrow_mut();
-            *backends = UdevHandlerImpl::scan_connectors(
+            *backends = scan_connectors(
                 &mut *source,
                 &backend_data.gbm,
                 &backend_data.egl,
@@ -597,26 +566,29 @@ impl UdevHandlerImpl {
 
     fn device_removed(&mut self, device: dev_t) {
         // drop the backends on this side
-        if let Some(backend_data) = self.backends.remove(&device) {
+        if let Some(backend_data) = self.backend_data.backends.remove(&device) {
             // drop surfaces
             backend_data.surfaces.borrow_mut().clear();
-            debug!(self.logger, "Surfaces dropped");
+            debug!(self.log, "Surfaces dropped");
             // clear outputs
-            self.output_map
+            self.backend_data
+                .output_map
                 .borrow_mut()
                 .retain(|output| output.device_id != device);
 
-            let _device = self.loop_handle.remove(backend_data.registration_token);
+            let _device = self.handle.remove(backend_data.registration_token);
             let _device = backend_data.event_dispatcher.into_source_inner();
 
             // don't use hardware acceleration anymore, if this was the primary gpu
             #[cfg(feature = "egl")]
             {
-                if _device.dev_path().and_then(|path| path.canonicalize().ok()) == self.primary_gpu {
-                    *self.egl_buffer_reader.borrow_mut() = None;
+                if _device.dev_path().and_then(|path| path.canonicalize().ok())
+                    == self.backend_data.primary_gpu
+                {
+                    *self.egl_reader.borrow_mut() = None;
                 }
             }
-            debug!(self.logger, "Dropping device");
+            debug!(self.log, "Dropping device");
         }
     }
 }

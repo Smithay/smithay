@@ -9,7 +9,7 @@ use std::{
 
 use smithay::{
     reexports::{
-        calloop::{generic::Generic, Interest, LoopHandle, Mode, RegistrationToken},
+        calloop::{generic::Generic, Interest, LoopHandle, Mode},
         wayland_server::{protocol::wl_surface::WlSurface, Display},
     },
     wayland::{
@@ -22,23 +22,19 @@ use smithay::{
 
 #[cfg(feature = "egl")]
 use smithay::backend::egl::display::EGLBufferReader;
-#[cfg(feature = "udev")]
-use smithay::backend::session::{auto::AutoSession, Session};
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::XWayland;
 
 use crate::shell::init_shell;
-#[cfg(feature = "udev")]
-use crate::udev::MyOutput;
 #[cfg(feature = "xwayland")]
 use crate::xwayland::XWm;
 
-pub struct AnvilState<Backend> {
-    pub backend: Backend,
+pub struct AnvilState<BackendData> {
+    pub backend_data: BackendData,
     pub socket_name: String,
     pub running: Arc<AtomicBool>,
     pub display: Rc<RefCell<Display>>,
-    pub handle: LoopHandle<'static, AnvilState<Backend>>,
+    pub handle: LoopHandle<'static, AnvilState<BackendData>>,
     pub ctoken: CompositorToken<crate::shell::Roles>,
     pub window_map: Rc<RefCell<crate::window_map::WindowMap<crate::shell::Roles>>>,
     pub dnd_icon: Arc<Mutex<Option<WlSurface>>>,
@@ -48,44 +44,35 @@ pub struct AnvilState<Backend> {
     pub keyboard: KeyboardHandle,
     pub pointer_location: Rc<RefCell<(f64, f64)>>,
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
-    #[cfg(feature = "udev")]
-    pub output_map: Option<Rc<RefCell<Vec<MyOutput>>>>,
     pub seat_name: String,
-    #[cfg(feature = "udev")]
-    pub session: Option<AutoSession>,
+    #[cfg(feature = "egl")]
+    pub egl_reader: Rc<RefCell<Option<EGLBufferReader>>>,
     // things we must keep alive
-    _wayland_event_source: RegistrationToken,
     #[cfg(feature = "xwayland")]
-    _xwayland: XWayland<XWm<Backend>>,
+    _xwayland: XWayland<XWm<BackendData>>,
 }
 
-impl<Backend: Default + 'static> AnvilState<Backend> {
+impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
         display: Rc<RefCell<Display>>,
-        handle: LoopHandle<'static, AnvilState<Backend>>,
+        handle: LoopHandle<'static, AnvilState<BackendData>>,
+        backend_data: BackendData,
         #[cfg(feature = "egl")] egl_reader: Rc<RefCell<Option<EGLBufferReader>>>,
-        #[cfg(feature = "udev")] session: Option<AutoSession>,
-        #[cfg(not(feature = "udev"))] _session: Option<()>,
-        #[cfg(feature = "udev")] output_map: Option<Rc<RefCell<Vec<MyOutput>>>>,
-        #[cfg(not(feature = "udev"))] _output_map: Option<()>,
         log: slog::Logger,
-    ) -> AnvilState<Backend> {
+    ) -> AnvilState<BackendData> {
         // init the wayland connection
-        let _wayland_event_source = handle
+        handle
             .insert_source(
                 Generic::from_fd(display.borrow().get_poll_fd(), Interest::READ, Mode::Level),
-                {
-                    let display = display.clone();
-                    let log = log.clone();
-                    move |_, _, state: &mut AnvilState<Backend>| {
-                        let mut display = display.borrow_mut();
-                        match display.dispatch(std::time::Duration::from_millis(0), state) {
-                            Ok(_) => Ok(()),
-                            Err(e) => {
-                                error!(log, "I/O error on the Wayland display: {}", e);
-                                state.running.store(false, Ordering::SeqCst);
-                                Err(e)
-                            }
+                move |_, _, state: &mut AnvilState<BackendData>| {
+                    let display = state.display.clone();
+                    let mut display = display.borrow_mut();
+                    match display.dispatch(std::time::Duration::from_millis(0), state) {
+                        Ok(_) => Ok(()),
+                        Err(e) => {
+                            error!(state.log, "I/O error on the Wayland display: {}", e);
+                            state.running.store(false, Ordering::SeqCst);
+                            Err(e)
                         }
                     }
                 },
@@ -94,10 +81,11 @@ impl<Backend: Default + 'static> AnvilState<Backend> {
 
         // Init the basic compositor globals
 
-        init_shm_global(&mut display.borrow_mut(), vec![], log.clone());
+        init_shm_global(&mut (*display).borrow_mut(), vec![], log.clone());
 
         #[cfg(feature = "egl")]
-        let shell_handles = init_shell::<Backend>(&mut display.borrow_mut(), egl_reader, log.clone());
+        let shell_handles =
+            init_shell::<BackendData>(&mut display.borrow_mut(), egl_reader.clone(), log.clone());
         #[cfg(not(feature = "egl"))]
         let shell_handles = init_shell(&mut display.borrow_mut(), log.clone());
 
@@ -132,14 +120,7 @@ impl<Backend: Default + 'static> AnvilState<Backend> {
         );
 
         // init input
-        #[cfg(feature = "udev")]
-        let seat_name = if let Some(ref session) = session {
-            session.seat()
-        } else {
-            "anvil".into()
-        };
-        #[cfg(not(feature = "udev"))]
-        let seat_name: String = "anvil".into();
+        let seat_name = backend_data.seat_name();
 
         let (mut seat, _) = Seat::new(
             &mut display.borrow_mut(),
@@ -174,7 +155,7 @@ impl<Backend: Default + 'static> AnvilState<Backend> {
         };
 
         AnvilState {
-            backend: Default::default(),
+            backend_data,
             running: Arc::new(AtomicBool::new(true)),
             display,
             handle,
@@ -187,14 +168,14 @@ impl<Backend: Default + 'static> AnvilState<Backend> {
             keyboard,
             cursor_status,
             pointer_location: Rc::new(RefCell::new((0.0, 0.0))),
-            #[cfg(feature = "udev")]
-            output_map,
             seat_name,
-            #[cfg(feature = "udev")]
-            session,
-            _wayland_event_source,
+            egl_reader,
             #[cfg(feature = "xwayland")]
             _xwayland,
         }
     }
+}
+
+pub trait Backend {
+    fn seat_name(&self) -> String;
 }
