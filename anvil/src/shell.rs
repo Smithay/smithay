@@ -28,8 +28,8 @@ use smithay::{
                 wl_shell_init, ShellRequest, ShellState as WlShellState, ShellSurfaceKind, ShellSurfaceRole,
             },
             xdg::{
-                xdg_shell_init, PopupConfigure, ShellState as XdgShellState, ToplevelConfigure, XdgRequest,
-                XdgSurfacePendingState, XdgSurfaceRole,
+                xdg_shell_init, Configure, ShellState as XdgShellState, XdgPopupSurfaceRole, XdgRequest,
+                XdgToplevelSurfaceRole,
             },
         },
         Serial,
@@ -38,24 +38,17 @@ use smithay::{
 
 use crate::{
     state::AnvilState,
-    window_map::{Kind as SurfaceKind, WindowMap},
+    window_map::{Kind as SurfaceKind, PopupKind, WindowMap},
 };
 
 #[cfg(feature = "xwayland")]
 use crate::xwayland::X11SurfaceRole;
 
-// The xwayland feature only adds a X11Surface role, but the macro does not support #[cfg]
-#[cfg(not(feature = "xwayland"))]
 define_roles!(Roles =>
-    [ XdgSurface, XdgSurfaceRole ]
+    [ XdgToplevelSurface, XdgToplevelSurfaceRole ]
+    [ XdgPopupSurface, XdgPopupSurfaceRole ]
     [ ShellSurface, ShellSurfaceRole]
-    [ DnDIcon, DnDIconRole ]
-    [ CursorImage, CursorImageRole ]
-);
-#[cfg(feature = "xwayland")]
-define_roles!(Roles =>
-    [ XdgSurface, XdgSurfaceRole ]
-    [ ShellSurface, ShellSurfaceRole]
+    #[cfg(feature = "xwayland")]
     [ X11Surface, X11SurfaceRole ]
     [ DnDIcon, DnDIconRole ]
     [ CursorImage, CursorImageRole ]
@@ -172,7 +165,7 @@ impl PointerGrab for ResizeSurfaceGrab {
         _handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         _focus: Option<(wl_surface::WlSurface, (f64, f64))>,
-        serial: Serial,
+        _serial: Serial,
         _time: u32,
     ) {
         let mut dx = location.0 - self.start_data.location.0;
@@ -226,11 +219,13 @@ impl PointerGrab for ResizeSurfaceGrab {
         self.last_window_size = (new_window_width, new_window_height);
 
         match &self.toplevel {
-            SurfaceKind::Xdg(xdg) => xdg.send_configure(ToplevelConfigure {
-                size: Some(self.last_window_size),
-                states: vec![xdg_toplevel::State::Resizing],
-                serial,
-            }),
+            SurfaceKind::Xdg(xdg) => {
+                xdg.with_pending_state(|state| {
+                    state.states.set(xdg_toplevel::State::Resizing);
+                    state.size = Some(self.last_window_size);
+                });
+                xdg.send_configure();
+            }
             SurfaceKind::Wl(wl) => wl.send_configure(
                 (self.last_window_size.0 as u32, self.last_window_size.1 as u32),
                 self.edges.into(),
@@ -256,12 +251,11 @@ impl PointerGrab for ResizeSurfaceGrab {
             handle.unset_grab(serial, time);
 
             if let SurfaceKind::Xdg(xdg) = &self.toplevel {
-                // Send the final configure without the resizing state.
-                xdg.send_configure(ToplevelConfigure {
-                    size: Some(self.last_window_size),
-                    states: vec![],
-                    serial,
+                xdg.with_pending_state(|state| {
+                    state.states.unset(xdg_toplevel::State::Resizing);
+                    state.size = Some(self.last_window_size);
                 });
+                xdg.send_configure();
 
                 self.ctoken
                     .with_surface_data(self.toplevel.get_surface().unwrap(), |attrs| {
@@ -348,20 +342,19 @@ pub fn init_shell<Backend: 'static>(display: &mut Display, log: ::slog::Logger) 
                 let mut rng = rand::thread_rng();
                 let x = range.sample(&mut rng);
                 let y = range.sample(&mut rng);
-                surface.send_configure(ToplevelConfigure {
-                    size: None,
-                    states: vec![],
-                    serial: Serial::from(42),
-                });
+                // Do not send a configure here, the initial configure
+                // of a xdg_surface has to be sent during the commit if
+                // the surface is not already configured
                 xdg_window_map
                     .borrow_mut()
                     .insert(SurfaceKind::Xdg(surface), (x, y));
             }
-            XdgRequest::NewPopup { surface } => surface.send_configure(PopupConfigure {
-                size: (10, 10),
-                position: (10, 10),
-                serial: Serial::from(42),
-            }),
+            XdgRequest::NewPopup { surface } => {
+                // Do not send a configure here, the initial configure
+                // of a xdg_surface has to be sent during the commit if
+                // the surface is not already configured
+                xdg_window_map.borrow_mut().insert_popup(PopupKind::Xdg(surface));
+            }
             XdgRequest::Move {
                 surface,
                 seat,
@@ -462,39 +455,80 @@ pub fn init_shell<Backend: 'static>(display: &mut Display, log: ::slog::Logger) 
 
                 pointer.set_grab(grab, serial);
             }
-            XdgRequest::AckConfigure { surface, .. } => {
-                let waiting_for_serial = compositor_token.with_surface_data(&surface, |attrs| {
-                    if let Some(data) = attrs.user_data.get::<RefCell<SurfaceData>>() {
-                        if let ResizeState::WaitingForFinalAck(_, serial) = data.borrow().resize_state {
-                            return Some(serial);
+            XdgRequest::AckConfigure {
+                surface, configure, ..
+            } => {
+                if let Configure::Toplevel(configure) = configure {
+                    let waiting_for_serial = compositor_token.with_surface_data(&surface, |attrs| {
+                        if let Some(data) = attrs.user_data.get::<RefCell<SurfaceData>>() {
+                            if let ResizeState::WaitingForFinalAck(_, serial) = data.borrow().resize_state {
+                                return Some(serial);
+                            }
+                        }
+
+                        None
+                    });
+
+                    if let Some(serial) = waiting_for_serial {
+                        if configure.serial > serial {
+                            // TODO: huh, we have missed the serial somehow.
+                            // this should not happen, but it may be better to handle
+                            // this case anyway
+                        }
+
+                        if serial == configure.serial {
+                            if configure.state.states.contains(xdg_toplevel::State::Resizing) {
+                                compositor_token.with_surface_data(&surface, |attrs| {
+                                    let mut data = attrs
+                                        .user_data
+                                        .get::<RefCell<SurfaceData>>()
+                                        .unwrap()
+                                        .borrow_mut();
+                                    if let ResizeState::WaitingForFinalAck(resize_data, _) = data.resize_state
+                                    {
+                                        data.resize_state = ResizeState::WaitingForCommit(resize_data);
+                                    } else {
+                                        unreachable!()
+                                    }
+                                })
+                            }
                         }
                     }
-
-                    None
-                });
-
-                if let Some(serial) = waiting_for_serial {
-                    let acked = compositor_token
-                        .with_role_data(&surface, |role: &mut XdgSurfaceRole| {
-                            !role.pending_configures.contains(&serial.into())
-                        })
-                        .unwrap();
-
-                    if acked {
-                        compositor_token.with_surface_data(&surface, |attrs| {
-                            let mut data = attrs
-                                .user_data
-                                .get::<RefCell<SurfaceData>>()
-                                .unwrap()
-                                .borrow_mut();
-                            if let ResizeState::WaitingForFinalAck(resize_data, _) = data.resize_state {
-                                data.resize_state = ResizeState::WaitingForCommit(resize_data);
-                            } else {
-                                unreachable!()
-                            }
-                        })
-                    }
                 }
+            }
+            XdgRequest::Fullscreen { surface, output, .. } => {
+                surface.with_pending_state(|state| {
+                    // TODO: Use size of current output the window is on and set position to (0,0)
+                    state.states.set(xdg_toplevel::State::Fullscreen);
+                    state.size = Some((800, 600));
+                    // TODO: If the provided output is None, use the output where
+                    // the toplevel is currently shown
+                    state.fullscreen_output = output;
+                });
+                surface.send_configure();
+            }
+            XdgRequest::UnFullscreen { surface } => {
+                surface.with_pending_state(|state| {
+                    state.states.unset(xdg_toplevel::State::Fullscreen);
+                    state.size = None;
+                    state.fullscreen_output = None;
+                });
+                surface.send_configure();
+            }
+            XdgRequest::Maximize { surface } => {
+                surface.with_pending_state(|state| {
+                    // TODO: Use size of current output the window is on and set position to (0,0)
+                    state.states.set(xdg_toplevel::State::Maximized);
+                    state.size = Some((800, 600));
+                });
+                surface.send_configure();
+            }
+            XdgRequest::UnMaximize { surface } => {
+                surface.with_pending_state(|state| {
+                    state.states.unset(xdg_toplevel::State::Maximized);
+                    state.size = None;
+                });
+                surface.send_configure();
             }
             _ => (),
         },
@@ -790,14 +824,36 @@ fn surface_commit(
     let mut geometry = None;
     let mut min_size = (0, 0);
     let mut max_size = (0, 0);
-    let _ = token.with_role_data(surface, |role: &mut XdgSurfaceRole| {
-        if let XdgSurfacePendingState::Toplevel(ref state) = role.pending_state {
-            min_size = state.min_size;
-            max_size = state.max_size;
+
+    if token.has_role::<XdgToplevelSurfaceRole>(surface) {
+        if let Some(SurfaceKind::Xdg(xdg)) = window_map.borrow().find(surface) {
+            xdg.commit();
         }
 
-        geometry = role.window_geometry;
-    });
+        token
+            .with_role_data(surface, |role: &mut XdgToplevelSurfaceRole| {
+                if let XdgToplevelSurfaceRole::Some(attributes) = role {
+                    geometry = attributes.window_geometry;
+                    min_size = attributes.min_size;
+                    max_size = attributes.max_size;
+                }
+            })
+            .unwrap();
+    }
+
+    if token.has_role::<XdgPopupSurfaceRole>(surface) {
+        if let Some(PopupKind::Xdg(xdg)) = window_map.borrow().find_popup(&surface) {
+            xdg.commit();
+        }
+
+        token
+            .with_role_data(surface, |role: &mut XdgPopupSurfaceRole| {
+                if let XdgPopupSurfaceRole::Some(attributes) = role {
+                    geometry = attributes.window_geometry;
+                }
+            })
+            .unwrap();
+    }
 
     let sub_data = token
         .with_role_data(surface, |&mut role: &mut SubsurfaceRole| role)

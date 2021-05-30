@@ -7,7 +7,7 @@ use smithay::{
         compositor::{roles::Role, CompositorToken, SubsurfaceRole, TraversalAction},
         shell::{
             legacy::{ShellSurface, ShellSurfaceRole},
-            xdg::{ToplevelSurface, XdgSurfaceRole},
+            xdg::{PopupSurface, ToplevelSurface, XdgPopupSurfaceRole, XdgToplevelSurfaceRole},
         },
     },
 };
@@ -37,7 +37,7 @@ impl<R> Clone for Kind<R> {
 
 impl<R> Kind<R>
 where
-    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole> + 'static,
+    R: Role<SubsurfaceRole> + Role<XdgToplevelSurfaceRole> + Role<ShellSurfaceRole> + 'static,
 {
     pub fn alive(&self) -> bool {
         match *self {
@@ -68,6 +68,35 @@ where
     }
 }
 
+pub enum PopupKind<R> {
+    Xdg(PopupSurface<R>),
+}
+
+// We implement Clone manually because #[derive(..)] would require R: Clone.
+impl<R> Clone for PopupKind<R> {
+    fn clone(&self) -> Self {
+        match self {
+            PopupKind::Xdg(xdg) => PopupKind::Xdg(xdg.clone()),
+        }
+    }
+}
+
+impl<R> PopupKind<R>
+where
+    R: Role<XdgPopupSurfaceRole> + 'static,
+{
+    pub fn alive(&self) -> bool {
+        match *self {
+            PopupKind::Xdg(ref t) => t.alive(),
+        }
+    }
+    pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
+        match *self {
+            PopupKind::Xdg(ref t) => t.get_surface(),
+        }
+    }
+}
+
 struct Window<R> {
     location: (i32, i32),
     /// A bounding box over this window and its children.
@@ -80,7 +109,7 @@ struct Window<R> {
 
 impl<R> Window<R>
 where
-    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole> + 'static,
+    R: Role<SubsurfaceRole> + Role<XdgToplevelSurfaceRole> + Role<ShellSurfaceRole> + 'static,
 {
     /// Finds the topmost surface under this point if any and returns it together with the location of this
     /// surface.
@@ -203,19 +232,29 @@ where
     }
 }
 
+pub struct Popup<R> {
+    popup: PopupKind<R>,
+}
+
 pub struct WindowMap<R> {
     ctoken: CompositorToken<R>,
     windows: Vec<Window<R>>,
+    popups: Vec<Popup<R>>,
 }
 
 impl<R> WindowMap<R>
 where
-    R: Role<SubsurfaceRole> + Role<XdgSurfaceRole> + Role<ShellSurfaceRole> + 'static,
+    R: Role<SubsurfaceRole>
+        + Role<XdgToplevelSurfaceRole>
+        + Role<XdgPopupSurfaceRole>
+        + Role<ShellSurfaceRole>
+        + 'static,
 {
     pub fn new(ctoken: CompositorToken<R>) -> Self {
         WindowMap {
             ctoken,
             windows: Vec::new(),
+            popups: Vec::new(),
         }
     }
 
@@ -227,6 +266,11 @@ where
         };
         window.self_update(self.ctoken);
         self.windows.insert(0, window);
+    }
+
+    pub fn insert_popup(&mut self, popup: PopupKind<R>) {
+        let popup = Popup { popup };
+        self.popups.push(popup);
     }
 
     pub fn get_surface_under(&self, point: (f64, f64)) -> Option<(wl_surface::WlSurface, (f64, f64))> {
@@ -269,6 +313,7 @@ where
 
     pub fn refresh(&mut self) {
         self.windows.retain(|w| w.toplevel.alive());
+        self.popups.retain(|p| p.popup.alive());
         for w in &mut self.windows {
             w.self_update(self.ctoken);
         }
@@ -294,6 +339,20 @@ where
                 .unwrap_or(false)
             {
                 Some(w.toplevel.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn find_popup(&self, surface: &wl_surface::WlSurface) -> Option<PopupKind<R>> {
+        self.popups.iter().find_map(|p| {
+            if p.popup
+                .get_surface()
+                .map(|s| s.as_ref().equals(surface.as_ref()))
+                .unwrap_or(false)
+            {
+                Some(p.popup.clone())
             } else {
                 None
             }
