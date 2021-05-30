@@ -36,7 +36,10 @@ use smithay::{
     },
 };
 
-use crate::window_map::{Kind as SurfaceKind, WindowMap};
+use crate::{
+    state::AnvilState,
+    window_map::{Kind as SurfaceKind, WindowMap},
+};
 
 #[cfg(feature = "xwayland")]
 use crate::xwayland::X11SurfaceRole;
@@ -308,22 +311,18 @@ pub struct ShellHandles {
     pub window_map: Rc<RefCell<MyWindowMap>>,
 }
 
-pub fn init_shell(
+pub fn init_shell<Backend: 'static>(
     display: &mut Display,
     #[cfg(feature = "egl")] egl_reader: Rc<RefCell<Option<EGLBufferReader>>>,
     log: ::slog::Logger,
 ) -> ShellHandles {
-    // TODO: this is awkward...
-    let almost_window_map = Rc::new(RefCell::new(None::<Rc<RefCell<MyWindowMap>>>));
-    let almost_window_map_compositor = almost_window_map.clone();
-
     // Create the compositor
     let (compositor_token, _, _) = compositor_init(
         display,
-        move |request, surface, ctoken| match request {
+        move |request, surface, ctoken, mut ddata| match request {
             SurfaceEvent::Commit => {
-                let window_map = almost_window_map_compositor.borrow();
-                let window_map = window_map.as_ref().unwrap();
+                let anvil_state = ddata.get::<AnvilState<Backend>>().unwrap();
+                let window_map = anvil_state.window_map.as_ref();
                 #[cfg(feature = "egl")]
                 {
                     surface_commit(&surface, ctoken, egl_reader.borrow().as_ref(), &*window_map)
@@ -339,7 +338,6 @@ pub fn init_shell(
 
     // Init a window map, to track the location of our windows
     let window_map = Rc::new(RefCell::new(WindowMap::new(compositor_token)));
-    *almost_window_map.borrow_mut() = Some(window_map.clone());
 
     // init the xdg_shell
     let xdg_window_map = window_map.clone();
