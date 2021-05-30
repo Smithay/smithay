@@ -18,7 +18,7 @@
 //! define_roles!(Roles => [CursorImage, CursorImageRole]);
 //!
 //! # let mut display = wayland_server::Display::new();
-//! # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _| {}, None);
+//! # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _, _| {}, None);
 //! // insert the seat:
 //! let (seat, seat_global) = Seat::new(
 //!     &mut display,             // the display
@@ -204,7 +204,7 @@ impl Seat {
     /// # define_roles!(Roles => [CursorImage, CursorImageRole]);
     /// #
     /// # let mut display = wayland_server::Display::new();
-    /// # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _| {}, None);
+    /// # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _, _| {}, None);
     /// # let (mut seat, seat_global) = Seat::new(
     /// #     &mut display,
     /// #     "seat-0".into(),

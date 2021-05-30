@@ -2,7 +2,7 @@ use std::{cell::RefCell, ops::Deref as _, rc::Rc, sync::Mutex};
 
 use wayland_server::{
     protocol::{wl_compositor, wl_region, wl_subcompositor, wl_subsurface, wl_surface},
-    Filter, Main,
+    DispatchData, Filter, Main,
 };
 
 use super::{
@@ -22,7 +22,7 @@ pub(crate) fn implement_compositor<R, Impl>(
 ) -> wl_compositor::WlCompositor
 where
     R: Default + Send + 'static,
-    Impl: FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>) + 'static,
+    Impl: for<'a> FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>, DispatchData<'a>) + 'static,
 {
     compositor.quick_assign(move |_compositor, request, _| match request {
         wl_compositor::Request::CreateSurface { id } => {
@@ -42,7 +42,8 @@ where
  * wl_surface
  */
 
-type SurfaceImplemFn<R> = dyn FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>);
+type SurfaceImplemFn<R> =
+    dyn for<'a> FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>, DispatchData<'a>);
 
 // Internal implementation data of surfaces
 pub(crate) struct SurfaceImplem<R> {
@@ -53,7 +54,8 @@ pub(crate) struct SurfaceImplem<R> {
 impl<R> SurfaceImplem<R> {
     fn make<Impl>(log: ::slog::Logger, implem: Rc<RefCell<Impl>>) -> SurfaceImplem<R>
     where
-        Impl: FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>) + 'static,
+        Impl: for<'a> FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>, DispatchData<'a>)
+            + 'static,
     {
         SurfaceImplem { log, implem }
     }
@@ -63,7 +65,12 @@ impl<R> SurfaceImplem<R>
 where
     R: 'static,
 {
-    fn receive_surface_request(&mut self, req: wl_surface::Request, surface: wl_surface::WlSurface) {
+    fn receive_surface_request<'a>(
+        &mut self,
+        req: wl_surface::Request,
+        surface: wl_surface::WlSurface,
+        ddata: DispatchData<'a>,
+    ) {
         match req {
             wl_surface::Request::Attach { buffer, x, y } => {
                 SurfaceData::<R>::with_data(&surface, |d| {
@@ -103,7 +110,7 @@ where
             wl_surface::Request::Commit => {
                 let mut user_impl = self.implem.borrow_mut();
                 trace!(self.log, "Calling user implementation for wl_surface.commit");
-                (&mut *user_impl)(SurfaceEvent::Commit, surface, CompositorToken::make());
+                (&mut *user_impl)(SurfaceEvent::Commit, surface, CompositorToken::make(), ddata);
             }
             wl_surface::Request::SetBufferTransform { transform } => {
                 SurfaceData::<R>::with_data(&surface, |d| d.buffer_transform = transform);
@@ -131,11 +138,11 @@ fn implement_surface<R, Impl>(
 ) -> wl_surface::WlSurface
 where
     R: Default + Send + 'static,
-    Impl: FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>) + 'static,
+    Impl: for<'a> FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>, DispatchData<'a>) + 'static,
 {
     surface.quick_assign({
         let mut implem = SurfaceImplem::make(log, implem);
-        move |surface, req, _| implem.receive_surface_request(req, surface.deref().clone())
+        move |surface, req, ddata| implem.receive_surface_request(req, surface.deref().clone(), ddata)
     });
     surface.assign_destructor(Filter::new(|surface, _, _| SurfaceData::<R>::cleanup(&surface)));
     surface.as_ref().user_data().set_threadsafe(SurfaceData::<R>::new);

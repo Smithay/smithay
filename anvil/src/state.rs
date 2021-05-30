@@ -97,7 +97,7 @@ impl<Backend: Default + 'static> AnvilState<Backend> {
         init_shm_global(&mut display.borrow_mut(), vec![], log.clone());
 
         #[cfg(feature = "egl")]
-        let shell_handles = init_shell(&mut display.borrow_mut(), egl_reader, log.clone());
+        let shell_handles = init_shell::<Backend>(&mut display.borrow_mut(), egl_reader, log.clone());
         #[cfg(not(feature = "egl"))]
         let shell_handles = init_shell(&mut display.borrow_mut(), log.clone());
 

@@ -39,7 +39,7 @@
 //! // Call the init function:
 //! let (token, _, _) = compositor_init::<MyRoles, _, _>(
 //!     &mut display,
-//!     |request, surface, compositor_token| {
+//!     |request, surface, compositor_token, dispatch_data| {
 //!         /*
 //!           Your handling of the user requests.
 //!          */
@@ -84,7 +84,7 @@ use wayland_server::{
     protocol::{
         wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor, wl_surface::WlSurface,
     },
-    Display, Filter, Global, UserDataMap,
+    DispatchData, Display, Filter, Global, UserDataMap,
 };
 
 /// Description of a part of a surface that
@@ -514,7 +514,7 @@ pub fn compositor_init<R, Impl, L>(
 where
     L: Into<Option<::slog::Logger>>,
     R: Default + RoleType + Role<SubsurfaceRole> + Send + 'static,
-    Impl: FnMut(SurfaceEvent, WlSurface, CompositorToken<R>) + 'static,
+    Impl: for<'a> FnMut(SurfaceEvent, WlSurface, CompositorToken<R>, DispatchData<'a>) + 'static,
 {
     let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "compositor_handler"));
     let implem = Rc::new(RefCell::new(implem));

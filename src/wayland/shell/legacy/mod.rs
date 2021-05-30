@@ -45,7 +45,7 @@
 //! # let mut display = wayland_server::Display::new();
 //! # let (compositor_token, _, _) = smithay::wayland::compositor::compositor_init::<MyRoles, _, _>(
 //! #     &mut display,
-//! #     |_, _, _| {},
+//! #     |_, _, _, _| {},
 //! #     None
 //! # );
 //! let (shell_state, _) = wl_shell_init(
