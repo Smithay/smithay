@@ -76,9 +76,9 @@ impl EventSource for DBusConnection {
     fn reregister(&mut self, poll: &mut Poll, token: Token) -> io::Result<()> {
         let new_watch = self.cx.channel().watch();
         let new_interest = match (new_watch.read, new_watch.write) {
-            (true, true) => Some(Interest::Both),
-            (true, false) => Some(Interest::Readable),
-            (false, true) => Some(Interest::Writable),
+            (true, true) => Some(Interest::BOTH),
+            (true, false) => Some(Interest::READ),
+            (false, true) => Some(Interest::WRITE),
             (false, false) => None,
         };
         if new_watch.fd != self.current_watch.fd {

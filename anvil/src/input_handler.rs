@@ -16,7 +16,7 @@ use smithay::{
     },
 };
 
-impl AnvilState {
+impl<Backend> AnvilState<Backend> {
     pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
         match event {
             InputEvent::Keyboard { event, .. } => self.on_keyboard_key::<B>(event),

@@ -55,7 +55,7 @@ use std::{
 
 use calloop::{
     generic::{Fd, Generic},
-    Interest, LoopHandle, Mode, Source,
+    Interest, LoopHandle, Mode, RegistrationToken,
 };
 
 use nix::Error as NixError;
@@ -91,7 +91,7 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
     /// Start the XWayland server
     pub fn init<L, T: Any, Data: 'static>(
         wm: WM,
-        handle: LoopHandle<Data>,
+        handle: LoopHandle<'static, Data>,
         display: Rc<RefCell<Display>>,
         data: &mut T,
         logger: L,
@@ -109,7 +109,7 @@ impl<WM: XWindowManager + 'static> XWayland<WM> {
             source_maker: Box::new(move |inner, fd| {
                 handle
                     .insert_source(
-                        Generic::new(Fd(fd), Interest::Readable, Mode::Level),
+                        Generic::new(Fd(fd), Interest::READ, Mode::Level),
                         move |evt, _, _| {
                             debug_assert!(evt.readable);
                             xwayland_ready(&inner);
@@ -136,13 +136,13 @@ impl<WM: XWindowManager> Drop for XWayland<WM> {
 struct XWaylandInstance {
     display_lock: X11Lock,
     wayland_client: Client,
-    startup_handler: Option<Source<Generic<Fd>>>,
+    startup_handler: Option<RegistrationToken>,
     wm_fd: Option<UnixStream>,
     started_at: ::std::time::Instant,
     child_stdout: Option<ChildStdout>,
 }
 
-type SourceMaker<WM> = dyn FnMut(Rc<RefCell<Inner<WM>>>, RawFd) -> Result<Source<Generic<Fd>>, ()>;
+type SourceMaker<WM> = dyn FnMut(Rc<RefCell<Inner<WM>>>, RawFd) -> Result<RegistrationToken, ()>;
 
 // Inner implementation of the XWayland manager
 struct Inner<WM: XWindowManager> {
@@ -150,7 +150,7 @@ struct Inner<WM: XWindowManager> {
     source_maker: Box<SourceMaker<WM>>,
     wayland_display: Rc<RefCell<Display>>,
     instance: Option<XWaylandInstance>,
-    kill_source: Box<dyn Fn(Source<Generic<Fd>>)>,
+    kill_source: Box<dyn Fn(RegistrationToken)>,
     log: ::slog::Logger,
 }
 

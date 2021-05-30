@@ -39,14 +39,13 @@ fn main() {
         o!(),
     );
 
-    let mut event_loop = EventLoop::<AnvilState>::new().unwrap();
-    let display = Rc::new(RefCell::new(Display::new()));
-
     let arg = ::std::env::args().nth(1);
     match arg.as_ref().map(|s| &s[..]) {
         #[cfg(feature = "winit")]
         Some("--winit") => {
             info!(log, "Starting anvil with winit backend");
+            let mut event_loop = EventLoop::try_new().unwrap();
+            let display = Rc::new(RefCell::new(Display::new()));
             if let Err(()) = winit::run_winit(display, &mut event_loop, log.clone()) {
                 crit!(log, "Failed to initialize winit backend.");
             }
@@ -54,6 +53,8 @@ fn main() {
         #[cfg(feature = "udev")]
         Some("--tty-udev") => {
             info!(log, "Starting anvil on a tty using udev");
+            let mut event_loop = EventLoop::try_new().unwrap();
+            let display = Rc::new(RefCell::new(Display::new()));
             if let Err(()) = udev::run_udev(display, &mut event_loop, log.clone()) {
                 crit!(log, "Failed to initialize tty backend.");
             }

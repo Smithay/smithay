@@ -7,7 +7,7 @@ use slog::Drain;
 use smithay::{
     backend::{
         allocator::{dumb::DumbBuffer, Fourcc, Slot, Swapchain},
-        drm::{device_bind, DeviceHandler, DrmDevice, DrmError, DrmSurface},
+        drm::{DrmDevice, DrmEvent, DrmSurface},
     },
     reexports::{
         calloop::EventLoop,
@@ -16,7 +16,6 @@ use smithay::{
 };
 use std::{
     fs::{File, OpenOptions},
-    io::Error as IoError,
     os::unix::io::{AsRawFd, RawFd},
     rc::Rc,
     sync::Mutex,
@@ -48,7 +47,7 @@ fn main() {
         file: Rc::new(options.open("/dev/dri/card0").unwrap()),
     };
 
-    let mut device = DrmDevice::new(fd.clone(), true, log.clone()).unwrap();
+    let device = DrmDevice::new(fd.clone(), true, log.clone()).unwrap();
 
     // Get a set of all modesetting resource handles (excluding planes):
     let res_handles = ControlDevice::resource_handles(&device).unwrap();
@@ -111,20 +110,23 @@ fn main() {
     *first_buffer.userdata() = Some(framebuffer);
 
     // Get the device as an allocator into the
-    device.set_handler(DrmHandlerImpl {
+    let mut vblank_handler = VBlankHandler {
         swapchain,
         current: first_buffer,
         surface: surface.clone(),
-    });
+    };
 
     /*
      * Register the DrmDevice on the EventLoop
      */
-    let mut event_loop = EventLoop::<()>::new().unwrap();
-    let _source = device_bind(&event_loop.handle(), device)
-        .map_err(|err| -> IoError { err.into() })
+    let mut event_loop = EventLoop::<()>::try_new().unwrap();
+    event_loop
+        .handle()
+        .insert_source(device, move |event, _: &mut (), _: &mut ()| match event {
+            DrmEvent::VBlank(crtc) => vblank_handler.vblank(crtc),
+            DrmEvent::Error(e) => panic!("{}", e),
+        })
         .unwrap();
-
     // Start rendering
     surface
         .commit([(framebuffer, surface.plane())].iter(), true)
@@ -134,13 +136,13 @@ fn main() {
     event_loop.run(None, &mut (), |_| {}).unwrap();
 }
 
-pub struct DrmHandlerImpl {
+pub struct VBlankHandler {
     swapchain: Swapchain<DrmDevice<FdWrapper>, DumbBuffer<FdWrapper>, framebuffer::Handle>,
     current: Slot<DumbBuffer<FdWrapper>, framebuffer::Handle>,
     surface: Rc<DrmSurface<FdWrapper>>,
 }
 
-impl DeviceHandler for DrmHandlerImpl {
+impl VBlankHandler {
     fn vblank(&mut self, _crtc: crtc::Handle) {
         {
             // Next buffer
@@ -167,9 +169,5 @@ impl DeviceHandler for DrmHandlerImpl {
         self.surface
             .page_flip([(fb, self.surface.plane())].iter(), true)
             .unwrap();
-    }
-
-    fn error(&mut self, error: DrmError) {
-        panic!("{:?}", error);
     }
 }

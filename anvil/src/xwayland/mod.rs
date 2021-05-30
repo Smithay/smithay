@@ -35,16 +35,16 @@ mod x11rb_event_source;
 
 /// Implementation of [`smithay::xwayland::XWindowManager`] that is used for starting XWayland.
 /// After XWayland was started, the actual state is kept in `X11State`.
-pub struct XWm {
-    handle: LoopHandle<AnvilState>,
+pub struct XWm<Backend> {
+    handle: LoopHandle<'static, AnvilState<Backend>>,
     token: CompositorToken<Roles>,
     window_map: Rc<RefCell<MyWindowMap>>,
     log: slog::Logger,
 }
 
-impl XWm {
+impl<Backend> XWm<Backend> {
     pub fn new(
-        handle: LoopHandle<AnvilState>,
+        handle: LoopHandle<'static, AnvilState<Backend>>,
         token: CompositorToken<Roles>,
         window_map: Rc<RefCell<MyWindowMap>>,
         log: slog::Logger,
@@ -58,7 +58,7 @@ impl XWm {
     }
 }
 
-impl XWindowManager for XWm {
+impl<Backend> XWindowManager for XWm<Backend> {
     fn xwayland_ready(&mut self, connection: UnixStream, client: Client) {
         let (wm, source) =
             X11State::start_wm(connection, self.token, self.window_map.clone(), self.log.clone()).unwrap();

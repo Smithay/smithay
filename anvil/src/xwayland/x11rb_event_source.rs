@@ -21,7 +21,7 @@ pub struct X11Source {
 impl X11Source {
     pub fn new(connection: Rc<RustConnection>) -> Self {
         let fd = Fd(connection.stream().as_raw_fd());
-        let generic = Generic::new(fd, Interest::Readable, Mode::Level);
+        let generic = Generic::new(fd, Interest::READ, Mode::Level);
         Self { connection, generic }
     }
 }

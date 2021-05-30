@@ -18,7 +18,7 @@
 //!     // process the initial list of devices
 //! }
 //!
-//! # let event_loop = smithay::reexports::calloop::EventLoop::<()>::new().unwrap();
+//! # let event_loop = smithay::reexports::calloop::EventLoop::<()>::try_new().unwrap();
 //! # let loop_handle = event_loop.handle();
 //! // setup the event source for long-term monitoring
 //! loop_handle.insert_source(udev, |event, _, _dispatch_data| match event {
@@ -182,11 +182,11 @@ impl EventSource for UdevBackend {
     }
 
     fn register(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
-        poll.register(self.as_raw_fd(), Interest::Readable, Mode::Level, token)
+        poll.register(self.as_raw_fd(), Interest::READ, Mode::Level, token)
     }
 
     fn reregister(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
-        poll.reregister(self.as_raw_fd(), Interest::Readable, Mode::Level, token)
+        poll.reregister(self.as_raw_fd(), Interest::READ, Mode::Level, token)
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> std::io::Result<()> {

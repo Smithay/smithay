@@ -68,7 +68,7 @@ mod render;
 pub(self) mod session;
 pub(self) mod surface;
 
-pub use device::{device_bind, DevPath, DeviceHandler, DrmDevice, DrmSource};
+pub use device::{DevPath, DrmDevice, DrmEvent};
 pub use error::Error as DrmError;
 #[cfg(feature = "backend_gbm")]
 pub use render::{DrmRenderSurface, Error as DrmRenderError};
