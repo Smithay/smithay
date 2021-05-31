@@ -45,6 +45,7 @@ pub struct AnvilState<BackendData> {
     pub pointer_location: Rc<RefCell<(f64, f64)>>,
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
     pub seat_name: String,
+    pub start_time: std::time::Instant,
     #[cfg(feature = "egl")]
     pub egl_reader: Rc<RefCell<Option<EGLBufferReader>>>,
     // things we must keep alive
@@ -169,7 +170,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             cursor_status,
             pointer_location: Rc::new(RefCell::new((0.0, 0.0))),
             seat_name,
+            #[cfg(feature = "egl")]
             egl_reader,
+            start_time: std::time::Instant::now(),
             #[cfg(feature = "xwayland")]
             _xwayland,
         }

@@ -5,7 +5,7 @@ use std::{
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
     rc::Rc,
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::atomic::Ordering,
     time::Duration,
 };
 
@@ -78,6 +78,7 @@ pub struct UdevData {
     backends: HashMap<dev_t, BackendData>,
     signaler: Signaler<SessionSignal>,
     pointer_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
+    render_timer: TimerHandle<(u64, crtc::Handle)>,
 }
 
 impl Backend for UdevData {
@@ -116,6 +117,10 @@ pub fn run_udev(
      */
     let pointer_bytes = include_bytes!("../resources/cursor2.rgba");
     let primary_gpu = primary_gpu(&session.seat()).unwrap_or_default();
+
+    // setup the timer
+    let timer = Timer::new().unwrap();
+
     let data = UdevData {
         session,
         output_map: output_map.clone(),
@@ -123,6 +128,7 @@ pub fn run_udev(
         backends: HashMap::new(),
         signaler: session_signal.clone(),
         pointer_image: ImageBuffer::from_raw(64, 64, pointer_bytes.to_vec()).unwrap(),
+        render_timer: timer.handle(),
     };
     let mut state = AnvilState::init(
         display.clone(),
@@ -132,6 +138,14 @@ pub fn run_udev(
         egl_buffer_reader.clone(),
         log.clone(),
     );
+
+    // re-render timer
+    event_loop
+        .handle()
+        .insert_source(timer, |(dev_id, crtc), _, anvil_state| {
+            anvil_state.render(dev_id, Some(crtc))
+        })
+        .unwrap();
 
     /*
      * Initialize the udev backend
@@ -277,6 +291,8 @@ struct BackendData {
     gbm: GbmDevice<SessionFd>,
     registration_token: RegistrationToken,
     event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, AnvilState<UdevData>>,
+    dev_id: u64,
+    pointer_image: Gles2Texture,
 }
 
 pub fn scan_connectors(
@@ -466,49 +482,25 @@ impl AnvilState<UdevData> {
                     .expect("Failed to load pointer")
             };
 
-            // Set the handler.
-            // Note: if you replicate this (very simple) structure, it is rather easy
-            // to introduce reference cycles with Rc. Be sure about your drop order
-            let renderer = Rc::new(DrmRenderer {
-                device_id,
-                #[cfg(feature = "egl")]
-                egl_buffer_reader: if is_primary {
-                    self.egl_reader.borrow().clone()
-                } else {
-                    None
-                },
-                compositor_token: self.ctoken,
-                backends: backends.clone(),
-                window_map: self.window_map.clone(),
-                output_map: self.backend_data.output_map.clone(),
-                pointer_location: self.pointer_location.clone(),
-                pointer_image,
-                cursor_status: self.cursor_status.clone(),
-                dnd_icon: self.dnd_icon.clone(),
-                logger: self.log.clone(),
-                start_time: std::time::Instant::now(),
-            });
-            let mut listener = DrmRendererSessionListener {
-                renderer: renderer.clone(),
-                loop_handle: self.handle.clone(),
-            };
+            let dev_id = device.device_id();
+            let handle = self.handle.clone();
             let restart_token = self.backend_data.signaler.register(move |signal| match signal {
-                SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => listener.activate(),
+                SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => {
+                    handle.insert_idle(move |anvil_state| anvil_state.render(dev_id, None));
+                }
                 _ => {}
             });
-            let mut drm_handler = DrmHandlerImpl {
-                renderer,
-                loop_handle: self.handle.clone(),
-            };
 
             device.link(self.backend_data.signaler.clone());
-            let dev_id = device.device_id();
-            let event_dispatcher = Dispatcher::new(device, move |event, _, _| match event {
-                DrmEvent::VBlank(crtc) => drm_handler.vblank(crtc),
-                DrmEvent::Error(error) => {
-                    error!(drm_handler.renderer.logger, "{:?}", error);
-                }
-            });
+            let event_dispatcher = Dispatcher::new(
+                device,
+                move |event, _, anvil_state: &mut AnvilState<_>| match event {
+                    DrmEvent::VBlank(crtc) => anvil_state.render(dev_id, Some(crtc)),
+                    DrmEvent::Error(error) => {
+                        error!(anvil_state.log, "{:?}", error);
+                    }
+                },
+            );
             let registration_token = self.handle.register_dispatcher(event_dispatcher.clone()).unwrap();
 
             trace!(self.log, "Backends: {:?}", backends.borrow().keys());
@@ -528,6 +520,8 @@ impl AnvilState<UdevData> {
                     egl,
                     context,
                     gbm,
+                    pointer_image,
+                    dev_id,
                 },
             );
         }
@@ -591,80 +585,50 @@ impl AnvilState<UdevData> {
             debug!(self.log, "Dropping device");
         }
     }
-}
 
-pub struct DrmHandlerImpl<Data: 'static> {
-    renderer: Rc<DrmRenderer>,
-    loop_handle: LoopHandle<'static, Data>,
-}
+    // If crtc is `Some()`, render it, else render all crtcs
+    fn render(&mut self, dev_id: u64, crtc: Option<crtc::Handle>) {
+        let device_backend = match self.backend_data.backends.get_mut(&dev_id) {
+            Some(backend) => backend,
+            None => {
+                error!(self.log, "Trying to render on non-existent backend {}", dev_id);
+                return;
+            }
+        };
+        // setup two iterators on the stack, one over all surfaces for this backend, and
+        // one containing only the one given as argument.
+        // They make a trait-object to dynamically choose between the two
+        let surfaces = device_backend.surfaces.borrow();
+        let mut surfaces_iter = surfaces.iter();
+        let mut option_iter = crtc
+            .iter()
+            .flat_map(|crtc| surfaces.get(&crtc).map(|surface| (crtc, surface)));
 
-impl<Data: 'static> DrmHandlerImpl<Data> {
-    fn vblank(&mut self, crtc: crtc::Handle) {
-        self.renderer.clone().render(crtc, None, Some(&self.loop_handle))
-    }
-}
+        let to_render_iter: &mut dyn Iterator<Item = (&crtc::Handle, &Rc<RefCell<RenderSurface>>)> =
+            if crtc.is_some() {
+                &mut option_iter
+            } else {
+                &mut surfaces_iter
+            };
 
-pub struct DrmRendererSessionListener<Data: 'static> {
-    renderer: Rc<DrmRenderer>,
-    loop_handle: LoopHandle<'static, Data>,
-}
-
-impl<Data: 'static> DrmRendererSessionListener<Data> {
-    fn activate(&mut self) {
-        // we want to be called, after all session handling is done (TODO this is not so nice)
-        let renderer = self.renderer.clone();
-        let handle = self.loop_handle.clone();
-        self.loop_handle
-            .insert_idle(move |_| renderer.render_all(Some(&handle)));
-    }
-}
-
-pub struct DrmRenderer {
-    device_id: dev_t,
-    #[cfg(feature = "egl")]
-    egl_buffer_reader: Option<EGLBufferReader>,
-    compositor_token: CompositorToken<Roles>,
-    backends: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>>>>,
-    window_map: Rc<RefCell<MyWindowMap>>,
-    output_map: Rc<RefCell<Vec<MyOutput>>>,
-    pointer_location: Rc<RefCell<(f64, f64)>>,
-    pointer_image: Gles2Texture,
-    cursor_status: Arc<Mutex<CursorImageStatus>>,
-    dnd_icon: Arc<Mutex<Option<wl_surface::WlSurface>>>,
-    logger: ::slog::Logger,
-    start_time: std::time::Instant,
-}
-
-impl DrmRenderer {
-    fn render_all<Data: 'static>(self: Rc<Self>, evt_handle: Option<&LoopHandle<'static, Data>>) {
-        for crtc in self.backends.borrow().keys() {
-            self.clone().render(*crtc, None, evt_handle);
-        }
-    }
-    fn render<Data: 'static>(
-        self: Rc<Self>,
-        crtc: crtc::Handle,
-        timer: Option<TimerHandle<(std::rc::Weak<DrmRenderer>, crtc::Handle)>>,
-        evt_handle: Option<&LoopHandle<'static, Data>>,
-    ) {
-        if let Some(surface) = self.backends.borrow().get(&crtc) {
-            let result = DrmRenderer::render_surface(
+        for (&crtc, surface) in to_render_iter {
+            let result = render_surface(
                 &mut *surface.borrow_mut(),
                 #[cfg(feature = "egl")]
-                self.egl_buffer_reader.as_ref(),
-                self.device_id,
+                self.egl_reader.borrow().as_ref(),
+                device_backend.dev_id,
                 crtc,
                 &mut *self.window_map.borrow_mut(),
-                &mut *self.output_map.borrow_mut(),
-                &self.compositor_token,
+                &mut *self.backend_data.output_map.borrow_mut(),
+                &self.ctoken,
                 &*self.pointer_location.borrow(),
-                &self.pointer_image,
+                &device_backend.pointer_image,
                 &*self.dnd_icon.lock().unwrap(),
                 &mut *self.cursor_status.lock().unwrap(),
-                &self.logger,
+                &self.log,
             );
             if let Err(err) = result {
-                warn!(self.logger, "Error during rendering: {:?}", err);
+                warn!(self.log, "Error during rendering: {:?}", err);
                 let reschedule = match err {
                     SwapBuffersError::AlreadySwapped => false,
                     SwapBuffersError::TemporaryFailure(err) => !matches!(
@@ -679,35 +643,11 @@ impl DrmRenderer {
                 };
 
                 if reschedule {
-                    debug!(self.logger, "Rescheduling");
-                    match (timer, evt_handle) {
-                        (Some(handle), _) => {
-                            let _ = handle.add_timeout(
-                                Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/),
-                                (Rc::downgrade(&self), crtc),
-                            );
-                        }
-                        (None, Some(evt_handle)) => {
-                            let timer = Timer::new().unwrap();
-                            let handle = timer.handle();
-                            let _ = handle.add_timeout(
-                                Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/),
-                                (Rc::downgrade(&self), crtc),
-                            );
-                            evt_handle
-                                .insert_source(timer, |(renderer, crtc), handle, _data| {
-                                    if let Some(renderer) = renderer.upgrade() {
-                                        renderer.render(
-                                            crtc,
-                                            Some(handle.clone()),
-                                            Option::<&LoopHandle<'static, Data>>::None,
-                                        );
-                                    }
-                                })
-                                .unwrap();
-                        }
-                        _ => unreachable!(),
-                    }
+                    debug!(self.log, "Rescheduling");
+                    self.backend_data.render_timer.add_timeout(
+                        Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/),
+                        (device_backend.dev_id, crtc),
+                    );
                 }
             } else {
                 // TODO: only send drawn windows the frames callback
@@ -718,94 +658,71 @@ impl DrmRenderer {
             }
         }
     }
+}
 
-    #[allow(clippy::too_many_arguments)]
-    fn render_surface(
-        surface: &mut RenderSurface,
-        #[cfg(feature = "egl")] egl_buffer_reader: Option<&EGLBufferReader>,
-        device_id: dev_t,
-        crtc: crtc::Handle,
-        window_map: &mut MyWindowMap,
-        output_map: &mut Vec<MyOutput>,
-        compositor_token: &CompositorToken<Roles>,
-        pointer_location: &(f64, f64),
-        pointer_image: &Gles2Texture,
-        dnd_icon: &Option<wl_surface::WlSurface>,
-        cursor_status: &mut CursorImageStatus,
-        logger: &slog::Logger,
-    ) -> Result<(), SwapBuffersError> {
-        #[cfg(not(feature = "egl"))]
-        let egl_buffer_reader = None;
+#[allow(clippy::too_many_arguments)]
+fn render_surface(
+    surface: &mut RenderSurface,
+    #[cfg(feature = "egl")] egl_buffer_reader: Option<&EGLBufferReader>,
+    device_id: dev_t,
+    crtc: crtc::Handle,
+    window_map: &mut MyWindowMap,
+    output_map: &mut Vec<MyOutput>,
+    compositor_token: &CompositorToken<Roles>,
+    pointer_location: &(f64, f64),
+    pointer_image: &Gles2Texture,
+    dnd_icon: &Option<wl_surface::WlSurface>,
+    cursor_status: &mut CursorImageStatus,
+    logger: &slog::Logger,
+) -> Result<(), SwapBuffersError> {
+    #[cfg(not(feature = "egl"))]
+    let egl_buffer_reader = None;
 
-        surface.frame_submitted()?;
+    surface.frame_submitted()?;
 
-        // get output coordinates
-        let (x, y) = output_map
-            .iter()
-            .take_while(|output| output.device_id != device_id || output.crtc != crtc)
-            .fold((0u32, 0u32), |pos, output| (pos.0 + output.size.0, pos.1));
-        let (width, height) = output_map
-            .iter()
-            .find(|output| output.device_id == device_id && output.crtc == crtc)
-            .map(|output| output.size)
-            .unwrap_or((0, 0)); // in this case the output will be removed.
+    // get output coordinates
+    let (x, y) = output_map
+        .iter()
+        .take_while(|output| output.device_id != device_id || output.crtc != crtc)
+        .fold((0u32, 0u32), |pos, output| (pos.0 + output.size.0, pos.1));
+    let (width, height) = output_map
+        .iter()
+        .find(|output| output.device_id == device_id && output.crtc == crtc)
+        .map(|output| output.size)
+        .unwrap_or((0, 0)); // in this case the output will be removed.
 
-        // and draw in sync with our monitor
-        surface
-            .render(|renderer, frame| {
-                frame.clear([0.8, 0.8, 0.9, 1.0])?;
-                // draw the surfaces
-                draw_windows(
-                    renderer,
-                    frame,
-                    egl_buffer_reader,
-                    window_map,
-                    Some(Rectangle {
-                        x: x as i32,
-                        y: y as i32,
-                        width: width as i32,
-                        height: height as i32,
-                    }),
-                    *compositor_token,
-                    logger,
-                )?;
+    // and draw in sync with our monitor
+    surface
+        .render(|renderer, frame| {
+            frame.clear([0.8, 0.8, 0.9, 1.0])?;
+            // draw the surfaces
+            draw_windows(
+                renderer,
+                frame,
+                egl_buffer_reader,
+                window_map,
+                Some(Rectangle {
+                    x: x as i32,
+                    y: y as i32,
+                    width: width as i32,
+                    height: height as i32,
+                }),
+                *compositor_token,
+                logger,
+            )?;
 
-                // get pointer coordinates
-                let (ptr_x, ptr_y) = *pointer_location;
-                let ptr_x = ptr_x.trunc().abs() as i32 - x as i32;
-                let ptr_y = ptr_y.trunc().abs() as i32 - y as i32;
+            // get pointer coordinates
+            let (ptr_x, ptr_y) = *pointer_location;
+            let ptr_x = ptr_x.trunc().abs() as i32 - x as i32;
+            let ptr_y = ptr_y.trunc().abs() as i32 - y as i32;
 
-                // set cursor
-                if ptr_x >= 0 && ptr_x < width as i32 && ptr_y >= 0 && ptr_y < height as i32 {
-                    // draw the dnd icon if applicable
-                    {
-                        if let Some(ref wl_surface) = dnd_icon.as_ref() {
-                            if wl_surface.as_ref().is_alive() {
-                                draw_dnd_icon(
-                                    renderer,
-                                    frame,
-                                    wl_surface,
-                                    egl_buffer_reader,
-                                    (ptr_x, ptr_y),
-                                    *compositor_token,
-                                    logger,
-                                )?;
-                            }
-                        }
-                    }
-                    // draw the cursor as relevant
-                    {
-                        // reset the cursor if the surface is no longer alive
-                        let mut reset = false;
-                        if let CursorImageStatus::Image(ref surface) = *cursor_status {
-                            reset = !surface.as_ref().is_alive();
-                        }
-                        if reset {
-                            *cursor_status = CursorImageStatus::Default;
-                        }
-
-                        if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
-                            draw_cursor(
+            // set cursor
+            if ptr_x >= 0 && ptr_x < width as i32 && ptr_y >= 0 && ptr_y < height as i32 {
+                // draw the dnd icon if applicable
+                {
+                    if let Some(ref wl_surface) = dnd_icon.as_ref() {
+                        if wl_surface.as_ref().is_alive() {
+                            draw_dnd_icon(
                                 renderer,
                                 frame,
                                 wl_surface,
@@ -814,18 +731,41 @@ impl DrmRenderer {
                                 *compositor_token,
                                 logger,
                             )?;
-                        } else {
-                            frame.render_texture_at(pointer_image, (ptr_x, ptr_y), Transform::Normal, 1.0)?;
                         }
                     }
                 }
+                // draw the cursor as relevant
+                {
+                    // reset the cursor if the surface is no longer alive
+                    let mut reset = false;
+                    if let CursorImageStatus::Image(ref surface) = *cursor_status {
+                        reset = !surface.as_ref().is_alive();
+                    }
+                    if reset {
+                        *cursor_status = CursorImageStatus::Default;
+                    }
 
-                Ok(())
-            })
-            .map_err(Into::<SwapBuffersError>::into)
-            .and_then(|x| x)
-            .map_err(Into::<SwapBuffersError>::into)
-    }
+                    if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
+                        draw_cursor(
+                            renderer,
+                            frame,
+                            wl_surface,
+                            egl_buffer_reader,
+                            (ptr_x, ptr_y),
+                            *compositor_token,
+                            logger,
+                        )?;
+                    } else {
+                        frame.render_texture_at(pointer_image, (ptr_x, ptr_y), Transform::Normal, 1.0)?;
+                    }
+                }
+            }
+
+            Ok(())
+        })
+        .map_err(Into::<SwapBuffersError>::into)
+        .and_then(|x| x)
+        .map_err(Into::<SwapBuffersError>::into)
 }
 
 fn schedule_initial_render<Data: 'static>(
