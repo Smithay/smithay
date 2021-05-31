@@ -311,11 +311,7 @@ pub struct ShellHandles {
     pub window_map: Rc<RefCell<MyWindowMap>>,
 }
 
-pub fn init_shell<Backend: 'static>(
-    display: &mut Display,
-    #[cfg(feature = "egl")] egl_reader: Rc<RefCell<Option<EGLBufferReader>>>,
-    log: ::slog::Logger,
-) -> ShellHandles {
+pub fn init_shell<Backend: 'static>(display: &mut Display, log: ::slog::Logger) -> ShellHandles {
     // Create the compositor
     let (compositor_token, _, _) = compositor_init(
         display,
@@ -325,7 +321,7 @@ pub fn init_shell<Backend: 'static>(
                 let window_map = anvil_state.window_map.as_ref();
                 #[cfg(feature = "egl")]
                 {
-                    surface_commit(&surface, ctoken, egl_reader.borrow().as_ref(), &*window_map)
+                    surface_commit(&surface, ctoken, anvil_state.egl_reader.as_ref(), &*window_map)
                 }
                 #[cfg(not(feature = "egl"))]
                 {

@@ -14,6 +14,9 @@ use smithay::{
     },
 };
 
+#[cfg(feature = "udev")]
+use smithay::backend::session::Session;
+
 impl<Backend> AnvilState<Backend> {
     fn keyboard_key_to_action<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) -> KeyAction {
         let keycode = evt.key_code();
@@ -40,48 +43,6 @@ impl<Backend> AnvilState<Backend> {
             return KeyAction::None;
         }
         return action;
-        /*
-        match action {
-            KeyAction::Quit => {
-                info!(self.log, "Quitting.");
-                self.running.store(false, Ordering::SeqCst);
-            }
-            #[cfg(feature = "udev")]
-            KeyAction::VtSwitch(vt) => {
-                if let Some(ref mut session) = self.session {
-                    info!(log, "Trying to switch to vt {}", vt);
-                    if let Err(err) = session.change_vt(vt) {
-                        error!(log, "Error switching to vt {}: {}", vt, err);
-                    }
-                }
-            }
-            KeyAction::Run(cmd) => {
-                info!(self.log, "Starting program"; "cmd" => cmd.clone());
-                if let Err(e) = Command::new(&cmd).spawn() {
-                    error!(log,
-                        "Failed to start program";
-                        "cmd" => cmd,
-                        "err" => format!("{:?}", e)
-                    );
-                }
-            }
-            #[cfg(feature = "udev")]
-            KeyAction::Screen(num) => {
-                let output_map = self.output_map.as_ref().unwrap();
-                let outputs = output_map.borrow();
-                if let Some(output) = outputs.get(num) {
-                    let x = outputs
-                        .iter()
-                        .take(num)
-                        .fold(0, |acc, output| acc + output.size.0) as f64
-                        + (output.size.0 as f64 / 2.0);
-                    let y = output.size.1 as f64 / 2.0;
-                    *self.pointer_location.borrow_mut() = (x as f64, y as f64)
-                }
-            }
-            _ => (),
-        }
-        */
     }
 
     fn on_pointer_button<B: InputBackend>(&mut self, evt: B::PointerButtonEvent) {
@@ -99,7 +60,7 @@ impl<Backend> AnvilState<Backend> {
                     let under = self
                         .window_map
                         .borrow_mut()
-                        .get_surface_and_bring_to_top(*self.pointer_location.borrow());
+                        .get_surface_and_bring_to_top(self.pointer_location);
                     self.keyboard
                         .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
                 }
@@ -153,7 +114,7 @@ impl AnvilState<WinitData> {
     pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
         match event {
             InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
-                KeyAction::None => {}
+                KeyAction::None | KeyAction::Forward => {}
                 KeyAction::Quit => {
                     info!(self.log, "Quitting.");
                     self.running.store(false, Ordering::SeqCst);
@@ -184,7 +145,7 @@ impl AnvilState<WinitData> {
     fn on_pointer_move_absolute<B: InputBackend>(&mut self, evt: B::PointerMotionAbsoluteEvent) {
         // different cases depending on the context:
         let (x, y) = evt.position();
-        *self.pointer_location.borrow_mut() = (x, y);
+        self.pointer_location = (x, y);
         let serial = SCOUNTER.next_serial();
         let under = self.window_map.borrow().get_surface_under((x as f64, y as f64));
         self.pointer.motion((x, y), under, serial, evt.time());
@@ -196,10 +157,17 @@ impl AnvilState<UdevData> {
     pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
         match event {
             InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
-                KeyAction::None => {}
+                KeyAction::None | KeyAction::Forward => {}
                 KeyAction::Quit => {
                     info!(self.log, "Quitting.");
                     self.running.store(false, Ordering::SeqCst);
+                }
+                #[cfg(feature = "udev")]
+                KeyAction::VtSwitch(vt) => {
+                    info!(self.log, "Trying to switch to vt {}", vt);
+                    if let Err(err) = self.backend_data.session.change_vt(vt) {
+                        error!(self.log, "Error switching to vt {}: {}", vt, err);
+                    }
                 }
                 KeyAction::Run(cmd) => {
                     info!(self.log, "Starting program"; "cmd" => cmd.clone());
@@ -211,8 +179,19 @@ impl AnvilState<UdevData> {
                         );
                     }
                 }
-                action => {
-                    warn!(self.log, "Key action {:?} unsupported on winit backend.", action);
+                KeyAction::Screen(num) => {
+                    if let Some(output) = self.backend_data.output_map.get(num) {
+                        let x = self
+                            .backend_data
+                            .output_map
+                            .iter()
+                            .take(num)
+                            .fold(0, |acc, output| acc + output.size.0)
+                            as f64
+                            + (output.size.0 as f64 / 2.0);
+                        let y = output.size.1 as f64 / 2.0;
+                        self.pointer_location = (x as f64, y as f64)
+                    }
                 }
             },
             InputEvent::PointerMotion { event, .. } => self.on_pointer_move::<B>(event),
@@ -227,31 +206,30 @@ impl AnvilState<UdevData> {
     fn on_pointer_move<B: InputBackend>(&mut self, evt: B::PointerMotionEvent) {
         let (x, y) = (evt.delta_x(), evt.delta_y());
         let serial = SCOUNTER.next_serial();
-        let mut location = self.pointer_location.borrow_mut();
-        location.0 += x as f64;
-        location.1 += y as f64;
+        self.pointer_location.0 += x as f64;
+        self.pointer_location.1 += y as f64;
 
         // clamp to screen limits
         // this event is never generated by winit
-        *location = self.clamp_coords(*location);
+        self.pointer_location = self.clamp_coords(self.pointer_location);
 
-        let under = self
-            .window_map
-            .borrow()
-            .get_surface_under((location.0, location.1));
-        self.pointer.motion(*location, under, serial, evt.time());
+        let under = self.window_map.borrow().get_surface_under(self.pointer_location);
+        self.pointer
+            .motion(self.pointer_location, under, serial, evt.time());
     }
 
     fn clamp_coords(&self, pos: (f64, f64)) -> (f64, f64) {
-        let outputs = self.backend_data.output_map.borrow();
-
-        if outputs.len() == 0 {
+        if self.backend_data.output_map.len() == 0 {
             return pos;
         }
 
         let (mut x, mut y) = pos;
         // max_x is the sum of the width of all outputs
-        let max_x = outputs.iter().fold(0u32, |acc, output| acc + output.size.0);
+        let max_x = self
+            .backend_data
+            .output_map
+            .iter()
+            .fold(0u32, |acc, output| acc + output.size.0);
         x = x.max(0.0).min(max_x as f64);
 
         // max y depends on the current output
@@ -262,9 +240,8 @@ impl AnvilState<UdevData> {
     }
 
     fn current_output_idx(&self, x: f64) -> usize {
-        let outputs = self.backend_data.output_map.borrow();
-
-        outputs
+        self.backend_data
+            .output_map
             .iter()
             // map each output to their x position
             .scan(0u32, |acc, output| {
@@ -278,12 +255,11 @@ impl AnvilState<UdevData> {
             .find(|(_idx, x_pos)| *x_pos as f64 > x)
             // the previous output is the one we are on
             .map(|(idx, _)| idx - 1)
-            .unwrap_or(outputs.len() - 1)
+            .unwrap_or(self.backend_data.output_map.len() - 1)
     }
 
     fn current_output_size(&self, x: f64) -> (u32, u32) {
-        let outputs = self.backend_data.output_map.borrow();
-        outputs[self.current_output_idx(x)].size
+        self.backend_data.output_map[self.current_output_idx(x)].size
     }
 }
 

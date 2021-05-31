@@ -42,12 +42,12 @@ pub struct AnvilState<BackendData> {
     // input-related fields
     pub pointer: PointerHandle,
     pub keyboard: KeyboardHandle,
-    pub pointer_location: Rc<RefCell<(f64, f64)>>,
+    pub pointer_location: (f64, f64),
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
     pub seat_name: String,
     pub start_time: std::time::Instant,
     #[cfg(feature = "egl")]
-    pub egl_reader: Rc<RefCell<Option<EGLBufferReader>>>,
+    pub egl_reader: Option<EGLBufferReader>,
     // things we must keep alive
     #[cfg(feature = "xwayland")]
     _xwayland: XWayland<XWm<BackendData>>,
@@ -58,7 +58,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         display: Rc<RefCell<Display>>,
         handle: LoopHandle<'static, AnvilState<BackendData>>,
         backend_data: BackendData,
-        #[cfg(feature = "egl")] egl_reader: Rc<RefCell<Option<EGLBufferReader>>>,
+        #[cfg(feature = "egl")] egl_reader: Option<EGLBufferReader>,
         log: slog::Logger,
     ) -> AnvilState<BackendData> {
         // init the wayland connection
@@ -85,8 +85,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         init_shm_global(&mut (*display).borrow_mut(), vec![], log.clone());
 
         #[cfg(feature = "egl")]
-        let shell_handles =
-            init_shell::<BackendData>(&mut display.borrow_mut(), egl_reader.clone(), log.clone());
+        let shell_handles = init_shell::<BackendData>(&mut display.borrow_mut(), log.clone());
         #[cfg(not(feature = "egl"))]
         let shell_handles = init_shell(&mut display.borrow_mut(), log.clone());
 
@@ -168,7 +167,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             pointer,
             keyboard,
             cursor_status,
-            pointer_location: Rc::new(RefCell::new((0.0, 0.0))),
+            pointer_location: (0.0, 0.0),
             seat_name,
             #[cfg(feature = "egl")]
             egl_reader,
