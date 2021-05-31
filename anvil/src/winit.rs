@@ -56,7 +56,7 @@ pub fn run_winit(
         event_loop.handle(),
         WinitData,
         #[cfg(feature = "egl")]
-        Rc::new(RefCell::new(reader.clone())),
+        reader,
         log.clone(),
     );
 
@@ -114,14 +114,14 @@ pub fn run_winit(
                     draw_windows(
                         renderer,
                         frame,
-                        reader.as_ref(),
+                        state.egl_reader.as_ref(),
                         &*state.window_map.borrow(),
                         None,
                         state.ctoken,
                         &log,
                     )?;
 
-                    let (x, y) = *state.pointer_location.borrow();
+                    let (x, y) = state.pointer_location;
                     // draw the dnd icon if any
                     {
                         let guard = state.dnd_icon.lock().unwrap();
@@ -131,7 +131,7 @@ pub fn run_winit(
                                     renderer,
                                     frame,
                                     surface,
-                                    reader.as_ref(),
+                                    state.egl_reader.as_ref(),
                                     (x as i32, y as i32),
                                     state.ctoken,
                                     &log,
@@ -158,7 +158,7 @@ pub fn run_winit(
                                 renderer,
                                 frame,
                                 surface,
-                                reader.as_ref(),
+                                state.egl_reader.as_ref(),
                                 (x as i32, y as i32),
                                 state.ctoken,
                                 &log,

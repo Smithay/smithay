@@ -71,7 +71,7 @@ impl AsRawFd for SessionFd {
 }
 
 pub struct UdevData {
-    pub output_map: Rc<RefCell<Vec<MyOutput>>>,
+    pub output_map: Vec<MyOutput>,
     pub session: AutoSession,
     #[cfg(feature = "egl")]
     primary_gpu: Option<PathBuf>,
@@ -100,12 +100,6 @@ pub fn run_udev(
         .unwrap();
     info!(log, "Listening on wayland socket"; "name" => name.clone());
     ::std::env::set_var("WAYLAND_DISPLAY", name);
-
-    #[cfg(feature = "egl")]
-    let egl_buffer_reader = Rc::new(RefCell::new(None));
-
-    let output_map = Rc::new(RefCell::new(Vec::new()));
-
     /*
      * Initialize session
      */
@@ -123,7 +117,7 @@ pub fn run_udev(
 
     let data = UdevData {
         session,
-        output_map: output_map.clone(),
+        output_map: Vec::new(),
         primary_gpu,
         backends: HashMap::new(),
         signaler: session_signal.clone(),
@@ -135,7 +129,7 @@ pub fn run_udev(
         event_loop.handle(),
         data,
         #[cfg(feature = "egl")]
-        egl_buffer_reader.clone(),
+        None,
         log.clone(),
     );
 
@@ -446,7 +440,7 @@ impl AnvilState<UdevData> {
             {
                 if is_primary {
                     info!(self.log, "Initializing EGL Hardware Acceleration via {:?}", path);
-                    *self.egl_reader.borrow_mut() = egl.bind_wl_display(&*self.display.borrow()).ok();
+                    self.egl_reader = egl.bind_wl_display(&*self.display.borrow()).ok();
                 }
             }
 
@@ -467,7 +461,7 @@ impl AnvilState<UdevData> {
                 &egl,
                 &context,
                 &mut *self.display.borrow_mut(),
-                &mut *self.backend_data.output_map.borrow_mut(),
+                &mut self.backend_data.output_map,
                 &self.backend_data.signaler,
                 &self.log,
             )));
@@ -533,9 +527,10 @@ impl AnvilState<UdevData> {
             let logger = self.log.clone();
             let loop_handle = self.handle.clone();
             let mut display = self.display.borrow_mut();
-            let mut output_map = self.backend_data.output_map.borrow_mut();
             let signaler = self.backend_data.signaler.clone();
-            output_map.retain(|output| output.device_id != device);
+            self.backend_data
+                .output_map
+                .retain(|output| output.device_id != device);
 
             let mut source = backend_data.event_dispatcher.as_source_mut();
             let mut backends = backend_data.surfaces.borrow_mut();
@@ -545,7 +540,7 @@ impl AnvilState<UdevData> {
                 &backend_data.egl,
                 &backend_data.context,
                 &mut *display,
-                &mut *output_map,
+                &mut self.backend_data.output_map,
                 &signaler,
                 &logger,
             );
@@ -567,7 +562,6 @@ impl AnvilState<UdevData> {
             // clear outputs
             self.backend_data
                 .output_map
-                .borrow_mut()
                 .retain(|output| output.device_id != device);
 
             let _device = self.handle.remove(backend_data.registration_token);
@@ -579,7 +573,7 @@ impl AnvilState<UdevData> {
                 if _device.dev_path().and_then(|path| path.canonicalize().ok())
                     == self.backend_data.primary_gpu
                 {
-                    *self.egl_reader.borrow_mut() = None;
+                    self.egl_reader = None;
                 }
             }
             debug!(self.log, "Dropping device");
@@ -615,13 +609,13 @@ impl AnvilState<UdevData> {
             let result = render_surface(
                 &mut *surface.borrow_mut(),
                 #[cfg(feature = "egl")]
-                self.egl_reader.borrow().as_ref(),
+                self.egl_reader.as_ref(),
                 device_backend.dev_id,
                 crtc,
                 &mut *self.window_map.borrow_mut(),
-                &mut *self.backend_data.output_map.borrow_mut(),
+                &mut self.backend_data.output_map,
                 &self.ctoken,
-                &*self.pointer_location.borrow(),
+                &self.pointer_location,
                 &device_backend.pointer_image,
                 &*self.dnd_icon.lock().unwrap(),
                 &mut *self.cursor_status.lock().unwrap(),
