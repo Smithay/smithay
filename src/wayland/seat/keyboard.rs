@@ -27,7 +27,7 @@ pub use xkbcommon::xkb::{keysyms, Keysym};
 ///
 /// For some modifiers, this means that the key is currently pressed, others are toggled
 /// (like caps lock).
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct ModifiersState {
     /// The "control" key
     pub ctrl: bool,
@@ -43,19 +43,6 @@ pub struct ModifiersState {
     pub logo: bool,
     /// The "Num lock" key
     pub num_lock: bool,
-}
-
-impl Default for ModifiersState {
-    fn default() -> Self {
-        ModifiersState {
-            ctrl: false,
-            alt: false,
-            shift: false,
-            caps_lock: false,
-            logo: false,
-            num_lock: false,
-        }
-    }
 }
 
 impl ModifiersState {
