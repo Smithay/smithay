@@ -45,8 +45,8 @@ pub struct ModifiersState {
     pub num_lock: bool,
 }
 
-impl ModifiersState {
-    fn new() -> ModifiersState {
+impl Default for ModifiersState {
+    fn default() -> Self {
         ModifiersState {
             ctrl: false,
             alt: false,
@@ -56,7 +56,9 @@ impl ModifiersState {
             num_lock: false,
         }
     }
+}
 
+impl ModifiersState {
     fn update_with(&mut self, state: &xkb::State) {
         self.ctrl = state.mod_name_is_active(&xkb::MOD_NAME_CTRL, xkb::STATE_MODS_EFFECTIVE);
         self.alt = state.mod_name_is_active(&xkb::MOD_NAME_ALT, xkb::STATE_MODS_EFFECTIVE);
@@ -170,7 +172,7 @@ impl KbdInternal {
             known_kbds: Vec::new(),
             focus: None,
             pressed_keys: Vec::new(),
-            mods_state: ModifiersState::new(),
+            mods_state: ModifiersState::default(),
             keymap,
             state,
             repeat_rate,
