@@ -839,7 +839,7 @@ fn surface_commit(
                 }
                 #[cfg(not(feature = "egl"))]
                 {
-                    next_state.dimensions = buffer_dimensions(&buffer, None);
+                    next_state.dimensions = buffer_dimensions(&buffer);
                 }
                 next_state.buffer = Some(buffer);
             }

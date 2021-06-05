@@ -37,9 +37,6 @@ pub fn run_winit(
 
     #[cfg(feature = "egl")]
     let reader = renderer.borrow().bind_wl_display(&display.borrow()).ok();
-    #[cfg(not(feature = "egl"))]
-    let reader = None;
-
     #[cfg(feature = "egl")]
     if reader.is_some() {
         info!(log, "EGL hardware-acceleration enabled");
@@ -114,6 +111,7 @@ pub fn run_winit(
                     draw_windows(
                         renderer,
                         frame,
+                        #[cfg(feature = "egl")]
                         state.egl_reader.as_ref(),
                         &*state.window_map.borrow(),
                         None,
@@ -131,6 +129,7 @@ pub fn run_winit(
                                     renderer,
                                     frame,
                                     surface,
+                                    #[cfg(feature = "egl")]
                                     state.egl_reader.as_ref(),
                                     (x as i32, y as i32),
                                     state.ctoken,
@@ -158,6 +157,7 @@ pub fn run_winit(
                                 renderer,
                                 frame,
                                 surface,
+                                #[cfg(feature = "egl")]
                                 state.egl_reader.as_ref(),
                                 (x as i32, y as i32),
                                 state.ctoken,

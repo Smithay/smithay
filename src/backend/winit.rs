@@ -233,13 +233,13 @@ pub enum WinitEvent {
     Refresh,
 }
 
-#[cfg(feature = "use_system_lib")]
 impl WinitGraphicsBackend {
     /// Bind a `wl_display` to allow hardware-accelerated clients using `wl_drm`.
     ///
     /// Returns an `EGLBufferReader` used to access the contents of these buffers.
     ///
     /// *Note*: Only on implementation of `wl_drm` can be bound by a single wayland display.
+    #[cfg(feature = "use_system_lib")]
     pub fn bind_wl_display(&self, wl_display: &Display) -> Result<EGLBufferReader, EGLError> {
         self.display.bind_wl_display(wl_display)
     }

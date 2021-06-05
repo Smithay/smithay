@@ -84,10 +84,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         init_shm_global(&mut (*display).borrow_mut(), vec![], log.clone());
 
-        #[cfg(feature = "egl")]
         let shell_handles = init_shell::<BackendData>(&mut display.borrow_mut(), log.clone());
-        #[cfg(not(feature = "egl"))]
-        let shell_handles = init_shell(&mut display.borrow_mut(), log.clone());
 
         let socket_name = display
             .borrow_mut()
