@@ -110,6 +110,7 @@ pub fn run_udev(
      * Initialize the compositor
      */
     let pointer_bytes = include_bytes!("../resources/cursor2.rgba");
+    #[cfg(feature = "egl")]
     let primary_gpu = primary_gpu(&session.seat()).unwrap_or_default();
 
     // setup the timer
@@ -118,6 +119,7 @@ pub fn run_udev(
     let data = UdevData {
         session,
         output_map: Vec::new(),
+    #[cfg(feature = "egl")]
         primary_gpu,
         backends: HashMap::new(),
         signaler: session_signal.clone(),
@@ -669,9 +671,6 @@ fn render_surface(
     cursor_status: &mut CursorImageStatus,
     logger: &slog::Logger,
 ) -> Result<(), SwapBuffersError> {
-    #[cfg(not(feature = "egl"))]
-    let egl_buffer_reader = None;
-
     surface.frame_submitted()?;
 
     // get output coordinates
@@ -693,6 +692,7 @@ fn render_surface(
             draw_windows(
                 renderer,
                 frame,
+                #[cfg(feature = "egl")]
                 egl_buffer_reader,
                 window_map,
                 Some(Rectangle {
@@ -720,6 +720,7 @@ fn render_surface(
                                 renderer,
                                 frame,
                                 wl_surface,
+                                #[cfg(feature = "egl")]
                                 egl_buffer_reader,
                                 (ptr_x, ptr_y),
                                 *compositor_token,
@@ -744,6 +745,7 @@ fn render_surface(
                             renderer,
                             frame,
                             wl_surface,
+                            #[cfg(feature = "egl")]
                             egl_buffer_reader,
                             (ptr_x, ptr_y),
                             *compositor_token,

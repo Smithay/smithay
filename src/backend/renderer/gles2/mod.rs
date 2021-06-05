@@ -1,7 +1,5 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
-#[cfg(feature = "wayland_frontend")]
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ffi::CStr;
@@ -32,12 +30,17 @@ use crate::backend::SwapBuffersError;
 
 #[cfg(feature = "wayland_frontend")]
 use crate::{
-    backend::egl::display::EGLBufferReader, utils::Rectangle, wayland::compositor::SurfaceAttributes,
+    utils::Rectangle,
+    wayland::compositor::SurfaceAttributes,
 };
-#[cfg(feature = "wayland_frontend")]
-use wayland_commons::user_data::UserDataMap;
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+use crate::backend::egl::display::EGLBufferReader;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
+#[cfg(feature = "wayland_frontend")]
+use super::ImportShm;
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+use super::ImportEgl;
 
 #[allow(clippy::all, missing_docs)]
 pub mod ffi {
@@ -221,10 +224,6 @@ pub enum Gles2Error {
     #[error("Error accessing the buffer ({0:?})")]
     #[cfg(feature = "wayland_frontend")]
     EGLBufferAccessError(crate::backend::egl::BufferAccessError),
-    /// The buffer backend is unknown or unsupported
-    #[error("Error accessing the buffer")]
-    #[cfg(feature = "wayland_frontend")]
-    UnknownBufferType,
     /// This rendering operation was called without a previous `begin`-call
     #[error("Call begin before doing any rendering operations")]
     UnconstraintRenderingOperation,
@@ -243,7 +242,6 @@ impl From<Gles2Error> for SwapBuffersError {
             x @ Gles2Error::FramebufferBindingError
             | x @ Gles2Error::BindBufferEGLError(_)
             | x @ Gles2Error::UnsupportedPixelFormat(_)
-            | x @ Gles2Error::UnknownBufferType
             | x @ Gles2Error::BufferAccessError(_)
             | x @ Gles2Error::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
@@ -500,9 +498,9 @@ impl Gles2Renderer {
     }
 }
 
-impl Gles2Renderer {
-    #[cfg(feature = "wayland_frontend")]
-    fn import_shm(
+#[cfg(feature = "wayland_frontend")]
+impl ImportShm for Gles2Renderer {
+    fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&SurfaceAttributes>,
@@ -613,7 +611,19 @@ impl Gles2Renderer {
     }
 
     #[cfg(feature = "wayland_frontend")]
-    fn import_egl(
+    fn shm_formats(&self) -> &[wl_shm::Format] {
+        &[
+            wl_shm::Format::Abgr8888,
+            wl_shm::Format::Xbgr8888,
+            wl_shm::Format::Argb8888,
+            wl_shm::Format::Xrgb8888,
+        ]
+    }
+}
+
+#[cfg(all(feature = "wayland_frontend", feature = "backend_egl", feature = "use_system_lib"))]
+impl ImportEgl for Gles2Renderer {
+    fn import_egl_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         reader: &EGLBufferReader,
@@ -654,8 +664,10 @@ impl Gles2Renderer {
 
         Ok(texture)
     }
+}
 
-    #[cfg(feature = "wayland_frontend")]
+#[cfg(feature = "wayland_frontend")]
+impl Gles2Renderer {
     fn existing_dmabuf_texture(
         &self,
         buffer: &wl_buffer::WlBuffer,
@@ -880,16 +892,6 @@ impl Renderer for Gles2Renderer {
     type TextureId = Gles2Texture;
     type Frame = Gles2Frame;
 
-    #[cfg(feature = "wayland_frontend")]
-    fn shm_formats(&self) -> &[wl_shm::Format] {
-        &[
-            wl_shm::Format::Abgr8888,
-            wl_shm::Format::Xbgr8888,
-            wl_shm::Format::Argb8888,
-            wl_shm::Format::Xrgb8888,
-        ]
-    }
-
     #[cfg(feature = "image")]
     fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
         &mut self,
@@ -931,40 +933,6 @@ impl Renderer for Gles2Renderer {
             destruction_callback_sender: self.destruction_callback_sender.clone(),
         }));
         self.egl.unbind()?;
-
-        Ok(texture)
-    }
-
-    #[cfg(feature = "wayland_frontend")]
-    fn import_buffer(
-        &mut self,
-        buffer: &wl_buffer::WlBuffer,
-        surface: Option<&SurfaceAttributes>,
-        damage: &[Rectangle],
-        egl: Option<&EGLBufferReader>,
-    ) -> Result<Self::TextureId, Self::Error> {
-        let texture = if egl.and_then(|egl| egl.egl_buffer_dimensions(&buffer)).is_some() {
-            self.import_egl(&buffer, egl.unwrap())
-        } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
-            self.import_shm(&buffer, surface, damage)
-        } else {
-            Err(Gles2Error::UnknownBufferType)
-        }?;
-
-        // we want to keep the texture alive for as long as the buffer is alive.
-        // otherwise `existing_texture` will not work,
-        // if the user does not keep the texture alive long enough.
-        buffer.as_ref().user_data().set_threadsafe(|| UserDataMap::new());
-        if let Some(map) = buffer.as_ref().user_data().get::<UserDataMap>() {
-            map.insert_if_missing(|| Vec::<RefCell<Option<Gles2Texture>>>::new());
-            if let Some(vec) = map.get::<RefCell<Vec<Option<Gles2Texture>>>>() {
-                let mut vec = vec.borrow_mut();
-                while vec.len() < self.id {
-                    vec.push(None);
-                }
-                vec[self.id] = Some(texture.clone());
-            }
-        }
 
         Ok(texture)
     }

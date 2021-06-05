@@ -18,7 +18,7 @@ use wayland_server::protocol::{wl_buffer, wl_shm};
 
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
-#[cfg(all(feature = "wayland_frontend", feature = "backend_egl"))]
+#[cfg(all(feature = "wayland_frontend", feature = "backend_egl", feature = "use_system_lib"))]
 use crate::backend::egl::display::EGLBufferReader;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -216,39 +216,6 @@ pub trait Renderer {
         image: &image::ImageBuffer<image::Rgba<u8>, C>,
     ) -> Result<Self::TextureId, Self::Error>;
 
-    /// Returns supported formats for shared memory buffers.
-    ///
-    /// Will always contain At least `Argb8888` and `Xrgb8888`.
-    #[cfg(feature = "wayland_frontend")]
-    fn shm_formats(&self) -> &[wl_shm::Format] {
-        // Mandatory
-        &[wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888]
-    }
-
-    /// Import a given buffer into the renderer.
-    ///
-    /// Returns a texture_id, which can be used with `render_texture(_at)` or implementation-specific functions.
-    ///
-    /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
-    ///
-    /// This operation needs no bound or default rendering target.
-    ///
-    /// The implementation defines, if the id keeps being valid, if the buffer is released,
-    /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
-    ///
-    /// If provided the `SurfaceAttributes` can be used to do caching of rendering resources and is generally recommended.
-    ///
-    /// The `damage` argument provides a list of rectangle locating parts of the buffer that need to be updated. When provided
-    /// with an empty list `&[]`, the renderer is allowed to not update the texture at all.
-    #[cfg(all(feature = "wayland_frontend", feature = "backend_egl"))]
-    fn import_buffer(
-        &mut self,
-        buffer: &wl_buffer::WlBuffer,
-        surface: Option<&SurfaceAttributes>,
-        damage: &[Rectangle],
-        egl: Option<&EGLBufferReader>,
-    ) -> Result<Self::TextureId, Self::Error>;
-
     /// Initialize a rendering context on the current rendering target with given dimensions and transformation.
     ///
     /// This function *may* error, if:
@@ -266,6 +233,102 @@ pub trait Renderer {
     where
         F: FnOnce(&mut Self, &mut Self::Frame) -> R;
 }
+
+#[cfg(feature = "wayland_frontend")]
+/// Trait for Renderers supporting importing shm-based buffers.
+pub trait ImportShm: Renderer {
+    /// Import a given shm-based buffer into the renderer (see [`buffer_type`]).
+    ///
+    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// or implementation-specific functions.
+    ///
+    /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
+    /// This operation needs no bound or default rendering target.
+    ///
+    /// The implementation defines, if the id keeps being valid, if the buffer is released,
+    /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
+    ///
+    /// If provided the `SurfaceAttributes` can be used to do caching of rendering resources and is generally recommended.
+    ///
+    /// The `damage` argument provides a list of rectangle locating parts of the buffer that need to be updated. When provided
+    /// with an empty list `&[]`, the renderer is allowed to not update the texture at all.
+    fn import_shm_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        surface: Option<&SurfaceAttributes>,
+        damage: &[Rectangle],
+    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
+
+    /// Returns supported formats for shared memory buffers.
+    ///
+    /// Will always contain At least `Argb8888` and `Xrgb8888`.
+    fn shm_formats(&self) -> &[wl_shm::Format] {
+        // Mandatory
+        &[wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888]
+    }
+}
+
+#[cfg(all(feature = "wayland_frontend", feature = "backend_egl", feature = "use_system_lib"))]
+/// Trait for Renderers supporting importing wl_drm-based buffers.
+pub trait ImportEgl: Renderer {
+    /// Import a given wl_drm-based buffer into the renderer (see [`buffer_type`]).
+    ///
+    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// or implementation-specific functions.
+    /// 
+    /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
+    ///
+    /// This operation needs no bound or default rendering target.
+    ///
+    /// The implementation defines, if the id keeps being valid, if the buffer is released,
+    /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
+    fn import_egl_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        egl: &EGLBufferReader,
+    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
+}
+
+// TODO: Replace this with a trait_alias, once that is stabilized.
+// pub type ImportAll = Renderer + ImportShm + ImportEgl;
+
+/// Common trait for renderers of any wayland buffer type
+#[cfg(all(feature = "wayland_frontend", feature = "backend_egl", feature = "use_system_lib"))]
+pub trait ImportAll: Renderer + ImportShm + ImportEgl {
+    /// Import a given buffer into the renderer.
+    ///
+    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// or implementation-specific functions.
+    ///
+    /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
+    ///
+    /// This operation needs no bound or default rendering target.
+    ///
+    /// The implementation defines, if the id keeps being valid, if the buffer is released,
+    /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
+    ///
+    /// If provided the `SurfaceAttributes` can be used to do caching of rendering resources and is generally recommended.
+    ///
+    /// The `damage` argument provides a list of rectangle locating parts of the buffer that need to be updated. When provided
+    /// with an empty list `&[]`, the renderer is allowed to not update the texture at all.
+    /// 
+    /// Returns `None`, if the buffer type cannot be determined.
+    fn import_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        surface: Option<&SurfaceAttributes>,
+        damage: &[Rectangle],
+        egl: Option<&EGLBufferReader>,
+    ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
+        match buffer_type(buffer, egl) {
+            Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
+            Some(BufferType::Egl) => Some(self.import_egl_buffer(buffer, egl.unwrap())),
+            _ => None,
+        }
+    }
+}
+#[cfg(all(feature = "wayland_frontend", feature = "backend_egl", feature = "use_system_lib"))]
+impl<R: Renderer + ImportShm + ImportEgl> ImportAll for R {}
 
 #[cfg(feature = "wayland_frontend")]
 #[non_exhaustive]
@@ -306,7 +369,7 @@ pub fn buffer_type(
 /// Returns the *type* of a wl_buffer
 /// 
 /// Returns `None` if the type is not recognized by smithay or otherwise not supported.
-#[cfg(all(feature = "wayland_frontend", not(feature = "backend_egl"), not(feature = "use_system_lib")))]
+#[cfg(all(feature = "wayland_frontend", not(all(feature = "backend_egl", feature = "use_system_lib"))))]
 pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
     use crate::backend::allocator::Buffer;
 
@@ -343,7 +406,7 @@ pub fn buffer_dimensions(
 /// Returns the dimensions of a wl_buffer
 ///
 /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`])
-#[cfg(all(feature = "wayland_frontend", not(feature = "backend_egl"), not(feature = "use_system_lib")))]
+#[cfg(all(feature = "wayland_frontend", not(all(feature = "backend_egl", feature = "use_system_lib"))))]
 pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)> {
     use crate::backend::allocator::Buffer;
 

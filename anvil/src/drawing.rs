@@ -5,8 +5,7 @@ use std::cell::RefCell;
 use slog::Logger;
 use smithay::{
     backend::{
-        egl::display::EGLBufferReader,
-        renderer::{Frame, Renderer, Texture, Transform},
+        renderer::{Frame, Renderer, Texture, Transform, ImportShm, BufferType, buffer_type},
         SwapBuffersError,
     },
     reexports::wayland_server::protocol::{wl_buffer, wl_surface},
@@ -17,6 +16,16 @@ use smithay::{
         seat::CursorImageRole,
     },
 };
+#[cfg(feature = "egl")]
+use smithay::backend::{
+    egl::display::EGLBufferReader,
+    renderer::ImportEgl
+};
+// hacky...
+#[cfg(not(feature = "egl"))]
+pub trait ImportEgl {}
+#[cfg(not(feature = "egl"))]
+impl<T> ImportEgl for T {}
 
 use crate::shell::{MyCompositorToken, MyWindowMap, SurfaceData};
 
@@ -37,13 +46,14 @@ pub fn draw_cursor<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
     surface: &wl_surface::WlSurface,
+    #[cfg(feature = "egl")]
     egl_buffer_reader: Option<&EGLBufferReader>,
     (x, y): (i32, i32),
     token: MyCompositorToken,
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F>,
+    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportShm + ImportEgl,
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
@@ -62,6 +72,7 @@ where
         renderer,
         frame,
         surface,
+        #[cfg(feature = "egl")]
         egl_buffer_reader,
         (x - dx, y - dy),
         token,
@@ -73,13 +84,14 @@ fn draw_surface_tree<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
     root: &wl_surface::WlSurface,
+    #[cfg(feature = "egl")]
     egl_buffer_reader: Option<&EGLBufferReader>,
     location: (i32, i32),
     compositor_token: MyCompositorToken,
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F>,
+    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportShm + ImportEgl,
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
@@ -95,37 +107,45 @@ where
                 let mut data = data.borrow_mut();
                 if data.texture.is_none() {
                     if let Some(buffer) = data.current_state.buffer.take() {
-                        let damage = attributes
-                            .damage
-                            .iter()
-                            .map(|dmg| match dmg {
-                                Damage::Buffer(rect) => *rect,
-                                // TODO also apply transformations
-                                Damage::Surface(rect) => rect.scale(attributes.buffer_scale),
-                            })
-                            .collect::<Vec<_>>();
-                        match renderer.import_buffer(&buffer, Some(&attributes), &damage, egl_buffer_reader) {
-                            Ok(m) => {
-                                let buffer = if smithay::wayland::shm::with_buffer_contents(
-                                    &buffer,
-                                    |_, _| (),
-                                )
-                                .is_ok()
-                                {
+                        let texture = match buffer_type(
+                            &buffer,
+                            #[cfg(feature = "egl")]
+                            egl_buffer_reader
+                        ) {
+                            Some(BufferType::Shm) => {
+                                let damage = attributes
+                                    .damage
+                                    .iter()
+                                    .map(|dmg| match dmg {
+                                        Damage::Buffer(rect) => *rect,
+                                        // TODO also apply transformations
+                                        Damage::Surface(rect) => rect.scale(attributes.buffer_scale),
+                                    })
+                                    .collect::<Vec<_>>();
+                                let result = renderer.import_shm_buffer(&buffer, Some(&attributes), &damage);
+                                if result.is_ok() {
                                     buffer.release();
-                                    None
-                                } else {
-                                    Some(buffer)
-                                };
-                                data.texture = Some(Box::new(BufferTextures { buffer, texture: m })
+                                }
+                                Some(result)
+                            },
+                            #[cfg(feature = "egl")]
+                            Some(BufferType::Egl) => Some(renderer.import_egl_buffer(&buffer, egl_buffer_reader.unwrap())),
+                            _ => {
+                                error!(log, "Unknown buffer format for: {:?}", buffer);
+                                None
+                            }
+                        };
+                        match texture {
+                            Some(Ok(m)) => {
+                                data.texture = Some(Box::new(BufferTextures { buffer: Some(buffer), texture: m })
                                     as Box<dyn std::any::Any + 'static>)
                             }
-                            // there was an error reading the buffer, release it, we
-                            // already logged the error
-                            Err(err) => {
+                            // there was an error reading the buffer, release it.
+                            Some(Err(err)) => {
                                 warn!(log, "Error loading buffer: {:?}", err);
                                 buffer.release();
-                            }
+                            },
+                            None => buffer.release(),
                         };
                     }
                 }
@@ -181,6 +201,7 @@ where
 pub fn draw_windows<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
+    #[cfg(feature = "egl")]
     egl_buffer_reader: Option<&EGLBufferReader>,
     window_map: &MyWindowMap,
     output_rect: Option<Rectangle>,
@@ -188,7 +209,7 @@ pub fn draw_windows<R, E, F, T>(
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F>,
+    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportShm + ImportEgl,
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
@@ -210,6 +231,7 @@ where
                 renderer,
                 frame,
                 &wl_surface,
+                #[cfg(feature = "egl")]
                 egl_buffer_reader,
                 initial_place,
                 compositor_token,
@@ -227,13 +249,14 @@ pub fn draw_dnd_icon<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
     surface: &wl_surface::WlSurface,
+    #[cfg(feature = "egl")]
     egl_buffer_reader: Option<&EGLBufferReader>,
     (x, y): (i32, i32),
     token: MyCompositorToken,
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F>,
+    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportShm + ImportEgl,
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
@@ -244,5 +267,14 @@ where
             "Trying to display as a dnd icon a surface that does not have the DndIcon role."
         );
     }
-    draw_surface_tree(renderer, frame, surface, egl_buffer_reader, (x, y), token, log)
+    draw_surface_tree(
+        renderer,
+        frame,
+        surface,
+        #[cfg(feature = "egl")]
+        egl_buffer_reader,
+        (x, y),
+        token,
+        log
+    )
 }

@@ -1,6 +1,10 @@
 use std::{process::Command, sync::atomic::Ordering};
 
-use crate::{udev::UdevData, winit::WinitData, AnvilState};
+use crate::AnvilState;
+#[cfg(feature = "udev")]
+use crate::udev::UdevData;
+#[cfg(feature = "winit")]
+use crate::winit::WinitData;
 
 use smithay::{
     backend::input::{
