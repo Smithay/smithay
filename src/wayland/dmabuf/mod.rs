@@ -4,52 +4,25 @@
 //! contents as dmabuf file descriptors. These handlers automate the aggregation of the metadata associated
 //! with a dma buffer, and do some basic checking of the sanity of what the client sends.
 //!
-//! This module is only available if the `backend_drm` cargo feature is enabled.
-//!
 //! ## How to use
 //!
 //! To setup the dmabuf global, you will need to provide 2 things:
 //!
 //! - a list of the dmabuf formats you wish to support
-//! - an implementation of the `DmabufHandler` trait
+//! - a closure to test if a dmabuf buffer can be imported by your renderer
 //!
-//! The list of supported format is just a `Vec<Format>`, where you will enter all the (format, modifier)
-//! couples you support.
-//!
-//! The implementation of the `DmabufHandler` trait will be called whenever a client has finished setting up
-//! a dma buffer. You will be handled the full details of the client's submission as a `BufferInfo` struct,
-//! and you need to validate it and maybe import it into your renderer. The `BufferData` associated type
-//! allows you to store any metadata or handle to the resource you need into the created `wl_buffer`,
-//! user data, to then retrieve it when it is attached to a surface to re-identify the dmabuf.
+//! The list of supported format is just a `Vec<Format>`, where you will enter all the (code, modifier)
+//! couples you support. You can typically receive a list of supported formats for one renderer by calling
+//! [`crate::backend::renderer::Renderer::dmabuf_formats`].
 //!
 //! ```
 //! # extern crate wayland_server;
 //! # extern crate smithay;
-//! use smithay::wayland::dmabuf::{DmabufHandler, BufferInfo, init_dmabuf_global};
-//!
-//! struct MyDmabufHandler;
-//!
-//! struct MyBufferData {
-//!     /* ... */
-//! }
-//!
-//! impl Drop for MyBufferData {
-//!     fn drop(&mut self) {
-//!         // This is called when all handles to this buffer have been dropped,
-//!         // both client-side and server side.
-//!         // You can now free the associated resources in your renderer.
-//!     }
-//! }
-//!
-//! impl DmabufHandler for MyDmabufHandler {
-//!     type BufferData = MyBufferData;
-//!     fn validate_dmabuf(&mut self, info: BufferInfo) -> Result<Self::BufferData, ()> {
-//!         /* validate the dmabuf and import it into your renderer state */
-//!         Ok(MyBufferData { /* ... */ })
-//!     }
-//! }
-//!
-//! // Once this is defined, you can in your setup initialize the dmabuf global:
+//! use smithay::{
+//!     backend::allocator::dmabuf::Dmabuf,
+//!     reexports::{wayland_server::protocol::wl_buffer::WlBuffer},
+//!     wayland::dmabuf::init_dmabuf_global,
+//! };
 //!
 //! # let mut display = wayland_server::Display::new();
 //! // define your supported formats
@@ -59,12 +32,21 @@
 //! let dmabuf_global = init_dmabuf_global(
 //!     &mut display,
 //!     formats,
-//!     MyDmabufHandler,
+//!     |buffer, _| {
+//!         /* validate the dmabuf and import it into your renderer state */
+//!         let dmabuf = buffer.as_ref().user_data().get::<Dmabuf>().expect("dmabuf global sets this for us");
+//!         true
+//!     },
 //!     None // we don't provide a logger in this example
 //! );
 //! ```
 
-use std::{cell::RefCell, os::unix::io::RawFd, rc::Rc};
+use std::{
+    cell::RefCell,
+    convert::TryFrom,
+    os::unix::io::{IntoRawFd, RawFd},
+    rc::Rc,
+};
 
 pub use wayland_protocols::unstable::linux_dmabuf::v1::server::zwp_linux_buffer_params_v1::Flags;
 use wayland_protocols::unstable::linux_dmabuf::v1::server::{
@@ -73,124 +55,34 @@ use wayland_protocols::unstable::linux_dmabuf::v1::server::{
     },
     zwp_linux_dmabuf_v1,
 };
-use wayland_server::{protocol::wl_buffer, Display, Filter, Global, Main};
+use wayland_server::{protocol::wl_buffer, DispatchData, Display, Filter, Global, Main};
 
-use crate::backend::allocator::{Fourcc, Modifier};
-
-/// Representation of a Dmabuf format, as advertized to the client
-#[derive(Debug)]
-pub struct Format {
-    /// The format identifier.
-    pub format: Fourcc,
-    /// The supported dmabuf layout modifier.
-    ///
-    /// This is an opaque token. Drivers use this token to express tiling, compression, etc. driver-specific
-    /// modifications to the base format defined by the DRM fourcc code.
-    pub modifier: Modifier,
-    /// Number of planes used by this format
-    pub plane_count: u32,
-}
-
-/// A plane send by the client
-#[derive(Debug)]
-pub struct Plane {
-    /// The file descriptor
-    pub fd: RawFd,
-    /// The plane index
-    pub plane_idx: u32,
-    /// Offset from the start of the Fd
-    pub offset: u32,
-    /// Stride for this plane
-    pub stride: u32,
-    /// Modifier for this plane
-    pub modifier: u64,
-}
-
-bitflags! {
-    /// Possible flags for a DMA buffer
-    pub struct BufferFlags: u32 {
-        /// The buffer content is Y-inverted
-        const Y_INVERT = 1;
-        /// The buffer content is interlaced
-        const INTERLACED = 2;
-        /// The buffer content if interlaced is bottom-field first
-        const BOTTOM_FIRST = 4;
-    }
-}
-
-/// The complete information provided by the client to create a dmabuf buffer
-#[derive(Debug)]
-pub struct BufferInfo {
-    /// The submitted planes
-    pub planes: Vec<Plane>,
-    /// The width of this buffer
-    pub width: i32,
-    /// The height of this buffer
-    pub height: i32,
-    /// The format in use
-    pub format: u32,
-    /// The flags applied to it
-    ///
-    /// This is a bitflag, to be compared with the `Flags` enum reexported by this module.
-    pub flags: BufferFlags,
-}
+use crate::backend::allocator::{
+    dmabuf::{Dmabuf, DmabufFlags, Plane},
+    Format, Fourcc, Modifier,
+};
 
 /// Handler trait for dmabuf validation
 ///
-/// You need to provide an implementation of this trait that will validate the parameters provided by the
-/// client and import it as a dmabuf.
-pub trait DmabufHandler {
-    /// The data of a successfully imported dmabuf.
-    ///
-    /// This will be stored as the `user_data` of the `WlBuffer` associated with this dmabuf. If it has a
-    /// destructor, it will be run when the client has destroyed the buffer and your compositor has dropped
-    /// all of its `WlBuffer` handles to it.
-    type BufferData: 'static;
-    /// Validate a dmabuf
-    ///
-    /// From the information provided by the client, you need to validate and/or import the buffer.
-    ///
-    /// You can then store any information your compositor will need to handle it later, when the client has
-    /// submitted the buffer by returning `Ok(BufferData)` where `BufferData` is the associated type of this,
-    /// trait, a type of your choosing.
-    ///
-    /// If the buffer could not be imported, whatever the reason, return `Err(())`.
-    fn validate_dmabuf(&mut self, info: BufferInfo) -> Result<Self::BufferData, ()>;
-    /// Create a buffer from validated buffer data.
-    ///
-    /// This method is pre-implemented for you by storing the provided `BufferData` as the `user_data` of the
-    /// provided `WlBuffer`. By default it assumes that your `BufferData` is not threadsafe.
-    ///
-    /// You can override it if you need your `BufferData` to be threadsafe, or which to register a destructor
-    /// for the `WlBuffer` for example.
-    fn create_buffer(
-        &mut self,
-        data: Self::BufferData,
-        buffer: Main<wl_buffer::WlBuffer>,
-    ) -> wl_buffer::WlBuffer {
-        buffer.quick_assign(|_, _, _| {});
-        buffer.as_ref().user_data().set(|| data);
-        (*buffer).clone()
-    }
-}
+/// You need to provide an implementation of this trait 
+
 
 /// Initialize a dmabuf global.
 ///
-/// You need to provide a vector of the supported formats, as well as an implementation fo the `DmabufHandler`
-/// trait, which will receive the buffer creation requests from the clients.
-pub fn init_dmabuf_global<H, L>(
+/// You need to provide a vector of the supported formats, as well as a closure,
+/// that will validate the parameters provided by the client and tests the import as a dmabuf.
+pub fn init_dmabuf_global<F, L>(
     display: &mut Display,
     formats: Vec<Format>,
-    handler: H,
+    handler: F,
     logger: L,
 ) -> Global<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1>
 where
     L: Into<Option<::slog::Logger>>,
-    H: DmabufHandler + 'static,
+    F: for<'a> FnMut(&Dmabuf, DispatchData<'a>) -> bool + 'static,
 {
     let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "dmabuf_handler"));
 
-    let max_planes = formats.iter().map(|f| f.plane_count).max().unwrap_or(0);
     let formats = Rc::<[Format]>::from(formats);
     let handler = Rc::new(RefCell::new(handler));
 
@@ -211,13 +103,13 @@ where
                     if let zwp_linux_dmabuf_v1::Request::CreateParams { params_id } = req {
                         let mut handler = ParamsHandler {
                             pending_planes: Vec::new(),
-                            max_planes,
+                            max_planes: 4,
                             used: false,
                             formats: dma_formats.clone(),
                             handler: dma_handler.clone(),
                             log: dma_log.clone(),
                         };
-                        params_id.quick_assign(move |params, req, _| match req {
+                        params_id.quick_assign(move |params, req, ddata| match req {
                             ParamsRequest::Add {
                                 fd,
                                 plane_idx,
@@ -238,14 +130,14 @@ where
                                 height,
                                 format,
                                 flags,
-                            } => handler.create(&*params, width, height, format, flags),
+                            } => handler.create(&*params, width, height, format, flags, ddata),
                             ParamsRequest::CreateImmed {
                                 buffer_id,
                                 width,
                                 height,
                                 format,
                                 flags,
-                            } => handler.create_immed(&*params, buffer_id, width, height, format, flags),
+                            } => handler.create_immed(&*params, buffer_id, width, height, format, flags, ddata),
                             _ => {}
                         });
                     }
@@ -253,10 +145,10 @@ where
 
                 // send the supported formats
                 for f in &*formats {
-                    dmabuf.format(f.format as u32);
+                    dmabuf.format(f.code as u32);
                     if version >= 3 {
                         dmabuf.modifier(
-                            f.format as u32,
+                            f.code as u32,
                             (Into::<u64>::into(f.modifier) >> 32) as u32,
                             Into::<u64>::into(f.modifier) as u32,
                         );
@@ -267,7 +159,7 @@ where
     )
 }
 
-struct ParamsHandler<H: DmabufHandler> {
+struct ParamsHandler<H: for<'a> FnMut(&Dmabuf, DispatchData<'a>) -> bool + 'static> {
     pending_planes: Vec<Plane>,
     max_planes: u32,
     used: bool,
@@ -276,7 +168,10 @@ struct ParamsHandler<H: DmabufHandler> {
     log: ::slog::Logger,
 }
 
-impl<H: DmabufHandler> ParamsHandler<H> {
+impl<H> ParamsHandler<H>
+where
+  H: for<'a> FnMut(&Dmabuf, DispatchData<'a>) -> bool + 'static
+{
     fn add(
         &mut self,
         params: &BufferParams,
@@ -314,15 +209,15 @@ impl<H: DmabufHandler> ParamsHandler<H> {
         }
         // all checks passed, store the plane
         self.pending_planes.push(Plane {
-            fd,
+            fd: Some(fd),
             plane_idx,
             offset,
             stride,
-            modifier,
+            modifier: Modifier::from(modifier),
         });
     }
 
-    fn create(&mut self, params: &BufferParams, width: i32, height: i32, format: u32, flags: u32) {
+    fn create<'a>(&mut self, params: &BufferParams, width: i32, height: i32, format: u32, flags: u32, ddata: DispatchData<'a>) {
         // Cannot reuse a params:
         if self.used {
             params.as_ref().post_error(
@@ -332,6 +227,18 @@ impl<H: DmabufHandler> ParamsHandler<H> {
             return;
         }
         self.used = true;
+
+        let format = match Fourcc::try_from(format) {
+            Ok(format) => format,
+            Err(_) => {
+                params.as_ref().post_error(
+                    ParamError::InvalidFormat as u32,
+                    format!("Format {:x} is not supported", format),
+                );
+                return;
+            }
+        };
+
         if !buffer_basic_checks(
             &self.formats,
             &self.pending_planes,
@@ -343,23 +250,46 @@ impl<H: DmabufHandler> ParamsHandler<H> {
             trace!(self.log, "Killing client providing bogus dmabuf buffer params.");
             return;
         }
-        let info = BufferInfo {
-            planes: ::std::mem::replace(&mut self.pending_planes, Vec::new()),
-            width,
-            height,
+
+        let mut buf = Dmabuf::new(
+            width as u32,
+            height as u32,
             format,
-            flags: BufferFlags::from_bits_truncate(flags),
+            DmabufFlags::from_bits_truncate(flags),
+        );
+        let planes = ::std::mem::replace(&mut self.pending_planes, Vec::new());
+        for (i, plane) in planes.into_iter().enumerate() {
+            let offset = plane.offset;
+            let stride = plane.stride;
+            let modi = plane.modifier;
+            buf.add_plane(plane.into_raw_fd(), i as u32, offset, stride, modi);
+        }
+        let dmabuf = match buf.build() {
+            Some(buf) => buf,
+            None => {
+                params.as_ref().post_error(
+                    ParamError::Incomplete as u32,
+                    format!("Provided buffer is incomplete, it has zero planes"),
+                );
+                return;
+            }
         };
+        
         let mut handler = self.handler.borrow_mut();
-        if let Ok(data) = handler.validate_dmabuf(info) {
+        if handler(&dmabuf, ddata) {
             if let Some(buffer) = params
                 .as_ref()
                 .client()
                 .and_then(|c| c.create_resource::<wl_buffer::WlBuffer>(1))
             {
-                let buffer = handler.create_buffer(data, buffer);
-                trace!(self.log, "Creating a new validated dma wl_buffer.");
-                params.created(&buffer);
+                buffer.as_ref().user_data().set_threadsafe(|| dmabuf);
+                buffer.quick_assign(|_, _, _| {});
+
+                trace!(self.log, "Created a new validated dma wl_buffer.");
+                params.created(&buffer);  
+            } else {
+                trace!(self.log, "Failed to create a wl_buffer");
+                params.failed();
             }
         } else {
             trace!(self.log, "Refusing creation of an invalid dma wl_buffer.");
@@ -367,14 +297,15 @@ impl<H: DmabufHandler> ParamsHandler<H> {
         }
     }
 
-    fn create_immed(
+    fn create_immed<'a>(
         &mut self,
         params: &BufferParams,
-        buffer_id: Main<wl_buffer::WlBuffer>,
+        buffer: Main<wl_buffer::WlBuffer>,
         width: i32,
         height: i32,
         format: u32,
         flags: u32,
+        ddata: DispatchData<'a>,
     ) {
         // Cannot reuse a params:
         if self.used {
@@ -385,6 +316,18 @@ impl<H: DmabufHandler> ParamsHandler<H> {
             return;
         }
         self.used = true;
+
+        let format = match Fourcc::try_from(format) {
+            Ok(format) => format,
+            Err(_) => {
+                params.as_ref().post_error(
+                    ParamError::InvalidFormat as u32,
+                    format!("Format {:x} is not supported", format),
+                );
+                return;
+            }
+        };
+
         if !buffer_basic_checks(
             &self.formats,
             &self.pending_planes,
@@ -396,17 +339,36 @@ impl<H: DmabufHandler> ParamsHandler<H> {
             trace!(self.log, "Killing client providing bogus dmabuf buffer params.");
             return;
         }
-        let info = BufferInfo {
-            planes: ::std::mem::replace(&mut self.pending_planes, Vec::new()),
-            width,
-            height,
+
+        let mut buf = Dmabuf::new(
+            width as u32,
+            height as u32,
             format,
-            flags: BufferFlags::from_bits_truncate(flags),
+            DmabufFlags::from_bits_truncate(flags),
+        );
+        let planes = ::std::mem::replace(&mut self.pending_planes, Vec::new());
+        for (i, plane) in planes.into_iter().enumerate() {
+            let offset = plane.offset;
+            let stride = plane.stride;
+            let modi = plane.modifier;
+            buf.add_plane(plane.into_raw_fd(), i as u32, offset, stride, modi);
+        }
+        let dmabuf = match buf.build() {
+            Some(buf) => buf,
+            None => {
+                params.as_ref().post_error(
+                    ParamError::Incomplete as u32,
+                    format!("Provided buffer is incomplete, it has zero planes"),
+                );
+                return;
+            }
         };
+        
         let mut handler = self.handler.borrow_mut();
-        if let Ok(data) = handler.validate_dmabuf(info) {
-            trace!(self.log, "Creating a new validated immediate dma wl_buffer.");
-            handler.create_buffer(data, buffer_id);
+        if handler(&dmabuf, ddata) {
+            buffer.as_ref().user_data().set_threadsafe(|| dmabuf);
+            buffer.quick_assign(|_, _, _| {});
+            trace!(self.log, "Created a new validated dma wl_buffer.");
         } else {
             trace!(
                 self.log,
@@ -417,6 +379,8 @@ impl<H: DmabufHandler> ParamsHandler<H> {
                 "create_immed resulted in an invalid buffer.".into(),
             );
         }
+
+        
     }
 }
 
@@ -424,34 +388,22 @@ fn buffer_basic_checks(
     formats: &[Format],
     pending_planes: &[Plane],
     params: &BufferParams,
-    format: u32,
+    format: Fourcc,
     width: i32,
     height: i32,
 ) -> bool {
     // protocol_checks:
     // This must be a known format
-    let format = match formats.iter().find(|f| f.format as u32 == format) {
+    let _format = match formats.iter().find(|f| f.code == format) {
         Some(f) => f,
         None => {
             params.as_ref().post_error(
                 ParamError::InvalidFormat as u32,
-                format!("Format {:x} is not supported.", format),
+                format!("Format {:?}/{:x} is not supported.", format, format as u32),
             );
             return false;
         }
     };
-    // The number of planes set must match what the format expects
-    let max_plane_set = pending_planes.iter().map(|d| d.plane_idx + 1).max().unwrap_or(0);
-    if max_plane_set != format.plane_count || pending_planes.len() < format.plane_count as usize {
-        params.as_ref().post_error(
-            ParamError::Incomplete as u32,
-            format!(
-                "Format {:?} requires {} planes but got {}.",
-                format.format, format.plane_count, max_plane_set
-            ),
-        );
-        return false;
-    }
     // Width and height must be positivie
     if width < 1 || height < 1 {
         params.as_ref().post_error(
@@ -477,9 +429,9 @@ fn buffer_basic_checks(
             }
             Some(e) => e,
         };
-        if let Ok(size) = ::nix::unistd::lseek(plane.fd, 0, ::nix::unistd::Whence::SeekEnd) {
+        if let Ok(size) = ::nix::unistd::lseek(plane.fd.unwrap(), 0, ::nix::unistd::Whence::SeekEnd) {
             // reset the seek point
-            let _ = ::nix::unistd::lseek(plane.fd, 0, ::nix::unistd::Whence::SeekSet);
+            let _ = ::nix::unistd::lseek(plane.fd.unwrap(), 0, ::nix::unistd::Whence::SeekSet);
             if plane.offset as i64 > size {
                 params.as_ref().post_error(
                     ParamError::OutOfBounds as u32,

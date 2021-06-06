@@ -5,7 +5,7 @@
 //! conversions to and from [dmabufs](super::dmabuf).
 
 use super::{
-    dmabuf::{AsDmabuf, Dmabuf},
+    dmabuf::{AsDmabuf, Dmabuf, DmabufFlags, MAX_PLANES},
     Allocator, Buffer, Format, Fourcc, Modifier,
 };
 pub use gbm::{BufferObject as GbmBuffer, BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
@@ -95,20 +95,21 @@ impl<T> AsDmabuf for GbmBuffer<T> {
             return Err(GbmConvertError::UnsupportedBuffer); //TODO
         }
 
-        let fds = [self.fd()?, 0, 0, 0];
-        //if fds.iter().any(|fd| fd == 0) {
-        if fds[0] < 0 {
+        if self.fd()? == 0 {
             return Err(GbmConvertError::InvalidFD);
         }
 
-        let offsets = (0i32..planes)
-            .map(|i| self.offset(i))
-            .collect::<Result<Vec<u32>, gbm::DeviceDestroyedError>>()?;
-        let strides = (0i32..planes)
-            .map(|i| self.stride_for_plane(i))
-            .collect::<Result<Vec<u32>, gbm::DeviceDestroyedError>>()?;
-
-        Ok(Dmabuf::new(self, planes as usize, &offsets, &strides, &fds).unwrap())
+        let mut builder = Dmabuf::new_from_buffer(self, DmabufFlags::empty());
+        for idx in 0..planes {
+            builder.add_plane(
+                self.fd()?,
+                idx as u32,
+                self.offset(idx)?,
+                self.stride_for_plane(idx)?,
+                self.modifier()?,
+            );
+        }
+        Ok(builder.build().unwrap())
     }
 }
 
@@ -119,27 +120,39 @@ impl Dmabuf {
         gbm: &GbmDevice<A>,
         usage: GbmBufferFlags,
     ) -> std::io::Result<GbmBuffer<T>> {
-        let buf = &*self.0;
-        if self.has_modifier() || buf.num_planes > 1 || buf.offsets[0] != 0 {
+        let mut handles = [0; MAX_PLANES];
+        for (i, handle) in self.handles().take(MAX_PLANES).enumerate() {
+            handles[i] = handle;
+        }
+        let mut strides = [0i32; MAX_PLANES];
+        for (i, stride) in self.strides().take(MAX_PLANES).enumerate() {
+            strides[i] = stride as i32;
+        }
+        let mut offsets = [0i32; MAX_PLANES];
+        for (i, offset) in self.offsets().take(MAX_PLANES).enumerate() {
+            offsets[i] = offset as i32;
+        }
+
+        if self.has_modifier() || self.num_planes() > 1 || self.offsets().next().unwrap() != 0 {
             gbm.import_buffer_object_from_dma_buf_with_modifiers(
-                buf.num_planes as u32,
-                buf.fds,
-                buf.width,
-                buf.height,
-                buf.format.code,
+                self.num_planes() as u32,
+                handles,
+                self.width(),
+                self.height(),
+                self.format().code,
                 usage,
-                unsafe { std::mem::transmute::<[u32; 4], [i32; 4]>(buf.strides) },
-                unsafe { std::mem::transmute::<[u32; 4], [i32; 4]>(buf.offsets) },
-                buf.format.modifier,
+                strides,
+                offsets,
+                self.format().modifier,
             )
         } else {
             gbm.import_buffer_object_from_dma_buf(
-                buf.fds[0],
-                buf.width,
-                buf.height,
-                buf.strides[0],
-                buf.format.code,
-                if buf.format.modifier == Modifier::Linear {
+                handles[0],
+                self.width(),
+                self.height(),
+                strides[0] as u32,
+                self.format().code,
+                if self.format().modifier == Modifier::Linear {
                     usage | GbmBufferFlags::LINEAR
                 } else {
                     usage

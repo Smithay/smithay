@@ -18,6 +18,8 @@ use wayland_server::protocol::{wl_buffer, wl_shm};
 
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
+#[cfg(feature = "wayland_frontend")]
+use crate::backend::allocator::{dmabuf::Dmabuf, Format};
 #[cfg(all(feature = "wayland_frontend", feature = "backend_egl", feature = "use_system_lib"))]
 use crate::backend::egl::display::EGLBufferReader;
 
@@ -289,6 +291,54 @@ pub trait ImportEgl: Renderer {
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 }
 
+#[cfg(feature = "wayland_frontend")]
+/// Trait for Renderers supporting importing dmabuf-based buffers.
+pub trait ImportDma: Renderer {
+    /// Returns supported formats for dmabufs.
+    fn dmabuf_formats<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Format> + 'a> {
+        Box::new([].iter())
+    }
+
+    /// Import a given dmabuf-based buffer into the renderer (see [`buffer_type`]).
+    ///
+    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// or implementation-specific functions.
+    ///
+    /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
+    ///
+    /// This operation needs no bound or default rendering target.
+    ///
+    /// The implementation defines, if the id keeps being valid, if the buffer is released,
+    /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
+    fn import_dma_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+            let dmabuf = buffer
+                .as_ref()
+                .user_data()
+                .get::<Dmabuf>()
+                .expect("import_dma_buffer without checking buffer type?");
+            self.import_dmabuf(dmabuf)
+    }
+    
+    /// Import a given raw dmabuf into the renderer.
+    ///
+    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// or implementation-specific functions.
+    ///
+    /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
+    ///
+    /// This operation needs no bound or default rendering target.
+    ///
+    /// The implementation defines, if the id keeps being valid, if the buffer is released,
+    /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
+    fn import_dmabuf(
+        &mut self,
+        dmabuf: &Dmabuf,
+    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
+}
+
 // TODO: Replace this with a trait_alias, once that is stabilized.
 // pub type ImportAll = Renderer + ImportShm + ImportEgl;
 
@@ -352,7 +402,14 @@ pub fn buffer_type(
     buffer: &wl_buffer::WlBuffer,
     egl_buffer_reader: Option<&EGLBufferReader>,
 ) -> Option<BufferType> {
-    if egl_buffer_reader
+    if buffer
+        .as_ref()
+        .user_data()
+        .get::<Dmabuf>()
+        .is_some()
+    {
+        Some(BufferType::Dma)
+    } else if egl_buffer_reader
         .as_ref()
         .and_then(|x| x.egl_buffer_dimensions(&buffer))
         .is_some()
@@ -371,9 +428,14 @@ pub fn buffer_type(
 /// Returns `None` if the type is not recognized by smithay or otherwise not supported.
 #[cfg(all(feature = "wayland_frontend", not(all(feature = "backend_egl", feature = "use_system_lib"))))]
 pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
-    use crate::backend::allocator::Buffer;
-
-    if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok()
+    if buffer
+        .as_ref()
+        .user_data()
+        .get::<Dmabuf>()
+        .is_some()
+    {
+        Some(BufferType::Dma)
+    } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok()
     {
         Some(BufferType::Shm)
     } else {
@@ -389,7 +451,11 @@ pub fn buffer_dimensions(
     buffer: &wl_buffer::WlBuffer,
     egl_buffer_reader: Option<&EGLBufferReader>,
 ) -> Option<(i32, i32)> {
-    if let Some((w, h)) = egl_buffer_reader
+    use crate::backend::allocator::Buffer;
+
+    if let Some(buf) = buffer.as_ref().user_data().get::<Dmabuf>() {
+        Some((buf.width() as i32, buf.height() as i32))
+    } else if let Some((w, h)) = egl_buffer_reader
         .as_ref()
         .and_then(|x| x.egl_buffer_dimensions(&buffer))
     {
@@ -410,7 +476,9 @@ pub fn buffer_dimensions(
 pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)> {
     use crate::backend::allocator::Buffer;
 
-    if let Ok((w, h)) =
+    if let Some(buf) = buffer.as_ref().user_data().get::<Dmabuf>() {
+        Some((buf.width() as i32, buf.height() as i32))
+    } else if let Ok((w, h)) =
         crate::wayland::shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height))
     {
         Some((w, h))

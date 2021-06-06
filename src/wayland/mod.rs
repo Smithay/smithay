@@ -16,7 +16,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub mod compositor;
 pub mod data_device;
-#[cfg(feature = "backend_drm")]
 pub mod dmabuf;
 pub mod explicit_synchronization;
 pub mod output;

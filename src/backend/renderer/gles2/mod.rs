@@ -20,11 +20,11 @@ mod version;
 use super::{Bind, Frame, Renderer, Texture, Transform, Unbind};
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
-    Format,
+    Buffer, Format,
 };
 use crate::backend::egl::{
     ffi::egl::{self as ffi_egl, types::EGLImage},
-    EGLContext, EGLSurface, Format as EGLFormat, MakeCurrentError,
+    EGLContext, EGLSurface, MakeCurrentError,
 };
 use crate::backend::SwapBuffersError;
 
@@ -34,11 +34,11 @@ use crate::{
     wayland::compositor::SurfaceAttributes,
 };
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-use crate::backend::egl::display::EGLBufferReader;
+use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
 #[cfg(feature = "wayland_frontend")]
-use super::ImportShm;
+use super::{ImportShm, ImportDma};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use super::ImportEgl;
 
@@ -76,8 +76,6 @@ struct Gles2TextureInternal {
     y_inverted: bool,
     width: u32,
     height: u32,
-    #[cfg(feature = "wayland_frontend")]
-    buffer: Option<wl_buffer::WlBuffer>,
     egl_images: Option<Vec<EGLImage>>,
     destruction_callback_sender: Sender<CleanupResource>,
 }
@@ -155,7 +153,7 @@ pub struct Gles2Renderer {
     extensions: Vec<String>,
     programs: [Gles2Program; shaders::FRAGMENT_COUNT],
     #[cfg(feature = "wayland_frontend")]
-    dmabuf_cache: HashMap<BufferEntry, Gles2Texture>,
+    dmabuf_cache: HashMap<WeakDmabuf, Gles2Texture>,
     egl: EGLContext,
     gl: ffi::Gles2,
     destruction_callback: Receiver<CleanupResource>,
@@ -483,7 +481,7 @@ impl Gles2Renderer {
         self.make_current()?;
         #[cfg(feature = "wayland_frontend")]
         self.dmabuf_cache
-            .retain(|entry, _tex| entry.buffer.as_ref().is_alive());
+            .retain(|entry, _tex| entry.upgrade().is_some());
         for resource in self.destruction_callback.try_iter() {
             match resource {
                 CleanupResource::Texture(texture) => unsafe {
@@ -550,7 +548,6 @@ impl ImportShm for Gles2Renderer {
                             y_inverted: false,
                             width: width as u32,
                             height: height as u32,
-                            buffer: Some(buffer.clone()),
                             egl_images: None,
                             destruction_callback_sender: self.destruction_callback_sender.clone(),
                         });
@@ -657,7 +654,6 @@ impl ImportEgl for Gles2Renderer {
             y_inverted: egl.y_inverted,
             width: egl.width,
             height: egl.height,
-            buffer: Some(buffer.clone()),
             egl_images: Some(egl.into_images()),
             destruction_callback_sender: self.destruction_callback_sender.clone(),
         }));
@@ -667,15 +663,55 @@ impl ImportEgl for Gles2Renderer {
 }
 
 #[cfg(feature = "wayland_frontend")]
+impl ImportDma for Gles2Renderer {
+    fn import_dmabuf(
+        &mut self,
+        buffer: &Dmabuf,
+    ) -> Result<Gles2Texture, Gles2Error> {
+        if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
+            return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
+        }
+
+        self.existing_dmabuf_texture(&buffer)?.map(Ok).unwrap_or_else(|| {
+            let is_external = !self.egl.dmabuf_render_formats().contains(&buffer.format());
+
+            self.make_current()?;
+            let image = self.egl.display.create_image_from_dmabuf(&buffer)
+                .map_err(Gles2Error::BindBufferEGLError)?;
+
+            let tex = self.import_egl_image(image, is_external, None)?;
+            let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
+                texture: tex,
+                texture_kind: if is_external { 2 } else { 0 },
+                is_external,
+                y_inverted: buffer.y_inverted(),
+                width: buffer.width(),
+                height: buffer.height(),
+                egl_images: Some(vec![image]),
+                destruction_callback_sender: self.destruction_callback_sender.clone(),
+            }));
+            self.egl.unbind()?;
+            self.dmabuf_cache.insert(buffer.weak(), texture.clone());
+            Ok(texture)
+        })
+    }
+    
+    #[cfg(feature = "wayland_frontend")]
+    fn dmabuf_formats<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Format> + 'a> {
+        Box::new(self.egl.dmabuf_texture_formats().iter())
+    }
+}
+
+#[cfg(feature = "wayland_frontend")]
 impl Gles2Renderer {
     fn existing_dmabuf_texture(
         &self,
-        buffer: &wl_buffer::WlBuffer,
+        buffer: &Dmabuf,
     ) -> Result<Option<Gles2Texture>, Gles2Error> {
         let existing_texture = self
             .dmabuf_cache
             .iter()
-            .find(|(old_buffer, _)| &old_buffer.buffer == buffer)
+            .find(|(weak, _)| weak.upgrade().map(|entry| &entry == buffer).unwrap_or(false))
             .map(|(_, tex)| tex.clone());
 
         if let Some(texture) = existing_texture {
@@ -928,7 +964,6 @@ impl Renderer for Gles2Renderer {
             y_inverted: false,
             width: image.width(),
             height: image.height(),
-            buffer: None,
             egl_images: None,
             destruction_callback_sender: self.destruction_callback_sender.clone(),
         }));
