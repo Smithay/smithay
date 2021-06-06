@@ -16,7 +16,6 @@ use crate::backend::{
 };
 use std::{cell::RefCell, rc::Rc, time::Instant};
 use wayland_egl as wegl;
-use wayland_server::Display;
 use winit::{
     dpi::{LogicalPosition, LogicalSize, PhysicalSize},
     event::{
@@ -29,6 +28,8 @@ use winit::{
     window::{Window as WinitWindow, WindowBuilder},
 };
 
+#[cfg(feature = "use_system_lib")]
+use wayland_server::Display;
 #[cfg(feature = "use_system_lib")]
 use crate::backend::egl::display::EGLBufferReader;
 

@@ -19,10 +19,10 @@ use crate::backend::egl::{
     ffi,
     ffi::egl::types::EGLImage,
     native::EGLNativeDisplay,
-    wrap_egl_call, EGLError, Error, Format,
+    wrap_egl_call, EGLError, Error,
 };
-#[cfg(feature = "wayland_frontend")]
-use crate::backend::egl::{BufferAccessError, EGLBuffer};
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+use crate::backend::egl::{BufferAccessError, EGLBuffer, Format};
 
 /// Wrapper around [`ffi::EGLDisplay`](ffi::egl::types::EGLDisplay) to ensure display is only destroyed
 /// once all resources bound to it have been dropped.
@@ -473,18 +473,17 @@ impl EGLDisplay {
 
         for (i, ((fd, offset), stride)) in dmabuf
             .handles()
-            .iter()
             .zip(dmabuf.offsets())
             .zip(dmabuf.strides())
             .enumerate()
         {
             out.extend(&[
                 names[i][0] as i32,
-                *fd,
+                fd,
                 names[i][1] as i32,
-                *offset as i32,
+                offset as i32,
                 names[i][2] as i32,
-                *stride as i32,
+                stride as i32,
             ]);
             if dmabuf.has_modifier() {
                 out.extend(&[
@@ -510,7 +509,6 @@ impl EGLDisplay {
             if image == ffi::egl::NO_IMAGE_KHR {
                 Err(Error::EGLImageCreationFailed)
             } else {
-                // TODO check for external
                 Ok(image)
             }
         }
