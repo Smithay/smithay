@@ -6,7 +6,7 @@ use std::{
 use nix::{errno::Errno, sys::socket, Error as NixError, Result as NixResult};
 
 /// Find a free X11 display slot and setup
-pub(crate) fn prepare_x11_sockets(log: ::slog::Logger) -> Result<(X11Lock, [UnixStream; 2]), ()> {
+pub(crate) fn prepare_x11_sockets(log: ::slog::Logger) -> Result<(X11Lock, [UnixStream; 2]), std::io::Error> {
     for d in 0..33 {
         // if fails, try the next one
         if let Ok(lock) = X11Lock::grab(d, log.clone()) {
@@ -18,7 +18,10 @@ pub(crate) fn prepare_x11_sockets(log: ::slog::Logger) -> Result<(X11Lock, [Unix
     }
     // If we reach here, all values from 0 to 32 failed
     // we need to stop trying at some point
-    Err(())
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AddrInUse,
+        "Could not find a free socket for the XServer.",
+    ))
 }
 
 pub(crate) struct X11Lock {

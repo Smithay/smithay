@@ -220,6 +220,12 @@ pub fn run_udev(
         .unwrap();
 
     /*
+     * Start XWayland if supported
+     */
+    #[cfg(feature = "xwayland")]
+    state.start_xwayland();
+
+    /*
      * And run our loop
      */
 
