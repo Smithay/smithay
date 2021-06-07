@@ -98,6 +98,9 @@ pub fn run_winit(
     let start_time = std::time::Instant::now();
     let mut cursor_visible = true;
 
+    #[cfg(feature = "xwayland")]
+    state.start_xwayland();
+
     info!(log, "Initialization completed, starting the main loop.");
 
     while state.running.load(Ordering::SeqCst) {

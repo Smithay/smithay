@@ -1,12 +1,8 @@
 use std::{cell::RefCell, collections::HashMap, convert::TryFrom, os::unix::net::UnixStream, rc::Rc};
 
 use smithay::{
-    reexports::{
-        calloop::LoopHandle,
-        wayland_server::{protocol::wl_surface::WlSurface, Client},
-    },
+    reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
     wayland::compositor::CompositorToken,
-    xwayland::XWindowManager,
 };
 
 use x11rb::{
@@ -33,35 +29,16 @@ use x11rb_event_source::X11Source;
 
 mod x11rb_event_source;
 
-/// Implementation of [`smithay::xwayland::XWindowManager`] that is used for starting XWayland.
-/// After XWayland was started, the actual state is kept in `X11State`.
-pub struct XWm<Backend> {
-    handle: LoopHandle<'static, AnvilState<Backend>>,
-    token: CompositorToken<Roles>,
-    window_map: Rc<RefCell<MyWindowMap>>,
-    log: slog::Logger,
-}
-
-impl<Backend> XWm<Backend> {
-    pub fn new(
-        handle: LoopHandle<'static, AnvilState<Backend>>,
-        token: CompositorToken<Roles>,
-        window_map: Rc<RefCell<MyWindowMap>>,
-        log: slog::Logger,
-    ) -> Self {
-        Self {
-            handle,
-            token,
-            window_map,
-            log,
+impl<BackendData: 'static> AnvilState<BackendData> {
+    pub fn start_xwayland(&mut self) {
+        if let Err(e) = self.xwayland.start() {
+            error!(self.log, "Failed to start XWayland: {}", e);
         }
     }
-}
 
-impl<Backend> XWindowManager for XWm<Backend> {
-    fn xwayland_ready(&mut self, connection: UnixStream, client: Client) {
+    pub fn xwayland_ready(&mut self, connection: UnixStream, client: Client) {
         let (wm, source) =
-            X11State::start_wm(connection, self.token, self.window_map.clone(), self.log.clone()).unwrap();
+            X11State::start_wm(connection, self.ctoken, self.window_map.clone(), self.log.clone()).unwrap();
         let wm = Rc::new(RefCell::new(wm));
         client.data_map().insert_if_missing(|| Rc::clone(&wm));
         self.handle
@@ -75,7 +52,9 @@ impl<Backend> XWindowManager for XWm<Backend> {
             .unwrap();
     }
 
-    fn xwayland_exited(&mut self) {}
+    pub fn xwayland_exited(&mut self) {
+        error!(self.log, "Xwayland crashed");
+    }
 }
 
 x11rb::atom_manager! {

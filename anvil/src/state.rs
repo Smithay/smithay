@@ -23,11 +23,9 @@ use smithay::{
 #[cfg(feature = "egl")]
 use smithay::backend::egl::display::EGLBufferReader;
 #[cfg(feature = "xwayland")]
-use smithay::xwayland::XWayland;
+use smithay::xwayland::{XWayland, XWaylandEvent};
 
 use crate::shell::init_shell;
-#[cfg(feature = "xwayland")]
-use crate::xwayland::XWm;
 
 pub struct AnvilState<BackendData> {
     pub backend_data: BackendData,
@@ -48,9 +46,8 @@ pub struct AnvilState<BackendData> {
     pub start_time: std::time::Instant,
     #[cfg(feature = "egl")]
     pub egl_reader: Option<EGLBufferReader>,
-    // things we must keep alive
     #[cfg(feature = "xwayland")]
-    _xwayland: XWayland<XWm<BackendData>>,
+    pub xwayland: XWayland<AnvilState<BackendData>>,
 }
 
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
@@ -141,14 +138,19 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             .expect("Failed to initialize the keyboard");
 
         #[cfg(feature = "xwayland")]
-        let _xwayland = {
-            let xwm = XWm::new(
-                handle.clone(),
-                shell_handles.token,
-                shell_handles.window_map.clone(),
-                log.clone(),
-            );
-            XWayland::init(xwm, handle.clone(), display.clone(), &mut (), log.clone()).unwrap()
+        let xwayland = {
+            let (xwayland, channel) = XWayland::new(handle.clone(), display.clone(), log.clone());
+            let ret = handle.insert_source(channel, |event, _, anvil_state| match event {
+                XWaylandEvent::Ready { connection, client } => anvil_state.xwayland_ready(connection, client),
+                XWaylandEvent::Exited => anvil_state.xwayland_exited(),
+            });
+            if let Err(e) = ret {
+                error!(
+                    log,
+                    "Failed to insert the XWaylandSource into the event loop: {}", e
+                );
+            }
+            xwayland
         };
 
         AnvilState {
@@ -170,7 +172,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             egl_reader,
             start_time: std::time::Instant::now(),
             #[cfg(feature = "xwayland")]
-            _xwayland,
+            xwayland,
         }
     }
 }
