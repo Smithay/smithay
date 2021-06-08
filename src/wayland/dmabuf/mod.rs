@@ -32,9 +32,8 @@
 //! let dmabuf_global = init_dmabuf_global(
 //!     &mut display,
 //!     formats,
-//!     |buffer, _| {
+//!     |buffer, dispatch_data| {
 //!         /* validate the dmabuf and import it into your renderer state */
-//!         let dmabuf = buffer.as_ref().user_data().get::<Dmabuf>().expect("dmabuf global sets this for us");
 //!         true
 //!     },
 //!     None // we don't provide a logger in this example
