@@ -10,7 +10,7 @@ if it fits its scope.
 
 If you want a more realtime discussion I (@vberger) have a Matrix room dedicated to Smithay and
 my other wayland crates: [#smithay:matrix.org](https://matrix.to/#/#smithay:matrix.org). If you don't want to
-use matrix, this room is also bridged to gitter: https://gitter.im/smithay/Lobby.
+use matrix, this room is also bridged to libera.chat IRC on #smithay.
 
 ## Scope
 
