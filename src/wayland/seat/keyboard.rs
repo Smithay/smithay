@@ -27,7 +27,7 @@ pub use xkbcommon::xkb::{keysyms, Keysym};
 ///
 /// For some modifiers, this means that the key is currently pressed, others are toggled
 /// (like caps lock).
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct ModifiersState {
     /// The "control" key
     pub ctrl: bool,
@@ -46,17 +46,6 @@ pub struct ModifiersState {
 }
 
 impl ModifiersState {
-    fn new() -> ModifiersState {
-        ModifiersState {
-            ctrl: false,
-            alt: false,
-            shift: false,
-            caps_lock: false,
-            logo: false,
-            num_lock: false,
-        }
-    }
-
     fn update_with(&mut self, state: &xkb::State) {
         self.ctrl = state.mod_name_is_active(&xkb::MOD_NAME_CTRL, xkb::STATE_MODS_EFFECTIVE);
         self.alt = state.mod_name_is_active(&xkb::MOD_NAME_ALT, xkb::STATE_MODS_EFFECTIVE);
@@ -170,7 +159,7 @@ impl KbdInternal {
             known_kbds: Vec::new(),
             focus: None,
             pressed_keys: Vec::new(),
-            mods_state: ModifiersState::new(),
+            mods_state: ModifiersState::default(),
             keymap,
             state,
             repeat_rate,
