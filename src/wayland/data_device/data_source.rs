@@ -44,9 +44,9 @@ pub(crate) fn implement_data_source(src: Main<WlDataSource>) -> WlDataSource {
 pub fn with_source_metadata<T, F: FnOnce(&SourceMetadata) -> T>(
     source: &WlDataSource,
     f: F,
-) -> Result<T, ()> {
+) -> Result<T, crate::utils::UnmanagedResource> {
     match source.as_ref().user_data().get::<RefCell<SourceMetadata>>() {
         Some(data) => Ok(f(&data.borrow())),
-        None => Err(()),
+        None => Err(crate::utils::UnmanagedResource),
     }
 }

@@ -189,7 +189,7 @@ pub fn run_winit(
                     Ok(())
                 })
                 .map_err(Into::<SwapBuffersError>::into)
-                .and_then(|x| x.into());
+                .and_then(|x| x);
 
             renderer.window().set_cursor_visible(cursor_visible);
 

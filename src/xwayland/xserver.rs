@@ -192,7 +192,7 @@ fn launch<Data: Any>(inner: &Rc<RefCell<Inner<Data>>>) -> std::io::Result<()> {
             client.data_map().insert_if_missing(|| idle_inner.clone());
             client.add_destructor(Filter::new(|e: Arc<_>, _, _| client_destroy::<Data>(&e)));
 
-            instance.wayland_client = Some(client.clone());
+            instance.wayland_client = Some(client);
         }
     });
 

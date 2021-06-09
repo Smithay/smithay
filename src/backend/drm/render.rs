@@ -172,10 +172,10 @@ where
                         debug!(logger, "Success, choosen format: {:?}", format);
                         let buffers = Buffers::new(drm.clone(), gbm, buffer);
                         Ok(DrmRenderSurface {
-                            drm,
-                            renderer,
-                            swapchain,
                             buffers,
+                            swapchain,
+                            renderer,
+                            drm,
                         })
                     }
                     Err(err) => {
@@ -337,12 +337,14 @@ impl<A: AsRawFd + 'static> Drop for FbHandle<A> {
     }
 }
 
+type DmabufSlot<B, D> = Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>;
+
 struct Buffers<D: AsRawFd + 'static, B: Buffer> {
     gbm: GbmDevice<gbm::FdWrapper>,
     drm: Arc<DrmSurface<D>>,
-    _current_fb: Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>,
-    pending_fb: Option<Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>>,
-    queued_fb: Option<Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>>,
+    _current_fb: DmabufSlot<B, D>,
+    pending_fb: Option<DmabufSlot<B, D>>,
+    queued_fb: Option<DmabufSlot<B, D>>,
 }
 
 impl<D, B> Buffers<D, B>

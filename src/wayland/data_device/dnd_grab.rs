@@ -251,7 +251,7 @@ fn implement_dnd_data_offer(
         match req {
             Request::Accept { mime_type, .. } => {
                 if let Some(mtype) = mime_type {
-                    if let Err(()) = with_source_metadata(&source, |meta| {
+                    if let Err(crate::utils::UnmanagedResource) = with_source_metadata(&source, |meta| {
                         data.accepted = meta.mime_types.contains(&mtype);
                     }) {
                         data.accepted = false;

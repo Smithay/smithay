@@ -61,7 +61,7 @@
 //!                the contents of sync_state
 //!             */
 //!         },
-//!         Err(()) => {
+//!         Err(NoExplicitSync) => {
 //!             /* This surface is not explicitly synchronized, nothing more to do
 //!             */
 //!         }
@@ -155,6 +155,18 @@ pub enum ExplicitSyncError {
     NoBuffer,
 }
 
+/// This surface is not explicitly synchronized
+#[derive(Debug)]
+pub struct NoExplicitSync;
+
+impl std::fmt::Display for NoExplicitSync {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("The surface is not explicitly synchronized.")
+    }
+}
+
+impl std::error::Error for NoExplicitSync {}
+
 /// Retrieve the explicit synchronization state commited by the client
 ///
 /// This state can contain an acquire fence and a release object, for synchronization (see module-level docs).
@@ -163,12 +175,14 @@ pub enum ExplicitSyncError {
 /// should always call it on surface commit to avoid getting out-of-sync with the client.
 ///
 /// This function returns an error if the client has not setup explicit synchronization for this surface.
-pub fn get_explicit_synchronization_state(attrs: &mut SurfaceAttributes) -> Result<ExplicitSyncState, ()> {
+pub fn get_explicit_synchronization_state(
+    attrs: &mut SurfaceAttributes,
+) -> Result<ExplicitSyncState, NoExplicitSync> {
     attrs
         .user_data
         .get::<ESUserData>()
         .and_then(|s| s.take_state())
-        .ok_or(())
+        .ok_or(NoExplicitSync)
 }
 
 /// Send a synchronization error to a client
