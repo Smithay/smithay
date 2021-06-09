@@ -96,15 +96,15 @@ fn main() {
         .supported_formats(surface.plane())
         .expect("Unable to readout formats for surface")
         .iter()
-        .filter_map(|format| if format.code == Fourcc::Argb8888 { Some(format.modifier) } else { None })
+        .filter_map(|format| {
+            if format.code == Fourcc::Argb8888 {
+                Some(format.modifier)
+            } else {
+                None
+            }
+        })
         .collect::<Vec<_>>();
-    let mut swapchain = Swapchain::new(
-        allocator,
-        w.into(),
-        h.into(),
-        Fourcc::Argb8888,
-        mods,
-    );
+    let mut swapchain = Swapchain::new(allocator, w.into(), h.into(), Fourcc::Argb8888, mods);
     let first_buffer: Slot<DumbBuffer<FdWrapper>, _> = swapchain.acquire().unwrap().unwrap();
     let framebuffer = surface.add_framebuffer(first_buffer.handle(), 32, 32).unwrap();
     *first_buffer.userdata() = Some(framebuffer);

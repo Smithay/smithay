@@ -63,8 +63,7 @@ use crate::backend::allocator::{
 
 /// Handler trait for dmabuf validation
 ///
-/// You need to provide an implementation of this trait 
-
+/// You need to provide an implementation of this trait
 
 /// Initialize a dmabuf global.
 ///
@@ -136,7 +135,9 @@ where
                                 height,
                                 format,
                                 flags,
-                            } => handler.create_immed(&*params, buffer_id, width, height, format, flags, ddata),
+                            } => {
+                                handler.create_immed(&*params, buffer_id, width, height, format, flags, ddata)
+                            }
                             _ => {}
                         });
                     }
@@ -169,7 +170,7 @@ struct ParamsHandler<H: for<'a> FnMut(&Dmabuf, DispatchData<'a>) -> bool + 'stat
 
 impl<H> ParamsHandler<H>
 where
-  H: for<'a> FnMut(&Dmabuf, DispatchData<'a>) -> bool + 'static
+    H: for<'a> FnMut(&Dmabuf, DispatchData<'a>) -> bool + 'static,
 {
     fn add(
         &mut self,
@@ -216,7 +217,15 @@ where
         });
     }
 
-    fn create<'a>(&mut self, params: &BufferParams, width: i32, height: i32, format: u32, flags: u32, ddata: DispatchData<'a>) {
+    fn create<'a>(
+        &mut self,
+        params: &BufferParams,
+        width: i32,
+        height: i32,
+        format: u32,
+        flags: u32,
+        ddata: DispatchData<'a>,
+    ) {
         // Cannot reuse a params:
         if self.used {
             params.as_ref().post_error(
@@ -273,7 +282,7 @@ where
                 return;
             }
         };
-        
+
         let mut handler = self.handler.borrow_mut();
         if handler(&dmabuf, ddata) {
             if let Some(buffer) = params
@@ -285,7 +294,7 @@ where
                 buffer.quick_assign(|_, _, _| {});
 
                 trace!(self.log, "Created a new validated dma wl_buffer.");
-                params.created(&buffer);  
+                params.created(&buffer);
             } else {
                 trace!(self.log, "Failed to create a wl_buffer");
                 params.failed();
@@ -362,7 +371,7 @@ where
                 return;
             }
         };
-        
+
         let mut handler = self.handler.borrow_mut();
         if handler(&dmabuf, ddata) {
             buffer.as_ref().user_data().set_threadsafe(|| dmabuf);
@@ -378,8 +387,6 @@ where
                 "create_immed resulted in an invalid buffer.".into(),
             );
         }
-
-        
     }
 }
 
