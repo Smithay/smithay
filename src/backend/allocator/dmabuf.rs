@@ -152,7 +152,7 @@ impl DmabufBuilder {
     ///
     /// Returns `None` if the builder has no planes attached.
     pub fn build(mut self) -> Option<Dmabuf> {
-        if self.internal.planes.len() == 0 {
+        if self.internal.planes.is_empty() {
             return None;
         }
 
@@ -167,7 +167,7 @@ impl Dmabuf {
     // Note: the `src` Buffer is only used a reference for size and format.
     // The contents are determined by the provided file descriptors, which
     // do not need to refer to the same buffer `src` does.
-    pub fn new_from_buffer(src: &impl Buffer, flags: DmabufFlags) -> DmabufBuilder {
+    pub fn builder_from_buffer(src: &impl Buffer, flags: DmabufFlags) -> DmabufBuilder {
         DmabufBuilder {
             internal: DmabufInternal {
                 planes: Vec::with_capacity(MAX_PLANES),
@@ -179,8 +179,8 @@ impl Dmabuf {
         }
     }
 
-    /// Create a new Dmabuf
-    pub fn new(width: u32, height: u32, format: Fourcc, flags: DmabufFlags) -> DmabufBuilder {
+    /// Create a new Dmabuf builder
+    pub fn builder(width: u32, height: u32, format: Fourcc, flags: DmabufFlags) -> DmabufBuilder {
         DmabufBuilder {
             internal: DmabufInternal {
                 planes: Vec::with_capacity(MAX_PLANES),
@@ -198,17 +198,17 @@ impl Dmabuf {
     }
 
     /// Returns raw handles of the planes of this buffer
-    pub fn handles<'a>(&'a self) -> impl Iterator<Item = RawFd> + 'a {
+    pub fn handles(&self) -> impl Iterator<Item = RawFd> + '_ {
         self.0.planes.iter().map(|p| *p.fd.as_ref().unwrap())
     }
 
     /// Returns offsets for the planes of this buffer
-    pub fn offsets<'a>(&'a self) -> impl Iterator<Item = u32> + 'a {
+    pub fn offsets(&self) -> impl Iterator<Item = u32> + '_ {
         self.0.planes.iter().map(|p| p.offset)
     }
 
     /// Returns strides for the planes of this buffer
-    pub fn strides<'a>(&'a self) -> impl Iterator<Item = u32> + 'a {
+    pub fn strides(&self) -> impl Iterator<Item = u32> + '_ {
         self.0.planes.iter().map(|p| p.stride)
     }
 

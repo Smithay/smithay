@@ -537,7 +537,7 @@ impl ImportShm for Gles2Renderer {
                         unsafe { self.gl.GenTextures(1, &mut tex) };
                         // new texture, upload in full
                         upload_full = true;
-                        let texture = Rc::new(Gles2TextureInternal {
+                        Rc::new(Gles2TextureInternal {
                             texture: tex,
                             texture_kind: shader_idx,
                             is_external: false,
@@ -546,8 +546,7 @@ impl ImportShm for Gles2Renderer {
                             height: height as u32,
                             egl_images: None,
                             destruction_callback_sender: self.destruction_callback_sender.clone(),
-                        });
-                        texture
+                        })
                     }),
             );
 

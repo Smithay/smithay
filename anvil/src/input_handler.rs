@@ -46,7 +46,7 @@ impl<Backend> AnvilState<Backend> {
             // only process special actions on key press, not release
             return KeyAction::None;
         }
-        return action;
+        action
     }
 
     fn on_pointer_button<B: InputBackend>(&mut self, evt: B::PointerButtonEvent) {
@@ -223,7 +223,7 @@ impl AnvilState<UdevData> {
     }
 
     fn clamp_coords(&self, pos: (f64, f64)) -> (f64, f64) {
-        if self.backend_data.output_map.len() == 0 {
+        if self.backend_data.output_map.is_empty() {
             return pos;
         }
 

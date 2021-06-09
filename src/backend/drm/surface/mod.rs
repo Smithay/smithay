@@ -280,7 +280,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
                 .iter()
                 .find(|handle| {
                     // get information of that property
-                    if let Some(info) = self.get_property(**handle).ok() {
+                    if let Ok(info) = self.get_property(**handle) {
                         // to find out, if we got the handle of the "IN_FORMATS" property ...
                         if info.name().to_str().map(|x| x == "IN_FORMATS").unwrap_or(false) {
                             // so we can use that to get formats

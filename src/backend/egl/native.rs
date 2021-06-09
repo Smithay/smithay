@@ -120,7 +120,7 @@ impl<'a> Debug for EGLPlatform<'a> {
 /// Trait describing platform specific functionality to create a valid `EGLDisplay` using the `EGL_EXT_platform_base`(https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt) extension.
 pub trait EGLNativeDisplay: Send {
     /// List of supported platforms that can be used to create a display using [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)
-    fn supported_platforms<'a>(&'a self) -> Vec<EGLPlatform<'a>>;
+    fn supported_platforms(&self) -> Vec<EGLPlatform<'_>>;
 
     /// Type of surfaces created
     fn surface_type(&self) -> ffi::EGLint {
@@ -130,7 +130,7 @@ pub trait EGLNativeDisplay: Send {
 
 #[cfg(feature = "backend_gbm")]
 impl<A: AsRawFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
-    fn supported_platforms<'a>(&'a self) -> Vec<EGLPlatform<'a>> {
+    fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
         vec![
             // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_gbm.txt
             egl_platform!(PLATFORM_GBM_KHR, self.as_raw(), &["EGL_KHR_platform_gbm"]),
@@ -142,7 +142,7 @@ impl<A: AsRawFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
 
 #[cfg(feature = "backend_winit")]
 impl EGLNativeDisplay for WinitWindow {
-    fn supported_platforms<'a>(&'a self) -> Vec<EGLPlatform<'a>> {
+    fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
         if let Some(display) = self.wayland_display() {
             vec![
                 // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_wayland.txt

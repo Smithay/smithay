@@ -7,8 +7,8 @@ use wayland_server::{
 
 use super::{
     tree::{Location, SurfaceData},
-    BufferAssignment, CompositorToken, Damage, Rectangle, RectangleKind, RegionAttributes, Role, RoleType,
-    SubsurfaceRole, SurfaceEvent,
+    AlreadyHasRole, BufferAssignment, CompositorToken, Damage, Rectangle, RectangleKind, RegionAttributes,
+    Role, RoleType, SubsurfaceRole, SurfaceEvent,
 };
 
 /*
@@ -65,11 +65,11 @@ impl<R> SurfaceImplem<R>
 where
     R: 'static,
 {
-    fn receive_surface_request<'a>(
+    fn receive_surface_request(
         &mut self,
         req: wl_surface::Request,
         surface: wl_surface::WlSurface,
-        ddata: DispatchData<'a>,
+        ddata: DispatchData<'_>,
     ) {
         match req {
             wl_surface::Request::Attach { buffer, x, y } => {
@@ -196,7 +196,7 @@ where
 {
     subcompositor.quick_assign(move |subcompositor, request, _| match request {
         wl_subcompositor::Request::GetSubsurface { id, surface, parent } => {
-            if let Err(()) = SurfaceData::<R>::set_parent(&surface, &parent) {
+            if let Err(AlreadyHasRole) = SurfaceData::<R>::set_parent(&surface, &parent) {
                 subcompositor.as_ref().post_error(
                     wl_subcompositor::Error::BadSurface as u32,
                     "Surface already has a role.".into(),

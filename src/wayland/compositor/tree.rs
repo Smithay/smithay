@@ -127,7 +127,7 @@ impl<R: RoleType + 'static> SurfaceData<R> {
     }
 
     /// Register that this surface has a role, fails if it already has one
-    pub fn give_role<RoleData>(surface: &WlSurface) -> Result<(), ()>
+    pub fn give_role<RoleData>(surface: &WlSurface) -> Result<(), AlreadyHasRole>
     where
         R: Role<RoleData>,
         RoleData: Default,
@@ -215,12 +215,12 @@ impl<R: RoleType + Role<SubsurfaceRole> + 'static> SurfaceData<R> {
     ///
     /// if this surface already has a role, does nothing and fails, otherwise
     /// its role is now to be a subsurface
-    pub fn set_parent(child: &WlSurface, parent: &WlSurface) -> Result<(), ()> {
+    pub fn set_parent(child: &WlSurface, parent: &WlSurface) -> Result<(), AlreadyHasRole> {
         debug_assert!(child.as_ref().is_alive());
         debug_assert!(parent.as_ref().is_alive());
         // ensure the child is not already a parent of the parent
         if Self::is_ancestor(child, parent) {
-            return Err(());
+            return Err(AlreadyHasRole);
         }
 
         // change child's parent

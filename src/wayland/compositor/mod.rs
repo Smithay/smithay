@@ -76,7 +76,7 @@ mod tree;
 
 pub use self::tree::TraversalAction;
 use self::{
-    roles::{Role, RoleType, WrongRole},
+    roles::{AlreadyHasRole, Role, RoleType, WrongRole},
     tree::SurfaceData,
 };
 use crate::utils::Rectangle;
@@ -433,7 +433,7 @@ impl<R: RoleType + 'static> CompositorToken<R> {
     ///
     /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
     /// will panic (having more than one compositor is not supported).
-    pub fn give_role<RoleData>(self, surface: &WlSurface) -> Result<(), ()>
+    pub fn give_role<RoleData>(self, surface: &WlSurface) -> Result<(), AlreadyHasRole>
     where
         R: Role<RoleData>,
         RoleData: Default,

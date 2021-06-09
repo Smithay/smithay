@@ -92,6 +92,30 @@
 #[derive(Debug)]
 pub struct WrongRole;
 
+impl std::fmt::Display for WrongRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Wrong role for surface.")
+    }
+}
+
+impl std::error::Error for WrongRole {}
+
+/// An error type signifying that the surface already has a role and
+/// cannot be assigned an other
+///
+/// Generated if you attempt a role operation on a surface that does
+/// not have the role you asked for.
+#[derive(Debug)]
+pub struct AlreadyHasRole;
+
+impl std::fmt::Display for AlreadyHasRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Surface already has a role.")
+    }
+}
+
+impl std::error::Error for AlreadyHasRole {}
+
 /// A trait representing a type that can manage surface roles
 pub trait RoleType {
     /// Check if the associated surface has a role
@@ -126,11 +150,11 @@ pub trait Role<R>: RoleType {
     /// Set the role for the associated surface with default associated data
     ///
     /// Fails if the surface already has a role
-    fn set(&mut self) -> Result<(), ()>
+    fn set(&mut self) -> Result<(), AlreadyHasRole>
     where
         R: Default,
     {
-        self.set_with(Default::default()).map_err(|_| ())
+        self.set_with(Default::default()).map_err(|_| AlreadyHasRole)
     }
 
     /// Set the role for the associated surface with given data

@@ -259,7 +259,7 @@ where
             return;
         }
 
-        let mut buf = Dmabuf::new(
+        let mut buf = Dmabuf::builder(
             width as u32,
             height as u32,
             format,
@@ -277,7 +277,7 @@ where
             None => {
                 params.as_ref().post_error(
                     ParamError::Incomplete as u32,
-                    format!("Provided buffer is incomplete, it has zero planes"),
+                    "Provided buffer is incomplete, it has zero planes".to_string(),
                 );
                 return;
             }
@@ -305,6 +305,7 @@ where
         }
     }
 
+    #[allow(clippy::clippy::too_many_arguments)]
     fn create_immed<'a>(
         &mut self,
         params: &BufferParams,
@@ -348,7 +349,7 @@ where
             return;
         }
 
-        let mut buf = Dmabuf::new(
+        let mut buf = Dmabuf::builder(
             width as u32,
             height as u32,
             format,
@@ -366,7 +367,7 @@ where
             None => {
                 params.as_ref().post_error(
                     ParamError::Incomplete as u32,
-                    format!("Provided buffer is incomplete, it has zero planes"),
+                    "Provided buffer is incomplete, it has zero planes".to_string(),
                 );
                 return;
             }

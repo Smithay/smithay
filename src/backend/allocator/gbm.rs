@@ -99,7 +99,7 @@ impl<T> AsDmabuf for GbmBuffer<T> {
             return Err(GbmConvertError::InvalidFD);
         }
 
-        let mut builder = Dmabuf::new_from_buffer(self, DmabufFlags::empty());
+        let mut builder = Dmabuf::builder_from_buffer(self, DmabufFlags::empty());
         for idx in 0..planes {
             builder.add_plane(
                 self.fd()?,
