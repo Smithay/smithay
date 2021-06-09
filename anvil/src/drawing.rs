@@ -123,30 +123,32 @@ where
                                     })
                                     .collect::<Vec<_>>();
                                 let result = renderer.import_shm_buffer(&buffer, Some(&attributes), &damage);
-                                if result.is_ok() {
-                                    buffer.release();
-                                }
-                                Some(result)
+                                buffer.release();
+                                // don't return the buffer as it is already released
+                                Some((result, None))
                             },
                             #[cfg(feature = "egl")]
-                            Some(BufferType::Egl) => Some(renderer.import_egl_buffer(&buffer, egl_buffer_reader.unwrap())),
-                            Some(BufferType::Dma) => Some(renderer.import_dma_buffer(&buffer)),
+                            Some(BufferType::Egl) => Some((renderer.import_egl_buffer(&buffer, egl_buffer_reader.unwrap()), Some(buffer))),
+                            Some(BufferType::Dma) => Some((renderer.import_dma_buffer(&buffer), Some(buffer))),
                             _ => {
                                 error!(log, "Unknown buffer format for: {:?}", buffer);
+                                buffer.release();
                                 None
                             }
                         };
                         match texture {
-                            Some(Ok(m)) => {
-                                data.texture = Some(Box::new(BufferTextures { buffer: Some(buffer), texture: m })
+                            Some((Ok(m), buffer)) => {
+                                data.texture = Some(Box::new(BufferTextures { buffer, texture: m })
                                     as Box<dyn std::any::Any + 'static>)
                             }
                             // there was an error reading the buffer, release it.
-                            Some(Err(err)) => {
+                            Some((Err(err), buffer)) => {
                                 warn!(log, "Error loading buffer: {:?}", err);
-                                buffer.release();
+                                if let Some(buffer) = buffer {
+                                    buffer.release();
+                                }
                             },
-                            None => buffer.release(),
+                            None => {},
                         };
                     }
                 }
