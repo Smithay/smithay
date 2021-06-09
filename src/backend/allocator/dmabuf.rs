@@ -11,9 +11,9 @@
 //! the lifetime of the buffer. E.g. when you are only caching associated resources for a dmabuf.
 
 use super::{Buffer, Format, Fourcc, Modifier};
+use std::hash::{Hash, Hasher};
 use std::os::unix::io::{IntoRawFd, RawFd};
 use std::sync::{Arc, Weak};
-use std::hash::{Hash, Hasher};
 
 /// Maximum amount of planes this implementation supports
 pub const MAX_PLANES: usize = 4;

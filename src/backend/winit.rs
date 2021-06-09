@@ -29,9 +29,9 @@ use winit::{
 };
 
 #[cfg(feature = "use_system_lib")]
-use wayland_server::Display;
-#[cfg(feature = "use_system_lib")]
 use crate::backend::egl::display::EGLBufferReader;
+#[cfg(feature = "use_system_lib")]
+use wayland_server::Display;
 
 /// Errors thrown by the `winit` backends
 #[derive(thiserror::Error, Debug)]

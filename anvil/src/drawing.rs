@@ -3,9 +3,11 @@
 use std::cell::RefCell;
 
 use slog::Logger;
+#[cfg(feature = "egl")]
+use smithay::backend::{egl::display::EGLBufferReader, renderer::ImportEgl};
 use smithay::{
     backend::{
-        renderer::{Frame, Renderer, Texture, Transform, ImportShm, ImportDma, BufferType, buffer_type},
+        renderer::{buffer_type, BufferType, Frame, ImportDma, ImportShm, Renderer, Texture, Transform},
         SwapBuffersError,
     },
     reexports::wayland_server::protocol::{wl_buffer, wl_surface},
@@ -15,11 +17,6 @@ use smithay::{
         data_device::DnDIconRole,
         seat::CursorImageRole,
     },
-};
-#[cfg(feature = "egl")]
-use smithay::backend::{
-    egl::display::EGLBufferReader,
-    renderer::ImportEgl,
 };
 // hacky...
 #[cfg(not(feature = "egl"))]
@@ -46,8 +43,7 @@ pub fn draw_cursor<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
     surface: &wl_surface::WlSurface,
-    #[cfg(feature = "egl")]
-    egl_buffer_reader: Option<&EGLBufferReader>,
+    #[cfg(feature = "egl")] egl_buffer_reader: Option<&EGLBufferReader>,
     (x, y): (i32, i32),
     token: MyCompositorToken,
     log: &Logger,
@@ -84,8 +80,7 @@ fn draw_surface_tree<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
     root: &wl_surface::WlSurface,
-    #[cfg(feature = "egl")]
-    egl_buffer_reader: Option<&EGLBufferReader>,
+    #[cfg(feature = "egl")] egl_buffer_reader: Option<&EGLBufferReader>,
     location: (i32, i32),
     compositor_token: MyCompositorToken,
     log: &Logger,
@@ -110,7 +105,7 @@ where
                         let texture = match buffer_type(
                             &buffer,
                             #[cfg(feature = "egl")]
-                            egl_buffer_reader
+                            egl_buffer_reader,
                         ) {
                             Some(BufferType::Shm) => {
                                 let damage = attributes
@@ -126,10 +121,15 @@ where
                                 buffer.release();
                                 // don't return the buffer as it is already released
                                 Some((result, None))
-                            },
+                            }
                             #[cfg(feature = "egl")]
-                            Some(BufferType::Egl) => Some((renderer.import_egl_buffer(&buffer, egl_buffer_reader.unwrap()), Some(buffer))),
-                            Some(BufferType::Dma) => Some((renderer.import_dma_buffer(&buffer), Some(buffer))),
+                            Some(BufferType::Egl) => Some((
+                                renderer.import_egl_buffer(&buffer, egl_buffer_reader.unwrap()),
+                                Some(buffer),
+                            )),
+                            Some(BufferType::Dma) => {
+                                Some((renderer.import_dma_buffer(&buffer), Some(buffer)))
+                            }
                             _ => {
                                 error!(log, "Unknown buffer format for: {:?}", buffer);
                                 buffer.release();
@@ -147,8 +147,8 @@ where
                                 if let Some(buffer) = buffer {
                                     buffer.release();
                                 }
-                            },
-                            None => {},
+                            }
+                            None => {}
                         };
                     }
                 }
@@ -204,8 +204,7 @@ where
 pub fn draw_windows<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
-    #[cfg(feature = "egl")]
-    egl_buffer_reader: Option<&EGLBufferReader>,
+    #[cfg(feature = "egl")] egl_buffer_reader: Option<&EGLBufferReader>,
     window_map: &MyWindowMap,
     output_rect: Option<Rectangle>,
     compositor_token: MyCompositorToken,
@@ -252,8 +251,7 @@ pub fn draw_dnd_icon<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
     surface: &wl_surface::WlSurface,
-    #[cfg(feature = "egl")]
-    egl_buffer_reader: Option<&EGLBufferReader>,
+    #[cfg(feature = "egl")] egl_buffer_reader: Option<&EGLBufferReader>,
     (x, y): (i32, i32),
     token: MyCompositorToken,
     log: &::slog::Logger,
@@ -278,6 +276,6 @@ where
         egl_buffer_reader,
         (x, y),
         token,
-        log
+        log,
     )
 }

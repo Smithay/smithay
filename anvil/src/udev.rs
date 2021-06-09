@@ -12,6 +12,11 @@ use std::{
 use image::{ImageBuffer, Rgba};
 use slog::Logger;
 
+#[cfg(feature = "egl")]
+use smithay::{
+    backend::{drm::DevPath, egl::display::EGLBufferReader, renderer::ImportDma, udev::primary_gpu},
+    wayland::dmabuf::init_dmabuf_global,
+};
 use smithay::{
     backend::{
         drm::{DrmDevice, DrmError, DrmEvent, DrmRenderSurface},
@@ -19,7 +24,7 @@ use smithay::{
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             gles2::{Gles2Renderer, Gles2Texture},
-            Frame, Renderer, Transform
+            Frame, Renderer, Transform,
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
         udev::{UdevBackend, UdevEvent},
@@ -54,11 +59,6 @@ use smithay::{
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
     },
-};
-#[cfg(feature = "egl")]
-use smithay::{
-    backend::{drm::DevPath, egl::display::EGLBufferReader, udev::primary_gpu, renderer::ImportDma},
-    wayland::dmabuf::init_dmabuf_global,
 };
 
 use crate::drawing::*;
@@ -122,7 +122,7 @@ pub fn run_udev(
     let data = UdevData {
         session,
         output_map: Vec::new(),
-    #[cfg(feature = "egl")]
+        #[cfg(feature = "egl")]
         primary_gpu,
         backends: HashMap::new(),
         signaler: session_signal.clone(),
@@ -194,19 +194,24 @@ pub fn run_udev(
                 formats.extend(surface.borrow_mut().renderer().dmabuf_formats().cloned());
             }
         }
-        
-        init_dmabuf_global(&mut *display.borrow_mut(), formats, |buffer, mut ddata| {
-            let anvil_state = ddata.get::<AnvilState<UdevData>>().unwrap();
-            for backend_data in anvil_state.backend_data.backends.values() {
-                let surfaces = backend_data.surfaces.borrow_mut();
-                if let Some(surface) = surfaces.values().next() {
-                    if surface.borrow_mut().renderer().import_dmabuf(buffer).is_ok() {
-                        return true;
+
+        init_dmabuf_global(
+            &mut *display.borrow_mut(),
+            formats,
+            |buffer, mut ddata| {
+                let anvil_state = ddata.get::<AnvilState<UdevData>>().unwrap();
+                for backend_data in anvil_state.backend_data.backends.values() {
+                    let surfaces = backend_data.surfaces.borrow_mut();
+                    if let Some(surface) = surfaces.values().next() {
+                        if surface.borrow_mut().renderer().import_dmabuf(buffer).is_ok() {
+                            return true;
+                        }
                     }
                 }
-            }
-            false
-        }, log.clone());
+                false
+            },
+            log.clone(),
+        );
     }
 
     let udev_event_source = event_loop
