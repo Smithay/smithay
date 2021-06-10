@@ -152,6 +152,8 @@ pub struct Gles2Renderer {
     #[cfg(feature = "wayland_frontend")]
     dmabuf_cache: HashMap<WeakDmabuf, Gles2Texture>,
     egl: EGLContext,
+    #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+    egl_reader: Option<EGLBufferReader>,
     gl: ffi::Gles2,
     destruction_callback: Receiver<CleanupResource>,
     destruction_callback_sender: Sender<CleanupResource>,
@@ -446,6 +448,8 @@ impl Gles2Renderer {
             id: RENDERER_COUNTER.fetch_add(1, Ordering::SeqCst),
             gl,
             egl: context,
+            #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+            egl_reader: None,
             extensions: exts,
             programs,
             target_buffer: None,
@@ -619,13 +623,31 @@ impl ImportShm for Gles2Renderer {
     feature = "use_system_lib"
 ))]
 impl ImportEgl for Gles2Renderer {
-    fn import_egl_buffer(
+    fn bind_wl_display(
         &mut self,
-        buffer: &wl_buffer::WlBuffer,
-        reader: &EGLBufferReader,
-    ) -> Result<Gles2Texture, Gles2Error> {
+        display: &wayland_server::Display,
+    ) -> Result<(), crate::backend::egl::Error> {
+        self.egl_reader = Some(self.egl.display.bind_wl_display(display)?);
+        Ok(())
+    }
+
+    fn unbind_wl_display(&mut self) {
+        self.egl_reader = None;
+    }
+
+    fn egl_reader(&self) -> Option<&EGLBufferReader> {
+        self.egl_reader.as_ref()
+    }
+
+    fn import_egl_buffer(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Gles2Texture, Gles2Error> {
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
+        }
+
+        if self.egl_reader().is_none() {
+            return Err(Gles2Error::EGLBufferAccessError(
+                crate::backend::egl::BufferAccessError::NotManaged(crate::backend::egl::EGLError::BadDisplay),
+            ));
         }
 
         // We can not use the caching logic for textures here as the
@@ -635,7 +657,10 @@ impl ImportEgl for Gles2Renderer {
         // will never be cleaned up.
         self.make_current()?;
 
-        let egl = reader
+        let egl = self
+            .egl_reader
+            .as_ref()
+            .unwrap()
             .egl_buffer_contents(&buffer)
             .map_err(Gles2Error::EGLBufferAccessError)?;
 
@@ -905,6 +930,8 @@ impl Drop for Gles2Renderer {
                     let _ = Box::from_raw(logger_ptr);
                 }
 
+                #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+                let _ = self.egl_reader.take();
                 let _ = self.egl.unbind();
             }
         }

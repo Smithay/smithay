@@ -37,7 +37,7 @@ use smithay::{
 };
 
 use crate::{
-    state::AnvilState,
+    state::{AnvilState, Backend},
     window_map::{Kind as SurfaceKind, PopupKind, WindowMap},
 };
 
@@ -324,17 +324,25 @@ pub struct ShellHandles {
     pub window_map: Rc<RefCell<MyWindowMap>>,
 }
 
-pub fn init_shell<Backend: 'static>(display: &mut Display, log: ::slog::Logger) -> ShellHandles {
+pub fn init_shell<BackendData: Backend + 'static>(
+    display: &mut Display,
+    log: ::slog::Logger,
+) -> ShellHandles {
     // Create the compositor
     let (compositor_token, _, _) = compositor_init(
         display,
         move |request, surface, ctoken, mut ddata| match request {
             SurfaceEvent::Commit => {
-                let anvil_state = ddata.get::<AnvilState<Backend>>().unwrap();
+                let anvil_state = ddata.get::<AnvilState<BackendData>>().unwrap();
                 let window_map = anvil_state.window_map.as_ref();
                 #[cfg(feature = "egl")]
                 {
-                    surface_commit(&surface, ctoken, anvil_state.egl_reader.as_ref(), &*window_map)
+                    surface_commit(
+                        &surface,
+                        ctoken,
+                        anvil_state.backend_data.egl_reader().as_ref(),
+                        &*window_map,
+                    )
                 }
                 #[cfg(not(feature = "egl"))]
                 {

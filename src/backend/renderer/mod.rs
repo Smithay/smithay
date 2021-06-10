@@ -25,7 +25,7 @@ use crate::backend::allocator::{dmabuf::Dmabuf, Format};
     feature = "backend_egl",
     feature = "use_system_lib"
 ))]
-use crate::backend::egl::display::EGLBufferReader;
+use crate::backend::egl::{display::EGLBufferReader, Error as EglError};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Possible transformations to two-dimensional planes
@@ -281,6 +281,34 @@ pub trait ImportShm: Renderer {
 ))]
 /// Trait for Renderers supporting importing wl_drm-based buffers.
 pub trait ImportEgl: Renderer {
+    /// Binds the underlying EGL display to the given Wayland display.
+    ///
+    /// This will allow clients to utilize EGL to create hardware-accelerated
+    /// surfaces. This renderer will thus be able to handle wl_drm-based buffers.
+    ///
+    /// ## Errors
+    ///
+    /// This might return [`EglExtensionNotSupported`](Error::EglExtensionNotSupported)
+    /// if binding is not supported by the EGL implementation.
+    ///
+    /// This might return [`OtherEGLDisplayAlreadyBound`](Error::OtherEGLDisplayAlreadyBound)
+    /// if called for the same [`Display`] multiple times, as only one egl display may be bound at any given time.
+    fn bind_wl_display(&mut self, display: &wayland_server::Display) -> Result<(), EglError>;
+
+    /// Unbinds a previously bound egl display, if existing.
+    ///
+    /// *Note*: As a result any previously created egl-based WlBuffers will not be readable anymore.
+    /// Your compositor will have to deal with existing buffers of *unknown* type.
+    fn unbind_wl_display(&mut self);
+
+    /// Returns the underlying [`EGLBufferReader`].
+    ///
+    /// The primary use for this is calling [`buffer_dimensions`] or [`buffer_type`].
+    ///
+    /// Returns `None` if no [`Display`] was previously bound to the underlying [`EGLDisplay`]
+    /// (see [`ImportEgl::bind_wl_display`]).
+    fn egl_reader(&self) -> Option<&EGLBufferReader>;
+
     /// Import a given wl_drm-based buffer into the renderer (see [`buffer_type`]).
     ///
     /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
@@ -295,7 +323,6 @@ pub trait ImportEgl: Renderer {
     fn import_egl_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        egl: &EGLBufferReader,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 }
 
@@ -351,12 +378,8 @@ pub trait ImportDma: Renderer {
 // pub type ImportAll = Renderer + ImportShm + ImportEgl;
 
 /// Common trait for renderers of any wayland buffer type
-#[cfg(all(
-    feature = "wayland_frontend",
-    feature = "backend_egl",
-    feature = "use_system_lib"
-))]
-pub trait ImportAll: Renderer + ImportShm + ImportEgl {
+#[cfg(feature = "wayland_frontend")]
+pub trait ImportAll: Renderer {
     /// Import a given buffer into the renderer.
     ///
     /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
@@ -380,21 +403,86 @@ pub trait ImportAll: Renderer + ImportShm + ImportEgl {
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&SurfaceAttributes>,
         damage: &[Rectangle],
-        egl: Option<&EGLBufferReader>,
-    ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
-        match buffer_type(buffer, egl) {
-            Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
-            Some(BufferType::Egl) => Some(self.import_egl_buffer(buffer, egl.unwrap())),
-            _ => None,
-        }
-    }
+    ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>>;
+
+    /// Returns the *type* of a wl_buffer
+    ///
+    /// *Note*: Different to [`buffer_type`] this variant uses its internal `EGLBufferReader`, if
+    /// - the underlying Renderer supports `ImportEgl`,
+    /// - smithay was compiled with the `backend_egl` and `use_system_lib`,
+    /// - and the underlying Renderer bound via [`ImportEgl::bind_wl_display`] successfully.
+    ///
+    /// Returns `None` if the type is not known to smithay
+    /// or otherwise not supported (e.g. not initialized using one of smithays [`crate::wayland`]-handlers).
+    fn buffer_type(&self, buffer: &wl_buffer::WlBuffer) -> Option<BufferType>;
+
+    /// Returns the dimensions of a wl_buffer
+    ///
+    /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`]).
+    ///
+    /// *Note*: Different to [`buffer_type`] this variant uses its internal `EGLBufferReader`, if
+    /// - the underlying Renderer supports `ImportEgl`,
+    /// - smithay was compiled with the `backend_egl` and `use_system_lib`,
+    /// - and the underlying Renderer bound via [`ImportEgl::bind_wl_display`] successfully.
+    fn buffer_dimensions(&self, buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)>;
 }
+
+// TODO: Do this with specialization, when possible and do default implementations
 #[cfg(all(
     feature = "wayland_frontend",
     feature = "backend_egl",
     feature = "use_system_lib"
 ))]
-impl<R: Renderer + ImportShm + ImportEgl> ImportAll for R {}
+impl<R: Renderer + ImportShm + ImportEgl + ImportDma> ImportAll for R {
+    fn import_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        surface: Option<&SurfaceAttributes>,
+        damage: &[Rectangle],
+    ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
+        match buffer_type(buffer, self.egl_reader()) {
+            Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
+            Some(BufferType::Egl) => Some(self.import_egl_buffer(buffer)),
+            Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer)),
+            _ => None,
+        }
+    }
+
+    fn buffer_type(&self, buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
+        buffer_type(buffer, self.egl_reader())
+    }
+
+    fn buffer_dimensions(&self, buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)> {
+        buffer_dimensions(buffer, self.egl_reader())
+    }
+}
+
+#[cfg(all(
+    feature = "wayland_frontend",
+    not(all(feature = "backend_egl", feature = "use_system_lib"))
+))]
+impl<R: Renderer + ImportShm + ImportDma> ImportAll for R {
+    fn import_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        surface: Option<&SurfaceAttributes>,
+        damage: &[Rectangle],
+    ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
+        match buffer_type(buffer) {
+            Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
+            Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer)),
+            _ => None,
+        }
+    }
+
+    fn buffer_type(&self, buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
+        buffer_type(buffer)
+    }
+
+    fn buffer_dimensions(&self, buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)> {
+        buffer_dimensions(buffer)
+    }
+}
 
 #[cfg(feature = "wayland_frontend")]
 #[non_exhaustive]

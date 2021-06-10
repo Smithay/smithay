@@ -45,8 +45,7 @@ pub struct AnvilState<BackendData> {
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
     pub seat_name: String,
     pub start_time: std::time::Instant,
-    #[cfg(feature = "egl")]
-    pub egl_reader: Option<EGLBufferReader>,
+    // things we must keep alive
     #[cfg(feature = "xwayland")]
     pub xwayland: XWayland<AnvilState<BackendData>>,
 }
@@ -56,7 +55,6 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         display: Rc<RefCell<Display>>,
         handle: LoopHandle<'static, AnvilState<BackendData>>,
         backend_data: BackendData,
-        #[cfg(feature = "egl")] egl_reader: Option<EGLBufferReader>,
         log: slog::Logger,
     ) -> AnvilState<BackendData> {
         // init the wayland connection
@@ -170,8 +168,6 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             cursor_status,
             pointer_location: (0.0, 0.0),
             seat_name,
-            #[cfg(feature = "egl")]
-            egl_reader,
             start_time: std::time::Instant::now(),
             #[cfg(feature = "xwayland")]
             xwayland,
@@ -181,4 +177,6 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
 pub trait Backend {
     fn seat_name(&self) -> String;
+    #[cfg(feature = "egl")]
+    fn egl_reader(&self) -> Option<EGLBufferReader>;
 }

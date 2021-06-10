@@ -1,7 +1,13 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 #[cfg(feature = "egl")]
-use smithay::{backend::renderer::ImportDma, wayland::dmabuf::init_dmabuf_global};
+use smithay::{
+    backend::{
+        egl::display::EGLBufferReader,
+        renderer::{ImportDma, ImportEgl},
+    },
+    wayland::dmabuf::init_dmabuf_global,
+};
 use smithay::{
     backend::{input::InputBackend, renderer::Frame, winit, SwapBuffersError},
     reexports::{
@@ -19,9 +25,14 @@ use slog::Logger;
 use crate::drawing::*;
 use crate::state::{AnvilState, Backend};
 
-pub struct WinitData;
+pub struct WinitData(Rc<RefCell<winit::WinitGraphicsBackend>>);
 
 impl Backend for WinitData {
+    #[cfg(feature = "egl")]
+    fn egl_reader(&self) -> Option<EGLBufferReader> {
+        self.0.borrow_mut().renderer().egl_reader().cloned()
+    }
+
     fn seat_name(&self) -> String {
         String::from("winit")
     }
@@ -38,9 +49,7 @@ pub fn run_winit(
     let renderer = Rc::new(RefCell::new(renderer));
 
     #[cfg(feature = "egl")]
-    let reader = renderer.borrow().bind_wl_display(&display.borrow()).ok();
-    #[cfg(feature = "egl")]
-    if reader.is_some() {
+    if renderer.borrow().bind_wl_display(&display.borrow()).is_ok() {
         info!(log, "EGL hardware-acceleration enabled");
         let dmabuf_formats = renderer
             .borrow_mut()
@@ -66,9 +75,7 @@ pub fn run_winit(
     let mut state = AnvilState::init(
         display.clone(),
         event_loop.handle(),
-        WinitData,
-        #[cfg(feature = "egl")]
-        reader,
+        WinitData(renderer.clone()),
         log.clone(),
     );
 
@@ -129,8 +136,6 @@ pub fn run_winit(
                     draw_windows(
                         renderer,
                         frame,
-                        #[cfg(feature = "egl")]
-                        state.egl_reader.as_ref(),
                         &*state.window_map.borrow(),
                         None,
                         state.ctoken,
@@ -147,8 +152,6 @@ pub fn run_winit(
                                     renderer,
                                     frame,
                                     surface,
-                                    #[cfg(feature = "egl")]
-                                    state.egl_reader.as_ref(),
                                     (x as i32, y as i32),
                                     state.ctoken,
                                     &log,
@@ -171,16 +174,7 @@ pub fn run_winit(
                         // draw as relevant
                         if let CursorImageStatus::Image(ref surface) = *guard {
                             cursor_visible = false;
-                            draw_cursor(
-                                renderer,
-                                frame,
-                                surface,
-                                #[cfg(feature = "egl")]
-                                state.egl_reader.as_ref(),
-                                (x as i32, y as i32),
-                                state.ctoken,
-                                &log,
-                            )?;
+                            draw_cursor(renderer, frame, surface, (x as i32, y as i32), state.ctoken, &log)?;
                         } else {
                             cursor_visible = true;
                         }
