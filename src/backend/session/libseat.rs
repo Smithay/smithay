@@ -16,7 +16,7 @@ use std::{
     },
 };
 
-use nix::{fcntl::OFlag, unistd::close};
+use nix::{errno::Errno, fcntl::OFlag, unistd::close};
 
 use calloop::{EventSource, Poll, Readiness, Token};
 
@@ -113,7 +113,7 @@ impl LibSeatSession {
                 LibSeatSessionNotifier { internal, signaler },
             )
         })
-        .map_err(|_e| Error::FailedToOpenSession)
+        .map_err(|err| Error::FailedToOpenSession(Errno::from_i32(err.into())))
     }
 }
 
@@ -132,7 +132,7 @@ impl Session for LibSeatSession {
                     session.devices.borrow_mut().insert(fd, id);
                     fd
                 })
-                .map_err(|_| Error::Unknown)
+                .map_err(|err| Error::FailedToOpenDevice(Errno::from_i32(err.into())))
         } else {
             Err(Error::SessionLost)
         }
@@ -144,13 +144,19 @@ impl Session for LibSeatSession {
 
             let dev = session.devices.borrow().get(&fd).map(|fd| *fd);
 
-            if let Some(dev) = dev {
-                session.seat.borrow_mut().close_device(dev).unwrap();
-            }
+            let out = if let Some(dev) = dev {
+                session
+                    .seat
+                    .borrow_mut()
+                    .close_device(dev)
+                    .map_err(|err| Error::FailedToCloseDevice(Errno::from_i32(err.into())))
+            } else {
+                Ok(())
+            };
 
             close(fd).unwrap();
 
-            Ok(())
+            out
         } else {
             Err(Error::SessionLost)
         }
@@ -159,8 +165,11 @@ impl Session for LibSeatSession {
     fn change_vt(&mut self, vt: i32) -> Result<(), Self::Error> {
         if let Some(session) = self.internal.upgrade() {
             debug!(session.logger, "Session switch: {:?}", vt);
-            session.seat.borrow_mut().switch_session(vt).unwrap();
-            Ok(())
+            session
+                .seat
+                .borrow_mut()
+                .switch_session(vt)
+                .map_err(|err| Error::FailedToChangeVt(Errno::from_i32(err.into())))
         } else {
             Err(Error::SessionLost)
         }
@@ -242,8 +251,20 @@ impl EventSource for LibSeatSessionNotifier {
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     /// Failed to open session
-    #[error("Failed to open session")]
-    FailedToOpenSession,
+    #[error("Failed to open session: {0}")]
+    FailedToOpenSession(Errno),
+
+    /// Failed to open device
+    #[error("Failed to open device: {0}")]
+    FailedToOpenDevice(Errno),
+
+    /// Failed to close device
+    #[error("Failed to close device: {0}")]
+    FailedToCloseDevice(Errno),
+
+    /// Failed to close device
+    #[error("Failed to change vt: {0}")]
+    FailedToChangeVt(Errno),
 
     /// Session is already closed,
     #[error("Session is already closed")]
