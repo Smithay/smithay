@@ -83,8 +83,8 @@ impl LibSeatSession {
                 move |seat: &mut libseat::SeatRef| {
                     debug!(logger, "Disable callback called");
                     active.store(false, Ordering::SeqCst);
-                    seat.disable().unwrap();
                     signaler.signal(SessionSignal::PauseSession);
+                    seat.disable().unwrap();
                 }
             };
 
