@@ -198,8 +198,8 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     ///
     /// This operation is not necessarily blocking until the crtc is in the desired state,
     /// but will trigger a `vblank` event once done.
-    /// Make sure to [set a `DeviceHandler`](crate::backend::drm::DrmDevice::set_handler) and
-    /// [register the belonging `Device`](crate::backend::drm::device_bind) before to receive the event in time.
+    /// Make sure to have the device registered in your event loop prior to invoking this, to not miss
+    /// any generated event.
     pub fn commit<'a>(
         &self,
         mut framebuffers: impl Iterator<Item = &'a (framebuffer::Handle, plane::Handle)>,
@@ -226,8 +226,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     /// This will not cause the crtc to modeset.
     ///
     /// This operation is not blocking and will produce a `vblank` event once swapping is done.
-    /// Make sure to [set a `DeviceHandler`](crate::backend::drm::DrmDevice::set_handler) and
-    /// [register the belonging `DrmDevice`](crate::backend::drm::device_bind) before to receive the event in time.
+    /// Make sure to have the device registered in your event loop to not miss the event.
     pub fn page_flip<'a>(
         &self,
         mut framebuffers: impl Iterator<Item = &'a (framebuffer::Handle, plane::Handle)>,

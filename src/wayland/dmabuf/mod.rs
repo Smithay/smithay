@@ -13,7 +13,7 @@
 //!
 //! The list of supported format is just a `Vec<Format>`, where you will enter all the (code, modifier)
 //! couples you support. You can typically receive a list of supported formats for one renderer by calling
-//! [`crate::backend::renderer::Renderer::dmabuf_formats`].
+//! [`crate::backend::renderer::ImportDma::dmabuf_formats`].
 //!
 //! ```
 //! # extern crate wayland_server;

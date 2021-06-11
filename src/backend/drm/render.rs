@@ -266,7 +266,7 @@ where
     }
 
     /// Returns the pending [`connector`](drm::control::connector)s
-    /// used for the next frame as submitted by [`finish`](Renderer::finish) of this [`DrmRenderSurface`]
+    /// used for the next frame in [`render`](DrmRenderSurface::render)
     pub fn pending_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
         self.drm.pending_connectors()
     }
