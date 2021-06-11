@@ -161,6 +161,8 @@ impl AsErrno for () {
 
 pub mod auto;
 pub mod direct;
+#[cfg(feature = "backend_session_libseat")]
+pub mod libseat;
 
 #[cfg(feature = "backend_session_logind")]
 mod dbus;
