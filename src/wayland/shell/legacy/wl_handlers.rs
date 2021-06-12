@@ -32,7 +32,7 @@ pub(crate) fn implement_shell<R, Impl>(
         let role_data = ShellSurfaceRole {
             title: "".into(),
             class: "".into(),
-            pending_ping: Serial::from(0),
+            pending_ping: None,
         };
         if ctoken.give_role_with(&surface, role_data).is_err() {
             shell
@@ -102,8 +102,8 @@ where
                 let serial = Serial::from(serial);
                 let valid = ctoken
                     .with_role_data(&data.surface, |data| {
-                        if data.pending_ping == serial {
-                            data.pending_ping = Serial::from(0);
+                        if data.pending_ping == Some(serial) {
+                            data.pending_ping = None;
                             true
                         } else {
                             false

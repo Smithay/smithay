@@ -109,6 +109,9 @@ use wayland_server::{
     Display, Filter, Global, UserDataMap,
 };
 
+use super::PingError;
+use super::SurfaceError;
+
 // handlers for the xdg_shell protocol
 mod xdg_handlers;
 // compatibility handlers for the zxdg_shell_v6 protocol, its earlier version
@@ -813,13 +816,13 @@ enum ShellClientKind {
 }
 
 pub(crate) struct ShellClientData {
-    pending_ping: Serial,
+    pending_ping: Option<Serial>,
     data: UserDataMap,
 }
 
 fn make_shell_client_data() -> ShellClientData {
     ShellClientData {
-        pending_ping: Serial::from(0),
+        pending_ping: None,
         data: UserDataMap::new(),
     }
 }
@@ -873,9 +876,9 @@ where
     /// down to 0 before a pong is received, mark the client as unresponsive.
     ///
     /// Fails if this shell client already has a pending ping or is already dead.
-    pub fn send_ping(&self, serial: Serial) -> Result<(), ()> {
+    pub fn send_ping(&self, serial: Serial) -> Result<(), PingError> {
         if !self.alive() {
-            return Err(());
+            return Err(PingError::SurfaceError(SurfaceError::SurfaceNotAlive));
         }
         match self.kind {
             ShellClientKind::Xdg(ref shell) => {
@@ -885,10 +888,10 @@ where
                     .get::<self::xdg_handlers::ShellUserData<R>>()
                     .unwrap();
                 let mut guard = user_data.client_data.lock().unwrap();
-                if guard.pending_ping == SERIAL_COUNTER.next_serial() {
-                    return Err(());
+                if let Some(pending_ping) = guard.pending_ping {
+                    return Err(PingError::PingAlreadyPending(pending_ping));
                 }
-                guard.pending_ping = serial;
+                guard.pending_ping = Some(serial);
                 shell.ping(serial.into());
             }
             ShellClientKind::ZxdgV6(ref shell) => {
@@ -898,10 +901,10 @@ where
                     .get::<self::zxdgv6_handlers::ShellUserData<R>>()
                     .unwrap();
                 let mut guard = user_data.client_data.lock().unwrap();
-                if guard.pending_ping == SERIAL_COUNTER.next_serial() {
-                    return Err(());
+                if let Some(pending_ping) = guard.pending_ping {
+                    return Err(PingError::PingAlreadyPending(pending_ping));
                 }
-                guard.pending_ping = serial;
+                guard.pending_ping = Some(serial);
                 shell.ping(serial.into());
             }
         }
@@ -909,12 +912,12 @@ where
     }
 
     /// Access the user data associated with this shell client
-    pub fn with_data<F, T>(&self, f: F) -> Result<T, ()>
+    pub fn with_data<F, T>(&self, f: F) -> Result<T, SurfaceError>
     where
         F: FnOnce(&mut UserDataMap) -> T,
     {
         if !self.alive() {
-            return Err(());
+            return Err(SurfaceError::SurfaceNotAlive);
         }
         match self.kind {
             ShellClientKind::Xdg(ref shell) => {

@@ -84,8 +84,8 @@ where
             let serial = Serial::from(serial);
             let valid = {
                 let mut guard = data.client_data.lock().unwrap();
-                if guard.pending_ping == serial {
-                    guard.pending_ping = Serial::from(0);
+                if guard.pending_ping == Some(serial) {
+                    guard.pending_ping = None;
                     true
                 } else {
                     false
