@@ -3,7 +3,7 @@
 //!
 //! This requires libseat to be available on the system.
 
-use libseat::Seat;
+use libseat::{Seat, SeatEvent};
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -66,29 +66,26 @@ impl LibSeatSession {
         let signaler = Signaler::new();
 
         let seat = {
-            let enable = {
-                let active = active.clone();
-                let signaler = signaler.clone();
-                let logger = logger.clone();
-                move |_seat: &mut libseat::SeatRef| {
-                    debug!(logger, "Enable callback called");
-                    active.store(true, Ordering::SeqCst);
-                    signaler.signal(SessionSignal::ActivateSession);
-                }
-            };
-            let disable = {
-                let active = active.clone();
-                let signaler = signaler.clone();
-                let logger = logger.clone();
-                move |seat: &mut libseat::SeatRef| {
-                    debug!(logger, "Disable callback called");
-                    active.store(false, Ordering::SeqCst);
-                    signaler.signal(SessionSignal::PauseSession);
-                    seat.disable().unwrap();
-                }
-            };
+            let log = logger.clone();
+            let active = active.clone();
+            let signaler = signaler.clone();
 
-            Seat::open(enable, disable)
+            Seat::open(
+                move |seat, event| match event {
+                    SeatEvent::Enable => {
+                        debug!(log, "Enable callback called");
+                        active.store(true, Ordering::SeqCst);
+                        signaler.signal(SessionSignal::ActivateSession);
+                    }
+                    SeatEvent::Disable => {
+                        debug!(log, "Disable callback called");
+                        active.store(false, Ordering::SeqCst);
+                        signaler.signal(SessionSignal::PauseSession);
+                        seat.disable().unwrap();
+                    }
+                },
+                logger.clone(),
+            )
         };
 
         seat.map(|mut seat| {
