@@ -73,7 +73,6 @@ pub enum AutoSessionNotifier {
 
 impl AutoSession {
     /// Tries to create a new session via the best available interface.
-    #[cfg(feature = "backend_session_libseat")]
     pub fn new<L>(logger: L) -> Option<(AutoSession, AutoSessionNotifier)>
     where
         L: Into<Option<::slog::Logger>>,
@@ -81,84 +80,53 @@ impl AutoSession {
         let logger = crate::slog_or_fallback(logger)
             .new(o!("smithay_module" => "backend_session_auto", "session_type" => "auto"));
 
-        info!(logger, "Trying to create libseat session");
-        match LibSeatSession::new(logger.clone()) {
-            Ok((sesstion, notifier)) => Some((
-                AutoSession::LibSeat(sesstion),
-                AutoSessionNotifier::LibSeat(notifier),
-            )),
-            Err(err) => {
-                warn!(logger, "Failed to create libseat session: {}", err);
-                info!(logger, "Falling back to create tty session");
-                match DirectSession::new(None, logger.clone()) {
-                    Ok((session, notifier)) => Some((
-                        AutoSession::Direct(Rc::new(RefCell::new(session))),
-                        AutoSessionNotifier::Direct(notifier),
-                    )),
-                    Err(err) => {
-                        warn!(logger, "Failed to create direct session: {}", err);
-                        error!(logger, "Could not create any session, possibilities exhausted");
-                        None
-                    }
+        #[cfg(feature = "backend_session_libseat")]
+        {
+            info!(logger, "Trying to create libseat session");
+            match LibSeatSession::new(logger.clone()) {
+                Ok((sesstion, notifier)) => {
+                    return Some((
+                        AutoSession::LibSeat(sesstion),
+                        AutoSessionNotifier::LibSeat(notifier),
+                    ))
+                }
+                Err(err) => {
+                    warn!(logger, "Failed to create libseat session: {}", err);
                 }
             }
         }
-    }
 
-    /// Tries to create a new session via the best available interface.
-    #[cfg(all(feature = "backend_session_logind", not(feature = "backend_session_libseat")))]
-    pub fn new<L>(logger: L) -> Option<(AutoSession, AutoSessionNotifier)>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let logger = crate::slog_or_fallback(logger)
-            .new(o!("smithay_module" => "backend_session_auto", "session_type" => "auto"));
-
-        info!(logger, "Trying to create logind session");
-        match LogindSession::new(logger.clone()) {
-            Ok((session, notifier)) => Some((
-                AutoSession::Logind(session),
-                AutoSessionNotifier::Logind(notifier),
-            )),
-            Err(err) => {
-                warn!(logger, "Failed to create logind session: {}", err);
-                info!(logger, "Falling back to create tty session");
-                match DirectSession::new(None, logger.clone()) {
-                    Ok((session, notifier)) => Some((
-                        AutoSession::Direct(Rc::new(RefCell::new(session))),
-                        AutoSessionNotifier::Direct(notifier),
-                    )),
-                    Err(err) => {
-                        warn!(logger, "Failed to create direct session: {}", err);
-                        error!(logger, "Could not create any session, possibilities exhausted");
-                        None
-                    }
+        #[cfg(feature = "backend_session_logind")]
+        {
+            info!(logger, "Trying to create logind session");
+            match LogindSession::new(logger.clone()) {
+                Ok((session, notifier)) => {
+                    return Some((
+                        AutoSession::Logind(session),
+                        AutoSessionNotifier::Logind(notifier),
+                    ))
+                }
+                Err(err) => {
+                    warn!(logger, "Failed to create logind session: {}", err);
                 }
             }
         }
-    }
-
-    /// Tries to create a new session via the best available interface.
-    #[cfg(not(any(feature = "backend_session_logind", feature = "backend_session_libseat")))]
-    pub fn new<L>(logger: L) -> Option<(AutoSession, AutoSessionNotifier)>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let logger = crate::slog_or_fallback(logger)
-            .new(o!("smithay_module" => "backend_session_auto", "session_type" => "auto"));
 
         info!(logger, "Trying to create tty session");
         match DirectSession::new(None, logger.clone()) {
-            Ok((session, notifier)) => Some((
-                AutoSession::Direct(Rc::new(RefCell::new(session))),
-                AutoSessionNotifier::Direct(notifier),
-            )),
+            Ok((session, notifier)) => {
+                return Some((
+                    AutoSession::Direct(Rc::new(RefCell::new(session))),
+                    AutoSessionNotifier::Direct(notifier),
+                ))
+            }
             Err(err) => {
                 warn!(logger, "Failed to create direct session: {}", err);
-                error!(logger, "Could not create any session, possibilities exhausted");
-                None
             }
         }
+
+        error!(logger, "Could not create any session, possibilities exhausted");
+        None
     }
 }
 
