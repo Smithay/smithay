@@ -74,7 +74,7 @@ use wayland_server::{
     Display, Filter, Global,
 };
 
-use super::{PingError, SurfaceError};
+use super::PingError;
 
 mod wl_handlers;
 
@@ -143,7 +143,7 @@ where
     /// Fails if this shell client already has a pending ping or is already dead.
     pub fn send_ping(&self, serial: Serial) -> Result<(), PingError> {
         if !self.alive() {
-            return Err(PingError::SurfaceError(SurfaceError::SurfaceNotAlive));
+            return Err(PingError::DeadSurface);
         }
         self.token
             .with_role_data(&self.wl_surface, |data| {

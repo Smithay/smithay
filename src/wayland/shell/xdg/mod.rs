@@ -110,7 +110,6 @@ use wayland_server::{
 };
 
 use super::PingError;
-use super::SurfaceError;
 
 // handlers for the xdg_shell protocol
 mod xdg_handlers;
@@ -249,13 +248,13 @@ where
 {
     fn set_window_geometry(&mut self, geometry: Rectangle) {
         self.as_mut()
-            .expect("xdg_toplevel exists but role has been destroyed?!")
+            .expect("xdg_surface exists but role has been destroyed?!")
             .set_window_geometry(geometry)
     }
 
     fn ack_configure(&mut self, serial: Serial) -> Result<Configure, ConfigureError> {
         self.as_mut()
-            .expect("xdg_toplevel exists but role has been destroyed?!")
+            .expect("xdg_surface exists but role has been destroyed?!")
             .ack_configure(serial)
     }
 }
@@ -596,7 +595,7 @@ pub struct ToplevelState {
     pub size: Option<(i32, i32)>,
 
     /// The states for this surface
-    pub states: ToplevelStates,
+    pub states: ToplevelStateSet,
 
     /// The output for a fullscreen display
     pub fullscreen_output: Option<wl_output::WlOutput>,
@@ -629,11 +628,11 @@ impl Clone for ToplevelState {
 /// and simplifies setting and un-setting a particularly
 /// `xdg_toplevel::State`
 #[derive(Debug, Clone, PartialEq)]
-pub struct ToplevelStates {
+pub struct ToplevelStateSet {
     states: Vec<xdg_toplevel::State>,
 }
 
-impl ToplevelStates {
+impl ToplevelStateSet {
     /// Returns `true` if the states contains a state.
     pub fn contains(&self, state: xdg_toplevel::State) -> bool {
         self.states.iter().any(|s| *s == state)
@@ -665,13 +664,13 @@ impl ToplevelStates {
     }
 }
 
-impl Default for ToplevelStates {
+impl Default for ToplevelStateSet {
     fn default() -> Self {
         Self { states: Vec::new() }
     }
 }
 
-impl IntoIterator for ToplevelStates {
+impl IntoIterator for ToplevelStateSet {
     type Item = xdg_toplevel::State;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
@@ -680,8 +679,8 @@ impl IntoIterator for ToplevelStates {
     }
 }
 
-impl From<ToplevelStates> for Vec<xdg_toplevel::State> {
-    fn from(states: ToplevelStates) -> Self {
+impl From<ToplevelStateSet> for Vec<xdg_toplevel::State> {
+    fn from(states: ToplevelStateSet) -> Self {
         states.states
     }
 }
@@ -712,6 +711,19 @@ impl Default for ToplevelClientPending {
             max_size: None,
         }
     }
+}
+
+/// Represents the possible errors
+/// returned from `ToplevelSurface::with_pending_state`
+/// and `PopupSurface::with_pending_state`
+#[derive(Debug, Error)]
+pub enum PendingStateError {
+    /// The operation failed because the underlying surface has been destroyed
+    #[error("could not retrieve the pending state because the underlying surface has been destroyed")]
+    DeadSurface,
+    /// The role of the xdg_surface has been destroyed
+    #[error("the role of the xdg_surface has been destroyed")]
+    RoleDestroyed,
 }
 
 pub(crate) struct ShellData<R> {
@@ -878,7 +890,7 @@ where
     /// Fails if this shell client already has a pending ping or is already dead.
     pub fn send_ping(&self, serial: Serial) -> Result<(), PingError> {
         if !self.alive() {
-            return Err(PingError::SurfaceError(SurfaceError::SurfaceNotAlive));
+            return Err(PingError::DeadSurface);
         }
         match self.kind {
             ShellClientKind::Xdg(ref shell) => {
@@ -912,12 +924,12 @@ where
     }
 
     /// Access the user data associated with this shell client
-    pub fn with_data<F, T>(&self, f: F) -> Result<T, SurfaceError>
+    pub fn with_data<F, T>(&self, f: F) -> Result<T, crate::utils::DeadResource>
     where
         F: FnOnce(&mut UserDataMap) -> T,
     {
         if !self.alive() {
-            return Err(SurfaceError::SurfaceNotAlive);
+            return Err(crate::utils::DeadResource);
         }
         match self.kind {
             ShellClientKind::Xdg(ref shell) => {
@@ -1228,12 +1240,12 @@ where
     ///
     /// The state will be sent to the client when calling
     /// send_configure.
-    pub fn with_pending_state<F>(&self, f: F)
+    pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, PendingStateError>
     where
-        F: FnOnce(&mut ToplevelState),
+        F: FnOnce(&mut ToplevelState) -> T,
     {
         if !self.alive() {
-            return;
+            return Err(PendingStateError::DeadSurface);
         }
 
         self.token
@@ -1244,7 +1256,9 @@ where
                     }
 
                     let server_pending = attributes.server_pending.as_mut().unwrap();
-                    f(server_pending)
+                    Ok(f(server_pending))
+                } else {
+                    Err(PendingStateError::RoleDestroyed)
                 }
             })
             .unwrap()
@@ -1558,12 +1572,12 @@ where
     ///
     /// The state will be sent to the client when calling
     /// send_configure.
-    pub fn with_pending_state<F>(&self, f: F)
+    pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, PendingStateError>
     where
-        F: FnOnce(&mut PopupState),
+        F: FnOnce(&mut PopupState) -> T,
     {
         if !self.alive() {
-            return;
+            return Err(PendingStateError::DeadSurface);
         }
 
         self.token
@@ -1574,7 +1588,9 @@ where
                     }
 
                     let server_pending = attributes.server_pending.as_mut().unwrap();
-                    f(server_pending)
+                    Ok(f(server_pending))
+                } else {
+                    Err(PendingStateError::RoleDestroyed)
                 }
             })
             .unwrap()

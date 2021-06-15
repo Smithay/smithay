@@ -220,11 +220,15 @@ impl PointerGrab for ResizeSurfaceGrab {
 
         match &self.toplevel {
             SurfaceKind::Xdg(xdg) => {
-                xdg.with_pending_state(|state| {
-                    state.states.set(xdg_toplevel::State::Resizing);
-                    state.size = Some(self.last_window_size);
-                });
-                xdg.send_configure();
+                if xdg
+                    .with_pending_state(|state| {
+                        state.states.set(xdg_toplevel::State::Resizing);
+                        state.size = Some(self.last_window_size);
+                    })
+                    .is_ok()
+                {
+                    xdg.send_configure();
+                }
             }
             SurfaceKind::Wl(wl) => wl.send_configure(
                 (self.last_window_size.0 as u32, self.last_window_size.1 as u32),
@@ -251,11 +255,15 @@ impl PointerGrab for ResizeSurfaceGrab {
             handle.unset_grab(serial, time);
 
             if let SurfaceKind::Xdg(xdg) = &self.toplevel {
-                xdg.with_pending_state(|state| {
-                    state.states.unset(xdg_toplevel::State::Resizing);
-                    state.size = Some(self.last_window_size);
-                });
-                xdg.send_configure();
+                if xdg
+                    .with_pending_state(|state| {
+                        state.states.unset(xdg_toplevel::State::Resizing);
+                        state.size = Some(self.last_window_size);
+                    })
+                    .is_ok()
+                {
+                    xdg.send_configure();
+                }
 
                 self.ctoken
                     .with_surface_data(self.toplevel.get_surface().unwrap(), |attrs| {
@@ -497,38 +505,54 @@ pub fn init_shell<Backend: 'static>(display: &mut Display, log: ::slog::Logger) 
                 }
             }
             XdgRequest::Fullscreen { surface, output, .. } => {
-                surface.with_pending_state(|state| {
-                    // TODO: Use size of current output the window is on and set position to (0,0)
-                    state.states.set(xdg_toplevel::State::Fullscreen);
-                    state.size = Some((800, 600));
-                    // TODO: If the provided output is None, use the output where
-                    // the toplevel is currently shown
-                    state.fullscreen_output = output;
-                });
-                surface.send_configure();
+                if surface
+                    .with_pending_state(|state| {
+                        // TODO: Use size of current output the window is on and set position to (0,0)
+                        state.states.set(xdg_toplevel::State::Fullscreen);
+                        state.size = Some((800, 600));
+                        // TODO: If the provided output is None, use the output where
+                        // the toplevel is currently shown
+                        state.fullscreen_output = output;
+                    })
+                    .is_ok()
+                {
+                    surface.send_configure();
+                }
             }
             XdgRequest::UnFullscreen { surface } => {
-                surface.with_pending_state(|state| {
-                    state.states.unset(xdg_toplevel::State::Fullscreen);
-                    state.size = None;
-                    state.fullscreen_output = None;
-                });
-                surface.send_configure();
+                if surface
+                    .with_pending_state(|state| {
+                        state.states.unset(xdg_toplevel::State::Fullscreen);
+                        state.size = None;
+                        state.fullscreen_output = None;
+                    })
+                    .is_ok()
+                {
+                    surface.send_configure();
+                }
             }
             XdgRequest::Maximize { surface } => {
-                surface.with_pending_state(|state| {
-                    // TODO: Use size of current output the window is on and set position to (0,0)
-                    state.states.set(xdg_toplevel::State::Maximized);
-                    state.size = Some((800, 600));
-                });
-                surface.send_configure();
+                if surface
+                    .with_pending_state(|state| {
+                        // TODO: Use size of current output the window is on and set position to (0,0)
+                        state.states.set(xdg_toplevel::State::Maximized);
+                        state.size = Some((800, 600));
+                    })
+                    .is_ok()
+                {
+                    surface.send_configure();
+                }
             }
             XdgRequest::UnMaximize { surface } => {
-                surface.with_pending_state(|state| {
-                    state.states.unset(xdg_toplevel::State::Maximized);
-                    state.size = None;
-                });
-                surface.send_configure();
+                if surface
+                    .with_pending_state(|state| {
+                        state.states.unset(xdg_toplevel::State::Maximized);
+                        state.size = None;
+                    })
+                    .is_ok()
+                {
+                    surface.send_configure();
+                }
             }
             _ => (),
         },
