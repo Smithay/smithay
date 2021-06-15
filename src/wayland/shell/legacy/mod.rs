@@ -74,6 +74,8 @@ use wayland_server::{
     Display, Filter, Global,
 };
 
+use super::PingError;
+
 mod wl_handlers;
 
 /// Metadata associated with the `wl_surface` role
@@ -83,7 +85,7 @@ pub struct ShellSurfaceRole {
     pub title: String,
     /// Class of the surface
     pub class: String,
-    pending_ping: Serial,
+    pending_ping: Option<Serial>,
 }
 
 /// A handle to a shell surface
@@ -139,24 +141,21 @@ where
     /// down to 0 before a pong is received, mark the client as unresponsive.
     ///
     /// Fails if this shell client already has a pending ping or is already dead.
-    pub fn send_ping(&self, serial: Serial) -> Result<(), ()> {
+    pub fn send_ping(&self, serial: Serial) -> Result<(), PingError> {
         if !self.alive() {
-            return Err(());
+            return Err(PingError::DeadSurface);
         }
-        let ret = self.token.with_role_data(&self.wl_surface, |data| {
-            if data.pending_ping == Serial::from(0) {
-                data.pending_ping = serial;
-                true
-            } else {
-                false
-            }
-        });
-        if let Ok(true) = ret {
-            self.shell_surface.ping(serial.into());
-            Ok(())
-        } else {
-            Err(())
-        }
+        self.token
+            .with_role_data(&self.wl_surface, |data| {
+                if let Some(pending_ping) = data.pending_ping {
+                    return Err(PingError::PingAlreadyPending(pending_ping));
+                }
+                data.pending_ping = Some(serial);
+                Ok(())
+            })
+            .unwrap()?;
+        self.shell_surface.ping(serial.into());
+        Ok(())
     }
 
     /// Send a configure event to this toplevel surface to suggest it a new configuration

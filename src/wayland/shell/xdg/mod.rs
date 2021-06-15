@@ -32,13 +32,14 @@
 //! #
 //! use smithay::wayland::compositor::roles::*;
 //! use smithay::wayland::compositor::CompositorToken;
-//! use smithay::wayland::shell::xdg::{xdg_shell_init, XdgSurfaceRole, XdgRequest};
+//! use smithay::wayland::shell::xdg::{xdg_shell_init, XdgToplevelSurfaceRole, XdgPopupSurfaceRole, XdgRequest};
 //! use wayland_protocols::unstable::xdg_shell::v6::server::zxdg_shell_v6::ZxdgShellV6;
 //! # use wayland_server::protocol::{wl_seat, wl_output};
 //!
 //! // define the roles type. You need to integrate the XdgSurface role:
 //! define_roles!(MyRoles =>
-//!     [XdgSurface, XdgSurfaceRole]
+//!     [XdgToplevelSurface, XdgToplevelSurfaceRole]
+//!     [XdgPopupSurface, XdgPopupSurfaceRole]
 //! );
 //!
 //! // define the metadata you want associated with the shell clients
@@ -87,56 +88,329 @@
 //! that you are given (in an `Arc<Mutex<_>>`) as return value of the `init` function.
 
 use crate::utils::Rectangle;
+use crate::wayland::compositor::roles::WrongRole;
 use crate::wayland::compositor::{roles::Role, CompositorToken};
-use crate::wayland::Serial;
+use crate::wayland::{Serial, SERIAL_COUNTER};
+use std::fmt::Debug;
 use std::{
     cell::RefCell,
     rc::Rc,
     sync::{Arc, Mutex},
 };
+use thiserror::Error;
+use wayland_protocols::unstable::xdg_shell::v6::server::zxdg_surface_v6;
+use wayland_protocols::xdg_shell::server::xdg_surface;
 use wayland_protocols::{
-    unstable::xdg_shell::v6::server::{zxdg_popup_v6, zxdg_shell_v6, zxdg_surface_v6, zxdg_toplevel_v6},
-    xdg_shell::server::{xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base},
+    unstable::xdg_shell::v6::server::{zxdg_popup_v6, zxdg_shell_v6, zxdg_toplevel_v6},
+    xdg_shell::server::{xdg_popup, xdg_positioner, xdg_toplevel, xdg_wm_base},
 };
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_surface},
     Display, Filter, Global, UserDataMap,
 };
 
+use super::PingError;
+
 // handlers for the xdg_shell protocol
 mod xdg_handlers;
 // compatibility handlers for the zxdg_shell_v6 protocol, its earlier version
 mod zxdgv6_handlers;
 
-/// Metadata associated with the `xdg_surface` role
-#[derive(Debug)]
-pub struct XdgSurfaceRole {
-    /// Pending state as requested by the client
+macro_rules! xdg_role {
+    ($(#[$role_attr:meta])* $role:ident,
+     $configure:ty,
+     $(#[$attr:meta])* $element:ident {$($(#[$field_attr:meta])* $vis:vis$field:ident:$type:ty),*},
+     $role_ack_configure:expr) => {
+        $(#[$role_attr])*
+        pub type $role = Option<$element>;
+
+        $(#[$attr])*
+        pub struct $element {
+                /// Defines the current window geometry of the surface if any.
+                pub window_geometry: Option<Rectangle>,
+
+                /// Holds the double-buffered geometry that may be specified
+                /// by xdg_surface.set_window_geometry. This should be moved to the
+                /// current configuration on a commit of the underlying
+                /// wl_surface.
+                pub client_pending_window_geometry: Option<Rectangle>,
+
+                /// Defines if the surface has received at least one
+                /// xdg_surface.ack_configure from the client
+                pub configured: bool,
+
+                /// The serial of the last acked configure
+                pub configure_serial: Option<Serial>,
+
+                /// Holds the state if the surface has sent the initial
+                /// configure event to the client. It is expected that
+                /// during the first commit a initial
+                /// configure event is sent to the client
+                pub initial_configure_sent: bool,
+
+                /// Holds the configures the server has sent out
+                /// to the client waiting to be acknowledged by
+                /// the client. All pending configures that are older
+                /// than the acknowledged one will be discarded during
+                /// processing xdg_surface.ack_configure.
+                pending_configures: Vec<$configure>,
+
+                $(
+                    $(#[$field_attr])*
+                    $vis $field: $type,
+                )*
+        }
+
+        impl XdgSurface for $element {
+            fn set_window_geometry(&mut self, geometry: Rectangle) {
+                self.client_pending_window_geometry = Some(geometry);
+            }
+
+            fn ack_configure(&mut self, serial: Serial) -> Result<Configure, ConfigureError> {
+                let configure = match self
+                    .pending_configures
+                    .iter()
+                    .find(|configure| configure.serial == serial)
+                {
+                    Some(configure) => (*configure).clone(),
+                    None => {
+                        return Err(ConfigureError::SerialNotFound(serial));
+                    }
+                };
+
+                // Role specific ack_configure
+                let role_ack_configure: &dyn Fn(&mut Self, $configure) = &$role_ack_configure;
+                role_ack_configure(self, configure.clone());
+
+                // Set the xdg_surface to configured
+                self.configured = true;
+
+                // Save the last configure serial as a reference
+                self.configure_serial = Some(Serial::from(serial));
+
+                // Clean old configures
+                self.pending_configures.retain(|c| c.serial > serial);
+
+                Ok(configure.into())
+            }
+        }
+
+        impl Default for $element {
+            fn default() -> Self {
+                Self {
+                    window_geometry: None,
+                    client_pending_window_geometry: None,
+                    configured: false,
+                    configure_serial: None,
+                    pending_configures: Vec::new(),
+                    initial_configure_sent: false,
+
+                    $(
+                        $field: Default::default(),
+                    )*
+                }
+            }
+        }
+    };
+}
+
+impl<R> CompositorToken<R>
+where
+    R: Role<XdgToplevelSurfaceRole> + Role<XdgPopupSurfaceRole> + 'static,
+{
+    fn with_xdg_role<F, T>(&self, surface: &wl_surface::WlSurface, f: F) -> Result<T, WrongRole>
+    where
+        F: FnOnce(&mut dyn XdgSurface) -> T,
+    {
+        if self.has_role::<XdgToplevelSurfaceRole>(surface) {
+            self.with_role_data(surface, |role: &mut XdgToplevelSurfaceRole| f(role))
+        } else {
+            self.with_role_data(surface, |role: &mut XdgPopupSurfaceRole| f(role))
+        }
+    }
+}
+
+trait XdgSurface {
+    fn set_window_geometry(&mut self, geometry: Rectangle);
+
+    fn ack_configure(&mut self, serial: Serial) -> Result<Configure, ConfigureError>;
+}
+
+#[derive(Debug, Error)]
+enum ConfigureError {
+    #[error("the serial `{0:?}` was not found in the pending configure list")]
+    SerialNotFound(Serial),
+}
+
+impl<T> XdgSurface for Option<T>
+where
+    T: XdgSurface,
+{
+    fn set_window_geometry(&mut self, geometry: Rectangle) {
+        self.as_mut()
+            .expect("xdg_surface exists but role has been destroyed?!")
+            .set_window_geometry(geometry)
+    }
+
+    fn ack_configure(&mut self, serial: Serial) -> Result<Configure, ConfigureError> {
+        self.as_mut()
+            .expect("xdg_surface exists but role has been destroyed?!")
+            .ack_configure(serial)
+    }
+}
+
+xdg_role!(
+    /// This interface defines an xdg_surface role which allows a surface to,
+    /// among other things, set window-like properties such as maximize,
+    /// fullscreen, and minimize, set application-specific metadata like title and
+    /// id, and well as trigger user interactive operations such as interactive
+    /// resize and move.
     ///
-    /// The data in this field are double-buffered, you should
-    /// apply them on a surface commit.
-    pub pending_state: XdgSurfacePendingState,
-    /// Geometry of the surface
+    /// Unmapping an xdg_toplevel means that the surface cannot be shown
+    /// by the compositor until it is explicitly mapped again.
+    /// All active operations (e.g., move, resize) are canceled and all
+    /// attributes (e.g. title, state, stacking, ...) are discarded for
+    /// an xdg_toplevel surface when it is unmapped. The xdg_toplevel returns to
+    /// the state it had right after xdg_surface.get_toplevel. The client
+    /// can re-map the toplevel by perfoming a commit without any buffer
+    /// attached, waiting for a configure event and handling it as usual (see
+    /// xdg_surface description).
     ///
-    /// Defines, in surface relative coordinates, what should
-    /// be considered as "the surface itself", regarding focus,
-    /// window alignment, etc...
+    /// Attaching a null buffer to a toplevel unmaps the surface.
+    XdgToplevelSurfaceRole,
+    ToplevelConfigure,
+    /// Role specific attributes for xdg_toplevel
+    XdgToplevelSurfaceRoleAttributes {
+        /// The parent field of a toplevel should be used
+        /// by the compositor to determine which toplevel
+        /// should be brought to front. If the parent is focused
+        /// all of it's child should be brought to front.
+        pub parent: Option<wl_surface::WlSurface>,
+        /// Holds the optional title the client has set for
+        /// this toplevel. For example a web-browser will most likely
+        /// set this to include the current uri.
+        ///
+        /// This string may be used to identify the surface in a task bar,
+        /// window list, or other user interface elements provided by the
+        /// compositor.
+        pub title: Option<String>,
+        /// Holds the optional app ID the client has set for
+        /// this toplevel.
+        ///
+        /// The app ID identifies the general class of applications to which
+        /// the surface belongs. The compositor can use this to group multiple
+        /// surfaces together, or to determine how to launch a new application.
+        ///
+        /// For D-Bus activatable applications, the app ID is used as the D-Bus
+        /// service name.
+        pub app_id: Option<String>,
+        /// Minimum size requested for this surface
+        ///
+        /// A value of 0 on an axis means this axis is not constrained
+        pub min_size: (i32, i32),
+        /// Maximum size requested for this surface
+        ///
+        /// A value of 0 on an axis means this axis is not constrained
+        pub max_size: (i32, i32),
+        /// Holds the pending state as set by the client.
+        pub client_pending: Option<ToplevelClientPending>,
+        /// Holds the pending state as set by the server.
+        pub server_pending: Option<ToplevelState>,
+        /// Holds the last server_pending state that has been acknowledged
+        /// by the client. This state should be cloned to the current
+        /// during a commit.
+        pub last_acked: Option<ToplevelState>,
+        /// Holds the current state of the toplevel after a successful
+        /// commit.
+        pub current: ToplevelState
+    },
+    |attributes, configure| {
+        attributes.last_acked = Some(configure.state);
+    }
+);
+
+xdg_role!(
+    /// A popup surface is a short-lived, temporary surface. It can be used to
+    /// implement for example menus, popovers, tooltips and other similar user
+    /// interface concepts.
     ///
-    /// By default, you should consider the full contents of the
-    /// buffers of this surface and its subsurfaces.
-    pub window_geometry: Option<Rectangle>,
-    /// List of non-acked configures pending
+    /// A popup can be made to take an explicit grab. See xdg_popup.grab for
+    /// details.
     ///
-    /// Whenever a configure is acked by the client, all configure
-    /// older than it are discarded as well. As such, this `Vec` contains
-    /// the serials of all the configure send to this surface that are
-    /// newer than the last ack received.
-    pub pending_configures: Vec<u32>,
-    /// Has this surface acked at least one configure?
+    /// When the popup is dismissed, a popup_done event will be sent out, and at
+    /// the same time the surface will be unmapped. See the xdg_popup.popup_done
+    /// event for details.
     ///
-    /// `xdg_shell` defines it as illegal to commit on a surface that has
-    /// not yet acked a configure.
-    pub configured: bool,
+    /// Explicitly destroying the xdg_popup object will also dismiss the popup and
+    /// unmap the surface. Clients that want to dismiss the popup when another
+    /// surface of their own is clicked should dismiss the popup using the destroy
+    /// request.
+    ///
+    /// A newly created xdg_popup will be stacked on top of all previously created
+    /// xdg_popup surfaces associated with the same xdg_toplevel.
+    ///
+    /// The parent of an xdg_popup must be mapped (see the xdg_surface
+    /// description) before the xdg_popup itself.
+    ///
+    /// The client must call wl_surface.commit on the corresponding wl_surface
+    /// for the xdg_popup state to take effect.
+    XdgPopupSurfaceRole,
+    PopupConfigure,
+    /// Popup Surface Role
+    XdgPopupSurfaceRoleAttributes {
+        /// Holds the parent for the xdg_popup.
+        ///
+        /// The parent is allowed to remain unset as long
+        /// as no commit has been requested for the underlying
+        /// wl_surface. The parent can either be directly
+        /// specified during xdg_surface.get_popup or using
+        /// another protocol extension, for example xdg_layer_shell.
+        ///
+        /// It is a protocol error to call commit on a wl_surface with
+        /// the xdg_popup role when no parent is set.
+        pub parent: Option<wl_surface::WlSurface>,
+        /// The positioner state can be used by the compositor
+        /// to calculate the best placement for the popup.
+        ///
+        /// For example the compositor should prevent that a popup
+        /// is placed outside the visible rectangle of a output.
+        pub positioner: PositionerState,
+        /// Holds the last server_pending state that has been acknowledged
+        /// by the client. This state should be cloned to the current
+        /// during a commit.
+        pub last_acked: Option<PopupState>,
+        /// Holds the current state of the popup after a successful
+        /// commit.
+        pub current: PopupState,
+        /// Holds the pending state as set by the server.
+        pub server_pending: Option<PopupState>
+    },
+    |attributes,configure| {
+        attributes.last_acked = Some(configure.state);
+    }
+);
+
+/// Represents the state of the popup
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PopupState {
+    /// Holds the geometry of the popup as defined by the positioner.
+    ///
+    /// `Rectangle::width` and `Rectangle::height` holds the size of the
+    /// of the popup in surface-local coordinates and corresponds to the
+    /// window geometry
+    ///
+    /// `Rectangle::x` and `Rectangle::y` holds the position of the popup
+    /// The position is relative to the window geometry as defined by
+    /// xdg_surface.set_window_geometry of the parent surface.
+    pub geometry: Rectangle,
+}
+
+impl Default for PopupState {
+    fn default() -> Self {
+        Self {
+            geometry: Default::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -159,6 +433,19 @@ pub struct PositionerState {
     pub offset: (i32, i32),
 }
 
+impl Default for PositionerState {
+    fn default() -> Self {
+        PositionerState {
+            anchor_edges: xdg_positioner::Anchor::None,
+            anchor_rect: Default::default(),
+            constraint_adjustment: xdg_positioner::ConstraintAdjustment::empty(),
+            gravity: xdg_positioner::Gravity::None,
+            offset: (0, 0),
+            rect_size: (0, 0),
+        }
+    }
+}
+
 impl PositionerState {
     pub(crate) fn new() -> PositionerState {
         PositionerState {
@@ -175,89 +462,268 @@ impl PositionerState {
             offset: (0, 0),
         }
     }
-}
 
-/// Contents of the pending state of a shell surface, depending on its role
-#[derive(Debug)]
-pub enum XdgSurfacePendingState {
-    /// This a regular, toplevel surface
+    pub(crate) fn anchor_has_edge(&self, edge: xdg_positioner::Anchor) -> bool {
+        match edge {
+            xdg_positioner::Anchor::Top => {
+                self.anchor_edges == xdg_positioner::Anchor::Top
+                    || self.anchor_edges == xdg_positioner::Anchor::TopLeft
+                    || self.anchor_edges == xdg_positioner::Anchor::TopRight
+            }
+            xdg_positioner::Anchor::Bottom => {
+                self.anchor_edges == xdg_positioner::Anchor::Bottom
+                    || self.anchor_edges == xdg_positioner::Anchor::BottomLeft
+                    || self.anchor_edges == xdg_positioner::Anchor::BottomRight
+            }
+            xdg_positioner::Anchor::Left => {
+                self.anchor_edges == xdg_positioner::Anchor::Left
+                    || self.anchor_edges == xdg_positioner::Anchor::TopLeft
+                    || self.anchor_edges == xdg_positioner::Anchor::BottomLeft
+            }
+            xdg_positioner::Anchor::Right => {
+                self.anchor_edges == xdg_positioner::Anchor::Right
+                    || self.anchor_edges == xdg_positioner::Anchor::TopRight
+                    || self.anchor_edges == xdg_positioner::Anchor::BottomRight
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn gravity_has_edge(&self, edge: xdg_positioner::Gravity) -> bool {
+        match edge {
+            xdg_positioner::Gravity::Top => {
+                self.gravity == xdg_positioner::Gravity::Top
+                    || self.gravity == xdg_positioner::Gravity::TopLeft
+                    || self.gravity == xdg_positioner::Gravity::TopRight
+            }
+            xdg_positioner::Gravity::Bottom => {
+                self.gravity == xdg_positioner::Gravity::Bottom
+                    || self.gravity == xdg_positioner::Gravity::BottomLeft
+                    || self.gravity == xdg_positioner::Gravity::BottomRight
+            }
+            xdg_positioner::Gravity::Left => {
+                self.gravity == xdg_positioner::Gravity::Left
+                    || self.gravity == xdg_positioner::Gravity::TopLeft
+                    || self.gravity == xdg_positioner::Gravity::BottomLeft
+            }
+            xdg_positioner::Gravity::Right => {
+                self.gravity == xdg_positioner::Gravity::Right
+                    || self.gravity == xdg_positioner::Gravity::TopRight
+                    || self.gravity == xdg_positioner::Gravity::BottomRight
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Get the geometry for a popup as defined by this positioner.
     ///
-    /// This corresponds to the `xdg_toplevel` role
+    /// `Rectangle::width` and `Rectangle::height` corresponds to the
+    /// size set by `xdg_positioner.set_size`.
     ///
-    /// This is what you'll generally interpret as "a window".
-    Toplevel(ToplevelState),
-    /// This is a popup surface
-    ///
-    /// This corresponds to the `xdg_popup` role
-    ///
-    /// This are mostly for small tooltips and similar short-lived
-    /// surfaces.
-    Popup(PopupState),
-    /// This surface was not yet assigned a kind
-    None,
+    /// `Rectangle::x` and `Rectangle::y` define the position of the
+    /// popup relative to it's parent surface `window_geometry`.
+    /// The position is calculated according to the rules defined
+    /// in the `xdg_shell` protocol.
+    /// The `constraint_adjustment` will not be considered by this
+    /// implementation and the position and size should be re-calculated
+    /// in the compositor if the compositor implements `constraint_adjustment`
+    pub(crate) fn get_geometry(&self) -> Rectangle {
+        // From the `xdg_shell` prococol specification:
+        //
+        // set_offset:
+        //
+        //  Specify the surface position offset relative to the position of the
+        //  anchor on the anchor rectangle and the anchor on the surface. For
+        //  example if the anchor of the anchor rectangle is at (x, y), the surface
+        //  has the gravity bottom|right, and the offset is (ox, oy), the calculated
+        //  surface position will be (x + ox, y + oy)
+        let mut geometry = Rectangle {
+            x: self.offset.0,
+            y: self.offset.1,
+            width: self.rect_size.0,
+            height: self.rect_size.1,
+        };
+
+        // Defines the anchor point for the anchor rectangle. The specified anchor
+        // is used derive an anchor point that the child surface will be
+        // positioned relative to. If a corner anchor is set (e.g. 'top_left' or
+        // 'bottom_right'), the anchor point will be at the specified corner;
+        // otherwise, the derived anchor point will be centered on the specified
+        // edge, or in the center of the anchor rectangle if no edge is specified.
+        if self.anchor_has_edge(xdg_positioner::Anchor::Top) {
+            geometry.y += self.anchor_rect.y;
+        } else if self.anchor_has_edge(xdg_positioner::Anchor::Bottom) {
+            geometry.y += self.anchor_rect.y + self.anchor_rect.height;
+        } else {
+            geometry.y += self.anchor_rect.y + self.anchor_rect.height / 2;
+        }
+
+        if self.anchor_has_edge(xdg_positioner::Anchor::Left) {
+            geometry.x += self.anchor_rect.x;
+        } else if self.anchor_has_edge(xdg_positioner::Anchor::Right) {
+            geometry.x += self.anchor_rect.x + self.anchor_rect.width;
+        } else {
+            geometry.x += self.anchor_rect.x + self.anchor_rect.width / 2;
+        }
+
+        // Defines in what direction a surface should be positioned, relative to
+        // the anchor point of the parent surface. If a corner gravity is
+        // specified (e.g. 'bottom_right' or 'top_left'), then the child surface
+        // will be placed towards the specified gravity; otherwise, the child
+        // surface will be centered over the anchor point on any axis that had no
+        // gravity specified.
+        if self.gravity_has_edge(xdg_positioner::Gravity::Top) {
+            geometry.y -= geometry.height;
+        } else if self.gravity_has_edge(xdg_positioner::Gravity::Bottom) {
+            geometry.y -= geometry.height / 2;
+        }
+
+        if self.gravity_has_edge(xdg_positioner::Gravity::Left) {
+            geometry.x -= geometry.width;
+        } else if self.gravity_has_edge(xdg_positioner::Gravity::Right) {
+            geometry.x -= geometry.width / 2;
+        }
+
+        geometry
+    }
 }
 
 /// State of a regular toplevel surface
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ToplevelState {
-    /// Parent of this surface
-    ///
-    /// If this surface has a parent, it should be hidden
-    /// or displayed, brought up at the same time as it.
-    pub parent: Option<wl_surface::WlSurface>,
-    /// Title of this shell surface
-    pub title: String,
-    /// App id for this shell surface
-    ///
-    /// This identifier can be used to group surface together
-    /// as being several instance of the same app. This can
-    /// also be used as the D-Bus name for the app.
-    pub app_id: String,
-    /// Minimum size requested for this surface
-    ///
-    /// A value of 0 on an axis means this axis is not constrained
-    pub min_size: (i32, i32),
-    /// Maximum size requested for this surface
-    ///
-    /// A value of 0 on an axis means this axis is not constrained
-    pub max_size: (i32, i32),
+    /// The suggested size of the surface
+    pub size: Option<(i32, i32)>,
+
+    /// The states for this surface
+    pub states: ToplevelStateSet,
+
+    /// The output for a fullscreen display
+    pub fullscreen_output: Option<wl_output::WlOutput>,
+}
+
+impl Default for ToplevelState {
+    fn default() -> Self {
+        ToplevelState {
+            fullscreen_output: None,
+            states: Default::default(),
+            size: None,
+        }
+    }
 }
 
 impl Clone for ToplevelState {
     fn clone(&self) -> ToplevelState {
         ToplevelState {
-            parent: self.parent.as_ref().cloned(),
-            title: self.title.clone(),
-            app_id: self.app_id.clone(),
-            min_size: self.min_size,
-            max_size: self.max_size,
+            fullscreen_output: self.fullscreen_output.clone(),
+            states: self.states.clone(),
+            size: self.size,
         }
     }
 }
 
-/// The pending state of a popup surface
-#[derive(Debug)]
-pub struct PopupState {
-    /// Parent of this popup surface
-    pub parent: Option<wl_surface::WlSurface>,
-    /// The positioner specifying how this tooltip should
-    /// be placed relative to its parent.
-    pub positioner: PositionerState,
+/// Container holding the states for a `XdgToplevel`
+///
+/// This container will prevent the `XdgToplevel` from
+/// having the same `xdg_toplevel::State` multiple times
+/// and simplifies setting and un-setting a particularly
+/// `xdg_toplevel::State`
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToplevelStateSet {
+    states: Vec<xdg_toplevel::State>,
 }
 
-impl Clone for PopupState {
-    fn clone(&self) -> PopupState {
-        PopupState {
-            parent: self.parent.as_ref().cloned(),
-            positioner: self.positioner.clone(),
+impl ToplevelStateSet {
+    /// Returns `true` if the states contains a state.
+    pub fn contains(&self, state: xdg_toplevel::State) -> bool {
+        self.states.iter().any(|s| *s == state)
+    }
+
+    /// Adds a state to the states.
+    ///
+    /// If the states did not have this state present, `true` is returned.
+    ///
+    /// If the states did have this state present, `false` is returned.
+    pub fn set(&mut self, state: xdg_toplevel::State) -> bool {
+        if self.contains(state) {
+            false
+        } else {
+            self.states.push(state);
+            true
+        }
+    }
+
+    /// Removes a state from the states. Returns whether the state was
+    /// present in the states.
+    pub fn unset(&mut self, state: xdg_toplevel::State) -> bool {
+        if !self.contains(state) {
+            false
+        } else {
+            self.states.retain(|s| *s != state);
+            true
         }
     }
 }
 
-impl Default for XdgSurfacePendingState {
-    fn default() -> XdgSurfacePendingState {
-        XdgSurfacePendingState::None
+impl Default for ToplevelStateSet {
+    fn default() -> Self {
+        Self { states: Vec::new() }
     }
+}
+
+impl IntoIterator for ToplevelStateSet {
+    type Item = xdg_toplevel::State;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.states.into_iter()
+    }
+}
+
+impl From<ToplevelStateSet> for Vec<xdg_toplevel::State> {
+    fn from(states: ToplevelStateSet) -> Self {
+        states.states
+    }
+}
+
+/// Represents the client pending state
+#[derive(Debug, Clone, Copy)]
+pub struct ToplevelClientPending {
+    /// Minimum size requested for this surface
+    ///
+    /// A value of 0 on an axis means this axis is not constrained
+    ///
+    /// A value of `None` represents the client has not defined
+    /// a minimum size
+    pub min_size: Option<(i32, i32)>,
+    /// Maximum size requested for this surface
+    ///
+    /// A value of 0 on an axis means this axis is not constrained
+    ///
+    /// A value of `None` represents the client has not defined
+    /// a maximum size
+    pub max_size: Option<(i32, i32)>,
+}
+
+impl Default for ToplevelClientPending {
+    fn default() -> Self {
+        Self {
+            min_size: None,
+            max_size: None,
+        }
+    }
+}
+
+/// Represents the possible errors
+/// returned from `ToplevelSurface::with_pending_state`
+/// and `PopupSurface::with_pending_state`
+#[derive(Debug, Error)]
+pub enum PendingStateError {
+    /// The operation failed because the underlying surface has been destroyed
+    #[error("could not retrieve the pending state because the underlying surface has been destroyed")]
+    DeadSurface,
+    /// The role of the xdg_surface has been destroyed
+    #[error("the role of the xdg_surface has been destroyed")]
+    RoleDestroyed,
 }
 
 pub(crate) struct ShellData<R> {
@@ -290,7 +756,7 @@ pub fn xdg_shell_init<R, L, Impl>(
     Global<zxdg_shell_v6::ZxdgShellV6>,
 )
 where
-    R: Role<XdgSurfaceRole> + 'static,
+    R: Role<XdgToplevelSurfaceRole> + Role<XdgPopupSurfaceRole> + 'static,
     L: Into<Option<::slog::Logger>>,
     Impl: FnMut(XdgRequest<R>) + 'static,
 {
@@ -338,7 +804,7 @@ pub struct ShellState<R> {
 
 impl<R> ShellState<R>
 where
-    R: Role<XdgSurfaceRole> + 'static,
+    R: Role<XdgToplevelSurfaceRole> + Role<XdgPopupSurfaceRole> + 'static,
 {
     /// Access all the shell surfaces known by this handler
     pub fn toplevel_surfaces(&self) -> &[ToplevelSurface<R>] {
@@ -362,13 +828,13 @@ enum ShellClientKind {
 }
 
 pub(crate) struct ShellClientData {
-    pending_ping: Serial,
+    pending_ping: Option<Serial>,
     data: UserDataMap,
 }
 
 fn make_shell_client_data() -> ShellClientData {
     ShellClientData {
-        pending_ping: Serial::from(0),
+        pending_ping: None,
         data: UserDataMap::new(),
     }
 }
@@ -391,7 +857,7 @@ pub struct ShellClient<R> {
 
 impl<R> ShellClient<R>
 where
-    R: Role<XdgSurfaceRole> + 'static,
+    R: Role<XdgToplevelSurfaceRole> + Role<XdgPopupSurfaceRole> + 'static,
 {
     /// Is the shell client represented by this handle still connected?
     pub fn alive(&self) -> bool {
@@ -422,9 +888,9 @@ where
     /// down to 0 before a pong is received, mark the client as unresponsive.
     ///
     /// Fails if this shell client already has a pending ping or is already dead.
-    pub fn send_ping(&self, serial: Serial) -> Result<(), ()> {
+    pub fn send_ping(&self, serial: Serial) -> Result<(), PingError> {
         if !self.alive() {
-            return Err(());
+            return Err(PingError::DeadSurface);
         }
         match self.kind {
             ShellClientKind::Xdg(ref shell) => {
@@ -434,10 +900,10 @@ where
                     .get::<self::xdg_handlers::ShellUserData<R>>()
                     .unwrap();
                 let mut guard = user_data.client_data.lock().unwrap();
-                if guard.pending_ping == Serial::from(0) {
-                    return Err(());
+                if let Some(pending_ping) = guard.pending_ping {
+                    return Err(PingError::PingAlreadyPending(pending_ping));
                 }
-                guard.pending_ping = serial;
+                guard.pending_ping = Some(serial);
                 shell.ping(serial.into());
             }
             ShellClientKind::ZxdgV6(ref shell) => {
@@ -447,10 +913,10 @@ where
                     .get::<self::zxdgv6_handlers::ShellUserData<R>>()
                     .unwrap();
                 let mut guard = user_data.client_data.lock().unwrap();
-                if guard.pending_ping == Serial::from(0) {
-                    return Err(());
+                if let Some(pending_ping) = guard.pending_ping {
+                    return Err(PingError::PingAlreadyPending(pending_ping));
                 }
-                guard.pending_ping = serial;
+                guard.pending_ping = Some(serial);
                 shell.ping(serial.into());
             }
         }
@@ -458,12 +924,12 @@ where
     }
 
     /// Access the user data associated with this shell client
-    pub fn with_data<F, T>(&self, f: F) -> Result<T, ()>
+    pub fn with_data<F, T>(&self, f: F) -> Result<T, crate::utils::DeadResource>
     where
         F: FnOnce(&mut UserDataMap) -> T,
     {
         if !self.alive() {
-            return Err(());
+            return Err(crate::utils::DeadResource);
         }
         match self.kind {
             ShellClientKind::Xdg(ref shell) => {
@@ -515,7 +981,7 @@ impl<R> Clone for ToplevelSurface<R> {
 
 impl<R> ToplevelSurface<R>
 where
-    R: Role<XdgSurfaceRole> + 'static,
+    R: Role<XdgToplevelSurfaceRole> + 'static,
 {
     /// Is the toplevel surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
@@ -564,16 +1030,135 @@ where
         })
     }
 
+    /// Gets the current pending state for a configure
+    ///
+    /// Returns `Some` if either no initial configure has been sent or
+    /// the `server_pending` is `Some` and different from the last pending
+    /// configure or `last_acked` if there is no pending
+    ///
+    /// Returns `None` if either no `server_pending` or the pending
+    /// has already been sent to the client or the pending is equal
+    /// to the `last_acked`
+    fn get_pending_state(&self, attributes: &mut XdgToplevelSurfaceRoleAttributes) -> Option<ToplevelState> {
+        if !attributes.initial_configure_sent {
+            return Some(attributes.server_pending.take().unwrap_or_default());
+        }
+
+        let server_pending = match attributes.server_pending.take() {
+            Some(state) => state,
+            None => {
+                return None;
+            }
+        };
+
+        let last_state = attributes
+            .pending_configures
+            .last()
+            .map(|c| &c.state)
+            .or_else(|| attributes.last_acked.as_ref());
+
+        if let Some(state) = last_state {
+            if state == &server_pending {
+                return None;
+            }
+        }
+
+        Some(server_pending)
+    }
+
     /// Send a configure event to this toplevel surface to suggest it a new configuration
     ///
     /// The serial of this configure will be tracked waiting for the client to ACK it.
-    pub fn send_configure(&self, cfg: ToplevelConfigure) {
-        if !self.alive() {
-            return;
+    pub fn send_configure(&self) {
+        if let Some(surface) = self.get_surface() {
+            let configure = self
+                .token
+                .with_role_data(surface, |role| {
+                    if let Some(attributes) = role {
+                        if let Some(pending) = self.get_pending_state(attributes) {
+                            let configure = ToplevelConfigure {
+                                serial: SERIAL_COUNTER.next_serial(),
+                                state: pending,
+                            };
+
+                            attributes.pending_configures.push(configure.clone());
+
+                            Some((configure, !attributes.initial_configure_sent))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(None);
+
+            if let Some((configure, initial)) = configure {
+                match self.shell_surface {
+                    ToplevelKind::Xdg(ref s) => {
+                        self::xdg_handlers::send_toplevel_configure::<R>(s, configure)
+                    }
+                    ToplevelKind::ZxdgV6(ref s) => {
+                        self::zxdgv6_handlers::send_toplevel_configure::<R>(s, configure)
+                    }
+                }
+
+                if initial {
+                    self.token
+                        .with_role_data(surface, |role| {
+                            if let XdgToplevelSurfaceRole::Some(attributes) = role {
+                                attributes.initial_configure_sent = true;
+                            }
+                        })
+                        .unwrap();
+                }
+            }
         }
-        match self.shell_surface {
-            ToplevelKind::Xdg(ref s) => self::xdg_handlers::send_toplevel_configure::<R>(s, cfg),
-            ToplevelKind::ZxdgV6(ref s) => self::zxdgv6_handlers::send_toplevel_configure::<R>(s, cfg),
+    }
+
+    /// Handles the role specific commit logic
+    ///
+    /// This should be called when the underlying WlSurface
+    /// handles a wl_surface.commit request.
+    pub fn commit(&self) {
+        if let Some(surface) = self.get_surface() {
+            let send_initial_configure = self
+                .token
+                .with_role_data(surface, |role: &mut XdgToplevelSurfaceRole| {
+                    if let XdgToplevelSurfaceRole::Some(attributes) = role {
+                        if let Some(window_geometry) = attributes.client_pending_window_geometry.take() {
+                            attributes.window_geometry = Some(window_geometry);
+                        }
+
+                        if attributes.initial_configure_sent {
+                            if let Some(state) = attributes.last_acked.clone() {
+                                if state != attributes.current {
+                                    attributes.current = state;
+                                }
+                            }
+
+                            if let Some(mut client_pending) = attributes.client_pending.take() {
+                                // update state from the client that doesn't need compositor approval
+                                if let Some(size) = client_pending.max_size.take() {
+                                    attributes.max_size = size;
+                                }
+
+                                if let Some(size) = client_pending.min_size.take() {
+                                    attributes.min_size = size;
+                                }
+                            }
+                        }
+
+                        !attributes.initial_configure_sent
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+
+            if send_initial_configure {
+                self.send_configure();
+            }
         }
     }
 
@@ -591,7 +1176,11 @@ where
         }
         let configured = self
             .token
-            .with_role_data::<XdgSurfaceRole, _, _>(&self.wl_surface, |data| data.configured)
+            .with_role_data::<XdgToplevelSurfaceRole, _, _>(&self.wl_surface, |data| {
+                data.as_ref()
+                    .expect("xdg_toplevel exists but role has been destroyed?!")
+                    .configured
+            })
             .expect("A shell surface object exists but the surface does not have the shell_surface role ?!");
         if !configured {
             match self.shell_surface {
@@ -641,24 +1230,42 @@ where
         }
     }
 
-    /// Retrieve a copy of the pending state of this toplevel surface
+    /// Allows the pending state of this toplevel to
+    /// be manipulated.
     ///
-    /// Returns `None` of the toplevel surface actually no longer exists.
-    pub fn get_pending_state(&self) -> Option<ToplevelState> {
+    /// This should be used to inform the client about
+    /// size and state changes.
+    ///
+    /// For example after a resize request from the client.
+    ///
+    /// The state will be sent to the client when calling
+    /// send_configure.
+    pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, PendingStateError>
+    where
+        F: FnOnce(&mut ToplevelState) -> T,
+    {
         if !self.alive() {
-            return None;
+            return Err(PendingStateError::DeadSurface);
         }
+
         self.token
-            .with_role_data::<XdgSurfaceRole, _, _>(&self.wl_surface, |data| match data.pending_state {
-                XdgSurfacePendingState::Toplevel(ref state) => Some(state.clone()),
-                _ => None,
+            .with_role_data(&self.wl_surface, |role| {
+                if let Some(attributes) = role {
+                    if attributes.server_pending.is_none() {
+                        attributes.server_pending = Some(attributes.current.clone());
+                    }
+
+                    let server_pending = attributes.server_pending.as_mut().unwrap();
+                    Ok(f(server_pending))
+                } else {
+                    Err(PendingStateError::RoleDestroyed)
+                }
             })
-            .ok()
-            .and_then(|x| x)
+            .unwrap()
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum PopupKind {
     Xdg(xdg_popup::XdgPopup),
     ZxdgV6(zxdg_popup_v6::ZxdgPopupV6),
@@ -675,9 +1282,20 @@ pub struct PopupSurface<R> {
     token: CompositorToken<R>,
 }
 
+// We implement Clone manually because #[derive(..)] would require R: Clone.
+impl<R> Clone for PopupSurface<R> {
+    fn clone(&self) -> Self {
+        Self {
+            wl_surface: self.wl_surface.clone(),
+            shell_surface: self.shell_surface.clone(),
+            token: self.token,
+        }
+    }
+}
+
 impl<R> PopupSurface<R>
 where
-    R: Role<XdgSurfaceRole> + 'static,
+    R: Role<XdgPopupSurfaceRole> + 'static,
 {
     /// Is the popup surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
@@ -686,6 +1304,20 @@ where
             PopupKind::ZxdgV6(ref p) => p.as_ref().is_alive(),
         };
         shell_alive && self.wl_surface.as_ref().is_alive()
+    }
+
+    /// Gets a reference of the parent WlSurface of
+    /// this popup.
+    pub fn get_parent_surface(&self) -> Option<wl_surface::WlSurface> {
+        if !self.alive() {
+            None
+        } else {
+            self.token
+                .with_role_data(&self.wl_surface, |role: &mut XdgPopupSurfaceRole| {
+                    role.as_ref().and_then(|role| role.parent.clone())
+                })
+                .unwrap()
+        }
     }
 
     /// Do this handle and the other one actually refer to the same popup surface?
@@ -726,19 +1358,135 @@ where
         })
     }
 
-    /// Send a configure event to this toplevel surface to suggest it a new configuration
+    /// Send a configure event to this popup surface to suggest it a new configuration
     ///
     /// The serial of this configure will be tracked waiting for the client to ACK it.
-    pub fn send_configure(&self, cfg: PopupConfigure) {
-        if !self.alive() {
-            return;
-        }
-        match self.shell_surface {
-            PopupKind::Xdg(ref p) => {
-                self::xdg_handlers::send_popup_configure::<R>(p, cfg);
+    pub fn send_configure(&self) {
+        if let Some(surface) = self.get_surface() {
+            if let Some((configure, initial)) = self
+                .token
+                .with_role_data(surface, |role| {
+                    if let XdgPopupSurfaceRole::Some(attributes) = role {
+                        if !attributes.initial_configure_sent || attributes.server_pending.is_some() {
+                            let pending = attributes.server_pending.take().unwrap_or(attributes.current);
+
+                            let configure = PopupConfigure {
+                                state: pending,
+                                serial: SERIAL_COUNTER.next_serial(),
+                            };
+
+                            attributes.pending_configures.push(configure);
+
+                            Some((configure, !attributes.initial_configure_sent))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(None)
+            {
+                match self.shell_surface {
+                    PopupKind::Xdg(ref p) => {
+                        self::xdg_handlers::send_popup_configure::<R>(p, configure);
+                    }
+                    PopupKind::ZxdgV6(ref p) => {
+                        self::zxdgv6_handlers::send_popup_configure::<R>(p, configure);
+                    }
+                }
+
+                if initial {
+                    self.token
+                        .with_role_data(surface, |role| {
+                            if let XdgPopupSurfaceRole::Some(attributes) = role {
+                                attributes.initial_configure_sent = true;
+                            }
+                        })
+                        .unwrap();
+                }
             }
-            PopupKind::ZxdgV6(ref p) => {
-                self::zxdgv6_handlers::send_popup_configure::<R>(p, cfg);
+        }
+    }
+
+    /// Handles the role specific commit logic
+    ///
+    /// This should be called when the underlying WlSurface
+    /// handles a wl_surface.commit request.
+    pub fn commit(&self) {
+        if let Some(surface) = self.get_surface() {
+            let has_parent = self
+                .token
+                .with_role_data(surface, |role| {
+                    if let Some(attributes) = role {
+                        attributes.parent.is_some()
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+
+            if !has_parent {
+                match self.shell_surface {
+                    PopupKind::Xdg(ref s) => {
+                        let data = s
+                            .as_ref()
+                            .user_data()
+                            .get::<self::xdg_handlers::ShellSurfaceUserData<R>>()
+                            .unwrap();
+                        data.xdg_surface.as_ref().post_error(
+                            xdg_surface::Error::NotConstructed as u32,
+                            "Surface has not been configured yet.".into(),
+                        );
+                    }
+                    PopupKind::ZxdgV6(ref s) => {
+                        let data = s
+                            .as_ref()
+                            .user_data()
+                            .get::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
+                            .unwrap();
+                        data.xdg_surface.as_ref().post_error(
+                            zxdg_surface_v6::Error::NotConstructed as u32,
+                            "Surface has not been configured yet.".into(),
+                        );
+                    }
+                }
+                return;
+            }
+
+            let send_initial_configure = self
+                .token
+                .with_role_data(surface, |role: &mut XdgPopupSurfaceRole| {
+                    if let XdgPopupSurfaceRole::Some(attributes) = role {
+                        if let Some(window_geometry) = attributes.client_pending_window_geometry.take() {
+                            attributes.window_geometry = Some(window_geometry);
+                        }
+
+                        if attributes.initial_configure_sent {
+                            if let Some(state) = attributes.last_acked {
+                                if state != attributes.current {
+                                    attributes.current = state;
+                                }
+                            }
+
+                            if attributes.window_geometry.is_none() {
+                                attributes.window_geometry = Some(Rectangle {
+                                    width: attributes.current.geometry.width,
+                                    height: attributes.current.geometry.height,
+                                    ..Default::default()
+                                })
+                            }
+                        }
+
+                        !attributes.initial_configure_sent
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+
+            if send_initial_configure {
+                self.send_configure();
             }
         }
     }
@@ -757,7 +1505,11 @@ where
         }
         let configured = self
             .token
-            .with_role_data::<XdgSurfaceRole, _, _>(&self.wl_surface, |data| data.configured)
+            .with_role_data::<XdgPopupSurfaceRole, _, _>(&self.wl_surface, |data| {
+                data.as_ref()
+                    .expect("xdg_popup exists but role has been destroyed?!")
+                    .configured
+            })
             .expect("A shell surface object exists but the surface does not have the shell_surface role ?!");
         if !configured {
             match self.shell_surface {
@@ -810,33 +1562,47 @@ where
         }
     }
 
-    /// Retrieve a copy of the pending state of this popup surface
+    /// Allows the pending state of this popup to
+    /// be manipulated.
     ///
-    /// Returns `None` of the popup surface actually no longer exists.
-    pub fn get_pending_state(&self) -> Option<PopupState> {
+    /// This should be used to inform the client about
+    /// size and position changes.
+    ///
+    /// For example after a move of the parent toplevel.
+    ///
+    /// The state will be sent to the client when calling
+    /// send_configure.
+    pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, PendingStateError>
+    where
+        F: FnOnce(&mut PopupState) -> T,
+    {
         if !self.alive() {
-            return None;
+            return Err(PendingStateError::DeadSurface);
         }
+
         self.token
-            .with_role_data::<XdgSurfaceRole, _, _>(&self.wl_surface, |data| match data.pending_state {
-                XdgSurfacePendingState::Popup(ref state) => Some(state.clone()),
-                _ => None,
+            .with_role_data(&self.wl_surface, |role| {
+                if let Some(attributes) = role {
+                    if attributes.server_pending.is_none() {
+                        attributes.server_pending = Some(attributes.current);
+                    }
+
+                    let server_pending = attributes.server_pending.as_mut().unwrap();
+                    Ok(f(server_pending))
+                } else {
+                    Err(PendingStateError::RoleDestroyed)
+                }
             })
-            .ok()
-            .and_then(|x| x)
+            .unwrap()
     }
 }
 
 /// A configure message for toplevel surfaces
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ToplevelConfigure {
-    /// A suggestion for a new size for the surface
-    pub size: Option<(i32, i32)>,
-    /// A notification of what are the current states of this surface
-    ///
-    /// A surface can be any combination of these possible states
-    /// at the same time.
-    pub states: Vec<xdg_toplevel::State>,
+    /// The state associated with this configure
+    pub state: ToplevelState,
+
     /// A serial number to track ACK from the client
     ///
     /// This should be an ever increasing number, as the ACK-ing
@@ -846,19 +1612,41 @@ pub struct ToplevelConfigure {
 }
 
 /// A configure message for popup surface
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct PopupConfigure {
-    /// The position chosen for this popup relative to
-    /// its parent
-    pub position: (i32, i32),
-    /// A suggested size for the popup
-    pub size: (i32, i32),
+    /// The state associated with this configure,
+    pub state: PopupState,
     /// A serial number to track ACK from the client
     ///
     /// This should be an ever increasing number, as the ACK-ing
     /// from a client for a serial will validate all pending lower
     /// serials.
     pub serial: Serial,
+}
+
+/// Defines the possible configure variants
+/// for a XdgSurface that will be issued in
+/// the user_impl for notifying about a ack_configure
+#[derive(Debug)]
+pub enum Configure {
+    /// A xdg_surface with a role of xdg_toplevel
+    /// has processed an ack_configure request
+    Toplevel(ToplevelConfigure),
+    /// A xdg_surface with a role of xdg_popup
+    /// has processed an ack_configure request
+    Popup(PopupConfigure),
+}
+
+impl From<ToplevelConfigure> for Configure {
+    fn from(configure: ToplevelConfigure) -> Self {
+        Configure::Toplevel(configure)
+    }
+}
+
+impl From<PopupConfigure> for Configure {
+    fn from(configure: PopupConfigure) -> Self {
+        Configure::Popup(configure)
+    }
 }
 
 /// Events generated by xdg shell surfaces
@@ -976,6 +1764,6 @@ pub enum XdgRequest<R> {
         /// The surface.
         surface: wl_surface::WlSurface,
         /// The configure serial.
-        serial: Serial,
+        configure: Configure,
     },
 }

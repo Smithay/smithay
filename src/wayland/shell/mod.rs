@@ -14,5 +14,20 @@
 //! - The [`legacy`](legacy/index.html) module provides handlers for the `wl_shell` protocol, which
 //!   is now deprecated. You only need it if you want to support apps predating `xdg_shell`.
 
+use super::Serial;
+use thiserror::Error;
+
 pub mod legacy;
 pub mod xdg;
+
+/// Represents the possible errors returned from
+/// a surface ping
+#[derive(Debug, Error)]
+pub enum PingError {
+    /// The operation failed because the underlying surface has been destroyed
+    #[error("the ping failed cause the underlying surface has been destroyed")]
+    DeadSurface,
+    /// There is already a pending ping
+    #[error("there is already a ping pending `{0:?}`")]
+    PingAlreadyPending(Serial),
+}

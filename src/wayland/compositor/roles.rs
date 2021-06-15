@@ -186,17 +186,17 @@ macro_rules! define_roles(
     ($enum_name: ident) => {
         define_roles!($enum_name =>);
     };
-    ($enum_name:ident => $([ $role_name: ident, $role_data: ty])*) => {
+    ($enum_name:ident => $($(#[$role_attr:meta])* [$role_name: ident, $role_data: ty])*) => {
         define_roles!(__impl $enum_name =>
             // add in subsurface role
             [Subsurface, $crate::wayland::compositor::SubsurfaceRole]
-            $([$role_name, $role_data])*
+            $($(#[$role_attr])* [$role_name, $role_data])*
         );
     };
-    (__impl $enum_name:ident => $([ $role_name: ident, $role_data: ty])*) => {
+    (__impl $enum_name:ident => $($(#[$role_attr:meta])* [$role_name: ident, $role_data: ty])*) => {
         pub enum $enum_name {
             NoRole,
-            $($role_name($role_data)),*
+            $($(#[$role_attr])* $role_name($role_data)),*
         }
 
         impl Default for $enum_name {
@@ -216,6 +216,7 @@ macro_rules! define_roles(
         }
 
         $(
+            $(#[$role_attr])*
             impl $crate::wayland::compositor::roles::Role<$role_data> for $enum_name {
                 fn set_with(&mut self, data: $role_data) -> ::std::result::Result<(), $role_data> {
                     if let $enum_name::NoRole = *self {
