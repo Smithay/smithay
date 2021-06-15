@@ -31,6 +31,8 @@
 //! The [`AutoSessionNotifier`] is to be inserted into
 //! a calloop event source to have its events processed.
 
+#[cfg(feature = "backend_session_libseat")]
+use super::libseat::{LibSeatSession, LibSeatSessionNotifier};
 #[cfg(feature = "backend_session_logind")]
 use super::logind::{self, LogindSession, LogindSessionNotifier};
 use super::{
@@ -51,6 +53,9 @@ pub enum AutoSession {
     Logind(LogindSession),
     /// Direct / tty session
     Direct(Rc<RefCell<DirectSession>>),
+    /// LibSeat session
+    #[cfg(feature = "backend_session_libseat")]
+    LibSeat(LibSeatSession),
 }
 
 /// Notifier using the best available interface
@@ -61,11 +66,13 @@ pub enum AutoSessionNotifier {
     Logind(LogindSessionNotifier),
     /// Direct / tty session notifier
     Direct(DirectSessionNotifier),
+    /// LibSeat session notifier
+    #[cfg(feature = "backend_session_libseat")]
+    LibSeat(LibSeatSessionNotifier),
 }
 
 impl AutoSession {
     /// Tries to create a new session via the best available interface.
-    #[cfg(feature = "backend_session_logind")]
     pub fn new<L>(logger: L) -> Option<(AutoSession, AutoSessionNotifier)>
     where
         L: Into<Option<::slog::Logger>>,
@@ -73,51 +80,53 @@ impl AutoSession {
         let logger = crate::slog_or_fallback(logger)
             .new(o!("smithay_module" => "backend_session_auto", "session_type" => "auto"));
 
-        info!(logger, "Trying to create logind session");
-        match LogindSession::new(logger.clone()) {
-            Ok((session, notifier)) => Some((
-                AutoSession::Logind(session),
-                AutoSessionNotifier::Logind(notifier),
-            )),
-            Err(err) => {
-                warn!(logger, "Failed to create logind session: {}", err);
-                info!(logger, "Falling back to create tty session");
-                match DirectSession::new(None, logger.clone()) {
-                    Ok((session, notifier)) => Some((
-                        AutoSession::Direct(Rc::new(RefCell::new(session))),
-                        AutoSessionNotifier::Direct(notifier),
-                    )),
-                    Err(err) => {
-                        warn!(logger, "Failed to create direct session: {}", err);
-                        error!(logger, "Could not create any session, possibilities exhausted");
-                        None
-                    }
+        #[cfg(feature = "backend_session_libseat")]
+        {
+            info!(logger, "Trying to create libseat session");
+            match LibSeatSession::new(logger.clone()) {
+                Ok((sesstion, notifier)) => {
+                    return Some((
+                        AutoSession::LibSeat(sesstion),
+                        AutoSessionNotifier::LibSeat(notifier),
+                    ))
+                }
+                Err(err) => {
+                    warn!(logger, "Failed to create libseat session: {}", err);
                 }
             }
         }
-    }
 
-    /// Tries to create a new session via the best available interface.
-    #[cfg(not(feature = "backend_session_logind"))]
-    pub fn new<L>(logger: L) -> Option<(AutoSession, AutoSessionNotifier)>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let logger = crate::slog_or_fallback(logger)
-            .new(o!("smithay_module" => "backend_session_auto", "session_type" => "auto"));
+        #[cfg(feature = "backend_session_logind")]
+        {
+            info!(logger, "Trying to create logind session");
+            match LogindSession::new(logger.clone()) {
+                Ok((session, notifier)) => {
+                    return Some((
+                        AutoSession::Logind(session),
+                        AutoSessionNotifier::Logind(notifier),
+                    ))
+                }
+                Err(err) => {
+                    warn!(logger, "Failed to create logind session: {}", err);
+                }
+            }
+        }
 
         info!(logger, "Trying to create tty session");
         match DirectSession::new(None, logger.clone()) {
-            Ok((session, notifier)) => Some((
-                AutoSession::Direct(Rc::new(RefCell::new(session))),
-                AutoSessionNotifier::Direct(notifier),
-            )),
+            Ok((session, notifier)) => {
+                return Some((
+                    AutoSession::Direct(Rc::new(RefCell::new(session))),
+                    AutoSessionNotifier::Direct(notifier),
+                ))
+            }
             Err(err) => {
                 warn!(logger, "Failed to create direct session: {}", err);
-                error!(logger, "Could not create any session, possibilities exhausted");
-                None
             }
         }
+
+        error!(logger, "Could not create any session, possibilities exhausted");
+        None
     }
 }
 
@@ -129,6 +138,8 @@ impl Session for AutoSession {
             #[cfg(feature = "backend_session_logind")]
             AutoSession::Logind(ref mut logind) => logind.open(path, flags).map_err(|e| e.into()),
             AutoSession::Direct(ref mut direct) => direct.open(path, flags).map_err(|e| e.into()),
+            #[cfg(feature = "backend_session_libseat")]
+            AutoSession::LibSeat(ref mut logind) => logind.open(path, flags).map_err(|e| e.into()),
         }
     }
     fn close(&mut self, fd: RawFd) -> Result<(), Error> {
@@ -136,6 +147,8 @@ impl Session for AutoSession {
             #[cfg(feature = "backend_session_logind")]
             AutoSession::Logind(ref mut logind) => logind.close(fd).map_err(|e| e.into()),
             AutoSession::Direct(ref mut direct) => direct.close(fd).map_err(|e| e.into()),
+            #[cfg(feature = "backend_session_libseat")]
+            AutoSession::LibSeat(ref mut direct) => direct.close(fd).map_err(|e| e.into()),
         }
     }
 
@@ -144,6 +157,8 @@ impl Session for AutoSession {
             #[cfg(feature = "backend_session_logind")]
             AutoSession::Logind(ref mut logind) => logind.change_vt(vt).map_err(|e| e.into()),
             AutoSession::Direct(ref mut direct) => direct.change_vt(vt).map_err(|e| e.into()),
+            #[cfg(feature = "backend_session_libseat")]
+            AutoSession::LibSeat(ref mut direct) => direct.change_vt(vt).map_err(|e| e.into()),
         }
     }
 
@@ -152,6 +167,8 @@ impl Session for AutoSession {
             #[cfg(feature = "backend_session_logind")]
             AutoSession::Logind(ref logind) => logind.is_active(),
             AutoSession::Direct(ref direct) => direct.is_active(),
+            #[cfg(feature = "backend_session_libseat")]
+            AutoSession::LibSeat(ref direct) => direct.is_active(),
         }
     }
     fn seat(&self) -> String {
@@ -159,6 +176,8 @@ impl Session for AutoSession {
             #[cfg(feature = "backend_session_logind")]
             AutoSession::Logind(ref logind) => logind.seat(),
             AutoSession::Direct(ref direct) => direct.seat(),
+            #[cfg(feature = "backend_session_libseat")]
+            AutoSession::LibSeat(ref direct) => direct.seat(),
         }
     }
 }
@@ -172,6 +191,8 @@ impl AutoSessionNotifier {
             #[cfg(feature = "backend_session_logind")]
             AutoSessionNotifier::Logind(ref logind) => logind.signaler(),
             AutoSessionNotifier::Direct(ref direct) => direct.signaler(),
+            #[cfg(feature = "backend_session_libseat")]
+            AutoSessionNotifier::LibSeat(ref direct) => direct.signaler(),
         }
     }
 }
@@ -189,6 +210,8 @@ impl EventSource for AutoSessionNotifier {
             #[cfg(feature = "backend_session_logind")]
             AutoSessionNotifier::Logind(s) => s.process_events(readiness, token, callback),
             AutoSessionNotifier::Direct(s) => s.process_events(readiness, token, callback),
+            #[cfg(feature = "backend_session_libseat")]
+            AutoSessionNotifier::LibSeat(s) => s.process_events(readiness, token, callback),
         }
     }
 
@@ -197,6 +220,8 @@ impl EventSource for AutoSessionNotifier {
             #[cfg(feature = "backend_session_logind")]
             AutoSessionNotifier::Logind(s) => EventSource::register(s, poll, token),
             AutoSessionNotifier::Direct(s) => EventSource::register(s, poll, token),
+            #[cfg(feature = "backend_session_libseat")]
+            AutoSessionNotifier::LibSeat(s) => EventSource::register(s, poll, token),
         }
     }
 
@@ -205,6 +230,8 @@ impl EventSource for AutoSessionNotifier {
             #[cfg(feature = "backend_session_logind")]
             AutoSessionNotifier::Logind(s) => EventSource::reregister(s, poll, token),
             AutoSessionNotifier::Direct(s) => EventSource::reregister(s, poll, token),
+            #[cfg(feature = "backend_session_libseat")]
+            AutoSessionNotifier::LibSeat(s) => EventSource::reregister(s, poll, token),
         }
     }
 
@@ -213,6 +240,8 @@ impl EventSource for AutoSessionNotifier {
             #[cfg(feature = "backend_session_logind")]
             AutoSessionNotifier::Logind(s) => EventSource::unregister(s, poll),
             AutoSessionNotifier::Direct(s) => EventSource::unregister(s, poll),
+            #[cfg(feature = "backend_session_libseat")]
+            AutoSessionNotifier::LibSeat(s) => EventSource::unregister(s, poll),
         }
     }
 }
@@ -227,6 +256,11 @@ pub enum Error {
     /// Direct session error
     #[error("Direct session error: {0}")]
     Direct(#[from] direct::Error),
+    /// LibSeat session error
+    #[cfg(feature = "backend_session_libseat")]
+    #[error("LibSeat session error: {0}")]
+    LibSeat(#[from] super::libseat::Error),
+
     /// Nix error
     #[error("Nix error: {0}")]
     Nix(#[from] nix::Error),
