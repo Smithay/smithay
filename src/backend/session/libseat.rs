@@ -266,14 +266,16 @@ pub enum Error {
     /// Session is already closed,
     #[error("Session is already closed")]
     SessionLost,
-
-    /// Unknown
-    #[error("Unknown")]
-    Unknown,
 }
 
 impl AsErrno for Error {
     fn as_errno(&self) -> Option<i32> {
-        None
+        match self {
+            &Self::FailedToOpenSession(errno)
+            | &Self::FailedToOpenDevice(errno)
+            | &Self::FailedToCloseDevice(errno)
+            | &Self::FailedToChangeVt(errno) => Some(errno as i32),
+            _ => None,
+        }
     }
 }
