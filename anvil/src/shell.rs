@@ -162,12 +162,18 @@ struct ResizeSurfaceGrab {
 impl PointerGrab for ResizeSurfaceGrab {
     fn motion(
         &mut self,
-        _handle: &mut PointerInnerHandle<'_>,
+        handle: &mut PointerInnerHandle<'_>,
         location: (f64, f64),
         _focus: Option<(wl_surface::WlSurface, (f64, f64))>,
-        _serial: Serial,
-        _time: u32,
+        serial: Serial,
+        time: u32,
     ) {
+        // It is impossible to get `min_size` and `max_size` of dead toplevel, so we return early.
+        if !self.toplevel.alive() | self.toplevel.get_surface().is_none() {
+            handle.unset_grab(serial, time);
+            return;
+        }
+
         let mut dx = location.0 - self.start_data.location.0;
         let mut dy = location.1 - self.start_data.location.1;
 
@@ -253,6 +259,11 @@ impl PointerGrab for ResizeSurfaceGrab {
         if handle.current_pressed().is_empty() {
             // No more buttons are pressed, release the grab.
             handle.unset_grab(serial, time);
+
+            // If toplevel is dead, we can't resize it, so we return early.
+            if !self.toplevel.alive() | self.toplevel.get_surface().is_none() {
+                return;
+            }
 
             if let SurfaceKind::Xdg(xdg) = &self.toplevel {
                 if xdg
