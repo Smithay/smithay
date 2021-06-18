@@ -4,14 +4,14 @@ use std::sync::Arc;
 
 use drm::buffer::PlanarBuffer;
 use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
-use gbm::{BufferObject, BufferObjectFlags, Device as GbmDevice};
+use gbm::{BufferObject, Device as GbmDevice};
 
-use super::{device::DevPath, surface::DrmSurfaceInternal, DrmError, DrmSurface};
 use crate::backend::allocator::{
     dmabuf::{AsDmabuf, Dmabuf},
-    Allocator, Buffer, Format, Fourcc, Modifier, Slot, Swapchain,
+    gbm::GbmConvertError,
+    Format, Fourcc, Modifier, Slot, Swapchain,
 };
-use crate::backend::renderer::{Bind, Frame, Renderer, Transform};
+use crate::backend::drm::{device::DevPath, surface::DrmSurfaceInternal, DrmError, DrmSurface};
 use crate::backend::SwapBuffersError;
 
 /// Simplified by limited abstraction to link single [`DrmSurface`]s to renderers.
@@ -21,22 +21,15 @@ use crate::backend::SwapBuffersError;
 /// In some scenarios it might be enough to use of a drm-surface as the one and only target
 /// of a single renderer. In these cases `DrmRenderSurface` provides a way to quickly
 /// get up and running without manually handling and binding buffers.
-pub struct DrmRenderSurface<D: AsRawFd + 'static, A: Allocator<B>, R: Bind<Dmabuf>, B: Buffer> {
-    buffers: Buffers<D, B>,
-    swapchain: Swapchain<A, B, (Dmabuf, BufferObject<FbHandle<D>>)>,
-    renderer: R,
+pub struct GbmBufferedSurface<D: AsRawFd + 'static> {
+    buffers: Buffers<D>,
+    swapchain: Swapchain<GbmDevice<D>, BufferObject<()>, (Dmabuf, FbHandle<D>)>,
     drm: Arc<DrmSurface<D>>,
 }
 
-impl<D, A, B, R, E1, E2, E3> DrmRenderSurface<D, A, R, B>
+impl<D> GbmBufferedSurface<D>
 where
     D: AsRawFd + 'static,
-    A: Allocator<B, Error = E1>,
-    B: Buffer + AsDmabuf<Error = E2>,
-    R: Bind<Dmabuf> + Renderer<Error = E3>,
-    E1: std::error::Error + 'static,
-    E2: std::error::Error + 'static,
-    E3: std::error::Error + 'static,
 {
     /// Create a new `DrmRendererSurface` from a given compatible combination
     /// of a surface, an allocator and a renderer.
@@ -48,12 +41,15 @@ where
     /// The function will futhermore check for compatibility by enumerating
     /// supported pixel formats and choosing an appropriate one.
     #[allow(clippy::type_complexity)]
-    pub fn new<L: Into<Option<::slog::Logger>>>(
+    pub fn new<L>(
         drm: DrmSurface<D>,
-        allocator: A,
-        mut renderer: R,
+        allocator: GbmDevice<D>,
+        mut renderer_formats: HashSet<Format>,
         log: L,
-    ) -> Result<DrmRenderSurface<D, A, R, B>, Error<E1, E2, E3>> {
+    ) -> Result<GbmBufferedSurface<D>, Error>
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
         // we cannot simply pick the first supported format of the intersection of *all* formats, because:
         // - we do not want something like Abgr4444, which looses color information
         // - some formats might perform terribly
@@ -73,15 +69,10 @@ where
             .filter(|fmt| fmt.code == code)
             .cloned()
             .collect::<HashSet<_>>();
-        let renderer_formats = Bind::<Dmabuf>::supported_formats(&renderer)
-            .expect("Dmabuf renderer without formats")
-            .iter()
-            .filter(|fmt| fmt.code == code)
-            .cloned()
-            .collect::<HashSet<_>>();
+        renderer_formats.retain(|fmt| fmt.code == code);
 
-        debug!(logger, "Remaining plane formats: {:?}", plane_formats);
-        debug!(logger, "Remaining renderer formats: {:?}", renderer_formats);
+        trace!(logger, "Plane formats: {:?}", plane_formats);
+        trace!(logger, "Renderer formats: {:?}", renderer_formats);
         debug!(
             logger,
             "Remaining intersected formats: {:?}",
@@ -95,6 +86,7 @@ where
         } else if renderer_formats.is_empty() {
             return Err(Error::NoSupportedRendererFormat);
         }
+
         let formats = {
             // Special case: if a format supports explicit LINEAR (but no implicit Modifiers)
             // and the other doesn't support any modifier, force Implicit.
@@ -127,8 +119,7 @@ where
 
         let mode = drm.pending_mode();
 
-        let gbm = unsafe { GbmDevice::new_from_fd(drm.as_raw_fd())? };
-        let mut swapchain = Swapchain::new(
+        let mut swapchain: Swapchain<GbmDevice<D>, BufferObject<()>, (Dmabuf, FbHandle<D>)> = Swapchain::new(
             allocator,
             mode.size().0 as u32,
             mode.size().1 as u32,
@@ -137,116 +128,63 @@ where
         );
 
         // Test format
-        let buffer = swapchain.acquire().map_err(Error::SwapchainError)?.unwrap();
-        let dmabuf = buffer.export().map_err(Error::AsDmabufError)?;
+        let buffer = swapchain.acquire()?.unwrap();
         let format = Format {
             code,
-            modifier: buffer.format().modifier, // no guarantee
-                                                // that this is stable across allocations, but
-                                                // we want to print that here for debugging proposes.
-                                                // It has no further use.
+            modifier: buffer.modifier().unwrap(), // no guarantee
+                                                  // that this is stable across allocations, but
+                                                  // we want to print that here for debugging proposes.
+                                                  // It has no further use.
         };
 
-        match renderer
-            .bind(dmabuf.clone())
-            .map_err(Error::<E1, E2, E3>::RenderError)
-            .and_then(|_| {
-                renderer
-                    .render(
-                        mode.size().0 as u32,
-                        mode.size().1 as u32,
-                        Transform::Normal,
-                        |_, frame| frame.clear([0.0, 0.0, 0.0, 1.0]),
-                    )
-                    .map_err(Error::RenderError)
-            })
-            .and_then(|_| renderer.unbind().map_err(Error::RenderError))
-        {
-            Ok(_) => {
-                let bo = import_dmabuf(&drm, &gbm, &dmabuf)?;
-                let fb = bo.userdata().unwrap().unwrap().fb;
-                *buffer.userdata() = Some((dmabuf, bo));
+        let fb = attach_framebuffer(&drm, &*buffer)?;
+        let dmabuf = buffer.export()?;
+        let handle = fb.fb;
+        *buffer.userdata() = Some((dmabuf, fb));
 
-                match drm.test_buffer(fb, &mode, true) {
-                    Ok(_) => {
-                        debug!(logger, "Success, choosen format: {:?}", format);
-                        let buffers = Buffers::new(drm.clone(), gbm, buffer);
-                        Ok(DrmRenderSurface {
-                            buffers,
-                            swapchain,
-                            renderer,
-                            drm,
-                        })
-                    }
-                    Err(err) => {
-                        warn!(
-                            logger,
-                            "Mode-setting failed with automatically selected buffer format {:?}: {}",
-                            format,
-                            err
-                        );
-                        Err(err).map_err(Into::into)
-                    }
-                }
+        match drm.test_buffer(handle, &mode, true) {
+            Ok(_) => {
+                debug!(logger, "Choosen format: {:?}", format);
+                let buffers = Buffers::new(drm.clone(), buffer);
+                Ok(GbmBufferedSurface {
+                    buffers,
+                    swapchain,
+                    drm,
+                })
             }
             Err(err) => {
                 warn!(
                     logger,
-                    "Rendering failed with automatically selected format {:?}: {}", format, err
+                    "Mode-setting failed with automatically selected buffer format {:?}: {}", format, err
                 );
-                Err(err)
+                Err(err).map_err(Into::into)
             }
         }
     }
 
-    /// Access the underlying renderer
-    pub fn renderer(&mut self) -> &mut R {
-        &mut self.renderer
+    /// Retrieves the next buffer to be rendered into.
+    ///
+    /// *Note*: This function can be called multiple times and
+    /// will return the same buffer until it is queued (see [`GbmBufferedSurface::queue_buffer`]).
+    pub fn next_buffer(&mut self) -> Result<Dmabuf, Error> {
+        self.buffers.next(&mut self.swapchain)
     }
 
-    /// Shortcut to [`Renderer::render`] with the pending mode as dimensions
-    /// and this surface set a the rendering target.
-    pub fn render<F, S>(&mut self, rendering: F) -> Result<S, Error<E1, E2, E3>>
-    where
-        F: FnOnce(&mut R, &mut <R as Renderer>::Frame) -> S,
-    {
-        let mode = self.drm.pending_mode();
-        let (width, height) = (mode.size().0 as u32, mode.size().1 as u32);
-        let slot = self
-            .swapchain
-            .acquire()
-            .map_err(Error::SwapchainError)?
-            .ok_or(Error::NoFreeSlotsError)?;
-        let dmabuf = match &*slot.userdata() {
-            Some((buf, _)) => buf.clone(),
-            None => (*slot).export().map_err(Error::AsDmabufError)?,
-        };
-        self.renderer.bind(dmabuf.clone()).map_err(Error::RenderError)?;
-
-        let result = self.renderer
-            .render(
-                width, height,
-                Transform::Flipped180 /* TODO: add Add<Transform> implementation to add and correct _transform here */,
-                rendering,
-            )
-            .map_err(Error::RenderError)?;
-
-        match self.buffers.queue::<E1, E2, E3>(slot, dmabuf) {
-            Ok(()) => {}
-            Err(Error::DrmError(drm)) => return Err(drm.into()),
-            Err(Error::GbmError(err)) => return Err(err.into()),
-            _ => unreachable!(),
-        }
-
-        Ok(result)
+    /// Queues the current buffer for rendering.
+    ///
+    /// *Note*: This function needs to be followed up with [`GbmBufferedSurface::frame_submitted`]
+    /// when a vblank event is received, that denotes successful scanout of the buffer.
+    /// Otherwise the underlying swapchain will eventually run out of buffers.
+    pub fn queue_buffer(&mut self) -> Result<(), Error> {
+        self.buffers.queue()
     }
 
     /// Marks the current frame as submitted.
     ///
-    /// Needs to be called, after the vblank event of the matching [`DrmDevice`](super::DrmDevice)
-    /// was received after calling [`DrmRenderSurface::render`] on this surface.
-    /// Otherwise the rendering will run out of buffers eventually.
-    pub fn frame_submitted(&mut self) -> Result<(), Error<E1, E2, E3>> {
+    /// *Note*: Needs to be called, after the vblank event of the matching [`DrmDevice`](super::DrmDevice)
+    /// was received after calling [`GbmBufferedSurface::queue_buffer`] on this surface.
+    /// Otherwise the underlying swapchain will run out of buffers eventually.
+    pub fn frame_submitted(&mut self) -> Result<(), Error> {
         self.buffers.submitted()
     }
 
@@ -266,7 +204,7 @@ where
     }
 
     /// Returns the pending [`connector`](drm::control::connector)s
-    /// used for the next frame in [`render`](DrmRenderSurface::render)
+    /// used for the next frame queued via [`queue_buffer`](GbmBufferedSurface::queue_buffer).
     pub fn pending_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
         self.drm.pending_connectors()
     }
@@ -283,13 +221,13 @@ where
     /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
     /// or is not compatible with the currently pending
     /// [`Mode`](drm::control::Mode).
-    pub fn add_connector(&self, connector: connector::Handle) -> Result<(), Error<E1, E2, E3>> {
+    pub fn add_connector(&self, connector: connector::Handle) -> Result<(), Error> {
         self.drm.add_connector(connector).map_err(Error::DrmError)
     }
 
     /// Tries to mark a [`connector`](drm::control::connector)
     /// for removal on the next commit.    
-    pub fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error<E1, E2, E3>> {
+    pub fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error> {
         self.drm.remove_connector(connector).map_err(Error::DrmError)
     }
 
@@ -299,7 +237,7 @@ where
     /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
     /// or is not compatible with the currently pending
     /// [`Mode`](drm::control::Mode).    
-    pub fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error<E1, E2, E3>> {
+    pub fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error> {
         self.drm.set_connectors(connectors).map_err(Error::DrmError)
     }
 
@@ -321,7 +259,7 @@ where
     /// Fails if the mode is not compatible with the underlying
     /// [`crtc`](drm::control::crtc) or any of the
     /// pending [`connector`](drm::control::connector)s.
-    pub fn use_mode(&self, mode: Mode) -> Result<(), Error<E1, E2, E3>> {
+    pub fn use_mode(&self, mode: Mode) -> Result<(), Error> {
         self.drm.use_mode(mode).map_err(Error::DrmError)
     }
 }
@@ -337,65 +275,66 @@ impl<A: AsRawFd + 'static> Drop for FbHandle<A> {
     }
 }
 
-type DmabufSlot<B, D> = Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>;
+type DmabufSlot<D> = Slot<BufferObject<()>, (Dmabuf, FbHandle<D>)>;
 
-struct Buffers<D: AsRawFd + 'static, B: Buffer> {
-    gbm: GbmDevice<gbm::FdWrapper>,
+struct Buffers<D: AsRawFd + 'static> {
     drm: Arc<DrmSurface<D>>,
-    _current_fb: DmabufSlot<B, D>,
-    pending_fb: Option<DmabufSlot<B, D>>,
-    queued_fb: Option<DmabufSlot<B, D>>,
+    _current_fb: DmabufSlot<D>,
+    pending_fb: Option<DmabufSlot<D>>,
+    queued_fb: Option<DmabufSlot<D>>,
+    next_fb: Option<DmabufSlot<D>>,
 }
 
-impl<D, B> Buffers<D, B>
+impl<D> Buffers<D>
 where
-    B: Buffer + AsDmabuf,
     D: AsRawFd + 'static,
 {
-    pub fn new(
-        drm: Arc<DrmSurface<D>>,
-        gbm: GbmDevice<gbm::FdWrapper>,
-        slot: Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>,
-    ) -> Buffers<D, B> {
+    pub fn new(drm: Arc<DrmSurface<D>>, slot: DmabufSlot<D>) -> Buffers<D> {
         Buffers {
             drm,
-            gbm,
             _current_fb: slot,
             pending_fb: None,
             queued_fb: None,
+            next_fb: None,
         }
     }
 
-    pub fn queue<E1, E2, E3>(
+    pub fn next(
         &mut self,
-        slot: Slot<B, (Dmabuf, BufferObject<FbHandle<D>>)>,
-        dmabuf: Dmabuf,
-    ) -> Result<(), Error<E1, E2, E3>>
-    where
-        B: AsDmabuf<Error = E2>,
-        E1: std::error::Error + 'static,
-        E2: std::error::Error + 'static,
-        E3: std::error::Error + 'static,
-    {
-        if slot.userdata().is_none() {
-            let bo = import_dmabuf(&self.drm, &self.gbm, &dmabuf)?;
-            *slot.userdata() = Some((dmabuf, bo));
+        swapchain: &mut Swapchain<GbmDevice<D>, BufferObject<()>, (Dmabuf, FbHandle<D>)>,
+    ) -> Result<Dmabuf, Error> {
+        if let Some(slot) = self.next_fb.as_ref() {
+            return Ok(slot.userdata().as_ref().unwrap().0.clone());
         }
 
-        self.queued_fb = Some(slot);
-        if self.pending_fb.is_none() {
+        let slot = swapchain.acquire()?.ok_or(Error::NoFreeSlotsError)?;
+
+        let maybe_buffer = slot.userdata().as_ref().map(|(buf, _)| buf.clone());
+        let dmabuf = match maybe_buffer {
+            Some(buf) => buf.clone(),
+            None => {
+                let dmabuf = slot.export()?;
+                let fb_handle = attach_framebuffer(&self.drm, &*slot)?;
+                *slot.userdata() = Some((dmabuf.clone(), fb_handle));
+                dmabuf
+            }
+        };
+
+        self.next_fb = Some(slot);
+
+        Ok(dmabuf)
+    }
+
+    pub fn queue(&mut self) -> Result<(), Error> {
+        self.queued_fb = self.next_fb.take();
+        if self.pending_fb.is_none() && self.queued_fb.is_some() {
             self.submit()
         } else {
             Ok(())
         }
     }
 
-    pub fn submitted<E1, E2, E3>(&mut self) -> Result<(), Error<E1, E2, E3>>
-    where
-        E1: std::error::Error + 'static,
-        E2: std::error::Error + 'static,
-        E3: std::error::Error + 'static,
-    {
+    pub fn submitted(&mut self) -> Result<(), Error> {
         if self.pending_fb.is_none() {
             return Ok(());
         }
@@ -407,23 +346,10 @@ where
         }
     }
 
-    fn submit<E1, E2, E3>(&mut self) -> Result<(), Error<E1, E2, E3>>
-    where
-        E1: std::error::Error + 'static,
-        E2: std::error::Error + 'static,
-        E3: std::error::Error + 'static,
-    {
+    fn submit(&mut self) -> Result<(), Error> {
         // yes it does not look like it, but both of these lines should be safe in all cases.
         let slot = self.queued_fb.take().unwrap();
-        let fb = slot
-            .userdata()
-            .as_ref()
-            .unwrap()
-            .1
-            .userdata()
-            .unwrap()
-            .unwrap()
-            .fb;
+        let fb = slot.userdata().as_ref().unwrap().1.fb;
 
         let flip = if self.drm.commit_pending() {
             self.drm.commit([(fb, self.drm.plane())].iter(), true)
@@ -437,19 +363,10 @@ where
     }
 }
 
-fn import_dmabuf<A, E1, E2, E3>(
-    drm: &Arc<DrmSurface<A>>,
-    gbm: &GbmDevice<gbm::FdWrapper>,
-    buffer: &Dmabuf,
-) -> Result<BufferObject<FbHandle<A>>, Error<E1, E2, E3>>
+fn attach_framebuffer<A>(drm: &Arc<DrmSurface<A>>, bo: &BufferObject<()>) -> Result<FbHandle<A>, Error>
 where
     A: AsRawFd + 'static,
-    E1: std::error::Error + 'static,
-    E2: std::error::Error + 'static,
-    E3: std::error::Error + 'static,
 {
-    // TODO check userdata and return early
-    let mut bo = buffer.import_to(&gbm, BufferObjectFlags::SCANOUT)?;
     let modifier = match bo.modifier().unwrap() {
         Modifier::Invalid => None,
         x => Some(x),
@@ -468,15 +385,15 @@ where
             if num > 2 { modifier } else { None },
             if num > 3 { modifier } else { None },
         ];
-        drm.add_planar_framebuffer(&bo, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
+        drm.add_planar_framebuffer(bo, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
     } else {
-        drm.add_planar_framebuffer(&bo, &[None, None, None, None], 0)
+        drm.add_planar_framebuffer(bo, &[None, None, None, None], 0)
     } {
         Ok(fb) => fb,
         Err(source) => {
             // We only support this as a fallback of last resort for ARGB8888 visuals,
             // like xf86-video-modesetting does.
-            if drm::buffer::Buffer::format(&bo) != Fourcc::Argb8888 || bo.handles()[1].is_some() {
+            if drm::buffer::Buffer::format(bo) != Fourcc::Argb8888 || bo.handles()[1].is_some() {
                 return Err(Error::DrmError(DrmError::Access {
                     errmsg: "Failed to add framebuffer",
                     dev: drm.dev_path(),
@@ -484,7 +401,7 @@ where
                 }));
             }
             debug!(logger, "Failed to add framebuffer, trying legacy method");
-            drm.add_framebuffer(&bo, 32, 32)
+            drm.add_framebuffer(bo, 32, 32)
                 .map_err(|source| DrmError::Access {
                     errmsg: "Failed to add framebuffer",
                     dev: drm.dev_path(),
@@ -492,19 +409,12 @@ where
                 })?
         }
     };
-    bo.set_userdata(FbHandle { drm: drm.clone(), fb }).unwrap();
-
-    Ok(bo)
+    Ok(FbHandle { drm: drm.clone(), fb })
 }
 
-/// Errors thrown by a [`DrmRenderSurface`]
+/// Errors thrown by a [`GbmBufferedSurface`]
 #[derive(Debug, thiserror::Error)]
-pub enum Error<E1, E2, E3>
-where
-    E1: std::error::Error + 'static,
-    E2: std::error::Error + 'static,
-    E3: std::error::Error + 'static,
-{
+pub enum Error {
     /// No supported pixel format for the given plane could be determined
     #[error("No supported plane buffer format found")]
     NoSupportedPlaneFormat,
@@ -526,24 +436,13 @@ where
     /// Error importing the rendered buffer to libgbm for scan-out
     #[error("The underlying gbm device encounted an error: {0}")]
     GbmError(#[from] std::io::Error),
-    /// Error allocating or converting newly created buffers
-    #[error("The swapchain encounted an error: {0}")]
-    SwapchainError(#[source] E1),
     /// Error exporting as Dmabuf
     #[error("The allocated buffer could not be exported as a dmabuf: {0}")]
-    AsDmabufError(#[source] E2),
-    /// Error during rendering
-    #[error("The renderer encounted an error: {0}")]
-    RenderError(#[source] E3),
+    AsDmabufError(#[from] GbmConvertError),
 }
 
-impl<
-        E1: std::error::Error + 'static,
-        E2: std::error::Error + 'static,
-        E3: std::error::Error + Into<SwapBuffersError> + 'static,
-    > From<Error<E1, E2, E3>> for SwapBuffersError
-{
-    fn from(err: Error<E1, E2, E3>) -> SwapBuffersError {
+impl From<Error> for SwapBuffersError {
+    fn from(err: Error) -> SwapBuffersError {
         match err {
             x @ Error::NoSupportedPlaneFormat
             | x @ Error::NoSupportedRendererFormat
@@ -552,9 +451,7 @@ impl<
             x @ Error::NoFreeSlotsError => SwapBuffersError::TemporaryFailure(Box::new(x)),
             Error::DrmError(err) => err.into(),
             Error::GbmError(err) => SwapBuffersError::ContextLost(Box::new(err)),
-            Error::SwapchainError(err) => SwapBuffersError::ContextLost(Box::new(err)),
             Error::AsDmabufError(err) => SwapBuffersError::ContextLost(Box::new(err)),
-            Error::RenderError(err) => err.into(),
         }
     }
 }
