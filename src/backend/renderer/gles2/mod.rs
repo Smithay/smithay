@@ -781,7 +781,12 @@ impl Bind<Dmabuf> for Gles2Renderer {
         let mut i = 0;
         while i != self.buffers.len() {
             if self.buffers[i].dmabuf.upgrade().is_none() {
-                self.buffers.remove(i);
+                let weak = self.buffers.remove(i);
+                unsafe {
+                    self.gl.DeleteFramebuffers(1, &weak.fbo as *const _);
+                    self.gl.DeleteRenderbuffers(1, &weak.rbo as *const _);
+                    ffi_egl::DestroyImageKHR(**self.egl.display.display, weak.image);
+                }
             } else {
                 i += 1;
             }
@@ -809,6 +814,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
                 })
             })
             .unwrap_or_else(|| {
+                trace!(self.logger, "Creating EGLImage for Dmabuf: {:?}", dmabuf);
                 let image = self
                     .egl
                     .display
