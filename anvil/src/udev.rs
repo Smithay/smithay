@@ -12,19 +12,15 @@ use std::{
 use image::{ImageBuffer, Rgba};
 use slog::Logger;
 
-#[cfg(feature = "egl")]
-use smithay::{
-    backend::{drm::DevPath, egl::display::EGLBufferReader, renderer::ImportDma, udev::primary_gpu},
-    wayland::dmabuf::init_dmabuf_global,
-};
 use smithay::{
     backend::{
-        drm::{DrmDevice, DrmError, DrmEvent, DrmRenderSurface},
+        allocator::dmabuf::Dmabuf,
+        drm::{DrmDevice, DrmError, DrmEvent, GbmBufferedSurface},
         egl::{EGLContext, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             gles2::{Gles2Renderer, Gles2Texture},
-            Frame, Renderer, Transform,
+            Bind, Frame, Renderer, Transform,
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
         udev::{UdevBackend, UdevEvent},
@@ -44,7 +40,7 @@ use smithay::{
                 Device as ControlDevice,
             },
         },
-        gbm::{BufferObject as GbmBuffer, Device as GbmDevice},
+        gbm::Device as GbmDevice,
         input::Libinput,
         nix::{fcntl::OFlag, sys::stat::dev_t},
         wayland_server::{
@@ -59,6 +55,11 @@ use smithay::{
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
     },
+};
+#[cfg(feature = "egl")]
+use smithay::{
+    backend::{drm::DevPath, egl::display::EGLBufferReader, renderer::ImportDma, udev::primary_gpu},
+    wayland::dmabuf::init_dmabuf_global,
 };
 
 use crate::drawing::*;
@@ -189,10 +190,7 @@ pub fn run_udev(
     {
         let mut formats = Vec::new();
         for backend_data in state.backend_data.backends.values() {
-            let surfaces = backend_data.surfaces.borrow_mut();
-            if let Some(surface) = surfaces.values().next() {
-                formats.extend(surface.borrow_mut().renderer().dmabuf_formats().cloned());
-            }
+            formats.extend(backend_data.renderer.borrow().dmabuf_formats().cloned());
         }
 
         init_dmabuf_global(
@@ -201,11 +199,8 @@ pub fn run_udev(
             |buffer, mut ddata| {
                 let anvil_state = ddata.get::<AnvilState<UdevData>>().unwrap();
                 for backend_data in anvil_state.backend_data.backends.values() {
-                    let surfaces = backend_data.surfaces.borrow_mut();
-                    if let Some(surface) = surfaces.values().next() {
-                        if surface.borrow_mut().renderer().import_dmabuf(buffer).is_ok() {
-                            return true;
-                        }
+                    if backend_data.renderer.borrow_mut().import_dmabuf(buffer).is_ok() {
+                        return true;
                     }
                 }
                 false
@@ -318,25 +313,23 @@ impl Drop for MyOutput {
     }
 }
 
-pub type RenderSurface = DrmRenderSurface<SessionFd, GbmDevice<SessionFd>, Gles2Renderer, GbmBuffer<()>>;
+pub type RenderSurface = GbmBufferedSurface<SessionFd>;
 
 struct BackendData {
     _restart_token: SignalToken,
     surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>>>>,
-    context: EGLContext,
-    egl: EGLDisplay,
+    pointer_image: Gles2Texture,
+    renderer: Rc<RefCell<Gles2Renderer>>,
     gbm: GbmDevice<SessionFd>,
     registration_token: RegistrationToken,
     event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, AnvilState<UdevData>>,
     dev_id: u64,
-    pointer_image: Gles2Texture,
 }
 
 pub fn scan_connectors(
     device: &mut DrmDevice<SessionFd>,
     gbm: &GbmDevice<SessionFd>,
-    egl: &EGLDisplay,
-    context: &EGLContext,
+    renderer: &mut Gles2Renderer,
     display: &mut Display,
     output_map: &mut Vec<MyOutput>,
     signaler: &Signaler<SessionSignal>,
@@ -374,20 +367,6 @@ pub fn scan_connectors(
                         connector_info.interface_id(),
                         crtc,
                     );
-                    let context = match EGLContext::new_shared(egl, context, logger.clone()) {
-                        Ok(context) => context,
-                        Err(err) => {
-                            warn!(logger, "Failed to create EGLContext: {}", err);
-                            continue;
-                        }
-                    };
-                    let renderer = match unsafe { Gles2Renderer::new(context, logger.clone()) } {
-                        Ok(renderer) => renderer,
-                        Err(err) => {
-                            warn!(logger, "Failed to create Gles2 Renderer: {}", err);
-                            continue;
-                        }
-                    };
                     let mut surface = match device.create_surface(
                         crtc,
                         connector_info.modes()[0],
@@ -400,14 +379,19 @@ pub fn scan_connectors(
                         }
                     };
                     surface.link(signaler.clone());
-                    let renderer = match DrmRenderSurface::new(surface, gbm.clone(), renderer, logger.clone())
-                    {
-                        Ok(renderer) => renderer,
-                        Err(err) => {
-                            warn!(logger, "Failed to create rendering surface: {}", err);
-                            continue;
-                        }
-                    };
+
+                    let renderer_formats =
+                        Bind::<Dmabuf>::supported_formats(renderer).expect("Dmabuf renderer without formats");
+
+                    let renderer =
+                        match GbmBufferedSurface::new(surface, gbm.clone(), renderer_formats, logger.clone())
+                        {
+                            Ok(renderer) => renderer,
+                            Err(err) => {
+                                warn!(logger, "Failed to create rendering surface: {}", err);
+                                continue;
+                            }
+                        };
 
                     output_map.push(MyOutput::new(
                         display,
@@ -498,26 +482,24 @@ impl AnvilState<UdevData> {
                 }
             };
 
+            let renderer = Rc::new(RefCell::new(unsafe {
+                Gles2Renderer::new(context, self.log.clone()).unwrap()
+            }));
+
             let backends = Rc::new(RefCell::new(scan_connectors(
                 &mut device,
                 &gbm,
-                &egl,
-                &context,
+                &mut *renderer.borrow_mut(),
                 &mut *self.display.borrow_mut(),
                 &mut self.backend_data.output_map,
                 &self.backend_data.signaler,
                 &self.log,
             )));
 
-            // we leak this texture (we would need to call `destroy_texture` on Drop of DrmRenderer),
-            // but only on shutdown anyway, because we do not support hot-pluggin, so it does not really matter.
-            let pointer_image = {
-                let context = EGLContext::new_shared(&egl, &context, self.log.clone()).unwrap();
-                let mut renderer = unsafe { Gles2Renderer::new(context, self.log.clone()).unwrap() };
-                renderer
-                    .import_bitmap(&self.backend_data.pointer_image)
-                    .expect("Failed to load pointer")
-            };
+            let pointer_image = renderer
+                .borrow_mut()
+                .import_bitmap(&self.backend_data.pointer_image)
+                .expect("Failed to load pointer");
 
             let dev_id = device.device_id();
             let handle = self.handle.clone();
@@ -544,7 +526,7 @@ impl AnvilState<UdevData> {
             for backend in backends.borrow_mut().values() {
                 // render first frame
                 trace!(self.log, "Scheduling frame");
-                schedule_initial_render(backend.clone(), &self.handle, self.log.clone());
+                schedule_initial_render(backend.clone(), renderer.clone(), &self.handle, self.log.clone());
             }
 
             self.backend_data.backends.insert(
@@ -554,8 +536,7 @@ impl AnvilState<UdevData> {
                     registration_token,
                     event_dispatcher,
                     surfaces: backends,
-                    egl,
-                    context,
+                    renderer,
                     gbm,
                     pointer_image,
                     dev_id,
@@ -580,8 +561,7 @@ impl AnvilState<UdevData> {
             *backends = scan_connectors(
                 &mut *source,
                 &backend_data.gbm,
-                &backend_data.egl,
-                &backend_data.context,
+                &mut *backend_data.renderer.borrow_mut(),
                 &mut *display,
                 &mut self.backend_data.output_map,
                 &signaler,
@@ -591,7 +571,12 @@ impl AnvilState<UdevData> {
             for renderer in backends.values() {
                 let logger = logger.clone();
                 // render first frame
-                schedule_initial_render(renderer.clone(), &loop_handle, logger);
+                schedule_initial_render(
+                    renderer.clone(),
+                    backend_data.renderer.clone(),
+                    &loop_handle,
+                    logger,
+                );
             }
         }
     }
@@ -651,6 +636,7 @@ impl AnvilState<UdevData> {
         for (&crtc, surface) in to_render_iter {
             let result = render_surface(
                 &mut *surface.borrow_mut(),
+                &mut *device_backend.renderer.borrow_mut(),
                 #[cfg(feature = "egl")]
                 self.egl_reader.as_ref(),
                 device_backend.dev_id,
@@ -700,6 +686,7 @@ impl AnvilState<UdevData> {
 #[allow(clippy::too_many_arguments)]
 fn render_surface(
     surface: &mut RenderSurface,
+    renderer: &mut Gles2Renderer,
     #[cfg(feature = "egl")] egl_buffer_reader: Option<&EGLBufferReader>,
     device_id: dev_t,
     crtc: crtc::Handle,
@@ -725,39 +712,70 @@ fn render_surface(
         .map(|output| output.size)
         .unwrap_or((0, 0)); // in this case the output will be removed.
 
-    // and draw in sync with our monitor
-    surface
-        .render(|renderer, frame| {
-            frame.clear([0.8, 0.8, 0.9, 1.0])?;
-            // draw the surfaces
-            draw_windows(
-                renderer,
-                frame,
-                #[cfg(feature = "egl")]
-                egl_buffer_reader,
-                window_map,
-                Some(Rectangle {
-                    x: x as i32,
-                    y: y as i32,
-                    width: width as i32,
-                    height: height as i32,
-                }),
-                *compositor_token,
-                logger,
-            )?;
+    let dmabuf = surface.next_buffer()?;
+    renderer.bind(dmabuf)?;
+    // and draw to our buffer
+    match renderer
+        .render(
+            width,
+            height,
+            Transform::Flipped180, // Scanout is rotated
+            |renderer, frame| {
+                frame.clear([0.8, 0.8, 0.9, 1.0])?;
+                // draw the surfaces
+                draw_windows(
+                    renderer,
+                    frame,
+                    #[cfg(feature = "egl")]
+                    egl_buffer_reader,
+                    window_map,
+                    Some(Rectangle {
+                        x: x as i32,
+                        y: y as i32,
+                        width: width as i32,
+                        height: height as i32,
+                    }),
+                    *compositor_token,
+                    logger,
+                )?;
 
-            // get pointer coordinates
-            let (ptr_x, ptr_y) = *pointer_location;
-            let ptr_x = ptr_x.trunc().abs() as i32 - x as i32;
-            let ptr_y = ptr_y.trunc().abs() as i32 - y as i32;
+                // get pointer coordinates
+                let (ptr_x, ptr_y) = *pointer_location;
+                let ptr_x = ptr_x.trunc().abs() as i32 - x as i32;
+                let ptr_y = ptr_y.trunc().abs() as i32 - y as i32;
 
-            // set cursor
-            if ptr_x >= 0 && ptr_x < width as i32 && ptr_y >= 0 && ptr_y < height as i32 {
-                // draw the dnd icon if applicable
-                {
-                    if let Some(ref wl_surface) = dnd_icon.as_ref() {
-                        if wl_surface.as_ref().is_alive() {
-                            draw_dnd_icon(
+                // set cursor
+                if ptr_x >= 0 && ptr_x < width as i32 && ptr_y >= 0 && ptr_y < height as i32 {
+                    // draw the dnd icon if applicable
+                    {
+                        if let Some(ref wl_surface) = dnd_icon.as_ref() {
+                            if wl_surface.as_ref().is_alive() {
+                                draw_dnd_icon(
+                                    renderer,
+                                    frame,
+                                    wl_surface,
+                                    #[cfg(feature = "egl")]
+                                    egl_buffer_reader,
+                                    (ptr_x, ptr_y),
+                                    *compositor_token,
+                                    logger,
+                                )?;
+                            }
+                        }
+                    }
+                    // draw the cursor as relevant
+                    {
+                        // reset the cursor if the surface is no longer alive
+                        let mut reset = false;
+                        if let CursorImageStatus::Image(ref surface) = *cursor_status {
+                            reset = !surface.as_ref().is_alive();
+                        }
+                        if reset {
+                            *cursor_status = CursorImageStatus::Default;
+                        }
+
+                        if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
+                            draw_cursor(
                                 renderer,
                                 frame,
                                 wl_surface,
@@ -767,60 +785,34 @@ fn render_surface(
                                 *compositor_token,
                                 logger,
                             )?;
+                        } else {
+                            frame.render_texture_at(pointer_image, (ptr_x, ptr_y), Transform::Normal, 1.0)?;
                         }
                     }
                 }
-                // draw the cursor as relevant
-                {
-                    // reset the cursor if the surface is no longer alive
-                    let mut reset = false;
-                    if let CursorImageStatus::Image(ref surface) = *cursor_status {
-                        reset = !surface.as_ref().is_alive();
-                    }
-                    if reset {
-                        *cursor_status = CursorImageStatus::Default;
-                    }
 
-                    if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
-                        draw_cursor(
-                            renderer,
-                            frame,
-                            wl_surface,
-                            #[cfg(feature = "egl")]
-                            egl_buffer_reader,
-                            (ptr_x, ptr_y),
-                            *compositor_token,
-                            logger,
-                        )?;
-                    } else {
-                        frame.render_texture_at(pointer_image, (ptr_x, ptr_y), Transform::Normal, 1.0)?;
-                    }
-                }
-            }
-
-            Ok(())
-        })
+                Ok(())
+            },
+        )
         .map_err(Into::<SwapBuffersError>::into)
         .and_then(|x| x)
         .map_err(Into::<SwapBuffersError>::into)
+    {
+        Ok(()) => surface.queue_buffer().map_err(Into::<SwapBuffersError>::into),
+        Err(err) => Err(err),
+    }
 }
 
 fn schedule_initial_render<Data: 'static>(
-    renderer: Rc<RefCell<RenderSurface>>,
+    surface: Rc<RefCell<RenderSurface>>,
+    renderer: Rc<RefCell<Gles2Renderer>>,
     evt_handle: &LoopHandle<'static, Data>,
     logger: ::slog::Logger,
 ) {
     let result = {
+        let mut surface = surface.borrow_mut();
         let mut renderer = renderer.borrow_mut();
-        // Does not matter if we render an empty frame
-        renderer
-            .render(|_, frame| {
-                frame
-                    .clear([0.8, 0.8, 0.9, 1.0])
-                    .map_err(Into::<SwapBuffersError>::into)
-            })
-            .map_err(Into::<SwapBuffersError>::into)
-            .and_then(|x| x.map_err(Into::<SwapBuffersError>::into))
+        initial_render(&mut *surface, &mut *renderer)
     };
     if let Err(err) = result {
         match err {
@@ -829,9 +821,25 @@ fn schedule_initial_render<Data: 'static>(
                 // TODO dont reschedule after 3(?) retries
                 warn!(logger, "Failed to submit page_flip: {}", err);
                 let handle = evt_handle.clone();
-                evt_handle.insert_idle(move |_| schedule_initial_render(renderer, &handle, logger));
+                evt_handle.insert_idle(move |_| schedule_initial_render(surface, renderer, &handle, logger));
             }
             SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
         }
     }
+}
+
+fn initial_render(surface: &mut RenderSurface, renderer: &mut Gles2Renderer) -> Result<(), SwapBuffersError> {
+    let dmabuf = surface.next_buffer()?;
+    renderer.bind(dmabuf)?;
+    // Does not matter if we render an empty frame
+    renderer
+        .render(1, 1, Transform::Normal, |_, frame| {
+            frame
+                .clear([0.8, 0.8, 0.9, 1.0])
+                .map_err(Into::<SwapBuffersError>::into)
+        })
+        .map_err(Into::<SwapBuffersError>::into)
+        .and_then(|x| x.map_err(Into::<SwapBuffersError>::into))?;
+    surface.queue_buffer()?;
+    Ok(())
 }

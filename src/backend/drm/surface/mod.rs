@@ -10,6 +10,8 @@ use drm::{Device as BasicDevice, DriverCapability};
 use nix::libc::dev_t;
 
 pub(super) mod atomic;
+#[cfg(feature = "backend_gbm")]
+pub(super) mod gbm;
 pub(super) mod legacy;
 use super::{device::DevPath, error::Error, plane_type, planes, PlaneType, Planes};
 use crate::backend::allocator::{Format, Fourcc, Modifier};
