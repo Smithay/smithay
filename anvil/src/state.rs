@@ -40,6 +40,7 @@ pub struct AnvilState<BackendData> {
     // input-related fields
     pub pointer: PointerHandle,
     pub keyboard: KeyboardHandle,
+    pub suppressed_keys: Vec<u32>,
     pub pointer_location: (f64, f64),
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
     pub seat_name: String,
@@ -165,6 +166,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             socket_name,
             pointer,
             keyboard,
+            suppressed_keys: Vec::new(),
             cursor_status,
             pointer_location: (0.0, 0.0),
             seat_name,

@@ -30,6 +30,7 @@ impl<Backend> AnvilState<Backend> {
         let log = &self.log;
         let time = Event::time(&evt);
         let mut action = KeyAction::None;
+        let suppressed_keys = &mut self.suppressed_keys;
         self.keyboard
             .input(keycode, state, serial, time, |modifiers, keysym| {
                 debug!(log, "keysym";
@@ -37,15 +38,33 @@ impl<Backend> AnvilState<Backend> {
                     "mods" => format!("{:?}", modifiers),
                     "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
                 );
-                action = process_keyboard_shortcut(*modifiers, keysym);
-                // forward to client only if action == KeyAction::Forward
-                // both for pressed and released, to avoid inconsistencies
-                matches!(action, KeyAction::Forward)
+
+                // If the key is pressed and triggered a action
+                // we will not forward the key to the client.
+                // Additionally add the key to the suppressed keys
+                // so that we can decide on a release if the key
+                // should be forwarded to the client or not.
+                if let KeyState::Pressed = state {
+                    action = process_keyboard_shortcut(*modifiers, keysym);
+
+                    // forward to client only if action == KeyAction::Forward
+                    let forward = matches!(action, KeyAction::Forward);
+
+                    if !forward {
+                        suppressed_keys.push(keysym);
+                    }
+
+                    forward
+                } else {
+                    let suppressed = suppressed_keys.contains(&keysym);
+
+                    if suppressed {
+                        suppressed_keys.retain(|k| *k != keysym);
+                    }
+
+                    !suppressed
+                }
             });
-        if let KeyState::Released = state {
-            // only process special actions on key press, not release
-            return KeyAction::None;
-        }
         action
     }
 
