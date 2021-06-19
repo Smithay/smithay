@@ -305,7 +305,7 @@ where
         }
     }
 
-    #[allow(clippy::clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn create_immed<'a>(
         &mut self,
         params: &BufferParams,
