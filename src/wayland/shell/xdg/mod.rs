@@ -1113,6 +1113,30 @@ impl ToplevelSurface {
         })
         .unwrap())
     }
+
+    /// Gets a copy of the current state of this toplevel
+    ///
+    /// Returns `None` if the underlying surface has been
+    /// destroyed
+    pub fn current_state(&self) -> Option<ToplevelState> {
+        if !self.alive() {
+            return None;
+        }
+
+        Some(
+            compositor::with_states(&self.wl_surface, |states| {
+                let attributes = states
+                    .data_map
+                    .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap();
+
+                attributes.current.clone()
+            })
+            .unwrap(),
+        )
+    }
 }
 
 #[derive(Debug, Clone)]

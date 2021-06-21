@@ -45,13 +45,12 @@ use smithay::{
         nix::{fcntl::OFlag, sys::stat::dev_t},
         wayland_server::{
             protocol::{wl_output, wl_surface},
-            Display, Global,
+            Display,
         },
     },
     signaling::{Linkable, SignalToken, Signaler},
-    utils::Rectangle,
     wayland::{
-        output::{Mode, Output, PhysicalProperties},
+        output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,
     },
 };
@@ -76,8 +75,14 @@ impl AsRawFd for SessionFd {
     }
 }
 
+struct UdevOutputMap {
+    pub device_id: dev_t,
+    pub crtc: crtc::Handle,
+    pub output_name: String,
+}
+
 pub struct UdevData {
-    pub output_map: Vec<MyOutput>,
+    output_map: Vec<UdevOutputMap>,
     pub session: AutoSession,
     #[cfg(feature = "egl")]
     primary_gpu: Option<PathBuf>,
@@ -233,6 +238,7 @@ pub fn run_udev(
         } else {
             display.borrow_mut().flush_clients(&mut state);
             state.window_map.borrow_mut().refresh();
+            state.output_map.borrow_mut().refresh();
         }
     }
 
@@ -244,68 +250,6 @@ pub fn run_udev(
     event_loop.handle().remove(udev_event_source);
 
     Ok(())
-}
-
-pub struct MyOutput {
-    pub device_id: dev_t,
-    pub crtc: crtc::Handle,
-    pub size: (u32, u32),
-    _wl: Output,
-    global: Option<Global<wl_output::WlOutput>>,
-}
-
-impl MyOutput {
-    fn new(
-        display: &mut Display,
-        device_id: dev_t,
-        crtc: crtc::Handle,
-        conn: ConnectorInfo,
-        logger: ::slog::Logger,
-    ) -> MyOutput {
-        let (output, global) = Output::new(
-            display,
-            format!("{:?}", conn.interface()),
-            PhysicalProperties {
-                width: conn.size().unwrap_or((0, 0)).0 as i32,
-                height: conn.size().unwrap_or((0, 0)).1 as i32,
-                subpixel: wl_output::Subpixel::Unknown,
-                make: "Smithay".into(),
-                model: "Generic DRM".into(),
-            },
-            logger,
-        );
-
-        let mode = conn.modes()[0];
-        let (w, h) = mode.size();
-        output.change_current_state(
-            Some(Mode {
-                width: w as i32,
-                height: h as i32,
-                refresh: (mode.vrefresh() * 1000) as i32,
-            }),
-            None,
-            None,
-        );
-        output.set_preferred(Mode {
-            width: w as i32,
-            height: h as i32,
-            refresh: (mode.vrefresh() * 1000) as i32,
-        });
-
-        MyOutput {
-            device_id,
-            crtc,
-            size: (w as u32, h as u32),
-            _wl: output,
-            global: Some(global),
-        }
-    }
-}
-
-impl Drop for MyOutput {
-    fn drop(&mut self) {
-        self.global.take().unwrap().destroy();
-    }
 }
 
 pub type RenderSurface = GbmBufferedSurface<SessionFd>;
@@ -321,12 +265,12 @@ struct BackendData {
     dev_id: u64,
 }
 
-pub fn scan_connectors(
+fn scan_connectors(
     device: &mut DrmDevice<SessionFd>,
     gbm: &GbmDevice<SessionFd>,
     renderer: &mut Gles2Renderer,
-    display: &mut Display,
-    output_map: &mut Vec<MyOutput>,
+    backend_output_map: &mut Vec<UdevOutputMap>,
+    output_map: &mut crate::output_map::OutputMap,
     signaler: &Signaler<SessionSignal>,
     logger: &::slog::Logger,
 ) -> HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>> {
@@ -388,13 +332,37 @@ pub fn scan_connectors(
                             }
                         };
 
-                    output_map.push(MyOutput::new(
-                        display,
-                        device.device_id(),
+                    let mode = connector_info.modes()[0];
+                    let size = mode.size();
+                    let mode = Mode {
+                        width: size.0 as i32,
+                        height: size.1 as i32,
+                        refresh: (mode.vrefresh() * 1000) as i32,
+                    };
+
+                    let output_name = format!(
+                        "{:?}-{}",
+                        connector_info.interface(),
+                        connector_info.interface_id()
+                    );
+
+                    output_map.add(
+                        &output_name,
+                        PhysicalProperties {
+                            width: connector_info.size().unwrap_or((0, 0)).0 as i32,
+                            height: connector_info.size().unwrap_or((0, 0)).1 as i32,
+                            subpixel: wl_output::Subpixel::Unknown,
+                            make: "Smithay".into(),
+                            model: "Generic DRM".into(),
+                        },
+                        mode,
+                    );
+
+                    backend_output_map.push(UdevOutputMap {
                         crtc,
-                        connector_info,
-                        logger.clone(),
-                    ));
+                        device_id: device.device_id(),
+                        output_name,
+                    });
 
                     entry.insert(Rc::new(RefCell::new(renderer)));
                     break 'outer;
@@ -483,8 +451,8 @@ impl AnvilState<UdevData> {
                 &mut device,
                 &gbm,
                 &mut *renderer.borrow_mut(),
-                &mut *self.display.borrow_mut(),
                 &mut self.backend_data.output_map,
+                &mut *self.output_map.borrow_mut(),
                 &self.backend_data.signaler,
                 &self.log,
             )));
@@ -543,8 +511,18 @@ impl AnvilState<UdevData> {
         if let Some(ref mut backend_data) = self.backend_data.backends.get_mut(&device) {
             let logger = self.log.clone();
             let loop_handle = self.handle.clone();
-            let mut display = self.display.borrow_mut();
             let signaler = self.backend_data.signaler.clone();
+            let removed_outputs = self
+                .backend_data
+                .output_map
+                .iter()
+                .filter(|o| o.device_id == device)
+                .map(|o| o.output_name.as_str());
+
+            for output in removed_outputs {
+                self.output_map.borrow_mut().remove(output);
+            }
+
             self.backend_data
                 .output_map
                 .retain(|output| output.device_id != device);
@@ -555,8 +533,8 @@ impl AnvilState<UdevData> {
                 &mut *source,
                 &backend_data.gbm,
                 &mut *backend_data.renderer.borrow_mut(),
-                &mut *display,
                 &mut self.backend_data.output_map,
+                &mut *self.output_map.borrow_mut(),
                 &signaler,
                 &logger,
             );
@@ -580,10 +558,16 @@ impl AnvilState<UdevData> {
             // drop surfaces
             backend_data.surfaces.borrow_mut().clear();
             debug!(self.log, "Surfaces dropped");
-            // clear outputs
-            self.backend_data
+            let removed_outputs = self
+                .backend_data
                 .output_map
-                .retain(|output| output.device_id != device);
+                .iter()
+                .filter(|o| o.device_id == device)
+                .map(|o| o.output_name.as_str());
+            for output_id in removed_outputs {
+                self.output_map.borrow_mut().remove(output_id);
+            }
+            self.backend_data.output_map.retain(|o| o.device_id != device);
 
             let _device = self.handle.remove(backend_data.registration_token);
             let _device = backend_data.event_dispatcher.into_source_inner();
@@ -630,6 +614,7 @@ impl AnvilState<UdevData> {
                 crtc,
                 &mut *self.window_map.borrow_mut(),
                 &mut self.backend_data.output_map,
+                &*self.output_map.borrow(),
                 &self.pointer_location,
                 &device_backend.pointer_image,
                 &*self.dnd_icon.lock().unwrap(),
@@ -676,7 +661,8 @@ fn render_surface(
     device_id: dev_t,
     crtc: crtc::Handle,
     window_map: &mut WindowMap,
-    output_map: &mut Vec<MyOutput>,
+    backend_output_map: &[UdevOutputMap],
+    output_map: &crate::output_map::OutputMap,
     pointer_location: &(f64, f64),
     pointer_image: &Gles2Texture,
     dnd_icon: &Option<wl_surface::WlSurface>,
@@ -685,48 +671,40 @@ fn render_surface(
 ) -> Result<(), SwapBuffersError> {
     surface.frame_submitted()?;
 
-    // get output coordinates
-    let (x, y) = output_map
+    let output_geometry = backend_output_map
         .iter()
-        .take_while(|output| output.device_id != device_id || output.crtc != crtc)
-        .fold((0u32, 0u32), |pos, output| (pos.0 + output.size.0, pos.1));
-    let (width, height) = output_map
-        .iter()
-        .find(|output| output.device_id == device_id && output.crtc == crtc)
-        .map(|output| output.size)
-        .unwrap_or((0, 0)); // in this case the output will be removed.
+        .find(|o| o.device_id == device_id && o.crtc == crtc)
+        .map(|o| o.output_name.as_str())
+        .and_then(|name| output_map.find_by_name(name, |_, geometry| geometry).ok());
+
+    let output_geometry = if let Some(geometry) = output_geometry {
+        geometry
+    } else {
+        // Somehow we got called with a non existing output
+        return Ok(());
+    };
 
     let dmabuf = surface.next_buffer()?;
     renderer.bind(dmabuf)?;
     // and draw to our buffer
     match renderer
         .render(
-            width,
-            height,
+            output_geometry.width as u32,
+            output_geometry.height as u32,
             Transform::Flipped180, // Scanout is rotated
             |renderer, frame| {
                 frame.clear([0.8, 0.8, 0.9, 1.0])?;
                 // draw the surfaces
-                draw_windows(
-                    renderer,
-                    frame,
-                    window_map,
-                    Some(Rectangle {
-                        x: x as i32,
-                        y: y as i32,
-                        width: width as i32,
-                        height: height as i32,
-                    }),
-                    logger,
-                )?;
+                draw_windows(renderer, frame, window_map, output_geometry, logger)?;
 
                 // get pointer coordinates
                 let (ptr_x, ptr_y) = *pointer_location;
-                let ptr_x = ptr_x.trunc().abs() as i32 - x as i32;
-                let ptr_y = ptr_y.trunc().abs() as i32 - y as i32;
+                let ptr_x = ptr_x.trunc().abs() as i32 - output_geometry.x;
+                let ptr_y = ptr_y.trunc().abs() as i32 - output_geometry.y;
 
                 // set cursor
-                if ptr_x >= 0 && ptr_x < width as i32 && ptr_y >= 0 && ptr_y < height as i32 {
+                if ptr_x >= 0 && ptr_x < output_geometry.width && ptr_y >= 0 && ptr_y < output_geometry.height
+                {
                     // draw the dnd icon if applicable
                     {
                         if let Some(ref wl_surface) = dnd_icon.as_ref() {

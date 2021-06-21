@@ -53,10 +53,16 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use wayland_server::protocol::wl_output::{Subpixel, Transform};
 use wayland_server::{
     protocol::wl_output::{Mode as WMode, WlOutput},
     Display, Filter, Global, Main,
+};
+use wayland_server::{
+    protocol::{
+        wl_output::{Subpixel, Transform},
+        wl_surface,
+    },
+    Resource,
 };
 
 use slog::{info, o, trace, warn};
@@ -313,5 +319,35 @@ impl Output {
             .instances
             .iter()
             .any(|o| o.as_ref().equals(output.as_ref()))
+    }
+
+    /// This function allows to run a `Fn` for the matching
+    /// client outputs for a specific `Resource`.
+    pub fn with_output<F, R, II>(&self, resource: &R, mut f: F)
+    where
+        R: AsRef<Resource<II>>,
+        II: wayland_server::Interface,
+        F: FnMut(&R, &WlOutput),
+    {
+        let tmp = resource.as_ref();
+        self.inner
+            .lock()
+            .unwrap()
+            .instances
+            .iter()
+            .filter(|output| output.as_ref().same_client_as(tmp))
+            .for_each(|output| f(resource, output))
+    }
+
+    /// Sends `wl_surface.enter` for the provided surface
+    /// with the matching client output
+    pub fn enter(&self, surface: &wl_surface::WlSurface) {
+        self.with_output(surface, |surface, output| surface.enter(output))
+    }
+
+    /// Sends `wl_surface.leave` for the provided surface
+    /// with the matching client output
+    pub fn leave(&self, surface: &wl_surface::WlSurface) {
+        self.with_output(surface, |surface, output| surface.leave(output))
     }
 }

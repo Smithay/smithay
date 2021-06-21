@@ -26,6 +26,8 @@ mod winit;
 #[cfg(feature = "xwayland")]
 mod xwayland;
 
+mod output_map;
+
 use state::AnvilState;
 
 static POSSIBLE_BACKENDS: &[&str] = &[

@@ -31,6 +31,7 @@ pub struct AnvilState<BackendData> {
     pub display: Rc<RefCell<Display>>,
     pub handle: LoopHandle<'static, AnvilState<BackendData>>,
     pub window_map: Rc<RefCell<crate::window_map::WindowMap>>,
+    pub output_map: Rc<RefCell<crate::output_map::OutputMap>>,
     pub dnd_icon: Arc<Mutex<Option<WlSurface>>>,
     pub log: slog::Logger,
     // input-related fields
@@ -76,7 +77,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         init_shm_global(&mut (*display).borrow_mut(), vec![], log.clone());
 
-        let shell_handles = init_shell::<BackendData>(&mut display.borrow_mut(), log.clone());
+        let shell_handles = init_shell::<BackendData>(display.clone(), log.clone());
 
         let socket_name = display
             .borrow_mut()
@@ -148,6 +149,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             display,
             handle,
             window_map: shell_handles.window_map,
+            output_map: shell_handles.output_map,
             dnd_icon,
             log,
             socket_name,
