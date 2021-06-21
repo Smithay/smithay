@@ -333,7 +333,7 @@ impl<'a> PointerInnerHandle<'a> {
         self.inner.grab = GrabStatus::None;
         // restore the focus
         let location = self.current_location();
-        let focus = self.inner.pending_focus.take();
+        let focus = self.inner.pending_focus.clone();
         self.motion(location, focus, serial, time);
     }
 
