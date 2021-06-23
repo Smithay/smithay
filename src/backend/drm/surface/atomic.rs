@@ -752,6 +752,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
     }
 
     // If a mode is set a matching blob needs to be set (the inverse is not true)
+    #[allow(clippy::too_many_arguments)]
     pub fn build_request<'a>(
         &self,
         new_connectors: &mut dyn Iterator<Item = &connector::Handle>,

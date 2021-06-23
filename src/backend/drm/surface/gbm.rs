@@ -313,7 +313,7 @@ where
 
         let maybe_buffer = slot.userdata().as_ref().map(|(buf, _)| buf.clone());
         let dmabuf = match maybe_buffer {
-            Some(buf) => buf.clone(),
+            Some(buf) => buf,
             None => {
                 let dmabuf = slot.export()?;
                 let fb_handle = attach_framebuffer(&self.drm, &*slot)?;
