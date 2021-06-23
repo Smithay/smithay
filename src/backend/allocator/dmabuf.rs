@@ -61,7 +61,7 @@ impl Drop for Plane {
     }
 }
 
-bitflags! {
+bitflags::bitflags! {
     /// Possible flags for a DMA buffer
     pub struct DmabufFlags: u32 {
         /// The buffer content is Y-inverted

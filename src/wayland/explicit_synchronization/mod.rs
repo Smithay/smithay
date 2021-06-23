@@ -190,7 +190,7 @@ where
     L: Into<Option<::slog::Logger>>,
 {
     let _log =
-        crate::slog_or_fallback(logger).new(o!("smithay_module" => "wayland_explicit_synchronization"));
+        crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "wayland_explicit_synchronization"));
 
     display.create_global::<ZwpLinuxExplicitSynchronizationV1, _>(
         2,

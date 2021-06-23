@@ -1,6 +1,5 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
-use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ffi::CStr;
 use std::fmt;
@@ -20,7 +19,7 @@ mod version;
 use super::{Bind, Frame, Renderer, Texture, Transform, Unbind};
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
-    Buffer, Format,
+    Format,
 };
 use crate::backend::egl::{
     ffi::egl::{self as ffi_egl, types::EGLImage},
@@ -38,6 +37,8 @@ use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
 use crate::utils::Rectangle;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
+
+use slog::{debug, error, info, o, trace, warn};
 
 #[allow(clippy::all, missing_docs)]
 pub mod ffi {
@@ -150,12 +151,14 @@ pub struct Gles2Renderer {
     extensions: Vec<String>,
     programs: [Gles2Program; shaders::FRAGMENT_COUNT],
     #[cfg(feature = "wayland_frontend")]
-    dmabuf_cache: HashMap<WeakDmabuf, Gles2Texture>,
+    dmabuf_cache: std::collections::HashMap<WeakDmabuf, Gles2Texture>,
     egl: EGLContext,
     #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
     egl_reader: Option<EGLBufferReader>,
     gl: ffi::Gles2,
     destruction_callback: Receiver<CleanupResource>,
+    // This field is only accessed if the image or wayland_frontend features are active
+    #[allow(dead_code)]
     destruction_callback_sender: Sender<CleanupResource>,
     logger_ptr: Option<*mut ::slog::Logger>,
     logger: ::slog::Logger,
@@ -456,7 +459,7 @@ impl Gles2Renderer {
             target_surface: None,
             buffers: Vec::new(),
             #[cfg(feature = "wayland_frontend")]
-            dmabuf_cache: HashMap::new(),
+            dmabuf_cache: std::collections::HashMap::new(),
             destruction_callback: rx,
             destruction_callback_sender: tx,
             logger_ptr,
@@ -689,6 +692,7 @@ impl ImportEgl for Gles2Renderer {
 #[cfg(feature = "wayland_frontend")]
 impl ImportDma for Gles2Renderer {
     fn import_dmabuf(&mut self, buffer: &Dmabuf) -> Result<Gles2Texture, Gles2Error> {
+        use crate::backend::allocator::Buffer;
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }

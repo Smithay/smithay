@@ -56,6 +56,8 @@ use wayland_protocols::unstable::linux_dmabuf::v1::server::{
 };
 use wayland_server::{protocol::wl_buffer, DispatchData, Display, Filter, Global, Main};
 
+use slog::{o, trace};
+
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, DmabufFlags, Plane},
     Format, Fourcc, Modifier,

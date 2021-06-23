@@ -10,6 +10,8 @@ use drm::control::{connector, crtc, Device as ControlDevice};
 use super::{DevPath, FdWrapper};
 use crate::backend::drm::error::Error;
 
+use slog::{error, info, o};
+
 pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
     pub(crate) fd: Arc<FdWrapper<A>>,
     pub(crate) active: Arc<AtomicBool>,

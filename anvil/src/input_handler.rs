@@ -9,7 +9,7 @@ use crate::AnvilState;
 use smithay::{
     backend::input::{
         self, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent,
-        PointerButtonEvent, PointerMotionAbsoluteEvent, PointerMotionEvent,
+        PointerButtonEvent,
     },
     reexports::wayland_server::protocol::wl_pointer,
     wayland::{
@@ -18,8 +18,11 @@ use smithay::{
     },
 };
 
+#[cfg(feature = "winit")]
+use smithay::backend::input::PointerMotionAbsoluteEvent;
+
 #[cfg(feature = "udev")]
-use smithay::backend::session::Session;
+use smithay::backend::{input::PointerMotionEvent, session::Session};
 
 impl<Backend> AnvilState<Backend> {
     fn keyboard_key_to_action<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) -> KeyAction {

@@ -449,7 +449,7 @@ where
     L: Into<Option<::slog::Logger>>,
     Impl: for<'a> FnMut(WlSurface, DispatchData<'a>) + 'static,
 {
-    let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "compositor_handler"));
+    let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "compositor_handler"));
     let implem = Rc::new(RefCell::new(implem));
 
     let compositor = display.create_global(

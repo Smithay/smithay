@@ -52,6 +52,8 @@ use udev::{Enumerator, EventType, MonitorBuilder, MonitorSocket};
 
 use calloop::{EventSource, Interest, Mode, Poll, Readiness, Token};
 
+use slog::{debug, info, o, warn};
+
 /// Backend to monitor available drm devices.
 ///
 /// Provides a way to automatically scan for available gpus and notifies the

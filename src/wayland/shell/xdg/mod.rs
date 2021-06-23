@@ -679,7 +679,7 @@ where
     }));
 
     let shell_data = ShellData {
-        log: log.new(o!("smithay_module" => "xdg_shell_handler")),
+        log: log.new(slog::o!("smithay_module" => "xdg_shell_handler")),
         user_impl: Rc::new(RefCell::new(implementation)),
         shell_state: shell_state.clone(),
     };

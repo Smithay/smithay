@@ -8,6 +8,8 @@ use crate::backend::allocator::Format as DrmFormat;
 use crate::backend::egl::display::{EGLDisplay, PixelFormat};
 use crate::backend::egl::EGLSurface;
 
+use slog::{info, o, trace};
+
 /// EGL context for rendering
 #[derive(Debug)]
 pub struct EGLContext {

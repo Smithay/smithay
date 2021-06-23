@@ -15,6 +15,8 @@ use crate::backend::egl::{
     EGLError, SwapBuffersError,
 };
 
+use slog::{debug, o, trace};
+
 /// EGL surface of a given EGL context for rendering
 pub struct EGLSurface {
     pub(crate) display: Arc<EGLDisplayHandle>,

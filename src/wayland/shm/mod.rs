@@ -116,7 +116,7 @@ where
     formats.push(wl_shm::Format::Xrgb8888);
     let data = ShmGlobalData {
         formats: formats.into(),
-        log: log.new(o!("smithay_module" => "shm_handler")),
+        log: log.new(slog::o!("smithay_module" => "shm_handler")),
     };
 
     display.create_global::<wl_shm::WlShm, _>(

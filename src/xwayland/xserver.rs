@@ -59,6 +59,8 @@ use calloop::{
     Interest, LoopHandle, Mode, RegistrationToken,
 };
 
+use slog::{error, info, o};
+
 use nix::Error as NixError;
 
 use wayland_server::{Client, Display, Filter};

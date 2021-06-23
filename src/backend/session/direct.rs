@@ -70,6 +70,8 @@ use std::{
 #[cfg(feature = "backend_udev")]
 use udev::Device as UdevDevice;
 
+use slog::{debug, error, info, o, trace, warn};
+
 /// This environment variable can be used to specify a tty path
 /// that will be used in [DirectSession::new] in case no explicit
 /// tty path has been provided.
@@ -77,23 +79,23 @@ pub const SMITHAY_DIRECT_TTY_ENV: &str = "SMITHAY_DIRECT_TTY";
 
 #[allow(dead_code)]
 mod tty {
-    ioctl_read_bad!(kd_get_mode, 0x4B3B, i16);
-    ioctl_write_int_bad!(kd_set_mode, 0x4B3A);
+    nix::ioctl_read_bad!(kd_get_mode, 0x4B3B, i16);
+    nix::ioctl_write_int_bad!(kd_set_mode, 0x4B3A);
     pub const KD_TEXT: i16 = 0x00;
     pub const KD_GRAPHICS: i16 = 0x00;
 
-    ioctl_read_bad!(kd_get_kb_mode, 0x4B44, i32);
-    ioctl_write_int_bad!(kd_set_kb_mode, 0x4B45);
+    nix::ioctl_read_bad!(kd_get_kb_mode, 0x4B44, i32);
+    nix::ioctl_write_int_bad!(kd_set_kb_mode, 0x4B45);
     pub const K_RAW: i32 = 0x00;
     pub const K_XLATE: i32 = 0x01;
     pub const K_MEDIUMRAW: i32 = 0x02;
     pub const K_UNICODE: i32 = 0x03;
     pub const K_OFF: i32 = 0x04;
 
-    ioctl_write_int_bad!(vt_activate, 0x5606);
-    ioctl_write_int_bad!(vt_wait_active, 0x5607);
-    ioctl_write_ptr_bad!(vt_set_mode, 0x5602, VtMode);
-    ioctl_write_int_bad!(vt_rel_disp, 0x5605);
+    nix::ioctl_write_int_bad!(vt_activate, 0x5606);
+    nix::ioctl_write_int_bad!(vt_wait_active, 0x5607);
+    nix::ioctl_write_ptr_bad!(vt_set_mode, 0x5602, VtMode);
+    nix::ioctl_write_int_bad!(vt_rel_disp, 0x5605);
     #[repr(C)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub struct VtMode {

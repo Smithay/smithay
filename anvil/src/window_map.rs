@@ -33,6 +33,7 @@ impl Kind {
             Kind::X11(ref t) => t.alive(),
         }
     }
+
     pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
         match *self {
             Kind::Xdg(ref t) => t.get_surface(),
@@ -84,6 +85,7 @@ impl PopupKind {
             PopupKind::Xdg(ref t) => t.alive(),
         }
     }
+
     pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
         match *self {
             PopupKind::Xdg(ref t) => t.get_surface(),
