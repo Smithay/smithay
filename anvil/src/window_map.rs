@@ -56,21 +56,18 @@ impl Kind {
 
     /// Activate/Deactivate this window
     pub fn set_activated(&self, active: bool) {
-        match *self {
-            Kind::Xdg(ref t) => {
-                let changed = t.with_pending_state(|state| {
-                    if active {
-                        state.states.set(xdg_toplevel::State::Activated)
-                    } else {
-                        state.states.unset(xdg_toplevel::State::Activated)
-                    }
-                });
-                if let Ok(true) = changed {
-                    t.send_configure();
+        if let Kind::Xdg(ref t) = self {
+            let changed = t.with_pending_state(|state| {
+                if active {
+                    state.states.set(xdg_toplevel::State::Activated)
+                } else {
+                    state.states.unset(xdg_toplevel::State::Activated)
                 }
+            });
+            if let Ok(true) = changed {
+                t.send_configure();
             }
-            _ => {}
-        };
+        }
     }
 }
 
