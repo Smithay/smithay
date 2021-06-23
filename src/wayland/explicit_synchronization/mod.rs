@@ -21,60 +21,32 @@
 //!
 //! ```
 //! # extern crate wayland_server;
-//! # #[macro_use] extern crate smithay;
-//! #
-//! # use smithay::wayland::compositor::roles::*;
-//! # use smithay::wayland::compositor::CompositorToken;
 //! use smithay::wayland::explicit_synchronization::*;
-//! # define_roles!(MyRoles);
-//! #
 //! # let mut display = wayland_server::Display::new();
-//! # let (compositor_token, _, _) = smithay::wayland::compositor::compositor_init::<MyRoles, _, _>(
-//! #     &mut display,
-//! #     |_, _, _, _| {},
-//! #     None
-//! # );
 //! init_explicit_synchronization_global(
 //!     &mut display,
-//!     compositor_token,
 //!     None /* You can insert a logger here */
 //! );
 //! ```
 //!
-//! Then when handling a surface commit, you can retrieve the synchronization information for the surface
-//! data:
-//! ```no_run
+//! Then when handling a surface commit, you can retrieve the synchronization information for the surface states:
+//! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
 //! #
 //! # use wayland_server::protocol::wl_surface::WlSurface;
-//! # use smithay::wayland::compositor::CompositorToken;
 //! # use smithay::wayland::explicit_synchronization::*;
 //! #
-//! # fn dummy_function<R: 'static>(surface: &WlSurface, compositor_token: CompositorToken<R>) {
-//! compositor_token.with_surface_data(&surface, |surface_attributes| {
-//!     // While you retrieve the surface data from the commit ...
-//!     // Check the explicit synchronization data:
-//!     match get_explicit_synchronization_state(surface_attributes) {
-//!         Ok(sync_state) => {
-//!             /* This surface is explicitly synchronized, you need to handle
-//!                the contents of sync_state
-//!             */
-//!         },
-//!         Err(NoExplicitSync) => {
-//!             /* This surface is not explicitly synchronized, nothing more to do
-//!             */
-//!         }
-//!     }
+//! # fn dummy_function<R: 'static>(surface: &WlSurface) {
+//! use smithay::wayland::compositor::with_states;
+//! with_states(&surface, |states| {
+//!     let explicit_sync_state = states.cached_state.current::<ExplicitSyncState>();
+//!     /* process the explicit_sync_state */
 //! });
 //! # }
 //! ```
 
-use std::{
-    cell::RefCell,
-    ops::{Deref as _, DerefMut as _},
-    os::unix::io::RawFd,
-};
+use std::{cell::RefCell, ops::Deref as _, os::unix::io::RawFd};
 
 use wayland_protocols::unstable::linux_explicit_synchronization::v1::server::{
     zwp_linux_buffer_release_v1::ZwpLinuxBufferReleaseV1,
@@ -83,7 +55,7 @@ use wayland_protocols::unstable::linux_explicit_synchronization::v1::server::{
 };
 use wayland_server::{protocol::wl_surface::WlSurface, Display, Filter, Global, Main};
 
-use crate::wayland::compositor::{CompositorToken, SurfaceAttributes};
+use super::compositor::{with_states, Cacheable, SurfaceData};
 
 /// An object to signal end of use of a buffer
 #[derive(Debug)]
@@ -112,6 +84,9 @@ impl ExplicitBufferRelease {
 /// The client is not required to fill both. `acquire` being `None` means that you don't need to wait
 /// before acessing the buffer, `release` being `None` means that the client does not require additionnal
 /// signaling that you are finished (you still need to send `wl_buffer.release`).
+///
+/// When processing the current state, the whould [`Option::take`] the values from it. Otherwise they'll
+/// be treated as unused and released when overwritten by the next client commit.
 #[derive(Debug)]
 pub struct ExplicitSyncState {
     /// An acquire `dma_fence` object, that you should wait on before accessing the contents of the
@@ -122,26 +97,37 @@ pub struct ExplicitSyncState {
     pub release: Option<ExplicitBufferRelease>,
 }
 
-struct InternalState {
-    sync_state: ExplicitSyncState,
-    sync_resource: ZwpLinuxSurfaceSynchronizationV1,
+impl Default for ExplicitSyncState {
+    fn default() -> Self {
+        ExplicitSyncState {
+            acquire: None,
+            release: None,
+        }
+    }
+}
+
+impl Cacheable for ExplicitSyncState {
+    fn commit(&mut self) -> Self {
+        std::mem::take(self)
+    }
+    fn merge_into(mut self, into: &mut Self) {
+        if self.acquire.is_some() {
+            if let Some(fd) = std::mem::replace(&mut into.acquire, self.acquire.take()) {
+                // close the unused fd
+                let _ = nix::unistd::close(fd);
+            }
+        }
+        if self.release.is_some() {
+            if let Some(release) = std::mem::replace(&mut into.release, self.release.take()) {
+                // release the overriden state
+                release.immediate_release();
+            }
+        }
+    }
 }
 
 struct ESUserData {
-    state: RefCell<Option<InternalState>>,
-}
-
-impl ESUserData {
-    fn take_state(&self) -> Option<ExplicitSyncState> {
-        if let Some(state) = self.state.borrow_mut().deref_mut() {
-            Some(ExplicitSyncState {
-                acquire: state.sync_state.acquire.take(),
-                release: state.sync_state.release.take(),
-            })
-        } else {
-            None
-        }
-    }
+    state: RefCell<Option<ZwpLinuxSurfaceSynchronizationV1>>,
 }
 
 /// Possible errors you can send to an ill-behaving clients
@@ -167,42 +153,24 @@ impl std::fmt::Display for NoExplicitSync {
 
 impl std::error::Error for NoExplicitSync {}
 
-/// Retrieve the explicit synchronization state commited by the client
-///
-/// This state can contain an acquire fence and a release object, for synchronization (see module-level docs).
-///
-/// This function will clear the pending state, preparing the surface for the next commit, as a result you
-/// should always call it on surface commit to avoid getting out-of-sync with the client.
-///
-/// This function returns an error if the client has not setup explicit synchronization for this surface.
-pub fn get_explicit_synchronization_state(
-    attrs: &mut SurfaceAttributes,
-) -> Result<ExplicitSyncState, NoExplicitSync> {
-    attrs
-        .user_data
-        .get::<ESUserData>()
-        .and_then(|s| s.take_state())
-        .ok_or(NoExplicitSync)
-}
-
 /// Send a synchronization error to a client
 ///
 /// See the enum definition for possible errors. These errors are protocol errors, meaning that
 /// the client associated with this `SurfaceAttributes` will be killed as a result of calling this
 /// function.
-pub fn send_explicit_synchronization_error(attrs: &SurfaceAttributes, error: ExplicitSyncError) {
-    if let Some(ref data) = attrs.user_data.get::<ESUserData>() {
-        if let Some(state) = data.state.borrow().deref() {
+pub fn send_explicit_synchronization_error(attrs: &SurfaceData, error: ExplicitSyncError) {
+    if let Some(ref data) = attrs.data_map.get::<ESUserData>() {
+        if let Some(sync_resource) = data.state.borrow().deref() {
             match error {
-                ExplicitSyncError::InvalidFence => state.sync_resource.as_ref().post_error(
+                ExplicitSyncError::InvalidFence => sync_resource.as_ref().post_error(
                     zwp_linux_surface_synchronization_v1::Error::InvalidFence as u32,
                     "The fence specified by the client could not be imported.".into(),
                 ),
-                ExplicitSyncError::UnsupportedBuffer => state.sync_resource.as_ref().post_error(
+                ExplicitSyncError::UnsupportedBuffer => sync_resource.as_ref().post_error(
                     zwp_linux_surface_synchronization_v1::Error::UnsupportedBuffer as u32,
                     "The buffer does not support explicit synchronization.".into(),
                 ),
-                ExplicitSyncError::NoBuffer => state.sync_resource.as_ref().post_error(
+                ExplicitSyncError::NoBuffer => sync_resource.as_ref().post_error(
                     zwp_linux_surface_synchronization_v1::Error::NoBuffer as u32,
                     "No buffer was attached.".into(),
                 ),
@@ -214,14 +182,12 @@ pub fn send_explicit_synchronization_error(attrs: &SurfaceAttributes, error: Exp
 /// Initialize the explicit synchronization global
 ///
 /// See module-level documentation for its use.
-pub fn init_explicit_synchronization_global<R, L>(
+pub fn init_explicit_synchronization_global<L>(
     display: &mut Display,
-    compositor: CompositorToken<R>,
     logger: L,
 ) -> Global<ZwpLinuxExplicitSynchronizationV1>
 where
     L: Into<Option<::slog::Logger>>,
-    R: 'static,
 {
     let _log =
         crate::slog_or_fallback(logger).new(o!("smithay_module" => "wayland_explicit_synchronization"));
@@ -236,16 +202,17 @@ where
                         surface,
                     } = req
                     {
-                        let exists = compositor.with_surface_data(&surface, |attrs| {
-                            attrs.user_data.insert_if_missing(|| ESUserData {
+                        let exists = with_states(&surface, |states| {
+                            states.data_map.insert_if_missing(|| ESUserData {
                                 state: RefCell::new(None),
                             });
-                            attrs
-                                .user_data
+                            states
+                                .data_map
                                 .get::<ESUserData>()
                                 .map(|ud| ud.state.borrow().is_some())
                                 .unwrap()
-                        });
+                        })
+                        .unwrap_or(false);
                         if exists {
                             explicit_sync.as_ref().post_error(
                                 zwp_linux_explicit_synchronization_v1::Error::SynchronizationExists as u32,
@@ -253,17 +220,12 @@ where
                             );
                             return;
                         }
-                        let surface_sync = implement_surface_sync(id, surface.clone(), compositor);
-                        compositor.with_surface_data(&surface, |attrs| {
-                            let data = attrs.user_data.get::<ESUserData>().unwrap();
-                            *data.state.borrow_mut() = Some(InternalState {
-                                sync_state: ExplicitSyncState {
-                                    acquire: None,
-                                    release: None,
-                                },
-                                sync_resource: surface_sync,
-                            });
-                        });
+                        let surface_sync = implement_surface_sync(id, surface.clone());
+                        with_states(&surface, |states| {
+                            let data = states.data_map.get::<ESUserData>().unwrap();
+                            *data.state.borrow_mut() = Some(surface_sync);
+                        })
+                        .unwrap();
                     }
                 });
             },
@@ -271,14 +233,10 @@ where
     )
 }
 
-fn implement_surface_sync<R>(
+fn implement_surface_sync(
     id: Main<ZwpLinuxSurfaceSynchronizationV1>,
     surface: WlSurface,
-    compositor: CompositorToken<R>,
-) -> ZwpLinuxSurfaceSynchronizationV1
-where
-    R: 'static,
-{
+) -> ZwpLinuxSurfaceSynchronizationV1 {
     id.quick_assign(move |surface_sync, req, _| match req {
         zwp_linux_surface_synchronization_v1::Request::SetAcquireFence { fd } => {
             if !surface.as_ref().is_alive() {
@@ -287,19 +245,18 @@ where
                     "The associated wl_surface was destroyed.".into(),
                 )
             }
-            compositor.with_surface_data(&surface, |attrs| {
-                let data = attrs.user_data.get::<ESUserData>().unwrap();
-                if let Some(state) = data.state.borrow_mut().deref_mut() {
-                    if state.sync_state.acquire.is_some() {
-                        surface_sync.as_ref().post_error(
-                            zwp_linux_surface_synchronization_v1::Error::DuplicateFence as u32,
-                            "Multiple fences added for a single surface commit.".into(),
-                        )
-                    } else {
-                        state.sync_state.acquire = Some(fd);
-                    }
+            with_states(&surface, |states| {
+                let mut pending = states.cached_state.pending::<ExplicitSyncState>();
+                if pending.acquire.is_some() {
+                    surface_sync.as_ref().post_error(
+                        zwp_linux_surface_synchronization_v1::Error::DuplicateFence as u32,
+                        "Multiple fences added for a single surface commit.".into(),
+                    )
+                } else {
+                    pending.acquire = Some(fd);
                 }
-            });
+            })
+            .unwrap();
         }
         zwp_linux_surface_synchronization_v1::Request::GetRelease { release } => {
             if !surface.as_ref().is_alive() {
@@ -308,30 +265,30 @@ where
                     "The associated wl_surface was destroyed.".into(),
                 )
             }
-            compositor.with_surface_data(&surface, |attrs| {
-                let data = attrs.user_data.get::<ESUserData>().unwrap();
-                if let Some(state) = data.state.borrow_mut().deref_mut() {
-                    if state.sync_state.acquire.is_some() {
-                        surface_sync.as_ref().post_error(
-                            zwp_linux_surface_synchronization_v1::Error::DuplicateRelease as u32,
-                            "Multiple releases added for a single surface commit.".into(),
-                        )
-                    } else {
-                        release.quick_assign(|_, _, _| {});
-                        state.sync_state.release = Some(ExplicitBufferRelease {
-                            release: release.deref().clone(),
-                        });
-                    }
+            with_states(&surface, |states| {
+                let mut pending = states.cached_state.pending::<ExplicitSyncState>();
+                if pending.release.is_some() {
+                    surface_sync.as_ref().post_error(
+                        zwp_linux_surface_synchronization_v1::Error::DuplicateRelease as u32,
+                        "Multiple releases added for a single surface commit.".into(),
+                    )
+                } else {
+                    release.quick_assign(|_, _, _| {});
+                    pending.release = Some(ExplicitBufferRelease {
+                        release: release.deref().clone(),
+                    });
                 }
-            });
+            })
+            .unwrap();
         }
         zwp_linux_surface_synchronization_v1::Request::Destroy => {
             // disable the ESUserData
-            compositor.with_surface_data(&surface, |attrs| {
-                if let Some(ref mut data) = attrs.user_data.get::<ESUserData>() {
+            with_states(&surface, |states| {
+                if let Some(ref mut data) = states.data_map.get::<ESUserData>() {
                     *data.state.borrow_mut() = None;
                 }
-            });
+            })
+            .unwrap();
         }
         _ => (),
     });

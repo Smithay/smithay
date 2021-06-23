@@ -39,8 +39,7 @@ impl<A: AsRawFd + 'static> Allocator<DumbBuffer<A>> for DrmDevice<A> {
         // dumb buffers are always linear
         if modifiers
             .iter()
-            .find(|x| **x == Modifier::Invalid || **x == Modifier::Linear)
-            .is_none()
+            .all(|&x| x != Modifier::Invalid && x != Modifier::Linear)
         {
             return Err(drm::SystemError::InvalidArgument);
         }

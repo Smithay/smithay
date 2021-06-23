@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::error::Error;
 
 #[cfg(feature = "wayland_frontend")]
-use crate::{utils::Rectangle, wayland::compositor::SurfaceAttributes};
+use crate::{utils::Rectangle, wayland::compositor::SurfaceData};
 use cgmath::{prelude::*, Matrix3, Vector2};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
@@ -264,7 +264,7 @@ pub trait ImportShm: Renderer {
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&SurfaceAttributes>,
+        surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 
@@ -404,7 +404,7 @@ pub trait ImportAll: Renderer {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&SurfaceAttributes>,
+        surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>>;
 }
@@ -419,7 +419,7 @@ impl<R: Renderer + ImportShm + ImportEgl + ImportDma> ImportAll for R {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&SurfaceAttributes>,
+        surface: Option<&SurfaceData>,
         damage: &[Rectangle],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
         match buffer_type(buffer) {
@@ -439,7 +439,7 @@ impl<R: Renderer + ImportShm + ImportDma> ImportAll for R {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&SurfaceAttributes>,
+        surface: Option<&SurfaceData>,
         damage: &[Rectangle],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
         match buffer_type(buffer) {

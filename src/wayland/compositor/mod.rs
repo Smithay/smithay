@@ -9,7 +9,8 @@
 //!
 //! This implementation does a simple job: it stores in a coherent way the state of
 //! surface trees with subsurfaces, to provide you a direct access to the tree
-//! structure and all surface metadata.
+//! structure and all surface attributes, and handles the application of double-buffered
+//! state.
 //!
 //! As such, you can, given a root surface with a role requiring it to be displayed,
 //! you can iterate over the whole tree of subsurfaces to recover all the metadata you
@@ -32,54 +33,67 @@
 //! # #[macro_use] extern crate smithay;
 //! use smithay::wayland::compositor::compositor_init;
 //!
-//! // Declare the roles enum
-//! define_roles!(MyRoles);
-//!
 //! # let mut display = wayland_server::Display::new();
 //! // Call the init function:
-//! let (token, _, _) = compositor_init::<MyRoles, _, _>(
+//! compositor_init(
 //!     &mut display,
-//!     |request, surface, compositor_token, dispatch_data| {
+//!     |surface, dispatch_data| {
 //!         /*
-//!           Your handling of the user requests.
+//!           Your handling of surface commits
 //!          */
 //!     },
 //!     None // put a logger here
 //! );
 //!
-//! // this `token` is what you'll use to access the surface associated data
-//!
 //! // You're now ready to go!
 //! ```
 //!
-//! ### Use the surface metadata
+//! ### Use the surface states
 //!
-//! As you can see in the previous example, in the end we are retrieving a token from
-//! the `init` function. This token is necessary to retrieve the metadata associated with
-//! a surface. It can be cloned. See [`CompositorToken`]
-//! for the details of what it enables you.
+//! The main access to surface states is done through the [`with_states`] function, which
+//! gives you access to the [`SurfaceData`] instance associated with this surface. It acts
+//! as a general purpose container for associating state to a surface, double-buffered or
+//! not. See its documentation for more details.
 //!
-//! The surface metadata is held in the [`SurfaceAttributes`]
-//! struct. In contains double-buffered state pending from the client as defined by the protocol for
-//! [`wl_surface`](wayland_server::protocol::wl_surface), as well as your user-defined type holding
-//! any data you need to have associated with a struct. See its documentation for details.
+//! ### State application and hooks
 //!
-//! This [`CompositorToken`] also provides access to the metadata associated with the role of the
-//! surfaces. See the documentation of the [`roles`] submodule
-//! for a detailed explanation.
+//! On commit of a surface several steps are taken to update the state of the surface. Actions
+//! are taken by smithay in the following order:
+//!
+//! 1. Commit hooks registered to this surface are invoked. Such hooks can be registered using
+//!    the [`add_commit_hook`] function. They are typically used by protocol extensions that
+//!    add state to a surface and need to check on commit that client did not request an
+//!    illegal state before it is applied on commit.
+//! 2. The pending state is either applied and made current, or cached for later application
+//!    is the surface is a synchronize subsurface. If the current state is applied, state
+//!    of the synchronized children subsurface are applied as well at this point.
+//! 3. Your user callback provided to [`compositor_init`] is invoked, so that you can access
+//!    the new current state of the surface. The state of sync children subsurfaces of your
+//!    surface may have changed as well, so this is the place to check it, using functions
+//!    like [`with_surface_tree_upward`] or [`with_surface_tree_downward`]. On the other hand,
+//!    if the surface is a sync subsurface, its current state will note have changed as
+//!    the result of that commit. You can check if it is using [`is_sync_subsurface`].
+//!
+//! ### Surface roles
+//!
+//! The wayland protocol specifies that a surface needs to be assigned a role before it can
+//! be displayed. Furthermore, a surface can only have a single role during its whole lifetime.
+//! Smithay represents this role as a `&'static str` identifier, that can only be set once
+//! on a surface. See [`give_role`] and [`get_role`] for details. This module manages the
+//! subsurface role, which is identified by the string `"subsurface"`.
 
-use std::{cell::RefCell, fmt, rc::Rc, sync::Mutex};
+use std::{cell::RefCell, rc::Rc, sync::Mutex};
 
+mod cache;
 mod handlers;
-pub mod roles;
+mod transaction;
 mod tree;
 
-pub use self::tree::TraversalAction;
-use self::{
-    roles::{AlreadyHasRole, Role, RoleType, WrongRole},
-    tree::SurfaceData,
-};
-use crate::utils::Rectangle;
+pub use self::cache::{Cacheable, MultiCache};
+pub use self::handlers::SubsurfaceCachedState;
+use self::tree::PrivateSurfaceData;
+pub use self::tree::{AlreadyHasRole, TraversalAction};
+use crate::utils::{DeadResource, Rectangle};
 use wayland_server::{
     protocol::{
         wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor, wl_surface::WlSurface,
@@ -104,6 +118,32 @@ struct Marker<R> {
     _r: ::std::marker::PhantomData<R>,
 }
 
+/// The state container associated with a surface
+///
+/// This general-purpose container provides 2 main storages:
+///
+/// - the `data_map` storage has typemap semantics and allows you
+///   to associate and access non-buffered data to the surface
+/// - the `cached_state` storages allows you to associate state to
+///   the surface that follows the double-buffering semantics associated
+///   with the `commit` procedure of surfaces, also with typemap-like
+///   semantics
+///
+/// See the respective documentation of each container for its usage.
+///
+/// By default, all surfaces have a [`SurfaceAttributes`] cached state,
+/// and subsurface also have a [`SubsurfaceCachedState`] state as well.
+pub struct SurfaceData {
+    /// The current role of the surface.
+    ///
+    /// If `None` if the surface has not yet been assigned a role
+    pub role: Option<&'static str>,
+    /// The non-buffered typemap storage of this surface
+    pub data_map: UserDataMap,
+    /// The double-buffered typemap storage of this surface
+    pub cached_state: MultiCache,
+}
+
 /// New buffer assignation for a surface
 #[derive(Debug)]
 pub enum BufferAssignment {
@@ -118,14 +158,12 @@ pub enum BufferAssignment {
     },
 }
 
-/// Data associated with a surface, aggregated by the handlers
+/// General state associated with a surface
 ///
-/// Most of the fields of this struct represent a double-buffered state, which
-/// should only be applied once a [`commit`](SurfaceEvent::Commit)
-/// request is received from the surface.
-///
-/// You are responsible for setting those values as you see fit to avoid
-/// processing them two times.
+/// The fields `buffer`, `damage` and `frame_callbacks` should be
+/// reset (by clearing their contents) once you have adequately
+/// processed them, as their contents are aggregated from commit to commit.
+#[derive(Debug)]
 pub struct SurfaceAttributes {
     /// Buffer defining the contents of the surface
     ///
@@ -172,26 +210,6 @@ pub struct SurfaceAttributes {
     /// An example possibility would be to trigger it once the frame
     /// associated with this commit has been displayed on the screen.
     pub frame_callbacks: Vec<wl_callback::WlCallback>,
-    /// User-controlled data
-    ///
-    /// This is your field to host whatever you need.
-    pub user_data: UserDataMap,
-}
-
-// UserDataMap does not implement debug, so we have to impl Debug manually
-impl fmt::Debug for SurfaceAttributes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SurfaceAttributes")
-            .field("buffer", &self.buffer)
-            .field("buffer_scale", &self.buffer_scale)
-            .field("buffer_transform", &self.buffer_transform)
-            .field("opaque_region", &self.opaque_region)
-            .field("input_region", &self.input_region)
-            .field("damage", &self.damage)
-            .field("frame_callbacks", &self.frame_callbacks)
-            .field("user_data", &"...")
-            .finish()
-    }
 }
 
 impl Default for SurfaceAttributes {
@@ -204,7 +222,6 @@ impl Default for SurfaceAttributes {
             input_region: None,
             damage: Vec::new(),
             frame_callbacks: Vec::new(),
-            user_data: UserDataMap::new(),
         }
     }
 }
@@ -277,244 +294,160 @@ impl RegionAttributes {
     }
 }
 
-/// A Compositor global token
+/// Access the data of a surface tree from bottom to top
 ///
-/// This token can be cloned at will, and is the entry-point to
-/// access data associated with the [`wl_surface`](wayland_server::protocol::wl_surface)
-/// and [`wl_region`](wayland_server::protocol::wl_region) managed
-/// by the `CompositorGlobal` that provided it.
-#[derive(Debug)]
-pub struct CompositorToken<R> {
-    _role: ::std::marker::PhantomData<*mut R>,
-}
-
-// we implement them manually because #[derive(..)] would require R: Clone
-impl<R> Copy for CompositorToken<R> {}
-impl<R> Clone for CompositorToken<R> {
-    fn clone(&self) -> CompositorToken<R> {
-        *self
-    }
-}
-
-unsafe impl<R> Send for CompositorToken<R> {}
-unsafe impl<R> Sync for CompositorToken<R> {}
-
-impl<R> CompositorToken<R> {
-    pub(crate) fn make() -> CompositorToken<R> {
-        CompositorToken {
-            _role: ::std::marker::PhantomData,
-        }
-    }
-}
-
-impl<R: 'static> CompositorToken<R> {
-    /// Access the data of a surface
-    ///
-    /// The closure will be called with the contents of the data associated with this surface.
-    ///
-    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
-    /// will panic (having more than one compositor is not supported).
-    pub fn with_surface_data<F, T>(self, surface: &WlSurface, f: F) -> T
-    where
-        F: FnOnce(&mut SurfaceAttributes) -> T,
-    {
-        SurfaceData::<R>::with_data(surface, f)
-    }
-}
-
-impl<R> CompositorToken<R>
-where
-    R: RoleType + Role<SubsurfaceRole> + 'static,
+/// You provide three closures, a "filter", a "processor" and a "post filter".
+///
+/// The first closure is initially called on a surface to determine if its children
+/// should be processed as well. It returns a `TraversalAction<T>` reflecting that.
+///
+/// The second closure is supposed to do the actual processing. The processing closure for
+/// a surface may be called after the processing closure of some of its children, depending
+/// on the stack ordering the client requested. Here the surfaces are processed in the same
+/// order as they are supposed to be drawn: from the farthest of the screen to the nearest.
+///
+/// The third closure is called once all the subtree of a node has been processed, and gives
+/// an opportunity for early-stopping. If it returns `true` the processing will continue,
+/// while if it returns `false` it'll stop.
+///
+/// The arguments provided to the closures are, in this order:
+///
+/// - The surface object itself
+/// - a mutable reference to its surface attribute data
+/// - a mutable reference to its role data,
+/// - a custom value that is passed in a fold-like manner, but only from the output of a parent
+///   to its children. See [`TraversalAction`] for details.
+///
+/// If the surface not managed by the `CompositorGlobal` that provided this token, this
+/// will panic (having more than one compositor is not supported).
+pub fn with_surface_tree_upward<F1, F2, F3, T>(
+    surface: &WlSurface,
+    initial: T,
+    filter: F1,
+    processor: F2,
+    post_filter: F3,
+) where
+    F1: FnMut(&WlSurface, &SurfaceData, &T) -> TraversalAction<T>,
+    F2: FnMut(&WlSurface, &SurfaceData, &T),
+    F3: FnMut(&WlSurface, &SurfaceData, &T) -> bool,
 {
-    /// Access the data of a surface tree from bottom to top
-    ///
-    /// You provide three closures, a "filter", a "processor" and a "post filter".
-    ///
-    /// The first closure is initially called on a surface to determine if its children
-    /// should be processed as well. It returns a `TraversalAction<T>` reflecting that.
-    ///
-    /// The second closure is supposed to do the actual processing. The processing closure for
-    /// a surface may be called after the processing closure of some of its children, depending
-    /// on the stack ordering the client requested. Here the surfaces are processed in the same
-    /// order as they are supposed to be drawn: from the farthest of the screen to the nearest.
-    ///
-    /// The third closure is called once all the subtree of a node has been processed, and gives
-    /// an opportunity for early-stopping. If it returns `true` the processing will continue,
-    /// while if it returns `false` it'll stop.
-    ///
-    /// The arguments provided to the closures are, in this order:
-    ///
-    /// - The surface object itself
-    /// - a mutable reference to its surface attribute data
-    /// - a mutable reference to its role data,
-    /// - a custom value that is passed in a fold-like manner, but only from the output of a parent
-    ///   to its children. See [`TraversalAction`] for details.
-    ///
-    /// If the surface not managed by the `CompositorGlobal` that provided this token, this
-    /// will panic (having more than one compositor is not supported).
-    pub fn with_surface_tree_upward<F1, F2, F3, T>(
-        self,
-        surface: &WlSurface,
-        initial: T,
-        filter: F1,
-        processor: F2,
-        post_filter: F3,
-    ) where
-        F1: FnMut(&WlSurface, &mut SurfaceAttributes, &mut R, &T) -> TraversalAction<T>,
-        F2: FnMut(&WlSurface, &mut SurfaceAttributes, &mut R, &T),
-        F3: FnMut(&WlSurface, &mut SurfaceAttributes, &mut R, &T) -> bool,
-    {
-        SurfaceData::<R>::map_tree(surface, &initial, filter, processor, post_filter, false);
-    }
+    PrivateSurfaceData::map_tree(surface, &initial, filter, processor, post_filter, false);
+}
 
-    /// Access the data of a surface tree from top to bottom
-    ///
-    /// Behavior is the same as [`with_surface_tree_upward`](CompositorToken::with_surface_tree_upward), but
-    /// the processing is done in the reverse order, from the nearest of the screen to the deepest.
-    ///
-    /// This would typically be used to find out which surface of a subsurface tree has been clicked for example.
-    pub fn with_surface_tree_downward<F1, F2, F3, T>(
-        self,
-        surface: &WlSurface,
-        initial: T,
-        filter: F1,
-        processor: F2,
-        post_filter: F3,
-    ) where
-        F1: FnMut(&WlSurface, &mut SurfaceAttributes, &mut R, &T) -> TraversalAction<T>,
-        F2: FnMut(&WlSurface, &mut SurfaceAttributes, &mut R, &T),
-        F3: FnMut(&WlSurface, &mut SurfaceAttributes, &mut R, &T) -> bool,
-    {
-        SurfaceData::<R>::map_tree(surface, &initial, filter, processor, post_filter, true);
-    }
+/// Access the data of a surface tree from top to bottom
+///
+/// Behavior is the same as [`with_surface_tree_upward`], but the processing is done in the reverse order,
+/// from the nearest of the screen to the deepest.
+///
+/// This would typically be used to find out which surface of a subsurface tree has been clicked for example.
+pub fn with_surface_tree_downward<F1, F2, F3, T>(
+    surface: &WlSurface,
+    initial: T,
+    filter: F1,
+    processor: F2,
+    post_filter: F3,
+) where
+    F1: FnMut(&WlSurface, &SurfaceData, &T) -> TraversalAction<T>,
+    F2: FnMut(&WlSurface, &SurfaceData, &T),
+    F3: FnMut(&WlSurface, &SurfaceData, &T) -> bool,
+{
+    PrivateSurfaceData::map_tree(surface, &initial, filter, processor, post_filter, true);
+}
 
-    /// Retrieve the parent of this surface
-    ///
-    /// Returns `None` is this surface is a root surface
-    ///
-    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
-    /// will panic (having more than one compositor is not supported).
-    pub fn get_parent(self, surface: &WlSurface) -> Option<WlSurface> {
-        SurfaceData::<R>::get_parent(surface)
+/// Retrieve the parent of this surface
+///
+/// Returns `None` is this surface is a root surface
+pub fn get_parent(surface: &WlSurface) -> Option<WlSurface> {
+    if !surface.as_ref().is_alive() {
+        return None;
     }
+    PrivateSurfaceData::get_parent(surface)
+}
 
-    /// Retrieve the children of this surface
-    ///
-    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
-    /// will panic (having more than one compositor is not supported).
-    pub fn get_children(self, surface: &WlSurface) -> Vec<WlSurface> {
-        SurfaceData::<R>::get_children(surface)
+/// Retrieve the children of this surface
+pub fn get_children(surface: &WlSurface) -> Vec<WlSurface> {
+    if !surface.as_ref().is_alive() {
+        return Vec::new();
+    }
+    PrivateSurfaceData::get_children(surface)
+}
+
+/// Check if this subsurface is a synchronized subsurface
+///
+/// Returns false if the surface is already dead
+pub fn is_sync_subsurface(surface: &WlSurface) -> bool {
+    if !surface.as_ref().is_alive() {
+        return false;
+    }
+    self::handlers::is_effectively_sync(surface)
+}
+
+/// Get the current role of this surface
+pub fn get_role(surface: &WlSurface) -> Option<&'static str> {
+    if !surface.as_ref().is_alive() {
+        return None;
+    }
+    PrivateSurfaceData::get_role(surface)
+}
+
+/// Register that this surface has given role
+///
+/// Fails if the surface already has a role.
+pub fn give_role(surface: &WlSurface, role: &'static str) -> Result<(), AlreadyHasRole> {
+    if !surface.as_ref().is_alive() {
+        return Ok(());
+    }
+    PrivateSurfaceData::set_role(surface, role)
+}
+
+/// Access the states associated to this surface
+pub fn with_states<F, T>(surface: &WlSurface, f: F) -> Result<T, DeadResource>
+where
+    F: FnOnce(&SurfaceData) -> T,
+{
+    if !surface.as_ref().is_alive() {
+        return Err(DeadResource);
+    }
+    Ok(PrivateSurfaceData::with_states(surface, f))
+}
+
+/// Retrieve the metadata associated with a `wl_region`
+///
+/// If the region is not managed by the `CompositorGlobal` that provided this token, this
+/// will panic (having more than one compositor is not supported).
+pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
+    match region.as_ref().user_data().get::<Mutex<RegionAttributes>>() {
+        Some(mutex) => mutex.lock().unwrap().clone(),
+        None => panic!("Accessing the data of foreign regions is not supported."),
     }
 }
 
-impl<R: RoleType + 'static> CompositorToken<R> {
-    /// Check whether this surface as a role or not
-    ///
-    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
-    /// will panic (having more than one compositor is not supported).
-    pub fn has_a_role(self, surface: &WlSurface) -> bool {
-        SurfaceData::<R>::has_a_role(surface)
+/// Register a commit hook to be invoked on surface commit
+///
+/// For its precise semantics, see module-level documentation.
+pub fn add_commit_hook(surface: &WlSurface, hook: fn(&WlSurface)) {
+    if !surface.as_ref().is_alive() {
+        return;
     }
-
-    /// Check whether this surface as a specific role
-    ///
-    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
-    /// will panic (having more than one compositor is not supported).
-    pub fn has_role<RoleData>(self, surface: &WlSurface) -> bool
-    where
-        R: Role<RoleData>,
-    {
-        SurfaceData::<R>::has_role::<RoleData>(surface)
-    }
-
-    /// Register that this surface has given role with default data
-    ///
-    /// Fails if the surface already has a role.
-    ///
-    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
-    /// will panic (having more than one compositor is not supported).
-    pub fn give_role<RoleData>(self, surface: &WlSurface) -> Result<(), AlreadyHasRole>
-    where
-        R: Role<RoleData>,
-        RoleData: Default,
-    {
-        SurfaceData::<R>::give_role::<RoleData>(surface)
-    }
-
-    /// Register that this surface has given role with given data
-    ///
-    /// Fails if the surface already has a role and returns the data.
-    ///
-    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
-    /// will panic (having more than one compositor is not supported).
-    pub fn give_role_with<RoleData>(self, surface: &WlSurface, data: RoleData) -> Result<(), RoleData>
-    where
-        R: Role<RoleData>,
-    {
-        SurfaceData::<R>::give_role_with::<RoleData>(surface, data)
-    }
-
-    /// Access the role data of a surface
-    ///
-    /// Fails and don't call the closure if the surface doesn't have this role
-    ///
-    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
-    /// will panic (having more than one compositor is not supported).
-    pub fn with_role_data<RoleData, F, T>(self, surface: &WlSurface, f: F) -> Result<T, WrongRole>
-    where
-        R: Role<RoleData>,
-        F: FnOnce(&mut RoleData) -> T,
-    {
-        SurfaceData::<R>::with_role_data::<RoleData, _, _>(surface, f)
-    }
-
-    /// Register that this surface does not have a role any longer and retrieve the data
-    ///
-    /// Fails if the surface didn't already have this role.
-    ///
-    /// If the surface is not managed by the `CompositorGlobal` that provided this token, this
-    /// will panic (having more than one compositor is not supported).
-    pub fn remove_role<RoleData>(self, surface: &WlSurface) -> Result<RoleData, WrongRole>
-    where
-        R: Role<RoleData>,
-    {
-        SurfaceData::<R>::remove_role::<RoleData>(surface)
-    }
-
-    /// Retrieve the metadata associated with a `wl_region`
-    ///
-    /// If the region is not managed by the `CompositorGlobal` that provided this token, this
-    /// will panic (having more than one compositor is not supported).
-    pub fn get_region_attributes(self, region: &wl_region::WlRegion) -> RegionAttributes {
-        match region.as_ref().user_data().get::<Mutex<RegionAttributes>>() {
-            Some(mutex) => mutex.lock().unwrap().clone(),
-            None => panic!("Accessing the data of foreign regions is not supported."),
-        }
-    }
+    PrivateSurfaceData::add_commit_hook(surface, hook)
 }
 
 /// Create new [`wl_compositor`](wayland_server::protocol::wl_compositor)
 /// and [`wl_subcompositor`](wayland_server::protocol::wl_subcompositor) globals.
 ///
-/// The globals are directly registered into the event loop, and this function
-/// returns a [`CompositorToken`] which you'll need access the data associated to
-/// the [`wl_surface`](wayland_server::protocol::wl_surface)s.
-///
-/// It also returns the two global handles, in case you wish to remove these
-/// globals from the event loop in the future.
-pub fn compositor_init<R, Impl, L>(
+/// It returns the two global handles, in case you wish to remove these globals from
+/// the event loop in the future.
+pub fn compositor_init<Impl, L>(
     display: &mut Display,
     implem: Impl,
     logger: L,
 ) -> (
-    CompositorToken<R>,
     Global<wl_compositor::WlCompositor>,
     Global<wl_subcompositor::WlSubcompositor>,
 )
 where
     L: Into<Option<::slog::Logger>>,
-    R: Default + RoleType + Role<SubsurfaceRole> + Send + 'static,
-    Impl: for<'a> FnMut(SurfaceEvent, WlSurface, CompositorToken<R>, DispatchData<'a>) + 'static,
+    Impl: for<'a> FnMut(WlSurface, DispatchData<'a>) + 'static,
 {
     let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "compositor_handler"));
     let implem = Rc::new(RefCell::new(implem));
@@ -522,32 +455,18 @@ where
     let compositor = display.create_global(
         4,
         Filter::new(move |(new_compositor, _version), _, _| {
-            self::handlers::implement_compositor::<R, Impl>(new_compositor, log.clone(), implem.clone());
+            self::handlers::implement_compositor::<Impl>(new_compositor, log.clone(), implem.clone());
         }),
     );
 
     let subcompositor = display.create_global(
         1,
         Filter::new(move |(new_subcompositor, _version), _, _| {
-            self::handlers::implement_subcompositor::<R>(new_subcompositor);
+            self::handlers::implement_subcompositor(new_subcompositor);
         }),
     );
 
-    (CompositorToken::make(), compositor, subcompositor)
-}
-
-/// User-handled events for surfaces
-///
-/// The global provided by smithay cannot process these events for you, so
-/// they are forwarded directly via your provided implementation, and are
-/// described by this global.
-#[derive(Debug)]
-pub enum SurfaceEvent {
-    /// The double-buffered state has been validated by the client
-    ///
-    /// At this point, the pending state that has been accumulated in the [`SurfaceAttributes`] associated
-    /// to this surface should be atomically integrated into the current state of the surface.
-    Commit,
+    (compositor, subcompositor)
 }
 
 #[cfg(test)]

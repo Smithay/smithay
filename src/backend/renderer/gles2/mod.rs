@@ -35,7 +35,7 @@ use super::{ImportDma, ImportShm};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
 #[cfg(feature = "wayland_frontend")]
-use crate::{utils::Rectangle, wayland::compositor::SurfaceAttributes};
+use crate::utils::Rectangle;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
@@ -501,7 +501,7 @@ impl ImportShm for Gles2Renderer {
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&SurfaceAttributes>,
+        surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle],
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;
@@ -535,7 +535,7 @@ impl ImportShm for Gles2Renderer {
                 // why not store a `Gles2Texture`? because the user might do so.
                 // this is guaranteed a non-public internal type, so we are good.
                 surface
-                    .and_then(|surface| surface.user_data.get::<Rc<Gles2TextureInternal>>().cloned())
+                    .and_then(|surface| surface.data_map.get::<Rc<Gles2TextureInternal>>().cloned())
                     .unwrap_or_else(|| {
                         let mut tex = 0;
                         unsafe { self.gl.GenTextures(1, &mut tex) };
@@ -742,9 +742,7 @@ impl Gles2Renderer {
                 texture.0.texture,
                 buffer
             );
-            if texture.0.is_external {
-                Ok(Some(texture))
-            } else {
+            if !texture.0.is_external {
                 if let Some(egl_images) = texture.0.egl_images.as_ref() {
                     if egl_images[0] == ffi_egl::NO_IMAGE_KHR {
                         return Ok(None);
@@ -753,8 +751,8 @@ impl Gles2Renderer {
                     let tex = Some(texture.0.texture);
                     self.import_egl_image(egl_images[0], false, tex)?;
                 }
-                Ok(Some(texture))
             }
+            Ok(Some(texture))
         } else {
             Ok(None)
         }

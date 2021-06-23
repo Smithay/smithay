@@ -10,116 +10,116 @@ use wayland_server::{
     Filter, Main,
 };
 
-use crate::wayland::compositor::{roles::Role, CompositorToken};
+static WL_SHELL_SURFACE_ROLE: &str = "wl_shell_surface";
+
+use crate::wayland::compositor;
 use crate::wayland::Serial;
 
-use super::{ShellRequest, ShellState, ShellSurface, ShellSurfaceKind, ShellSurfaceRole};
+use super::{ShellRequest, ShellState, ShellSurface, ShellSurfaceAttributes, ShellSurfaceKind};
 
-pub(crate) fn implement_shell<R, Impl>(
+pub(crate) fn implement_shell<Impl>(
     shell: Main<wl_shell::WlShell>,
-    ctoken: CompositorToken<R>,
     implementation: Rc<RefCell<Impl>>,
-    state: Arc<Mutex<ShellState<R>>>,
+    state: Arc<Mutex<ShellState>>,
 ) where
-    R: Role<ShellSurfaceRole> + 'static,
-    Impl: FnMut(ShellRequest<R>) + 'static,
+    Impl: FnMut(ShellRequest) + 'static,
 {
     shell.quick_assign(move |shell, req, _data| {
         let (id, surface) = match req {
             wl_shell::Request::GetShellSurface { id, surface } => (id, surface),
             _ => unreachable!(),
         };
-        let role_data = ShellSurfaceRole {
-            title: "".into(),
-            class: "".into(),
-            pending_ping: None,
-        };
-        if ctoken.give_role_with(&surface, role_data).is_err() {
+        if compositor::give_role(&surface, WL_SHELL_SURFACE_ROLE).is_err() {
             shell
                 .as_ref()
                 .post_error(wl_shell::Error::Role as u32, "Surface already has a role.".into());
             return;
         }
-        let shell_surface =
-            implement_shell_surface(id, surface, implementation.clone(), ctoken, state.clone());
+        compositor::with_states(&surface, |states| {
+            states.data_map.insert_if_missing(|| {
+                Mutex::new(ShellSurfaceAttributes {
+                    title: "".into(),
+                    class: "".into(),
+                    pending_ping: None,
+                })
+            })
+        })
+        .unwrap();
+        let shell_surface = implement_shell_surface(id, surface, implementation.clone(), state.clone());
         state
             .lock()
             .unwrap()
             .known_surfaces
-            .push(make_handle(&shell_surface, ctoken));
+            .push(make_handle(&shell_surface));
         let mut imp = implementation.borrow_mut();
         (&mut *imp)(ShellRequest::NewShellSurface {
-            surface: make_handle(&shell_surface, ctoken),
+            surface: make_handle(&shell_surface),
         });
     });
 }
 
-fn make_handle<R>(
-    shell_surface: &wl_shell_surface::WlShellSurface,
-    token: CompositorToken<R>,
-) -> ShellSurface<R>
-where
-    R: Role<ShellSurfaceRole> + 'static,
-{
+fn make_handle(shell_surface: &wl_shell_surface::WlShellSurface) -> ShellSurface {
     let data = shell_surface
         .as_ref()
         .user_data()
-        .get::<ShellSurfaceUserData<R>>()
+        .get::<ShellSurfaceUserData>()
         .unwrap();
     ShellSurface {
         wl_surface: data.surface.clone(),
         shell_surface: shell_surface.clone(),
-        token,
     }
 }
 
-pub(crate) struct ShellSurfaceUserData<R> {
+pub(crate) struct ShellSurfaceUserData {
     surface: wl_surface::WlSurface,
-    state: Arc<Mutex<ShellState<R>>>,
+    state: Arc<Mutex<ShellState>>,
 }
 
-fn implement_shell_surface<R, Impl>(
+fn implement_shell_surface<Impl>(
     shell_surface: Main<wl_shell_surface::WlShellSurface>,
     surface: wl_surface::WlSurface,
     implementation: Rc<RefCell<Impl>>,
-    ctoken: CompositorToken<R>,
-    state: Arc<Mutex<ShellState<R>>>,
+    state: Arc<Mutex<ShellState>>,
 ) -> wl_shell_surface::WlShellSurface
 where
-    R: Role<ShellSurfaceRole> + 'static,
-    Impl: FnMut(ShellRequest<R>) + 'static,
+    Impl: FnMut(ShellRequest) + 'static,
 {
     use self::wl_shell_surface::Request;
     shell_surface.quick_assign(move |shell_surface, req, _data| {
         let data = shell_surface
             .as_ref()
             .user_data()
-            .get::<ShellSurfaceUserData<R>>()
+            .get::<ShellSurfaceUserData>()
             .unwrap();
         let mut user_impl = implementation.borrow_mut();
         match req {
             Request::Pong { serial } => {
                 let serial = Serial::from(serial);
-                let valid = ctoken
-                    .with_role_data(&data.surface, |data| {
-                        if data.pending_ping == Some(serial) {
-                            data.pending_ping = None;
-                            true
-                        } else {
-                            false
-                        }
-                    })
-                    .expect("wl_shell_surface exists but surface has not the right role?");
+                let valid = compositor::with_states(&data.surface, |states| {
+                    let mut guard = states
+                        .data_map
+                        .get::<Mutex<ShellSurfaceAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap();
+                    if guard.pending_ping == Some(serial) {
+                        guard.pending_ping = None;
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .unwrap();
                 if valid {
                     (&mut *user_impl)(ShellRequest::Pong {
-                        surface: make_handle(&shell_surface, ctoken),
+                        surface: make_handle(&shell_surface),
                     });
                 }
             }
             Request::Move { seat, serial } => {
                 let serial = Serial::from(serial);
                 (&mut *user_impl)(ShellRequest::Move {
-                    surface: make_handle(&shell_surface, ctoken),
+                    surface: make_handle(&shell_surface),
                     serial,
                     seat,
                 })
@@ -127,18 +127,18 @@ where
             Request::Resize { seat, serial, edges } => {
                 let serial = Serial::from(serial);
                 (&mut *user_impl)(ShellRequest::Resize {
-                    surface: make_handle(&shell_surface, ctoken),
+                    surface: make_handle(&shell_surface),
                     serial,
                     seat,
                     edges,
                 })
             }
             Request::SetToplevel => (&mut *user_impl)(ShellRequest::SetKind {
-                surface: make_handle(&shell_surface, ctoken),
+                surface: make_handle(&shell_surface),
                 kind: ShellSurfaceKind::Toplevel,
             }),
             Request::SetTransient { parent, x, y, flags } => (&mut *user_impl)(ShellRequest::SetKind {
-                surface: make_handle(&shell_surface, ctoken),
+                surface: make_handle(&shell_surface),
                 kind: ShellSurfaceKind::Transient {
                     parent,
                     location: (x, y),
@@ -150,7 +150,7 @@ where
                 framerate,
                 output,
             } => (&mut *user_impl)(ShellRequest::SetKind {
-                surface: make_handle(&shell_surface, ctoken),
+                surface: make_handle(&shell_surface),
                 kind: ShellSurfaceKind::Fullscreen {
                     method,
                     framerate,
@@ -167,7 +167,7 @@ where
             } => {
                 let serial = Serial::from(serial);
                 (&mut *user_impl)(ShellRequest::SetKind {
-                    surface: make_handle(&shell_surface, ctoken),
+                    surface: make_handle(&shell_surface),
                     kind: ShellSurfaceKind::Popup {
                         parent,
                         serial,
@@ -178,18 +178,32 @@ where
                 })
             }
             Request::SetMaximized { output } => (&mut *user_impl)(ShellRequest::SetKind {
-                surface: make_handle(&shell_surface, ctoken),
+                surface: make_handle(&shell_surface),
                 kind: ShellSurfaceKind::Maximized { output },
             }),
             Request::SetTitle { title } => {
-                ctoken
-                    .with_role_data(&data.surface, |data| data.title = title)
-                    .expect("wl_shell_surface exists but surface has not shell_surface role?!");
+                compositor::with_states(&data.surface, |states| {
+                    let mut guard = states
+                        .data_map
+                        .get::<Mutex<ShellSurfaceAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap();
+                    guard.title = title;
+                })
+                .unwrap();
             }
             Request::SetClass { class_ } => {
-                ctoken
-                    .with_role_data(&data.surface, |data| data.class = class_)
-                    .expect("wl_shell_surface exists but surface has not shell_surface role?!");
+                compositor::with_states(&data.surface, |states| {
+                    let mut guard = states
+                        .data_map
+                        .get::<Mutex<ShellSurfaceAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap();
+                    guard.class = class_;
+                })
+                .unwrap();
             }
             _ => unreachable!(),
         }
@@ -200,7 +214,7 @@ where
             let data = shell_surface
                 .as_ref()
                 .user_data()
-                .get::<ShellSurfaceUserData<R>>()
+                .get::<ShellSurfaceUserData>()
                 .unwrap();
             data.state.lock().unwrap().cleanup_surfaces();
         },

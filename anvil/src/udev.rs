@@ -51,7 +51,6 @@ use smithay::{
     signaling::{Linkable, SignalToken, Signaler},
     utils::Rectangle,
     wayland::{
-        compositor::CompositorToken,
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
     },
@@ -66,9 +65,8 @@ use smithay::{
     wayland::dmabuf::init_dmabuf_global,
 };
 
-use crate::drawing::*;
-use crate::shell::{MyWindowMap, Roles};
 use crate::state::{AnvilState, Backend};
+use crate::{drawing::*, window_map::WindowMap};
 
 #[derive(Clone)]
 pub struct SessionFd(RawFd);
@@ -632,7 +630,6 @@ impl AnvilState<UdevData> {
                 crtc,
                 &mut *self.window_map.borrow_mut(),
                 &mut self.backend_data.output_map,
-                &self.ctoken,
                 &self.pointer_location,
                 &device_backend.pointer_image,
                 &*self.dnd_icon.lock().unwrap(),
@@ -678,9 +675,8 @@ fn render_surface(
     renderer: &mut Gles2Renderer,
     device_id: dev_t,
     crtc: crtc::Handle,
-    window_map: &mut MyWindowMap,
+    window_map: &mut WindowMap,
     output_map: &mut Vec<MyOutput>,
-    compositor_token: &CompositorToken<Roles>,
     pointer_location: &(f64, f64),
     pointer_image: &Gles2Texture,
     dnd_icon: &Option<wl_surface::WlSurface>,
@@ -721,7 +717,6 @@ fn render_surface(
                         width: width as i32,
                         height: height as i32,
                     }),
-                    *compositor_token,
                     logger,
                 )?;
 
@@ -736,14 +731,7 @@ fn render_surface(
                     {
                         if let Some(ref wl_surface) = dnd_icon.as_ref() {
                             if wl_surface.as_ref().is_alive() {
-                                draw_dnd_icon(
-                                    renderer,
-                                    frame,
-                                    wl_surface,
-                                    (ptr_x, ptr_y),
-                                    *compositor_token,
-                                    logger,
-                                )?;
+                                draw_dnd_icon(renderer, frame, wl_surface, (ptr_x, ptr_y), logger)?;
                             }
                         }
                     }
@@ -759,20 +747,12 @@ fn render_surface(
                         }
 
                         if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
-                            draw_cursor(
-                                renderer,
-                                frame,
-                                wl_surface,
-                                (ptr_x, ptr_y),
-                                *compositor_token,
-                                logger,
-                            )?;
+                            draw_cursor(renderer, frame, wl_surface, (ptr_x, ptr_y), logger)?;
                         } else {
                             frame.render_texture_at(pointer_image, (ptr_x, ptr_y), Transform::Normal, 1.0)?;
                         }
                     }
                 }
-
                 Ok(())
             },
         )

@@ -1,7 +1,8 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{cell::RefCell, ops::Deref as _, sync::Mutex};
 
-use crate::wayland::compositor::{roles::*, CompositorToken};
-use crate::wayland::shell::xdg::{ConfigureError, PopupState};
+use crate::wayland::compositor;
+use crate::wayland::shell::xdg::PopupState;
 use crate::wayland::Serial;
 use wayland_protocols::{
     unstable::xdg_shell::v6::server::{
@@ -15,25 +16,25 @@ use crate::utils::Rectangle;
 
 use super::{
     make_shell_client_data, PopupConfigure, PopupKind, PositionerState, ShellClient, ShellClientData,
-    ShellData, ToplevelClientPending, ToplevelConfigure, ToplevelKind, XdgPopupSurfaceRole,
-    XdgPopupSurfaceRoleAttributes, XdgRequest, XdgToplevelSurfaceRole, XdgToplevelSurfaceRoleAttributes,
+    ShellData, SurfaceCachedState, ToplevelConfigure, ToplevelKind, XdgPopupSurfaceRoleAttributes,
+    XdgRequest, XdgToplevelSurfaceRoleAttributes,
 };
 
-pub(crate) fn implement_shell<R>(
+static ZXDG_TOPLEVEL_ROLE: &str = "zxdg_toplevel";
+static ZXDG_POPUP_ROLE: &str = "zxdg_toplevel";
+
+pub(crate) fn implement_shell(
     shell: Main<zxdg_shell_v6::ZxdgShellV6>,
-    shell_data: &ShellData<R>,
-) -> zxdg_shell_v6::ZxdgShellV6
-where
-    R: Role<XdgToplevelSurfaceRole> + Role<XdgPopupSurfaceRole> + 'static,
-{
-    shell.quick_assign(|shell, req, _data| shell_implementation::<R>(req, shell.deref().clone()));
+    shell_data: &ShellData,
+) -> zxdg_shell_v6::ZxdgShellV6 {
+    shell.quick_assign(|shell, req, _data| shell_implementation(req, shell.deref().clone()));
     shell.as_ref().user_data().set(|| ShellUserData {
         shell_data: shell_data.clone(),
         client_data: Mutex::new(make_shell_client_data()),
     });
     let mut user_impl = shell_data.user_impl.borrow_mut();
     (&mut *user_impl)(XdgRequest::NewClient {
-        client: make_shell_client(&shell, shell_data.compositor_token),
+        client: make_shell_client(&shell),
     });
     shell.deref().clone()
 }
@@ -42,26 +43,19 @@ where
  * xdg_shell
  */
 
-pub(crate) struct ShellUserData<R> {
-    shell_data: ShellData<R>,
+pub(crate) struct ShellUserData {
+    shell_data: ShellData,
     pub(crate) client_data: Mutex<ShellClientData>,
 }
 
-pub(crate) fn make_shell_client<R>(
-    resource: &zxdg_shell_v6::ZxdgShellV6,
-    token: CompositorToken<R>,
-) -> ShellClient<R> {
+pub(crate) fn make_shell_client(resource: &zxdg_shell_v6::ZxdgShellV6) -> ShellClient {
     ShellClient {
         kind: super::ShellClientKind::ZxdgV6(resource.clone()),
-        _token: token,
     }
 }
 
-fn shell_implementation<R>(request: zxdg_shell_v6::Request, shell: zxdg_shell_v6::ZxdgShellV6)
-where
-    R: Role<XdgToplevelSurfaceRole> + Role<XdgPopupSurfaceRole> + 'static,
-{
-    let data = shell.as_ref().user_data().get::<ShellUserData<R>>().unwrap();
+fn shell_implementation(request: zxdg_shell_v6::Request, shell: zxdg_shell_v6::ZxdgShellV6) {
+    let data = shell.as_ref().user_data().get::<ShellUserData>().unwrap();
     match request {
         zxdg_shell_v6::Request::Destroy => {
             // all is handled by destructor
@@ -70,14 +64,13 @@ where
             implement_positioner(id);
         }
         zxdg_shell_v6::Request::GetXdgSurface { id, surface } => {
-            id.quick_assign(|surface, req, _data| {
-                xdg_surface_implementation::<R>(req, surface.deref().clone())
-            });
-            id.assign_destructor(Filter::new(|surface, _, _data| destroy_surface::<R>(surface)));
+            id.quick_assign(|surface, req, _data| xdg_surface_implementation(req, surface.deref().clone()));
+            id.assign_destructor(Filter::new(|surface, _, _data| destroy_surface(surface)));
             id.as_ref().user_data().set(|| XdgSurfaceUserData {
                 shell_data: data.shell_data.clone(),
                 wl_surface: surface,
                 shell: shell.clone(),
+                has_active_role: AtomicBool::new(false),
             });
         }
         zxdg_shell_v6::Request::Pong { serial } => {
@@ -94,7 +87,7 @@ where
             if valid {
                 let mut user_impl = data.shell_data.user_impl.borrow_mut();
                 (&mut *user_impl)(XdgRequest::ClientPong {
-                    client: make_shell_client(&shell, data.shell_data.compositor_token),
+                    client: make_shell_client(&shell),
                 });
             }
         }
@@ -185,21 +178,15 @@ fn implement_positioner(
  * xdg_surface
  */
 
-struct XdgSurfaceUserData<R> {
-    shell_data: ShellData<R>,
+struct XdgSurfaceUserData {
+    shell_data: ShellData,
     wl_surface: wl_surface::WlSurface,
     shell: zxdg_shell_v6::ZxdgShellV6,
+    has_active_role: AtomicBool,
 }
 
-fn destroy_surface<R>(surface: zxdg_surface_v6::ZxdgSurfaceV6)
-where
-    R: Role<XdgToplevelSurfaceRole> + Role<XdgPopupSurfaceRole> + 'static,
-{
-    let data = surface
-        .as_ref()
-        .user_data()
-        .get::<XdgSurfaceUserData<R>>()
-        .unwrap();
+fn destroy_surface(surface: zxdg_surface_v6::ZxdgSurfaceV6) {
+    let data = surface.as_ref().user_data().get::<XdgSurfaceUserData>().unwrap();
     if !data.wl_surface.as_ref().is_alive() {
         // the wl_surface is destroyed, this means the client is not
         // trying to change the role but it's a cleanup (possibly a
@@ -207,25 +194,12 @@ where
         return;
     }
 
-    if !data.shell_data.compositor_token.has_a_role(&data.wl_surface) {
+    if compositor::get_role(&data.wl_surface).is_none() {
         // No role assigned to the surface, we can exit early.
         return;
     }
 
-    let has_active_xdg_role = data
-        .shell_data
-        .compositor_token
-        .with_role_data(&data.wl_surface, |role: &mut XdgToplevelSurfaceRole| {
-            role.is_some()
-        })
-        .unwrap_or(false)
-        || data
-            .shell_data
-            .compositor_token
-            .with_role_data(&data.wl_surface, |role: &mut XdgPopupSurfaceRole| role.is_some())
-            .unwrap_or(false);
-
-    if has_active_xdg_role {
+    if data.has_active_role.load(Ordering::Acquire) {
         data.shell.as_ref().post_error(
             zxdg_shell_v6::Error::Role as u32,
             "xdg_surface was destroyed before its role object".into(),
@@ -233,16 +207,14 @@ where
     }
 }
 
-fn xdg_surface_implementation<R>(
+fn xdg_surface_implementation(
     request: zxdg_surface_v6::Request,
     xdg_surface: zxdg_surface_v6::ZxdgSurfaceV6,
-) where
-    R: Role<XdgToplevelSurfaceRole> + Role<XdgPopupSurfaceRole> + 'static,
-{
+) {
     let data = xdg_surface
         .as_ref()
         .user_data()
-        .get::<XdgSurfaceUserData<R>>()
+        .get::<XdgSurfaceUserData>()
         .unwrap();
     match request {
         zxdg_surface_v6::Request::Destroy => {
@@ -253,14 +225,7 @@ fn xdg_surface_implementation<R>(
             let surface = &data.wl_surface;
             let shell = &data.shell;
 
-            let role_data = XdgToplevelSurfaceRole::Some(Default::default());
-
-            if data
-                .shell_data
-                .compositor_token
-                .give_role_with(&surface, role_data)
-                .is_err()
-            {
+            if compositor::give_role(surface, ZXDG_TOPLEVEL_ROLE).is_err() {
                 shell.as_ref().post_error(
                     zxdg_shell_v6::Error::Role as u32,
                     "Surface already has a role.".into(),
@@ -268,10 +233,19 @@ fn xdg_surface_implementation<R>(
                 return;
             }
 
-            id.quick_assign(|toplevel, req, _data| {
-                toplevel_implementation::<R>(req, toplevel.deref().clone())
-            });
-            id.assign_destructor(Filter::new(|toplevel, _, _data| destroy_toplevel::<R>(toplevel)));
+            data.has_active_role.store(true, Ordering::Release);
+
+            compositor::with_states(surface, |states| {
+                states
+                    .data_map
+                    .insert_if_missing_threadsafe(|| Mutex::new(XdgToplevelSurfaceRoleAttributes::default()))
+            })
+            .unwrap();
+
+            compositor::add_commit_hook(surface, super::ToplevelSurface::commit_hook);
+
+            id.quick_assign(|toplevel, req, _data| toplevel_implementation(req, toplevel.deref().clone()));
+            id.assign_destructor(Filter::new(|toplevel, _, _data| destroy_toplevel(toplevel)));
             id.as_ref().user_data().set(|| ShellSurfaceUserData {
                 shell_data: data.shell_data.clone(),
                 wl_surface: data.wl_surface.clone(),
@@ -304,11 +278,7 @@ fn xdg_surface_implementation<R>(
                 .clone();
 
             let parent_surface = {
-                let parent_data = parent
-                    .as_ref()
-                    .user_data()
-                    .get::<XdgSurfaceUserData<R>>()
-                    .unwrap();
+                let parent_data = parent.as_ref().user_data().get::<XdgSurfaceUserData>().unwrap();
                 parent_data.wl_surface.clone()
             };
 
@@ -316,21 +286,15 @@ fn xdg_surface_implementation<R>(
             let surface = &data.wl_surface;
             let shell = &data.shell;
 
-            let role_data = XdgPopupSurfaceRole::Some(XdgPopupSurfaceRoleAttributes {
+            let attributes = XdgPopupSurfaceRoleAttributes {
                 parent: Some(parent_surface),
                 server_pending: Some(PopupState {
                     // Set the positioner data as the popup geometry
                     geometry: positioner_data.get_geometry(),
                 }),
                 ..Default::default()
-            });
-
-            if data
-                .shell_data
-                .compositor_token
-                .give_role_with(&surface, role_data)
-                .is_err()
-            {
+            };
+            if compositor::give_role(surface, ZXDG_POPUP_ROLE).is_err() {
                 shell.as_ref().post_error(
                     zxdg_shell_v6::Error::Role as u32,
                     "Surface already has a role.".into(),
@@ -338,8 +302,25 @@ fn xdg_surface_implementation<R>(
                 return;
             }
 
-            id.quick_assign(|popup, req, _data| popup_implementation::<R>(req, popup.deref().clone()));
-            id.assign_destructor(Filter::new(|popup, _, _data| destroy_popup::<R>(popup)));
+            data.has_active_role.store(true, Ordering::Release);
+
+            compositor::with_states(surface, |states| {
+                states
+                    .data_map
+                    .insert_if_missing_threadsafe(|| Mutex::new(XdgPopupSurfaceRoleAttributes::default()));
+                *states
+                    .data_map
+                    .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap() = attributes;
+            })
+            .unwrap();
+
+            compositor::add_commit_hook(surface, super::PopupSurface::commit_hook);
+
+            id.quick_assign(|popup, req, _data| popup_implementation(req, popup.deref().clone()));
+            id.assign_destructor(Filter::new(|popup, _, _data| destroy_popup(popup)));
             id.as_ref().user_data().set(|| ShellSurfaceUserData {
                 shell_data: data.shell_data.clone(),
                 wl_surface: data.wl_surface.clone(),
@@ -364,33 +345,28 @@ fn xdg_surface_implementation<R>(
             // which is a protocol error.
             let surface = &data.wl_surface;
 
-            if !data.shell_data.compositor_token.has_a_role(surface) {
-                data.shell.as_ref().post_error(
+            let role = compositor::get_role(surface);
+
+            if role.is_none() {
+                xdg_surface.as_ref().post_error(
                     zxdg_surface_v6::Error::NotConstructed as u32,
                     "xdg_surface must have a role.".into(),
                 );
                 return;
             }
 
-            // Set the next window geometry here, the geometry will be moved from
-            // next to the current geometry on a commit. This has to be done currently
-            // in anvil as the whole commit logic is implemented there until a proper
-            // abstraction has been found to handle commits within roles. This also
-            // ensures that a commit for a xdg_surface follows the rules for subsurfaces.
-            let has_wrong_role = data
-                .shell_data
-                .compositor_token
-                .with_xdg_role(surface, |role| {
-                    role.set_window_geometry(Rectangle { x, y, width, height })
-                })
-                .is_err();
-
-            if has_wrong_role {
+            if role != Some(ZXDG_TOPLEVEL_ROLE) && role != Some(ZXDG_POPUP_ROLE) {
                 data.shell.as_ref().post_error(
                     zxdg_shell_v6::Error::Role as u32,
                     "xdg_surface must have a role of xdg_toplevel or xdg_popup.".into(),
                 );
             }
+
+            compositor::with_states(surface, |states| {
+                states.cached_state.pending::<SurfaceCachedState>().geometry =
+                    Some(Rectangle { x, y, width, height });
+            })
+            .unwrap();
         }
         zxdg_surface_v6::Request::AckConfigure { serial } => {
             let serial = Serial::from(serial);
@@ -399,7 +375,7 @@ fn xdg_surface_implementation<R>(
             // Check the role of the surface, this can be either xdg_toplevel
             // or xdg_popup. If none of the role matches the xdg_surface has no role set
             // which is a protocol error.
-            if !data.shell_data.compositor_token.has_a_role(surface) {
+            if compositor::get_role(surface).is_none() {
                 data.shell.as_ref().post_error(
                     zxdg_surface_v6::Error::NotConstructed as u32,
                     "xdg_surface must have a role.".into(),
@@ -420,13 +396,31 @@ fn xdg_surface_implementation<R>(
             //
             // This can be used to integrate custom protocol extensions
             //
-            let configure = match data
-                .shell_data
-                .compositor_token
-                .with_xdg_role(surface, |role| role.ack_configure(serial))
-            {
-                Ok(Ok(configure)) => configure,
-                Ok(Err(ConfigureError::SerialNotFound(serial))) => {
+            let found_configure = compositor::with_states(surface, |states| {
+                if states.role == Some(ZXDG_TOPLEVEL_ROLE) {
+                    Ok(states
+                        .data_map
+                        .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .ack_configure(serial))
+                } else if states.role == Some(ZXDG_POPUP_ROLE) {
+                    Ok(states
+                        .data_map
+                        .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .ack_configure(serial))
+                } else {
+                    Err(())
+                }
+            })
+            .unwrap();
+            let configure = match found_configure {
+                Ok(Some(configure)) => configure,
+                Ok(None) => {
                     data.shell.as_ref().post_error(
                         zxdg_shell_v6::Error::InvalidSurfaceState as u32,
                         format!("wrong configure serial: {}", <u32>::from(serial)),
@@ -456,64 +450,54 @@ fn xdg_surface_implementation<R>(
  * xdg_toplevel
  */
 
-pub struct ShellSurfaceUserData<R> {
-    pub(crate) shell_data: ShellData<R>,
+pub struct ShellSurfaceUserData {
+    pub(crate) shell_data: ShellData,
     pub(crate) wl_surface: wl_surface::WlSurface,
     pub(crate) shell: zxdg_shell_v6::ZxdgShellV6,
     pub(crate) xdg_surface: zxdg_surface_v6::ZxdgSurfaceV6,
 }
 
 // Utility functions allowing to factor out a lot of the upcoming logic
-fn with_surface_toplevel_role_data<R, F, T>(
-    shell_data: &ShellData<R>,
-    toplevel: &zxdg_toplevel_v6::ZxdgToplevelV6,
-    f: F,
-) -> T
+fn with_surface_toplevel_role_data<F, T>(toplevel: &zxdg_toplevel_v6::ZxdgToplevelV6, f: F) -> T
 where
-    R: Role<XdgToplevelSurfaceRole> + 'static,
     F: FnOnce(&mut XdgToplevelSurfaceRoleAttributes) -> T,
 {
     let data = toplevel
         .as_ref()
         .user_data()
-        .get::<ShellSurfaceUserData<R>>()
+        .get::<ShellSurfaceUserData>()
         .unwrap();
-    shell_data
-        .compositor_token
-        .with_role_data::<XdgToplevelSurfaceRole, _, _>(&data.wl_surface, |role| {
-            let attributes = role
-                .as_mut()
-                .expect("xdg_toplevel exists but role has been destroyed?!");
-            f(attributes)
-        })
-        .expect("xdg_toplevel exists but surface has not shell_surface role?!")
-}
-
-fn with_surface_toplevel_client_pending<R, F, T>(
-    shell_data: &ShellData<R>,
-    toplevel: &zxdg_toplevel_v6::ZxdgToplevelV6,
-    f: F,
-) -> T
-where
-    R: Role<XdgToplevelSurfaceRole> + 'static,
-    F: FnOnce(&mut ToplevelClientPending) -> T,
-{
-    with_surface_toplevel_role_data(shell_data, toplevel, |data| {
-        if data.client_pending.is_none() {
-            data.client_pending = Some(Default::default());
-        }
-        f(&mut data.client_pending.as_mut().unwrap())
+    compositor::with_states(&data.wl_surface, |states| {
+        f(&mut *states
+            .data_map
+            .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+            .unwrap()
+            .lock()
+            .unwrap())
     })
+    .unwrap()
 }
 
-pub fn send_toplevel_configure<R>(resource: &zxdg_toplevel_v6::ZxdgToplevelV6, configure: ToplevelConfigure)
+fn with_toplevel_pending_state<F, T>(toplevel: &zxdg_toplevel_v6::ZxdgToplevelV6, f: F) -> T
 where
-    R: Role<XdgToplevelSurfaceRole> + 'static,
+    F: FnOnce(&mut SurfaceCachedState) -> T,
 {
+    let data = toplevel
+        .as_ref()
+        .user_data()
+        .get::<ShellSurfaceUserData>()
+        .unwrap();
+    compositor::with_states(&data.wl_surface, |states| {
+        f(&mut *states.cached_state.pending::<SurfaceCachedState>())
+    })
+    .unwrap()
+}
+
+pub fn send_toplevel_configure(resource: &zxdg_toplevel_v6::ZxdgToplevelV6, configure: ToplevelConfigure) {
     let data = resource
         .as_ref()
         .user_data()
-        .get::<ShellSurfaceUserData<R>>()
+        .get::<ShellSurfaceUserData>()
         .unwrap();
 
     let (width, height) = configure.state.size.unwrap_or((0, 0));
@@ -536,41 +520,35 @@ where
     data.xdg_surface.configure(serial.into());
 }
 
-fn make_toplevel_handle<R: 'static>(
-    resource: &zxdg_toplevel_v6::ZxdgToplevelV6,
-) -> super::ToplevelSurface<R> {
+fn make_toplevel_handle(resource: &zxdg_toplevel_v6::ZxdgToplevelV6) -> super::ToplevelSurface {
     let data = resource
         .as_ref()
         .user_data()
-        .get::<ShellSurfaceUserData<R>>()
+        .get::<ShellSurfaceUserData>()
         .unwrap();
     super::ToplevelSurface {
         wl_surface: data.wl_surface.clone(),
         shell_surface: ToplevelKind::ZxdgV6(resource.clone()),
-        token: data.shell_data.compositor_token,
     }
 }
 
-fn toplevel_implementation<R>(request: zxdg_toplevel_v6::Request, toplevel: zxdg_toplevel_v6::ZxdgToplevelV6)
-where
-    R: Role<XdgToplevelSurfaceRole> + 'static,
-{
+fn toplevel_implementation(request: zxdg_toplevel_v6::Request, toplevel: zxdg_toplevel_v6::ZxdgToplevelV6) {
     let data = toplevel
         .as_ref()
         .user_data()
-        .get::<ShellSurfaceUserData<R>>()
+        .get::<ShellSurfaceUserData>()
         .unwrap();
     match request {
         zxdg_toplevel_v6::Request::Destroy => {
             // all it done by the destructor
         }
         zxdg_toplevel_v6::Request::SetParent { parent } => {
-            with_surface_toplevel_role_data(&data.shell_data, &toplevel, |data| {
+            with_surface_toplevel_role_data(&toplevel, |data| {
                 data.parent = parent.map(|toplevel_surface_parent| {
                     let parent_data = toplevel_surface_parent
                         .as_ref()
                         .user_data()
-                        .get::<ShellSurfaceUserData<R>>()
+                        .get::<ShellSurfaceUserData>()
                         .unwrap();
                     parent_data.wl_surface.clone()
                 })
@@ -578,13 +556,13 @@ where
         }
         zxdg_toplevel_v6::Request::SetTitle { title } => {
             // Title is not double buffered, we can set it directly
-            with_surface_toplevel_role_data(&data.shell_data, &toplevel, |data| {
+            with_surface_toplevel_role_data(&toplevel, |data| {
                 data.title = Some(title);
             });
         }
         zxdg_toplevel_v6::Request::SetAppId { app_id } => {
             // AppId is not double buffered, we can set it directly
-            with_surface_toplevel_role_data(&data.shell_data, &toplevel, |role| {
+            with_surface_toplevel_role_data(&toplevel, |role| {
                 role.app_id = Some(app_id);
             });
         }
@@ -623,13 +601,13 @@ where
             });
         }
         zxdg_toplevel_v6::Request::SetMaxSize { width, height } => {
-            with_surface_toplevel_client_pending(&data.shell_data, &toplevel, |toplevel_data| {
-                toplevel_data.max_size = Some((width, height));
+            with_toplevel_pending_state(&toplevel, |toplevel_data| {
+                toplevel_data.max_size = (width, height);
             });
         }
         zxdg_toplevel_v6::Request::SetMinSize { width, height } => {
-            with_surface_toplevel_client_pending(&data.shell_data, &toplevel, |toplevel_data| {
-                toplevel_data.min_size = Some((width, height));
+            with_toplevel_pending_state(&toplevel, |toplevel_data| {
+                toplevel_data.min_size = (width, height);
             });
         }
         zxdg_toplevel_v6::Request::SetMaximized => {
@@ -666,26 +644,14 @@ where
     }
 }
 
-fn destroy_toplevel<R>(toplevel: zxdg_toplevel_v6::ZxdgToplevelV6)
-where
-    R: Role<XdgToplevelSurfaceRole> + 'static,
-{
+fn destroy_toplevel(toplevel: zxdg_toplevel_v6::ZxdgToplevelV6) {
     let data = toplevel
         .as_ref()
         .user_data()
-        .get::<ShellSurfaceUserData<R>>()
+        .get::<ShellSurfaceUserData>()
         .unwrap();
-    if !data.wl_surface.as_ref().is_alive() {
-        // the wl_surface is destroyed, this means the client is not
-        // trying to change the role but it's a cleanup (possibly a
-        // disconnecting client), ignore the protocol check.
-    } else {
-        data.shell_data
-            .compositor_token
-            .with_role_data(&data.wl_surface, |role_data| {
-                *role_data = XdgToplevelSurfaceRole::None;
-            })
-            .expect("xdg_toplevel exists but surface has not shell_surface role?!");
+    if let Some(data) = data.xdg_surface.as_ref().user_data().get::<XdgSurfaceUserData>() {
+        data.has_active_role.store(false, Ordering::Release);
     }
     // remove this surface from the known ones (as well as any leftover dead surface)
     data.shell_data
@@ -700,14 +666,11 @@ where
  * xdg_popup
  */
 
-pub(crate) fn send_popup_configure<R>(resource: &zxdg_popup_v6::ZxdgPopupV6, configure: PopupConfigure)
-where
-    R: Role<XdgPopupSurfaceRole> + 'static,
-{
+pub(crate) fn send_popup_configure(resource: &zxdg_popup_v6::ZxdgPopupV6, configure: PopupConfigure) {
     let data = resource
         .as_ref()
         .user_data()
-        .get::<ShellSurfaceUserData<R>>()
+        .get::<ShellSurfaceUserData>()
         .unwrap();
 
     let serial = configure.serial;
@@ -721,28 +684,20 @@ where
     data.xdg_surface.configure(serial.into());
 }
 
-fn make_popup_handle<R: 'static>(resource: &zxdg_popup_v6::ZxdgPopupV6) -> super::PopupSurface<R> {
+fn make_popup_handle(resource: &zxdg_popup_v6::ZxdgPopupV6) -> super::PopupSurface {
     let data = resource
         .as_ref()
         .user_data()
-        .get::<ShellSurfaceUserData<R>>()
+        .get::<ShellSurfaceUserData>()
         .unwrap();
     super::PopupSurface {
         wl_surface: data.wl_surface.clone(),
         shell_surface: PopupKind::ZxdgV6(resource.clone()),
-        token: data.shell_data.compositor_token,
     }
 }
 
-fn popup_implementation<R>(request: zxdg_popup_v6::Request, popup: zxdg_popup_v6::ZxdgPopupV6)
-where
-    R: Role<XdgPopupSurfaceRole> + 'static,
-{
-    let data = popup
-        .as_ref()
-        .user_data()
-        .get::<ShellSurfaceUserData<R>>()
-        .unwrap();
+fn popup_implementation(request: zxdg_popup_v6::Request, popup: zxdg_popup_v6::ZxdgPopupV6) {
+    let data = popup.as_ref().user_data().get::<ShellSurfaceUserData>().unwrap();
     match request {
         zxdg_popup_v6::Request::Destroy => {
             // all is handled by our destructor
@@ -761,26 +716,10 @@ where
     }
 }
 
-fn destroy_popup<R>(popup: zxdg_popup_v6::ZxdgPopupV6)
-where
-    R: Role<XdgPopupSurfaceRole> + 'static,
-{
-    let data = popup
-        .as_ref()
-        .user_data()
-        .get::<ShellSurfaceUserData<R>>()
-        .unwrap();
-    if !data.wl_surface.as_ref().is_alive() {
-        // the wl_surface is destroyed, this means the client is not
-        // trying to change the role but it's a cleanup (possibly a
-        // disconnecting client), ignore the protocol check.
-    } else {
-        data.shell_data
-            .compositor_token
-            .with_role_data(&data.wl_surface, |role_data| {
-                *role_data = XdgPopupSurfaceRole::None;
-            })
-            .expect("xdg_popup exists but surface has not shell_surface role?!");
+fn destroy_popup(popup: zxdg_popup_v6::ZxdgPopupV6) {
+    let data = popup.as_ref().user_data().get::<ShellSurfaceUserData>().unwrap();
+    if let Some(data) = data.xdg_surface.as_ref().user_data().get::<XdgSurfaceUserData>() {
+        data.has_active_role.store(false, Ordering::Release);
     }
     // remove this surface from the known ones (as well as any leftover dead surface)
     data.shell_data

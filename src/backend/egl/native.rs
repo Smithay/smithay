@@ -117,9 +117,11 @@ impl<'a> Debug for EGLPlatform<'a> {
     }
 }
 
-/// Trait describing platform specific functionality to create a valid `EGLDisplay` using the `EGL_EXT_platform_base`(https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt) extension.
+/// Trait describing platform specific functionality to create a valid `EGLDisplay` using the
+/// [`EGL_EXT_platform_base`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt) extension.
 pub trait EGLNativeDisplay: Send {
-    /// List of supported platforms that can be used to create a display using [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)
+    /// List of supported platforms that can be used to create a display using
+    /// [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)
     fn supported_platforms(&self) -> Vec<EGLPlatform<'_>>;
 
     /// Type of surfaces created

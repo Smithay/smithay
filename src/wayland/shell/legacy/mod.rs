@@ -23,37 +23,18 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this handler, simple use the [`wl_shell_init`]
-//! function provided in this module. You will need to provide it the [`CompositorToken`](crate::wayland::compositor::CompositorToken)
-//! you retrieved from an instantiation of the compositor handler provided by smithay.
+//! To initialize this handler, simple use the [`wl_shell_init`] function provided in this module.
 //!
 //! ```no_run
 //! # extern crate wayland_server;
-//! # #[macro_use] extern crate smithay;
-//! # extern crate wayland_protocols;
 //! #
-//! use smithay::wayland::compositor::roles::*;
-//! use smithay::wayland::compositor::CompositorToken;
-//! use smithay::wayland::shell::legacy::{wl_shell_init, ShellSurfaceRole, ShellRequest};
-//! # use wayland_server::protocol::{wl_seat, wl_output};
-//!
-//! // define the roles type. You need to integrate the XdgSurface role:
-//! define_roles!(MyRoles =>
-//!     [ShellSurface, ShellSurfaceRole]
-//! );
+//! use smithay::wayland::shell::legacy::{wl_shell_init, ShellRequest};
 //!
 //! # let mut display = wayland_server::Display::new();
-//! # let (compositor_token, _, _) = smithay::wayland::compositor::compositor_init::<MyRoles, _, _>(
-//! #     &mut display,
-//! #     |_, _, _, _| {},
-//! #     None
-//! # );
 //! let (shell_state, _) = wl_shell_init(
 //!     &mut display,
-//!     // token from the compositor implementation
-//!     compositor_token,
 //!     // your implementation
-//!     |event: ShellRequest<_>| { /* ... */ },
+//!     |event: ShellRequest| { /* ... */ },
 //!     None  // put a logger if you want
 //! );
 //!
@@ -66,8 +47,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::wayland::compositor::{roles::Role, CompositorToken};
-use crate::wayland::Serial;
+use crate::wayland::{compositor, Serial};
 
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface},
@@ -80,7 +60,7 @@ mod wl_handlers;
 
 /// Metadata associated with the `wl_surface` role
 #[derive(Debug)]
-pub struct ShellSurfaceRole {
+pub struct ShellSurfaceAttributes {
     /// Title of the surface
     pub title: String,
     /// Class of the surface
@@ -89,28 +69,13 @@ pub struct ShellSurfaceRole {
 }
 
 /// A handle to a shell surface
-#[derive(Debug)]
-pub struct ShellSurface<R> {
+#[derive(Debug, Clone)]
+pub struct ShellSurface {
     wl_surface: wl_surface::WlSurface,
     shell_surface: wl_shell_surface::WlShellSurface,
-    token: CompositorToken<R>,
 }
 
-// We implement Clone manually because #[derive(..)] would require R: Clone.
-impl<R> Clone for ShellSurface<R> {
-    fn clone(&self) -> Self {
-        Self {
-            wl_surface: self.wl_surface.clone(),
-            shell_surface: self.shell_surface.clone(),
-            token: self.token,
-        }
-    }
-}
-
-impl<R> ShellSurface<R>
-where
-    R: Role<ShellSurfaceRole> + 'static,
-{
+impl ShellSurface {
     /// Is the shell surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
         self.shell_surface.as_ref().is_alive() && self.wl_surface.as_ref().is_alive()
@@ -145,15 +110,20 @@ where
         if !self.alive() {
             return Err(PingError::DeadSurface);
         }
-        self.token
-            .with_role_data(&self.wl_surface, |data| {
-                if let Some(pending_ping) = data.pending_ping {
-                    return Err(PingError::PingAlreadyPending(pending_ping));
-                }
-                data.pending_ping = Some(serial);
-                Ok(())
-            })
-            .unwrap()?;
+        compositor::with_states(&self.wl_surface, |states| {
+            let mut data = states
+                .data_map
+                .get::<Mutex<ShellSurfaceAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
+            if let Some(pending_ping) = data.pending_ping {
+                return Err(PingError::PingAlreadyPending(pending_ping));
+            }
+            data.pending_ping = Some(serial);
+            Ok(())
+        })
+        .unwrap()?;
         self.shell_surface.ping(serial.into());
         Ok(())
     }
@@ -225,13 +195,13 @@ pub enum ShellSurfaceKind {
 
 /// A request triggered by a `wl_shell_surface`
 #[derive(Debug)]
-pub enum ShellRequest<R> {
+pub enum ShellRequest {
     /// A new shell surface was created
     ///
     /// by default it has no kind and this should not be displayed
     NewShellSurface {
         /// The created surface
-        surface: ShellSurface<R>,
+        surface: ShellSurface,
     },
     /// A pong event
     ///
@@ -239,14 +209,14 @@ pub enum ShellRequest<R> {
     /// event, smithay has already checked that the responded serial was valid.
     Pong {
         /// The surface that sent the pong
-        surface: ShellSurface<R>,
+        surface: ShellSurface,
     },
     /// Start of an interactive move
     ///
     /// The surface requests that an interactive move is started on it
     Move {
         /// The surface requesting the move
-        surface: ShellSurface<R>,
+        surface: ShellSurface,
         /// Serial of the implicit grab that initiated the move
         serial: Serial,
         /// Seat associated with the move
@@ -257,7 +227,7 @@ pub enum ShellRequest<R> {
     /// The surface requests that an interactive resize is started on it
     Resize {
         /// The surface requesting the resize
-        surface: ShellSurface<R>,
+        surface: ShellSurface,
         /// Serial of the implicit grab that initiated the resize
         serial: Serial,
         /// Seat associated with the resize
@@ -268,7 +238,7 @@ pub enum ShellRequest<R> {
     /// The surface changed its kind
     SetKind {
         /// The surface
-        surface: ShellSurface<R>,
+        surface: ShellSurface,
         /// Its new kind
         kind: ShellSurfaceKind,
     },
@@ -279,36 +249,31 @@ pub enum ShellRequest<R> {
 /// This state allows you to retrieve a list of surfaces
 /// currently known to the shell global.
 #[derive(Debug)]
-pub struct ShellState<R> {
-    known_surfaces: Vec<ShellSurface<R>>,
+pub struct ShellState {
+    known_surfaces: Vec<ShellSurface>,
 }
 
-impl<R> ShellState<R>
-where
-    R: Role<ShellSurfaceRole> + 'static,
-{
+impl ShellState {
     /// Cleans the internal surface storage by removing all dead surfaces
     pub(crate) fn cleanup_surfaces(&mut self) {
         self.known_surfaces.retain(|s| s.alive());
     }
 
     /// Access all the shell surfaces known by this handler
-    pub fn surfaces(&self) -> &[ShellSurface<R>] {
+    pub fn surfaces(&self) -> &[ShellSurface] {
         &self.known_surfaces[..]
     }
 }
 
 /// Create a new `wl_shell` global
-pub fn wl_shell_init<R, L, Impl>(
+pub fn wl_shell_init<L, Impl>(
     display: &mut Display,
-    ctoken: CompositorToken<R>,
     implementation: Impl,
     logger: L,
-) -> (Arc<Mutex<ShellState<R>>>, Global<wl_shell::WlShell>)
+) -> (Arc<Mutex<ShellState>>, Global<wl_shell::WlShell>)
 where
-    R: Role<ShellSurfaceRole> + 'static,
     L: Into<Option<::slog::Logger>>,
-    Impl: FnMut(ShellRequest<R>) + 'static,
+    Impl: FnMut(ShellRequest) + 'static,
 {
     let _log = crate::slog_or_fallback(logger);
 
@@ -322,7 +287,7 @@ where
     let global = display.create_global(
         1,
         Filter::new(move |(shell, _version), _, _data| {
-            self::wl_handlers::implement_shell(shell, ctoken, implementation.clone(), state2.clone());
+            self::wl_handlers::implement_shell(shell, implementation.clone(), state2.clone());
         }),
     );
 

@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, convert::TryFrom, os::unix::net::
 
 use smithay::{
     reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
-    wayland::compositor::CompositorToken,
+    wayland::compositor::give_role,
 };
 
 use x11rb::{
@@ -20,8 +20,7 @@ use x11rb::{
 };
 
 use crate::{
-    shell::{MyWindowMap, Roles},
-    window_map::Kind,
+    window_map::{Kind, WindowMap},
     AnvilState,
 };
 
@@ -37,8 +36,7 @@ impl<BackendData: 'static> AnvilState<BackendData> {
     }
 
     pub fn xwayland_ready(&mut self, connection: UnixStream, client: Client) {
-        let (wm, source) =
-            X11State::start_wm(connection, self.ctoken, self.window_map.clone(), self.log.clone()).unwrap();
+        let (wm, source) = X11State::start_wm(connection, self.window_map.clone(), self.log.clone()).unwrap();
         let wm = Rc::new(RefCell::new(wm));
         client.data_map().insert_if_missing(|| Rc::clone(&wm));
         self.handle
@@ -70,15 +68,13 @@ struct X11State {
     atoms: Atoms,
     log: slog::Logger,
     unpaired_surfaces: HashMap<u32, (Window, (i32, i32))>,
-    token: CompositorToken<Roles>,
-    window_map: Rc<RefCell<MyWindowMap>>,
+    window_map: Rc<RefCell<WindowMap>>,
 }
 
 impl X11State {
     fn start_wm(
         connection: UnixStream,
-        token: CompositorToken<Roles>,
-        window_map: Rc<RefCell<MyWindowMap>>,
+        window_map: Rc<RefCell<WindowMap>>,
         log: slog::Logger,
     ) -> Result<(Self, X11Source), Box<dyn std::error::Error>> {
         // Create an X11 connection. XWayland only uses screen 0.
@@ -123,7 +119,6 @@ impl X11State {
             conn: Rc::clone(&conn),
             atoms,
             unpaired_surfaces: Default::default(),
-            token,
             window_map,
             log,
         };
@@ -209,7 +204,7 @@ impl X11State {
     fn new_window(&mut self, window: Window, surface: WlSurface, location: (i32, i32)) {
         debug!(self.log, "Matched X11 surface {:x?} to {:x?}", window, surface);
 
-        if self.token.give_role_with(&surface, X11SurfaceRole).is_err() {
+        if give_role(&surface, "x11_surface").is_err() {
             // It makes no sense to post a protocol error here since that would only kill Xwayland
             error!(self.log, "Surface {:x?} already has a role?!", surface);
             return;
@@ -236,8 +231,6 @@ pub fn commit_hook(surface: &WlSurface) {
         }
     }
 }
-
-pub struct X11SurfaceRole;
 
 #[derive(Clone)]
 pub struct X11Surface {

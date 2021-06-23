@@ -9,21 +9,13 @@
 //!
 //! ```
 //! # extern crate wayland_server;
-//! # #[macro_use] extern crate smithay;
-//! use smithay::wayland::seat::{Seat, CursorImageRole};
-//! # use smithay::wayland::compositor::compositor_init;
-//!
-//! // You need to insert the `CursorImageRole` into your roles, to handle requests from clients
-//! // to set a surface as a cursor image
-//! define_roles!(Roles => [CursorImage, CursorImageRole]);
+//! use smithay::wayland::seat::Seat;
 //!
 //! # let mut display = wayland_server::Display::new();
-//! # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _, _| {}, None);
 //! // insert the seat:
 //! let (seat, seat_global) = Seat::new(
 //!     &mut display,             // the display
 //!     "seat-0".into(),          // the name of the seat, will be advertized to clients
-//!     compositor_token.clone(), // the compositor token
 //!     None                      // insert a logger here
 //! );
 //! ```
@@ -32,13 +24,15 @@
 //!
 //! Once the seat is initialized, you can add capabilities to it.
 //!
-//! Currently, only pointer and keyboard capabilities are supported by
-//! smithay.
+//! Currently, only pointer and keyboard capabilities are supported by smithay.
 //!
 //! You can add these capabilities via methods of the [`Seat`] struct:
-//! [`add_keyboard`](Seat::add_keyboard), [`add_pointer`](Seat::add_pointer).
+//! [`Seat::add_keyboard`] and [`Seat::add_pointer`].
 //! These methods return handles that can be cloned and sent across thread, so you can keep one around
 //! in your event-handling code to forward inputs to your clients.
+//!
+//! This module further defines the `"cursor_image"` role, that is assigned to surfaces used by clients
+//! to change the cursor icon.
 
 use std::{cell::RefCell, fmt, ops::Deref as _, rc::Rc};
 
@@ -48,12 +42,10 @@ mod pointer;
 pub use self::{
     keyboard::{keysyms, Error as KeyboardError, KeyboardHandle, Keysym, ModifiersState, XkbConfig},
     pointer::{
-        AxisFrame, CursorImageRole, CursorImageStatus, GrabStartData, PointerGrab, PointerHandle,
+        AxisFrame, CursorImageAttributes, CursorImageStatus, GrabStartData, PointerGrab, PointerHandle,
         PointerInnerHandle,
     },
 };
-
-use crate::wayland::compositor::{roles::Role, CompositorToken};
 
 use wayland_server::{
     protocol::{wl_seat, wl_surface},
@@ -130,14 +122,8 @@ impl Seat {
     /// You are provided with the state token to retrieve it (allowing
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
-    pub fn new<R, L>(
-        display: &mut Display,
-        name: String,
-        token: CompositorToken<R>,
-        logger: L,
-    ) -> (Seat, Global<wl_seat::WlSeat>)
+    pub fn new<L>(display: &mut Display, name: String, logger: L) -> (Seat, Global<wl_seat::WlSeat>)
     where
-        R: Role<CursorImageRole> + 'static,
         L: Into<Option<::slog::Logger>>,
     {
         let log = crate::slog_or_fallback(logger);
@@ -155,7 +141,7 @@ impl Seat {
         let global = display.create_global(
             5,
             Filter::new(move |(new_seat, _version), _, _| {
-                let seat = implement_seat(new_seat, arc.clone(), token);
+                let seat = implement_seat(new_seat, arc.clone());
                 let mut inner = arc.inner.borrow_mut();
                 if seat.as_ref().version() >= 2 {
                     seat.name(arc.name.clone());
@@ -197,32 +183,25 @@ impl Seat {
     ///
     /// ```
     /// # extern crate wayland_server;
-    /// # #[macro_use] extern crate smithay;
     /// #
-    /// # use smithay::wayland::{seat::{Seat, CursorImageRole}, compositor::compositor_init};
-    /// #
-    /// # define_roles!(Roles => [CursorImage, CursorImageRole]);
+    /// # use smithay::wayland::seat::Seat;
     /// #
     /// # let mut display = wayland_server::Display::new();
-    /// # let (compositor_token, _, _) = compositor_init::<Roles, _, _>(&mut display, |_, _, _, _| {}, None);
     /// # let (mut seat, seat_global) = Seat::new(
     /// #     &mut display,
     /// #     "seat-0".into(),
-    /// #     compositor_token.clone(),
     /// #     None
     /// # );
     /// let pointer_handle = seat.add_pointer(
-    ///     compositor_token.clone(),
     ///     |new_status| { /* a closure handling requests from clients tot change the cursor icon */ }
     /// );
     /// ```
-    pub fn add_pointer<R, F>(&mut self, token: CompositorToken<R>, cb: F) -> PointerHandle
+    pub fn add_pointer<F>(&mut self, cb: F) -> PointerHandle
     where
-        R: Role<CursorImageRole> + 'static,
         F: FnMut(CursorImageStatus) + 'static,
     {
         let mut inner = self.arc.inner.borrow_mut();
-        let pointer = self::pointer::create_pointer_handler(token, cb);
+        let pointer = self::pointer::create_pointer_handler(cb);
         if inner.pointer.is_some() {
             // there is already a pointer, remove it and notify the clients
             // of the change
@@ -344,21 +323,14 @@ impl ::std::cmp::PartialEq for Seat {
     }
 }
 
-fn implement_seat<R>(
-    seat: Main<wl_seat::WlSeat>,
-    arc: Rc<SeatRc>,
-    token: CompositorToken<R>,
-) -> wl_seat::WlSeat
-where
-    R: Role<CursorImageRole> + 'static,
-{
+fn implement_seat(seat: Main<wl_seat::WlSeat>, arc: Rc<SeatRc>) -> wl_seat::WlSeat {
     let dest_arc = arc.clone();
     seat.quick_assign(move |seat, request, _| {
         let arc = seat.as_ref().user_data().get::<Rc<SeatRc>>().unwrap();
         let inner = arc.inner.borrow_mut();
         match request {
             wl_seat::Request::GetPointer { id } => {
-                let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref(), token);
+                let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref());
                 if let Some(ref ptr_handle) = inner.pointer {
                     ptr_handle.new_pointer(pointer);
                 } else {

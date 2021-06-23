@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::cell::RefCell;
+use std::{cell::RefCell, sync::Mutex};
 
 use slog::Logger;
 use smithay::{
@@ -11,13 +11,15 @@ use smithay::{
     reexports::wayland_server::protocol::{wl_buffer, wl_surface},
     utils::Rectangle,
     wayland::{
-        compositor::{roles::Role, Damage, SubsurfaceRole, TraversalAction},
-        data_device::DnDIconRole,
-        seat::CursorImageRole,
+        compositor::{
+            get_role, with_states, with_surface_tree_upward, Damage, SubsurfaceCachedState,
+            SurfaceAttributes, TraversalAction,
+        },
+        seat::CursorImageAttributes,
     },
 };
 
-use crate::shell::{MyCompositorToken, MyWindowMap, SurfaceData};
+use crate::{shell::SurfaceData, window_map::WindowMap};
 
 struct BufferTextures<T> {
     buffer: Option<wl_buffer::WlBuffer>,
@@ -37,7 +39,6 @@ pub fn draw_cursor<R, E, F, T>(
     frame: &mut F,
     surface: &wl_surface::WlSurface,
     (x, y): (i32, i32),
-    token: MyCompositorToken,
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -46,9 +47,21 @@ where
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
 {
-    let (dx, dy) = match token.with_role_data::<CursorImageRole, _, _>(surface, |data| data.hotspot) {
-        Ok(h) => h,
-        Err(_) => {
+    let ret = with_states(surface, |states| {
+        Some(
+            states
+                .data_map
+                .get::<Mutex<CursorImageAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .hotspot,
+        )
+    })
+    .unwrap_or(None);
+    let (dx, dy) = match ret {
+        Some(h) => h,
+        None => {
             warn!(
                 log,
                 "Trying to display as a cursor a surface that does not have the CursorImage role."
@@ -56,7 +69,7 @@ where
             (0, 0)
         }
     };
-    draw_surface_tree(renderer, frame, surface, (x - dx, y - dy), token, log)
+    draw_surface_tree(renderer, frame, surface, (x - dx, y - dy), log)
 }
 
 fn draw_surface_tree<R, E, F, T>(
@@ -64,7 +77,6 @@ fn draw_surface_tree<R, E, F, T>(
     frame: &mut F,
     root: &wl_surface::WlSurface,
     location: (i32, i32),
-    compositor_token: MyCompositorToken,
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -75,15 +87,16 @@ where
 {
     let mut result = Ok(());
 
-    compositor_token.with_surface_tree_upward(
+    with_surface_tree_upward(
         root,
         location,
-        |_surface, attributes, role, &(mut x, mut y)| {
+        |_surface, states, &(mut x, mut y)| {
             // Pull a new buffer if available
-            if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
+            if let Some(data) = states.data_map.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
+                let attributes = states.cached_state.current::<SurfaceAttributes>();
                 if data.texture.is_none() {
-                    if let Some(buffer) = data.current_state.buffer.take() {
+                    if let Some(buffer) = data.buffer.take() {
                         let damage = attributes
                             .damage
                             .iter()
@@ -94,16 +107,18 @@ where
                             })
                             .collect::<Vec<_>>();
 
-                        match renderer.import_buffer(&buffer, Some(&attributes), &damage) {
+                        match renderer.import_buffer(&buffer, Some(states), &damage) {
                             Some(Ok(m)) => {
-                                if let Some(BufferType::Shm) = buffer_type(&buffer) {
+                                let texture_buffer = if let Some(BufferType::Shm) = buffer_type(&buffer) {
                                     buffer.release();
-                                }
+                                    None
+                                } else {
+                                    Some(buffer)
+                                };
                                 data.texture = Some(Box::new(BufferTextures {
-                                    buffer: Some(buffer),
+                                    buffer: texture_buffer,
                                     texture: m,
-                                })
-                                    as Box<dyn std::any::Any + 'static>)
+                                }))
                             }
                             Some(Err(err)) => {
                                 warn!(log, "Error loading buffer: {:?}", err);
@@ -119,9 +134,10 @@ where
                 // Now, should we be drawn ?
                 if data.texture.is_some() {
                     // if yes, also process the children
-                    if Role::<SubsurfaceRole>::has(role) {
-                        x += data.current_state.sub_location.0;
-                        y += data.current_state.sub_location.1;
+                    if states.role == Some("subsurface") {
+                        let current = states.cached_state.current::<SubsurfaceCachedState>();
+                        x += current.location.0;
+                        y += current.location.1;
                     }
                     TraversalAction::DoChildren((x, y))
                 } else {
@@ -133,10 +149,9 @@ where
                 TraversalAction::SkipChildren
             }
         },
-        |_surface, attributes, role, &(mut x, mut y)| {
-            if let Some(ref data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
+        |_surface, states, &(mut x, mut y)| {
+            if let Some(ref data) = states.data_map.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
-                let (sub_x, sub_y) = data.current_state.sub_location;
                 if let Some(texture) = data
                     .texture
                     .as_mut()
@@ -144,9 +159,10 @@ where
                 {
                     // we need to re-extract the subsurface offset, as the previous closure
                     // only passes it to our children
-                    if Role::<SubsurfaceRole>::has(role) {
-                        x += sub_x;
-                        y += sub_y;
+                    if states.role == Some("subsurface") {
+                        let current = states.cached_state.current::<SubsurfaceCachedState>();
+                        x += current.location.0;
+                        y += current.location.1;
                     }
                     if let Err(err) = frame.render_texture_at(
                         &texture.texture,
@@ -159,7 +175,7 @@ where
                 }
             }
         },
-        |_, _, _, _| true,
+        |_, _, _| true,
     );
 
     result
@@ -168,9 +184,8 @@ where
 pub fn draw_windows<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
-    window_map: &MyWindowMap,
+    window_map: &WindowMap,
     output_rect: Option<Rectangle>,
-    compositor_token: MyCompositorToken,
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -192,9 +207,7 @@ where
         }
         if let Some(wl_surface) = toplevel_surface.get_surface() {
             // this surface is a root of a subsurface tree that needs to be drawn
-            if let Err(err) =
-                draw_surface_tree(renderer, frame, &wl_surface, initial_place, compositor_token, log)
-            {
+            if let Err(err) = draw_surface_tree(renderer, frame, &wl_surface, initial_place, log) {
                 result = Err(err);
             }
         }
@@ -208,7 +221,6 @@ pub fn draw_dnd_icon<R, E, F, T>(
     frame: &mut F,
     surface: &wl_surface::WlSurface,
     (x, y): (i32, i32),
-    token: MyCompositorToken,
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -217,11 +229,11 @@ where
     E: std::error::Error + Into<SwapBuffersError>,
     T: Texture + 'static,
 {
-    if !token.has_role::<DnDIconRole>(surface) {
+    if get_role(surface) != Some("dnd_icon") {
         warn!(
             log,
             "Trying to display as a dnd icon a surface that does not have the DndIcon role."
         );
     }
-    draw_surface_tree(renderer, frame, surface, (x, y), token, log)
+    draw_surface_tree(renderer, frame, surface, (x, y), log)
 }
