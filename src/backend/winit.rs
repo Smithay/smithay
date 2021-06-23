@@ -28,6 +28,8 @@ use winit::{
     window::{Window as WinitWindow, WindowBuilder},
 };
 
+use slog::{debug, error, info, o, trace, warn};
+
 /// Errors thrown by the `winit` backends
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

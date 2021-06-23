@@ -11,6 +11,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use slog::{info, warn};
+
 #[inline(always)]
 pub fn on_device_event<F>(
     callback: &mut F,

@@ -59,6 +59,8 @@ use std::{
 
 use calloop::{EventSource, Poll, Readiness, Token};
 
+use slog::{debug, error, info, o, warn};
+
 use super::DBusConnection;
 
 struct LogindSessionImpl {

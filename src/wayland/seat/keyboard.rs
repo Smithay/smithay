@@ -1,5 +1,6 @@
 use crate::backend::input::KeyState;
 use crate::wayland::Serial;
+use slog::{debug, info, o, trace, warn};
 use std::{
     cell::RefCell,
     default::Default,

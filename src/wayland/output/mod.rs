@@ -59,6 +59,8 @@ use wayland_server::{
     Display, Filter, Global, Main,
 };
 
+use slog::{info, o, trace, warn};
+
 /// An output mode
 ///
 /// A possible combination of dimensions and refresh rate for an output.

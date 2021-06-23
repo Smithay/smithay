@@ -17,6 +17,8 @@ use crate::backend::drm::{
     error::Error,
 };
 
+use slog::{debug, info, o, trace, warn};
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {
     pub mode: Mode,

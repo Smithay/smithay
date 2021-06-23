@@ -48,7 +48,7 @@ pub mod egl {
     use libloading::Library;
     use std::sync::Once;
 
-    lazy_static! {
+    lazy_static::lazy_static! {
         pub static ref LIB: Library = unsafe { Library::new("libEGL.so.1") }.expect("Failed to load LibEGL");
     }
 

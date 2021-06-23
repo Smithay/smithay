@@ -1,3 +1,4 @@
+#[cfg(feature = "backend_session")]
 use std::cell::RefCell;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::PathBuf;
@@ -15,6 +16,8 @@ use super::surface::{atomic::AtomicDrmSurface, legacy::LegacyDrmSurface, DrmSurf
 use super::{error::Error, planes, Planes};
 use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
+
+use slog::{error, info, o, trace, warn};
 
 /// An open drm device
 pub struct DrmDevice<A: AsRawFd + 'static> {

@@ -1,6 +1,6 @@
 //! Common traits for input backends to receive input from.
 
-use std::{error::Error, string::ToString};
+use std::error::Error;
 
 /// A seat describes a group of input devices and at least one
 /// graphics device belonging together.
@@ -21,7 +21,8 @@ pub struct Seat {
 }
 
 impl Seat {
-    pub(crate) fn new<S: ToString>(id: u64, name: S, capabilities: SeatCapabilities) -> Seat {
+    #[cfg(any(feature = "backend_winit", feature = "backend_libinput"))]
+    pub(crate) fn new<S: std::string::ToString>(id: u64, name: S, capabilities: SeatCapabilities) -> Seat {
         Seat {
             id,
             name: name.to_string(),
@@ -29,6 +30,7 @@ impl Seat {
         }
     }
 
+    #[cfg(feature = "backend_libinput")]
     pub(crate) fn capabilities_mut(&mut self) -> &mut SeatCapabilities {
         &mut self.capabilities
     }
@@ -329,6 +331,7 @@ pub struct TouchSlot {
     id: u64,
 }
 
+#[cfg(any(feature = "backend_winit", feature = "backend_libinput"))]
 impl TouchSlot {
     pub(crate) fn new(id: u64) -> Self {
         TouchSlot { id }

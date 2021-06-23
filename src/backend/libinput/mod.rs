@@ -22,6 +22,8 @@ use std::{
 
 use calloop::{EventSource, Interest, Mode, Poll, Readiness, Token};
 
+use slog::{info, o};
+
 // No idea if this is the same across unix platforms
 // Lets make this linux exclusive for now, once someone tries to build it for
 // any BSD-like system, they can verify if this is right and make a PR to change this.
@@ -76,7 +78,7 @@ impl Linkable<SessionSignal> for LibinputInputBackend {
             }
             SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => {
                 if input.resume().is_err() {
-                    error!(log, "Failed to resume libinput context");
+                    slog::error!(log, "Failed to resume libinput context");
                 }
             }
             _ => {}

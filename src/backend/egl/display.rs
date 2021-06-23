@@ -26,8 +26,10 @@ use crate::backend::egl::{
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{BufferAccessError, EGLBuffer, Format};
 
+use slog::{debug, error, info, o, trace, warn};
+
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-lazy_static! {
+lazy_static::lazy_static! {
     pub(crate) static ref BUFFER_READER: Mutex<Option<WeakBufferReader>> = Mutex::new(None);
 }
 

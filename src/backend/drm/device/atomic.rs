@@ -14,6 +14,8 @@ use drm::control::{
 use super::{DevPath, FdWrapper};
 use crate::backend::drm::error::Error;
 
+use slog::{error, o, trace};
+
 type OldState = (
     Vec<(connector::Handle, PropertyValueSet)>,
     Vec<(crtc::Handle, PropertyValueSet)>,

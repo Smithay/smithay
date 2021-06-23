@@ -1,4 +1,10 @@
 #![warn(rust_2018_idioms)]
+// If no backend is enabled, a large portion of the codebase is unused.
+// So silence this useless warning for the CI.
+#![cfg_attr(
+    not(any(feature = "winit", feature = "udev")),
+    allow(dead_code, unused_imports)
+)]
 
 #[macro_use]
 extern crate slog;
@@ -57,7 +63,10 @@ fn main() {
                 crit!(log, "Failed to initialize tty backend.");
             }
         }
-        _ => {
+        Some(other) => {
+            crit!(log, "Unknown backend: {}", other);
+        }
+        None => {
             println!("USAGE: anvil --backend");
             println!();
             println!("Possible backends are:");

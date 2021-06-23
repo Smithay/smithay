@@ -37,7 +37,8 @@ use nix::libc::c_void;
 
 #[allow(non_camel_case_types, dead_code, unused_mut, non_upper_case_globals)]
 pub mod ffi;
-use self::ffi::egl::types::EGLImage;
+#[cfg(feature = "wayland_frontend")]
+use self::{display::EGLDisplayHandle, ffi::egl::types::EGLImage};
 
 pub mod display;
 pub mod native;
@@ -45,8 +46,8 @@ pub mod surface;
 pub use self::display::EGLDisplay;
 pub use self::surface::EGLSurface;
 
-use self::display::EGLDisplayHandle;
 use std::ffi::CString;
+#[cfg(feature = "wayland_frontend")]
 use std::sync::Arc;
 
 /// Error that can happen on optional EGL features

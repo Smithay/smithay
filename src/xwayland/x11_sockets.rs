@@ -3,6 +3,8 @@ use std::{
     os::unix::{io::FromRawFd, net::UnixStream},
 };
 
+use slog::{debug, info, warn};
+
 use nix::{errno::Errno, sys::socket, Error as NixError, Result as NixResult};
 
 /// Find a free X11 display slot and setup

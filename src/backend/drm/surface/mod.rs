@@ -1,3 +1,4 @@
+#[cfg(feature = "backend_session")]
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::convert::TryFrom;
@@ -18,8 +19,12 @@ use crate::backend::allocator::{Format, Fourcc, Modifier};
 use atomic::AtomicDrmSurface;
 use legacy::LegacyDrmSurface;
 
+use slog::trace;
+
 /// An open crtc + plane combination that can be used for scan-out
 pub struct DrmSurface<A: AsRawFd + 'static> {
+    // This field is only read when 'backend_session' is enabled
+    #[allow(dead_code)]
     pub(super) dev_id: dev_t,
     pub(super) crtc: crtc::Handle,
     pub(super) primary: plane::Handle,

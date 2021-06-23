@@ -56,6 +56,8 @@ use wayland_server::{
     Client, Display, Filter, Global, Main,
 };
 
+use slog::{debug, error, o};
+
 use crate::wayland::{
     compositor,
     seat::{GrabStartData, Seat},

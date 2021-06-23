@@ -14,6 +14,8 @@ use crate::backend::allocator::{
 use crate::backend::drm::{device::DevPath, surface::DrmSurfaceInternal, DrmError, DrmSurface};
 use crate::backend::SwapBuffersError;
 
+use slog::{debug, error, o, trace, warn};
+
 /// Simplified by limited abstraction to link single [`DrmSurface`]s to renderers.
 ///
 /// # Use-case

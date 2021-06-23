@@ -13,6 +13,8 @@ use std::{
     sync::{Once, RwLock},
 };
 
+use slog::{debug, trace};
+
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr::null_mut(), false)));
 
 static SIGBUS_INIT: Once = Once::new();

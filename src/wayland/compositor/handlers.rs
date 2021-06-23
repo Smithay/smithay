@@ -19,6 +19,8 @@ use super::{
     AlreadyHasRole, BufferAssignment, Damage, Rectangle, RectangleKind, RegionAttributes, SurfaceAttributes,
 };
 
+use slog::trace;
+
 /*
  * wl_compositor
  */

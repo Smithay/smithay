@@ -133,7 +133,7 @@ impl Seat {
                 keyboard: None,
                 known_seats: Vec::new(),
             }),
-            log: log.new(o!("smithay_module" => "seat_handler", "seat_name" => name.clone())),
+            log: log.new(slog::o!("smithay_module" => "seat_handler", "seat_name" => name.clone())),
             name,
             user_data: UserDataMap::new(),
         });

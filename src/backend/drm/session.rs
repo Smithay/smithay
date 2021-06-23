@@ -18,6 +18,8 @@ use crate::{
     signaling::{Linkable, Signaler},
 };
 
+use slog::{crit, error, info, o, warn};
+
 struct DrmDeviceObserver<A: AsRawFd + 'static> {
     dev_id: dev_t,
     dev: Weak<DrmDeviceInternal<A>>,

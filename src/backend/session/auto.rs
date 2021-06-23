@@ -45,6 +45,8 @@ use std::{cell::RefCell, io, os::unix::io::RawFd, path::Path, rc::Rc};
 
 use calloop::{EventSource, Poll, Readiness, Token};
 
+use slog::{error, info, o, warn};
+
 /// [`Session`] using the best available interface
 #[derive(Debug, Clone)]
 pub enum AutoSession {
