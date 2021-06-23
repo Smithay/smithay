@@ -225,7 +225,7 @@ impl Output {
     pub fn set_preferred(&self, mode: Mode) {
         let mut inner = self.inner.lock().unwrap();
         inner.preferred_mode = Some(mode);
-        if inner.modes.iter().find(|&m| *m == mode).is_none() {
+        if inner.modes.iter().all(|&m| m != mode) {
             inner.modes.push(mode);
         }
     }
@@ -233,7 +233,7 @@ impl Output {
     /// Adds a mode to the list of known modes to this output
     pub fn add_mode(&self, mode: Mode) {
         let mut inner = self.inner.lock().unwrap();
-        if inner.modes.iter().find(|&m| *m == mode).is_none() {
+        if inner.modes.iter().all(|&m| m != mode) {
             inner.modes.push(mode);
         }
     }
@@ -270,7 +270,7 @@ impl Output {
     ) {
         let mut inner = self.inner.lock().unwrap();
         if let Some(mode) = new_mode {
-            if inner.modes.iter().find(|&m| *m == mode).is_none() {
+            if inner.modes.iter().all(|&m| m != mode) {
                 inner.modes.push(mode);
             }
             inner.current_mode = new_mode;

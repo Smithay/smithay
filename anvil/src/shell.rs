@@ -9,25 +9,22 @@ use smithay::{
     reexports::{
         wayland_protocols::xdg_shell::server::xdg_toplevel,
         wayland_server::{
-            protocol::{wl_buffer, wl_callback, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
+            protocol::{wl_buffer, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
             Display,
         },
     },
     utils::Rectangle,
     wayland::{
         compositor::{
-            compositor_init, roles::Role, BufferAssignment, CompositorToken, RegionAttributes,
-            SubsurfaceRole, SurfaceEvent, TraversalAction,
+            compositor_init, is_sync_subsurface, with_states, with_surface_tree_upward, BufferAssignment,
+            SurfaceAttributes, TraversalAction,
         },
-        data_device::DnDIconRole,
-        seat::{AxisFrame, CursorImageRole, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
+        seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
         shell::{
-            legacy::{
-                wl_shell_init, ShellRequest, ShellState as WlShellState, ShellSurfaceKind, ShellSurfaceRole,
-            },
+            legacy::{wl_shell_init, ShellRequest, ShellState as WlShellState, ShellSurfaceKind},
             xdg::{
-                xdg_shell_init, Configure, ShellState as XdgShellState, XdgPopupSurfaceRole, XdgRequest,
-                XdgToplevelSurfaceRole,
+                xdg_shell_init, Configure, ShellState as XdgShellState, SurfaceCachedState, XdgRequest,
+                XdgToplevelSurfaceRoleAttributes,
             },
         },
         Serial,
@@ -39,27 +36,10 @@ use crate::{
     window_map::{Kind as SurfaceKind, PopupKind, WindowMap},
 };
 
-#[cfg(feature = "xwayland")]
-use crate::xwayland::X11SurfaceRole;
-
-define_roles!(Roles =>
-    [ XdgToplevelSurface, XdgToplevelSurfaceRole ]
-    [ XdgPopupSurface, XdgPopupSurfaceRole ]
-    [ ShellSurface, ShellSurfaceRole]
-    #[cfg(feature = "xwayland")]
-    [ X11Surface, X11SurfaceRole ]
-    [ DnDIcon, DnDIconRole ]
-    [ CursorImage, CursorImageRole ]
-);
-
-pub type MyWindowMap = WindowMap<Roles>;
-
-pub type MyCompositorToken = CompositorToken<Roles>;
-
 struct MoveSurfaceGrab {
     start_data: GrabStartData,
-    window_map: Rc<RefCell<MyWindowMap>>,
-    toplevel: SurfaceKind<Roles>,
+    window_map: Rc<RefCell<WindowMap>>,
+    toplevel: SurfaceKind,
     initial_window_location: (i32, i32),
 }
 
@@ -150,8 +130,7 @@ impl From<ResizeEdge> for xdg_toplevel::ResizeEdge {
 
 struct ResizeSurfaceGrab {
     start_data: GrabStartData,
-    ctoken: MyCompositorToken,
-    toplevel: SurfaceKind<Roles>,
+    toplevel: SurfaceKind,
     edges: ResizeEdge,
     initial_window_size: (i32, i32),
     last_window_size: (i32, i32),
@@ -197,12 +176,11 @@ impl PointerGrab for ResizeSurfaceGrab {
             new_window_height = (self.initial_window_size.1 as f64 + dy) as i32;
         }
 
-        let (min_size, max_size) =
-            self.ctoken
-                .with_surface_data(self.toplevel.get_surface().unwrap(), |attrs| {
-                    let data = attrs.user_data.get::<RefCell<SurfaceData>>().unwrap().borrow();
-                    (data.min_size, data.max_size)
-                });
+        let (min_size, max_size) = with_states(self.toplevel.get_surface().unwrap(), |states| {
+            let data = states.cached_state.current::<SurfaceCachedState>();
+            (data.min_size, data.max_size)
+        })
+        .unwrap();
 
         let min_width = min_size.0.max(1);
         let min_height = min_size.1.max(1);
@@ -224,13 +202,11 @@ impl PointerGrab for ResizeSurfaceGrab {
 
         match &self.toplevel {
             SurfaceKind::Xdg(xdg) => {
-                if xdg
-                    .with_pending_state(|state| {
-                        state.states.set(xdg_toplevel::State::Resizing);
-                        state.size = Some(self.last_window_size);
-                    })
-                    .is_ok()
-                {
+                let ret = xdg.with_pending_state(|state| {
+                    state.states.set(xdg_toplevel::State::Resizing);
+                    state.size = Some(self.last_window_size);
+                });
+                if ret.is_ok() {
                     xdg.send_configure();
                 }
             }
@@ -264,43 +240,41 @@ impl PointerGrab for ResizeSurfaceGrab {
             }
 
             if let SurfaceKind::Xdg(xdg) = &self.toplevel {
-                if xdg
-                    .with_pending_state(|state| {
-                        state.states.unset(xdg_toplevel::State::Resizing);
-                        state.size = Some(self.last_window_size);
-                    })
-                    .is_ok()
-                {
+                let ret = xdg.with_pending_state(|state| {
+                    state.states.unset(xdg_toplevel::State::Resizing);
+                    state.size = Some(self.last_window_size);
+                });
+                if ret.is_ok() {
                     xdg.send_configure();
                 }
 
-                self.ctoken
-                    .with_surface_data(self.toplevel.get_surface().unwrap(), |attrs| {
-                        let mut data = attrs
-                            .user_data
-                            .get::<RefCell<SurfaceData>>()
-                            .unwrap()
-                            .borrow_mut();
-                        if let ResizeState::Resizing(resize_data) = data.resize_state {
-                            data.resize_state = ResizeState::WaitingForFinalAck(resize_data, serial);
-                        } else {
-                            panic!("invalid resize state: {:?}", data.resize_state);
-                        }
-                    });
+                with_states(self.toplevel.get_surface().unwrap(), |states| {
+                    let mut data = states
+                        .data_map
+                        .get::<RefCell<SurfaceData>>()
+                        .unwrap()
+                        .borrow_mut();
+                    if let ResizeState::Resizing(resize_data) = data.resize_state {
+                        data.resize_state = ResizeState::WaitingForFinalAck(resize_data, serial);
+                    } else {
+                        panic!("invalid resize state: {:?}", data.resize_state);
+                    }
+                })
+                .unwrap();
             } else {
-                self.ctoken
-                    .with_surface_data(self.toplevel.get_surface().unwrap(), |attrs| {
-                        let mut data = attrs
-                            .user_data
-                            .get::<RefCell<SurfaceData>>()
-                            .unwrap()
-                            .borrow_mut();
-                        if let ResizeState::Resizing(resize_data) = data.resize_state {
-                            data.resize_state = ResizeState::WaitingForCommit(resize_data);
-                        } else {
-                            panic!("invalid resize state: {:?}", data.resize_state);
-                        }
-                    });
+                with_states(self.toplevel.get_surface().unwrap(), |states| {
+                    let mut data = states
+                        .data_map
+                        .get::<RefCell<SurfaceData>>()
+                        .unwrap()
+                        .borrow_mut();
+                    if let ResizeState::Resizing(resize_data) = data.resize_state {
+                        data.resize_state = ResizeState::WaitingForCommit(resize_data);
+                    } else {
+                        panic!("invalid resize state: {:?}", data.resize_state);
+                    }
+                })
+                .unwrap();
             }
         }
     }
@@ -316,34 +290,30 @@ impl PointerGrab for ResizeSurfaceGrab {
 
 #[derive(Clone)]
 pub struct ShellHandles {
-    pub token: CompositorToken<Roles>,
-    pub xdg_state: Arc<Mutex<XdgShellState<Roles>>>,
-    pub wl_state: Arc<Mutex<WlShellState<Roles>>>,
-    pub window_map: Rc<RefCell<MyWindowMap>>,
+    pub xdg_state: Arc<Mutex<XdgShellState>>,
+    pub wl_state: Arc<Mutex<WlShellState>>,
+    pub window_map: Rc<RefCell<WindowMap>>,
 }
 
 pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logger) -> ShellHandles {
     // Create the compositor
-    let (compositor_token, _, _) = compositor_init(
+    compositor_init(
         display,
-        move |request, surface, ctoken, mut ddata| match request {
-            SurfaceEvent::Commit => {
-                let anvil_state = ddata.get::<AnvilState<BackendData>>().unwrap();
-                let window_map = anvil_state.window_map.as_ref();
-                surface_commit(&surface, ctoken, &*window_map)
-            }
+        move |surface, mut ddata| {
+            let anvil_state = ddata.get::<AnvilState<BackendData>>().unwrap();
+            let window_map = anvil_state.window_map.as_ref();
+            surface_commit(&surface, &*window_map)
         },
         log.clone(),
     );
 
     // Init a window map, to track the location of our windows
-    let window_map = Rc::new(RefCell::new(WindowMap::new(compositor_token)));
+    let window_map = Rc::new(RefCell::new(WindowMap::new()));
 
     // init the xdg_shell
     let xdg_window_map = window_map.clone();
     let (xdg_shell_state, _, _) = xdg_shell_init(
         display,
-        compositor_token,
         move |shell_event| match shell_event {
             XdgRequest::NewToplevel { surface } => {
                 // place the window at a random location in the [0;800]x[0;800] square
@@ -441,9 +411,9 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
                 let geometry = xdg_window_map.borrow().geometry(&toplevel).unwrap();
                 let initial_window_size = (geometry.width, geometry.height);
 
-                compositor_token.with_surface_data(surface.get_surface().unwrap(), move |attrs| {
-                    attrs
-                        .user_data
+                with_states(surface.get_surface().unwrap(), move |states| {
+                    states
+                        .data_map
                         .get::<RefCell<SurfaceData>>()
                         .unwrap()
                         .borrow_mut()
@@ -452,11 +422,11 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
                         initial_window_location,
                         initial_window_size,
                     });
-                });
+                })
+                .unwrap();
 
                 let grab = ResizeSurfaceGrab {
                     start_data,
-                    ctoken: compositor_token,
                     toplevel,
                     edges: edges.into(),
                     initial_window_size,
@@ -466,93 +436,86 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
                 pointer.set_grab(grab, serial);
             }
             XdgRequest::AckConfigure {
-                surface, configure, ..
+                surface,
+                configure: Configure::Toplevel(configure),
+                ..
             } => {
-                if let Configure::Toplevel(configure) = configure {
-                    let waiting_for_serial = compositor_token.with_surface_data(&surface, |attrs| {
-                        if let Some(data) = attrs.user_data.get::<RefCell<SurfaceData>>() {
-                            if let ResizeState::WaitingForFinalAck(_, serial) = data.borrow().resize_state {
-                                return Some(serial);
+                let waiting_for_serial = with_states(&surface, |states| {
+                    if let Some(data) = states.data_map.get::<RefCell<SurfaceData>>() {
+                        if let ResizeState::WaitingForFinalAck(_, serial) = data.borrow().resize_state {
+                            return Some(serial);
+                        }
+                    }
+
+                    None
+                })
+                .unwrap();
+
+                if let Some(serial) = waiting_for_serial {
+                    if configure.serial > serial {
+                        // TODO: huh, we have missed the serial somehow.
+                        // this should not happen, but it may be better to handle
+                        // this case anyway
+                    }
+
+                    if serial == configure.serial
+                        && configure.state.states.contains(xdg_toplevel::State::Resizing)
+                    {
+                        with_states(&surface, |states| {
+                            let mut data = states
+                                .data_map
+                                .get::<RefCell<SurfaceData>>()
+                                .unwrap()
+                                .borrow_mut();
+                            if let ResizeState::WaitingForFinalAck(resize_data, _) = data.resize_state {
+                                data.resize_state = ResizeState::WaitingForCommit(resize_data);
+                            } else {
+                                unreachable!()
                             }
-                        }
-
-                        None
-                    });
-
-                    if let Some(serial) = waiting_for_serial {
-                        if configure.serial > serial {
-                            // TODO: huh, we have missed the serial somehow.
-                            // this should not happen, but it may be better to handle
-                            // this case anyway
-                        }
-
-                        if serial == configure.serial {
-                            if configure.state.states.contains(xdg_toplevel::State::Resizing) {
-                                compositor_token.with_surface_data(&surface, |attrs| {
-                                    let mut data = attrs
-                                        .user_data
-                                        .get::<RefCell<SurfaceData>>()
-                                        .unwrap()
-                                        .borrow_mut();
-                                    if let ResizeState::WaitingForFinalAck(resize_data, _) = data.resize_state
-                                    {
-                                        data.resize_state = ResizeState::WaitingForCommit(resize_data);
-                                    } else {
-                                        unreachable!()
-                                    }
-                                })
-                            }
-                        }
+                        })
+                        .unwrap();
                     }
                 }
             }
             XdgRequest::Fullscreen { surface, output, .. } => {
-                if surface
-                    .with_pending_state(|state| {
-                        // TODO: Use size of current output the window is on and set position to (0,0)
-                        state.states.set(xdg_toplevel::State::Fullscreen);
-                        state.size = Some((800, 600));
-                        // TODO: If the provided output is None, use the output where
-                        // the toplevel is currently shown
-                        state.fullscreen_output = output;
-                    })
-                    .is_ok()
-                {
+                let ret = surface.with_pending_state(|state| {
+                    // TODO: Use size of current output the window is on and set position to (0,0)
+                    state.states.set(xdg_toplevel::State::Fullscreen);
+                    state.size = Some((800, 600));
+                    // TODO: If the provided output is None, use the output where
+                    // the toplevel is currently shown
+                    state.fullscreen_output = output;
+                });
+                if ret.is_ok() {
                     surface.send_configure();
                 }
             }
             XdgRequest::UnFullscreen { surface } => {
-                if surface
-                    .with_pending_state(|state| {
-                        state.states.unset(xdg_toplevel::State::Fullscreen);
-                        state.size = None;
-                        state.fullscreen_output = None;
-                    })
-                    .is_ok()
-                {
+                let ret = surface.with_pending_state(|state| {
+                    state.states.unset(xdg_toplevel::State::Fullscreen);
+                    state.size = None;
+                    state.fullscreen_output = None;
+                });
+                if ret.is_ok() {
                     surface.send_configure();
                 }
             }
             XdgRequest::Maximize { surface } => {
-                if surface
-                    .with_pending_state(|state| {
-                        // TODO: Use size of current output the window is on and set position to (0,0)
-                        state.states.set(xdg_toplevel::State::Maximized);
-                        state.size = Some((800, 600));
-                    })
-                    .is_ok()
-                {
+                let ret = surface.with_pending_state(|state| {
+                    // TODO: Use size of current output the window is on and set position to (0,0)
+                    state.states.set(xdg_toplevel::State::Maximized);
+                    state.size = Some((800, 600));
+                });
+                if ret.is_ok() {
                     surface.send_configure();
                 }
             }
             XdgRequest::UnMaximize { surface } => {
-                if surface
-                    .with_pending_state(|state| {
-                        state.states.unset(xdg_toplevel::State::Maximized);
-                        state.size = None;
-                    })
-                    .is_ok()
-                {
+                let ret = surface.with_pending_state(|state| {
+                    state.states.unset(xdg_toplevel::State::Maximized);
+                    state.size = None;
+                });
+                if ret.is_ok() {
                     surface.send_configure();
                 }
             }
@@ -565,8 +528,7 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
     let shell_window_map = window_map.clone();
     let (wl_shell_state, _) = wl_shell_init(
         display,
-        compositor_token,
-        move |req: ShellRequest<_>| {
+        move |req: ShellRequest| {
             match req {
                 ShellRequest::SetKind {
                     surface,
@@ -658,9 +620,9 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
                     let geometry = shell_window_map.borrow().geometry(&toplevel).unwrap();
                     let initial_window_size = (geometry.width, geometry.height);
 
-                    compositor_token.with_surface_data(surface.get_surface().unwrap(), move |attrs| {
-                        attrs
-                            .user_data
+                    with_states(surface.get_surface().unwrap(), move |states| {
+                        states
+                            .data_map
                             .get::<RefCell<SurfaceData>>()
                             .unwrap()
                             .borrow_mut()
@@ -669,11 +631,11 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
                             initial_window_location,
                             initial_window_size,
                         });
-                    });
+                    })
+                    .unwrap();
 
                     let grab = ResizeSurfaceGrab {
                         start_data,
-                        ctoken: compositor_token,
                         toplevel,
                         edges: edges.into(),
                         initial_window_size,
@@ -689,7 +651,6 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
     );
 
     ShellHandles {
-        token: compositor_token,
         xdg_state: xdg_shell_state,
         wl_state: wl_shell_state,
         window_map,
@@ -726,82 +687,43 @@ impl Default for ResizeState {
     }
 }
 
-#[derive(Default, Clone)]
-pub struct CommitedState {
-    pub buffer: Option<wl_buffer::WlBuffer>,
-    pub input_region: Option<RegionAttributes>,
-    pub dimensions: Option<(i32, i32)>,
-    pub frame_callbacks: Vec<wl_callback::WlCallback>,
-    pub sub_location: (i32, i32),
-}
-
 #[derive(Default)]
 pub struct SurfaceData {
+    pub buffer: Option<wl_buffer::WlBuffer>,
     pub texture: Option<Box<dyn std::any::Any + 'static>>,
     pub geometry: Option<Rectangle>,
     pub resize_state: ResizeState,
-    /// Minimum width and height, as requested by the surface.
-    ///
-    /// `0` means unlimited.
-    pub min_size: (i32, i32),
-    /// Maximum width and height, as requested by the surface.
-    ///
-    /// `0` means unlimited.
-    pub max_size: (i32, i32),
-    pub current_state: CommitedState,
-    pub cached_state: Option<CommitedState>,
+    pub dimensions: Option<(i32, i32)>,
 }
 
 impl SurfaceData {
-    /// Apply a next state into the surface current state
-    pub fn apply_state(&mut self, next_state: CommitedState) {
-        if Self::merge_state(&mut self.current_state, next_state) {
-            let _ = self.texture.take();
-        }
-    }
-
-    /// Apply a next state into the cached state
-    pub fn apply_cache(&mut self, next_state: CommitedState) {
-        match self.cached_state {
-            Some(ref mut cached) => {
-                Self::merge_state(cached, next_state);
+    pub fn update_buffer(&mut self, attrs: &mut SurfaceAttributes) {
+        match attrs.buffer.take() {
+            Some(BufferAssignment::NewBuffer { buffer, .. }) => {
+                // new contents
+                self.dimensions = buffer_dimensions(&buffer);
+                if let Some(old_buffer) = std::mem::replace(&mut self.buffer, Some(buffer)) {
+                    old_buffer.release();
+                }
+                self.texture = None;
             }
-            None => self.cached_state = Some(next_state),
-        }
-    }
-
-    /// Apply the current cached state if any
-    pub fn apply_from_cache(&mut self) {
-        if let Some(cached) = self.cached_state.take() {
-            self.apply_state(cached);
-        }
-    }
-
-    // merge the "next" state into the "into" state
-    //
-    // returns true if the texture cache should be invalidated
-    fn merge_state(into: &mut CommitedState, next: CommitedState) -> bool {
-        // release the previous buffer if relevant
-        let new_buffer = into.buffer != next.buffer;
-        if new_buffer {
-            if let Some(buffer) = into.buffer.take() {
-                buffer.release();
+            Some(BufferAssignment::Removed) => {
+                // remove the contents
+                self.buffer = None;
+                self.dimensions = None;
+                self.texture = None;
             }
+            None => {}
         }
-
-        *into = next;
-        new_buffer
     }
-}
 
-impl SurfaceData {
     /// Returns the size of the surface.
     pub fn size(&self) -> Option<(i32, i32)> {
-        self.current_state.dimensions
+        self.dimensions
     }
 
     /// Checks if the surface's input region contains the point.
-    pub fn contains_point(&self, point: (f64, f64)) -> bool {
+    pub fn contains_point(&self, attrs: &SurfaceAttributes, point: (f64, f64)) -> bool {
         let (w, h) = match self.size() {
             None => return false, // If the surface has no size, it can't have an input region.
             Some(wh) => wh,
@@ -823,170 +745,73 @@ impl SurfaceData {
         }
 
         // If there's no input region, we're done.
-        if self.current_state.input_region.is_none() {
+        if attrs.input_region.is_none() {
             return true;
         }
 
-        self.current_state.input_region.as_ref().unwrap().contains(point)
+        attrs.input_region.as_ref().unwrap().contains(point)
     }
 
     /// Send the frame callback if it had been requested
-    pub fn send_frame(&mut self, time: u32) {
-        for callback in self.current_state.frame_callbacks.drain(..) {
+    pub fn send_frame(attrs: &mut SurfaceAttributes, time: u32) {
+        for callback in attrs.frame_callbacks.drain(..) {
             callback.done(time);
         }
     }
 }
 
-fn surface_commit(
-    surface: &wl_surface::WlSurface,
-    token: CompositorToken<Roles>,
-    window_map: &RefCell<MyWindowMap>,
-) {
+fn surface_commit(surface: &wl_surface::WlSurface, window_map: &RefCell<WindowMap>) {
     #[cfg(feature = "xwayland")]
     super::xwayland::commit_hook(surface);
 
-    let mut geometry = None;
-    let mut min_size = (0, 0);
-    let mut max_size = (0, 0);
+    let mut window_map = window_map.borrow_mut();
 
-    if token.has_role::<XdgToplevelSurfaceRole>(surface) {
-        if let Some(SurfaceKind::Xdg(xdg)) = window_map.borrow().find(surface) {
-            xdg.commit();
-        }
-
-        token
-            .with_role_data(surface, |role: &mut XdgToplevelSurfaceRole| {
-                if let XdgToplevelSurfaceRole::Some(attributes) = role {
-                    geometry = attributes.window_geometry;
-                    min_size = attributes.min_size;
-                    max_size = attributes.max_size;
-                }
-            })
-            .unwrap();
-    }
-
-    if token.has_role::<XdgPopupSurfaceRole>(surface) {
-        if let Some(PopupKind::Xdg(xdg)) = window_map.borrow().find_popup(&surface) {
-            xdg.commit();
-        }
-
-        token
-            .with_role_data(surface, |role: &mut XdgPopupSurfaceRole| {
-                if let XdgPopupSurfaceRole::Some(attributes) = role {
-                    geometry = attributes.window_geometry;
-                }
-            })
-            .unwrap();
-    }
-
-    let sub_data = token
-        .with_role_data(surface, |&mut role: &mut SubsurfaceRole| role)
-        .ok();
-
-    let (refresh, apply_children) = token.with_surface_data(surface, |attributes| {
-        attributes
-            .user_data
-            .insert_if_missing(|| RefCell::new(SurfaceData::default()));
-        let mut data = attributes
-            .user_data
-            .get::<RefCell<SurfaceData>>()
-            .unwrap()
-            .borrow_mut();
-
-        let mut next_state = match data.cached_state {
-            // There is a pending state, accumulate into it
-            Some(ref cached_state) => cached_state.clone(),
-            // Start from the current state
-            None => data.current_state.clone(),
-        };
-
-        if let Some(ref data) = sub_data {
-            next_state.sub_location = data.location;
-        }
-
-        data.geometry = geometry;
-        next_state.input_region = attributes.input_region.clone();
-        data.min_size = min_size;
-        data.max_size = max_size;
-
-        // we retrieve the contents of the associated buffer and copy it
-        match attributes.buffer.take() {
-            Some(BufferAssignment::NewBuffer { buffer, .. }) => {
-                // new contents
-                next_state.dimensions = buffer_dimensions(&buffer);
-                next_state.buffer = Some(buffer);
-            }
-            Some(BufferAssignment::Removed) => {
-                // remove the contents
-                next_state.buffer = None;
-                next_state.dimensions = None;
-            }
-            None => {}
-        }
-
-        // Append the current frame callbacks to the next state
-        next_state
-            .frame_callbacks
-            .extend(attributes.frame_callbacks.drain(..));
-
-        data.apply_cache(next_state);
-
-        let apply_children = if let Some(SubsurfaceRole { sync: true, .. }) = sub_data {
-            false
-        } else {
-            data.apply_from_cache();
-            true
-        };
-
-        (window_map.borrow().find(surface), apply_children)
-    });
-
-    // Apply the cached state of all sync children
-    if apply_children {
-        token.with_surface_tree_upward(
+    if !is_sync_subsurface(surface) {
+        // Update the buffer of all child surfaces
+        with_surface_tree_upward(
             surface,
-            true,
-            |_, _, role, &is_root| {
-                // only process children if the surface is sync or we are the root
-                if is_root {
-                    // we are the root
-                    TraversalAction::DoChildren(false)
-                } else if let Ok(sub_data) = Role::<SubsurfaceRole>::data(role) {
-                    if sub_data.sync || is_root {
-                        TraversalAction::DoChildren(false)
-                    } else {
-                        // if we are not sync, we won't apply from cache and don't process
-                        // the children
-                        TraversalAction::SkipChildren
-                    }
-                } else {
-                    unreachable!();
-                }
+            (),
+            |_, _, _| TraversalAction::DoChildren(()),
+            |_, states, _| {
+                states
+                    .data_map
+                    .insert_if_missing(|| RefCell::new(SurfaceData::default()));
+                let mut data = states
+                    .data_map
+                    .get::<RefCell<SurfaceData>>()
+                    .unwrap()
+                    .borrow_mut();
+                data.update_buffer(&mut *states.cached_state.current::<SurfaceAttributes>());
             },
-            |_, attributes, role, _| {
-                // only apply from cache if we are a sync subsurface
-                if let Ok(sub_data) = Role::<SubsurfaceRole>::data(role) {
-                    if sub_data.sync {
-                        if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
-                            data.borrow_mut().apply_from_cache();
-                        }
-                    }
-                }
-            },
-            |_, _, _, _| true,
-        )
+            |_, _, _| true,
+        );
     }
 
-    if let Some(toplevel) = refresh {
-        let mut window_map = window_map.borrow_mut();
+    if let Some(toplevel) = window_map.find(surface) {
+        // send the initial configure if relevant
+        if let SurfaceKind::Xdg(ref toplevel) = toplevel {
+            let initial_configure_sent = with_states(surface, |states| {
+                states
+                    .data_map
+                    .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .initial_configure_sent
+            })
+            .unwrap();
+            if !initial_configure_sent {
+                toplevel.send_configure();
+            }
+        }
+
         window_map.refresh_toplevel(&toplevel);
         // Get the geometry outside since it uses the token, and so would block inside.
         let Rectangle { width, height, .. } = window_map.geometry(&toplevel).unwrap();
 
-        let new_location = token.with_surface_data(surface, |attributes| {
-            let mut data = attributes
-                .user_data
+        let new_location = with_states(surface, |states| {
+            let mut data = states
+                .data_map
                 .get::<RefCell<SurfaceData>>()
                 .unwrap()
                 .borrow_mut();
@@ -1027,7 +852,8 @@ fn surface_commit(
             }
 
             new_location
-        });
+        })
+        .unwrap();
 
         if let Some(location) = new_location {
             window_map.set_location(&toplevel, location);

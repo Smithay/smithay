@@ -4,10 +4,10 @@ use smithay::{
     reexports::wayland_server::protocol::wl_surface,
     utils::Rectangle,
     wayland::{
-        compositor::{roles::Role, CompositorToken, SubsurfaceRole, TraversalAction},
+        compositor::{with_states, with_surface_tree_downward, SubsurfaceCachedState, TraversalAction},
         shell::{
-            legacy::{ShellSurface, ShellSurfaceRole},
-            xdg::{PopupSurface, ToplevelSurface, XdgPopupSurfaceRole, XdgToplevelSurfaceRole},
+            legacy::ShellSurface,
+            xdg::{PopupSurface, SurfaceCachedState, ToplevelSurface},
         },
     },
 };
@@ -16,29 +16,15 @@ use crate::shell::SurfaceData;
 #[cfg(feature = "xwayland")]
 use crate::xwayland::X11Surface;
 
-pub enum Kind<R> {
-    Xdg(ToplevelSurface<R>),
-    Wl(ShellSurface<R>),
+#[derive(Clone)]
+pub enum Kind {
+    Xdg(ToplevelSurface),
+    Wl(ShellSurface),
     #[cfg(feature = "xwayland")]
     X11(X11Surface),
 }
 
-// We implement Clone manually because #[derive(..)] would require R: Clone.
-impl<R> Clone for Kind<R> {
-    fn clone(&self) -> Self {
-        match self {
-            Kind::Xdg(xdg) => Kind::Xdg(xdg.clone()),
-            Kind::Wl(wl) => Kind::Wl(wl.clone()),
-            #[cfg(feature = "xwayland")]
-            Kind::X11(x11) => Kind::X11(x11.clone()),
-        }
-    }
-}
-
-impl<R> Kind<R>
-where
-    R: Role<SubsurfaceRole> + Role<XdgToplevelSurfaceRole> + Role<ShellSurfaceRole> + 'static,
-{
+impl Kind {
     pub fn alive(&self) -> bool {
         match *self {
             Kind::Xdg(ref t) => t.alive(),
@@ -68,23 +54,12 @@ where
     }
 }
 
-pub enum PopupKind<R> {
-    Xdg(PopupSurface<R>),
+#[derive(Clone)]
+pub enum PopupKind {
+    Xdg(PopupSurface),
 }
 
-// We implement Clone manually because #[derive(..)] would require R: Clone.
-impl<R> Clone for PopupKind<R> {
-    fn clone(&self) -> Self {
-        match self {
-            PopupKind::Xdg(xdg) => PopupKind::Xdg(xdg.clone()),
-        }
-    }
-}
-
-impl<R> PopupKind<R>
-where
-    R: Role<XdgPopupSurfaceRole> + 'static,
-{
+impl PopupKind {
     pub fn alive(&self) -> bool {
         match *self {
             PopupKind::Xdg(ref t) => t.alive(),
@@ -97,56 +72,53 @@ where
     }
 }
 
-struct Window<R> {
+struct Window {
     location: (i32, i32),
     /// A bounding box over this window and its children.
     ///
     /// Used for the fast path of the check in `matching`, and as the fall-back for the window
     /// geometry if that's not set explicitly.
     bbox: Rectangle,
-    toplevel: Kind<R>,
+    toplevel: Kind,
 }
 
-impl<R> Window<R>
-where
-    R: Role<SubsurfaceRole> + Role<XdgToplevelSurfaceRole> + Role<ShellSurfaceRole> + 'static,
-{
+impl Window {
     /// Finds the topmost surface under this point if any and returns it together with the location of this
     /// surface.
-    fn matching(
-        &self,
-        point: (f64, f64),
-        ctoken: CompositorToken<R>,
-    ) -> Option<(wl_surface::WlSurface, (f64, f64))> {
+    fn matching(&self, point: (f64, f64)) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         if !self.bbox.contains((point.0 as i32, point.1 as i32)) {
             return None;
         }
         // need to check more carefully
         let found = RefCell::new(None);
         if let Some(wl_surface) = self.toplevel.get_surface() {
-            ctoken.with_surface_tree_downward(
+            with_surface_tree_downward(
                 wl_surface,
                 self.location,
-                |wl_surface, attributes, role, &(mut x, mut y)| {
-                    let data = attributes.user_data.get::<RefCell<SurfaceData>>();
+                |wl_surface, states, &(mut x, mut y)| {
+                    let data = states.data_map.get::<RefCell<SurfaceData>>();
 
-                    if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                        x += subdata.location.0;
-                        y += subdata.location.1;
+                    if states.role == Some("subsurface") {
+                        let current = states.cached_state.current::<SubsurfaceCachedState>();
+                        x += current.location.0;
+                        y += current.location.1;
                     }
 
                     let surface_local_point = (point.0 - x as f64, point.1 - y as f64);
-                    if data
-                        .map(|data| data.borrow().contains_point(surface_local_point))
-                        .unwrap_or(false)
-                    {
+                    let contains_the_point = data
+                        .map(|data| {
+                            data.borrow()
+                                .contains_point(&*states.cached_state.current(), surface_local_point)
+                        })
+                        .unwrap_or(false);
+                    if contains_the_point {
                         *found.borrow_mut() = Some((wl_surface.clone(), (x as f64, y as f64)));
                     }
 
                     TraversalAction::DoChildren((x, y))
                 },
-                |_, _, _, _| {},
-                |_, _, _, _| {
+                |_, _, _| {},
+                |_, _, _| {
                     // only continue if the point is not found
                     found.borrow().is_none()
                 },
@@ -155,20 +127,21 @@ where
         found.into_inner()
     }
 
-    fn self_update(&mut self, ctoken: CompositorToken<R>) {
+    fn self_update(&mut self) {
         let (base_x, base_y) = self.location;
         let (mut min_x, mut min_y, mut max_x, mut max_y) = (base_x, base_y, base_x, base_y);
         if let Some(wl_surface) = self.toplevel.get_surface() {
-            ctoken.with_surface_tree_downward(
+            with_surface_tree_downward(
                 wl_surface,
                 (base_x, base_y),
-                |_, attributes, role, &(mut x, mut y)| {
-                    let data = attributes.user_data.get::<RefCell<SurfaceData>>();
+                |_, states, &(mut x, mut y)| {
+                    let data = states.data_map.get::<RefCell<SurfaceData>>();
 
                     if let Some((w, h)) = data.and_then(|d| d.borrow().size()) {
-                        if let Ok(subdata) = Role::<SubsurfaceRole>::data(role) {
-                            x += subdata.location.0;
-                            y += subdata.location.1;
+                        if states.role == Some("subsurface") {
+                            let current = states.cached_state.current::<SubsurfaceCachedState>();
+                            x += current.location.0;
+                            y += current.location.1;
                         }
 
                         // Update the bounding box.
@@ -184,8 +157,8 @@ where
                         TraversalAction::SkipChildren
                     }
                 },
-                |_, _, _, _| {},
-                |_, _, _, _| true,
+                |_, _, _| {},
+                |_, _, _| true,
             );
         }
         self.bbox = Rectangle {
@@ -197,85 +170,69 @@ where
     }
 
     /// Returns the geometry of this window.
-    pub fn geometry(&self, ctoken: CompositorToken<R>) -> Rectangle {
+    pub fn geometry(&self) -> Rectangle {
         // It's the set geometry with the full bounding box as the fallback.
-        ctoken
-            .with_surface_data(self.toplevel.get_surface().unwrap(), |attributes| {
-                attributes
-                    .user_data
-                    .get::<RefCell<SurfaceData>>()
-                    .unwrap()
-                    .borrow()
-                    .geometry
-            })
-            .unwrap_or(self.bbox)
+        with_states(self.toplevel.get_surface().unwrap(), |states| {
+            states.cached_state.current::<SurfaceCachedState>().geometry
+        })
+        .unwrap()
+        .unwrap_or(self.bbox)
     }
 
     /// Sends the frame callback to all the subsurfaces in this
     /// window that requested it
-    pub fn send_frame(&self, time: u32, ctoken: CompositorToken<R>) {
+    pub fn send_frame(&self, time: u32) {
         if let Some(wl_surface) = self.toplevel.get_surface() {
-            ctoken.with_surface_tree_downward(
+            with_surface_tree_downward(
                 wl_surface,
                 (),
-                |_, _, _, &()| TraversalAction::DoChildren(()),
-                |_, attributes, _, &()| {
+                |_, _, &()| TraversalAction::DoChildren(()),
+                |_, states, &()| {
                     // the surface may not have any user_data if it is a subsurface and has not
                     // yet been commited
-                    if let Some(data) = attributes.user_data.get::<RefCell<SurfaceData>>() {
-                        data.borrow_mut().send_frame(time)
-                    }
+                    SurfaceData::send_frame(&mut *states.cached_state.current(), time)
                 },
-                |_, _, _, &()| true,
+                |_, _, &()| true,
             );
         }
     }
 }
 
-pub struct Popup<R> {
-    popup: PopupKind<R>,
+pub struct Popup {
+    popup: PopupKind,
 }
 
-pub struct WindowMap<R> {
-    ctoken: CompositorToken<R>,
-    windows: Vec<Window<R>>,
-    popups: Vec<Popup<R>>,
+pub struct WindowMap {
+    windows: Vec<Window>,
+    popups: Vec<Popup>,
 }
 
-impl<R> WindowMap<R>
-where
-    R: Role<SubsurfaceRole>
-        + Role<XdgToplevelSurfaceRole>
-        + Role<XdgPopupSurfaceRole>
-        + Role<ShellSurfaceRole>
-        + 'static,
-{
-    pub fn new(ctoken: CompositorToken<R>) -> Self {
+impl WindowMap {
+    pub fn new() -> Self {
         WindowMap {
-            ctoken,
             windows: Vec::new(),
             popups: Vec::new(),
         }
     }
 
-    pub fn insert(&mut self, toplevel: Kind<R>, location: (i32, i32)) {
+    pub fn insert(&mut self, toplevel: Kind, location: (i32, i32)) {
         let mut window = Window {
             location,
             bbox: Rectangle::default(),
             toplevel,
         };
-        window.self_update(self.ctoken);
+        window.self_update();
         self.windows.insert(0, window);
     }
 
-    pub fn insert_popup(&mut self, popup: PopupKind<R>) {
+    pub fn insert_popup(&mut self, popup: PopupKind) {
         let popup = Popup { popup };
         self.popups.push(popup);
     }
 
     pub fn get_surface_under(&self, point: (f64, f64)) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         for w in &self.windows {
-            if let Some(surface) = w.matching(point, self.ctoken) {
+            if let Some(surface) = w.matching(point) {
                 return Some(surface);
             }
         }
@@ -288,7 +245,7 @@ where
     ) -> Option<(wl_surface::WlSurface, (f64, f64))> {
         let mut found = None;
         for (i, w) in self.windows.iter().enumerate() {
-            if let Some(surface) = w.matching(point, self.ctoken) {
+            if let Some(surface) = w.matching(point) {
                 found = Some((i, surface));
                 break;
             }
@@ -304,7 +261,7 @@ where
 
     pub fn with_windows_from_bottom_to_top<Func>(&self, mut f: Func)
     where
-        Func: FnMut(&Kind<R>, (i32, i32), &Rectangle),
+        Func: FnMut(&Kind, (i32, i32), &Rectangle),
     {
         for w in self.windows.iter().rev() {
             f(&w.toplevel, w.location, &w.bbox)
@@ -315,14 +272,14 @@ where
         self.windows.retain(|w| w.toplevel.alive());
         self.popups.retain(|p| p.popup.alive());
         for w in &mut self.windows {
-            w.self_update(self.ctoken);
+            w.self_update();
         }
     }
 
     /// Refreshes the state of the toplevel, if it exists.
-    pub fn refresh_toplevel(&mut self, toplevel: &Kind<R>) {
+    pub fn refresh_toplevel(&mut self, toplevel: &Kind) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.toplevel.equals(toplevel)) {
-            w.self_update(self.ctoken);
+            w.self_update();
         }
     }
 
@@ -331,7 +288,7 @@ where
     }
 
     /// Finds the toplevel corresponding to the given `WlSurface`.
-    pub fn find(&self, surface: &wl_surface::WlSurface) -> Option<Kind<R>> {
+    pub fn find(&self, surface: &wl_surface::WlSurface) -> Option<Kind> {
         self.windows.iter().find_map(|w| {
             if w.toplevel
                 .get_surface()
@@ -345,7 +302,7 @@ where
         })
     }
 
-    pub fn find_popup(&self, surface: &wl_surface::WlSurface) -> Option<PopupKind<R>> {
+    pub fn find_popup(&self, surface: &wl_surface::WlSurface) -> Option<PopupKind> {
         self.popups.iter().find_map(|p| {
             if p.popup
                 .get_surface()
@@ -360,7 +317,7 @@ where
     }
 
     /// Returns the location of the toplevel, if it exists.
-    pub fn location(&self, toplevel: &Kind<R>) -> Option<(i32, i32)> {
+    pub fn location(&self, toplevel: &Kind) -> Option<(i32, i32)> {
         self.windows
             .iter()
             .find(|w| w.toplevel.equals(toplevel))
@@ -368,24 +325,24 @@ where
     }
 
     /// Sets the location of the toplevel, if it exists.
-    pub fn set_location(&mut self, toplevel: &Kind<R>, location: (i32, i32)) {
+    pub fn set_location(&mut self, toplevel: &Kind, location: (i32, i32)) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.toplevel.equals(toplevel)) {
             w.location = location;
-            w.self_update(self.ctoken);
+            w.self_update();
         }
     }
 
     /// Returns the geometry of the toplevel, if it exists.
-    pub fn geometry(&self, toplevel: &Kind<R>) -> Option<Rectangle> {
+    pub fn geometry(&self, toplevel: &Kind) -> Option<Rectangle> {
         self.windows
             .iter()
             .find(|w| w.toplevel.equals(toplevel))
-            .map(|w| w.geometry(self.ctoken))
+            .map(|w| w.geometry())
     }
 
     pub fn send_frames(&self, time: u32) {
         for window in &self.windows {
-            window.send_frame(time, self.ctoken);
+            window.send_frame(time);
         }
     }
 }

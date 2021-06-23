@@ -372,10 +372,9 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
             let encoders = info
                 .encoders()
                 .iter()
-                .filter(|enc| enc.is_some())
-                .map(|enc| enc.unwrap())
+                .flatten()
                 .map(|encoder| {
-                    self.fd.get_encoder(encoder).map_err(|source| Error::Access {
+                    self.fd.get_encoder(*encoder).map_err(|source| Error::Access {
                         errmsg: "Error loading encoder info",
                         dev: self.fd.dev_path(),
                         source,

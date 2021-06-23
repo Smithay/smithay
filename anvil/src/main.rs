@@ -2,8 +2,6 @@
 
 #[macro_use]
 extern crate slog;
-#[macro_use(define_roles)]
-extern crate smithay;
 
 use std::{cell::RefCell, rc::Rc};
 

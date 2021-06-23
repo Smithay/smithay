@@ -265,7 +265,7 @@ where
             format,
             DmabufFlags::from_bits_truncate(flags),
         );
-        let planes = ::std::mem::replace(&mut self.pending_planes, Vec::new());
+        let planes = std::mem::take(&mut self.pending_planes);
         for (i, plane) in planes.into_iter().enumerate() {
             let offset = plane.offset;
             let stride = plane.stride;
@@ -355,7 +355,7 @@ where
             format,
             DmabufFlags::from_bits_truncate(flags),
         );
-        let planes = ::std::mem::replace(&mut self.pending_planes, Vec::new());
+        let planes = ::std::mem::take(&mut self.pending_planes);
         for (i, plane) in planes.into_iter().enumerate() {
             let offset = plane.offset;
             let stride = plane.stride;

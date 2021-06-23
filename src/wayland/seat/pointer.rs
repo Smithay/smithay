@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt, ops::Deref as _, rc::Rc};
+use std::{cell::RefCell, fmt, ops::Deref as _, rc::Rc, sync::Mutex};
 
 use wayland_server::{
     protocol::{
@@ -8,12 +8,14 @@ use wayland_server::{
     Filter, Main,
 };
 
-use crate::wayland::compositor::{roles::Role, CompositorToken};
+use crate::wayland::compositor;
 use crate::wayland::Serial;
+
+static CURSOR_IMAGE_ROLE: &str = "cursor_image";
 
 /// The role representing a surface set as the pointer cursor
 #[derive(Debug, Default, Copy, Clone)]
-pub struct CursorImageRole {
+pub struct CursorImageAttributes {
     /// Location of the hotspot of the pointer in the surface
     pub hotspot: (i32, i32),
 }
@@ -72,9 +74,8 @@ impl fmt::Debug for PointerInternal {
 }
 
 impl PointerInternal {
-    fn new<F, R>(token: CompositorToken<R>, mut cb: F) -> PointerInternal
+    fn new<F>(mut cb: F) -> PointerInternal
     where
-        R: Role<CursorImageRole> + 'static,
         F: FnMut(CursorImageStatus) + 'static,
     {
         let mut old_status = CursorImageStatus::Default;
@@ -86,11 +87,7 @@ impl PointerInternal {
                     CursorImageStatus::Image(ref new_surface) if new_surface == &surface => {
                         // don't remove the role, we are just re-binding the same surface
                     }
-                    _ => {
-                        if surface.as_ref().is_alive() {
-                            token.remove_role::<CursorImageRole>(&surface).unwrap();
-                        }
-                    }
+                    _ => {}
                 }
             }
             cb(new_status)
@@ -566,24 +563,16 @@ impl AxisFrame {
     }
 }
 
-pub(crate) fn create_pointer_handler<F, R>(token: CompositorToken<R>, cb: F) -> PointerHandle
+pub(crate) fn create_pointer_handler<F>(cb: F) -> PointerHandle
 where
-    R: Role<CursorImageRole> + 'static,
     F: FnMut(CursorImageStatus) + 'static,
 {
     PointerHandle {
-        inner: Rc::new(RefCell::new(PointerInternal::new(token, cb))),
+        inner: Rc::new(RefCell::new(PointerInternal::new(cb))),
     }
 }
 
-pub(crate) fn implement_pointer<R>(
-    pointer: Main<WlPointer>,
-    handle: Option<&PointerHandle>,
-    token: CompositorToken<R>,
-) -> WlPointer
-where
-    R: Role<CursorImageRole> + 'static,
-{
+pub(crate) fn implement_pointer(pointer: Main<WlPointer>, handle: Option<&PointerHandle>) -> WlPointer {
     let inner = handle.map(|h| h.inner.clone());
     pointer.quick_assign(move |pointer, request, _data| {
         match request {
@@ -606,14 +595,9 @@ where
                         if focus.as_ref().same_client_as(&pointer.as_ref()) {
                             match surface {
                                 Some(surface) => {
-                                    let role_data = CursorImageRole {
-                                        hotspot: (hotspot_x, hotspot_y),
-                                    };
-                                    // we gracefully tolerate the client to provide a surface that
-                                    // already had the "CursorImage" role, as most clients will
-                                    // always reuse the same surface (and they are right to do so!)
-                                    if token.with_role_data(&surface, |data| *data = role_data).is_err()
-                                        && token.give_role_with(&surface, role_data).is_err()
+                                    // tolerate re-using the same surface
+                                    if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
+                                        && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
                                     {
                                         pointer.as_ref().post_error(
                                             wl_pointer::Error::Role as u32,
@@ -621,6 +605,20 @@ where
                                         );
                                         return;
                                     }
+                                    compositor::with_states(&surface, |states| {
+                                        states.data_map.insert_if_missing_threadsafe(|| {
+                                            Mutex::new(CursorImageAttributes { hotspot: (0, 0) })
+                                        });
+                                        states
+                                            .data_map
+                                            .get::<Mutex<CursorImageAttributes>>()
+                                            .unwrap()
+                                            .lock()
+                                            .unwrap()
+                                            .hotspot = (hotspot_x, hotspot_y);
+                                    })
+                                    .unwrap();
+
                                     image_callback(CursorImageStatus::Image(surface));
                                 }
                                 None => {

@@ -21,26 +21,13 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this handler, simple use the [`xdg_shell_init`] function provided in this
-//! module. You will need to provide it the [`CompositorToken`](crate::wayland::compositor::CompositorToken)
-//! you retrieved from an instantiation of the compositor global provided by smithay.
+//! To initialize this handler, simple use the [`xdg_shell_init`] function provided in this module.
 //!
 //! ```no_run
 //! # extern crate wayland_server;
-//! # #[macro_use] extern crate smithay;
-//! # extern crate wayland_protocols;
 //! #
-//! use smithay::wayland::compositor::roles::*;
-//! use smithay::wayland::compositor::CompositorToken;
-//! use smithay::wayland::shell::xdg::{xdg_shell_init, XdgToplevelSurfaceRole, XdgPopupSurfaceRole, XdgRequest};
-//! use wayland_protocols::unstable::xdg_shell::v6::server::zxdg_shell_v6::ZxdgShellV6;
-//! # use wayland_server::protocol::{wl_seat, wl_output};
+//! use smithay::wayland::shell::xdg::{xdg_shell_init, XdgRequest};
 //!
-//! // define the roles type. You need to integrate the XdgSurface role:
-//! define_roles!(MyRoles =>
-//!     [XdgToplevelSurface, XdgToplevelSurfaceRole]
-//!     [XdgPopupSurface, XdgPopupSurfaceRole]
-//! );
 //!
 //! // define the metadata you want associated with the shell clients
 //! #[derive(Default)]
@@ -49,17 +36,10 @@
 //! }
 //!
 //! # let mut display = wayland_server::Display::new();
-//! # let (compositor_token, _, _) = smithay::wayland::compositor::compositor_init::<MyRoles, _, _>(
-//! #     &mut display,
-//! #     |_, _, _, _| {},
-//! #     None
-//! # );
 //! let (shell_state, _, _) = xdg_shell_init(
 //!     &mut display,
-//!     // token from the compositor implementation
-//!     compositor_token,
 //!     // your implementation
-//!     |event: XdgRequest<_>| { /* ... */ },
+//!     |event: XdgRequest| { /* ... */ },
 //!     None  // put a logger if you want
 //! );
 //!
@@ -87,9 +67,10 @@
 //! the subhandler you provided, or via methods on the [`ShellState`]
 //! that you are given (in an `Arc<Mutex<_>>`) as return value of the `init` function.
 
+use crate::utils::DeadResource;
 use crate::utils::Rectangle;
-use crate::wayland::compositor::roles::WrongRole;
-use crate::wayland::compositor::{roles::Role, CompositorToken};
+use crate::wayland::compositor;
+use crate::wayland::compositor::Cacheable;
 use crate::wayland::{Serial, SERIAL_COUNTER};
 use std::fmt::Debug;
 use std::{
@@ -97,7 +78,6 @@ use std::{
     rc::Rc,
     sync::{Arc, Mutex},
 };
-use thiserror::Error;
 use wayland_protocols::unstable::xdg_shell::v6::server::zxdg_surface_v6;
 use wayland_protocols::xdg_shell::server::xdg_surface;
 use wayland_protocols::{
@@ -117,24 +97,12 @@ mod xdg_handlers;
 mod zxdgv6_handlers;
 
 macro_rules! xdg_role {
-    ($(#[$role_attr:meta])* $role:ident,
-     $configure:ty,
+    ($configure:ty,
      $(#[$attr:meta])* $element:ident {$($(#[$field_attr:meta])* $vis:vis$field:ident:$type:ty),*},
      $role_ack_configure:expr) => {
-        $(#[$role_attr])*
-        pub type $role = Option<$element>;
 
         $(#[$attr])*
         pub struct $element {
-                /// Defines the current window geometry of the surface if any.
-                pub window_geometry: Option<Rectangle>,
-
-                /// Holds the double-buffered geometry that may be specified
-                /// by xdg_surface.set_window_geometry. This should be moved to the
-                /// current configuration on a commit of the underlying
-                /// wl_surface.
-                pub client_pending_window_geometry: Option<Rectangle>,
-
                 /// Defines if the surface has received at least one
                 /// xdg_surface.ack_configure from the client
                 pub configured: bool,
@@ -161,12 +129,8 @@ macro_rules! xdg_role {
                 )*
         }
 
-        impl XdgSurface for $element {
-            fn set_window_geometry(&mut self, geometry: Rectangle) {
-                self.client_pending_window_geometry = Some(geometry);
-            }
-
-            fn ack_configure(&mut self, serial: Serial) -> Result<Configure, ConfigureError> {
+        impl $element {
+            fn ack_configure(&mut self, serial: Serial) -> Option<Configure> {
                 let configure = match self
                     .pending_configures
                     .iter()
@@ -174,7 +138,7 @@ macro_rules! xdg_role {
                 {
                     Some(configure) => (*configure).clone(),
                     None => {
-                        return Err(ConfigureError::SerialNotFound(serial));
+                        return None;
                     }
                 };
 
@@ -191,15 +155,13 @@ macro_rules! xdg_role {
                 // Clean old configures
                 self.pending_configures.retain(|c| c.serial > serial);
 
-                Ok(configure.into())
+                Some(configure.into())
             }
         }
 
         impl Default for $element {
             fn default() -> Self {
                 Self {
-                    window_geometry: None,
-                    client_pending_window_geometry: None,
                     configured: false,
                     configure_serial: None,
                     pending_configures: Vec::new(),
@@ -214,52 +176,10 @@ macro_rules! xdg_role {
     };
 }
 
-impl<R> CompositorToken<R>
-where
-    R: Role<XdgToplevelSurfaceRole> + Role<XdgPopupSurfaceRole> + 'static,
-{
-    fn with_xdg_role<F, T>(&self, surface: &wl_surface::WlSurface, f: F) -> Result<T, WrongRole>
-    where
-        F: FnOnce(&mut dyn XdgSurface) -> T,
-    {
-        if self.has_role::<XdgToplevelSurfaceRole>(surface) {
-            self.with_role_data(surface, |role: &mut XdgToplevelSurfaceRole| f(role))
-        } else {
-            self.with_role_data(surface, |role: &mut XdgPopupSurfaceRole| f(role))
-        }
-    }
-}
-
-trait XdgSurface {
-    fn set_window_geometry(&mut self, geometry: Rectangle);
-
-    fn ack_configure(&mut self, serial: Serial) -> Result<Configure, ConfigureError>;
-}
-
-#[derive(Debug, Error)]
-enum ConfigureError {
-    #[error("the serial `{0:?}` was not found in the pending configure list")]
-    SerialNotFound(Serial),
-}
-
-impl<T> XdgSurface for Option<T>
-where
-    T: XdgSurface,
-{
-    fn set_window_geometry(&mut self, geometry: Rectangle) {
-        self.as_mut()
-            .expect("xdg_surface exists but role has been destroyed?!")
-            .set_window_geometry(geometry)
-    }
-
-    fn ack_configure(&mut self, serial: Serial) -> Result<Configure, ConfigureError> {
-        self.as_mut()
-            .expect("xdg_surface exists but role has been destroyed?!")
-            .ack_configure(serial)
-    }
-}
-
 xdg_role!(
+    ToplevelConfigure,
+    /// Role specific attributes for xdg_toplevel
+    ///
     /// This interface defines an xdg_surface role which allows a surface to,
     /// among other things, set window-like properties such as maximize,
     /// fullscreen, and minimize, set application-specific metadata like title and
@@ -277,9 +197,6 @@ xdg_role!(
     /// xdg_surface description).
     ///
     /// Attaching a null buffer to a toplevel unmaps the surface.
-    XdgToplevelSurfaceRole,
-    ToplevelConfigure,
-    /// Role specific attributes for xdg_toplevel
     XdgToplevelSurfaceRoleAttributes {
         /// The parent field of a toplevel should be used
         /// by the compositor to determine which toplevel
@@ -312,8 +229,6 @@ xdg_role!(
         ///
         /// A value of 0 on an axis means this axis is not constrained
         pub max_size: (i32, i32),
-        /// Holds the pending state as set by the client.
-        pub client_pending: Option<ToplevelClientPending>,
         /// Holds the pending state as set by the server.
         pub server_pending: Option<ToplevelState>,
         /// Holds the last server_pending state that has been acknowledged
@@ -330,6 +245,9 @@ xdg_role!(
 );
 
 xdg_role!(
+    PopupConfigure,
+    /// Role specific attributes for xdg_popup
+    ///
     /// A popup surface is a short-lived, temporary surface. It can be used to
     /// implement for example menus, popovers, tooltips and other similar user
     /// interface concepts.
@@ -354,9 +272,6 @@ xdg_role!(
     ///
     /// The client must call wl_surface.commit on the corresponding wl_surface
     /// for the xdg_popup state to take effect.
-    XdgPopupSurfaceRole,
-    PopupConfigure,
-    /// Popup Surface Role
     XdgPopupSurfaceRoleAttributes {
         /// Holds the parent for the xdg_popup.
         ///
@@ -383,7 +298,8 @@ xdg_role!(
         /// commit.
         pub current: PopupState,
         /// Holds the pending state as set by the server.
-        pub server_pending: Option<PopupState>
+        pub server_pending: Option<PopupState>,
+        popup_handle: Option<PopupKind>
     },
     |attributes,configure| {
         attributes.last_acked = Some(configure.state);
@@ -687,57 +603,55 @@ impl From<ToplevelStateSet> for Vec<xdg_toplevel::State> {
 
 /// Represents the client pending state
 #[derive(Debug, Clone, Copy)]
-pub struct ToplevelClientPending {
+pub struct SurfaceCachedState {
+    /// Holds the double-buffered geometry that may be specified
+    /// by xdg_surface.set_window_geometry.
+    pub geometry: Option<Rectangle>,
     /// Minimum size requested for this surface
     ///
     /// A value of 0 on an axis means this axis is not constrained
     ///
-    /// A value of `None` represents the client has not defined
-    /// a minimum size
-    pub min_size: Option<(i32, i32)>,
+    /// This is only relevant for xdg_toplevel, and will always be
+    /// `(0, 0)` for xdg_popup.
+    pub min_size: (i32, i32),
     /// Maximum size requested for this surface
     ///
     /// A value of 0 on an axis means this axis is not constrained
     ///
-    /// A value of `None` represents the client has not defined
-    /// a maximum size
-    pub max_size: Option<(i32, i32)>,
+    /// This is only relevant for xdg_toplevel, and will always be
+    /// `(0, 0)` for xdg_popup.
+    pub max_size: (i32, i32),
 }
 
-impl Default for ToplevelClientPending {
+impl Default for SurfaceCachedState {
     fn default() -> Self {
         Self {
-            min_size: None,
-            max_size: None,
+            geometry: None,
+            min_size: (0, 0),
+            max_size: (0, 0),
         }
     }
 }
 
-/// Represents the possible errors
-/// returned from `ToplevelSurface::with_pending_state`
-/// and `PopupSurface::with_pending_state`
-#[derive(Debug, Error)]
-pub enum PendingStateError {
-    /// The operation failed because the underlying surface has been destroyed
-    #[error("could not retrieve the pending state because the underlying surface has been destroyed")]
-    DeadSurface,
-    /// The role of the xdg_surface has been destroyed
-    #[error("the role of the xdg_surface has been destroyed")]
-    RoleDestroyed,
+impl Cacheable for SurfaceCachedState {
+    fn commit(&mut self) -> Self {
+        *self
+    }
+    fn merge_into(self, into: &mut Self) {
+        *into = self;
+    }
 }
 
-pub(crate) struct ShellData<R> {
+pub(crate) struct ShellData {
     log: ::slog::Logger,
-    compositor_token: CompositorToken<R>,
-    user_impl: Rc<RefCell<dyn FnMut(XdgRequest<R>)>>,
-    shell_state: Arc<Mutex<ShellState<R>>>,
+    user_impl: Rc<RefCell<dyn FnMut(XdgRequest)>>,
+    shell_state: Arc<Mutex<ShellState>>,
 }
 
-impl<R> Clone for ShellData<R> {
+impl Clone for ShellData {
     fn clone(&self) -> Self {
         ShellData {
             log: self.log.clone(),
-            compositor_token: self.compositor_token,
             user_impl: self.user_impl.clone(),
             shell_state: self.shell_state.clone(),
         }
@@ -745,20 +659,18 @@ impl<R> Clone for ShellData<R> {
 }
 
 /// Create a new `xdg_shell` globals
-pub fn xdg_shell_init<R, L, Impl>(
+pub fn xdg_shell_init<L, Impl>(
     display: &mut Display,
-    ctoken: CompositorToken<R>,
     implementation: Impl,
     logger: L,
 ) -> (
-    Arc<Mutex<ShellState<R>>>,
+    Arc<Mutex<ShellState>>,
     Global<xdg_wm_base::XdgWmBase>,
     Global<zxdg_shell_v6::ZxdgShellV6>,
 )
 where
-    R: Role<XdgToplevelSurfaceRole> + Role<XdgPopupSurfaceRole> + 'static,
     L: Into<Option<::slog::Logger>>,
-    Impl: FnMut(XdgRequest<R>) + 'static,
+    Impl: FnMut(XdgRequest) + 'static,
 {
     let log = crate::slog_or_fallback(logger);
     let shell_state = Arc::new(Mutex::new(ShellState {
@@ -768,7 +680,6 @@ where
 
     let shell_data = ShellData {
         log: log.new(o!("smithay_module" => "xdg_shell_handler")),
-        compositor_token: ctoken,
         user_impl: Rc::new(RefCell::new(implementation)),
         shell_state: shell_state.clone(),
     };
@@ -797,22 +708,19 @@ where
 /// This state allows you to retrieve a list of surfaces
 /// currently known to the shell global.
 #[derive(Debug)]
-pub struct ShellState<R> {
-    known_toplevels: Vec<ToplevelSurface<R>>,
-    known_popups: Vec<PopupSurface<R>>,
+pub struct ShellState {
+    known_toplevels: Vec<ToplevelSurface>,
+    known_popups: Vec<PopupSurface>,
 }
 
-impl<R> ShellState<R>
-where
-    R: Role<XdgToplevelSurfaceRole> + Role<XdgPopupSurfaceRole> + 'static,
-{
+impl ShellState {
     /// Access all the shell surfaces known by this handler
-    pub fn toplevel_surfaces(&self) -> &[ToplevelSurface<R>] {
+    pub fn toplevel_surfaces(&self) -> &[ToplevelSurface] {
         &self.known_toplevels[..]
     }
 
     /// Access all the popup surfaces known by this handler
-    pub fn popup_surfaces(&self) -> &[PopupSurface<R>] {
+    pub fn popup_surfaces(&self) -> &[PopupSurface] {
         &self.known_popups[..]
     }
 }
@@ -850,15 +758,11 @@ fn make_shell_client_data() -> ShellClientData {
 /// You can use this handle to access a storage for any
 /// client-specific data you wish to associate with it.
 #[derive(Debug)]
-pub struct ShellClient<R> {
+pub struct ShellClient {
     kind: ShellClientKind,
-    _token: CompositorToken<R>,
 }
 
-impl<R> ShellClient<R>
-where
-    R: Role<XdgToplevelSurfaceRole> + Role<XdgPopupSurfaceRole> + 'static,
-{
+impl ShellClient {
     /// Is the shell client represented by this handle still connected?
     pub fn alive(&self) -> bool {
         match self.kind {
@@ -897,7 +801,7 @@ where
                 let user_data = shell
                     .as_ref()
                     .user_data()
-                    .get::<self::xdg_handlers::ShellUserData<R>>()
+                    .get::<self::xdg_handlers::ShellUserData>()
                     .unwrap();
                 let mut guard = user_data.client_data.lock().unwrap();
                 if let Some(pending_ping) = guard.pending_ping {
@@ -910,7 +814,7 @@ where
                 let user_data = shell
                     .as_ref()
                     .user_data()
-                    .get::<self::zxdgv6_handlers::ShellUserData<R>>()
+                    .get::<self::zxdgv6_handlers::ShellUserData>()
                     .unwrap();
                 let mut guard = user_data.client_data.lock().unwrap();
                 if let Some(pending_ping) = guard.pending_ping {
@@ -936,7 +840,7 @@ where
                 let data = shell
                     .as_ref()
                     .user_data()
-                    .get::<self::xdg_handlers::ShellUserData<R>>()
+                    .get::<self::xdg_handlers::ShellUserData>()
                     .unwrap();
                 let mut guard = data.client_data.lock().unwrap();
                 Ok(f(&mut guard.data))
@@ -945,7 +849,7 @@ where
                 let data = shell
                     .as_ref()
                     .user_data()
-                    .get::<self::zxdgv6_handlers::ShellUserData<R>>()
+                    .get::<self::zxdgv6_handlers::ShellUserData>()
                     .unwrap();
                 let mut guard = data.client_data.lock().unwrap();
                 Ok(f(&mut guard.data))
@@ -961,28 +865,13 @@ pub(crate) enum ToplevelKind {
 }
 
 /// A handle to a toplevel surface
-#[derive(Debug)]
-pub struct ToplevelSurface<R> {
+#[derive(Debug, Clone)]
+pub struct ToplevelSurface {
     wl_surface: wl_surface::WlSurface,
     shell_surface: ToplevelKind,
-    token: CompositorToken<R>,
 }
 
-// We implement Clone manually because #[derive(..)] would require R: Clone.
-impl<R> Clone for ToplevelSurface<R> {
-    fn clone(&self) -> Self {
-        Self {
-            wl_surface: self.wl_surface.clone(),
-            shell_surface: self.shell_surface.clone(),
-            token: self.token,
-        }
-    }
-}
-
-impl<R> ToplevelSurface<R>
-where
-    R: Role<XdgToplevelSurfaceRole> + 'static,
-{
+impl ToplevelSurface {
     /// Is the toplevel surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
         let shell_alive = match self.shell_surface {
@@ -1000,7 +889,7 @@ where
     /// Retrieve the shell client owning this toplevel surface
     ///
     /// Returns `None` if the surface does actually no longer exist.
-    pub fn client(&self) -> Option<ShellClient<R>> {
+    pub fn client(&self) -> Option<ShellClient> {
         if !self.alive() {
             return None;
         }
@@ -1010,7 +899,7 @@ where
                 let data = s
                     .as_ref()
                     .user_data()
-                    .get::<self::xdg_handlers::ShellSurfaceUserData<R>>()
+                    .get::<self::xdg_handlers::ShellSurfaceUserData>()
                     .unwrap();
                 ShellClientKind::Xdg(data.wm_base.clone())
             }
@@ -1018,16 +907,13 @@ where
                 let data = s
                     .as_ref()
                     .user_data()
-                    .get::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
+                    .get::<self::zxdgv6_handlers::ShellSurfaceUserData>()
                     .unwrap();
                 ShellClientKind::ZxdgV6(data.shell.clone())
             }
         };
 
-        Some(ShellClient {
-            kind: shell,
-            _token: self.token,
-        })
+        Some(ShellClient { kind: shell })
     }
 
     /// Gets the current pending state for a configure
@@ -1071,46 +957,34 @@ where
     /// The serial of this configure will be tracked waiting for the client to ACK it.
     pub fn send_configure(&self) {
         if let Some(surface) = self.get_surface() {
-            let configure = self
-                .token
-                .with_role_data(surface, |role| {
-                    if let Some(attributes) = role {
-                        if let Some(pending) = self.get_pending_state(attributes) {
-                            let configure = ToplevelConfigure {
-                                serial: SERIAL_COUNTER.next_serial(),
-                                state: pending,
-                            };
+            let configure = compositor::with_states(surface, |states| {
+                let mut attributes = states
+                    .data_map
+                    .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap();
+                if let Some(pending) = self.get_pending_state(&mut *attributes) {
+                    let configure = ToplevelConfigure {
+                        serial: SERIAL_COUNTER.next_serial(),
+                        state: pending,
+                    };
 
-                            attributes.pending_configures.push(configure.clone());
+                    attributes.pending_configures.push(configure.clone());
+                    attributes.initial_configure_sent = true;
 
-                            Some((configure, !attributes.initial_configure_sent))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(None);
-
-            if let Some((configure, initial)) = configure {
-                match self.shell_surface {
-                    ToplevelKind::Xdg(ref s) => {
-                        self::xdg_handlers::send_toplevel_configure::<R>(s, configure)
-                    }
-                    ToplevelKind::ZxdgV6(ref s) => {
-                        self::zxdgv6_handlers::send_toplevel_configure::<R>(s, configure)
-                    }
+                    Some(configure)
+                } else {
+                    None
                 }
-
-                if initial {
-                    self.token
-                        .with_role_data(surface, |role| {
-                            if let XdgToplevelSurfaceRole::Some(attributes) = role {
-                                attributes.initial_configure_sent = true;
-                            }
-                        })
-                        .unwrap();
+            })
+            .unwrap_or(None);
+            if let Some(configure) = configure {
+                match self.shell_surface {
+                    ToplevelKind::Xdg(ref s) => self::xdg_handlers::send_toplevel_configure(s, configure),
+                    ToplevelKind::ZxdgV6(ref s) => {
+                        self::zxdgv6_handlers::send_toplevel_configure(s, configure)
+                    }
                 }
             }
         }
@@ -1120,46 +994,19 @@ where
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub fn commit(&self) {
-        if let Some(surface) = self.get_surface() {
-            let send_initial_configure = self
-                .token
-                .with_role_data(surface, |role: &mut XdgToplevelSurfaceRole| {
-                    if let XdgToplevelSurfaceRole::Some(attributes) = role {
-                        if let Some(window_geometry) = attributes.client_pending_window_geometry.take() {
-                            attributes.window_geometry = Some(window_geometry);
-                        }
-
-                        if attributes.initial_configure_sent {
-                            if let Some(state) = attributes.last_acked.clone() {
-                                if state != attributes.current {
-                                    attributes.current = state;
-                                }
-                            }
-
-                            if let Some(mut client_pending) = attributes.client_pending.take() {
-                                // update state from the client that doesn't need compositor approval
-                                if let Some(size) = client_pending.max_size.take() {
-                                    attributes.max_size = size;
-                                }
-
-                                if let Some(size) = client_pending.min_size.take() {
-                                    attributes.min_size = size;
-                                }
-                            }
-                        }
-
-                        !attributes.initial_configure_sent
-                    } else {
-                        false
-                    }
-                })
-                .unwrap_or(false);
-
-            if send_initial_configure {
-                self.send_configure();
+    pub(crate) fn commit_hook(surface: &wl_surface::WlSurface) {
+        compositor::with_states(surface, |states| {
+            let mut guard = states
+                .data_map
+                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
+            if let Some(state) = guard.last_acked.clone() {
+                guard.current = state;
             }
-        }
+        })
+        .unwrap();
     }
 
     /// Make sure this surface was configured
@@ -1174,21 +1021,23 @@ where
         if !self.alive() {
             return false;
         }
-        let configured = self
-            .token
-            .with_role_data::<XdgToplevelSurfaceRole, _, _>(&self.wl_surface, |data| {
-                data.as_ref()
-                    .expect("xdg_toplevel exists but role has been destroyed?!")
-                    .configured
-            })
-            .expect("A shell surface object exists but the surface does not have the shell_surface role ?!");
+        let configured = compositor::with_states(&self.wl_surface, |states| {
+            states
+                .data_map
+                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .configured
+        })
+        .unwrap();
         if !configured {
             match self.shell_surface {
                 ToplevelKind::Xdg(ref s) => {
                     let data = s
                         .as_ref()
                         .user_data()
-                        .get::<self::xdg_handlers::ShellSurfaceUserData<R>>()
+                        .get::<self::xdg_handlers::ShellSurfaceUserData>()
                         .unwrap();
                     data.xdg_surface.as_ref().post_error(
                         xdg_surface::Error::NotConstructed as u32,
@@ -1199,7 +1048,7 @@ where
                     let data = s
                         .as_ref()
                         .user_data()
-                        .get::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
+                        .get::<self::zxdgv6_handlers::ShellSurfaceUserData>()
                         .unwrap();
                     data.xdg_surface.as_ref().post_error(
                         zxdg_surface_v6::Error::NotConstructed as u32,
@@ -1240,28 +1089,29 @@ where
     ///
     /// The state will be sent to the client when calling
     /// send_configure.
-    pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, PendingStateError>
+    pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, DeadResource>
     where
         F: FnOnce(&mut ToplevelState) -> T,
     {
         if !self.alive() {
-            return Err(PendingStateError::DeadSurface);
+            return Err(DeadResource);
         }
 
-        self.token
-            .with_role_data(&self.wl_surface, |role| {
-                if let Some(attributes) = role {
-                    if attributes.server_pending.is_none() {
-                        attributes.server_pending = Some(attributes.current.clone());
-                    }
+        Ok(compositor::with_states(&self.wl_surface, |states| {
+            let mut attributes = states
+                .data_map
+                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
+            if attributes.server_pending.is_none() {
+                attributes.server_pending = Some(attributes.current.clone());
+            }
 
-                    let server_pending = attributes.server_pending.as_mut().unwrap();
-                    Ok(f(server_pending))
-                } else {
-                    Err(PendingStateError::RoleDestroyed)
-                }
-            })
-            .unwrap()
+            let server_pending = attributes.server_pending.as_mut().unwrap();
+            f(server_pending)
+        })
+        .unwrap())
     }
 }
 
@@ -1275,28 +1125,13 @@ pub(crate) enum PopupKind {
 ///
 /// This is an unified abstraction over the popup surfaces
 /// of both `wl_shell` and `xdg_shell`.
-#[derive(Debug)]
-pub struct PopupSurface<R> {
+#[derive(Debug, Clone)]
+pub struct PopupSurface {
     wl_surface: wl_surface::WlSurface,
     shell_surface: PopupKind,
-    token: CompositorToken<R>,
 }
 
-// We implement Clone manually because #[derive(..)] would require R: Clone.
-impl<R> Clone for PopupSurface<R> {
-    fn clone(&self) -> Self {
-        Self {
-            wl_surface: self.wl_surface.clone(),
-            shell_surface: self.shell_surface.clone(),
-            token: self.token,
-        }
-    }
-}
-
-impl<R> PopupSurface<R>
-where
-    R: Role<XdgPopupSurfaceRole> + 'static,
-{
+impl PopupSurface {
     /// Is the popup surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
         let shell_alive = match self.shell_surface {
@@ -1312,11 +1147,17 @@ where
         if !self.alive() {
             None
         } else {
-            self.token
-                .with_role_data(&self.wl_surface, |role: &mut XdgPopupSurfaceRole| {
-                    role.as_ref().and_then(|role| role.parent.clone())
-                })
-                .unwrap()
+            compositor::with_states(&self.wl_surface, |states| {
+                states
+                    .data_map
+                    .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .parent
+                    .clone()
+            })
+            .unwrap()
         }
     }
 
@@ -1328,7 +1169,7 @@ where
     /// Retrieve the shell client owning this popup surface
     ///
     /// Returns `None` if the surface does actually no longer exist.
-    pub fn client(&self) -> Option<ShellClient<R>> {
+    pub fn client(&self) -> Option<ShellClient> {
         if !self.alive() {
             return None;
         }
@@ -1338,7 +1179,7 @@ where
                 let data = p
                     .as_ref()
                     .user_data()
-                    .get::<self::xdg_handlers::ShellSurfaceUserData<R>>()
+                    .get::<self::xdg_handlers::ShellSurfaceUserData>()
                     .unwrap();
                 ShellClientKind::Xdg(data.wm_base.clone())
             }
@@ -1346,16 +1187,13 @@ where
                 let data = p
                     .as_ref()
                     .user_data()
-                    .get::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
+                    .get::<self::zxdgv6_handlers::ShellSurfaceUserData>()
                     .unwrap();
                 ShellClientKind::ZxdgV6(data.shell.clone())
             }
         };
 
-        Some(ShellClient {
-            kind: shell,
-            _token: self.token,
-        })
+        Some(ShellClient { kind: shell })
     }
 
     /// Send a configure event to this popup surface to suggest it a new configuration
@@ -1363,47 +1201,38 @@ where
     /// The serial of this configure will be tracked waiting for the client to ACK it.
     pub fn send_configure(&self) {
         if let Some(surface) = self.get_surface() {
-            if let Some((configure, initial)) = self
-                .token
-                .with_role_data(surface, |role| {
-                    if let XdgPopupSurfaceRole::Some(attributes) = role {
-                        if !attributes.initial_configure_sent || attributes.server_pending.is_some() {
-                            let pending = attributes.server_pending.take().unwrap_or(attributes.current);
+            let next_configure = compositor::with_states(surface, |states| {
+                let mut attributes = states
+                    .data_map
+                    .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap();
+                if !attributes.initial_configure_sent || attributes.server_pending.is_some() {
+                    let pending = attributes.server_pending.take().unwrap_or(attributes.current);
 
-                            let configure = PopupConfigure {
-                                state: pending,
-                                serial: SERIAL_COUNTER.next_serial(),
-                            };
+                    let configure = PopupConfigure {
+                        state: pending,
+                        serial: SERIAL_COUNTER.next_serial(),
+                    };
 
-                            attributes.pending_configures.push(configure);
+                    attributes.pending_configures.push(configure);
+                    attributes.initial_configure_sent = true;
 
-                            Some((configure, !attributes.initial_configure_sent))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(None)
-            {
+                    Some(configure)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(None);
+            if let Some(configure) = next_configure {
                 match self.shell_surface {
                     PopupKind::Xdg(ref p) => {
-                        self::xdg_handlers::send_popup_configure::<R>(p, configure);
+                        self::xdg_handlers::send_popup_configure(p, configure);
                     }
                     PopupKind::ZxdgV6(ref p) => {
-                        self::zxdgv6_handlers::send_popup_configure::<R>(p, configure);
+                        self::zxdgv6_handlers::send_popup_configure(p, configure);
                     }
-                }
-
-                if initial {
-                    self.token
-                        .with_role_data(surface, |role| {
-                            if let XdgPopupSurfaceRole::Some(attributes) = role {
-                                attributes.initial_configure_sent = true;
-                            }
-                        })
-                        .unwrap();
                 }
             }
         }
@@ -1413,82 +1242,66 @@ where
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub fn commit(&self) {
-        if let Some(surface) = self.get_surface() {
-            let has_parent = self
-                .token
-                .with_role_data(surface, |role| {
-                    if let Some(attributes) = role {
-                        attributes.parent.is_some()
-                    } else {
-                        false
-                    }
-                })
-                .unwrap_or(false);
+    pub(crate) fn commit_hook(surface: &wl_surface::WlSurface) {
+        let send_error_to = compositor::with_states(surface, |states| {
+            let attributes = states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
+            if attributes.parent.is_none() {
+                attributes.popup_handle.clone()
+            } else {
+                None
+            }
+        })
+        .unwrap_or(None);
+        if let Some(handle) = send_error_to {
+            match handle {
+                PopupKind::Xdg(ref s) => {
+                    let data = s
+                        .as_ref()
+                        .user_data()
+                        .get::<self::xdg_handlers::ShellSurfaceUserData>()
+                        .unwrap();
+                    data.xdg_surface.as_ref().post_error(
+                        xdg_surface::Error::NotConstructed as u32,
+                        "Surface has not been configured yet.".into(),
+                    );
+                }
+                PopupKind::ZxdgV6(ref s) => {
+                    let data = s
+                        .as_ref()
+                        .user_data()
+                        .get::<self::zxdgv6_handlers::ShellSurfaceUserData>()
+                        .unwrap();
+                    data.xdg_surface.as_ref().post_error(
+                        zxdg_surface_v6::Error::NotConstructed as u32,
+                        "Surface has not been configured yet.".into(),
+                    );
+                }
+            }
+            return;
+        }
 
-            if !has_parent {
-                match self.shell_surface {
-                    PopupKind::Xdg(ref s) => {
-                        let data = s
-                            .as_ref()
-                            .user_data()
-                            .get::<self::xdg_handlers::ShellSurfaceUserData<R>>()
-                            .unwrap();
-                        data.xdg_surface.as_ref().post_error(
-                            xdg_surface::Error::NotConstructed as u32,
-                            "Surface has not been configured yet.".into(),
-                        );
-                    }
-                    PopupKind::ZxdgV6(ref s) => {
-                        let data = s
-                            .as_ref()
-                            .user_data()
-                            .get::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
-                            .unwrap();
-                        data.xdg_surface.as_ref().post_error(
-                            zxdg_surface_v6::Error::NotConstructed as u32,
-                            "Surface has not been configured yet.".into(),
-                        );
+        compositor::with_states(surface, |states| {
+            let mut attributes = states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
+            if attributes.initial_configure_sent {
+                if let Some(state) = attributes.last_acked {
+                    if state != attributes.current {
+                        attributes.current = state;
                     }
                 }
-                return;
             }
-
-            let send_initial_configure = self
-                .token
-                .with_role_data(surface, |role: &mut XdgPopupSurfaceRole| {
-                    if let XdgPopupSurfaceRole::Some(attributes) = role {
-                        if let Some(window_geometry) = attributes.client_pending_window_geometry.take() {
-                            attributes.window_geometry = Some(window_geometry);
-                        }
-
-                        if attributes.initial_configure_sent {
-                            if let Some(state) = attributes.last_acked {
-                                if state != attributes.current {
-                                    attributes.current = state;
-                                }
-                            }
-
-                            if attributes.window_geometry.is_none() {
-                                attributes.window_geometry = Some(Rectangle {
-                                    width: attributes.current.geometry.width,
-                                    height: attributes.current.geometry.height,
-                                    ..Default::default()
-                                })
-                            }
-                        }
-
-                        !attributes.initial_configure_sent
-                    } else {
-                        false
-                    }
-                })
-                .unwrap_or(false);
-
-            if send_initial_configure {
-                self.send_configure();
-            }
-        }
+            !attributes.initial_configure_sent
+        })
+        .unwrap();
     }
 
     /// Make sure this surface was configured
@@ -1503,21 +1316,23 @@ where
         if !self.alive() {
             return false;
         }
-        let configured = self
-            .token
-            .with_role_data::<XdgPopupSurfaceRole, _, _>(&self.wl_surface, |data| {
-                data.as_ref()
-                    .expect("xdg_popup exists but role has been destroyed?!")
-                    .configured
-            })
-            .expect("A shell surface object exists but the surface does not have the shell_surface role ?!");
+        let configured = compositor::with_states(&self.wl_surface, |states| {
+            states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .configured
+        })
+        .unwrap();
         if !configured {
             match self.shell_surface {
                 PopupKind::Xdg(ref s) => {
                     let data = s
                         .as_ref()
                         .user_data()
-                        .get::<self::xdg_handlers::ShellSurfaceUserData<R>>()
+                        .get::<self::xdg_handlers::ShellSurfaceUserData>()
                         .unwrap();
                     data.xdg_surface.as_ref().post_error(
                         xdg_surface::Error::NotConstructed as u32,
@@ -1528,7 +1343,7 @@ where
                     let data = s
                         .as_ref()
                         .user_data()
-                        .get::<self::zxdgv6_handlers::ShellSurfaceUserData<R>>()
+                        .get::<self::zxdgv6_handlers::ShellSurfaceUserData>()
                         .unwrap();
                     data.xdg_surface.as_ref().post_error(
                         zxdg_surface_v6::Error::NotConstructed as u32,
@@ -1572,28 +1387,29 @@ where
     ///
     /// The state will be sent to the client when calling
     /// send_configure.
-    pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, PendingStateError>
+    pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, DeadResource>
     where
         F: FnOnce(&mut PopupState) -> T,
     {
         if !self.alive() {
-            return Err(PendingStateError::DeadSurface);
+            return Err(DeadResource);
         }
 
-        self.token
-            .with_role_data(&self.wl_surface, |role| {
-                if let Some(attributes) = role {
-                    if attributes.server_pending.is_none() {
-                        attributes.server_pending = Some(attributes.current);
-                    }
+        Ok(compositor::with_states(&self.wl_surface, |states| {
+            let mut attributes = states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
+            if attributes.server_pending.is_none() {
+                attributes.server_pending = Some(attributes.current);
+            }
 
-                    let server_pending = attributes.server_pending.as_mut().unwrap();
-                    Ok(f(server_pending))
-                } else {
-                    Err(PendingStateError::RoleDestroyed)
-                }
-            })
-            .unwrap()
+            let server_pending = attributes.server_pending.as_mut().unwrap();
+            f(server_pending)
+        })
+        .unwrap())
     }
 }
 
@@ -1656,11 +1472,11 @@ impl From<PopupConfigure> for Configure {
 ///
 /// Depending on what you want to do, you might ignore some of them
 #[derive(Debug)]
-pub enum XdgRequest<R> {
+pub enum XdgRequest {
     /// A new shell client was instantiated
     NewClient {
         /// the client
-        client: ShellClient<R>,
+        client: ShellClient,
     },
     /// The pong for a pending ping of this shell client was received
     ///
@@ -1668,7 +1484,7 @@ pub enum XdgRequest<R> {
     /// from the pending ping.
     ClientPong {
         /// the client
-        client: ShellClient<R>,
+        client: ShellClient,
     },
     /// A new toplevel surface was created
     ///
@@ -1676,7 +1492,7 @@ pub enum XdgRequest<R> {
     /// client as to how its window should be
     NewToplevel {
         /// the surface
-        surface: ToplevelSurface<R>,
+        surface: ToplevelSurface,
     },
     /// A new popup surface was created
     ///
@@ -1684,12 +1500,12 @@ pub enum XdgRequest<R> {
     /// client as to how its popup should be
     NewPopup {
         /// the surface
-        surface: PopupSurface<R>,
+        surface: PopupSurface,
     },
     /// The client requested the start of an interactive move for this surface
     Move {
         /// the surface
-        surface: ToplevelSurface<R>,
+        surface: ToplevelSurface,
         /// the seat associated to this move
         seat: wl_seat::WlSeat,
         /// the grab serial
@@ -1698,7 +1514,7 @@ pub enum XdgRequest<R> {
     /// The client requested the start of an interactive resize for this surface
     Resize {
         /// The surface
-        surface: ToplevelSurface<R>,
+        surface: ToplevelSurface,
         /// The seat associated with this resize
         seat: wl_seat::WlSeat,
         /// The grab serial
@@ -1712,7 +1528,7 @@ pub enum XdgRequest<R> {
     /// the grab area.
     Grab {
         /// The surface
-        surface: PopupSurface<R>,
+        surface: PopupSurface,
         /// The seat to grab
         seat: wl_seat::WlSeat,
         /// The grab serial
@@ -1721,29 +1537,29 @@ pub enum XdgRequest<R> {
     /// A toplevel surface requested to be maximized
     Maximize {
         /// The surface
-        surface: ToplevelSurface<R>,
+        surface: ToplevelSurface,
     },
     /// A toplevel surface requested to stop being maximized
     UnMaximize {
         /// The surface
-        surface: ToplevelSurface<R>,
+        surface: ToplevelSurface,
     },
     /// A toplevel surface requested to be set fullscreen
     Fullscreen {
         /// The surface
-        surface: ToplevelSurface<R>,
+        surface: ToplevelSurface,
         /// The output (if any) on which the fullscreen is requested
         output: Option<wl_output::WlOutput>,
     },
     /// A toplevel surface request to stop being fullscreen
     UnFullscreen {
         /// The surface
-        surface: ToplevelSurface<R>,
+        surface: ToplevelSurface,
     },
     /// A toplevel surface requested to be minimized
     Minimize {
         /// The surface
-        surface: ToplevelSurface<R>,
+        surface: ToplevelSurface,
     },
     /// The client requests the window menu to be displayed on this surface at this location
     ///
@@ -1751,7 +1567,7 @@ pub enum XdgRequest<R> {
     /// control of the window (maximize/minimize/close/move/etc...).
     ShowWindowMenu {
         /// The surface
-        surface: ToplevelSurface<R>,
+        surface: ToplevelSurface,
         /// The seat associated with this input grab
         seat: wl_seat::WlSeat,
         /// the grab serial

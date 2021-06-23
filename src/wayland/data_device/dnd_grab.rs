@@ -6,14 +6,13 @@ use wayland_server::{
 };
 
 use crate::wayland::{
-    compositor::{roles::Role, CompositorToken},
     seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
     Serial,
 };
 
-use super::{with_source_metadata, DataDeviceData, DnDIconRole, SeatData};
+use super::{with_source_metadata, DataDeviceData, SeatData};
 
-pub(crate) struct DnDGrab<R> {
+pub(crate) struct DnDGrab {
     start_data: GrabStartData,
     data_source: Option<wl_data_source::WlDataSource>,
     current_focus: Option<wl_surface::WlSurface>,
@@ -22,20 +21,18 @@ pub(crate) struct DnDGrab<R> {
     icon: Option<wl_surface::WlSurface>,
     origin: wl_surface::WlSurface,
     callback: Rc<RefCell<dyn FnMut(super::DataDeviceEvent)>>,
-    token: CompositorToken<R>,
     seat: Seat,
 }
 
-impl<R: Role<DnDIconRole> + 'static> DnDGrab<R> {
+impl DnDGrab {
     pub(crate) fn new(
         start_data: GrabStartData,
         source: Option<wl_data_source::WlDataSource>,
         origin: wl_surface::WlSurface,
         seat: Seat,
         icon: Option<wl_surface::WlSurface>,
-        token: CompositorToken<R>,
         callback: Rc<RefCell<dyn FnMut(super::DataDeviceEvent)>>,
-    ) -> DnDGrab<R> {
+    ) -> DnDGrab {
         DnDGrab {
             start_data,
             data_source: source,
@@ -45,13 +42,12 @@ impl<R: Role<DnDIconRole> + 'static> DnDGrab<R> {
             origin,
             icon,
             callback,
-            token,
             seat,
         }
     }
 }
 
-impl<R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<R> {
+impl PointerGrab for DnDGrab {
     fn motion(
         &mut self,
         _handle: &mut PointerInnerHandle<'_>,
@@ -211,11 +207,7 @@ impl<R: Role<DnDIconRole> + 'static> PointerGrab for DnDGrab<R> {
                 }
             }
             (&mut *self.callback.borrow_mut())(super::DataDeviceEvent::DnDDropped);
-            if let Some(icon) = self.icon.take() {
-                if icon.as_ref().is_alive() {
-                    self.token.remove_role::<super::DnDIconRole>(&icon).unwrap();
-                }
-            }
+            self.icon = None;
             // in all cases abandon the drop
             // no more buttons are pressed, release the grab
             handle.unset_grab(serial, time);

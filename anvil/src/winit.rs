@@ -61,12 +61,7 @@ pub fn run_winit(
      * Initialize the globals
      */
 
-    let mut state = AnvilState::init(
-        display.clone(),
-        event_loop.handle(),
-        WinitData,
-        log.clone(),
-    );
+    let mut state = AnvilState::init(display.clone(), event_loop.handle(), WinitData, log.clone());
 
     let (output, _) = Output::new(
         &mut display.borrow_mut(),
@@ -122,14 +117,7 @@ pub fn run_winit(
                     frame.clear([0.8, 0.8, 0.9, 1.0])?;
 
                     // draw the windows
-                    draw_windows(
-                        renderer,
-                        frame,
-                        &*state.window_map.borrow(),
-                        None,
-                        state.ctoken,
-                        &log,
-                    )?;
+                    draw_windows(renderer, frame, &*state.window_map.borrow(), None, &log)?;
 
                     let (x, y) = state.pointer_location;
                     // draw the dnd icon if any
@@ -137,14 +125,7 @@ pub fn run_winit(
                         let guard = state.dnd_icon.lock().unwrap();
                         if let Some(ref surface) = *guard {
                             if surface.as_ref().is_alive() {
-                                draw_dnd_icon(
-                                    renderer,
-                                    frame,
-                                    surface,
-                                    (x as i32, y as i32),
-                                    state.ctoken,
-                                    &log,
-                                )?;
+                                draw_dnd_icon(renderer, frame, surface, (x as i32, y as i32), &log)?;
                             }
                         }
                     }
@@ -163,7 +144,7 @@ pub fn run_winit(
                         // draw as relevant
                         if let CursorImageStatus::Image(ref surface) = *guard {
                             cursor_visible = false;
-                            draw_cursor(renderer, frame, surface, (x as i32, y as i32), state.ctoken, &log)?;
+                            draw_cursor(renderer, frame, surface, (x as i32, y as i32), &log)?;
                         } else {
                             cursor_visible = true;
                         }

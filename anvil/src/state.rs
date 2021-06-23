@@ -13,7 +13,6 @@ use smithay::{
         wayland_server::{protocol::wl_surface::WlSurface, Display},
     },
     wayland::{
-        compositor::CompositorToken,
         data_device::{default_action_chooser, init_data_device, set_data_device_focus, DataDeviceEvent},
         seat::{CursorImageStatus, KeyboardHandle, PointerHandle, Seat, XkbConfig},
         shm::init_shm_global,
@@ -31,8 +30,7 @@ pub struct AnvilState<BackendData> {
     pub running: Arc<AtomicBool>,
     pub display: Rc<RefCell<Display>>,
     pub handle: LoopHandle<'static, AnvilState<BackendData>>,
-    pub ctoken: CompositorToken<crate::shell::Roles>,
-    pub window_map: Rc<RefCell<crate::window_map::WindowMap<crate::shell::Roles>>>,
+    pub window_map: Rc<RefCell<crate::window_map::WindowMap>>,
     pub dnd_icon: Arc<Mutex<Option<WlSurface>>>,
     pub log: slog::Logger,
     // input-related fields
@@ -106,24 +104,18 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 _ => {}
             },
             default_action_chooser,
-            shell_handles.token,
             log.clone(),
         );
 
         // init input
         let seat_name = backend_data.seat_name();
 
-        let (mut seat, _) = Seat::new(
-            &mut display.borrow_mut(),
-            seat_name.clone(),
-            shell_handles.token,
-            log.clone(),
-        );
+        let (mut seat, _) = Seat::new(&mut display.borrow_mut(), seat_name.clone(), log.clone());
 
         let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
 
         let cursor_status2 = cursor_status.clone();
-        let pointer = seat.add_pointer(shell_handles.token, move |new_status| {
+        let pointer = seat.add_pointer(move |new_status| {
             // TODO: hide winit system cursor when relevant
             *cursor_status2.lock().unwrap() = new_status
         });
@@ -155,7 +147,6 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             running: Arc::new(AtomicBool::new(true)),
             display,
             handle,
-            ctoken: shell_handles.token,
             window_map: shell_handles.window_map,
             dnd_icon,
             log,

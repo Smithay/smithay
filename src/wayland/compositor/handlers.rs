@@ -1,4 +1,12 @@
-use std::{cell::RefCell, ops::Deref as _, rc::Rc, sync::Mutex};
+use std::{
+    cell::RefCell,
+    ops::Deref as _,
+    rc::Rc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
+};
 
 use wayland_server::{
     protocol::{wl_compositor, wl_region, wl_subcompositor, wl_subsurface, wl_surface},
@@ -6,23 +14,22 @@ use wayland_server::{
 };
 
 use super::{
-    tree::{Location, SurfaceData},
-    AlreadyHasRole, BufferAssignment, CompositorToken, Damage, Rectangle, RectangleKind, RegionAttributes,
-    Role, RoleType, SubsurfaceRole, SurfaceEvent,
+    cache::Cacheable,
+    tree::{Location, PrivateSurfaceData},
+    AlreadyHasRole, BufferAssignment, Damage, Rectangle, RectangleKind, RegionAttributes, SurfaceAttributes,
 };
 
 /*
  * wl_compositor
  */
 
-pub(crate) fn implement_compositor<R, Impl>(
+pub(crate) fn implement_compositor<Impl>(
     compositor: Main<wl_compositor::WlCompositor>,
     log: ::slog::Logger,
     implem: Rc<RefCell<Impl>>,
 ) -> wl_compositor::WlCompositor
 where
-    R: Default + Send + 'static,
-    Impl: for<'a> FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>, DispatchData<'a>) + 'static,
+    Impl: for<'a> FnMut(wl_surface::WlSurface, DispatchData<'a>) + 'static,
 {
     compositor.quick_assign(move |_compositor, request, _| match request {
         wl_compositor::Request::CreateSurface { id } => {
@@ -42,29 +49,24 @@ where
  * wl_surface
  */
 
-type SurfaceImplemFn<R> =
-    dyn for<'a> FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>, DispatchData<'a>);
+type SurfaceImplemFn = dyn for<'a> FnMut(wl_surface::WlSurface, DispatchData<'a>);
 
 // Internal implementation data of surfaces
-pub(crate) struct SurfaceImplem<R> {
+pub(crate) struct SurfaceImplem {
     log: ::slog::Logger,
-    implem: Rc<RefCell<SurfaceImplemFn<R>>>,
+    implem: Rc<RefCell<SurfaceImplemFn>>,
 }
 
-impl<R> SurfaceImplem<R> {
-    fn make<Impl>(log: ::slog::Logger, implem: Rc<RefCell<Impl>>) -> SurfaceImplem<R>
+impl SurfaceImplem {
+    fn make<Impl>(log: ::slog::Logger, implem: Rc<RefCell<Impl>>) -> SurfaceImplem
     where
-        Impl: for<'a> FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>, DispatchData<'a>)
-            + 'static,
+        Impl: for<'a> FnMut(wl_surface::WlSurface, DispatchData<'a>) + 'static,
     {
         SurfaceImplem { log, implem }
     }
 }
 
-impl<R> SurfaceImplem<R>
-where
-    R: 'static,
-{
+impl SurfaceImplem {
     fn receive_surface_request(
         &mut self,
         req: wl_surface::Request,
@@ -73,8 +75,8 @@ where
     ) {
         match req {
             wl_surface::Request::Attach { buffer, x, y } => {
-                SurfaceData::<R>::with_data(&surface, |d| {
-                    d.buffer = Some(match buffer {
+                PrivateSurfaceData::with_states(&surface, |states| {
+                    states.cached_state.pending::<SurfaceAttributes>().buffer = Some(match buffer {
                         Some(buffer) => BufferAssignment::NewBuffer {
                             buffer,
                             delta: (x, y),
@@ -84,13 +86,21 @@ where
                 });
             }
             wl_surface::Request::Damage { x, y, width, height } => {
-                SurfaceData::<R>::with_data(&surface, |d| {
-                    d.damage.push(Damage::Surface(Rectangle { x, y, width, height }));
+                PrivateSurfaceData::with_states(&surface, |states| {
+                    states
+                        .cached_state
+                        .pending::<SurfaceAttributes>()
+                        .damage
+                        .push(Damage::Surface(Rectangle { x, y, width, height }));
                 });
             }
             wl_surface::Request::Frame { callback } => {
-                SurfaceData::<R>::with_data(&surface, move |d| {
-                    d.frame_callbacks.push((*callback).clone());
+                PrivateSurfaceData::with_states(&surface, |states| {
+                    states
+                        .cached_state
+                        .pending::<SurfaceAttributes>()
+                        .frame_callbacks
+                        .push((*callback).clone());
                 });
             }
             wl_surface::Request::SetOpaqueRegion { region } => {
@@ -98,29 +108,50 @@ where
                     let attributes_mutex = r.as_ref().user_data().get::<Mutex<RegionAttributes>>().unwrap();
                     attributes_mutex.lock().unwrap().clone()
                 });
-                SurfaceData::<R>::with_data(&surface, |d| d.opaque_region = attributes);
+                PrivateSurfaceData::with_states(&surface, |states| {
+                    states.cached_state.pending::<SurfaceAttributes>().opaque_region = attributes;
+                });
             }
             wl_surface::Request::SetInputRegion { region } => {
                 let attributes = region.map(|r| {
                     let attributes_mutex = r.as_ref().user_data().get::<Mutex<RegionAttributes>>().unwrap();
                     attributes_mutex.lock().unwrap().clone()
                 });
-                SurfaceData::<R>::with_data(&surface, |d| d.input_region = attributes);
+                PrivateSurfaceData::with_states(&surface, |states| {
+                    states.cached_state.pending::<SurfaceAttributes>().input_region = attributes;
+                });
             }
             wl_surface::Request::Commit => {
                 let mut user_impl = self.implem.borrow_mut();
+                PrivateSurfaceData::invoke_commit_hooks(&surface);
+                if !surface.as_ref().is_alive() {
+                    // the client was killed by a hook, abort
+                    return;
+                }
+                PrivateSurfaceData::commit(&surface);
                 trace!(self.log, "Calling user implementation for wl_surface.commit");
-                (&mut *user_impl)(SurfaceEvent::Commit, surface, CompositorToken::make(), ddata);
+                (&mut *user_impl)(surface, ddata);
             }
             wl_surface::Request::SetBufferTransform { transform } => {
-                SurfaceData::<R>::with_data(&surface, |d| d.buffer_transform = transform);
+                PrivateSurfaceData::with_states(&surface, |states| {
+                    states
+                        .cached_state
+                        .pending::<SurfaceAttributes>()
+                        .buffer_transform = transform;
+                });
             }
             wl_surface::Request::SetBufferScale { scale } => {
-                SurfaceData::<R>::with_data(&surface, |d| d.buffer_scale = scale);
+                PrivateSurfaceData::with_states(&surface, |states| {
+                    states.cached_state.pending::<SurfaceAttributes>().buffer_scale = scale;
+                });
             }
             wl_surface::Request::DamageBuffer { x, y, width, height } => {
-                SurfaceData::<R>::with_data(&surface, |d| {
-                    d.damage.push(Damage::Buffer(Rectangle { x, y, width, height }))
+                PrivateSurfaceData::with_states(&surface, |states| {
+                    states
+                        .cached_state
+                        .pending::<SurfaceAttributes>()
+                        .damage
+                        .push(Damage::Buffer(Rectangle { x, y, width, height }))
                 });
             }
             wl_surface::Request::Destroy => {
@@ -131,22 +162,53 @@ where
     }
 }
 
-fn implement_surface<R, Impl>(
+impl Cacheable for SurfaceAttributes {
+    fn commit(&mut self) -> Self {
+        SurfaceAttributes {
+            buffer: self.buffer.take(),
+            buffer_scale: self.buffer_scale,
+            buffer_transform: self.buffer_transform,
+            damage: std::mem::take(&mut self.damage),
+            opaque_region: self.opaque_region.clone(),
+            input_region: self.input_region.clone(),
+            frame_callbacks: std::mem::take(&mut self.frame_callbacks),
+        }
+    }
+    fn merge_into(self, into: &mut Self) {
+        if self.buffer.is_some() {
+            if let Some(BufferAssignment::NewBuffer { buffer, .. }) =
+                std::mem::replace(&mut into.buffer, self.buffer)
+            {
+                buffer.release();
+            }
+        }
+        into.buffer_scale = self.buffer_scale;
+        into.buffer_transform = self.buffer_transform;
+        into.damage.extend(self.damage);
+        into.opaque_region = self.opaque_region;
+        into.input_region = self.input_region;
+        into.frame_callbacks.extend(self.frame_callbacks);
+    }
+}
+
+fn implement_surface<Impl>(
     surface: Main<wl_surface::WlSurface>,
     log: ::slog::Logger,
     implem: Rc<RefCell<Impl>>,
 ) -> wl_surface::WlSurface
 where
-    R: Default + Send + 'static,
-    Impl: for<'a> FnMut(SurfaceEvent, wl_surface::WlSurface, CompositorToken<R>, DispatchData<'a>) + 'static,
+    Impl: for<'a> FnMut(wl_surface::WlSurface, DispatchData<'a>) + 'static,
 {
     surface.quick_assign({
         let mut implem = SurfaceImplem::make(log, implem);
         move |surface, req, ddata| implem.receive_surface_request(req, surface.deref().clone(), ddata)
     });
-    surface.assign_destructor(Filter::new(|surface, _, _| SurfaceData::<R>::cleanup(&surface)));
-    surface.as_ref().user_data().set_threadsafe(SurfaceData::<R>::new);
-    SurfaceData::<R>::init(&surface);
+    surface.assign_destructor(Filter::new(|surface, _, _| PrivateSurfaceData::cleanup(&surface)));
+    surface
+        .as_ref()
+        .user_data()
+        .set_threadsafe(PrivateSurfaceData::new);
+    PrivateSurfaceData::init(&surface);
     surface.deref().clone()
 }
 
@@ -188,22 +250,19 @@ fn implement_region(region: Main<wl_region::WlRegion>) -> wl_region::WlRegion {
  * wl_subcompositor
  */
 
-pub(crate) fn implement_subcompositor<R>(
+pub(crate) fn implement_subcompositor(
     subcompositor: Main<wl_subcompositor::WlSubcompositor>,
-) -> wl_subcompositor::WlSubcompositor
-where
-    R: RoleType + Role<SubsurfaceRole> + 'static,
-{
+) -> wl_subcompositor::WlSubcompositor {
     subcompositor.quick_assign(move |subcompositor, request, _| match request {
         wl_subcompositor::Request::GetSubsurface { id, surface, parent } => {
-            if let Err(AlreadyHasRole) = SurfaceData::<R>::set_parent(&surface, &parent) {
+            if let Err(AlreadyHasRole) = PrivateSurfaceData::set_parent(&surface, &parent) {
                 subcompositor.as_ref().post_error(
                     wl_subcompositor::Error::BadSurface as u32,
                     "Surface already has a role.".into(),
                 );
                 return;
             }
-            implement_subsurface::<R>(id, surface);
+            implement_subsurface(id, surface);
         }
         wl_subcompositor::Request::Destroy => {}
         _ => unreachable!(),
@@ -215,32 +274,72 @@ where
  * wl_subsurface
  */
 
-fn with_subsurface_attributes<R, F>(subsurface: &wl_subsurface::WlSubsurface, f: F)
-where
-    F: FnOnce(&mut SubsurfaceRole),
-    R: RoleType + Role<SubsurfaceRole> + 'static,
-{
-    let surface = subsurface
-        .as_ref()
-        .user_data()
-        .get::<wl_surface::WlSurface>()
-        .unwrap();
-    SurfaceData::<R>::with_role_data::<SubsurfaceRole, _, _>(surface, |d| f(d))
-        .expect("The surface does not have a subsurface role while it has a wl_subsurface?!");
+/// The cached state associated with a subsurface
+pub struct SubsurfaceCachedState {
+    /// Location of the top-left corner of this subsurface
+    /// relative to its parent coordinate space
+    pub location: (i32, i32),
 }
 
-fn implement_subsurface<R>(
+impl Default for SubsurfaceCachedState {
+    fn default() -> Self {
+        SubsurfaceCachedState { location: (0, 0) }
+    }
+}
+
+impl Cacheable for SubsurfaceCachedState {
+    fn commit(&mut self) -> Self {
+        SubsurfaceCachedState {
+            location: self.location,
+        }
+    }
+
+    fn merge_into(self, into: &mut Self) {
+        into.location = self.location;
+    }
+}
+
+pub(crate) struct SubsurfaceState {
+    pub(crate) sync: AtomicBool,
+}
+
+impl SubsurfaceState {
+    fn new() -> SubsurfaceState {
+        SubsurfaceState {
+            sync: AtomicBool::new(true),
+        }
+    }
+}
+
+/// Check if a (sub)surface is effectively sync
+pub fn is_effectively_sync(surface: &wl_surface::WlSurface) -> bool {
+    let is_direct_sync = PrivateSurfaceData::with_states(surface, |state| {
+        state
+            .data_map
+            .get::<SubsurfaceState>()
+            .map(|s| s.sync.load(Ordering::Acquire))
+            .unwrap_or(false)
+    });
+    if is_direct_sync {
+        return true;
+    }
+    if let Some(parent) = PrivateSurfaceData::get_parent(surface) {
+        is_effectively_sync(&parent)
+    } else {
+        false
+    }
+}
+
+fn implement_subsurface(
     subsurface: Main<wl_subsurface::WlSubsurface>,
     surface: wl_surface::WlSurface,
-) -> wl_subsurface::WlSubsurface
-where
-    R: RoleType + Role<SubsurfaceRole> + 'static,
-{
-    subsurface.quick_assign(|subsurface, request, _| {
+) -> wl_subsurface::WlSubsurface {
+    let data_surface = surface.clone();
+    subsurface.quick_assign(move |subsurface, request, _| {
         match request {
             wl_subsurface::Request::SetPosition { x, y } => {
-                with_subsurface_attributes::<R, _>(&subsurface, |attrs| {
-                    attrs.location = (x, y);
+                PrivateSurfaceData::with_states(&surface, |state| {
+                    state.cached_state.pending::<SubsurfaceCachedState>().location = (x, y);
                 })
             }
             wl_subsurface::Request::PlaceAbove { sibling } => {
@@ -249,7 +348,7 @@ where
                     .user_data()
                     .get::<wl_surface::WlSurface>()
                     .unwrap();
-                if let Err(()) = SurfaceData::<R>::reorder(surface, Location::After, &sibling) {
+                if let Err(()) = PrivateSurfaceData::reorder(surface, Location::After, &sibling) {
                     subsurface.as_ref().post_error(
                         wl_subsurface::Error::BadSurface as u32,
                         "Provided surface is not a sibling or parent.".into(),
@@ -262,18 +361,28 @@ where
                     .user_data()
                     .get::<wl_surface::WlSurface>()
                     .unwrap();
-                if let Err(()) = SurfaceData::<R>::reorder(surface, Location::Before, &sibling) {
+                if let Err(()) = PrivateSurfaceData::reorder(surface, Location::Before, &sibling) {
                     subsurface.as_ref().post_error(
                         wl_subsurface::Error::BadSurface as u32,
                         "Provided surface is not a sibling or parent.".into(),
                     )
                 }
             }
-            wl_subsurface::Request::SetSync => with_subsurface_attributes::<R, _>(&subsurface, |attrs| {
-                attrs.sync = true;
+            wl_subsurface::Request::SetSync => PrivateSurfaceData::with_states(&surface, |state| {
+                state
+                    .data_map
+                    .get::<SubsurfaceState>()
+                    .unwrap()
+                    .sync
+                    .store(true, Ordering::Release);
             }),
-            wl_subsurface::Request::SetDesync => with_subsurface_attributes::<R, _>(&subsurface, |attrs| {
-                attrs.sync = false;
+            wl_subsurface::Request::SetDesync => PrivateSurfaceData::with_states(&surface, |state| {
+                state
+                    .data_map
+                    .get::<SubsurfaceState>()
+                    .unwrap()
+                    .sync
+                    .store(false, Ordering::Release);
             }),
             wl_subsurface::Request::Destroy => {
                 // Our destructor already handles it
@@ -281,23 +390,25 @@ where
             _ => unreachable!(),
         }
     });
-    subsurface.assign_destructor(Filter::new(|subsurface, _, _| {
-        destroy_subsurface::<R>(&subsurface)
-    }));
-    subsurface.as_ref().user_data().set_threadsafe(|| surface);
+    super::with_states(&data_surface, |states| {
+        states.data_map.insert_if_missing_threadsafe(SubsurfaceState::new)
+    })
+    .unwrap();
+    subsurface.assign_destructor(Filter::new(|subsurface, _, _| destroy_subsurface(&subsurface)));
+    subsurface
+        .as_ref()
+        .user_data()
+        .set_threadsafe(move || data_surface);
     subsurface.deref().clone()
 }
 
-fn destroy_subsurface<R>(subsurface: &wl_subsurface::WlSubsurface)
-where
-    R: RoleType + Role<SubsurfaceRole> + 'static,
-{
+fn destroy_subsurface(subsurface: &wl_subsurface::WlSubsurface) {
     let surface = subsurface
         .as_ref()
         .user_data()
         .get::<wl_surface::WlSurface>()
         .unwrap();
     if surface.as_ref().is_alive() {
-        SurfaceData::<R>::unset_parent(&surface);
+        PrivateSurfaceData::unset_parent(&surface);
     }
 }
