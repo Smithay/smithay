@@ -20,8 +20,6 @@ use smithay::{
     },
 };
 
-#[cfg(feature = "egl")]
-use smithay::backend::egl::display::EGLBufferReader;
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::{XWayland, XWaylandEvent};
 
@@ -177,6 +175,4 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
 pub trait Backend {
     fn seat_name(&self) -> String;
-    #[cfg(feature = "egl")]
-    fn egl_reader(&self) -> Option<EGLBufferReader>;
 }

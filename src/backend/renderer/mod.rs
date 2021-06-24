@@ -25,7 +25,10 @@ use crate::backend::allocator::{dmabuf::Dmabuf, Format};
     feature = "backend_egl",
     feature = "use_system_lib"
 ))]
-use crate::backend::egl::{display::EGLBufferReader, Error as EglError};
+use crate::backend::egl::{
+    display::{EGLBufferReader, BUFFER_READER},
+    Error as EglError,
+};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Possible transformations to two-dimensional planes
@@ -404,27 +407,6 @@ pub trait ImportAll: Renderer {
         surface: Option<&SurfaceAttributes>,
         damage: &[Rectangle],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>>;
-
-    /// Returns the *type* of a wl_buffer
-    ///
-    /// *Note*: Different to [`buffer_type`] this variant uses its internal `EGLBufferReader`, if
-    /// - the underlying Renderer supports `ImportEgl`,
-    /// - smithay was compiled with the `backend_egl` and `use_system_lib`,
-    /// - and the underlying Renderer bound via [`ImportEgl::bind_wl_display`] successfully.
-    ///
-    /// Returns `None` if the type is not known to smithay
-    /// or otherwise not supported (e.g. not initialized using one of smithays [`crate::wayland`]-handlers).
-    fn buffer_type(&self, buffer: &wl_buffer::WlBuffer) -> Option<BufferType>;
-
-    /// Returns the dimensions of a wl_buffer
-    ///
-    /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`]).
-    ///
-    /// *Note*: Different to [`buffer_type`] this variant uses its internal `EGLBufferReader`, if
-    /// - the underlying Renderer supports `ImportEgl`,
-    /// - smithay was compiled with the `backend_egl` and `use_system_lib`,
-    /// - and the underlying Renderer bound via [`ImportEgl::bind_wl_display`] successfully.
-    fn buffer_dimensions(&self, buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)>;
 }
 
 // TODO: Do this with specialization, when possible and do default implementations
@@ -440,20 +422,12 @@ impl<R: Renderer + ImportShm + ImportEgl + ImportDma> ImportAll for R {
         surface: Option<&SurfaceAttributes>,
         damage: &[Rectangle],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
-        match buffer_type(buffer, self.egl_reader()) {
+        match buffer_type(buffer) {
             Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
             Some(BufferType::Egl) => Some(self.import_egl_buffer(buffer)),
             Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer)),
             _ => None,
         }
-    }
-
-    fn buffer_type(&self, buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
-        buffer_type(buffer, self.egl_reader())
-    }
-
-    fn buffer_dimensions(&self, buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)> {
-        buffer_dimensions(buffer, self.egl_reader())
     }
 }
 
@@ -474,14 +448,6 @@ impl<R: Renderer + ImportShm + ImportDma> ImportAll for R {
             _ => None,
         }
     }
-
-    fn buffer_type(&self, buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
-        buffer_type(buffer)
-    }
-
-    fn buffer_dimensions(&self, buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)> {
-        buffer_dimensions(buffer)
-    }
 }
 
 #[cfg(feature = "wayland_frontend")]
@@ -501,94 +467,58 @@ pub enum BufferType {
 ///
 /// Returns `None` if the type is not known to smithay
 /// or otherwise not supported (e.g. not initialized using one of smithays [`crate::wayland`]-handlers).
-#[cfg(all(
-    feature = "wayland_frontend",
-    feature = "backend_egl",
-    feature = "use_system_lib"
-))]
-pub fn buffer_type(
-    buffer: &wl_buffer::WlBuffer,
-    egl_buffer_reader: Option<&EGLBufferReader>,
-) -> Option<BufferType> {
+#[cfg(feature = "wayland_frontend")]
+pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
     if buffer.as_ref().user_data().get::<Dmabuf>().is_some() {
-        Some(BufferType::Dma)
-    } else if egl_buffer_reader
+        return Some(BufferType::Dma);
+    }
+
+    #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
+    if BUFFER_READER
+        .lock()
+        .unwrap()
         .as_ref()
+        .and_then(|x| x.upgrade())
         .and_then(|x| x.egl_buffer_dimensions(&buffer))
         .is_some()
     {
-        Some(BufferType::Egl)
-    } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
-        Some(BufferType::Shm)
-    } else {
-        None
+        return Some(BufferType::Egl);
     }
-}
 
-/// Returns the *type* of a wl_buffer
-///
-/// Returns `None` if the type is not recognized by smithay or otherwise not supported.
-#[cfg(all(
-    feature = "wayland_frontend",
-    not(all(feature = "backend_egl", feature = "use_system_lib"))
-))]
-pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
-    if buffer.as_ref().user_data().get::<Dmabuf>().is_some() {
-        Some(BufferType::Dma)
-    } else if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
-        Some(BufferType::Shm)
-    } else {
-        None
+    if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
+        return Some(BufferType::Shm);
     }
+
+    None
 }
 
 /// Returns the dimensions of a wl_buffer
 ///
 /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`])
-#[cfg(all(
-    feature = "wayland_frontend",
-    feature = "backend_egl",
-    feature = "use_system_lib"
-))]
-pub fn buffer_dimensions(
-    buffer: &wl_buffer::WlBuffer,
-    egl_buffer_reader: Option<&EGLBufferReader>,
-) -> Option<(i32, i32)> {
-    use crate::backend::allocator::Buffer;
-
-    if let Some(buf) = buffer.as_ref().user_data().get::<Dmabuf>() {
-        Some((buf.width() as i32, buf.height() as i32))
-    } else if let Some((w, h)) = egl_buffer_reader
-        .as_ref()
-        .and_then(|x| x.egl_buffer_dimensions(&buffer))
-    {
-        Some((w, h))
-    } else if let Ok((w, h)) =
-        crate::wayland::shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height))
-    {
-        Some((w, h))
-    } else {
-        None
-    }
-}
-
-/// Returns the dimensions of a wl_buffer
-///
-/// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`])
-#[cfg(all(
-    feature = "wayland_frontend",
-    not(all(feature = "backend_egl", feature = "use_system_lib"))
-))]
+#[cfg(feature = "wayland_frontend")]
 pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)> {
     use crate::backend::allocator::Buffer;
 
     if let Some(buf) = buffer.as_ref().user_data().get::<Dmabuf>() {
-        Some((buf.width() as i32, buf.height() as i32))
-    } else if let Ok((w, h)) =
+        return Some((buf.width() as i32, buf.height() as i32));
+    }
+
+    #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
+    if let Some((w, h)) = BUFFER_READER
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|x| x.upgrade())
+        .and_then(|x| x.egl_buffer_dimensions(&buffer))
+    {
+        return Some((w, h));
+    }
+
+    if let Ok((w, h)) =
         crate::wayland::shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height))
     {
-        Some((w, h))
-    } else {
-        None
+        return Some((w, h));
     }
+
+    None
 }

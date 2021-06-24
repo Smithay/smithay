@@ -60,7 +60,6 @@ use smithay::{
 use smithay::{
     backend::{
         drm::DevPath,
-        egl::display::EGLBufferReader,
         renderer::{ImportDma, ImportEgl},
         udev::primary_gpu,
     },
@@ -91,12 +90,6 @@ pub struct UdevData {
 }
 
 impl Backend for UdevData {
-    #[cfg(feature = "egl")]
-    fn egl_reader(&self) -> Option<EGLBufferReader> {
-        self.backends
-            .values()
-            .find_map(|backend| backend.renderer.borrow().egl_reader().cloned())
-    }
     fn seat_name(&self) -> String {
         self.session.seat()
     }

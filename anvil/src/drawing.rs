@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use slog::Logger;
 use smithay::{
     backend::{
-        renderer::{BufferType, Frame, ImportAll, Renderer, Texture, Transform},
+        renderer::{buffer_type, BufferType, Frame, ImportAll, Renderer, Texture, Transform},
         SwapBuffersError,
     },
     reexports::wayland_server::protocol::{wl_buffer, wl_surface},
@@ -96,7 +96,7 @@ where
 
                         match renderer.import_buffer(&buffer, Some(&attributes), &damage) {
                             Some(Ok(m)) => {
-                                if let Some(BufferType::Shm) = renderer.buffer_type(&buffer) {
+                                if let Some(BufferType::Shm) = buffer_type(&buffer) {
                                     buffer.release();
                                 }
                                 data.texture = Some(Box::new(BufferTextures {

@@ -1,13 +1,7 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 #[cfg(feature = "egl")]
-use smithay::{
-    backend::{
-        egl::display::EGLBufferReader,
-        renderer::{ImportDma, ImportEgl},
-    },
-    wayland::dmabuf::init_dmabuf_global,
-};
+use smithay::{backend::renderer::ImportDma, wayland::dmabuf::init_dmabuf_global};
 use smithay::{
     backend::{input::InputBackend, renderer::Frame, winit, SwapBuffersError},
     reexports::{
@@ -25,14 +19,9 @@ use slog::Logger;
 use crate::drawing::*;
 use crate::state::{AnvilState, Backend};
 
-pub struct WinitData(Rc<RefCell<winit::WinitGraphicsBackend>>);
+pub struct WinitData;
 
 impl Backend for WinitData {
-    #[cfg(feature = "egl")]
-    fn egl_reader(&self) -> Option<EGLBufferReader> {
-        self.0.borrow_mut().renderer().egl_reader().cloned()
-    }
-
     fn seat_name(&self) -> String {
         String::from("winit")
     }
@@ -75,7 +64,7 @@ pub fn run_winit(
     let mut state = AnvilState::init(
         display.clone(),
         event_loop.handle(),
-        WinitData(renderer.clone()),
+        WinitData,
         log.clone(),
     );
 
