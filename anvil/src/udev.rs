@@ -58,7 +58,11 @@ use smithay::{
 };
 #[cfg(feature = "egl")]
 use smithay::{
-    backend::{drm::DevPath, egl::display::EGLBufferReader, renderer::ImportDma, udev::primary_gpu},
+    backend::{
+        drm::DevPath,
+        renderer::{ImportDma, ImportEgl},
+        udev::primary_gpu,
+    },
     wayland::dmabuf::init_dmabuf_global,
 };
 
@@ -130,14 +134,7 @@ pub fn run_udev(
         pointer_image: ImageBuffer::from_raw(64, 64, pointer_bytes.to_vec()).unwrap(),
         render_timer: timer.handle(),
     };
-    let mut state = AnvilState::init(
-        display.clone(),
-        event_loop.handle(),
-        data,
-        #[cfg(feature = "egl")]
-        None,
-        log.clone(),
-    );
+    let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone());
 
     // re-render timer
     event_loop
@@ -460,17 +457,6 @@ impl AnvilState<UdevData> {
                 }
             };
 
-            #[cfg(feature = "egl")]
-            let is_primary = path.canonicalize().ok() == self.backend_data.primary_gpu;
-            // init hardware acceleration on the primary gpu.
-            #[cfg(feature = "egl")]
-            {
-                if is_primary {
-                    info!(self.log, "Initializing EGL Hardware Acceleration via {:?}", path);
-                    self.egl_reader = egl.bind_wl_display(&*self.display.borrow()).ok();
-                }
-            }
-
             let context = match EGLContext::new(&egl, self.log.clone()) {
                 Ok(context) => context,
                 Err(err) => {
@@ -485,6 +471,15 @@ impl AnvilState<UdevData> {
             let renderer = Rc::new(RefCell::new(unsafe {
                 Gles2Renderer::new(context, self.log.clone()).unwrap()
             }));
+
+            #[cfg(feature = "egl")]
+            if path.canonicalize().ok() == self.backend_data.primary_gpu {
+                info!(self.log, "Initializing EGL Hardware Acceleration via {:?}", path);
+                renderer
+                    .borrow_mut()
+                    .bind_wl_display(&*self.display.borrow())
+                    .expect("Unable to bind Wl Display?");
+            }
 
             let backends = Rc::new(RefCell::new(scan_connectors(
                 &mut device,
@@ -597,12 +592,8 @@ impl AnvilState<UdevData> {
 
             // don't use hardware acceleration anymore, if this was the primary gpu
             #[cfg(feature = "egl")]
-            {
-                if _device.dev_path().and_then(|path| path.canonicalize().ok())
-                    == self.backend_data.primary_gpu
-                {
-                    self.egl_reader = None;
-                }
+            if _device.dev_path().and_then(|path| path.canonicalize().ok()) == self.backend_data.primary_gpu {
+                backend_data.renderer.borrow_mut().unbind_wl_display();
             }
             debug!(self.log, "Dropping device");
         }
@@ -637,8 +628,6 @@ impl AnvilState<UdevData> {
             let result = render_surface(
                 &mut *surface.borrow_mut(),
                 &mut *device_backend.renderer.borrow_mut(),
-                #[cfg(feature = "egl")]
-                self.egl_reader.as_ref(),
                 device_backend.dev_id,
                 crtc,
                 &mut *self.window_map.borrow_mut(),
@@ -687,7 +676,6 @@ impl AnvilState<UdevData> {
 fn render_surface(
     surface: &mut RenderSurface,
     renderer: &mut Gles2Renderer,
-    #[cfg(feature = "egl")] egl_buffer_reader: Option<&EGLBufferReader>,
     device_id: dev_t,
     crtc: crtc::Handle,
     window_map: &mut MyWindowMap,
@@ -726,8 +714,6 @@ fn render_surface(
                 draw_windows(
                     renderer,
                     frame,
-                    #[cfg(feature = "egl")]
-                    egl_buffer_reader,
                     window_map,
                     Some(Rectangle {
                         x: x as i32,
@@ -754,8 +740,6 @@ fn render_surface(
                                     renderer,
                                     frame,
                                     wl_surface,
-                                    #[cfg(feature = "egl")]
-                                    egl_buffer_reader,
                                     (ptr_x, ptr_y),
                                     *compositor_token,
                                     logger,
@@ -779,8 +763,6 @@ fn render_surface(
                                 renderer,
                                 frame,
                                 wl_surface,
-                                #[cfg(feature = "egl")]
-                                egl_buffer_reader,
                                 (ptr_x, ptr_y),
                                 *compositor_token,
                                 logger,

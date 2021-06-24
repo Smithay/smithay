@@ -38,9 +38,7 @@ pub fn run_winit(
     let renderer = Rc::new(RefCell::new(renderer));
 
     #[cfg(feature = "egl")]
-    let reader = renderer.borrow().bind_wl_display(&display.borrow()).ok();
-    #[cfg(feature = "egl")]
-    if reader.is_some() {
+    if renderer.borrow().bind_wl_display(&display.borrow()).is_ok() {
         info!(log, "EGL hardware-acceleration enabled");
         let dmabuf_formats = renderer
             .borrow_mut()
@@ -67,8 +65,6 @@ pub fn run_winit(
         display.clone(),
         event_loop.handle(),
         WinitData,
-        #[cfg(feature = "egl")]
-        reader,
         log.clone(),
     );
 
@@ -129,8 +125,6 @@ pub fn run_winit(
                     draw_windows(
                         renderer,
                         frame,
-                        #[cfg(feature = "egl")]
-                        state.egl_reader.as_ref(),
                         &*state.window_map.borrow(),
                         None,
                         state.ctoken,
@@ -147,8 +141,6 @@ pub fn run_winit(
                                     renderer,
                                     frame,
                                     surface,
-                                    #[cfg(feature = "egl")]
-                                    state.egl_reader.as_ref(),
                                     (x as i32, y as i32),
                                     state.ctoken,
                                     &log,
@@ -171,16 +163,7 @@ pub fn run_winit(
                         // draw as relevant
                         if let CursorImageStatus::Image(ref surface) = *guard {
                             cursor_visible = false;
-                            draw_cursor(
-                                renderer,
-                                frame,
-                                surface,
-                                #[cfg(feature = "egl")]
-                                state.egl_reader.as_ref(),
-                                (x as i32, y as i32),
-                                state.ctoken,
-                                &log,
-                            )?;
+                            draw_cursor(renderer, frame, surface, (x as i32, y as i32), state.ctoken, &log)?;
                         } else {
                             cursor_visible = true;
                         }

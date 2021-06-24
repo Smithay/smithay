@@ -4,8 +4,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-#[cfg(feature = "egl")]
-use smithay::backend::egl::display::EGLBufferReader;
 use smithay::{
     backend::renderer::buffer_dimensions,
     reexports::{
@@ -324,22 +322,15 @@ pub struct ShellHandles {
     pub window_map: Rc<RefCell<MyWindowMap>>,
 }
 
-pub fn init_shell<Backend: 'static>(display: &mut Display, log: ::slog::Logger) -> ShellHandles {
+pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logger) -> ShellHandles {
     // Create the compositor
     let (compositor_token, _, _) = compositor_init(
         display,
         move |request, surface, ctoken, mut ddata| match request {
             SurfaceEvent::Commit => {
-                let anvil_state = ddata.get::<AnvilState<Backend>>().unwrap();
+                let anvil_state = ddata.get::<AnvilState<BackendData>>().unwrap();
                 let window_map = anvil_state.window_map.as_ref();
-                #[cfg(feature = "egl")]
-                {
-                    surface_commit(&surface, ctoken, anvil_state.egl_reader.as_ref(), &*window_map)
-                }
-                #[cfg(not(feature = "egl"))]
-                {
-                    surface_commit(&surface, ctoken, &*window_map)
-                }
+                surface_commit(&surface, ctoken, &*window_map)
             }
         },
         log.clone(),
@@ -850,7 +841,6 @@ impl SurfaceData {
 fn surface_commit(
     surface: &wl_surface::WlSurface,
     token: CompositorToken<Roles>,
-    #[cfg(feature = "egl")] egl_reader: Option<&EGLBufferReader>,
     window_map: &RefCell<MyWindowMap>,
 ) {
     #[cfg(feature = "xwayland")]
@@ -924,14 +914,7 @@ fn surface_commit(
         match attributes.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
-                #[cfg(feature = "egl")]
-                {
-                    next_state.dimensions = buffer_dimensions(&buffer, egl_reader);
-                }
-                #[cfg(not(feature = "egl"))]
-                {
-                    next_state.dimensions = buffer_dimensions(&buffer);
-                }
+                next_state.dimensions = buffer_dimensions(&buffer);
                 next_state.buffer = Some(buffer);
             }
             Some(BufferAssignment::Removed) => {

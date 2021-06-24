@@ -5,6 +5,8 @@ use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+use std::sync::{Mutex, Weak};
 
 use libc::c_void;
 use nix::libc::c_int;
@@ -23,6 +25,11 @@ use crate::backend::egl::{
 };
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{BufferAccessError, EGLBuffer, Format};
+
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+lazy_static! {
+    pub(crate) static ref BUFFER_READER: Mutex<Option<WeakBufferReader>> = Mutex::new(None);
+}
 
 /// Wrapper around [`ffi::EGLDisplay`](ffi::egl::types::EGLDisplay) to ensure display is only destroyed
 /// once all resources bound to it have been dropped.
@@ -535,7 +542,18 @@ impl EGLDisplay {
             ffi::egl::BindWaylandDisplayWL(**self.display, display.c_ptr() as *mut _)
         })
         .map_err(Error::OtherEGLDisplayAlreadyBound)?;
-        Ok(EGLBufferReader::new(self.display.clone(), display.c_ptr()))
+        let reader = EGLBufferReader::new(self.display.clone(), display.c_ptr());
+        let mut global = BUFFER_READER.lock().unwrap();
+        if global.as_ref().and_then(|x| x.upgrade()).is_some() {
+            warn!(
+                self.logger,
+                "Double bind_wl_display, smithay does not support this, please report"
+            );
+        }
+        *global = Some(WeakBufferReader {
+            display: Arc::downgrade(&self.display),
+        });
+        Ok(reader)
     }
 }
 
@@ -662,6 +680,24 @@ pub struct EGLBufferReader {
     display: Arc<EGLDisplayHandle>,
     wayland: Option<Arc<*mut wl_display>>,
 }
+
+#[cfg(feature = "use_system_lib")]
+pub(crate) struct WeakBufferReader {
+    display: Weak<EGLDisplayHandle>,
+}
+
+#[cfg(feature = "use_system_lib")]
+impl WeakBufferReader {
+    pub fn upgrade(&self) -> Option<EGLBufferReader> {
+        Some(EGLBufferReader {
+            display: self.display.upgrade()?,
+            wayland: None,
+        })
+    }
+}
+
+#[cfg(feature = "use_system_lib")]
+unsafe impl Send for EGLBufferReader {}
 
 #[cfg(feature = "use_system_lib")]
 impl EGLBufferReader {
@@ -825,7 +861,7 @@ impl EGLBufferReader {
 #[cfg(feature = "use_system_lib")]
 impl Drop for EGLBufferReader {
     fn drop(&mut self) {
-        if let Ok(wayland) = Arc::try_unwrap(self.wayland.take().unwrap()) {
+        if let Some(wayland) = self.wayland.take().and_then(|x| Arc::try_unwrap(x).ok()) {
             if !wayland.is_null() {
                 unsafe {
                     // ignore errors on drop
