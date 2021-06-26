@@ -100,7 +100,7 @@ where
                                     buffer.release();
                                 }
                                 data.texture = Some(Box::new(BufferTextures {
-                                    buffer: Some(buffer),
+                                    buffer: None,
                                     texture: m,
                                 })
                                     as Box<dyn std::any::Any + 'static>)
