@@ -14,6 +14,8 @@ mod shell;
 mod state;
 #[cfg(feature = "udev")]
 mod udev;
+#[cfg(feature = "udev")]
+mod raw;
 mod window_map;
 #[cfg(feature = "winit")]
 mod winit;
@@ -27,6 +29,7 @@ static POSSIBLE_BACKENDS: &[&str] = &[
     "--winit : Run anvil as a X11 or Wayland client using winit.",
     #[cfg(feature = "udev")]
     "--tty-udev : Run anvil as a tty udev client (requires root if without logind).",
+    // dont advertise the "raw" backend
 ];
 
 fn main() {
@@ -54,6 +57,16 @@ fn main() {
             let mut event_loop = EventLoop::try_new().unwrap();
             let display = Rc::new(RefCell::new(Display::new()));
             if let Err(()) = udev::run_udev(display, &mut event_loop, log.clone()) {
+                crit!(log, "Failed to initialize tty backend.");
+            }
+        }
+        #[cfg(all(feature = "udev", debug_assertions))]
+        Some("--raw") => {
+            let device = ::std::env::args().nth(2).expect("Raw backend can only be used with a drm node argument");
+            info!(log, "Starting raw backend on {:?}", device);
+            let mut event_loop = EventLoop::try_new().unwrap();
+            let display = Rc::new(RefCell::new(Display::new()));
+            if let Err(()) = raw::run_raw(display, &mut event_loop, device, log.clone()) {
                 crit!(log, "Failed to initialize tty backend.");
             }
         }
