@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use smithay::{
-    reexports::wayland_server::protocol::wl_surface,
+    reexports::{wayland_protocols::xdg_shell::server::xdg_toplevel, wayland_server::protocol::wl_surface},
     utils::Rectangle,
     wayland::{
         compositor::{with_states, with_surface_tree_downward, SubsurfaceCachedState, TraversalAction},
@@ -51,6 +51,25 @@ impl Kind {
             (Kind::X11(a), Kind::X11(b)) => a.equals(b),
             _ => false,
         }
+    }
+
+    /// Activate/Deactivate this window
+    pub fn set_activated(&self, active: bool) {
+        match *self {
+            Kind::Xdg(ref t) => {
+                let changed = t.with_pending_state(|state| {
+                    if active {
+                        state.states.set(xdg_toplevel::State::Activated)
+                    } else {
+                        state.states.unset(xdg_toplevel::State::Activated)
+                    }
+                });
+                if let Ok(true) = changed {
+                    t.send_configure();
+                }
+            }
+            _ => {}
+        };
     }
 }
 
@@ -252,6 +271,15 @@ impl WindowMap {
         }
         if let Some((i, surface)) = found {
             let winner = self.windows.remove(i);
+
+            // Take activation away from all the windows
+            for window in self.windows.iter() {
+                window.toplevel.set_activated(false);
+            }
+
+            // Give activation to our winner
+            winner.toplevel.set_activated(true);
+
             self.windows.insert(0, winner);
             Some(surface)
         } else {
