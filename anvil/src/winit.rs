@@ -1,7 +1,10 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 #[cfg(feature = "egl")]
-use smithay::{backend::renderer::ImportDma, wayland::dmabuf::init_dmabuf_global};
+use smithay::{
+    backend::renderer::{ImportDma, ImportEgl},
+    wayland::dmabuf::init_dmabuf_global,
+};
 use smithay::{
     backend::{input::InputBackend, renderer::Frame, winit, SwapBuffersError},
     reexports::{
@@ -38,7 +41,12 @@ pub fn run_winit(
     let renderer = Rc::new(RefCell::new(renderer));
 
     #[cfg(feature = "egl")]
-    if renderer.borrow().bind_wl_display(&display.borrow()).is_ok() {
+    if renderer
+        .borrow_mut()
+        .renderer()
+        .bind_wl_display(&display.borrow())
+        .is_ok()
+    {
         info!(log, "EGL hardware-acceleration enabled");
         let dmabuf_formats = renderer
             .borrow_mut()
