@@ -295,7 +295,12 @@ impl<Data> Inner<Data> {
 
 fn client_destroy<Data: 'static>(map: &::wayland_server::UserDataMap) {
     let inner = map.get::<Rc<RefCell<Inner<Data>>>>().unwrap();
-    inner.borrow_mut().shutdown();
+    // If we are unable to take a lock we are most likely called during
+    // a shutdown. This will definitely be the case when the compositor exits
+    // and the XWayland instance is dropped.
+    if let Ok(mut guard) = inner.try_borrow_mut() {
+        guard.shutdown();
+    }
 }
 
 fn xwayland_ready<Data: 'static>(inner: &Rc<RefCell<Inner<Data>>>) {
@@ -322,7 +327,7 @@ fn xwayland_ready<Data: 'static>(inner: &Rc<RefCell<Inner<Data>>>) {
         ::std::env::set_var("DISPLAY", format!(":{}", instance.display_lock.display()));
 
         // signal the WM
-        info!(guard.log, "XWayland is ready, signaling the WM.");
+        info!(guard.log, "XWayland is ready on DISPLAY \":{}\", signaling the WM.", instance.display_lock.display());
         // send error occurs if the user dropped the channel... We cannot do much except ignore.
         let _ = guard.sender.send(XWaylandEvent::Ready {
             connection: instance.wm_fd.take().unwrap(), // This is a bug if None
