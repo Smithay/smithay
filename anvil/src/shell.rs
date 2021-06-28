@@ -513,50 +513,46 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                 // Use the specified preferred output or else the current output the window
                 // is shown or the primary output
                 let output = output
+                    .map(|output| {
+                        xdg_output_map
+                            .borrow()
+                            .find(&output, |_, geometry| (Some(output.clone()), geometry))
+                            .ok()
+                    })
+                    .flatten()
                     .or_else(|| {
                         let xdg_window_map = xdg_window_map.borrow();
-                        let mut window_output: Option<wl_output::WlOutput> = None;
+
                         xdg_window_map
                             .find(wl_surface)
                             .and_then(|kind| xdg_window_map.location(&kind))
                             .and_then(|position| {
                                 xdg_output_map
                                     .borrow()
-                                    .find_by_position(position, |output, _| {
+                                    .find_by_position(position, |output, geometry| {
+                                        let mut window_output: Option<wl_output::WlOutput> = None;
                                         output.with_output(wl_surface, |_, output| {
                                             window_output = Some(output.to_owned());
-                                        })
+                                        });
+                                        (window_output, geometry)
                                     })
                                     .ok()
-                            });
-                        window_output
+                            })
                     })
                     .or_else(|| {
-                        let mut primary_output: Option<wl_output::WlOutput> = None;
                         xdg_output_map
                             .borrow()
-                            .with_primary(|output, _| {
+                            .with_primary(|output, geometry| {
+                                let mut primary_output: Option<wl_output::WlOutput> = None;
                                 output.with_output(wl_surface, |_, output| {
                                     primary_output = Some(output.to_owned());
-                                })
+                                });
+                                (primary_output, geometry)
                             })
-                            .ok();
-                        primary_output
+                            .ok()
                     });
 
-                let fullscreen_output = if let Some(output) = output {
-                    output
-                } else {
-                    // If we have no output ignore the request
-                    return;
-                };
-
-                let geometry = xdg_output_map
-                    .borrow()
-                    .find(&fullscreen_output, |_, geometry| geometry)
-                    .ok();
-
-                if let Some(geometry) = geometry {
+                if let Some((output, geometry)) = output {
                     if let Some(surface) = surface.get_surface() {
                         let mut xdg_window_map = xdg_window_map.borrow_mut();
                         if let Some(kind) = xdg_window_map.find(surface) {
@@ -567,7 +563,7 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                     let ret = surface.with_pending_state(|state| {
                         state.states.set(xdg_toplevel::State::Fullscreen);
                         state.size = Some((geometry.width, geometry.height));
-                        state.fullscreen_output = Some(fullscreen_output);
+                        state.fullscreen_output = output;
                     });
                     if ret.is_ok() {
                         surface.send_configure();
@@ -683,54 +679,50 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                     // Use the specified preferred output or else the current output the window
                     // is shown or the primary output
                     let output = output
+                        .map(|output| {
+                            shell_output_map
+                                .borrow()
+                                .find(&output, |_, geometry| (Some(output.clone()), geometry))
+                                .ok()
+                        })
+                        .flatten()
                         .or_else(|| {
                             let shell_window_map = shell_window_map.borrow();
-                            let mut window_output: Option<wl_output::WlOutput> = None;
+
                             shell_window_map
                                 .find(wl_surface)
                                 .and_then(|kind| shell_window_map.location(&kind))
                                 .and_then(|position| {
                                     shell_output_map
                                         .borrow()
-                                        .find_by_position(position, |output, _| {
+                                        .find_by_position(position, |output, geometry| {
+                                            let mut window_output: Option<wl_output::WlOutput> = None;
                                             output.with_output(wl_surface, |_, output| {
                                                 window_output = Some(output.to_owned());
-                                            })
+                                            });
+                                            (window_output, geometry)
                                         })
                                         .ok()
-                                });
-                            window_output
+                                })
                         })
                         .or_else(|| {
-                            let mut primary_output: Option<wl_output::WlOutput> = None;
                             shell_output_map
                                 .borrow()
-                                .with_primary(|output, _| {
+                                .with_primary(|output, geometry| {
+                                    let mut primary_output: Option<wl_output::WlOutput> = None;
                                     output.with_output(wl_surface, |_, output| {
                                         primary_output = Some(output.to_owned());
-                                    })
+                                    });
+                                    (primary_output, geometry)
                                 })
-                                .ok();
-                            primary_output
+                                .ok()
                         });
 
-                    let fullscreen_output = if let Some(output) = output {
-                        output
-                    } else {
-                        // If we have no output ignore the request
-                        return;
-                    };
-
-                    let geometry = shell_output_map
-                        .borrow()
-                        .find(&fullscreen_output, |_, geometry| geometry)
-                        .ok();
-
-                    let location = geometry.map(|g| (g.x, g.y)).unwrap_or_default();
-
-                    shell_window_map
-                        .borrow_mut()
-                        .insert(SurfaceKind::Wl(surface), location);
+                    if let Some((_, geometry)) = output {
+                        shell_window_map
+                            .borrow_mut()
+                            .insert(SurfaceKind::Wl(surface), (geometry.x, geometry.y));
+                    }
                 }
                 ShellRequest::Move {
                     surface,
