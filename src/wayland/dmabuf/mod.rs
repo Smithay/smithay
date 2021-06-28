@@ -441,14 +441,14 @@ fn buffer_basic_checks(
         if let Ok(size) = ::nix::unistd::lseek(plane.fd.unwrap(), 0, ::nix::unistd::Whence::SeekEnd) {
             // reset the seek point
             let _ = ::nix::unistd::lseek(plane.fd.unwrap(), 0, ::nix::unistd::Whence::SeekSet);
-            if plane.offset as i64 > size {
+            if plane.offset as libc::off_t > size {
                 params.as_ref().post_error(
                     ParamError::OutOfBounds as u32,
                     format!("Invalid offset {} for plane {}.", plane.offset, plane.plane_idx),
                 );
                 return false;
             }
-            if (plane.offset + plane.stride) as i64 > size {
+            if (plane.offset + plane.stride) as libc::off_t > size {
                 params.as_ref().post_error(
                     ParamError::OutOfBounds as u32,
                     format!("Invalid stride {} for plane {}.", plane.stride, plane.plane_idx),
@@ -457,7 +457,7 @@ fn buffer_basic_checks(
             }
             // Planes > 0 can be subsampled, in which case 'size' will be smaller
             // than expected.
-            if plane.plane_idx == 0 && end as i64 > size {
+            if plane.plane_idx == 0 && end as libc::off_t > size {
                 params.as_ref().post_error(
                     ParamError::OutOfBounds as u32,
                     format!(
