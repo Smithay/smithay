@@ -327,7 +327,11 @@ fn xwayland_ready<Data: 'static>(inner: &Rc<RefCell<Inner<Data>>>) {
         ::std::env::set_var("DISPLAY", format!(":{}", instance.display_lock.display()));
 
         // signal the WM
-        info!(guard.log, "XWayland is ready on DISPLAY \":{}\", signaling the WM.", instance.display_lock.display());
+        info!(
+            guard.log,
+            "XWayland is ready on DISPLAY \":{}\", signaling the WM.",
+            instance.display_lock.display()
+        );
         // send error occurs if the user dropped the channel... We cannot do much except ignore.
         let _ = guard.sender.send(XWaylandEvent::Ready {
             connection: instance.wm_fd.take().unwrap(), // This is a bug if None
