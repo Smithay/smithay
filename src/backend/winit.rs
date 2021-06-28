@@ -28,11 +28,6 @@ use winit::{
     window::{Window as WinitWindow, WindowBuilder},
 };
 
-#[cfg(feature = "use_system_lib")]
-use crate::backend::egl::display::EGLBufferReader;
-#[cfg(feature = "use_system_lib")]
-use wayland_server::Display;
-
 /// Errors thrown by the `winit` backends
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -235,16 +230,6 @@ pub enum WinitEvent {
 }
 
 impl WinitGraphicsBackend {
-    /// Bind a `wl_display` to allow hardware-accelerated clients using `wl_drm`.
-    ///
-    /// Returns an `EGLBufferReader` used to access the contents of these buffers.
-    ///
-    /// *Note*: Only on implementation of `wl_drm` can be bound by a single wayland display.
-    #[cfg(feature = "use_system_lib")]
-    pub fn bind_wl_display(&self, wl_display: &Display) -> Result<EGLBufferReader, EGLError> {
-        self.display.bind_wl_display(wl_display)
-    }
-
     /// Window size of the underlying window
     pub fn window_size(&self) -> WindowSize {
         self.size.borrow().clone()
