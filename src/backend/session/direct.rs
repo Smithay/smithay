@@ -11,7 +11,8 @@
 //! ### Initialization
 //!
 //! To initialize the session you may pass the path to any tty device, that shall be used.
-//! If no path is given the tty used to start this compositor (if any) will be used.
+//! If no path is given the tty used to start this compositor (if any) will be used unless
+//! the [SMITHAY_DIRECT_TTY_ENV] environment variable is set.
 //! A new session and its notifier will be returned.
 //!
 //! ```rust,no_run
@@ -59,7 +60,8 @@ use nix::{
 use std::{
     fmt,
     os::unix::io::RawFd,
-    path::Path,
+    path::{Path, PathBuf},
+    str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -67,6 +69,11 @@ use std::{
 };
 #[cfg(feature = "backend_udev")]
 use udev::Device as UdevDevice;
+
+/// This environment variable can be used to specify a tty path
+/// that will be used in [DirectSession::new] in case no explicit
+/// tty path has been provided.
+pub const SMITHAY_DIRECT_TTY_ENV: &str = "SMITHAY_DIRECT_TTY";
 
 #[allow(dead_code)]
 mod tty {
@@ -185,13 +192,47 @@ impl fmt::Debug for DirectSessionNotifier {
 impl DirectSession {
     /// Tries to create a new session via the legacy virtual terminal interface.
     ///
-    /// If you do not provide a tty device path, it will try to open the currently active tty if any.
+    /// If you do not provide a tty device path, it will try to open the tty set
+    /// in the [SMITHAY_DIRECT_TTY_ENV] environment variable or if unset the currently active tty if any.
     pub fn new<L>(tty: Option<&Path>, logger: L) -> Result<(DirectSession, DirectSessionNotifier), Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
         let logger = crate::slog_or_fallback(logger)
             .new(o!("smithay_module" => "backend_session", "session_type" => "direct/vt"));
+
+        let direct_path: PathBuf;
+        let tty = if tty.is_none() {
+            if let Ok(direct_tty) = std::env::var(SMITHAY_DIRECT_TTY_ENV) {
+                info!(
+                    logger,
+                    "{} is set in environment, trying to open {}", SMITHAY_DIRECT_TTY_ENV, &direct_tty
+                );
+
+                let path = PathBuf::from_str(&direct_tty);
+
+                match path {
+                    Ok(path) => {
+                        direct_path = path;
+                        Some(direct_path.as_path())
+                    }
+                    Err(err) => {
+                        warn!(
+                            logger,
+                            "Failed to parse {} with value \"{}\": {}",
+                            SMITHAY_DIRECT_TTY_ENV,
+                            direct_tty,
+                            err
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            tty
+        };
 
         let fd = tty
             .map(|path| {
