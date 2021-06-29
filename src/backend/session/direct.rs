@@ -453,7 +453,7 @@ impl calloop::EventSource for DirectSessionNotifier {
         readiness: calloop::Readiness,
         token: calloop::Token,
         _: F,
-    ) -> std::io::Result<()>
+    ) -> std::io::Result<calloop::PostAction>
     where
         F: FnMut((), &mut ()),
     {
@@ -462,10 +462,14 @@ impl calloop::EventSource for DirectSessionNotifier {
             source.process_events(readiness, token, |_, _| self.signal_received())?;
         }
         self.source = source;
-        Ok(())
+        Ok(calloop::PostAction::Continue)
     }
 
-    fn register(&mut self, poll: &mut calloop::Poll, token: calloop::Token) -> std::io::Result<()> {
+    fn register(
+        &mut self,
+        poll: &mut calloop::Poll,
+        factory: &mut calloop::TokenFactory,
+    ) -> std::io::Result<()> {
         if self.source.is_some() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
@@ -473,14 +477,18 @@ impl calloop::EventSource for DirectSessionNotifier {
             ));
         }
         let mut source = Signals::new(&[self.signal])?;
-        source.register(poll, token)?;
+        source.register(poll, factory)?;
         self.source = Some(source);
         Ok(())
     }
 
-    fn reregister(&mut self, poll: &mut calloop::Poll, token: calloop::Token) -> std::io::Result<()> {
+    fn reregister(
+        &mut self,
+        poll: &mut calloop::Poll,
+        factory: &mut calloop::TokenFactory,
+    ) -> std::io::Result<()> {
         if let Some(ref mut source) = self.source {
-            source.reregister(poll, token)
+            source.reregister(poll, factory)
         } else {
             Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,

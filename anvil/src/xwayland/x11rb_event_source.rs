@@ -10,7 +10,7 @@ use x11rb::{
 
 use smithay::reexports::calloop::{
     generic::{Fd, Generic},
-    EventSource, Interest, Mode, Poll, Readiness, Token,
+    EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory,
 };
 
 pub struct X11Source {
@@ -31,7 +31,12 @@ impl EventSource for X11Source {
     type Metadata = ();
     type Ret = Result<(), ReplyOrIdError>;
 
-    fn process_events<C>(&mut self, _readiness: Readiness, _token: Token, callback: C) -> IOResult<()>
+    fn process_events<C>(
+        &mut self,
+        readiness: Readiness,
+        token: Token,
+        mut callback: C,
+    ) -> IOResult<PostAction>
     where
         C: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
@@ -49,15 +54,19 @@ impl EventSource for X11Source {
             conn.flush()?;
             Ok(())
         }
-        inner(&self.connection, callback).map_err(|err| IOError::new(ErrorKind::Other, err))
+        let connection = &self.connection;
+        self.generic.process_events(readiness, token, |_, _| {
+            inner(connection, &mut callback).map_err(|err| IOError::new(ErrorKind::Other, err))?;
+            Ok(PostAction::Continue)
+        })
     }
 
-    fn register(&mut self, poll: &mut Poll, token: Token) -> IOResult<()> {
-        self.generic.register(poll, token)
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> IOResult<()> {
+        self.generic.register(poll, factory)
     }
 
-    fn reregister(&mut self, poll: &mut Poll, token: Token) -> IOResult<()> {
-        self.generic.reregister(poll, token)
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> IOResult<()> {
+        self.generic.reregister(poll, factory)
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> IOResult<()> {

@@ -9,7 +9,7 @@ use std::{
 
 use smithay::{
     reexports::{
-        calloop::{generic::Generic, Interest, LoopHandle, Mode},
+        calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
         wayland_server::{protocol::wl_surface::WlSurface, Display},
     },
     wayland::{
@@ -62,7 +62,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     let display = state.display.clone();
                     let mut display = display.borrow_mut();
                     match display.dispatch(std::time::Duration::from_millis(0), state) {
-                        Ok(_) => Ok(()),
+                        Ok(_) => Ok(PostAction::Continue),
                         Err(e) => {
                             error!(state.log, "I/O error on the Wayland display: {}", e);
                             state.running.store(false, Ordering::SeqCst);

@@ -43,7 +43,7 @@ use crate::signaling::Signaler;
 use nix::fcntl::OFlag;
 use std::{cell::RefCell, io, os::unix::io::RawFd, path::Path, rc::Rc};
 
-use calloop::{EventSource, Poll, Readiness, Token};
+use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 
 use slog::{error, info, o, warn};
 
@@ -204,7 +204,7 @@ impl EventSource for AutoSessionNotifier {
     type Metadata = ();
     type Ret = ();
 
-    fn process_events<F>(&mut self, readiness: Readiness, token: Token, callback: F) -> io::Result<()>
+    fn process_events<F>(&mut self, readiness: Readiness, token: Token, callback: F) -> io::Result<PostAction>
     where
         F: FnMut((), &mut ()),
     {
@@ -217,23 +217,23 @@ impl EventSource for AutoSessionNotifier {
         }
     }
 
-    fn register(&mut self, poll: &mut Poll, token: Token) -> io::Result<()> {
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> io::Result<()> {
         match self {
             #[cfg(feature = "backend_session_logind")]
-            AutoSessionNotifier::Logind(s) => EventSource::register(s, poll, token),
-            AutoSessionNotifier::Direct(s) => EventSource::register(s, poll, token),
+            AutoSessionNotifier::Logind(s) => EventSource::register(s, poll, factory),
+            AutoSessionNotifier::Direct(s) => EventSource::register(s, poll, factory),
             #[cfg(feature = "backend_session_libseat")]
-            AutoSessionNotifier::LibSeat(s) => EventSource::register(s, poll, token),
+            AutoSessionNotifier::LibSeat(s) => EventSource::register(s, poll, factory),
         }
     }
 
-    fn reregister(&mut self, poll: &mut Poll, token: Token) -> io::Result<()> {
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> io::Result<()> {
         match self {
             #[cfg(feature = "backend_session_logind")]
-            AutoSessionNotifier::Logind(s) => EventSource::reregister(s, poll, token),
-            AutoSessionNotifier::Direct(s) => EventSource::reregister(s, poll, token),
+            AutoSessionNotifier::Logind(s) => EventSource::reregister(s, poll, factory),
+            AutoSessionNotifier::Direct(s) => EventSource::reregister(s, poll, factory),
             #[cfg(feature = "backend_session_libseat")]
-            AutoSessionNotifier::LibSeat(s) => EventSource::reregister(s, poll, token),
+            AutoSessionNotifier::LibSeat(s) => EventSource::reregister(s, poll, factory),
         }
     }
 
