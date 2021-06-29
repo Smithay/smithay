@@ -210,6 +210,16 @@ where
             if let Err(err) = draw_surface_tree(renderer, frame, &wl_surface, initial_place, log) {
                 result = Err(err);
             }
+            // furthermore, draw its popups
+            window_map.with_child_popups(&wl_surface, |popup| {
+                let location = popup.location();
+                let draw_location = (initial_place.0 + location.0, initial_place.1 + location.1);
+                if let Some(wl_surface) = popup.get_surface() {
+                    if let Err(err) = draw_surface_tree(renderer, frame, &wl_surface, draw_location, log) {
+                        result = Err(err);
+                    }
+                }
+            });
         }
     });
 

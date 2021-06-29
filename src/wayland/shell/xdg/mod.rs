@@ -1368,7 +1368,7 @@ impl PopupSurface {
 
     /// Access the underlying `wl_surface` of this toplevel surface
     ///
-    /// Returns `None` if the toplevel surface actually no longer exists.
+    /// Returns `None` if the popup surface actually no longer exists.
     pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
         if self.alive() {
             Some(&self.wl_surface)
