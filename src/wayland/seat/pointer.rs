@@ -125,6 +125,14 @@ impl PointerInternal {
         match grab {
             GrabStatus::Borrowed => panic!("Accessed a pointer grab from within a pointer grab access."),
             GrabStatus::Active(_, ref mut handler) => {
+                // If this grab is associated with a surface that is no longer alive, discard it
+                if let Some((ref surface, _)) = handler.start_data().focus {
+                    if !surface.as_ref().is_alive() {
+                        self.grab = GrabStatus::None;
+                        f(PointerInnerHandle { inner: self }, &mut DefaultGrab);
+                        return;
+                    }
+                }
                 f(PointerInnerHandle { inner: self }, &mut **handler);
             }
             GrabStatus::None => {
