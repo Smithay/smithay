@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::sync::Mutex;
 
 use smithay::{
     reexports::{wayland_protocols::xdg_shell::server::xdg_toplevel, wayland_server::protocol::wl_surface},
@@ -7,7 +8,7 @@ use smithay::{
         compositor::{with_states, with_surface_tree_downward, SubsurfaceCachedState, TraversalAction},
         shell::{
             legacy::ShellSurface,
-            xdg::{PopupSurface, SurfaceCachedState, ToplevelSurface},
+            xdg::{PopupSurface, SurfaceCachedState, ToplevelSurface, XdgPopupSurfaceRoleAttributes},
         },
     },
 };
@@ -77,7 +78,7 @@ pub enum PopupKind {
 }
 
 impl PopupKind {
-    pub fn alive(&self) -> bool {
+    fn alive(&self) -> bool {
         match *self {
             PopupKind::Xdg(ref t) => t.alive(),
         }
@@ -87,6 +88,44 @@ impl PopupKind {
         match *self {
             PopupKind::Xdg(ref t) => t.get_surface(),
         }
+    }
+
+    fn parent(&self) -> Option<wl_surface::WlSurface> {
+        let wl_surface = match self.get_surface() {
+            Some(s) => s,
+            None => return None,
+        };
+        with_states(wl_surface, |states| {
+            states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .parent
+                .clone()
+        })
+        .ok()
+        .flatten()
+    }
+
+    pub fn location(&self) -> (i32, i32) {
+        let wl_surface = match self.get_surface() {
+            Some(s) => s,
+            None => return (0, 0),
+        };
+        let geometry = with_states(wl_surface, |states| {
+            states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .current
+                .geometry
+        })
+        .unwrap_or_default();
+        (geometry.x, geometry.y)
     }
 }
 
@@ -294,6 +333,19 @@ impl WindowMap {
             f(&w.toplevel, w.location, &w.bbox)
         }
     }
+    pub fn with_child_popups<Func>(&self, base: &wl_surface::WlSurface, mut f: Func)
+    where
+        Func: FnMut(&PopupKind),
+    {
+        for w in self
+            .popups
+            .iter()
+            .rev()
+            .filter(move |w| w.popup.parent().as_ref() == Some(base))
+        {
+            f(&w.popup)
+        }
+    }
 
     pub fn refresh(&mut self) {
         self.windows.retain(|w| w.toplevel.alive());
@@ -329,6 +381,7 @@ impl WindowMap {
         })
     }
 
+    /// Finds the popup corresponding to the given `WlSurface`.
     pub fn find_popup(&self, surface: &wl_surface::WlSurface) -> Option<PopupKind> {
         self.popups.iter().find_map(|p| {
             if p.popup

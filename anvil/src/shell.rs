@@ -23,8 +23,8 @@ use smithay::{
         shell::{
             legacy::{wl_shell_init, ShellRequest, ShellState as WlShellState, ShellSurfaceKind},
             xdg::{
-                xdg_shell_init, Configure, ShellState as XdgShellState, SurfaceCachedState, XdgRequest,
-                XdgToplevelSurfaceRoleAttributes,
+                xdg_shell_init, Configure, ShellState as XdgShellState, SurfaceCachedState,
+                XdgPopupSurfaceRoleAttributes, XdgRequest, XdgToplevelSurfaceRoleAttributes,
             },
         },
         Serial,
@@ -857,6 +857,24 @@ fn surface_commit(surface: &wl_surface::WlSurface, window_map: &RefCell<WindowMa
 
         if let Some(location) = new_location {
             window_map.set_location(&toplevel, location);
+        }
+    }
+
+    if let Some(popup) = window_map.find_popup(surface) {
+        let PopupKind::Xdg(ref popup) = popup;
+        let initial_configure_sent = with_states(surface, |states| {
+            states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .initial_configure_sent
+        })
+        .unwrap();
+        if !initial_configure_sent {
+            // TODO: properly recompute the geometry with the whole of positioner state
+            popup.send_configure();
         }
     }
 }

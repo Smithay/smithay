@@ -11,6 +11,7 @@ use smithay::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
     },
+    utils::Rectangle,
     wayland::{
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
@@ -120,12 +121,28 @@ pub fn run_winit(
         {
             let mut renderer = renderer.borrow_mut();
 
+            let output_rect = {
+                let (width, height) = renderer.window_size().physical_size.into();
+                Rectangle {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height,
+                }
+            };
+
             let result = renderer
                 .render(|renderer, frame| {
                     frame.clear([0.8, 0.8, 0.9, 1.0])?;
 
                     // draw the windows
-                    draw_windows(renderer, frame, &*state.window_map.borrow(), None, &log)?;
+                    draw_windows(
+                        renderer,
+                        frame,
+                        &*state.window_map.borrow(),
+                        Some(output_rect),
+                        &log,
+                    )?;
 
                     let (x, y) = state.pointer_location;
                     // draw the dnd icon if any

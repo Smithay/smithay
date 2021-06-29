@@ -18,7 +18,7 @@ use super::{
 };
 
 static XDG_TOPLEVEL_ROLE: &str = "xdg_toplevel";
-static XDG_POPUP_ROLE: &str = "xdg_toplevel";
+static XDG_POPUP_ROLE: &str = "xdg_popup";
 
 pub(crate) fn implement_wm_base(
     shell: Main<xdg_wm_base::XdgWmBase>,
