@@ -35,6 +35,7 @@ pub const SLOT_CAP: usize = 4;
 /// If you have associated resources for each buffer that can be reused (e.g. framebuffer `Handle`s for a `DrmDevice`),
 /// you can store then in the `Slot`s userdata field. If a buffer is re-used, its userdata is preserved for the next time
 /// it is returned by `acquire()`.
+#[derive(Debug)]
 pub struct Swapchain<A: Allocator<B>, B: Buffer, U: 'static> {
     /// Allocator used by the swapchain
     pub allocator: A,
@@ -52,8 +53,10 @@ pub struct Swapchain<A: Allocator<B>, B: Buffer, U: 'static> {
 /// Can be cloned and passed around freely, the buffer is marked for re-use
 /// once all copies are dropped. Holding on to this struct will block the
 /// buffer in the swapchain.
+#[derive(Debug)]
 pub struct Slot<B: Buffer, U: 'static>(Arc<InternalSlot<B, U>>);
 
+#[derive(Debug)]
 struct InternalSlot<B: Buffer, U: 'static> {
     buffer: Option<B>,
     acquired: AtomicBool,

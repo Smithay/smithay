@@ -124,6 +124,7 @@ impl Buffer for Dmabuf {
 }
 
 /// Builder for Dmabufs
+#[derive(Debug)]
 pub struct DmabufBuilder {
     internal: DmabufInternal,
 }

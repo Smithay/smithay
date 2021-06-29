@@ -29,7 +29,7 @@ pub type Mapping = (
     HashMap<framebuffer::Handle, HashMap<String, property::Handle>>,
     HashMap<plane::Handle, HashMap<String, property::Handle>>,
 );
-
+#[derive(Debug)]
 pub struct AtomicDrmDevice<A: AsRawFd + 'static> {
     pub(crate) fd: Arc<FdWrapper<A>>,
     pub(crate) active: Arc<AtomicBool>,

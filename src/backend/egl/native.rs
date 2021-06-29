@@ -227,6 +227,7 @@ pub unsafe trait EGLNativeSurface: Send + Sync {
 
 #[cfg(feature = "backend_winit")]
 /// Typed Xlib window for the `X11` backend
+#[derive(Debug)]
 pub struct XlibWindow(pub raw::c_ulong);
 
 #[cfg(feature = "backend_winit")]

@@ -22,6 +22,7 @@ use legacy::LegacyDrmSurface;
 use slog::trace;
 
 /// An open crtc + plane combination that can be used for scan-out
+#[derive(Debug)]
 pub struct DrmSurface<A: AsRawFd + 'static> {
     // This field is only read when 'backend_session' is enabled
     #[allow(dead_code)]
@@ -34,6 +35,7 @@ pub struct DrmSurface<A: AsRawFd + 'static> {
     pub(super) links: RefCell<Vec<crate::signaling::SignalToken>>,
 }
 
+#[derive(Debug)]
 pub enum DrmSurfaceInternal<A: AsRawFd + 'static> {
     Atomic(AtomicDrmSurface<A>),
     Legacy(LegacyDrmSurface<A>),

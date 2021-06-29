@@ -197,6 +197,7 @@ xdg_role!(
     /// xdg_surface description).
     ///
     /// Attaching a null buffer to a toplevel unmaps the surface.
+    #[derive(Debug)]
     XdgToplevelSurfaceRoleAttributes {
         /// The parent field of a toplevel should be used
         /// by the compositor to determine which toplevel
@@ -272,6 +273,7 @@ xdg_role!(
     ///
     /// The client must call wl_surface.commit on the corresponding wl_surface
     /// for the xdg_popup state to take effect.
+    #[derive(Debug)]
     XdgPopupSurfaceRoleAttributes {
         /// Holds the parent for the xdg_popup.
         ///

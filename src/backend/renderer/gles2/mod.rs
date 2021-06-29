@@ -40,7 +40,7 @@ use wayland_server::protocol::{wl_buffer, wl_shm};
 
 use slog::{debug, error, info, o, trace, warn};
 
-#[allow(clippy::all, missing_docs)]
+#[allow(clippy::all, missing_docs, missing_debug_implementations)]
 pub mod ffi {
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
 }
@@ -170,6 +170,15 @@ pub struct Gles2Frame {
     current_projection: Matrix3<f32>,
     gl: ffi::Gles2,
     programs: [Gles2Program; shaders::FRAGMENT_COUNT],
+}
+
+impl fmt::Debug for Gles2Frame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Gles2Frame")
+            .field("current_projection", &self.current_projection)
+            .field("programs", &self.programs)
+            .finish_non_exhaustive()
+    }
 }
 
 impl fmt::Debug for Gles2Renderer {

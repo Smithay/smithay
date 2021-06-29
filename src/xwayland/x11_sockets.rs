@@ -26,6 +26,7 @@ pub(crate) fn prepare_x11_sockets(log: ::slog::Logger) -> Result<(X11Lock, [Unix
     ))
 }
 
+#[derive(Debug)]
 pub(crate) struct X11Lock {
     display: u32,
     log: ::slog::Logger,
