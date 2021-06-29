@@ -107,6 +107,7 @@ pub struct PlaneInfo {
     h: u32,
 }
 
+#[derive(Debug)]
 pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
     pub(super) fd: Arc<DrmDeviceInternal<A>>,
     pub(super) active: Arc<AtomicBool>,

@@ -277,6 +277,7 @@ pub(crate) fn implement_subcompositor(
  */
 
 /// The cached state associated with a subsurface
+#[derive(Debug)]
 pub struct SubsurfaceCachedState {
     /// Location of the top-left corner of this subsurface
     /// relative to its parent coordinate space

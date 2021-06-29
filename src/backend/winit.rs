@@ -261,7 +261,7 @@ impl WinitGraphicsBackend {
 }
 
 /// Virtual input device used by the backend to associate input events
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, Debug)]
 pub struct WinitVirtualDevice;
 
 impl Device for WinitVirtualDevice {

@@ -75,6 +75,7 @@ pub use surface::DrmSurface;
 use drm::control::{crtc, plane, Device as ControlDevice, PlaneType};
 
 /// A set of planes as supported by a crtc
+#[derive(Debug)]
 pub struct Planes {
     /// The primary plane of the crtc (automatically selected for [DrmDevice::create_surface])
     pub primary: plane::Handle,

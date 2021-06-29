@@ -29,6 +29,16 @@ pub struct GbmBufferedSurface<D: AsRawFd + 'static> {
     drm: Arc<DrmSurface<D>>,
 }
 
+// TODO: Replace with #[derive(Debug)] once gbm::BufferObject implements debug
+impl<D: std::fmt::Debug + AsRawFd + 'static> std::fmt::Debug for GbmBufferedSurface<D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GbmBufferedSurface")
+            .field("buffers", &self.buffers)
+            .field("drm", &self.drm)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<D> GbmBufferedSurface<D>
 where
     D: AsRawFd + 'static,
@@ -266,6 +276,7 @@ where
     }
 }
 
+#[derive(Debug)]
 struct FbHandle<D: AsRawFd + 'static> {
     drm: Arc<DrmSurface<D>>,
     fb: framebuffer::Handle,
@@ -285,6 +296,15 @@ struct Buffers<D: AsRawFd + 'static> {
     pending_fb: Option<DmabufSlot<D>>,
     queued_fb: Option<DmabufSlot<D>>,
     next_fb: Option<DmabufSlot<D>>,
+}
+
+// TODO: Replace with #[derive(Debug)] once gbm::BufferObject implements debug
+impl<D: std::fmt::Debug + AsRawFd + 'static> std::fmt::Debug for Buffers<D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Buffers")
+            .field("drm", &self.drm)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<D> Buffers<D>

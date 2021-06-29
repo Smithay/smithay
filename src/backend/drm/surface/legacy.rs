@@ -70,6 +70,7 @@ impl State {
     }
 }
 
+#[derive(Debug)]
 pub struct LegacyDrmSurface<A: AsRawFd + 'static> {
     pub(super) fd: Arc<DrmDeviceInternal<A>>,
     pub(super) active: Arc<AtomicBool>,

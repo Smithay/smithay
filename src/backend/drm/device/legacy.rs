@@ -12,6 +12,7 @@ use crate::backend::drm::error::Error;
 
 use slog::{error, info, o};
 
+#[derive(Debug)]
 pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
     pub(crate) fd: Arc<FdWrapper<A>>,
     pub(crate) active: Arc<AtomicBool>,

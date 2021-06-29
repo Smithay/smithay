@@ -1,4 +1,4 @@
-#![warn(missing_docs, rust_2018_idioms)]
+#![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 // Allow acronyms like EGL
 #![allow(clippy::upper_case_acronyms)]
 

@@ -133,6 +133,7 @@ struct Marker<R> {
 ///
 /// By default, all surfaces have a [`SurfaceAttributes`] cached state,
 /// and subsurface also have a [`SubsurfaceCachedState`] state as well.
+#[derive(Debug)]
 pub struct SurfaceData {
     /// The current role of the surface.
     ///

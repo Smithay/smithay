@@ -136,6 +136,12 @@ pub struct MultiCache {
     caches: appendlist::AppendList<Box<dyn Cache + Send>>,
 }
 
+impl std::fmt::Debug for MultiCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MultiCache").finish_non_exhaustive()
+    }
+}
+
 impl MultiCache {
     pub(crate) fn new() -> MultiCache {
         MultiCache {

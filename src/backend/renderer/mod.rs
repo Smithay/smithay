@@ -453,6 +453,7 @@ impl<R: Renderer + ImportShm + ImportDma> ImportAll for R {
 #[cfg(feature = "wayland_frontend")]
 #[non_exhaustive]
 /// Buffer type of a given wl_buffer, if managed by smithay
+#[derive(Debug)]
 pub enum BufferType {
     /// Buffer is managed by the [`crate::wayland::shm`] global
     Shm,

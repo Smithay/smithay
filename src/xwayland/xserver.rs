@@ -68,6 +68,7 @@ use wayland_server::{Client, Display, Filter};
 use super::x11_sockets::{prepare_x11_sockets, X11Lock};
 
 /// The XWayland handle
+#[derive(Debug)]
 pub struct XWayland<Data> {
     inner: Rc<RefCell<Inner<Data>>>,
 }
@@ -143,6 +144,7 @@ impl<Data> Drop for XWayland<Data> {
     }
 }
 
+#[derive(Debug)]
 struct XWaylandInstance {
     display_lock: X11Lock,
     wayland_client: Option<Client>,
@@ -151,6 +153,7 @@ struct XWaylandInstance {
 }
 
 // Inner implementation of the XWayland manager
+#[derive(Debug)]
 struct Inner<Data> {
     sender: SyncSender<XWaylandEvent>,
     handle: LoopHandle<'static, Data>,
@@ -227,6 +230,7 @@ fn launch<Data: Any>(inner: &Rc<RefCell<Inner<Data>>>) -> std::io::Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
 pub struct XWaylandSource {
     channel: Channel<XWaylandEvent>,
 }
