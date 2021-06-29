@@ -1,8 +1,5 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
-mod helpers;
-use helpers::{on_device_event, on_keyboard_event, on_pointer_event, on_touch_event};
-
 use crate::backend::input::{self as backend, Axis, InputBackend, InputEvent};
 #[cfg(feature = "backend_session")]
 use crate::{
@@ -15,7 +12,6 @@ use input::event;
 #[cfg(feature = "backend_session")]
 use std::path::Path;
 use std::{
-    collections::hash_map::HashMap,
     io::Error as IoError,
     os::unix::io::{AsRawFd, RawFd},
 };
@@ -37,8 +33,6 @@ const INPUT_MAJOR: u32 = 13;
 #[derive(Debug)]
 pub struct LibinputInputBackend {
     context: libinput::Libinput,
-    config: LibinputConfig,
-    seats: HashMap<libinput::Seat, backend::Seat>,
     #[cfg(feature = "backend_session")]
     links: Vec<SignalToken>,
     logger: ::slog::Logger,
@@ -55,8 +49,6 @@ impl LibinputInputBackend {
         info!(log, "Initializing a libinput backend");
         LibinputInputBackend {
             context,
-            config: LibinputConfig { devices: Vec::new() },
-            seats: HashMap::new(),
             #[cfg(feature = "backend_session")]
             links: Vec::new(),
             logger: log,
@@ -87,13 +79,45 @@ impl Linkable<SessionSignal> for LibinputInputBackend {
     }
 }
 
-impl backend::Event for event::keyboard::KeyboardKeyEvent {
-    fn time(&self) -> u32 {
-        event::keyboard::KeyboardEventTrait::time(self)
+impl backend::Device for libinput::Device {
+    fn id(&self) -> String {
+        self.sysname().into()
+    }
+
+    fn name(&self) -> String {
+        self.name().into()
+    }
+
+    fn has_capability(&self, capability: backend::DeviceCapability) -> bool {
+        libinput::Device::has_capability(self, capability.into())
     }
 }
 
-impl backend::KeyboardKeyEvent for event::keyboard::KeyboardKeyEvent {
+impl From<backend::DeviceCapability> for libinput::DeviceCapability {
+    fn from(other: backend::DeviceCapability) -> libinput::DeviceCapability {
+        match other {
+            backend::DeviceCapability::Gesture => libinput::DeviceCapability::Gesture,
+            backend::DeviceCapability::Keyboard => libinput::DeviceCapability::Keyboard,
+            backend::DeviceCapability::Pointer => libinput::DeviceCapability::Pointer,
+            backend::DeviceCapability::Switch => libinput::DeviceCapability::Switch,
+            backend::DeviceCapability::TabletPad => libinput::DeviceCapability::TabletPad,
+            backend::DeviceCapability::TabletTool => libinput::DeviceCapability::TabletTool,
+            backend::DeviceCapability::Touch => libinput::DeviceCapability::Touch,
+        }
+    }
+}
+
+impl backend::Event<LibinputInputBackend> for event::keyboard::KeyboardKeyEvent {
+    fn time(&self) -> u32 {
+        event::keyboard::KeyboardEventTrait::time(self)
+    }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+impl backend::KeyboardKeyEvent<LibinputInputBackend> for event::keyboard::KeyboardKeyEvent {
     fn key_code(&self) -> u32 {
         use input::event::keyboard::KeyboardEventTrait;
         self.key()
@@ -109,13 +133,17 @@ impl backend::KeyboardKeyEvent for event::keyboard::KeyboardKeyEvent {
     }
 }
 
-impl<'a> backend::Event for event::pointer::PointerAxisEvent {
+impl<'a> backend::Event<LibinputInputBackend> for event::pointer::PointerAxisEvent {
     fn time(&self) -> u32 {
         event::pointer::PointerEventTrait::time(self)
     }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
 }
 
-impl backend::PointerAxisEvent for event::pointer::PointerAxisEvent {
+impl backend::PointerAxisEvent<LibinputInputBackend> for event::pointer::PointerAxisEvent {
     fn amount(&self, axis: Axis) -> Option<f64> {
         Some(self.axis_value(axis.into()))
     }
@@ -129,13 +157,17 @@ impl backend::PointerAxisEvent for event::pointer::PointerAxisEvent {
     }
 }
 
-impl backend::Event for event::pointer::PointerButtonEvent {
+impl backend::Event<LibinputInputBackend> for event::pointer::PointerButtonEvent {
     fn time(&self) -> u32 {
         event::pointer::PointerEventTrait::time(self)
     }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
 }
 
-impl backend::PointerButtonEvent for event::pointer::PointerButtonEvent {
+impl backend::PointerButtonEvent<LibinputInputBackend> for event::pointer::PointerButtonEvent {
     fn button(&self) -> backend::MouseButton {
         match self.button() {
             0x110 => backend::MouseButton::Left,
@@ -150,13 +182,17 @@ impl backend::PointerButtonEvent for event::pointer::PointerButtonEvent {
     }
 }
 
-impl backend::Event for event::pointer::PointerMotionEvent {
+impl backend::Event<LibinputInputBackend> for event::pointer::PointerMotionEvent {
     fn time(&self) -> u32 {
         event::pointer::PointerEventTrait::time(self)
     }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
 }
 
-impl backend::PointerMotionEvent for event::pointer::PointerMotionEvent {
+impl backend::PointerMotionEvent<LibinputInputBackend> for event::pointer::PointerMotionEvent {
     fn delta_x(&self) -> f64 {
         self.dx()
     }
@@ -165,13 +201,19 @@ impl backend::PointerMotionEvent for event::pointer::PointerMotionEvent {
     }
 }
 
-impl backend::Event for event::pointer::PointerMotionAbsoluteEvent {
+impl backend::Event<LibinputInputBackend> for event::pointer::PointerMotionAbsoluteEvent {
     fn time(&self) -> u32 {
         event::pointer::PointerEventTrait::time(self)
     }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
 }
 
-impl backend::PointerMotionAbsoluteEvent for event::pointer::PointerMotionAbsoluteEvent {
+impl backend::PointerMotionAbsoluteEvent<LibinputInputBackend>
+    for event::pointer::PointerMotionAbsoluteEvent
+{
     fn x(&self) -> f64 {
         self.absolute_x()
     }
@@ -189,13 +231,17 @@ impl backend::PointerMotionAbsoluteEvent for event::pointer::PointerMotionAbsolu
     }
 }
 
-impl backend::Event for event::touch::TouchDownEvent {
+impl backend::Event<LibinputInputBackend> for event::touch::TouchDownEvent {
     fn time(&self) -> u32 {
         event::touch::TouchEventTrait::time(self)
     }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
 }
 
-impl backend::TouchDownEvent for event::touch::TouchDownEvent {
+impl backend::TouchDownEvent<LibinputInputBackend> for event::touch::TouchDownEvent {
     fn slot(&self) -> Option<backend::TouchSlot> {
         event::touch::TouchEventSlot::slot(self).map(|x| backend::TouchSlot::new(x as u64))
     }
@@ -217,13 +263,17 @@ impl backend::TouchDownEvent for event::touch::TouchDownEvent {
     }
 }
 
-impl backend::Event for event::touch::TouchMotionEvent {
+impl backend::Event<LibinputInputBackend> for event::touch::TouchMotionEvent {
     fn time(&self) -> u32 {
         event::touch::TouchEventTrait::time(self)
     }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
 }
 
-impl backend::TouchMotionEvent for event::touch::TouchMotionEvent {
+impl backend::TouchMotionEvent<LibinputInputBackend> for event::touch::TouchMotionEvent {
     fn slot(&self) -> Option<backend::TouchSlot> {
         event::touch::TouchEventSlot::slot(self).map(|x| backend::TouchSlot::new(x as u64))
     }
@@ -245,66 +295,54 @@ impl backend::TouchMotionEvent for event::touch::TouchMotionEvent {
     }
 }
 
-impl backend::Event for event::touch::TouchUpEvent {
+impl backend::Event<LibinputInputBackend> for event::touch::TouchUpEvent {
     fn time(&self) -> u32 {
         event::touch::TouchEventTrait::time(self)
     }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
 }
 
-impl backend::TouchUpEvent for event::touch::TouchUpEvent {
+impl backend::TouchUpEvent<LibinputInputBackend> for event::touch::TouchUpEvent {
     fn slot(&self) -> Option<backend::TouchSlot> {
         event::touch::TouchEventSlot::slot(self).map(|x| backend::TouchSlot::new(x as u64))
     }
 }
 
-impl backend::Event for event::touch::TouchCancelEvent {
+impl backend::Event<LibinputInputBackend> for event::touch::TouchCancelEvent {
     fn time(&self) -> u32 {
         event::touch::TouchEventTrait::time(self)
     }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
 }
 
-impl backend::TouchCancelEvent for event::touch::TouchCancelEvent {
+impl backend::TouchCancelEvent<LibinputInputBackend> for event::touch::TouchCancelEvent {
     fn slot(&self) -> Option<backend::TouchSlot> {
         event::touch::TouchEventSlot::slot(self).map(|x| backend::TouchSlot::new(x as u64))
     }
 }
 
-impl backend::Event for event::touch::TouchFrameEvent {
+impl backend::Event<LibinputInputBackend> for event::touch::TouchFrameEvent {
     fn time(&self) -> u32 {
         event::touch::TouchEventTrait::time(self)
     }
-}
 
-impl backend::TouchFrameEvent for event::touch::TouchFrameEvent {}
-
-/// Special events generated by Libinput
-#[derive(Debug)]
-pub enum LibinputEvent {
-    /// A new device was plugged in
-    NewDevice(libinput::Device),
-    /// A device was plugged out
-    RemovedDevice(libinput::Device),
-}
-
-/// Configuration handle for libinput
-///
-/// This type allows you to access the list of know devices to configure them
-/// if relevant
-#[derive(Debug)]
-pub struct LibinputConfig {
-    devices: Vec<libinput::Device>,
-}
-
-impl LibinputConfig {
-    /// Access the list of current devices
-    pub fn devices(&mut self) -> &mut [libinput::Device] {
-        &mut self.devices
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
     }
 }
+
+impl backend::TouchFrameEvent<LibinputInputBackend> for event::touch::TouchFrameEvent {}
 
 impl InputBackend for LibinputInputBackend {
     type EventError = IoError;
 
+    type Device = libinput::Device;
     type KeyboardKeyEvent = event::keyboard::KeyboardKeyEvent;
     type PointerAxisEvent = event::pointer::PointerAxisEvent;
     type PointerButtonEvent = event::pointer::PointerButtonEvent;
@@ -316,61 +354,70 @@ impl InputBackend for LibinputInputBackend {
     type TouchCancelEvent = event::touch::TouchCancelEvent;
     type TouchFrameEvent = event::touch::TouchFrameEvent;
 
-    type SpecialEvent = LibinputEvent;
-    type InputConfig = LibinputConfig;
-
-    fn seats(&self) -> Vec<backend::Seat> {
-        self.seats.values().cloned().collect()
-    }
-
-    fn input_config(&mut self) -> &mut Self::InputConfig {
-        &mut self.config
-    }
+    type SpecialEvent = backend::UnusedEvent;
 
     fn dispatch_new_events<F>(&mut self, mut callback: F) -> Result<(), IoError>
     where
-        F: FnMut(InputEvent<Self>, &mut LibinputConfig),
+        F: FnMut(InputEvent<Self>),
     {
         self.context.dispatch()?;
 
         for event in &mut self.context {
             match event {
-                libinput::Event::Device(device_event) => {
-                    on_device_event(
-                        &mut callback,
-                        &mut self.seats,
-                        &mut self.config,
-                        device_event,
-                        &self.logger,
-                    );
-                }
-                libinput::Event::Touch(touch_event) => {
-                    on_touch_event(
-                        &mut callback,
-                        &self.seats,
-                        &mut self.config,
-                        touch_event,
-                        &self.logger,
-                    );
-                }
-                libinput::Event::Keyboard(keyboard_event) => {
-                    on_keyboard_event(
-                        &mut callback,
-                        &self.seats,
-                        &mut self.config,
-                        keyboard_event,
-                        &self.logger,
-                    );
-                }
-                libinput::Event::Pointer(pointer_event) => {
-                    on_pointer_event(
-                        &mut callback,
-                        &self.seats,
-                        &mut self.config,
-                        pointer_event,
-                        &self.logger,
-                    );
-                }
+                libinput::Event::Device(device_event) => match device_event {
+                    event::DeviceEvent::Added(device_added_event) => {
+                        let added = event::EventTrait::device(&device_added_event);
+
+                        info!(self.logger, "New device {:?}", added.sysname(),);
+
+                        callback(InputEvent::DeviceAdded { device: added });
+                    }
+                    event::DeviceEvent::Removed(device_removed_event) => {
+                        let removed = event::EventTrait::device(&device_removed_event);
+
+                        info!(self.logger, "Removed device {:?}", removed.sysname(),);
+
+                        callback(InputEvent::DeviceRemoved { device: removed });
+                    }
+                },
+                libinput::Event::Touch(touch_event) => match touch_event {
+                    event::TouchEvent::Down(down_event) => {
+                        callback(InputEvent::TouchDown { event: down_event });
+                    }
+                    event::TouchEvent::Motion(motion_event) => {
+                        callback(InputEvent::TouchMotion { event: motion_event });
+                    }
+                    event::TouchEvent::Up(up_event) => {
+                        callback(InputEvent::TouchUp { event: up_event });
+                    }
+                    event::TouchEvent::Cancel(cancel_event) => {
+                        callback(InputEvent::TouchCancel { event: cancel_event });
+                    }
+                    event::TouchEvent::Frame(frame_event) => {
+                        callback(InputEvent::TouchFrame { event: frame_event });
+                    }
+                },
+                libinput::Event::Keyboard(keyboard_event) => match keyboard_event {
+                    event::KeyboardEvent::Key(key_event) => {
+                        callback(InputEvent::Keyboard { event: key_event });
+                    }
+                },
+                libinput::Event::Pointer(pointer_event) => match pointer_event {
+                    event::PointerEvent::Motion(motion_event) => {
+                        callback(InputEvent::PointerMotion { event: motion_event });
+                    }
+                    event::PointerEvent::MotionAbsolute(motion_abs_event) => {
+                        callback(InputEvent::PointerMotionAbsolute {
+                            event: motion_abs_event,
+                        });
+                    }
+                    event::PointerEvent::Axis(axis_event) => {
+                        callback(InputEvent::PointerAxis { event: axis_event });
+                    }
+                    event::PointerEvent::Button(button_event) => {
+                        callback(InputEvent::PointerButton { event: button_event });
+                    }
+                },
                 _ => {} //FIXME: What to do with the rest.
             }
         }
@@ -460,14 +507,14 @@ impl AsRawFd for LibinputInputBackend {
 
 impl EventSource for LibinputInputBackend {
     type Event = InputEvent<LibinputInputBackend>;
-    type Metadata = LibinputConfig;
+    type Metadata = ();
     type Ret = ();
 
-    fn process_events<F>(&mut self, _: Readiness, _: Token, callback: F) -> std::io::Result<()>
+    fn process_events<F>(&mut self, _: Readiness, _: Token, mut callback: F) -> std::io::Result<()>
     where
-        F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
+        F: FnMut(Self::Event, &mut ()) -> Self::Ret,
     {
-        self.dispatch_new_events(callback)
+        self.dispatch_new_events(|event| callback(event, &mut ()))
     }
 
     fn register(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {

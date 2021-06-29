@@ -4,10 +4,10 @@ use crate::backend::egl::display::EGLDisplay;
 use crate::backend::{
     egl::{context::GlAttributes, native, EGLContext, EGLSurface, Error as EGLError},
     input::{
-        Axis, AxisSource, Event as BackendEvent, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
-        MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent,
-        Seat, SeatCapabilities, TouchCancelEvent, TouchDownEvent, TouchMotionEvent, TouchSlot, TouchUpEvent,
-        UnusedEvent,
+        Axis, AxisSource, Device, DeviceCapability, Event as BackendEvent, InputBackend, InputEvent,
+        KeyState, KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
+        PointerMotionAbsoluteEvent, TouchCancelEvent, TouchDownEvent, TouchMotionEvent, TouchSlot,
+        TouchUpEvent, UnusedEvent,
     },
     renderer::{
         gles2::{Gles2Error, Gles2Frame, Gles2Renderer},
@@ -77,8 +77,8 @@ pub struct WinitInputBackend {
     events_loop: EventLoop<()>,
     time: Instant,
     key_counter: u32,
-    seat: Seat,
     logger: ::slog::Logger,
+    initialized: bool,
     size: Rc<RefCell<WindowSize>>,
 }
 
@@ -200,15 +200,7 @@ where
             egl,
             time: Instant::now(),
             key_counter: 0,
-            seat: Seat::new(
-                0,
-                "winit",
-                SeatCapabilities {
-                    pointer: true,
-                    keyboard: true,
-                    touch: true,
-                },
-            ),
+            initialized: false,
             logger: log.new(o!("smithay_winit_component" => "input")),
             size,
         },
@@ -268,6 +260,27 @@ impl WinitGraphicsBackend {
     }
 }
 
+/// Virtual input device used by the backend to associate input events
+#[derive(PartialEq, Eq, Hash)]
+pub struct WinitVirtualDevice;
+
+impl Device for WinitVirtualDevice {
+    fn id(&self) -> String {
+        String::from("winit")
+    }
+
+    fn name(&self) -> String {
+        String::from("winit virtual input")
+    }
+
+    fn has_capability(&self, capability: DeviceCapability) -> bool {
+        matches!(
+            capability,
+            DeviceCapability::Keyboard | DeviceCapability::Pointer | DeviceCapability::Touch
+        )
+    }
+}
+
 /// Errors that may happen when driving the event loop of [`WinitInputBackend`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 pub enum WinitInputError {
@@ -287,13 +300,17 @@ pub struct WinitKeyboardInputEvent {
     state: ElementState,
 }
 
-impl BackendEvent for WinitKeyboardInputEvent {
+impl BackendEvent<WinitInputBackend> for WinitKeyboardInputEvent {
     fn time(&self) -> u32 {
         self.time
     }
+
+    fn device(&self) -> WinitVirtualDevice {
+        WinitVirtualDevice
+    }
 }
 
-impl KeyboardKeyEvent for WinitKeyboardInputEvent {
+impl KeyboardKeyEvent<WinitInputBackend> for WinitKeyboardInputEvent {
     fn key_code(&self) -> u32 {
         self.key
     }
@@ -315,13 +332,17 @@ pub struct WinitMouseMovedEvent {
     logical_position: LogicalPosition<f64>,
 }
 
-impl BackendEvent for WinitMouseMovedEvent {
+impl BackendEvent<WinitInputBackend> for WinitMouseMovedEvent {
     fn time(&self) -> u32 {
         self.time
     }
+
+    fn device(&self) -> WinitVirtualDevice {
+        WinitVirtualDevice
+    }
 }
 
-impl PointerMotionAbsoluteEvent for WinitMouseMovedEvent {
+impl PointerMotionAbsoluteEvent<WinitInputBackend> for WinitMouseMovedEvent {
     // TODO: maybe use {Logical, Physical}Position from winit?
     fn x(&self) -> f64 {
         let wsize = self.size.borrow();
@@ -353,13 +374,17 @@ pub struct WinitMouseWheelEvent {
     delta: MouseScrollDelta,
 }
 
-impl BackendEvent for WinitMouseWheelEvent {
+impl BackendEvent<WinitInputBackend> for WinitMouseWheelEvent {
     fn time(&self) -> u32 {
         self.time
     }
+
+    fn device(&self) -> WinitVirtualDevice {
+        WinitVirtualDevice
+    }
 }
 
-impl PointerAxisEvent for WinitMouseWheelEvent {
+impl PointerAxisEvent<WinitInputBackend> for WinitMouseWheelEvent {
     fn source(&self) -> AxisSource {
         match self.delta {
             MouseScrollDelta::LineDelta(_, _) => AxisSource::Wheel,
@@ -392,13 +417,17 @@ pub struct WinitMouseInputEvent {
     state: ElementState,
 }
 
-impl BackendEvent for WinitMouseInputEvent {
+impl BackendEvent<WinitInputBackend> for WinitMouseInputEvent {
     fn time(&self) -> u32 {
         self.time
     }
+
+    fn device(&self) -> WinitVirtualDevice {
+        WinitVirtualDevice
+    }
 }
 
-impl PointerButtonEvent for WinitMouseInputEvent {
+impl PointerButtonEvent<WinitInputBackend> for WinitMouseInputEvent {
     fn button(&self) -> MouseButton {
         self.button.into()
     }
@@ -417,13 +446,17 @@ pub struct WinitTouchStartedEvent {
     id: u64,
 }
 
-impl BackendEvent for WinitTouchStartedEvent {
+impl BackendEvent<WinitInputBackend> for WinitTouchStartedEvent {
     fn time(&self) -> u32 {
         self.time
     }
+
+    fn device(&self) -> WinitVirtualDevice {
+        WinitVirtualDevice
+    }
 }
 
-impl TouchDownEvent for WinitTouchStartedEvent {
+impl TouchDownEvent<WinitInputBackend> for WinitTouchStartedEvent {
     fn slot(&self) -> Option<TouchSlot> {
         Some(TouchSlot::new(self.id))
     }
@@ -460,13 +493,17 @@ pub struct WinitTouchMovedEvent {
     id: u64,
 }
 
-impl BackendEvent for WinitTouchMovedEvent {
+impl BackendEvent<WinitInputBackend> for WinitTouchMovedEvent {
     fn time(&self) -> u32 {
         self.time
     }
+
+    fn device(&self) -> WinitVirtualDevice {
+        WinitVirtualDevice
+    }
 }
 
-impl TouchMotionEvent for WinitTouchMovedEvent {
+impl TouchMotionEvent<WinitInputBackend> for WinitTouchMovedEvent {
     fn slot(&self) -> Option<TouchSlot> {
         Some(TouchSlot::new(self.id))
     }
@@ -501,13 +538,17 @@ pub struct WinitTouchEndedEvent {
     id: u64,
 }
 
-impl BackendEvent for WinitTouchEndedEvent {
+impl BackendEvent<WinitInputBackend> for WinitTouchEndedEvent {
     fn time(&self) -> u32 {
         self.time
     }
+
+    fn device(&self) -> WinitVirtualDevice {
+        WinitVirtualDevice
+    }
 }
 
-impl TouchUpEvent for WinitTouchEndedEvent {
+impl TouchUpEvent<WinitInputBackend> for WinitTouchEndedEvent {
     fn slot(&self) -> Option<TouchSlot> {
         Some(TouchSlot::new(self.id))
     }
@@ -520,27 +561,26 @@ pub struct WinitTouchCancelledEvent {
     id: u64,
 }
 
-impl BackendEvent for WinitTouchCancelledEvent {
+impl BackendEvent<WinitInputBackend> for WinitTouchCancelledEvent {
     fn time(&self) -> u32 {
         self.time
     }
+
+    fn device(&self) -> WinitVirtualDevice {
+        WinitVirtualDevice
+    }
 }
 
-impl TouchCancelEvent for WinitTouchCancelledEvent {
+impl TouchCancelEvent<WinitInputBackend> for WinitTouchCancelledEvent {
     fn slot(&self) -> Option<TouchSlot> {
         Some(TouchSlot::new(self.id))
     }
 }
 
-/// Input config for Winit
-///
-/// This backend does not allow any input configuration, so this type does nothing.
-#[derive(Debug)]
-pub struct WinitInputConfig;
-
 impl InputBackend for WinitInputBackend {
     type EventError = WinitInputError;
 
+    type Device = WinitVirtualDevice;
     type KeyboardKeyEvent = WinitKeyboardInputEvent;
     type PointerAxisEvent = WinitMouseWheelEvent;
     type PointerButtonEvent = WinitMouseInputEvent;
@@ -553,17 +593,6 @@ impl InputBackend for WinitInputBackend {
     type TouchFrameEvent = UnusedEvent;
 
     type SpecialEvent = WinitEvent;
-    type InputConfig = WinitInputConfig;
-
-    fn seats(&self) -> Vec<Seat> {
-        vec![self.seat.clone()]
-    }
-
-    fn input_config(&mut self) -> &mut Self::InputConfig {
-        /// So much effort to return a useless singleton!
-        static mut CONFIG: WinitInputConfig = WinitInputConfig;
-        unsafe { &mut CONFIG }
-    }
 
     /// Processes new events of the underlying event loop and calls the provided callback.
     ///
@@ -578,7 +607,7 @@ impl InputBackend for WinitInputBackend {
     /// not be used anymore as well.
     fn dispatch_new_events<F>(&mut self, mut callback: F) -> ::std::result::Result<(), WinitInputError>
     where
-        F: FnMut(InputEvent<Self>, &mut WinitInputConfig),
+        F: FnMut(InputEvent<Self>),
     {
         let mut closed = false;
 
@@ -591,12 +620,17 @@ impl InputBackend for WinitInputBackend {
             let closed_ptr = &mut closed;
             let key_counter = &mut self.key_counter;
             let time = &self.time;
-            let seat = &self.seat;
             let window = &self.window;
             let egl = &self.egl;
             let logger = &self.logger;
             let window_size = &self.size;
-            let mut callback = move |event| callback(event, &mut WinitInputConfig);
+
+            if !self.initialized {
+                callback(InputEvent::DeviceAdded {
+                    device: WinitVirtualDevice,
+                });
+                self.initialized = true;
+            }
 
             self.events_loop
                 .run_return(move |event, _target, control_flow| match event {
@@ -651,7 +685,6 @@ impl InputBackend for WinitInputBackend {
                                     }
                                 };
                                 callback(InputEvent::Keyboard {
-                                    seat: seat.clone(),
                                     event: WinitKeyboardInputEvent {
                                         time,
                                         key: scancode,
@@ -663,7 +696,6 @@ impl InputBackend for WinitInputBackend {
                             WindowEvent::CursorMoved { position, .. } => {
                                 let lpos = position.to_logical(window_size.borrow().scale_factor);
                                 callback(InputEvent::PointerMotionAbsolute {
-                                    seat: seat.clone(),
                                     event: WinitMouseMovedEvent {
                                         size: window_size.clone(),
                                         time,
@@ -673,14 +705,10 @@ impl InputBackend for WinitInputBackend {
                             }
                             WindowEvent::MouseWheel { delta, .. } => {
                                 let event = WinitMouseWheelEvent { time, delta };
-                                callback(InputEvent::PointerAxis {
-                                    seat: seat.clone(),
-                                    event,
-                                });
+                                callback(InputEvent::PointerAxis { event });
                             }
                             WindowEvent::MouseInput { state, button, .. } => {
                                 callback(InputEvent::PointerButton {
-                                    seat: seat.clone(),
                                     event: WinitMouseInputEvent { time, button, state },
                                 });
                             }
@@ -692,7 +720,6 @@ impl InputBackend for WinitInputBackend {
                                 ..
                             }) => {
                                 callback(InputEvent::TouchDown {
-                                    seat: seat.clone(),
                                     event: WinitTouchStartedEvent {
                                         size: window_size.clone(),
                                         time,
@@ -708,7 +735,6 @@ impl InputBackend for WinitInputBackend {
                                 ..
                             }) => {
                                 callback(InputEvent::TouchMotion {
-                                    seat: seat.clone(),
                                     event: WinitTouchMovedEvent {
                                         size: window_size.clone(),
                                         time,
@@ -725,7 +751,6 @@ impl InputBackend for WinitInputBackend {
                                 ..
                             }) => {
                                 callback(InputEvent::TouchMotion {
-                                    seat: seat.clone(),
                                     event: WinitTouchMovedEvent {
                                         size: window_size.clone(),
                                         time,
@@ -734,7 +759,6 @@ impl InputBackend for WinitInputBackend {
                                     },
                                 });
                                 callback(InputEvent::TouchUp {
-                                    seat: seat.clone(),
                                     event: WinitTouchEndedEvent { time, id },
                                 })
                             }
@@ -745,11 +769,13 @@ impl InputBackend for WinitInputBackend {
                                 ..
                             }) => {
                                 callback(InputEvent::TouchCancel {
-                                    seat: seat.clone(),
                                     event: WinitTouchCancelledEvent { time, id },
                                 });
                             }
                             WindowEvent::CloseRequested | WindowEvent::Destroyed => {
+                                callback(InputEvent::DeviceRemoved {
+                                    device: WinitVirtualDevice,
+                                });
                                 warn!(logger, "Window closed");
                                 *closed_ptr = true;
                             }
