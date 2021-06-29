@@ -50,7 +50,7 @@ use std::{
 };
 use udev::{Enumerator, EventType, MonitorBuilder, MonitorSocket};
 
-use calloop::{EventSource, Interest, Mode, Poll, Readiness, Token};
+use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
 use slog::{debug, info, o, warn};
 
@@ -62,6 +62,7 @@ use slog::{debug, info, o, warn};
 pub struct UdevBackend {
     devices: HashMap<dev_t, PathBuf>,
     monitor: MonitorSocket,
+    token: Token,
     logger: ::slog::Logger,
 }
 
@@ -112,6 +113,7 @@ impl UdevBackend {
         Ok(UdevBackend {
             devices,
             monitor,
+            token: Token::invalid(),
             logger: log,
         })
     }
@@ -130,10 +132,18 @@ impl EventSource for UdevBackend {
     type Metadata = ();
     type Ret = ();
 
-    fn process_events<F>(&mut self, _: Readiness, _: Token, mut callback: F) -> std::io::Result<()>
+    fn process_events<F>(
+        &mut self,
+        _: Readiness,
+        token: Token,
+        mut callback: F,
+    ) -> std::io::Result<PostAction>
     where
         F: FnMut(UdevEvent, &mut ()),
     {
+        if token != self.token {
+            return Ok(PostAction::Continue);
+        }
         let monitor = self.monitor.clone();
         for event in monitor {
             debug!(
@@ -180,18 +190,21 @@ impl EventSource for UdevBackend {
                 _ => {}
             }
         }
-        Ok(())
+        Ok(PostAction::Continue)
     }
 
-    fn register(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
-        poll.register(self.as_raw_fd(), Interest::READ, Mode::Level, token)
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
+        self.token = factory.token();
+        poll.register(self.as_raw_fd(), Interest::READ, Mode::Level, self.token)
     }
 
-    fn reregister(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
-        poll.reregister(self.as_raw_fd(), Interest::READ, Mode::Level, token)
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
+        self.token = factory.token();
+        poll.reregister(self.as_raw_fd(), Interest::READ, Mode::Level, self.token)
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> std::io::Result<()> {
+        self.token = Token::invalid();
         poll.unregister(self.as_raw_fd())
     }
 }

@@ -18,7 +18,7 @@ use std::{
 
 use nix::{errno::Errno, fcntl::OFlag, unistd::close};
 
-use calloop::{EventSource, Poll, Readiness, Token};
+use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 
 use crate::{
     backend::session::{AsErrno, Session, Signal as SessionSignal},
@@ -53,6 +53,7 @@ pub struct LibSeatSession {
 pub struct LibSeatSessionNotifier {
     internal: Rc<LibSeatSessionImpl>,
     signaler: Signaler<SessionSignal>,
+    token: Token,
 }
 
 impl LibSeatSession {
@@ -109,7 +110,11 @@ impl LibSeatSession {
                     internal: Rc::downgrade(&internal),
                     seat_name,
                 },
-                LibSeatSessionNotifier { internal, signaler },
+                LibSeatSessionNotifier {
+                    internal,
+                    signaler,
+                    token: Token::invalid(),
+                },
             )
         })
         .map_err(|err| Error::FailedToOpenSession(Errno::from_i32(err.into())))
@@ -209,37 +214,42 @@ impl EventSource for LibSeatSessionNotifier {
     type Metadata = ();
     type Ret = ();
 
-    fn process_events<F>(&mut self, _readiness: Readiness, _token: Token, _: F) -> std::io::Result<()>
+    fn process_events<F>(&mut self, _readiness: Readiness, token: Token, _: F) -> std::io::Result<PostAction>
     where
         F: FnMut((), &mut ()),
     {
-        self.internal.seat.borrow_mut().dispatch(0).unwrap();
-        Ok(())
+        if token == self.token {
+            self.internal.seat.borrow_mut().dispatch(0).unwrap();
+        }
+        Ok(PostAction::Continue)
     }
 
-    fn register(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
+        self.token = factory.token();
         poll.register(
             self.internal.seat.borrow_mut().get_fd().unwrap(),
             calloop::Interest::READ,
             calloop::Mode::Level,
-            token,
+            self.token,
         )
         .unwrap();
         Ok(())
     }
 
-    fn reregister(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
+        self.token = factory.token();
         poll.reregister(
             self.internal.seat.borrow_mut().get_fd().unwrap(),
             calloop::Interest::READ,
             calloop::Mode::Level,
-            token,
+            self.token,
         )
         .unwrap();
         Ok(())
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> std::io::Result<()> {
+        self.token = Token::invalid();
         poll.unregister(self.internal.seat.borrow_mut().get_fd().unwrap())
             .unwrap();
         Ok(())

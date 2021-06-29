@@ -56,7 +56,7 @@ use std::{
 use calloop::{
     channel::{sync_channel, Channel, SyncSender},
     generic::{Fd, Generic},
-    Interest, LoopHandle, Mode, RegistrationToken,
+    Interest, LoopHandle, Mode,
 };
 
 use slog::{error, info, o};
@@ -80,6 +80,7 @@ pub struct XWayland<Data> {
 /// Your WM code must be able handle the XWayland server connecting then
 /// disconnecting several time in a row, but only a single connection will
 /// be active at any given time.
+#[derive(Debug)]
 pub enum XWaylandEvent {
     /// The XWayland server is ready
     Ready {
@@ -145,7 +146,6 @@ impl<Data> Drop for XWayland<Data> {
 struct XWaylandInstance {
     display_lock: X11Lock,
     wayland_client: Option<Client>,
-    startup_handler: Option<RegistrationToken>,
     wm_fd: Option<UnixStream>,
     child_stdout: Option<ChildStdout>,
 }
@@ -208,18 +208,17 @@ fn launch<Data: Any>(inner: &Rc<RefCell<Inner<Data>>>) -> std::io::Result<()> {
     };
 
     let inner = inner.clone();
-    let startup_handler = guard.handle.insert_source(
+    guard.handle.insert_source(
         Generic::new(Fd(child_stdout.as_raw_fd()), Interest::READ, Mode::Level),
         move |_, _, _| {
             // the closure must be called exactly one time, this cannot panic
             xwayland_ready(&inner);
-            Ok(())
+            Ok(calloop::PostAction::Remove)
         },
     )?;
 
     guard.instance = Some(XWaylandInstance {
         display_lock: lock,
-        startup_handler: Some(startup_handler),
         wayland_client: None,
         wm_fd: Some(x_wm_me),
         child_stdout: Some(child_stdout),
@@ -242,7 +241,7 @@ impl calloop::EventSource for XWaylandSource {
         readiness: calloop::Readiness,
         token: calloop::Token,
         mut callback: F,
-    ) -> std::io::Result<()>
+    ) -> std::io::Result<calloop::PostAction>
     where
         F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
@@ -253,12 +252,20 @@ impl calloop::EventSource for XWaylandSource {
             })
     }
 
-    fn register(&mut self, poll: &mut calloop::Poll, token: calloop::Token) -> std::io::Result<()> {
-        self.channel.register(poll, token)
+    fn register(
+        &mut self,
+        poll: &mut calloop::Poll,
+        factory: &mut calloop::TokenFactory,
+    ) -> std::io::Result<()> {
+        self.channel.register(poll, factory)
     }
 
-    fn reregister(&mut self, poll: &mut calloop::Poll, token: calloop::Token) -> std::io::Result<()> {
-        self.channel.reregister(poll, token)
+    fn reregister(
+        &mut self,
+        poll: &mut calloop::Poll,
+        factory: &mut calloop::TokenFactory,
+    ) -> std::io::Result<()> {
+        self.channel.reregister(poll, factory)
     }
 
     fn unregister(&mut self, poll: &mut calloop::Poll) -> std::io::Result<()> {
@@ -270,15 +277,11 @@ impl<Data> Inner<Data> {
     // Shutdown the XWayland server and cleanup everything
     fn shutdown(&mut self) {
         // don't do anything if not running
-        if let Some(mut instance) = self.instance.take() {
+        if let Some(instance) = self.instance.take() {
             info!(self.log, "Shutting down XWayland.");
             // kill the client
             if let Some(client) = instance.wayland_client {
                 client.kill();
-            }
-            // remove the event source
-            if let Some(s) = instance.startup_handler.take() {
-                self.handle.kill(s);
             }
             // send error occurs if the user dropped the channel... We cannot do much except ignore.
             let _ = self.sender.send(XWaylandEvent::Exited);
@@ -344,11 +347,6 @@ fn xwayland_ready<Data: 'static>(inner: &Rc<RefCell<Inner<Data>>>) {
             guard.log,
             "XWayland crashed at startup, will not try to restart it."
         );
-    }
-
-    // in all cases, cleanup
-    if let Some(s) = instance.startup_handler.take() {
-        guard.handle.kill(s);
     }
 }
 

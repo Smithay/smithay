@@ -57,7 +57,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use calloop::{EventSource, Poll, Readiness, Token};
+use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 
 use slog::{debug, error, info, o, warn};
 
@@ -460,7 +460,7 @@ impl EventSource for LogindSessionNotifier {
     type Metadata = ();
     type Ret = ();
 
-    fn process_events<F>(&mut self, readiness: Readiness, token: Token, _: F) -> std::io::Result<()>
+    fn process_events<F>(&mut self, readiness: Readiness, token: Token, _: F) -> std::io::Result<PostAction>
     where
         F: FnMut((), &mut ()),
     {
@@ -478,15 +478,15 @@ impl EventSource for LogindSessionNotifier {
             }
         }
 
-        Ok(())
+        Ok(PostAction::Continue)
     }
 
-    fn register(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
-        self.internal.conn.borrow_mut().register(poll, token)
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
+        self.internal.conn.borrow_mut().register(poll, factory)
     }
 
-    fn reregister(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
-        self.internal.conn.borrow_mut().reregister(poll, token)
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
+        self.internal.conn.borrow_mut().reregister(poll, factory)
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> std::io::Result<()> {
