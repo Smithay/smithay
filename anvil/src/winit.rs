@@ -109,7 +109,7 @@ pub fn run_winit(
 
     while state.running.load(Ordering::SeqCst) {
         if input
-            .dispatch_new_events(|event, _| state.process_input_event(event))
+            .dispatch_new_events(|event| state.process_input_event(event))
             .is_err()
         {
             state.running.store(false, Ordering::SeqCst);
