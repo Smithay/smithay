@@ -265,11 +265,18 @@ impl AnvilState<UdevData> {
         }
 
         let (pos_x, pos_y) = pos;
-        let (max_x, max_y) = self.output_map.borrow().size();
+        let output_map = self.output_map.borrow();
+        let max_x = output_map.width();
         let clamped_x = pos_x.max(0.0).min(max_x as f64);
-        let clamped_y = pos_y.max(0.0).min(max_y as f64);
+        let max_y = output_map.height(clamped_x as i32);
 
-        (clamped_x, clamped_y)
+        if let Some(max_y) = max_y {
+            let clamped_y = pos_y.max(0.0).min(max_y as f64);
+
+            (clamped_x, clamped_y)
+        } else {
+            (clamped_x, pos_y)
+        }
     }
 }
 

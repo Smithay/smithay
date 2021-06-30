@@ -22,7 +22,7 @@ use slog::Logger;
 use crate::drawing::*;
 use crate::state::{AnvilState, Backend};
 
-pub const OUTPUT_NAME: &'static str = "winit";
+pub const OUTPUT_NAME: &str = "winit";
 
 pub struct WinitData;
 

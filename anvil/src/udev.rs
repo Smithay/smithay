@@ -613,7 +613,7 @@ impl AnvilState<UdevData> {
                 device_backend.dev_id,
                 crtc,
                 &mut *self.window_map.borrow_mut(),
-                &mut self.backend_data.output_map,
+                &self.backend_data.output_map,
                 &*self.output_map.borrow(),
                 &self.pointer_location,
                 &device_backend.pointer_image,

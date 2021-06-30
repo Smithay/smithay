@@ -212,18 +212,12 @@ impl OutputMap {
             .fold(0u32, |acc, output| acc + output.geometry.width as u32)
     }
 
-    pub fn height(&self) -> u32 {
+    pub fn height(&self, x: i32) -> Option<u32> {
         // This is a simplification, we only arrange the outputs on the y axis side-by-side
-        // so that the max height is simply the max of all output heights.
         self.outputs
             .iter()
+            .find(|output| x >= output.geometry.x && x < (output.geometry.x + output.geometry.width))
             .map(|output| output.geometry.height as u32)
-            .max()
-            .unwrap_or_default()
-    }
-
-    pub fn size(&self) -> (u32, u32) {
-        (self.width(), self.height())
     }
 
     pub fn is_empty(&self) -> bool {

@@ -297,6 +297,36 @@ pub struct ShellHandles {
     pub output_map: Rc<RefCell<OutputMap>>,
 }
 
+fn fullscreen_output_geometry(
+    wl_surface: &wl_surface::WlSurface,
+    wl_output: Option<&wl_output::WlOutput>,
+    window_map: &WindowMap,
+    output_map: &OutputMap,
+) -> Option<Rectangle> {
+    // First test if a specific output has been requested
+    // if the requested output is not found ignore the request
+    if let Some(wl_output) = wl_output {
+        return output_map.find(&wl_output, |_, geometry| geometry).ok();
+    }
+
+    // There is no output preference, try to find the output
+    // where the window is currently active
+    let window_location = window_map
+        .find(wl_surface)
+        .and_then(|kind| window_map.location(&kind));
+
+    if let Some(location) = window_location {
+        let window_output = output_map.find_by_position(location, |_, geometry| geometry).ok();
+
+        if let Some(result) = window_output {
+            return Some(result);
+        }
+    }
+
+    // Fallback to primary output
+    output_map.with_primary(|_, geometry| geometry).ok()
+}
+
 pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::slog::Logger) -> ShellHandles {
     // Create the compositor
     compositor_init(
@@ -510,49 +540,14 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                     return;
                 };
 
-                // Use the specified preferred output or else the current output the window
-                // is shown or the primary output
-                let output = output
-                    .map(|output| {
-                        xdg_output_map
-                            .borrow()
-                            .find(&output, |_, geometry| (Some(output.clone()), geometry))
-                            .ok()
-                    })
-                    .flatten()
-                    .or_else(|| {
-                        let xdg_window_map = xdg_window_map.borrow();
+                let output_geometry = fullscreen_output_geometry(
+                    wl_surface,
+                    output.as_ref(),
+                    &xdg_window_map.borrow(),
+                    &xdg_output_map.borrow(),
+                );
 
-                        xdg_window_map
-                            .find(wl_surface)
-                            .and_then(|kind| xdg_window_map.location(&kind))
-                            .and_then(|position| {
-                                xdg_output_map
-                                    .borrow()
-                                    .find_by_position(position, |output, geometry| {
-                                        let mut window_output: Option<wl_output::WlOutput> = None;
-                                        output.with_output(wl_surface, |_, output| {
-                                            window_output = Some(output.to_owned());
-                                        });
-                                        (window_output, geometry)
-                                    })
-                                    .ok()
-                            })
-                    })
-                    .or_else(|| {
-                        xdg_output_map
-                            .borrow()
-                            .with_primary(|output, geometry| {
-                                let mut primary_output: Option<wl_output::WlOutput> = None;
-                                output.with_output(wl_surface, |_, output| {
-                                    primary_output = Some(output.to_owned());
-                                });
-                                (primary_output, geometry)
-                            })
-                            .ok()
-                    });
-
-                if let Some((output, geometry)) = output {
+                if let Some(geometry) = output_geometry {
                     if let Some(surface) = surface.get_surface() {
                         let mut xdg_window_map = xdg_window_map.borrow_mut();
                         if let Some(kind) = xdg_window_map.find(surface) {
@@ -676,49 +671,14 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                         return;
                     };
 
-                    // Use the specified preferred output or else the current output the window
-                    // is shown or the primary output
-                    let output = output
-                        .map(|output| {
-                            shell_output_map
-                                .borrow()
-                                .find(&output, |_, geometry| (Some(output.clone()), geometry))
-                                .ok()
-                        })
-                        .flatten()
-                        .or_else(|| {
-                            let shell_window_map = shell_window_map.borrow();
+                    let output_geometry = fullscreen_output_geometry(
+                        wl_surface,
+                        output.as_ref(),
+                        &shell_window_map.borrow(),
+                        &shell_output_map.borrow(),
+                    );
 
-                            shell_window_map
-                                .find(wl_surface)
-                                .and_then(|kind| shell_window_map.location(&kind))
-                                .and_then(|position| {
-                                    shell_output_map
-                                        .borrow()
-                                        .find_by_position(position, |output, geometry| {
-                                            let mut window_output: Option<wl_output::WlOutput> = None;
-                                            output.with_output(wl_surface, |_, output| {
-                                                window_output = Some(output.to_owned());
-                                            });
-                                            (window_output, geometry)
-                                        })
-                                        .ok()
-                                })
-                        })
-                        .or_else(|| {
-                            shell_output_map
-                                .borrow()
-                                .with_primary(|output, geometry| {
-                                    let mut primary_output: Option<wl_output::WlOutput> = None;
-                                    output.with_output(wl_surface, |_, output| {
-                                        primary_output = Some(output.to_owned());
-                                    });
-                                    (primary_output, geometry)
-                                })
-                                .ok()
-                        });
-
-                    if let Some((_, geometry)) = output {
+                    if let Some(geometry) = output_geometry {
                         shell_window_map
                             .borrow_mut()
                             .insert(SurfaceKind::Wl(surface), (geometry.x, geometry.y));
