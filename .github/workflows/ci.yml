@@ -23,6 +23,7 @@ jobs:
         - backend_udev
         - backend_session
         - backend_session_logind
+        - backend_session_libseat
         - renderer_gl
         - wayland_frontend
         - xwayland
@@ -49,6 +50,17 @@ jobs:
       
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+
+      - name: Build and install Libseat
+        if: matrix.features == 'backend_session_libseat'
+        run: |
+          sudo apt-get install meson ninja-build
+          wget https://git.sr.ht/~kennylevinsen/seatd/archive/0.5.0.tar.gz -O libseat-source.tar.gz
+          tar xf libseat-source.tar.gz
+          cd seatd-0.5.0
+          meson -Dbuiltin=enabled -Dserver=disabled -Dexamples=disabled -Dman-pages=disabled build .
+          ninja -C build
+          sudo meson install -C build
 
       - name: Test features
         if: matrix.features != 'all'
