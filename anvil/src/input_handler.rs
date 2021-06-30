@@ -8,13 +8,15 @@ use crate::AnvilState;
 
 use smithay::{
     backend::input::{
-        self, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent,
-        PointerButtonEvent,
+        self, Device, DeviceCapability, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
+        PointerAxisEvent, PointerButtonEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
+        TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
     },
     reexports::wayland_server::protocol::wl_pointer,
     wayland::{
         output::Mode,
         seat::{keysyms as xkb, AxisFrame, Keysym, ModifiersState},
+        tablet_manager::TabletSeatTrait,
         SERIAL_COUNTER as SCOUNTER,
     },
 };
@@ -238,6 +240,27 @@ impl AnvilState<UdevData> {
             InputEvent::PointerMotion { event, .. } => self.on_pointer_move::<B>(event),
             InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(event),
             InputEvent::PointerAxis { event, .. } => self.on_pointer_axis::<B>(event),
+            InputEvent::TabletToolAxis { event, .. } => self.on_tablet_tool_axis::<B>(event),
+            InputEvent::TabletToolProximity { event, .. } => self.on_tablet_tool_proximity::<B>(event),
+            InputEvent::TabletToolTip { event, .. } => self.on_tablet_tool_tip::<B>(event),
+            InputEvent::TabletToolButton { event, .. } => self.on_tablet_button::<B>(event),
+            InputEvent::DeviceAdded { device } => {
+                if device.has_capability(DeviceCapability::TabletTool) {
+                    self.seat.tablet_seat().add_tablet(&device.into());
+                }
+            }
+            InputEvent::DeviceRemoved { device } => {
+                if device.has_capability(DeviceCapability::TabletTool) {
+                    let tablet_seat = self.seat.tablet_seat();
+
+                    tablet_seat.remove_tablet(&device.into());
+
+                    // If there are no tablets in seat we can remove all tools
+                    if tablet_seat.count_tablets() == 0 {
+                        tablet_seat.clear_tools();
+                    }
+                }
+            }
             _ => {
                 // other events are not handled in anvil (yet)
             }
@@ -257,6 +280,111 @@ impl AnvilState<UdevData> {
         let under = self.window_map.borrow().get_surface_under(self.pointer_location);
         self.pointer
             .motion(self.pointer_location, under, serial, evt.time());
+    }
+
+    fn on_tablet_tool_axis<B: InputBackend>(&mut self, evt: B::TabletToolAxisEvent) {
+        if let Some(out) = self.backend_data.output_map.first() {
+            self.pointer_location = evt.position_transformed(out.size);
+
+            let under = self.window_map.borrow().get_surface_under(self.pointer_location);
+            let tablet = self.seat.tablet_seat().get_tablet(&evt.device().into());
+            let tool = self.seat.tablet_seat().get_tool(&evt.tool());
+
+            if let (Some(tablet), Some(tool)) = (tablet, tool) {
+                if evt.pressure_has_changed() {
+                    tool.pressure(evt.pressure());
+                }
+                if evt.distance_has_changed() {
+                    tool.distance(evt.distance());
+                }
+                if evt.tilt_has_changed() {
+                    tool.tilt(evt.tilt());
+                }
+                if evt.slider_has_changed() {
+                    tool.slider_position(evt.slider_position());
+                }
+                if evt.rotation_has_changed() {
+                    tool.rotation(evt.rotation());
+                }
+                if evt.wheel_has_changed() {
+                    tool.wheel(evt.wheel_delta(), evt.wheel_delta_discrete());
+                }
+
+                tool.motion(
+                    self.pointer_location,
+                    under,
+                    &tablet,
+                    SCOUNTER.next_serial(),
+                    evt.time(),
+                );
+            }
+        }
+    }
+
+    fn on_tablet_tool_proximity<B: InputBackend>(&mut self, evt: B::TabletToolProximityEvent) {
+        if let Some(out) = self.backend_data.output_map.first() {
+            let tool = evt.tool();
+            self.seat.tablet_seat().add_tool(&tool);
+
+            self.pointer_location = evt.position_transformed(out.size);
+
+            let under = self.window_map.borrow().get_surface_under(self.pointer_location);
+            let tablet = self.seat.tablet_seat().get_tablet(&evt.device().into());
+            let tool = self.seat.tablet_seat().get_tool(&tool);
+
+            if let (Some(under), Some(tablet), Some(tool)) = (under, tablet, tool) {
+                match evt.state() {
+                    ProximityState::In => tool.proximity_in(
+                        self.pointer_location,
+                        under,
+                        &tablet,
+                        SCOUNTER.next_serial(),
+                        evt.time(),
+                    ),
+                    ProximityState::Out => tool.proximity_out(evt.time()),
+                }
+            }
+        }
+    }
+
+    fn on_tablet_tool_tip<B: InputBackend>(&mut self, evt: B::TabletToolTipEvent) {
+        let tool = self.seat.tablet_seat().get_tool(&evt.tool());
+
+        if let Some(tool) = tool {
+            match evt.tip_state() {
+                TabletToolTipState::Down => {
+                    tool.tip_down(SCOUNTER.next_serial(), evt.time());
+
+                    // change the keyboard focus unless the pointer is grabbed
+                    if !self.pointer.is_grabbed() {
+                        let under = self
+                            .window_map
+                            .borrow_mut()
+                            .get_surface_and_bring_to_top(self.pointer_location);
+
+                        let serial = SCOUNTER.next_serial();
+                        self.keyboard
+                            .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
+                    }
+                }
+                TabletToolTipState::Up => {
+                    tool.tip_up(evt.time());
+                }
+            }
+        }
+    }
+
+    fn on_tablet_button<B: InputBackend>(&mut self, evt: B::TabletToolButtonEvent) {
+        let tool = self.seat.tablet_seat().get_tool(&evt.tool());
+
+        if let Some(tool) = tool {
+            tool.button(
+                evt.button(),
+                evt.button_state(),
+                SCOUNTER.next_serial(),
+                evt.time(),
+            );
+        }
     }
 
     fn clamp_coords(&self, pos: (f64, f64)) -> (f64, f64) {
