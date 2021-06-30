@@ -62,6 +62,7 @@ pub mod output;
 pub mod seat;
 pub mod shell;
 pub mod shm;
+pub mod tablet_manager;
 
 /// A global [`SerialCounter`] for use in your compositor.
 ///
