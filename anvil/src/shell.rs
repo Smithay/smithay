@@ -452,15 +452,30 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
                 .unwrap();
 
                 if let Some(serial) = waiting_for_serial {
-                    if configure.serial > serial {
-                        // TODO: huh, we have missed the serial somehow.
-                        // this should not happen, but it may be better to handle
-                        // this case anyway
-                    }
+                    // When the resize grab is released the surface
+                    // resize state will be set to WaitingForFinalAck
+                    // and the client will receive a configure request
+                    // without the resize state to inform the client
+                    // resizing has finished. Here we will wait for
+                    // the client to acknowledge the end of the
+                    // resizing. To check if the surface was resizing
+                    // before sending the configure we need to use
+                    // the current state as the received acknowledge
+                    // will no longer have the resize state set
+                    let is_resizing = with_states(&surface, |states| {
+                        states
+                            .data_map
+                            .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                            .unwrap()
+                            .lock()
+                            .unwrap()
+                            .current
+                            .states
+                            .contains(xdg_toplevel::State::Resizing)
+                    })
+                    .unwrap();
 
-                    if serial == configure.serial
-                        && configure.state.states.contains(xdg_toplevel::State::Resizing)
-                    {
+                    if configure.serial >= serial && is_resizing {
                         with_states(&surface, |states| {
                             let mut data = states
                                 .data_map
