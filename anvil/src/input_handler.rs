@@ -81,7 +81,7 @@ impl<Backend> AnvilState<Backend> {
             input::MouseButton::Other(b) => b as u32,
         };
         let state = match evt.state() {
-            input::MouseButtonState::Pressed => {
+            input::ButtonState::Pressed => {
                 // change the keyboard focus unless the pointer is grabbed
                 if !self.pointer.is_grabbed() {
                     let under = self
@@ -93,7 +93,7 @@ impl<Backend> AnvilState<Backend> {
                 }
                 wl_pointer::ButtonState::Pressed
             }
-            input::MouseButtonState::Released => wl_pointer::ButtonState::Released,
+            input::ButtonState::Released => wl_pointer::ButtonState::Released,
         };
         self.pointer.button(button, state, serial, evt.time());
     }

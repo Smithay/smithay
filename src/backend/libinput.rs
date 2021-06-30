@@ -14,11 +14,14 @@ use std::path::Path;
 use std::{
     io::Error as IoError,
     os::unix::io::{AsRawFd, RawFd},
+    path::PathBuf,
 };
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
 use slog::{info, o};
+
+mod tablet;
 
 // No idea if this is the same across unix platforms
 // Lets make this linux exclusive for now, once someone tries to build it for
@@ -92,6 +95,22 @@ impl backend::Device for libinput::Device {
 
     fn has_capability(&self, capability: backend::DeviceCapability) -> bool {
         libinput::Device::has_capability(self, capability.into())
+    }
+
+    fn id_product(&self) -> Option<u32> {
+        Some(libinput::Device::id_product(self))
+    }
+
+    fn id_vendor(&self) -> Option<u32> {
+        Some(libinput::Device::id_vendor(self))
+    }
+
+    fn syspath(&self) -> Option<PathBuf> {
+        #[cfg(feature = "udev")]
+        return unsafe { libinput::Device::udev_device(self) }.map(|d| d.syspath().to_owned());
+
+        #[cfg(not(feature = "udev"))]
+        None
     }
 }
 
@@ -179,7 +198,7 @@ impl backend::PointerButtonEvent<LibinputInputBackend> for event::pointer::Point
         }
     }
 
-    fn state(&self) -> backend::MouseButtonState {
+    fn state(&self) -> backend::ButtonState {
         self.button_state().into()
     }
 }
@@ -355,6 +374,10 @@ impl InputBackend for LibinputInputBackend {
     type TouchMotionEvent = event::touch::TouchMotionEvent;
     type TouchCancelEvent = event::touch::TouchCancelEvent;
     type TouchFrameEvent = event::touch::TouchFrameEvent;
+    type TabletToolAxisEvent = event::tablet_tool::TabletToolAxisEvent;
+    type TabletToolProximityEvent = event::tablet_tool::TabletToolProximityEvent;
+    type TabletToolTipEvent = event::tablet_tool::TabletToolTipEvent;
+    type TabletToolButtonEvent = event::tablet_tool::TabletToolButtonEvent;
 
     type SpecialEvent = backend::UnusedEvent;
 
@@ -420,6 +443,20 @@ impl InputBackend for LibinputInputBackend {
                         callback(InputEvent::PointerButton { event: button_event });
                     }
                 },
+                libinput::Event::Tablet(tablet_event) => match tablet_event {
+                    event::TabletToolEvent::Axis(event) => {
+                        callback(InputEvent::TabletToolAxis { event });
+                    }
+                    event::TabletToolEvent::Proximity(event) => {
+                        callback(InputEvent::TabletToolProximity { event });
+                    }
+                    event::TabletToolEvent::Tip(event) => {
+                        callback(InputEvent::TabletToolTip { event });
+                    }
+                    event::TabletToolEvent::Button(event) => {
+                        callback(InputEvent::TabletToolButton { event });
+                    }
+                },
                 _ => {} //FIXME: What to do with the rest.
             }
         }
@@ -465,11 +502,11 @@ impl From<event::pointer::AxisSource> for backend::AxisSource {
     }
 }
 
-impl From<event::pointer::ButtonState> for backend::MouseButtonState {
+impl From<event::pointer::ButtonState> for backend::ButtonState {
     fn from(libinput: event::pointer::ButtonState) -> Self {
         match libinput {
-            event::pointer::ButtonState::Pressed => backend::MouseButtonState::Pressed,
-            event::pointer::ButtonState::Released => backend::MouseButtonState::Released,
+            event::pointer::ButtonState::Pressed => backend::ButtonState::Pressed,
+            event::pointer::ButtonState::Released => backend::ButtonState::Released,
         }
     }
 }

@@ -1,0 +1,188 @@
+use crate::backend::input::{
+    self as backend, TabletToolCapabilitys, TabletToolDescriptor, TabletToolTipState, TabletToolType,
+};
+
+use input as libinput;
+use input::event;
+use input::event::{tablet_tool, EventTrait};
+
+use super::LibinputInputBackend;
+
+/// Marker for tablet tool events
+pub trait IsTabetEvent: tablet_tool::TabletToolEventTrait + EventTrait {}
+
+impl IsTabetEvent for tablet_tool::TabletToolAxisEvent {}
+impl IsTabetEvent for tablet_tool::TabletToolProximityEvent {}
+impl IsTabetEvent for tablet_tool::TabletToolTipEvent {}
+impl IsTabetEvent for tablet_tool::TabletToolButtonEvent {}
+
+impl<E> backend::Event<LibinputInputBackend> for E
+where
+    E: IsTabetEvent,
+{
+    fn time(&self) -> u32 {
+        tablet_tool::TabletToolEventTrait::time(self)
+    }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+impl backend::TabletToolAxisEvent<LibinputInputBackend> for tablet_tool::TabletToolAxisEvent {}
+
+impl backend::TabletToolProximityEvent<LibinputInputBackend> for tablet_tool::TabletToolProximityEvent {
+    fn state(&self) -> backend::ProximityState {
+        match tablet_tool::TabletToolProximityEvent::proximity_state(self) {
+            tablet_tool::ProximityState::In => backend::ProximityState::In,
+            tablet_tool::ProximityState::Out => backend::ProximityState::Out,
+        }
+    }
+}
+
+impl backend::TabletToolTipEvent<LibinputInputBackend> for tablet_tool::TabletToolTipEvent {
+    fn tip_state(&self) -> TabletToolTipState {
+        match tablet_tool::TabletToolTipEvent::tip_state(self) {
+            tablet_tool::TipState::Up => backend::TabletToolTipState::Up,
+            tablet_tool::TipState::Down => backend::TabletToolTipState::Down,
+        }
+    }
+}
+
+impl<E> backend::TabletToolEvent<LibinputInputBackend> for E
+where
+    E: IsTabetEvent + event::EventTrait,
+{
+    fn tool(&self) -> TabletToolDescriptor {
+        let tool = self.tool();
+
+        let tool_type = match tool.tool_type() {
+            tablet_tool::TabletToolType::Pen => TabletToolType::Pen,
+            tablet_tool::TabletToolType::Eraser => TabletToolType::Eraser,
+            tablet_tool::TabletToolType::Brush => TabletToolType::Brush,
+            tablet_tool::TabletToolType::Pencil => TabletToolType::Pencil,
+            tablet_tool::TabletToolType::Airbrush => TabletToolType::Airbrush,
+            tablet_tool::TabletToolType::Mouse => TabletToolType::Mouse,
+            tablet_tool::TabletToolType::Lens => TabletToolType::Lens,
+            tablet_tool::TabletToolType::Totem => TabletToolType::Totem,
+        };
+
+        let hardware_serial = tool.serial();
+        let hardware_id_wacom = tool.tool_id();
+
+        let capabilitys = TabletToolCapabilitys {
+            tilt: tool.has_tilt(),
+            pressure: tool.has_pressure(),
+            distance: tool.has_distance(),
+            rotation: tool.has_rotation(),
+            slider: tool.has_slider(),
+            wheel: tool.has_wheel(),
+        };
+
+        TabletToolDescriptor {
+            tool_type,
+            hardware_serial,
+            hardware_id_wacom,
+            capabilitys,
+        }
+    }
+
+    fn delta_x(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::dx(self)
+    }
+
+    fn delta_y(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::dy(self)
+    }
+
+    fn x(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::x(self)
+    }
+
+    fn y(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::y(self)
+    }
+
+    fn x_transformed(&self, width: u32) -> f64 {
+        tablet_tool::TabletToolEventTrait::x_transformed(self, width)
+    }
+
+    fn y_transformed(&self, height: u32) -> f64 {
+        tablet_tool::TabletToolEventTrait::y_transformed(self, height)
+    }
+
+    fn distance(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::distance(self)
+    }
+
+    fn distance_has_changed(&self) -> bool {
+        tablet_tool::TabletToolEventTrait::distance_has_changed(self)
+    }
+
+    fn pressure(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::pressure(self)
+    }
+
+    fn pressure_has_changed(&self) -> bool {
+        tablet_tool::TabletToolEventTrait::pressure_has_changed(self)
+    }
+
+    fn slider_position(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::slider_position(self)
+    }
+
+    fn slider_has_changed(&self) -> bool {
+        tablet_tool::TabletToolEventTrait::slider_has_changed(self)
+    }
+
+    fn tilt_x(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::dx(self)
+    }
+
+    fn tilt_x_has_changed(&self) -> bool {
+        tablet_tool::TabletToolEventTrait::tilt_x_has_changed(self)
+    }
+
+    fn tilt_y(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::dy(self)
+    }
+
+    fn tilt_y_has_changed(&self) -> bool {
+        tablet_tool::TabletToolEventTrait::tilt_y_has_changed(self)
+    }
+
+    fn rotation(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::rotation(self)
+    }
+
+    fn rotation_has_changed(&self) -> bool {
+        tablet_tool::TabletToolEventTrait::rotation_has_changed(self)
+    }
+
+    fn wheel_delta(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::wheel_delta(self)
+    }
+
+    fn wheel_delta_discrete(&self) -> i32 {
+        // I have no idea why f64 is returend by this fn, in libinput's api wheel clicks are always i32
+        tablet_tool::TabletToolEventTrait::wheel_delta_discrete(self) as i32
+    }
+
+    fn wheel_has_changed(&self) -> bool {
+        tablet_tool::TabletToolEventTrait::wheel_has_changed(self)
+    }
+}
+
+impl backend::TabletToolButtonEvent<LibinputInputBackend> for tablet_tool::TabletToolButtonEvent {
+    fn button(&self) -> u32 {
+        tablet_tool::TabletToolButtonEvent::button(&self)
+    }
+
+    fn seat_button_count(&self) -> u32 {
+        tablet_tool::TabletToolButtonEvent::seat_button_count(&self)
+    }
+
+    fn button_state(&self) -> backend::ButtonState {
+        tablet_tool::TabletToolButtonEvent::button_state(&self).into()
+    }
+}
