@@ -237,13 +237,15 @@ pub struct X11Surface {
     surface: WlSurface,
 }
 
+impl std::cmp::PartialEq for X11Surface {
+    fn eq(&self, other: &Self) -> bool {
+        self.alive() && other.alive() && self.surface == other.surface
+    }
+}
+
 impl X11Surface {
     pub fn alive(&self) -> bool {
         self.surface.as_ref().is_alive()
-    }
-
-    pub fn equals(&self, other: &Self) -> bool {
-        self.alive() && other.alive() && self.surface.as_ref().equals(&other.surface.as_ref())
     }
 
     pub fn get_surface(&self) -> Option<&WlSurface> {

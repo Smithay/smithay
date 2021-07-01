@@ -352,7 +352,7 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
     let xdg_output_map = output_map.clone();
     let (xdg_shell_state, _, _) = xdg_shell_init(
         &mut *display.borrow_mut(),
-        move |shell_event| match shell_event {
+        move |shell_event, _dispatch_data| match shell_event {
             XdgRequest::NewToplevel { surface } => {
                 // place the window at a random location on the primary output
                 // or if there is not output in a [0;800]x[0;800] square

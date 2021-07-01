@@ -22,24 +22,19 @@
 //! ### Initialization
 //!
 //! To initialize this handler, simple use the [`xdg_shell_init`] function provided in this module.
+//! You need to provide a closure that will be invoked whenever some action is required from you,
+//! are represented by the [`XdgRequest`] enum.
 //!
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
 //! use smithay::wayland::shell::xdg::{xdg_shell_init, XdgRequest};
 //!
-//!
-//! // define the metadata you want associated with the shell clients
-//! #[derive(Default)]
-//! struct MyShellData {
-//!     /* ... */
-//! }
-//!
 //! # let mut display = wayland_server::Display::new();
 //! let (shell_state, _, _) = xdg_shell_init(
 //!     &mut display,
 //!     // your implementation
-//!     |event: XdgRequest| { /* ... */ },
+//!     |event: XdgRequest, dispatch_data| { /* handle the shell requests here */ },
 //!     None  // put a logger if you want
 //! );
 //!
@@ -52,8 +47,7 @@
 //!
 //! - [`ShellClient`]:
 //!   This is a handle representing an instantiation of a shell global
-//!   you can associate client-wise metadata to it (this is the `MyShellData` type in
-//!   the example above).
+//!   you can associate client-wise metadata to it through an [`UserDataMap`].
 //! - [`ToplevelSurface`]:
 //!   This is a handle representing a toplevel surface, you can
 //!   retrieve a list of all currently alive toplevel surface from the
@@ -84,6 +78,7 @@ use wayland_protocols::{
     unstable::xdg_shell::v6::server::{zxdg_popup_v6, zxdg_shell_v6, zxdg_toplevel_v6},
     xdg_shell::server::{xdg_popup, xdg_positioner, xdg_toplevel, xdg_wm_base},
 };
+use wayland_server::DispatchData;
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_surface},
     Display, Filter, Global, UserDataMap,
@@ -646,7 +641,7 @@ impl Cacheable for SurfaceCachedState {
 
 pub(crate) struct ShellData {
     log: ::slog::Logger,
-    user_impl: Rc<RefCell<dyn FnMut(XdgRequest)>>,
+    user_impl: Rc<RefCell<dyn FnMut(XdgRequest, DispatchData<'_>)>>,
     shell_state: Arc<Mutex<ShellState>>,
 }
 
@@ -672,7 +667,7 @@ pub fn xdg_shell_init<L, Impl>(
 )
 where
     L: Into<Option<::slog::Logger>>,
-    Impl: FnMut(XdgRequest) + 'static,
+    Impl: FnMut(XdgRequest, DispatchData<'_>) + 'static,
 {
     let log = crate::slog_or_fallback(logger);
     let shell_state = Arc::new(Mutex::new(ShellState {
@@ -690,15 +685,15 @@ where
 
     let xdg_shell_global = display.create_global(
         1,
-        Filter::new(move |(shell, _version), _, _data| {
-            self::xdg_handlers::implement_wm_base(shell, &shell_data);
+        Filter::new(move |(shell, _version), _, dispatch_data| {
+            self::xdg_handlers::implement_wm_base(shell, &shell_data, dispatch_data);
         }),
     );
 
     let zxdgv6_shell_global = display.create_global(
         1,
-        Filter::new(move |(shell, _version), _, _data| {
-            self::zxdgv6_handlers::implement_shell(shell, &shell_data_z);
+        Filter::new(move |(shell, _version), _, dispatch_data| {
+            self::zxdgv6_handlers::implement_shell(shell, &shell_data_z, dispatch_data);
         }),
     );
 
@@ -764,24 +759,22 @@ pub struct ShellClient {
     kind: ShellClientKind,
 }
 
+impl std::cmp::PartialEq for ShellClient {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.kind, &other.kind) {
+            (&ShellClientKind::Xdg(ref s1), &ShellClientKind::Xdg(ref s2)) => s1 == s2,
+            (&ShellClientKind::ZxdgV6(ref s1), &ShellClientKind::ZxdgV6(ref s2)) => s1 == s2,
+            _ => false,
+        }
+    }
+}
+
 impl ShellClient {
     /// Is the shell client represented by this handle still connected?
     pub fn alive(&self) -> bool {
         match self.kind {
             ShellClientKind::Xdg(ref s) => s.as_ref().is_alive(),
             ShellClientKind::ZxdgV6(ref s) => s.as_ref().is_alive(),
-        }
-    }
-
-    /// Checks if this handle and the other one actually refer to the
-    /// same shell client
-    pub fn equals(&self, other: &Self) -> bool {
-        match (&self.kind, &other.kind) {
-            (&ShellClientKind::Xdg(ref s1), &ShellClientKind::Xdg(ref s2)) => s1.as_ref().equals(s2.as_ref()),
-            (&ShellClientKind::ZxdgV6(ref s1), &ShellClientKind::ZxdgV6(ref s2)) => {
-                s1.as_ref().equals(s2.as_ref())
-            }
-            _ => false,
         }
     }
 
@@ -873,6 +866,12 @@ pub struct ToplevelSurface {
     shell_surface: ToplevelKind,
 }
 
+impl std::cmp::PartialEq for ToplevelSurface {
+    fn eq(&self, other: &Self) -> bool {
+        self.alive() && other.alive() && self.wl_surface == other.wl_surface
+    }
+}
+
 impl ToplevelSurface {
     /// Is the toplevel surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
@@ -881,11 +880,6 @@ impl ToplevelSurface {
             ToplevelKind::ZxdgV6(ref s) => s.as_ref().is_alive(),
         };
         shell_alive && self.wl_surface.as_ref().is_alive()
-    }
-
-    /// Do this handle and the other one actually refer to the same toplevel surface?
-    pub fn equals(&self, other: &Self) -> bool {
-        self.alive() && other.alive() && self.wl_surface.as_ref().equals(&other.wl_surface.as_ref())
     }
 
     /// Retrieve the shell client owning this toplevel surface
@@ -957,6 +951,9 @@ impl ToplevelSurface {
     /// Send a configure event to this toplevel surface to suggest it a new configuration
     ///
     /// The serial of this configure will be tracked waiting for the client to ACK it.
+    ///
+    /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
+    /// method.
     pub fn send_configure(&self) {
         if let Some(surface) = self.get_surface() {
             let configure = compositor::with_states(surface, |states| {
@@ -1084,13 +1081,10 @@ impl ToplevelSurface {
     /// Allows the pending state of this toplevel to
     /// be manipulated.
     ///
-    /// This should be used to inform the client about
-    /// size and state changes.
+    /// This should be used to inform the client about size and state changes,
+    /// for example after a resize request from the client.
     ///
-    /// For example after a resize request from the client.
-    ///
-    /// The state will be sent to the client when calling
-    /// send_configure.
+    /// The state will be sent to the client when calling [`send_configure`](#method.send_configure).
     pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, DeadResource>
     where
         F: FnOnce(&mut ToplevelState) -> T,
@@ -1157,6 +1151,12 @@ pub struct PopupSurface {
     shell_surface: PopupKind,
 }
 
+impl std::cmp::PartialEq for PopupSurface {
+    fn eq(&self, other: &Self) -> bool {
+        self.alive() && other.alive() && self.wl_surface == other.wl_surface
+    }
+}
+
 impl PopupSurface {
     /// Is the popup surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
@@ -1185,11 +1185,6 @@ impl PopupSurface {
             })
             .unwrap()
         }
-    }
-
-    /// Do this handle and the other one actually refer to the same popup surface?
-    pub fn equals(&self, other: &Self) -> bool {
-        self.alive() && other.alive() && self.wl_surface.as_ref().equals(&other.wl_surface.as_ref())
     }
 
     /// Retrieve the shell client owning this popup surface
@@ -1225,6 +1220,9 @@ impl PopupSurface {
     /// Send a configure event to this popup surface to suggest it a new configuration
     ///
     /// The serial of this configure will be tracked waiting for the client to ACK it.
+    ///
+    /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
+    /// method.
     pub fn send_configure(&self) {
         if let Some(surface) = self.get_surface() {
             let next_configure = compositor::with_states(surface, |states| {
@@ -1406,13 +1404,10 @@ impl PopupSurface {
     /// Allows the pending state of this popup to
     /// be manipulated.
     ///
-    /// This should be used to inform the client about
-    /// size and position changes.
+    /// This should be used to inform the client about size and position changes,
+    /// for example after a move of the parent toplevel.
     ///
-    /// For example after a move of the parent toplevel.
-    ///
-    /// The state will be sent to the client when calling
-    /// send_configure.
+    /// The state will be sent to the client when calling [`send_configure`](#method.send_configure).
     pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, DeadResource>
     where
         F: FnOnce(&mut PopupState) -> T,
@@ -1515,7 +1510,7 @@ pub enum XdgRequest {
     /// A new toplevel surface was created
     ///
     /// You likely need to send a [`ToplevelConfigure`] to the surface, to hint the
-    /// client as to how its window should be
+    /// client as to how its window should be sized.
     NewToplevel {
         /// the surface
         surface: ToplevelSurface,
@@ -1523,7 +1518,7 @@ pub enum XdgRequest {
     /// A new popup surface was created
     ///
     /// You likely need to send a [`PopupConfigure`] to the surface, to hint the
-    /// client as to how its popup should be
+    /// client as to how its popup should be sized.
     NewPopup {
         /// the surface
         surface: PopupSurface,
