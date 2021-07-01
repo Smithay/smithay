@@ -36,7 +36,7 @@
 
 use crate::{
     backend::session::{AsErrno, Session, Signal as SessionSignal},
-    signaling::Signaler,
+    utils::signaling::Signaler,
 };
 use dbus::{
     arg::{messageitem::MessageItem, OwnedFd},

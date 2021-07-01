@@ -49,7 +49,7 @@ use std::{
 
 use wayland_protocols::unstable::linux_dmabuf::v1::server::{
     zwp_linux_buffer_params_v1::{
-        Error as ParamError, Request as ParamsRequest, ZwpLinuxBufferParamsV1 as BufferParams
+        Error as ParamError, Request as ParamsRequest, ZwpLinuxBufferParamsV1 as BufferParams,
     },
     zwp_linux_dmabuf_v1,
 };

@@ -1,6 +1,7 @@
 //! Various utilities functions and types
 
 mod rectangle;
+pub mod signaling;
 
 pub use self::rectangle::Rectangle;
 

@@ -32,7 +32,7 @@ pub struct DrmSurface<A: AsRawFd + 'static> {
     pub(super) internal: Arc<DrmSurfaceInternal<A>>,
     pub(super) has_universal_planes: bool,
     #[cfg(feature = "backend_session")]
-    pub(super) links: RefCell<Vec<crate::signaling::SignalToken>>,
+    pub(super) links: RefCell<Vec<crate::utils::signaling::SignalToken>>,
 }
 
 #[derive(Debug)]
