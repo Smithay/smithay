@@ -3,8 +3,8 @@
 //! This module contains helpers to manage XWayland from your compositor, in order
 //! to support running X11 apps.
 //!
-//! The starting point is the [`XWayland`](struct.XWayland.html) struct, which represents the
-//! running `XWayland` instance. Dropping it will shutdown XWayland.
+//! The starting point is the [`XWayland`] struct, which represents the
+//! running XWayland instance. Dropping it will shutdown XWayland.
 //!
 //! You need to provide an implementation of a X11 Window Manager for XWayland to
 //! function properly. You'll need to treat XWayland (and all its X11 apps) as one
@@ -15,4 +15,4 @@
 mod x11_sockets;
 mod xserver;
 
-pub use self::xserver::{XWayland, XWaylandEvent};
+pub use self::xserver::{XWayland, XWaylandEvent, XWaylandSource};
