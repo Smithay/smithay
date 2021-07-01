@@ -17,7 +17,7 @@ use crate::shell::SurfaceData;
 #[cfg(feature = "xwayland")]
 use crate::xwayland::X11Surface;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Kind {
     Xdg(ToplevelSurface),
     Wl(ShellSurface),
@@ -41,17 +41,6 @@ impl Kind {
             Kind::Wl(ref t) => t.get_surface(),
             #[cfg(feature = "xwayland")]
             Kind::X11(ref t) => t.get_surface(),
-        }
-    }
-
-    /// Do this handle and the other one actually refer to the same toplevel surface?
-    pub fn equals(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Kind::Xdg(a), Kind::Xdg(b)) => a.equals(b),
-            (Kind::Wl(a), Kind::Wl(b)) => a.equals(b),
-            #[cfg(feature = "xwayland")]
-            (Kind::X11(a), Kind::X11(b)) => a.equals(b),
-            _ => false,
         }
     }
 
@@ -357,7 +346,7 @@ impl WindowMap {
 
     /// Refreshes the state of the toplevel, if it exists.
     pub fn refresh_toplevel(&mut self, toplevel: &Kind) {
-        if let Some(w) = self.windows.iter_mut().find(|w| w.toplevel.equals(toplevel)) {
+        if let Some(w) = self.windows.iter_mut().find(|w| &w.toplevel == toplevel) {
             w.self_update();
         }
     }
@@ -400,13 +389,13 @@ impl WindowMap {
     pub fn location(&self, toplevel: &Kind) -> Option<(i32, i32)> {
         self.windows
             .iter()
-            .find(|w| w.toplevel.equals(toplevel))
+            .find(|w| &w.toplevel == toplevel)
             .map(|w| w.location)
     }
 
     /// Sets the location of the toplevel, if it exists.
     pub fn set_location(&mut self, toplevel: &Kind, location: (i32, i32)) {
-        if let Some(w) = self.windows.iter_mut().find(|w| w.toplevel.equals(toplevel)) {
+        if let Some(w) = self.windows.iter_mut().find(|w| &w.toplevel == toplevel) {
             w.location = location;
             w.self_update();
         }
@@ -416,7 +405,7 @@ impl WindowMap {
     pub fn geometry(&self, toplevel: &Kind) -> Option<Rectangle> {
         self.windows
             .iter()
-            .find(|w| w.toplevel.equals(toplevel))
+            .find(|w| &w.toplevel == toplevel)
             .map(|w| w.geometry())
     }
 

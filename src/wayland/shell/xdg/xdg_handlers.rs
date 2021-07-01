@@ -7,6 +7,7 @@ use crate::wayland::Serial;
 use wayland_protocols::xdg_shell::server::{
     xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base,
 };
+use wayland_server::DispatchData;
 use wayland_server::{protocol::wl_surface, Filter, Main};
 
 use crate::utils::Rectangle;
@@ -23,16 +24,20 @@ static XDG_POPUP_ROLE: &str = "xdg_popup";
 pub(crate) fn implement_wm_base(
     shell: Main<xdg_wm_base::XdgWmBase>,
     shell_data: &ShellData,
+    dispatch_data: DispatchData<'_>,
 ) -> xdg_wm_base::XdgWmBase {
-    shell.quick_assign(|shell, req, _data| wm_implementation(req, shell.deref().clone()));
+    shell.quick_assign(wm_implementation);
     shell.as_ref().user_data().set(|| ShellUserData {
         shell_data: shell_data.clone(),
         client_data: Mutex::new(make_shell_client_data()),
     });
     let mut user_impl = shell_data.user_impl.borrow_mut();
-    (&mut *user_impl)(XdgRequest::NewClient {
-        client: make_shell_client(&shell),
-    });
+    (&mut *user_impl)(
+        XdgRequest::NewClient {
+            client: make_shell_client(&shell),
+        },
+        dispatch_data,
+    );
     shell.deref().clone()
 }
 
@@ -51,7 +56,11 @@ pub(crate) fn make_shell_client(resource: &xdg_wm_base::XdgWmBase) -> ShellClien
     }
 }
 
-fn wm_implementation(request: xdg_wm_base::Request, shell: xdg_wm_base::XdgWmBase) {
+fn wm_implementation(
+    shell: Main<xdg_wm_base::XdgWmBase>,
+    request: xdg_wm_base::Request,
+    dispatch_data: DispatchData<'_>,
+) {
     let data = shell.as_ref().user_data().get::<ShellUserData>().unwrap();
     match request {
         xdg_wm_base::Request::Destroy => {
@@ -64,12 +73,14 @@ fn wm_implementation(request: xdg_wm_base::Request, shell: xdg_wm_base::XdgWmBas
             // Do not assign a role to the surface here
             // xdg_surface is not role, only xdg_toplevel and
             // xdg_popup are defined as roles
-            id.quick_assign(|surface, req, _data| xdg_surface_implementation(req, surface.deref().clone()));
+            id.quick_assign(|surface, req, dispatch_data| {
+                xdg_surface_implementation(req, surface.deref().clone(), dispatch_data)
+            });
             id.assign_destructor(Filter::new(|surface, _, _data| destroy_surface(surface)));
             id.as_ref().user_data().set(|| XdgSurfaceUserData {
                 shell_data: data.shell_data.clone(),
                 wl_surface: surface,
-                wm_base: shell.clone(),
+                wm_base: shell.deref().clone(),
                 has_active_role: AtomicBool::new(false),
             });
         }
@@ -86,9 +97,12 @@ fn wm_implementation(request: xdg_wm_base::Request, shell: xdg_wm_base::XdgWmBas
             };
             if valid {
                 let mut user_impl = data.shell_data.user_impl.borrow_mut();
-                (&mut *user_impl)(XdgRequest::ClientPong {
-                    client: make_shell_client(&shell),
-                });
+                (&mut *user_impl)(
+                    XdgRequest::ClientPong {
+                        client: make_shell_client(&shell),
+                    },
+                    dispatch_data,
+                );
             }
         }
         _ => unreachable!(),
@@ -191,7 +205,11 @@ fn destroy_surface(surface: xdg_surface::XdgSurface) {
     }
 }
 
-fn xdg_surface_implementation(request: xdg_surface::Request, xdg_surface: xdg_surface::XdgSurface) {
+fn xdg_surface_implementation(
+    request: xdg_surface::Request,
+    xdg_surface: xdg_surface::XdgSurface,
+    dispatch_data: DispatchData<'_>,
+) {
     let data = xdg_surface
         .as_ref()
         .user_data()
@@ -225,7 +243,7 @@ fn xdg_surface_implementation(request: xdg_surface::Request, xdg_surface: xdg_su
 
             compositor::add_commit_hook(surface, super::ToplevelSurface::commit_hook);
 
-            id.quick_assign(|toplevel, req, _data| toplevel_implementation(req, toplevel.deref().clone()));
+            id.quick_assign(toplevel_implementation);
             id.assign_destructor(Filter::new(|toplevel, _, _data| destroy_toplevel(toplevel)));
             id.as_ref().user_data().set(|| ShellSurfaceUserData {
                 shell_data: data.shell_data.clone(),
@@ -243,7 +261,7 @@ fn xdg_surface_implementation(request: xdg_surface::Request, xdg_surface: xdg_su
 
             let handle = make_toplevel_handle(&id);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::NewToplevel { surface: handle });
+            (&mut *user_impl)(XdgRequest::NewToplevel { surface: handle }, dispatch_data);
         }
         xdg_surface::Request::GetPopup {
             id,
@@ -300,7 +318,7 @@ fn xdg_surface_implementation(request: xdg_surface::Request, xdg_surface: xdg_su
 
             compositor::add_commit_hook(surface, super::PopupSurface::commit_hook);
 
-            id.quick_assign(|popup, req, _data| xdg_popup_implementation(req, popup.deref().clone()));
+            id.quick_assign(xdg_popup_implementation);
             id.assign_destructor(Filter::new(|popup, _, _data| destroy_popup(popup)));
             id.as_ref().user_data().set(|| ShellSurfaceUserData {
                 shell_data: data.shell_data.clone(),
@@ -318,7 +336,7 @@ fn xdg_surface_implementation(request: xdg_surface::Request, xdg_surface: xdg_su
 
             let handle = make_popup_handle(&id);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::NewPopup { surface: handle });
+            (&mut *user_impl)(XdgRequest::NewPopup { surface: handle }, dispatch_data);
         }
         xdg_surface::Request::SetWindowGeometry { x, y, width, height } => {
             // Check the role of the surface, this can be either xdg_toplevel
@@ -417,10 +435,13 @@ fn xdg_surface_implementation(request: xdg_surface::Request, xdg_surface: xdg_su
             };
 
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::AckConfigure {
-                surface: surface.clone(),
-                configure,
-            });
+            (&mut *user_impl)(
+                XdgRequest::AckConfigure {
+                    surface: surface.clone(),
+                    configure,
+                },
+                dispatch_data,
+            );
         }
         _ => unreachable!(),
     }
@@ -512,7 +533,11 @@ fn make_toplevel_handle(resource: &xdg_toplevel::XdgToplevel) -> super::Toplevel
     }
 }
 
-fn toplevel_implementation(request: xdg_toplevel::Request, toplevel: xdg_toplevel::XdgToplevel) {
+fn toplevel_implementation(
+    toplevel: Main<xdg_toplevel::XdgToplevel>,
+    request: xdg_toplevel::Request,
+    dispatch_data: DispatchData<'_>,
+) {
     let data = toplevel
         .as_ref()
         .user_data()
@@ -553,35 +578,44 @@ fn toplevel_implementation(request: xdg_toplevel::Request, toplevel: xdg_topleve
             let handle = make_toplevel_handle(&toplevel);
             let serial = Serial::from(serial);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::ShowWindowMenu {
-                surface: handle,
-                seat,
-                serial,
-                location: (x, y),
-            });
+            (&mut *user_impl)(
+                XdgRequest::ShowWindowMenu {
+                    surface: handle,
+                    seat,
+                    serial,
+                    location: (x, y),
+                },
+                dispatch_data,
+            );
         }
         xdg_toplevel::Request::Move { seat, serial } => {
             // This has to be handled by the compositor
             let handle = make_toplevel_handle(&toplevel);
             let serial = Serial::from(serial);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::Move {
-                surface: handle,
-                seat,
-                serial,
-            });
+            (&mut *user_impl)(
+                XdgRequest::Move {
+                    surface: handle,
+                    seat,
+                    serial,
+                },
+                dispatch_data,
+            );
         }
         xdg_toplevel::Request::Resize { seat, serial, edges } => {
             // This has to be handled by the compositor
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
             let serial = Serial::from(serial);
-            (&mut *user_impl)(XdgRequest::Resize {
-                surface: handle,
-                seat,
-                serial,
-                edges,
-            });
+            (&mut *user_impl)(
+                XdgRequest::Resize {
+                    surface: handle,
+                    seat,
+                    serial,
+                    edges,
+                },
+                dispatch_data,
+            );
         }
         xdg_toplevel::Request::SetMaxSize { width, height } => {
             with_toplevel_pending_state(&toplevel, |toplevel_data| {
@@ -596,32 +630,35 @@ fn toplevel_implementation(request: xdg_toplevel::Request, toplevel: xdg_topleve
         xdg_toplevel::Request::SetMaximized => {
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::Maximize { surface: handle });
+            (&mut *user_impl)(XdgRequest::Maximize { surface: handle }, dispatch_data);
         }
         xdg_toplevel::Request::UnsetMaximized => {
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::UnMaximize { surface: handle });
+            (&mut *user_impl)(XdgRequest::UnMaximize { surface: handle }, dispatch_data);
         }
         xdg_toplevel::Request::SetFullscreen { output } => {
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::Fullscreen {
-                surface: handle,
-                output,
-            });
+            (&mut *user_impl)(
+                XdgRequest::Fullscreen {
+                    surface: handle,
+                    output,
+                },
+                dispatch_data,
+            );
         }
         xdg_toplevel::Request::UnsetFullscreen => {
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::UnFullscreen { surface: handle });
+            (&mut *user_impl)(XdgRequest::UnFullscreen { surface: handle }, dispatch_data);
         }
         xdg_toplevel::Request::SetMinimized => {
             // This has to be handled by the compositor, may not be
             // supported and just ignored
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::Minimize { surface: handle });
+            (&mut *user_impl)(XdgRequest::Minimize { surface: handle }, dispatch_data);
         }
         _ => unreachable!(),
     }
@@ -679,7 +716,11 @@ fn make_popup_handle(resource: &xdg_popup::XdgPopup) -> super::PopupSurface {
     }
 }
 
-fn xdg_popup_implementation(request: xdg_popup::Request, popup: xdg_popup::XdgPopup) {
+fn xdg_popup_implementation(
+    popup: Main<xdg_popup::XdgPopup>,
+    request: xdg_popup::Request,
+    dispatch_data: DispatchData<'_>,
+) {
     let data = popup.as_ref().user_data().get::<ShellSurfaceUserData>().unwrap();
     match request {
         xdg_popup::Request::Destroy => {
@@ -689,11 +730,14 @@ fn xdg_popup_implementation(request: xdg_popup::Request, popup: xdg_popup::XdgPo
             let handle = make_popup_handle(&popup);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
             let serial = Serial::from(serial);
-            (&mut *user_impl)(XdgRequest::Grab {
-                surface: handle,
-                seat,
-                serial,
-            });
+            (&mut *user_impl)(
+                XdgRequest::Grab {
+                    surface: handle,
+                    seat,
+                    serial,
+                },
+                dispatch_data,
+            );
         }
         _ => unreachable!(),
     }
