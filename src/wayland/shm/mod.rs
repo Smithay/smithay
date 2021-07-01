@@ -13,7 +13,7 @@
 //!
 //! To use it, first add a `ShmGlobal` to your display, specifying the formats
 //! you want to support (ARGB8888 and XRGB8888 are always considered as supported,
-//! as specified by the wayland protocol) and obtain its `ShmToken`.
+//! as specified by the wayland protocol).
 //!
 //! ```
 //! extern crate wayland_server;
@@ -26,7 +26,7 @@
 //! // Insert the ShmGlobal into your event loop
 //! // Here, we specify that Yuyv and C8 format are supported
 //! // additionally to the standard Argb8888 and Xrgb8888.
-//! let shm_global = init_shm_global(
+//! init_shm_global(
 //!     &mut display,
 //!     vec![Format::Yuyv, Format::C8],
 //!     None // we don't provide a logger here
@@ -52,7 +52,7 @@
 //!
 //! match content {
 //!     Ok(something) =>  {
-//!         /* `something` is the content you returned from the closure */
+//!         /* `something` is the value you returned from the closure */
 //!     },
 //!     Err(BufferAccessError::NotManaged) => {
 //!         /* This buffer is not managed by the SHM global, but by something else */
@@ -83,11 +83,7 @@ use wayland_server::{
 mod pool;
 
 #[derive(Debug, Clone)]
-/// Internal data storage of `ShmGlobal`
-///
-/// This type is only visible as type parameter of
-/// the `Global` handle you are provided.
-pub struct ShmGlobalData {
+struct ShmGlobalData {
     formats: Rc<[wl_shm::Format]>,
     log: ::slog::Logger,
 }
@@ -136,9 +132,10 @@ where
 }
 
 /// Error that can occur when accessing an SHM buffer
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum BufferAccessError {
     /// This buffer is not managed by the SHM handler
+    #[error("non-SHM buffer")]
     NotManaged,
     /// An error occurred while accessing the memory map
     ///
@@ -146,6 +143,7 @@ pub enum BufferAccessError {
     /// for the memory map.
     ///
     /// If this error occurs, the client has been killed as a result.
+    #[error("invalid client buffer")]
     BadMap,
 }
 
@@ -158,7 +156,8 @@ pub enum BufferAccessError {
 /// - The second argument is the specification of this buffer is this pool
 ///
 /// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
-/// and this method will return `Err(())` (this will be the case for an EGL buffer for example).
+/// and this method will return `Err(BufferAccessError::NotManaged)` (this will be the case for an
+/// EGL buffer for example).
 pub fn with_buffer_contents<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<T, BufferAccessError>
 where
     F: FnOnce(&[u8], BufferData) -> T,
@@ -219,7 +218,7 @@ impl ShmGlobalData {
 pub struct BufferData {
     /// Offset of the start of the buffer relative to the beginning of the pool in bytes
     pub offset: i32,
-    /// Wwidth of the buffer in bytes
+    /// Width of the buffer in bytes
     pub width: i32,
     /// Height of the buffer in bytes
     pub height: i32,

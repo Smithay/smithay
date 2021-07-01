@@ -5,7 +5,7 @@
 //!
 //! Most utilities provided in this module work in the same way:
 //!
-//! - An `init` function or method will take the event loop as argument and
+//! - An `init` function or method will take the wayland display as argument and
 //!   insert one or more globals into it.
 //! - If you want to remove a previously inserted global, just call the
 //!   `destroy()` method on the associated `Global`. If you don't plan to
