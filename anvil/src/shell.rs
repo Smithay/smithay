@@ -642,7 +642,7 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
     let shell_output_map = output_map.clone();
     let (wl_shell_state, _) = wl_shell_init(
         &mut *display.borrow_mut(),
-        move |req: ShellRequest| {
+        move |req: ShellRequest, _dispatch_data| {
             match req {
                 ShellRequest::SetKind {
                     surface,

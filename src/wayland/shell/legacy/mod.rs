@@ -24,6 +24,8 @@
 //! ### Initialization
 //!
 //! To initialize this handler, simple use the [`wl_shell_init`] function provided in this module.
+//! You need to provide a closure that will be invoked whenever some action is required from you,
+//! are represented by the [`ShellRequest`] enum.
 //!
 //! ```no_run
 //! # extern crate wayland_server;
@@ -34,7 +36,7 @@
 //! let (shell_state, _) = wl_shell_init(
 //!     &mut display,
 //!     // your implementation
-//!     |event: ShellRequest| { /* ... */ },
+//!     |event: ShellRequest, dispatch_data| { /* handle the shell requests here */ },
 //!     None  // put a logger if you want
 //! );
 //!
@@ -51,7 +53,7 @@ use crate::wayland::{compositor, Serial};
 
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface},
-    Display, Filter, Global,
+    DispatchData, Display, Filter, Global,
 };
 
 use super::PingError;
@@ -75,15 +77,16 @@ pub struct ShellSurface {
     shell_surface: wl_shell_surface::WlShellSurface,
 }
 
+impl std::cmp::PartialEq for ShellSurface {
+    fn eq(&self, other: &Self) -> bool {
+        self.shell_surface == other.shell_surface
+    }
+}
+
 impl ShellSurface {
     /// Is the shell surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
         self.shell_surface.as_ref().is_alive() && self.wl_surface.as_ref().is_alive()
-    }
-
-    /// Do this handle and the other one actually refer to the same shell surface?
-    pub fn equals(&self, other: &Self) -> bool {
-        self.shell_surface.as_ref().equals(&other.shell_surface.as_ref())
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface
@@ -273,7 +276,7 @@ pub fn wl_shell_init<L, Impl>(
 ) -> (Arc<Mutex<ShellState>>, Global<wl_shell::WlShell>)
 where
     L: Into<Option<::slog::Logger>>,
-    Impl: FnMut(ShellRequest) + 'static,
+    Impl: FnMut(ShellRequest, DispatchData<'_>) + 'static,
 {
     let _log = crate::slog_or_fallback(logger);
 

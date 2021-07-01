@@ -11,6 +11,11 @@
 //!   `destroy()` method on the associated `Global`. If you don't plan to
 //!   destroy the global at all, you don't need to bother keeping the
 //!   `Global` around.
+//!
+//! Some of these modules require you to provide a callback that is invoked for some
+//! client requests that your logic needs to handle. In most cases these callback
+//! are given as input an enum specifying the event that occured, as well as the
+//! [`DispatchData`](wayland_server::DispatchData) from `wayland_server`.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
