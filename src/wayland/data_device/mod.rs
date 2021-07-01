@@ -31,7 +31,7 @@
 //!
 //! ```
 //! # extern crate wayland_server;
-//! use smithay::wayland::data_device::{init_data_device, default_action_chooser, DnDIconRole};
+//! use smithay::wayland::data_device::{init_data_device, default_action_chooser};
 //! # use smithay::wayland::compositor::compositor_init;
 //!
 //! # let mut display = wayland_server::Display::new();
@@ -103,10 +103,6 @@ pub enum DataDeviceEvent {
         fd: RawFd,
     },
 }
-
-/// The role applied to surfaces used as DnD icons
-#[derive(Debug, Default)]
-pub struct DnDIconRole;
 
 enum Selection {
     Empty,
