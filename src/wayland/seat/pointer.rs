@@ -74,25 +74,10 @@ impl fmt::Debug for PointerInternal {
 }
 
 impl PointerInternal {
-    fn new<F>(mut cb: F) -> PointerInternal
+    fn new<F>(cb: F) -> PointerInternal
     where
         F: FnMut(CursorImageStatus) + 'static,
     {
-        let mut old_status = CursorImageStatus::Default;
-        let wrapper = move |new_status: CursorImageStatus| {
-            if let CursorImageStatus::Image(surface) =
-                ::std::mem::replace(&mut old_status, new_status.clone())
-            {
-                match new_status {
-                    CursorImageStatus::Image(ref new_surface) if new_surface == &surface => {
-                        // don't remove the role, we are just re-binding the same surface
-                    }
-                    _ => {}
-                }
-            }
-            cb(new_status)
-        };
-
         PointerInternal {
             known_pointers: Vec::new(),
             focus: None,
@@ -100,7 +85,7 @@ impl PointerInternal {
             location: (0.0, 0.0),
             grab: GrabStatus::None,
             pressed_buttons: Vec::new(),
-            image_callback: Box::new(wrapper) as Box<_>,
+            image_callback: Box::new(cb) as Box<_>,
         }
     }
 

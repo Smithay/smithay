@@ -103,7 +103,7 @@ impl Inner {
 /// This struct gives you access to the control of the
 /// capabilities of the associated seat.
 ///
-/// It is directly inserted in the event loop by its [`new`](Seat::new) method.
+/// It is directly inserted in the wayland display by its [`new`](Seat::new) method.
 ///
 /// This is an handle to the inner logic, it can be cloned.
 ///
@@ -117,7 +117,7 @@ impl Seat {
     /// Create a new seat global
     ///
     /// A new seat global is created with given name and inserted
-    /// into this event loop.
+    /// into this wayland display.
     ///
     /// You are provided with the state token to retrieve it (allowing
     /// you to add or remove capabilities from it), and the global handle,
@@ -176,8 +176,8 @@ impl Seat {
     /// will overwrite it, and will be seen by the clients as if the
     /// mouse was unplugged and a new one was plugged.
     ///
-    /// You need to provide a compositor token, as well as a callback that will be notified
-    /// whenever a client requests to set a custom cursor image.
+    /// You need to provide a callback that will be notified whenever a client requests
+    /// to set a custom cursor image.
     ///
     /// # Examples
     ///
@@ -193,7 +193,7 @@ impl Seat {
     /// #     None
     /// # );
     /// let pointer_handle = seat.add_pointer(
-    ///     |new_status| { /* a closure handling requests from clients tot change the cursor icon */ }
+    ///     |new_status| { /* a closure handling requests from clients to change the cursor icon */ }
     /// );
     /// ```
     pub fn add_pointer<F>(&mut self, cb: F) -> PointerHandle
