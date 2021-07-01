@@ -13,7 +13,7 @@
 //!
 //! The list of supported format is just a `Vec<Format>`, where you will enter all the (code, modifier)
 //! couples you support. You can typically receive a list of supported formats for one renderer by calling
-//! [`crate::backend::renderer::ImportDma::dmabuf_formats`].
+//! [`ImportDma::dmabuf_formats`](crate::backend::renderer::ImportDma::dmabuf_formats).
 //!
 //! ```
 //! # extern crate wayland_server;
@@ -47,10 +47,9 @@ use std::{
     rc::Rc,
 };
 
-pub use wayland_protocols::unstable::linux_dmabuf::v1::server::zwp_linux_buffer_params_v1::Flags;
 use wayland_protocols::unstable::linux_dmabuf::v1::server::{
     zwp_linux_buffer_params_v1::{
-        Error as ParamError, Request as ParamsRequest, ZwpLinuxBufferParamsV1 as BufferParams,
+        Error as ParamError, Request as ParamsRequest, ZwpLinuxBufferParamsV1 as BufferParams
     },
     zwp_linux_dmabuf_v1,
 };
