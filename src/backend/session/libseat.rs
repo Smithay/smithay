@@ -25,6 +25,8 @@ use crate::{
     signaling::Signaler,
 };
 
+use slog::{debug, error, o};
+
 #[derive(Debug)]
 struct LibSeatSessionImpl {
     seat: RefCell<Seat>,
