@@ -39,7 +39,7 @@ use super::{
     direct::{self, DirectSession, DirectSessionNotifier},
     AsErrno, Session, Signal as SessionSignal,
 };
-use crate::signaling::Signaler;
+use crate::utils::signaling::Signaler;
 use nix::fcntl::OFlag;
 use std::{cell::RefCell, io, os::unix::io::RawFd, path::Path, rc::Rc};
 

@@ -47,7 +47,7 @@
 //! a calloop event source to have its events processed.
 
 use super::{AsErrno, Session, Signal as SessionSignal};
-use crate::signaling::Signaler;
+use crate::utils::signaling::Signaler;
 
 use calloop::signals::{Signal, Signals};
 use nix::{

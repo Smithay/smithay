@@ -48,7 +48,7 @@ use smithay::{
             Display,
         },
     },
-    signaling::{Linkable, SignalToken, Signaler},
+    utils::signaling::{Linkable, SignalToken, Signaler},
     wayland::{
         output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,

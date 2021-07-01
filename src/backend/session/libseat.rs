@@ -22,7 +22,7 @@ use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 
 use crate::{
     backend::session::{AsErrno, Session, Signal as SessionSignal},
-    signaling::Signaler,
+    utils::signaling::Signaler,
 };
 
 use slog::{debug, error, o};

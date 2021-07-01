@@ -15,7 +15,7 @@ use super::device::{DrmDevice, DrmDeviceInternal};
 use super::surface::{DrmSurface, DrmSurfaceInternal};
 use crate::{
     backend::session::Signal as SessionSignal,
-    signaling::{Linkable, Signaler},
+    utils::signaling::{Linkable, Signaler},
 };
 
 use slog::{crit, error, info, o, warn};

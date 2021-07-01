@@ -25,7 +25,7 @@ pub struct DrmDevice<A: AsRawFd + 'static> {
     pub(super) dev_id: dev_t,
     pub(crate) internal: Arc<DrmDeviceInternal<A>>,
     #[cfg(feature = "backend_session")]
-    pub(super) links: RefCell<Vec<crate::signaling::SignalToken>>,
+    pub(super) links: RefCell<Vec<crate::utils::signaling::SignalToken>>,
     has_universal_planes: bool,
     resources: ResourceHandles,
     pub(super) logger: ::slog::Logger,

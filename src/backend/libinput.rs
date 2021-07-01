@@ -4,7 +4,7 @@ use crate::backend::input::{self as backend, Axis, InputBackend, InputEvent};
 #[cfg(feature = "backend_session")]
 use crate::{
     backend::session::{AsErrno, Session, Signal as SessionSignal},
-    signaling::{Linkable, SignalToken, Signaler},
+    utils::signaling::{Linkable, SignalToken, Signaler},
 };
 use input as libinput;
 use input::event;
