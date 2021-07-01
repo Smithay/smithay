@@ -39,6 +39,7 @@ pub fn draw_cursor<R, E, F, T>(
     frame: &mut F,
     surface: &wl_surface::WlSurface,
     location: Point<i32, Logical>,
+    output_scale: f32,
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -69,7 +70,7 @@ where
             (0, 0).into()
         }
     };
-    draw_surface_tree(renderer, frame, surface, location - delta, log)
+    draw_surface_tree(renderer, frame, surface, location - delta, output_scale, log)
 }
 
 fn draw_surface_tree<R, E, F, T>(
@@ -77,6 +78,7 @@ fn draw_surface_tree<R, E, F, T>(
     frame: &mut F,
     root: &wl_surface::WlSurface,
     location: Point<i32, Logical>,
+    output_scale: f32,
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -153,6 +155,7 @@ where
             let mut location = *location;
             if let Some(ref data) = states.data_map.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
+                let buffer_scale = data.buffer_scale as f32;
                 if let Some(texture) = data
                     .texture
                     .as_mut()
@@ -164,10 +167,12 @@ where
                         let current = states.cached_state.current::<SubsurfaceCachedState>();
                         location += current.location;
                     }
+                    let render_scale = output_scale as f32 / buffer_scale;
                     if let Err(err) = frame.render_texture_at(
                         &texture.texture,
-                        location.to_physical(1), // TODO: handle output scaling factor
-                        Transform::Normal,       /* TODO */
+                        location.to_f64().to_physical(output_scale as f64).to_i32_round(),
+                        Transform::Normal, /* TODO */
+                        render_scale,
                         1.0,
                     ) {
                         result = Err(err.into());
@@ -186,6 +191,7 @@ pub fn draw_windows<R, E, F, T>(
     frame: &mut F,
     window_map: &WindowMap,
     output_rect: Rectangle<i32, Logical>,
+    output_scale: f32,
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -205,7 +211,9 @@ where
         initial_place.x -= output_rect.loc.x;
         if let Some(wl_surface) = toplevel_surface.get_surface() {
             // this surface is a root of a subsurface tree that needs to be drawn
-            if let Err(err) = draw_surface_tree(renderer, frame, &wl_surface, initial_place, log) {
+            if let Err(err) =
+                draw_surface_tree(renderer, frame, &wl_surface, initial_place, output_scale, log)
+            {
                 result = Err(err);
             }
             // furthermore, draw its popups
@@ -217,7 +225,9 @@ where
                 let location = popup.location();
                 let draw_location = initial_place + location + toplevel_geometry_offset;
                 if let Some(wl_surface) = popup.get_surface() {
-                    if let Err(err) = draw_surface_tree(renderer, frame, &wl_surface, draw_location, log) {
+                    if let Err(err) =
+                        draw_surface_tree(renderer, frame, &wl_surface, draw_location, output_scale, log)
+                    {
                         result = Err(err);
                     }
                 }
@@ -233,6 +243,7 @@ pub fn draw_dnd_icon<R, E, F, T>(
     frame: &mut F,
     surface: &wl_surface::WlSurface,
     location: Point<i32, Logical>,
+    output_scale: f32,
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -247,5 +258,5 @@ where
             "Trying to display as a dnd icon a surface that does not have the DndIcon role."
         );
     }
-    draw_surface_tree(renderer, frame, surface, location, log)
+    draw_surface_tree(renderer, frame, surface, location, output_scale, log)
 }

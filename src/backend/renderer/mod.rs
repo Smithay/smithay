@@ -185,6 +185,7 @@ pub trait Frame {
         texture: &Self::TextureId,
         pos: Point<i32, Physical>,
         transform: Transform,
+        scale: f32,
         alpha: f32,
     ) -> Result<(), Self::Error> {
         let mut mat = Matrix3::<f32>::identity();
@@ -192,7 +193,7 @@ pub trait Frame {
         // position and scale
         let size = texture.size();
         mat = mat * Matrix3::from_translation(Vector2::new(pos.x as f32, pos.y as f32));
-        mat = mat * Matrix3::from_nonuniform_scale(size.0 as f32, size.1 as f32);
+        mat = mat * Matrix3::from_nonuniform_scale(size.0 as f32 * scale, size.1 as f32 * scale);
 
         //apply surface transformation
         mat = mat * Matrix3::from_translation(Vector2::new(0.5, 0.5));

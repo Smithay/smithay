@@ -164,6 +164,32 @@ impl AnvilState<WinitData> {
                         );
                     }
                 }
+                KeyAction::ScaleUp => {
+                    let current_scale = {
+                        self.output_map
+                            .borrow()
+                            .find_by_name(crate::winit::OUTPUT_NAME)
+                            .map(|o| o.scale())
+                            .unwrap_or(1.0)
+                    };
+                    self.output_map
+                        .borrow_mut()
+                        .update_scale_by_name(current_scale + 0.25f32, crate::winit::OUTPUT_NAME);
+                }
+                KeyAction::ScaleDown => {
+                    let current_scale = {
+                        self.output_map
+                            .borrow()
+                            .find_by_name(crate::winit::OUTPUT_NAME)
+                            .map(|o| o.scale())
+                            .unwrap_or(1.0)
+                    };
+
+                    self.output_map.borrow_mut().update_scale_by_name(
+                        f32::max(1.0f32, current_scale - 0.25f32),
+                        crate::winit::OUTPUT_NAME,
+                    );
+                }
                 action => {
                     warn!(self.log, "Key action {:?} unsupported on winit backend.", action);
                 }
@@ -172,12 +198,12 @@ impl AnvilState<WinitData> {
             InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(event),
             InputEvent::PointerAxis { event, .. } => self.on_pointer_axis::<B>(event),
             InputEvent::Special(WinitEvent::Resized { size, .. }) => {
-                self.output_map.borrow_mut().update_mode(
-                    crate::winit::OUTPUT_NAME,
+                self.output_map.borrow_mut().update_mode_by_name(
                     Mode {
                         size,
                         refresh: 60_000,
                     },
+                    crate::winit::OUTPUT_NAME,
                 );
             }
             _ => {
@@ -190,7 +216,8 @@ impl AnvilState<WinitData> {
         let output_size = self
             .output_map
             .borrow()
-            .with_primary(|_, rect| (rect.size.w as u32, rect.size.h as u32).into())
+            .find_by_name(crate::winit::OUTPUT_NAME)
+            .map(|o| (o.size().w as u32, o.size().h as u32).into())
             .unwrap();
         let pos = evt.position_transformed(output_size);
         self.pointer_location = pos;
@@ -228,16 +255,59 @@ impl AnvilState<UdevData> {
                     }
                 }
                 KeyAction::Screen(num) => {
-                    let geometry = self
-                        .output_map
-                        .borrow()
-                        .find_by_index(num, |_, geometry| geometry)
-                        .ok();
+                    let geometry = self.output_map.borrow().find_by_index(num).map(|o| o.geometry());
 
                     if let Some(geometry) = geometry {
                         let x = geometry.loc.x as f64 + geometry.size.w as f64 / 2.0;
                         let y = geometry.size.h as f64 / 2.0;
                         self.pointer_location = (x, y).into()
+                    }
+                }
+                KeyAction::ScaleUp => {
+                    let mut output_map = self.output_map.borrow_mut();
+
+                    let output = output_map
+                        .find_by_position(self.pointer_location.to_i32_round())
+                        .map(|o| (o.name().to_owned(), o.location(), o.scale()));
+
+                    if let Some((name, output_location, scale)) = output {
+                        let new_scale = scale + 0.25;
+
+                        output_map.update_scale_by_name(new_scale, name);
+
+                        let rescale = scale as f64 / new_scale as f64;
+                        let output_location = output_location.to_f64();
+                        let mut pointer_output_location = self.pointer_location - output_location;
+                        pointer_output_location.x *= rescale;
+                        pointer_output_location.y *= rescale;
+                        self.pointer_location = output_location + pointer_output_location;
+
+                        let under = self.window_map.borrow().get_surface_under(self.pointer_location);
+                        self.pointer
+                            .motion(self.pointer_location, under, SCOUNTER.next_serial(), 0);
+                    }
+                }
+                KeyAction::ScaleDown => {
+                    let mut output_map = self.output_map.borrow_mut();
+
+                    let output = output_map
+                        .find_by_position(self.pointer_location.to_i32_round())
+                        .map(|o| (o.name().to_owned(), o.location(), o.scale()));
+
+                    if let Some((name, output_location, scale)) = output {
+                        let new_scale = f32::max(1.0, scale - 0.25);
+                        output_map.update_scale_by_name(new_scale, name);
+
+                        let rescale = scale as f64 / new_scale as f64;
+                        let output_location = output_location.to_f64();
+                        let mut pointer_output_location = self.pointer_location - output_location;
+                        pointer_output_location.x *= rescale;
+                        pointer_output_location.y *= rescale;
+                        self.pointer_location = output_location + pointer_output_location;
+
+                        let under = self.window_map.borrow().get_surface_under(self.pointer_location);
+                        self.pointer
+                            .motion(self.pointer_location, under, SCOUNTER.next_serial(), 0);
                     }
                 }
             },
@@ -292,45 +362,45 @@ impl AnvilState<UdevData> {
         let tablet_seat = self.seat.tablet_seat();
         let window_map = self.window_map.borrow();
 
-        output_map
-            .with_primary(|_, rect| {
-                let rect_size = (rect.size.w as u32, rect.size.h as u32).into();
-                *pointer_location = evt.position_transformed(rect_size) + rect.loc.to_f64();
+        let output_geometry = output_map.with_primary().map(|o| o.geometry());
 
-                let under = window_map.get_surface_under(*pointer_location);
-                let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
-                let tool = tablet_seat.get_tool(&evt.tool());
+        if let Some(rect) = output_geometry {
+            let rect_size = (rect.size.w as u32, rect.size.h as u32).into();
+            *pointer_location = evt.position_transformed(rect_size) + rect.loc.to_f64();
 
-                if let (Some(tablet), Some(tool)) = (tablet, tool) {
-                    if evt.pressure_has_changed() {
-                        tool.pressure(evt.pressure());
-                    }
-                    if evt.distance_has_changed() {
-                        tool.distance(evt.distance());
-                    }
-                    if evt.tilt_has_changed() {
-                        tool.tilt(evt.tilt());
-                    }
-                    if evt.slider_has_changed() {
-                        tool.slider_position(evt.slider_position());
-                    }
-                    if evt.rotation_has_changed() {
-                        tool.rotation(evt.rotation());
-                    }
-                    if evt.wheel_has_changed() {
-                        tool.wheel(evt.wheel_delta(), evt.wheel_delta_discrete());
-                    }
+            let under = window_map.get_surface_under(*pointer_location);
+            let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
+            let tool = tablet_seat.get_tool(&evt.tool());
 
-                    tool.motion(
-                        *pointer_location,
-                        under,
-                        &tablet,
-                        SCOUNTER.next_serial(),
-                        evt.time(),
-                    );
+            if let (Some(tablet), Some(tool)) = (tablet, tool) {
+                if evt.pressure_has_changed() {
+                    tool.pressure(evt.pressure());
                 }
-            })
-            .unwrap();
+                if evt.distance_has_changed() {
+                    tool.distance(evt.distance());
+                }
+                if evt.tilt_has_changed() {
+                    tool.tilt(evt.tilt());
+                }
+                if evt.slider_has_changed() {
+                    tool.slider_position(evt.slider_position());
+                }
+                if evt.rotation_has_changed() {
+                    tool.rotation(evt.rotation());
+                }
+                if evt.wheel_has_changed() {
+                    tool.wheel(evt.wheel_delta(), evt.wheel_delta_discrete());
+                }
+
+                tool.motion(
+                    *pointer_location,
+                    under,
+                    &tablet,
+                    SCOUNTER.next_serial(),
+                    evt.time(),
+                );
+            }
+        }
     }
 
     fn on_tablet_tool_proximity<B: InputBackend>(&mut self, evt: B::TabletToolProximityEvent) {
@@ -339,32 +409,32 @@ impl AnvilState<UdevData> {
         let tablet_seat = self.seat.tablet_seat();
         let window_map = self.window_map.borrow();
 
-        output_map
-            .with_primary(|_, rect| {
-                let tool = evt.tool();
-                tablet_seat.add_tool(&tool);
+        let output_geometry = output_map.with_primary().map(|o| o.geometry());
 
-                let rect_size = (rect.size.h as u32, rect.size.w as u32).into();
-                *pointer_location = evt.position_transformed(rect_size) + rect.loc.to_f64();
+        if let Some(rect) = output_geometry {
+            let tool = evt.tool();
+            tablet_seat.add_tool(&tool);
 
-                let under = window_map.get_surface_under(*pointer_location);
-                let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
-                let tool = tablet_seat.get_tool(&tool);
+            let rect_size = (rect.size.h as u32, rect.size.w as u32).into();
+            *pointer_location = evt.position_transformed(rect_size) + rect.loc.to_f64();
 
-                if let (Some(under), Some(tablet), Some(tool)) = (under, tablet, tool) {
-                    match evt.state() {
-                        ProximityState::In => tool.proximity_in(
-                            *pointer_location,
-                            under,
-                            &tablet,
-                            SCOUNTER.next_serial(),
-                            evt.time(),
-                        ),
-                        ProximityState::Out => tool.proximity_out(evt.time()),
-                    }
+            let under = window_map.get_surface_under(*pointer_location);
+            let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
+            let tool = tablet_seat.get_tool(&tool);
+
+            if let (Some(under), Some(tablet), Some(tool)) = (under, tablet, tool) {
+                match evt.state() {
+                    ProximityState::In => tool.proximity_in(
+                        *pointer_location,
+                        under,
+                        &tablet,
+                        SCOUNTER.next_serial(),
+                        evt.time(),
+                    ),
+                    ProximityState::Out => tool.proximity_out(evt.time()),
                 }
-            })
-            .unwrap();
+            }
+        }
     }
 
     fn on_tablet_tool_tip<B: InputBackend>(&mut self, evt: B::TabletToolTipEvent) {
@@ -439,6 +509,8 @@ enum KeyAction {
     Run(String),
     /// Switch the current screen
     Screen(usize),
+    ScaleUp,
+    ScaleDown,
     /// Forward the key to the client
     Forward,
     /// Do nothing more
@@ -460,6 +532,10 @@ fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> KeyAc
         KeyAction::Run("weston-terminal".into())
     } else if modifiers.logo && keysym >= xkb::KEY_1 && keysym <= xkb::KEY_9 {
         KeyAction::Screen((keysym - xkb::KEY_1) as usize)
+    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_M {
+        KeyAction::ScaleDown
+    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_P {
+        KeyAction::ScaleUp
     } else {
         KeyAction::Forward
     }
