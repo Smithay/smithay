@@ -78,14 +78,13 @@ impl AsRawFd for SessionFd {
     }
 }
 
-struct UdevOutputMap {
-    pub device_id: dev_t,
-    pub crtc: crtc::Handle,
-    pub output_name: String,
+#[derive(Debug, PartialEq)]
+struct UdevOutputId {
+    device_id: dev_t,
+    crtc: crtc::Handle,
 }
 
 pub struct UdevData {
-    output_map: Vec<UdevOutputMap>,
     pub session: AutoSession,
     #[cfg(feature = "egl")]
     primary_gpu: Option<PathBuf>,
@@ -132,7 +131,6 @@ pub fn run_udev(
 
     let data = UdevData {
         session,
-        output_map: Vec::new(),
         #[cfg(feature = "egl")]
         primary_gpu,
         backends: HashMap::new(),
@@ -272,7 +270,6 @@ fn scan_connectors(
     device: &mut DrmDevice<SessionFd>,
     gbm: &GbmDevice<SessionFd>,
     renderer: &mut Gles2Renderer,
-    backend_output_map: &mut Vec<UdevOutputMap>,
     output_map: &mut crate::output_map::OutputMap,
     signaler: &Signaler<SessionSignal>,
     logger: &::slog::Logger,
@@ -342,14 +339,26 @@ fn scan_connectors(
                         refresh: (mode.vrefresh() * 1000) as i32,
                     };
 
-                    let output_name = format!(
-                        "{:?}-{}",
-                        connector_info.interface(),
-                        connector_info.interface_id()
-                    );
+                    let other_short_name;
+                    let interface_short_name = match connector_info.interface() {
+                        drm::control::connector::Interface::DVII => "DVI-I",
+                        drm::control::connector::Interface::DVID => "DVI-D",
+                        drm::control::connector::Interface::DVIA => "DVI-A",
+                        drm::control::connector::Interface::SVideo => "S-VIDEO",
+                        drm::control::connector::Interface::DisplayPort => "DP",
+                        drm::control::connector::Interface::HDMIA => "HDMI-A",
+                        drm::control::connector::Interface::HDMIB => "HDMI-B",
+                        drm::control::connector::Interface::EmbeddedDisplayPort => "eDP",
+                        other => {
+                            other_short_name = format!("{:?}", other);
+                            &other_short_name
+                        }
+                    };
+
+                    let output_name = format!("{}-{}", interface_short_name, connector_info.interface_id());
 
                     let (phys_w, phys_h) = connector_info.size().unwrap_or((0, 0));
-                    output_map.add(
+                    let output = output_map.add(
                         &output_name,
                         PhysicalProperties {
                             size: (phys_w as i32, phys_h as i32).into(),
@@ -360,10 +369,9 @@ fn scan_connectors(
                         mode,
                     );
 
-                    backend_output_map.push(UdevOutputMap {
+                    output.userdata().insert_if_missing(|| UdevOutputId {
                         crtc,
                         device_id: device.device_id(),
-                        output_name,
                     });
 
                     entry.insert(Rc::new(RefCell::new(renderer)));
@@ -456,7 +464,6 @@ impl AnvilState<UdevData> {
                 &mut device,
                 &gbm,
                 &mut *renderer.borrow_mut(),
-                &mut self.backend_data.output_map,
                 &mut *self.output_map.borrow_mut(),
                 &self.backend_data.signaler,
                 &self.log,
@@ -517,20 +524,14 @@ impl AnvilState<UdevData> {
             let logger = self.log.clone();
             let loop_handle = self.handle.clone();
             let signaler = self.backend_data.signaler.clone();
-            let removed_outputs = self
-                .backend_data
-                .output_map
-                .iter()
-                .filter(|o| o.device_id == device)
-                .map(|o| o.output_name.as_str());
 
-            for output in removed_outputs {
-                self.output_map.borrow_mut().remove(output);
-            }
-
-            self.backend_data
-                .output_map
-                .retain(|output| output.device_id != device);
+            self.output_map.borrow_mut().retain(|output| {
+                output
+                    .userdata()
+                    .get::<UdevOutputId>()
+                    .map(|id| id.device_id != device)
+                    .unwrap_or(true)
+            });
 
             let mut source = backend_data.event_dispatcher.as_source_mut();
             let mut backends = backend_data.surfaces.borrow_mut();
@@ -538,7 +539,6 @@ impl AnvilState<UdevData> {
                 &mut *source,
                 &backend_data.gbm,
                 &mut *backend_data.renderer.borrow_mut(),
-                &mut self.backend_data.output_map,
                 &mut *self.output_map.borrow_mut(),
                 &signaler,
                 &logger,
@@ -563,16 +563,14 @@ impl AnvilState<UdevData> {
             // drop surfaces
             backend_data.surfaces.borrow_mut().clear();
             debug!(self.log, "Surfaces dropped");
-            let removed_outputs = self
-                .backend_data
-                .output_map
-                .iter()
-                .filter(|o| o.device_id == device)
-                .map(|o| o.output_name.as_str());
-            for output_id in removed_outputs {
-                self.output_map.borrow_mut().remove(output_id);
-            }
-            self.backend_data.output_map.retain(|o| o.device_id != device);
+
+            self.output_map.borrow_mut().retain(|output| {
+                output
+                    .userdata()
+                    .get::<UdevOutputId>()
+                    .map(|id| id.device_id != device)
+                    .unwrap_or(true)
+            });
 
             let _device = self.handle.remove(backend_data.registration_token);
             let _device = backend_data.event_dispatcher.into_source_inner();
@@ -618,7 +616,6 @@ impl AnvilState<UdevData> {
                 device_backend.dev_id,
                 crtc,
                 &mut *self.window_map.borrow_mut(),
-                &self.backend_data.output_map,
                 &*self.output_map.borrow(),
                 self.pointer_location,
                 &device_backend.pointer_image,
@@ -666,7 +663,6 @@ fn render_surface(
     device_id: dev_t,
     crtc: crtc::Handle,
     window_map: &mut WindowMap,
-    backend_output_map: &[UdevOutputMap],
     output_map: &crate::output_map::OutputMap,
     pointer_location: Point<f64, Logical>,
     pointer_image: &Gles2Texture,
@@ -676,14 +672,12 @@ fn render_surface(
 ) -> Result<(), SwapBuffersError> {
     surface.frame_submitted()?;
 
-    let output_geometry = backend_output_map
-        .iter()
-        .find(|o| o.device_id == device_id && o.crtc == crtc)
-        .map(|o| o.output_name.as_str())
-        .and_then(|name| output_map.find_by_name(name, |_, geometry| geometry).ok());
+    let output = output_map
+        .find(|o| o.userdata().get::<UdevOutputId>() == Some(&UdevOutputId { device_id, crtc }))
+        .map(|output| (output.geometry(), output.scale(), output.current_mode()));
 
-    let output_geometry = if let Some(geometry) = output_geometry {
-        geometry
+    let (output_geometry, output_scale, mode) = if let Some((geometry, scale, mode)) = output {
+        (geometry, scale, mode)
     } else {
         // Somehow we got called with a non existing output
         return Ok(());
@@ -694,13 +688,12 @@ fn render_surface(
     // and draw to our buffer
     match renderer
         .render(
-            // TODO: handle scale factor
-            output_geometry.size.to_physical(1),
+            mode.size,
             Transform::Flipped180, // Scanout is rotated
             |renderer, frame| {
                 frame.clear([0.8, 0.8, 0.9, 1.0])?;
                 // draw the surfaces
-                draw_windows(renderer, frame, window_map, output_geometry, logger)?;
+                draw_windows(renderer, frame, window_map, output_geometry, output_scale, logger)?;
 
                 // set cursor
                 if output_geometry.to_f64().contains(pointer_location) {
@@ -711,7 +704,14 @@ fn render_surface(
                     {
                         if let Some(ref wl_surface) = dnd_icon.as_ref() {
                             if wl_surface.as_ref().is_alive() {
-                                draw_dnd_icon(renderer, frame, wl_surface, relative_ptr_location, logger)?;
+                                draw_dnd_icon(
+                                    renderer,
+                                    frame,
+                                    wl_surface,
+                                    relative_ptr_location,
+                                    output_scale,
+                                    logger,
+                                )?;
                             }
                         }
                     }
@@ -727,13 +727,23 @@ fn render_surface(
                         }
 
                         if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
-                            draw_cursor(renderer, frame, wl_surface, relative_ptr_location, logger)?;
+                            draw_cursor(
+                                renderer,
+                                frame,
+                                wl_surface,
+                                relative_ptr_location,
+                                output_scale,
+                                logger,
+                            )?;
                         } else {
-                            // TODO: handle output scale factor
                             frame.render_texture_at(
                                 pointer_image,
-                                relative_ptr_location.to_physical(1),
+                                relative_ptr_location
+                                    .to_f64()
+                                    .to_physical(output_scale as f64)
+                                    .to_i32_round(),
                                 Transform::Normal,
+                                output_scale,
                                 1.0,
                             )?;
                         }

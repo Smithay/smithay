@@ -5,10 +5,10 @@ use smithay::{
         wayland_protocols::xdg_shell::server::xdg_toplevel,
         wayland_server::{
             protocol::{wl_output, wl_surface::WlSurface},
-            Display, Global,
+            Display, Global, UserDataMap,
         },
     },
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Point, Rectangle, Size},
     wayland::{
         compositor::{with_surface_tree_downward, SubsurfaceCachedState, TraversalAction},
         output::{self, Mode, PhysicalProperties},
@@ -17,13 +17,16 @@ use smithay::{
 
 use crate::shell::SurfaceData;
 
-struct Output {
+pub struct Output {
     name: String,
     output: output::Output,
     global: Option<Global<wl_output::WlOutput>>,
-    geometry: Rectangle<i32, Logical>,
     surfaces: Vec<WlSurface>,
     current_mode: Mode,
+    scale: f32,
+    output_scale: i32,
+    location: Point<i32, Logical>,
+    userdata: UserDataMap,
 }
 
 impl Output {
@@ -40,21 +43,63 @@ impl Output {
     {
         let (output, global) = output::Output::new(display, name.as_ref().into(), physical, logger);
 
-        output.change_current_state(Some(mode), None, None);
+        let scale = std::env::var(format!("ANVIL_SCALE_{}", name.as_ref()))
+            .ok()
+            .and_then(|s| s.parse::<f32>().ok())
+            .unwrap_or(1.0)
+            .max(1.0);
+
+        let output_scale = scale.round() as i32;
+
+        output.change_current_state(Some(mode), None, Some(output_scale));
         output.set_preferred(mode);
 
         Self {
             name: name.as_ref().to_owned(),
             global: Some(global),
             output,
-            geometry: Rectangle {
-                loc: location,
-                // TODO: handle scaling factor
-                size: mode.size.to_logical(1),
-            },
+            location,
             surfaces: Vec::new(),
             current_mode: mode,
+            scale,
+            output_scale,
+            userdata: Default::default(),
         }
+    }
+
+    pub fn userdata(&self) -> &UserDataMap {
+        &self.userdata
+    }
+
+    pub fn geometry(&self) -> Rectangle<i32, Logical> {
+        let loc = self.location();
+        let size = self.size();
+
+        Rectangle { loc, size }
+    }
+
+    pub fn size(&self) -> Size<i32, Logical> {
+        self.current_mode
+            .size
+            .to_f64()
+            .to_logical(self.scale as f64)
+            .to_i32_round()
+    }
+
+    pub fn location(&self) -> Point<i32, Logical> {
+        self.location
+    }
+
+    pub fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    pub fn current_mode(&self) -> Mode {
+        self.current_mode
     }
 }
 
@@ -63,17 +108,6 @@ impl Drop for Output {
         self.global.take().unwrap().destroy();
     }
 }
-
-#[derive(Debug)]
-pub struct OutputNotFound;
-
-impl std::fmt::Display for OutputNotFound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("The output could not be found")
-    }
-}
-
-impl std::error::Error for OutputNotFound {}
 
 pub struct OutputMap {
     display: Rc<RefCell<Display>>,
@@ -100,24 +134,43 @@ impl OutputMap {
         // First recalculate the outputs location
         let mut output_x = 0;
         for output in self.outputs.iter_mut() {
-            output.geometry.loc.x = output_x;
-            output.geometry.loc.y = 0;
-            output_x += output.geometry.loc.x;
+            let output_x_shift = output_x - output.location.x;
+
+            // If the scale changed we shift all windows on that output
+            // so that the location of the window will stay the same on screen
+            if output_x_shift != 0 {
+                let mut window_map = self.window_map.borrow_mut();
+
+                for surface in output.surfaces.iter() {
+                    let toplevel = window_map.find(surface);
+
+                    if let Some(toplevel) = toplevel {
+                        let current_location = window_map.location(&toplevel);
+
+                        if let Some(mut location) = current_location {
+                            if output.geometry().contains(location) {
+                                location.x += output_x_shift;
+                                window_map.set_location(&toplevel, location);
+                            }
+                        }
+                    }
+                }
+            }
+
+            output.location.x = output_x;
+            output.location.y = 0;
+            output_x += output.size().w;
         }
 
         // Check if any windows are now out of outputs range
         // and move them to the primary output
-        let primary_output_location = self
-            .with_primary(|_, geometry| geometry)
-            .ok()
-            .map(|o| o.loc)
-            .unwrap_or_default();
+        let primary_output_location = self.with_primary().map(|o| o.location()).unwrap_or_default();
         let mut window_map = self.window_map.borrow_mut();
         // TODO: This is a bit unfortunate, we save the windows in a temp vector
         // cause we can not call window_map.set_location within the closure.
         let mut windows_to_move = Vec::new();
         window_map.with_windows_from_bottom_to_top(|kind, _, &bbox| {
-            let within_outputs = self.outputs.iter().any(|o| o.geometry.overlaps(bbox));
+            let within_outputs = self.outputs.iter().any(|o| o.geometry().overlaps(bbox));
 
             if !within_outputs {
                 windows_to_move.push((kind.to_owned(), primary_output_location));
@@ -135,9 +188,9 @@ impl OutputMap {
                         || state.states.contains(xdg_toplevel::State::Fullscreen)
                     {
                         let output_geometry = if let Some(output) = state.fullscreen_output.as_ref() {
-                            self.find(output, |_, geometry| geometry).ok()
+                            self.find_by_output(output).map(|o| o.geometry())
                         } else {
-                            self.find_by_position(location, |_, geometry| geometry).ok()
+                            self.find_by_position(location).map(|o| o.geometry())
                         };
 
                         if let Some(geometry) = output_geometry {
@@ -162,14 +215,14 @@ impl OutputMap {
         }
     }
 
-    pub fn add<N>(&mut self, name: N, physical: PhysicalProperties, mode: Mode)
+    pub fn add<N>(&mut self, name: N, physical: PhysicalProperties, mode: Mode) -> &Output
     where
         N: AsRef<str>,
     {
         // Append the output to the end of the existing
         // outputs by placing it after the current overall
         // width
-        let location = (self.width() as i32, 0);
+        let location = (self.width(), 0);
 
         let output = Output::new(
             name,
@@ -186,123 +239,143 @@ impl OutputMap {
         // this would not affect windows, but arrange could re-organize
         // outputs from a configuration.
         self.arrange();
+
+        self.outputs.last().unwrap()
     }
 
-    pub fn remove<N: AsRef<str>>(&mut self, name: N) {
-        let removed_outputs = self.outputs.iter_mut().filter(|o| o.name == name.as_ref());
+    pub fn retain<F>(&mut self, f: F)
+    where
+        F: FnMut(&Output) -> bool,
+    {
+        self.outputs.retain(f);
 
-        for output in removed_outputs {
-            for surface in output.surfaces.drain(..) {
-                output.output.leave(&surface);
-            }
-        }
-        self.outputs.retain(|o| o.name != name.as_ref());
-
-        // Re-arrange outputs cause one or more outputs have
-        // been removed
         self.arrange();
     }
 
     pub fn width(&self) -> i32 {
         // This is a simplification, we only arrange the outputs on the y axis side-by-side
         // so that the total width is simply the sum of all output widths.
-        self.outputs
-            .iter()
-            .fold(0, |acc, output| acc + output.geometry.size.w)
+        self.outputs.iter().fold(0, |acc, output| acc + output.size().w)
     }
 
     pub fn height(&self, x: i32) -> Option<i32> {
         // This is a simplification, we only arrange the outputs on the y axis side-by-side
         self.outputs
             .iter()
-            .find(|output| x >= output.geometry.loc.x && x < (output.geometry.loc.x + output.geometry.size.w))
-            .map(|output| output.geometry.size.h)
+            .find(|output| {
+                let geometry = output.geometry();
+                x >= geometry.loc.x && x < (geometry.loc.x + geometry.size.w)
+            })
+            .map(|output| output.size().h)
     }
 
     pub fn is_empty(&self) -> bool {
         self.outputs.is_empty()
     }
 
-    pub fn with_primary<F, T>(&self, f: F) -> Result<T, OutputNotFound>
-    where
-        F: FnOnce(&output::Output, Rectangle<i32, Logical>) -> T,
-    {
-        let output = self.outputs.get(0).ok_or(OutputNotFound)?;
-
-        Ok(f(&output.output, output.geometry))
+    pub fn with_primary(&self) -> Option<&Output> {
+        self.outputs.get(0)
     }
 
-    pub fn find<F, T>(&self, output: &wl_output::WlOutput, f: F) -> Result<T, OutputNotFound>
+    pub fn find<F>(&self, f: F) -> Option<&Output>
     where
-        F: FnOnce(&output::Output, Rectangle<i32, Logical>) -> T,
+        F: FnMut(&&Output) -> bool,
     {
-        let output = self
-            .outputs
-            .iter()
-            .find(|o| o.output.owns(output))
-            .ok_or(OutputNotFound)?;
-
-        Ok(f(&output.output, output.geometry))
+        self.outputs.iter().find(f)
     }
 
-    pub fn find_by_name<N, F, T>(&self, name: N, f: F) -> Result<T, OutputNotFound>
+    pub fn find_by_output(&self, output: &wl_output::WlOutput) -> Option<&Output> {
+        self.find(|o| o.output.owns(output))
+    }
+
+    pub fn find_by_name<N>(&self, name: N) -> Option<&Output>
     where
         N: AsRef<str>,
-        F: FnOnce(&output::Output, Rectangle<i32, Logical>) -> T,
     {
-        let output = self
-            .outputs
-            .iter()
-            .find(|o| o.name == name.as_ref())
-            .ok_or(OutputNotFound)?;
-
-        Ok(f(&output.output, output.geometry))
+        self.find(|o| o.name == name.as_ref())
     }
 
-    pub fn find_by_position<F, T>(&self, position: Point<i32, Logical>, f: F) -> Result<T, OutputNotFound>
+    pub fn find_by_position(&self, position: Point<i32, Logical>) -> Option<&Output> {
+        self.find(|o| o.geometry().contains(position))
+    }
+
+    pub fn find_by_index(&self, index: usize) -> Option<&Output> {
+        self.outputs.get(index)
+    }
+
+    pub fn update<F>(&mut self, mode: Option<Mode>, scale: Option<f32>, mut f: F)
     where
-        F: FnOnce(&output::Output, Rectangle<i32, Logical>) -> T,
+        F: FnMut(&Output) -> bool,
     {
-        let output = self
-            .outputs
-            .iter()
-            .find(|o| o.geometry.contains(position))
-            .ok_or(OutputNotFound)?;
+        let output = self.outputs.iter_mut().find(|o| f(&**o));
 
-        Ok(f(&output.output, output.geometry))
-    }
-
-    pub fn find_by_index<F, T>(&self, index: usize, f: F) -> Result<T, OutputNotFound>
-    where
-        F: FnOnce(&output::Output, Rectangle<i32, Logical>) -> T,
-    {
-        let output = self.outputs.get(index).ok_or(OutputNotFound)?;
-
-        Ok(f(&output.output, output.geometry))
-    }
-
-    pub fn update_mode<N: AsRef<str>>(&mut self, name: N, mode: Mode) {
-        let output = self.outputs.iter_mut().find(|o| o.name == name.as_ref());
-
-        // NOTE: This will just simply shift all outputs after
-        // the output who's mode has changed left or right depending
-        // on if the mode width increased or decreased.
-        // We could also re-configure toplevels here.
-        // If a surface is now visible on an additional output because
-        // the output width decreased the refresh method will take
-        // care and will send enter for the output.
         if let Some(output) = output {
-            // TODO: handle scale factors
-            output.geometry.size = mode.size.to_logical(1);
+            if let Some(mode) = mode {
+                output.output.delete_mode(output.current_mode);
+                output
+                    .output
+                    .change_current_state(Some(mode), None, Some(output.output_scale));
+                output.output.set_preferred(mode);
+                output.current_mode = mode;
+            }
 
-            output.output.delete_mode(output.current_mode);
-            output.output.change_current_state(Some(mode), None, None);
-            output.output.set_preferred(mode);
-            output.current_mode = mode;
+            if let Some(scale) = scale {
+                // Calculate in which direction the scale changed
+                let rescale = output.scale() / scale;
 
-            // Re-arrange outputs cause the size of one output changed
-            self.arrange();
+                {
+                    // We take the current location of our toplevels and move them
+                    // to the same location using the new scale
+                    let mut window_map = self.window_map.borrow_mut();
+                    for surface in output.surfaces.iter() {
+                        let toplevel = window_map.find(surface);
+
+                        if let Some(toplevel) = toplevel {
+                            let current_location = window_map.location(&toplevel);
+
+                            if let Some(location) = current_location {
+                                let output_geometry = output.geometry();
+
+                                if output_geometry.contains(location) {
+                                    let mut toplevel_output_location =
+                                        (location - output_geometry.loc).to_f64();
+                                    toplevel_output_location.x *= rescale as f64;
+                                    toplevel_output_location.y *= rescale as f64;
+                                    window_map.set_location(
+                                        &toplevel,
+                                        output_geometry.loc + toplevel_output_location.to_i32_round(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let output_scale = scale.round() as i32;
+                output.scale = scale;
+
+                if output.output_scale != output_scale {
+                    output.output_scale = output_scale;
+                    output
+                        .output
+                        .change_current_state(Some(output.current_mode), None, Some(output_scale));
+                }
+            }
         }
+
+        self.arrange();
+    }
+
+    pub fn update_by_name<N: AsRef<str>>(&mut self, mode: Option<Mode>, scale: Option<f32>, name: N) {
+        self.update(mode, scale, |o| o.name() == name.as_ref())
+    }
+
+    pub fn update_scale_by_name<N: AsRef<str>>(&mut self, scale: f32, name: N) {
+        self.update_by_name(None, Some(scale), name)
+    }
+
+    pub fn update_mode_by_name<N: AsRef<str>>(&mut self, mode: Mode, name: N) {
+        self.update_by_name(Some(mode), None, name)
     }
 
     pub fn refresh(&mut self) {
@@ -320,7 +393,7 @@ impl OutputMap {
                     // Check if the bounding box of the toplevel intersects with
                     // the output, if not no surface in the tree can intersect with
                     // the output.
-                    if !output.geometry.overlaps(bbox) {
+                    if !output.geometry().overlaps(bbox) {
                         if let Some(surface) = kind.get_surface() {
                             with_surface_tree_downward(
                                 surface,
@@ -365,7 +438,7 @@ impl OutputMap {
                                 if let Some(size) = data.and_then(|d| d.borrow().size()) {
                                     let surface_rectangle = Rectangle { loc, size };
 
-                                    if output.geometry.overlaps(surface_rectangle) {
+                                    if output.geometry().overlaps(surface_rectangle) {
                                         // We found a matching output, check if we already sent enter
                                         if !output.surfaces.contains(wl_surface) {
                                             output.output.enter(wl_surface);

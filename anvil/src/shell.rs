@@ -301,7 +301,7 @@ fn fullscreen_output_geometry(
     // First test if a specific output has been requested
     // if the requested output is not found ignore the request
     if let Some(wl_output) = wl_output {
-        return output_map.find(&wl_output, |_, geometry| geometry).ok();
+        return output_map.find_by_output(&wl_output).map(|o| o.geometry());
     }
 
     // There is no output preference, try to find the output
@@ -311,7 +311,7 @@ fn fullscreen_output_geometry(
         .and_then(|kind| window_map.location(&kind));
 
     if let Some(location) = window_location {
-        let window_output = output_map.find_by_position(location, |_, geometry| geometry).ok();
+        let window_output = output_map.find_by_position(location).map(|o| o.geometry());
 
         if let Some(result) = window_output {
             return Some(result);
@@ -319,7 +319,7 @@ fn fullscreen_output_geometry(
     }
 
     // Fallback to primary output
-    output_map.with_primary(|_, geometry| geometry).ok()
+    output_map.with_primary().map(|o| o.geometry())
 }
 
 pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::slog::Logger) -> ShellHandles {
@@ -355,8 +355,8 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
 
                 let output_geometry = xdg_output_map
                     .borrow()
-                    .with_primary(|_, geometry| geometry)
-                    .ok()
+                    .with_primary()
+                    .map(|o| o.geometry())
                     .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (800, 800)));
                 let max_x = output_geometry.loc.x + (((output_geometry.size.w as f32) / 3.0) * 2.0) as i32;
                 let max_y = output_geometry.loc.y + (((output_geometry.size.h as f32) / 3.0) * 2.0) as i32;
@@ -593,8 +593,8 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                         .and_then(|position| {
                             xdg_output_map
                                 .borrow()
-                                .find_by_position(position, |_, geometry| geometry)
-                                .ok()
+                                .find_by_position(position)
+                                .map(|o| o.geometry())
                         })
                 };
 
@@ -645,8 +645,8 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
 
                     let output_geometry = shell_output_map
                         .borrow()
-                        .with_primary(|_, geometry| geometry)
-                        .ok()
+                        .with_primary()
+                        .map(|o| o.geometry())
                         .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (800, 800)));
                     let max_x =
                         output_geometry.loc.x + (((output_geometry.size.w as f32) / 3.0) * 2.0) as i32;

@@ -110,11 +110,11 @@ pub fn run_winit(
         {
             let mut renderer = renderer.borrow_mut();
             // This is safe to do as with winit we are guaranteed to have exactly one output
-            let output_geometry = state
+            let (output_geometry, output_scale) = state
                 .output_map
                 .borrow()
-                .find_by_name(OUTPUT_NAME, |_, geometry| geometry)
-                .ok()
+                .find_by_name(OUTPUT_NAME)
+                .map(|output| (output.geometry(), output.scale()))
                 .unwrap();
 
             let result = renderer
@@ -127,6 +127,7 @@ pub fn run_winit(
                         frame,
                         &*state.window_map.borrow(),
                         output_geometry,
+                        output_scale,
                         &log,
                     )?;
 
@@ -136,7 +137,14 @@ pub fn run_winit(
                         let guard = state.dnd_icon.lock().unwrap();
                         if let Some(ref surface) = *guard {
                             if surface.as_ref().is_alive() {
-                                draw_dnd_icon(renderer, frame, surface, (x as i32, y as i32).into(), &log)?;
+                                draw_dnd_icon(
+                                    renderer,
+                                    frame,
+                                    surface,
+                                    (x as i32, y as i32).into(),
+                                    output_scale,
+                                    &log,
+                                )?;
                             }
                         }
                     }
@@ -155,7 +163,14 @@ pub fn run_winit(
                         // draw as relevant
                         if let CursorImageStatus::Image(ref surface) = *guard {
                             cursor_visible = false;
-                            draw_cursor(renderer, frame, surface, (x as i32, y as i32).into(), &log)?;
+                            draw_cursor(
+                                renderer,
+                                frame,
+                                surface,
+                                (x as i32, y as i32).into(),
+                                output_scale,
+                                &log,
+                            )?;
                         } else {
                             cursor_visible = true;
                         }
