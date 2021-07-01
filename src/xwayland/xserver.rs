@@ -96,6 +96,9 @@ pub enum XWaylandEvent {
 
 impl<Data: Any + 'static> XWayland<Data> {
     /// Create a new XWayland manager
+    ///
+    /// This function returns both the [`XWayland`] handle and an [`XWaylandSource`] that needs to be inserted
+    /// into the [`calloop`] event loop, producing the Xwayland startup and shutdown events.
     pub fn new<L>(
         handle: LoopHandle<'static, Data>,
         display: Rc<RefCell<Display>>,
@@ -230,6 +233,11 @@ fn launch<Data: Any>(inner: &Rc<RefCell<Inner<Data>>>) -> std::io::Result<()> {
     Ok(())
 }
 
+/// An event source for monitoring XWayland status
+///
+/// You need to insert it in a [`calloop`] event loop to handle the events it produces,
+/// of type [`XWaylandEvent`], which notify you about startup and shutdown of the Xwayland
+/// instance.
 #[derive(Debug)]
 pub struct XWaylandSource {
     channel: Channel<XWaylandEvent>,
