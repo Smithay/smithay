@@ -490,13 +490,13 @@ impl PositionerState {
         // gravity specified.
         if self.gravity_has_edge(xdg_positioner::Gravity::Top) {
             geometry.y -= geometry.height;
-        } else if self.gravity_has_edge(xdg_positioner::Gravity::Bottom) {
+        } else if !self.gravity_has_edge(xdg_positioner::Gravity::Bottom) {
             geometry.y -= geometry.height / 2;
         }
 
         if self.gravity_has_edge(xdg_positioner::Gravity::Left) {
             geometry.x -= geometry.width;
-        } else if self.gravity_has_edge(xdg_positioner::Gravity::Right) {
+        } else if !self.gravity_has_edge(xdg_positioner::Gravity::Right) {
             geometry.x -= geometry.width / 2;
         }
 
