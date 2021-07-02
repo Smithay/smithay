@@ -1,15 +1,43 @@
-//!
 //! Abstraction of different session APIs.
 //!
 //! Sessions provide a way for multiple graphical systems to run in parallel by providing
 //! mechanisms to switch between and handle device access and permissions for every running
-//! instance.
+//! instance. They are crucial to allow unprivileged processes to use graphical or input
+//! devices.
 //!
-//! They are crucial to allow unprivileged processes to use graphical or input devices.
+//! The functions of the provided interfaces lies in two main components: the ability to
+//! open privileged devices, and be notified about when the session is paused and resumed
+//! (for example when the user switches to an other TTY, or is the computer goes to sleep).
 //!
-//! The following mechanisms are currently provided:
-//!     - direct - legacy tty / virtual terminal kernel API
+//! ## General use
 //!
+//! Session handling in Smithay is done through a pair of types that each session provider implements.
+//!
+//! The first is a handle implementing the [`Session`] trait, which allows you to request the opening
+//! of devices, a VT change, or informations about the session state.
+//!
+//! The second is a notifier which informs you when the session is enabled or disabled by the system.
+//! This notifier takes the form of a [`calloop`] event source, but it does not generates any event
+//! directly. Instead, it gives you a [`Signaler`](crate::utils::signaling::Signaler) that you can
+//! pass around to other backend modules that need to be notified of the new session state, to stop
+//! accessing the devices while the session is disabled. Notable examples are the
+//! [`libinput`](super::libinput) and [`drm`](super::drm) backends.
+//!
+//! ## Available providers
+//!
+//! This module provides session implementations based on different providers:
+//!
+//! - Through [libseat](https://sr.ht/~kennylevinsen/seatd/), gated by the `backend_session_libseat`
+//!   cargo feature
+//! - Through logind or elogind, gated by the `backend_session_logind` and `backend_session_elogind`
+//!   cargo features (which are incompatible with each other)
+//! - Through the direct kernel VT interface. This last option is intended as a fallback, as this is
+//!   a legacy API.
+//!
+//! In general, you'll want to use the [`auto`] wrapper, that automatically discovers which
+//! provider is available and selects the "best" one (in the order of the previous list). See the
+//! module-level documentation of each provider for its precise usage.
+
 use nix::fcntl::OFlag;
 use std::{
     cell::RefCell,
