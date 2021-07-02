@@ -2,7 +2,6 @@
 
 use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, SwapBuffersError};
 use nix::libc::{c_int, c_void};
-use std::os::raw;
 #[cfg(feature = "backend_gbm")]
 use std::os::unix::io::AsRawFd;
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
@@ -228,7 +227,7 @@ pub unsafe trait EGLNativeSurface: Send + Sync {
 #[cfg(feature = "backend_winit")]
 /// Typed Xlib window for the `X11` backend
 #[derive(Debug)]
-pub struct XlibWindow(pub raw::c_ulong);
+pub struct XlibWindow(pub std::os::raw::c_ulong);
 
 #[cfg(feature = "backend_winit")]
 unsafe impl EGLNativeSurface for XlibWindow {
@@ -243,7 +242,7 @@ unsafe impl EGLNativeSurface for XlibWindow {
             ffi::egl::CreatePlatformWindowSurfaceEXT(
                 display.handle,
                 config_id,
-                (&mut id) as *mut raw::c_ulong as *mut _,
+                (&mut id) as *mut std::os::raw::c_ulong as *mut _,
                 surface_attributes.as_ptr(),
             )
         })
