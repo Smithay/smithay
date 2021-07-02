@@ -1,4 +1,23 @@
 //! Implementation of backend traits for types provided by `winit`
+//!
+//! This module provides the appropriate implementations of the backend
+//! interfaces for running a compositor as a Wayland of X11 client using [`winit`].
+//!
+//! ## Usage
+//!
+//! The backend is initialized using of of the [`init`], [`init_from_builder`] or
+//! [`init_from_builder_with_gl_attr`] functions, depending on the amount of control
+//! you want on the initialization of the backend. These functions will provide you
+//! with two objects:
+//!
+//! - a [`WinitGraphicsBackend`], which can give you an implementation of a [`Renderer`]
+//!   (or even [`Gles2Renderer`]) through its `renderer` method in addition to further
+//!   functionality to access and manage the created winit-window.
+//! - a [`WinitInputBackend`], which is an implementation of the [`InputBackend`] trait
+//!   using the input events forwarded from the host graphics server.
+//!
+//! The other types in this module are the instances of the associated types of these
+//! two traits for the winit backend.
 
 use crate::backend::egl::display::EGLDisplay;
 use crate::backend::{
