@@ -1,13 +1,11 @@
+//! `udev` related functionality for automated device scanning
 //!
-//! Provides `udev` related functionality for automated device scanning.
+//! This module mainly provides the [`UdevBackend`], which monitors available DRM devices and acts as
+//! an event source to be inserted in [`calloop`], generating events whenever these devices change.
 //!
-//! This module mainly provides the [`UdevBackend`], which
-//! monitors available DRM devices and acts as an event source, generating events whenever these
-//! devices change.
-//!
-//! *Note:* Once inserted into the event loop, the [`UdevBackend`] will
-//! only notify you about *changes* in the device list. To get an initial snapshot of the state during
-//! your initialization, you need to call its `device_list` method.
+//! *Note:* Once inserted into the event loop, the [`UdevBackend`] will only notify you about *changes*
+//! in the device list. To get an initial snapshot of the state during your initialization, you need to
+//! call its `device_list` method.
 //!
 //! ```no_run
 //! use smithay::backend::udev::{UdevBackend, UdevEvent};
