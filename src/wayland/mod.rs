@@ -3,6 +3,8 @@
 //! This module contains several handlers to manage the Wayland protocol
 //! and the clients.
 //!
+//! ## General structure
+//!
 //! Most utilities provided in this module work in the same way:
 //!
 //! - An `init` function or method will take the wayland display as argument and
@@ -16,6 +18,39 @@
 //! client requests that your logic needs to handle. In most cases these callback
 //! are given as input an enum specifying the event that occured, as well as the
 //! [`DispatchData`](wayland_server::DispatchData) from `wayland_server`.
+//!
+//! ## Provided helpers
+//!
+//! ### Core functionality
+//!
+//! The most fundamental module is the [`compositor`] module, which provides the necessary
+//! logic to handle the fundamental component by which clients build their windows: surfaces.
+//! Following this, the [`shell`] module contains the logic allowing clients to use their
+//! surface to build concrete windows with the usual interactions. Different kind of shells
+//! exist, but in general you will want to support at least the [`xdg`](shell::xdg) variant,
+//! which is the standart used by most applications.
+//!
+//! Then, the [`seat`] module contains logic related to input handling. These helpers are used
+//! to forward input (such as pointer action or keystrokes) to clients, and manage the input
+//! focus of clients. Tightly coupled with it is the [`data_device`] module, which handles
+//! cross-client interactions such as accessing the clipboard, or drag'n'drop actions.
+//!
+//! The [`shm`] module provides the necessary logic for client to provide buffers defining the
+//! contents of their windows using shared memory. This is the main mechanism used by clients
+//! that are not hardware accelerated. As a complement, the [`dmabuf`] module provides support
+//! hardware-accelerated clients; it is tighly linked to the
+//! [`backend::allocator`](crate::backend::allocator) module.
+//!
+//! The [`output`] module helps forwarding to clients information about the display monitors that
+//! are available. This notably plays a key role in HiDPI handling, and more generally notifying
+//! clients about whether they are currently visible or not (allowing them to stop drawing if they
+//! are not, for example).
+//!
+//! ### Experimental helpers
+//!
+//! The [`explicit_synchronization`] module provides helpers to give clients fine-grained control
+//! over the synchronization for accessing graphics buffer with the compositor, for low-latency
+//! rendering. It is however still experimental, and largely untested.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
