@@ -72,6 +72,7 @@ pub struct WinitGraphicsBackend {
 /// periodically to receive any events.
 #[derive(Debug)]
 pub struct WinitInputBackend {
+    // TODO: Find out how to get rid of this egl surface so the input backend is renderer agnostic.
     egl: Rc<EGLSurface>,
     window: Rc<WinitWindow>,
     events_loop: EventLoop<()>,
