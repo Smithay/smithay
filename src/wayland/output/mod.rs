@@ -53,10 +53,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use wayland_server::protocol::wl_output::{Subpixel, Transform};
+use wayland_server::protocol::{
+    wl_output::{Subpixel, Transform},
+    wl_surface,
+};
 use wayland_server::{
     protocol::wl_output::{Mode as WMode, WlOutput},
-    Display, Filter, Global, Main,
+    Client, Display, Filter, Global, Main,
 };
 
 use slog::{info, o, trace, warn};
@@ -313,5 +316,39 @@ impl Output {
             .instances
             .iter()
             .any(|o| o.as_ref().equals(output.as_ref()))
+    }
+
+    /// This function allows to run a [FnMut] on every
+    /// [WlOutput] matching the same [Client] as provided
+    pub fn with_client_outputs<F>(&self, client: Client, mut f: F)
+    where
+        F: FnMut(&WlOutput),
+    {
+        self.inner
+            .lock()
+            .unwrap()
+            .instances
+            .iter()
+            .filter(|output| match output.as_ref().client() {
+                Some(output_client) => output_client.equals(&client),
+                None => false,
+            })
+            .for_each(|output| f(output))
+    }
+
+    /// Sends `wl_surface.enter` for the provided surface
+    /// with the matching client output
+    pub fn enter(&self, surface: &wl_surface::WlSurface) {
+        if let Some(client) = surface.as_ref().client() {
+            self.with_client_outputs(client, |output| surface.enter(output))
+        }
+    }
+
+    /// Sends `wl_surface.leave` for the provided surface
+    /// with the matching client output
+    pub fn leave(&self, surface: &wl_surface::WlSurface) {
+        if let Some(client) = surface.as_ref().client() {
+            self.with_client_outputs(client, |output| surface.leave(output))
+        }
     }
 }

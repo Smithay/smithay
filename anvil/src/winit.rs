@@ -11,9 +11,8 @@ use smithay::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
     },
-    utils::Rectangle,
     wayland::{
-        output::{Mode, Output, PhysicalProperties},
+        output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,
     },
 };
@@ -22,6 +21,8 @@ use slog::Logger;
 
 use crate::drawing::*;
 use crate::state::{AnvilState, Backend};
+
+pub const OUTPUT_NAME: &str = "winit";
 
 pub struct WinitData;
 
@@ -72,9 +73,14 @@ pub fn run_winit(
 
     let mut state = AnvilState::init(display.clone(), event_loop.handle(), WinitData, log.clone());
 
-    let (output, _) = Output::new(
-        &mut display.borrow_mut(),
-        "Winit".into(),
+    let mode = Mode {
+        width: w as i32,
+        height: h as i32,
+        refresh: 60_000,
+    };
+
+    state.output_map.borrow_mut().add(
+        OUTPUT_NAME,
         PhysicalProperties {
             width: 0,
             height: 0,
@@ -82,23 +88,8 @@ pub fn run_winit(
             make: "Smithay".into(),
             model: "Winit".into(),
         },
-        log.clone(),
+        mode,
     );
-
-    output.change_current_state(
-        Some(Mode {
-            width: w as i32,
-            height: h as i32,
-            refresh: 60_000,
-        }),
-        None,
-        None,
-    );
-    output.set_preferred(Mode {
-        width: w as i32,
-        height: h as i32,
-        refresh: 60_000,
-    });
 
     let start_time = std::time::Instant::now();
     let mut cursor_visible = true;
@@ -120,16 +111,13 @@ pub fn run_winit(
         // drawing logic
         {
             let mut renderer = renderer.borrow_mut();
-
-            let output_rect = {
-                let (width, height) = renderer.window_size().physical_size.into();
-                Rectangle {
-                    x: 0,
-                    y: 0,
-                    width,
-                    height,
-                }
-            };
+            // This is safe to do as with winit we are guaranteed to have exactly one output
+            let output_geometry = state
+                .output_map
+                .borrow()
+                .find_by_name(OUTPUT_NAME, |_, geometry| geometry)
+                .ok()
+                .unwrap();
 
             let result = renderer
                 .render(|renderer, frame| {
@@ -140,7 +128,7 @@ pub fn run_winit(
                         renderer,
                         frame,
                         &*state.window_map.borrow(),
-                        Some(output_rect),
+                        output_geometry,
                         &log,
                     )?;
 
@@ -203,6 +191,7 @@ pub fn run_winit(
         } else {
             display.borrow_mut().flush_clients(&mut state);
             state.window_map.borrow_mut().refresh();
+            state.output_map.borrow_mut().refresh();
         }
     }
 

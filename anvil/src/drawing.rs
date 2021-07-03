@@ -185,7 +185,7 @@ pub fn draw_windows<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
     window_map: &WindowMap,
-    output_rect: Option<Rectangle>,
+    output_rect: Rectangle,
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -199,12 +199,10 @@ where
     // redraw the frame, in a simple but inneficient way
     window_map.with_windows_from_bottom_to_top(|toplevel_surface, mut initial_place, bounding_box| {
         // skip windows that do not overlap with a given output
-        if let Some(output) = output_rect {
-            if !output.overlaps(bounding_box) {
-                return;
-            }
-            initial_place.0 -= output.x;
+        if !output_rect.overlaps(bounding_box) {
+            return;
         }
+        initial_place.0 -= output_rect.x;
         if let Some(wl_surface) = toplevel_surface.get_surface() {
             // this surface is a root of a subsurface tree that needs to be drawn
             if let Err(err) = draw_surface_tree(renderer, frame, &wl_surface, initial_place, log) {

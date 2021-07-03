@@ -13,6 +13,7 @@ use smithay::{
     },
     reexports::wayland_server::protocol::wl_pointer,
     wayland::{
+        output::Mode,
         seat::{keysyms as xkb, AxisFrame, Keysym, ModifiersState},
         SERIAL_COUNTER as SCOUNTER,
     },
@@ -137,7 +138,12 @@ impl<Backend> AnvilState<Backend> {
 
 #[cfg(feature = "winit")]
 impl AnvilState<WinitData> {
-    pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
+    pub fn process_input_event<B>(&mut self, event: InputEvent<B>)
+    where
+        B: InputBackend<SpecialEvent = smithay::backend::winit::WinitEvent>,
+    {
+        use smithay::backend::winit::WinitEvent;
+
         match event {
             InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
                 KeyAction::None | KeyAction::Forward => {}
@@ -162,6 +168,16 @@ impl AnvilState<WinitData> {
             InputEvent::PointerMotionAbsolute { event, .. } => self.on_pointer_move_absolute::<B>(event),
             InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(event),
             InputEvent::PointerAxis { event, .. } => self.on_pointer_axis::<B>(event),
+            InputEvent::Special(WinitEvent::Resized { size, .. }) => {
+                self.output_map.borrow_mut().update_mode(
+                    crate::winit::OUTPUT_NAME,
+                    Mode {
+                        width: size.0 as i32,
+                        height: size.1 as i32,
+                        refresh: 60_000,
+                    },
+                );
+            }
             _ => {
                 // other events are not handled in anvil (yet)
             }
@@ -206,17 +222,16 @@ impl AnvilState<UdevData> {
                     }
                 }
                 KeyAction::Screen(num) => {
-                    if let Some(output) = self.backend_data.output_map.get(num) {
-                        let x = self
-                            .backend_data
-                            .output_map
-                            .iter()
-                            .take(num)
-                            .fold(0, |acc, output| acc + output.size.0)
-                            as f64
-                            + (output.size.0 as f64 / 2.0);
-                        let y = output.size.1 as f64 / 2.0;
-                        self.pointer_location = (x as f64, y as f64)
+                    let geometry = self
+                        .output_map
+                        .borrow()
+                        .find_by_index(num, |_, geometry| geometry)
+                        .ok();
+
+                    if let Some(geometry) = geometry {
+                        let x = geometry.x as f64 + geometry.width as f64 / 2.0;
+                        let y = geometry.height as f64 / 2.0;
+                        self.pointer_location = (x, y)
                     }
                 }
             },
@@ -245,47 +260,23 @@ impl AnvilState<UdevData> {
     }
 
     fn clamp_coords(&self, pos: (f64, f64)) -> (f64, f64) {
-        if self.backend_data.output_map.is_empty() {
+        if self.output_map.borrow().is_empty() {
             return pos;
         }
 
-        let (mut x, mut y) = pos;
-        // max_x is the sum of the width of all outputs
-        let max_x = self
-            .backend_data
-            .output_map
-            .iter()
-            .fold(0u32, |acc, output| acc + output.size.0);
-        x = x.max(0.0).min(max_x as f64);
+        let (pos_x, pos_y) = pos;
+        let output_map = self.output_map.borrow();
+        let max_x = output_map.width();
+        let clamped_x = pos_x.max(0.0).min(max_x as f64);
+        let max_y = output_map.height(clamped_x as i32);
 
-        // max y depends on the current output
-        let max_y = self.current_output_size(x).1;
-        y = y.max(0.0).min(max_y as f64);
+        if let Some(max_y) = max_y {
+            let clamped_y = pos_y.max(0.0).min(max_y as f64);
 
-        (x, y)
-    }
-
-    fn current_output_idx(&self, x: f64) -> usize {
-        self.backend_data
-            .output_map
-            .iter()
-            // map each output to their x position
-            .scan(0u32, |acc, output| {
-                let curr_x = *acc;
-                *acc += output.size.0;
-                Some(curr_x)
-            })
-            // get an index
-            .enumerate()
-            // find the first one with a greater x
-            .find(|(_idx, x_pos)| *x_pos as f64 > x)
-            // the previous output is the one we are on
-            .map(|(idx, _)| idx - 1)
-            .unwrap_or(self.backend_data.output_map.len() - 1)
-    }
-
-    fn current_output_size(&self, x: f64) -> (u32, u32) {
-        self.backend_data.output_map[self.current_output_idx(x)].size
+            (clamped_x, clamped_y)
+        } else {
+            (clamped_x, pos_y)
+        }
     }
 }
 
