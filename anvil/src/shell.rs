@@ -9,7 +9,7 @@ use smithay::{
     reexports::{
         wayland_protocols::xdg_shell::server::xdg_toplevel,
         wayland_server::{
-            protocol::{wl_buffer, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
+            protocol::{wl_buffer, wl_output, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
             Display,
         },
     },
@@ -32,6 +32,7 @@ use smithay::{
 };
 
 use crate::{
+    output_map::OutputMap,
     state::AnvilState,
     window_map::{Kind as SurfaceKind, PopupKind, WindowMap},
 };
@@ -293,12 +294,43 @@ pub struct ShellHandles {
     pub xdg_state: Arc<Mutex<XdgShellState>>,
     pub wl_state: Arc<Mutex<WlShellState>>,
     pub window_map: Rc<RefCell<WindowMap>>,
+    pub output_map: Rc<RefCell<OutputMap>>,
 }
 
-pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logger) -> ShellHandles {
+fn fullscreen_output_geometry(
+    wl_surface: &wl_surface::WlSurface,
+    wl_output: Option<&wl_output::WlOutput>,
+    window_map: &WindowMap,
+    output_map: &OutputMap,
+) -> Option<Rectangle> {
+    // First test if a specific output has been requested
+    // if the requested output is not found ignore the request
+    if let Some(wl_output) = wl_output {
+        return output_map.find(&wl_output, |_, geometry| geometry).ok();
+    }
+
+    // There is no output preference, try to find the output
+    // where the window is currently active
+    let window_location = window_map
+        .find(wl_surface)
+        .and_then(|kind| window_map.location(&kind));
+
+    if let Some(location) = window_location {
+        let window_output = output_map.find_by_position(location, |_, geometry| geometry).ok();
+
+        if let Some(result) = window_output {
+            return Some(result);
+        }
+    }
+
+    // Fallback to primary output
+    output_map.with_primary(|_, geometry| geometry).ok()
+}
+
+pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::slog::Logger) -> ShellHandles {
     // Create the compositor
     compositor_init(
-        display,
+        &mut *display.borrow_mut(),
         move |surface, mut ddata| {
             let anvil_state = ddata.get::<AnvilState<BackendData>>().unwrap();
             let window_map = anvil_state.window_map.as_ref();
@@ -309,19 +341,39 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
 
     // Init a window map, to track the location of our windows
     let window_map = Rc::new(RefCell::new(WindowMap::new()));
+    let output_map = Rc::new(RefCell::new(OutputMap::new(
+        display.clone(),
+        window_map.clone(),
+        log.clone(),
+    )));
 
     // init the xdg_shell
     let xdg_window_map = window_map.clone();
+    let xdg_output_map = output_map.clone();
     let (xdg_shell_state, _, _) = xdg_shell_init(
-        display,
+        &mut *display.borrow_mut(),
         move |shell_event| match shell_event {
             XdgRequest::NewToplevel { surface } => {
-                // place the window at a random location in the [0;800]x[0;800] square
+                // place the window at a random location on the primary output
+                // or if there is not output in a [0;800]x[0;800] square
                 use rand::distributions::{Distribution, Uniform};
-                let range = Uniform::new(0, 800);
+
+                let output_geometry = xdg_output_map
+                    .borrow()
+                    .with_primary(|_, geometry| geometry)
+                    .ok()
+                    .unwrap_or_else(|| Rectangle {
+                        width: 800,
+                        height: 800,
+                        ..Default::default()
+                    });
+                let max_x = output_geometry.x + (((output_geometry.width as f32) / 3.0) * 2.0) as i32;
+                let max_y = output_geometry.y + (((output_geometry.height as f32) / 3.0) * 2.0) as i32;
+                let x_range = Uniform::new(output_geometry.x, max_x);
+                let y_range = Uniform::new(output_geometry.y, max_y);
                 let mut rng = rand::thread_rng();
-                let x = range.sample(&mut rng);
-                let y = range.sample(&mut rng);
+                let x = x_range.sample(&mut rng);
+                let y = y_range.sample(&mut rng);
                 // Do not send a configure here, the initial configure
                 // of a xdg_surface has to be sent during the commit if
                 // the surface is not already configured
@@ -493,16 +545,39 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
                 }
             }
             XdgRequest::Fullscreen { surface, output, .. } => {
-                let ret = surface.with_pending_state(|state| {
-                    // TODO: Use size of current output the window is on and set position to (0,0)
-                    state.states.set(xdg_toplevel::State::Fullscreen);
-                    state.size = Some((800, 600));
-                    // TODO: If the provided output is None, use the output where
-                    // the toplevel is currently shown
-                    state.fullscreen_output = output;
-                });
-                if ret.is_ok() {
-                    surface.send_configure();
+                // NOTE: This is only one part of the solution. We can set the
+                // location and configure size here, but the surface should be rendered fullscreen
+                // independently from its buffer size
+                let wl_surface = if let Some(surface) = surface.get_surface() {
+                    surface
+                } else {
+                    // If there is no underlying surface just ignore the request
+                    return;
+                };
+
+                let output_geometry = fullscreen_output_geometry(
+                    wl_surface,
+                    output.as_ref(),
+                    &xdg_window_map.borrow(),
+                    &xdg_output_map.borrow(),
+                );
+
+                if let Some(geometry) = output_geometry {
+                    if let Some(surface) = surface.get_surface() {
+                        let mut xdg_window_map = xdg_window_map.borrow_mut();
+                        if let Some(kind) = xdg_window_map.find(surface) {
+                            xdg_window_map.set_location(&kind, (geometry.x, geometry.y));
+                        }
+                    }
+
+                    let ret = surface.with_pending_state(|state| {
+                        state.states.set(xdg_toplevel::State::Fullscreen);
+                        state.size = Some((geometry.width, geometry.height));
+                        state.fullscreen_output = output;
+                    });
+                    if ret.is_ok() {
+                        surface.send_configure();
+                    }
                 }
             }
             XdgRequest::UnFullscreen { surface } => {
@@ -516,13 +591,36 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
                 }
             }
             XdgRequest::Maximize { surface } => {
-                let ret = surface.with_pending_state(|state| {
-                    // TODO: Use size of current output the window is on and set position to (0,0)
-                    state.states.set(xdg_toplevel::State::Maximized);
-                    state.size = Some((800, 600));
-                });
-                if ret.is_ok() {
-                    surface.send_configure();
+                // NOTE: This should use layer-shell when it is implemented to
+                // get the correct maximum size
+                let output_geometry = {
+                    let xdg_window_map = xdg_window_map.borrow();
+                    surface
+                        .get_surface()
+                        .and_then(|s| xdg_window_map.find(s))
+                        .and_then(|k| xdg_window_map.location(&k))
+                        .and_then(|position| {
+                            xdg_output_map
+                                .borrow()
+                                .find_by_position(position, |_, geometry| geometry)
+                                .ok()
+                        })
+                };
+
+                if let Some(geometry) = output_geometry {
+                    if let Some(surface) = surface.get_surface() {
+                        let mut xdg_window_map = xdg_window_map.borrow_mut();
+                        if let Some(kind) = xdg_window_map.find(surface) {
+                            xdg_window_map.set_location(&kind, (geometry.x, geometry.y));
+                        }
+                    }
+                    let ret = surface.with_pending_state(|state| {
+                        state.states.set(xdg_toplevel::State::Maximized);
+                        state.size = Some((geometry.width, geometry.height));
+                    });
+                    if ret.is_ok() {
+                        surface.send_configure();
+                    }
                 }
             }
             XdgRequest::UnMaximize { surface } => {
@@ -541,23 +639,65 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
 
     // init the wl_shell
     let shell_window_map = window_map.clone();
+    let shell_output_map = output_map.clone();
     let (wl_shell_state, _) = wl_shell_init(
-        display,
+        &mut *display.borrow_mut(),
         move |req: ShellRequest| {
             match req {
                 ShellRequest::SetKind {
                     surface,
                     kind: ShellSurfaceKind::Toplevel,
                 } => {
-                    // place the window at a random location in the [0;800]x[0;800] square
+                    // place the window at a random location on the primary output
+                    // or if there is not output in a [0;800]x[0;800] square
                     use rand::distributions::{Distribution, Uniform};
-                    let range = Uniform::new(0, 800);
+
+                    let output_geometry = shell_output_map
+                        .borrow()
+                        .with_primary(|_, geometry| geometry)
+                        .ok()
+                        .unwrap_or_else(|| Rectangle {
+                            width: 800,
+                            height: 800,
+                            ..Default::default()
+                        });
+                    let max_x = output_geometry.x + (((output_geometry.width as f32) / 3.0) * 2.0) as i32;
+                    let max_y = output_geometry.y + (((output_geometry.height as f32) / 3.0) * 2.0) as i32;
+                    let x_range = Uniform::new(output_geometry.x, max_x);
+                    let y_range = Uniform::new(output_geometry.y, max_y);
                     let mut rng = rand::thread_rng();
-                    let x = range.sample(&mut rng);
-                    let y = range.sample(&mut rng);
+                    let x = x_range.sample(&mut rng);
+                    let y = y_range.sample(&mut rng);
                     shell_window_map
                         .borrow_mut()
                         .insert(SurfaceKind::Wl(surface), (x, y));
+                }
+                ShellRequest::SetKind {
+                    surface,
+                    kind: ShellSurfaceKind::Fullscreen { output, .. },
+                } => {
+                    // NOTE: This is only one part of the solution. We can set the
+                    // location and configure size here, but the surface should be rendered fullscreen
+                    // independently from its buffer size
+                    let wl_surface = if let Some(surface) = surface.get_surface() {
+                        surface
+                    } else {
+                        // If there is no underlying surface just ignore the request
+                        return;
+                    };
+
+                    let output_geometry = fullscreen_output_geometry(
+                        wl_surface,
+                        output.as_ref(),
+                        &shell_window_map.borrow(),
+                        &shell_output_map.borrow(),
+                    );
+
+                    if let Some(geometry) = output_geometry {
+                        shell_window_map
+                            .borrow_mut()
+                            .insert(SurfaceKind::Wl(surface), (geometry.x, geometry.y));
+                    }
                 }
                 ShellRequest::Move {
                     surface,
@@ -669,6 +809,7 @@ pub fn init_shell<BackendData: 'static>(display: &mut Display, log: ::slog::Logg
         xdg_state: xdg_shell_state,
         wl_state: wl_shell_state,
         window_map,
+        output_map,
     }
 }
 
