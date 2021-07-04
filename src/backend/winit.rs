@@ -29,6 +29,7 @@ use winit::{
 };
 
 use slog::{debug, error, info, o, trace, warn};
+use std::cell::Cell;
 
 /// Errors thrown by the `winit` backends
 #[derive(thiserror::Error, Debug)]
@@ -64,6 +65,7 @@ pub struct WinitGraphicsBackend {
     egl: Rc<EGLSurface>,
     window: Rc<WinitWindow>,
     size: Rc<RefCell<WindowSize>>,
+    resize_notification: Rc<Cell<Option<(u32, u32)>>>,
 }
 
 /// Abstracted event loop of a [`WinitWindow`] implementing the [`InputBackend`] trait
@@ -72,7 +74,6 @@ pub struct WinitGraphicsBackend {
 /// periodically to receive any events.
 #[derive(Debug)]
 pub struct WinitInputBackend {
-    egl: Rc<EGLSurface>,
     window: Rc<WinitWindow>,
     events_loop: EventLoop<()>,
     time: Instant,
@@ -80,6 +81,7 @@ pub struct WinitInputBackend {
     logger: ::slog::Logger,
     initialized: bool,
     size: Rc<RefCell<WindowSize>>,
+    resize_notification: Rc<Cell<Option<(u32, u32)>>>,
 }
 
 /// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait and a corresponding [`WinitInputBackend`],
@@ -185,19 +187,21 @@ where
     let window = Rc::new(winit_window);
     let egl = Rc::new(surface);
     let renderer = unsafe { Gles2Renderer::new(context, log.clone())? };
+    let resize_notification = Rc::new(Cell::new(None));
 
     Ok((
         WinitGraphicsBackend {
             window: window.clone(),
             display,
-            egl: egl.clone(),
+            egl,
             renderer,
             size: size.clone(),
+            resize_notification: resize_notification.clone(),
         },
         WinitInputBackend {
+            resize_notification,
             events_loop,
             window,
-            egl,
             time: Instant::now(),
             key_counter: 0,
             initialized: false,
@@ -245,6 +249,11 @@ impl WinitGraphicsBackend {
     where
         F: FnOnce(&mut Gles2Renderer, &mut Gles2Frame) -> R,
     {
+        // Were we told to resize?
+        if let Some((width, height)) = self.resize_notification.take() {
+            self.egl.resize(width as i32, height as i32, 0, 0);
+        }
+
         let (width, height) = {
             let size = self.size.borrow();
             size.physical_size.into()
@@ -621,7 +630,7 @@ impl InputBackend for WinitInputBackend {
             let key_counter = &mut self.key_counter;
             let time = &self.time;
             let window = &self.window;
-            let egl = &self.egl;
+            let resize_notification = &self.resize_notification;
             let logger = &self.logger;
             let window_size = &self.size;
 
@@ -651,7 +660,9 @@ impl InputBackend for WinitInputBackend {
                                 let mut wsize = window_size.borrow_mut();
                                 wsize.physical_size = psize;
                                 wsize.scale_factor = scale_factor;
-                                egl.resize(psize.width as i32, psize.height as i32, 0, 0);
+
+                                resize_notification.set(Some((psize.width, psize.height)));
+
                                 callback(InputEvent::Special(WinitEvent::Resized {
                                     size: psize.into(),
                                     scale_factor,
@@ -667,7 +678,9 @@ impl InputBackend for WinitInputBackend {
                             } => {
                                 let mut wsize = window_size.borrow_mut();
                                 wsize.scale_factor = scale_factor;
-                                egl.resize(new_psize.width as i32, new_psize.height as i32, 0, 0);
+
+                                resize_notification.set(Some((new_psize.width, new_psize.height)));
+
                                 let psize_f64: (f64, f64) = (new_psize.width.into(), new_psize.height.into());
                                 callback(InputEvent::Special(WinitEvent::Resized {
                                     size: psize_f64,
