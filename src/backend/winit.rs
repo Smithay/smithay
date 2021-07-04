@@ -74,8 +74,6 @@ pub struct WinitGraphicsBackend {
 /// periodically to receive any events.
 #[derive(Debug)]
 pub struct WinitInputBackend {
-    // TODO: Find out how to get rid of this egl surface so the input backend is renderer agnostic.
-    resize_notification: Rc<Cell<Option<(u32, u32)>>>,
     window: Rc<WinitWindow>,
     events_loop: EventLoop<()>,
     time: Instant,
@@ -83,6 +81,7 @@ pub struct WinitInputBackend {
     logger: ::slog::Logger,
     initialized: bool,
     size: Rc<RefCell<WindowSize>>,
+    resize_notification: Rc<Cell<Option<(u32, u32)>>>,
 }
 
 /// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait and a corresponding [`WinitInputBackend`],
