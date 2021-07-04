@@ -29,6 +29,7 @@ use winit::{
 };
 
 use slog::{debug, error, info, o, trace, warn};
+use std::cell::Cell;
 
 /// Errors thrown by the `winit` backends
 #[derive(thiserror::Error, Debug)]
@@ -64,7 +65,7 @@ pub struct WinitGraphicsBackend {
     egl: Rc<EGLSurface>,
     window: Rc<WinitWindow>,
     size: Rc<RefCell<WindowSize>>,
-    resize_notification: Rc<RefCell<Option<(u32, u32)>>>,
+    resize_notification: Rc<Cell<Option<(u32, u32)>>>,
 }
 
 /// Abstracted event loop of a [`WinitWindow`] implementing the [`InputBackend`] trait
@@ -74,7 +75,7 @@ pub struct WinitGraphicsBackend {
 #[derive(Debug)]
 pub struct WinitInputBackend {
     // TODO: Find out how to get rid of this egl surface so the input backend is renderer agnostic.
-    resize_notification: Rc<RefCell<Option<(u32, u32)>>>,
+    resize_notification: Rc<Cell<Option<(u32, u32)>>>,
     window: Rc<WinitWindow>,
     events_loop: EventLoop<()>,
     time: Instant,
@@ -187,7 +188,7 @@ where
     let window = Rc::new(winit_window);
     let egl = Rc::new(surface);
     let renderer = unsafe { Gles2Renderer::new(context, log.clone())? };
-    let resize_notification = Rc::new(RefCell::new(None));
+    let resize_notification = Rc::new(Cell::new(None));
 
     Ok((
         WinitGraphicsBackend {
@@ -250,7 +251,7 @@ impl WinitGraphicsBackend {
         F: FnOnce(&mut Gles2Renderer, &mut Gles2Frame) -> R,
     {
         // Were we told to resize?
-        if let Some((width, height)) = *self.resize_notification.borrow() {
+        if let Some((width, height)) = self.resize_notification.take() {
             self.egl.resize(width as i32, height as i32, 0, 0);
         }
 
@@ -661,7 +662,7 @@ impl InputBackend for WinitInputBackend {
                                 wsize.physical_size = psize;
                                 wsize.scale_factor = scale_factor;
 
-                                *resize_notification.borrow_mut() = Some((psize.width, psize.height));
+                                resize_notification.set(Some((psize.width, psize.height)));
 
                                 callback(InputEvent::Special(WinitEvent::Resized {
                                     size: psize.into(),
@@ -679,7 +680,7 @@ impl InputBackend for WinitInputBackend {
                                 let mut wsize = window_size.borrow_mut();
                                 wsize.scale_factor = scale_factor;
 
-                                *resize_notification.borrow_mut() = Some((new_psize.width, new_psize.height));
+                                resize_notification.set(Some((new_psize.width, new_psize.height)));
 
                                 let psize_f64: (f64, f64) = (new_psize.width.into(), new_psize.height.into());
                                 callback(InputEvent::Special(WinitEvent::Resized {
