@@ -193,7 +193,7 @@ where
         WinitGraphicsBackend {
             window: window.clone(),
             display,
-            egl: egl.clone(),
+            egl,
             renderer,
             size: size.clone(),
             resize_notification: resize_notification.clone(),
