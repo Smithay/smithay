@@ -13,6 +13,8 @@ use wayland_server::{
     DispatchData, Filter, Main,
 };
 
+use crate::utils::{Logical, Point};
+
 use super::{
     cache::Cacheable,
     tree::{Location, PrivateSurfaceData},
@@ -81,7 +83,7 @@ impl SurfaceImplem {
                     states.cached_state.pending::<SurfaceAttributes>().buffer = Some(match buffer {
                         Some(buffer) => BufferAssignment::NewBuffer {
                             buffer,
-                            delta: (x, y),
+                            delta: (x, y).into(),
                         },
                         None => BufferAssignment::Removed,
                     })
@@ -93,7 +95,10 @@ impl SurfaceImplem {
                         .cached_state
                         .pending::<SurfaceAttributes>()
                         .damage
-                        .push(Damage::Surface(Rectangle { x, y, width, height }));
+                        .push(Damage::Surface(Rectangle::from_loc_and_size(
+                            (x, y),
+                            (width, height),
+                        )));
                 });
             }
             wl_surface::Request::Frame { callback } => {
@@ -153,7 +158,10 @@ impl SurfaceImplem {
                         .cached_state
                         .pending::<SurfaceAttributes>()
                         .damage
-                        .push(Damage::Buffer(Rectangle { x, y, width, height }))
+                        .push(Damage::Buffer(Rectangle::from_loc_and_size(
+                            (x, y),
+                            (width, height),
+                        )))
                 });
             }
             wl_surface::Request::Destroy => {
@@ -226,12 +234,14 @@ fn region_implem(request: wl_region::Request, region: wl_region::WlRegion) {
         .unwrap();
     let mut guard = attributes_mutex.lock().unwrap();
     match request {
-        wl_region::Request::Add { x, y, width, height } => guard
-            .rects
-            .push((RectangleKind::Add, Rectangle { x, y, width, height })),
-        wl_region::Request::Subtract { x, y, width, height } => guard
-            .rects
-            .push((RectangleKind::Subtract, Rectangle { x, y, width, height })),
+        wl_region::Request::Add { x, y, width, height } => guard.rects.push((
+            RectangleKind::Add,
+            Rectangle::from_loc_and_size((x, y), (width, height)),
+        )),
+        wl_region::Request::Subtract { x, y, width, height } => guard.rects.push((
+            RectangleKind::Subtract,
+            Rectangle::from_loc_and_size((x, y), (width, height)),
+        )),
         wl_region::Request::Destroy => {
             // all is handled by our destructor
         }
@@ -281,12 +291,14 @@ pub(crate) fn implement_subcompositor(
 pub struct SubsurfaceCachedState {
     /// Location of the top-left corner of this subsurface
     /// relative to its parent coordinate space
-    pub location: (i32, i32),
+    pub location: Point<i32, Logical>,
 }
 
 impl Default for SubsurfaceCachedState {
     fn default() -> Self {
-        SubsurfaceCachedState { location: (0, 0) }
+        SubsurfaceCachedState {
+            location: (0, 0).into(),
+        }
     }
 }
 
@@ -342,7 +354,7 @@ fn implement_subsurface(
         match request {
             wl_subsurface::Request::SetPosition { x, y } => {
                 PrivateSurfaceData::with_states(&surface, |state| {
-                    state.cached_state.pending::<SubsurfaceCachedState>().location = (x, y);
+                    state.cached_state.pending::<SubsurfaceCachedState>().location = (x, y).into();
                 })
             }
             wl_subsurface::Request::PlaceAbove { sibling } => {

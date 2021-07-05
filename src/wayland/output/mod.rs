@@ -27,8 +27,7 @@
 //!     &mut display,      // the display
 //!     "output-0".into(), // the name of this output,
 //!     PhysicalProperties {
-//!         width: 200,                     // width in mm
-//!         height: 150,                    // height in mm,
+//!         size: (200, 150).into(),        // dimensions (width, height) in mm
 //!         subpixel: wl_output::Subpixel::HorizontalRgb,  // subpixel information
 //!         make: "Screens Inc".into(),     // make of the monitor
 //!         model: "Monitor Ultra".into(),  // model of the monitor
@@ -37,15 +36,15 @@
 //! );
 //! // Now you can configure it
 //! output.change_current_state(
-//!     Some(Mode { width: 1902, height: 1080, refresh: 60000 }), // the resolution mode,
+//!     Some(Mode { size: (1920, 1080).into(), refresh: 60000 }), // the resolution mode,
 //!     Some(wl_output::Transform::Normal), // global screen transformation
 //!     Some(1), // global screen scaling factor
 //! );
 //! // set the preferred mode
-//! output.set_preferred(Mode { width: 1920, height: 1080, refresh: 60000 });
+//! output.set_preferred(Mode { size: (1920, 1080).into(), refresh: 60000 });
 //! // add other supported modes
-//! output.add_mode(Mode { width: 800, height: 600, refresh: 60000 });
-//! output.add_mode(Mode { width: 1024, height: 768, refresh: 60000 });
+//! output.add_mode(Mode { size: (800, 600).into(), refresh: 60000 });
+//! output.add_mode(Mode { size: (1024, 768).into(), refresh: 60000 });
 //! ```
 
 use std::{
@@ -64,6 +63,8 @@ use wayland_server::{
 
 use slog::{info, o, trace, warn};
 
+use crate::utils::{Logical, Physical, Point, Raw, Size};
+
 /// An output mode
 ///
 /// A possible combination of dimensions and refresh rate for an output.
@@ -72,10 +73,8 @@ use slog::{info, o, trace, warn};
 /// not taking into account any global scaling.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Mode {
-    /// The width in pixels
-    pub width: i32,
-    /// The height in pixels
-    pub height: i32,
+    /// The size of the mode, in pixels
+    pub size: Size<i32, Physical>,
     /// The refresh rate in millihertz
     ///
     /// `1000` is one fps (frame per second), `2000` is 2 fps, etc...
@@ -85,10 +84,8 @@ pub struct Mode {
 /// The physical properties of an output
 #[derive(Debug)]
 pub struct PhysicalProperties {
-    /// The width in millimeters
-    pub width: i32,
-    /// The height in millimeters
-    pub height: i32,
+    /// The size of the monitor, in millimeters
+    pub size: Size<i32, Raw>,
     /// The subpixel geometry
     pub subpixel: Subpixel,
     /// Textual representation of the make
@@ -103,7 +100,7 @@ struct Inner {
     log: ::slog::Logger,
     instances: Vec<WlOutput>,
     physical: PhysicalProperties,
-    location: (i32, i32),
+    location: Point<i32, Logical>,
     transform: Transform,
     scale: i32,
     modes: Vec<Mode>,
@@ -134,7 +131,7 @@ impl Inner {
             if Some(mode) == self.preferred_mode {
                 flags |= WMode::Preferred;
             }
-            output.mode(flags, mode.width, mode.height, mode.refresh);
+            output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
         }
         if output.as_ref().version() >= 2 {
             output.scale(self.scale);
@@ -146,10 +143,10 @@ impl Inner {
 
     fn send_geometry(&self, output: &WlOutput) {
         output.geometry(
-            self.location.0,
-            self.location.1,
-            self.physical.width,
-            self.physical.height,
+            self.location.x,
+            self.location.y,
+            self.physical.size.w,
+            self.physical.size.h,
             self.physical.subpixel,
             self.physical.make.clone(),
             self.physical.model.clone(),
@@ -191,7 +188,7 @@ impl Output {
             log,
             instances: Vec::new(),
             physical,
-            location: (0, 0),
+            location: (0, 0).into(),
             transform: Transform::Normal,
             scale: 1,
             modes: Vec::new(),
@@ -292,7 +289,7 @@ impl Output {
         }
         for output in &inner.instances {
             if let Some(mode) = new_mode {
-                output.mode(flags, mode.width, mode.height, mode.refresh);
+                output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
             }
             if new_transform.is_some() {
                 inner.send_geometry(output);

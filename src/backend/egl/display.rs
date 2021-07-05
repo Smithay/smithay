@@ -822,7 +822,10 @@ impl EGLBufferReader {
     ///
     /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](crate::wayland::shm)) or the
     /// context has been lost, `None` is returned.
-    pub fn egl_buffer_dimensions(&self, buffer: &WlBuffer) -> Option<(i32, i32)> {
+    pub fn egl_buffer_dimensions(
+        &self,
+        buffer: &WlBuffer,
+    ) -> Option<crate::utils::Size<i32, crate::utils::Physical>> {
         let mut width: i32 = 0;
         if unsafe {
             ffi::egl::QueryWaylandBufferWL(
@@ -847,7 +850,7 @@ impl EGLBufferReader {
             return None;
         }
 
-        Some((width, height))
+        Some((width, height).into())
     }
 }
 

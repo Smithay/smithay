@@ -157,7 +157,7 @@ where
                     surface: make_handle(&shell_surface),
                     kind: ShellSurfaceKind::Transient {
                         parent,
-                        location: (x, y),
+                        location: (x, y).into(),
                         inactive: flags.contains(wl_shell_surface::Transient::Inactive),
                     },
                 },
@@ -194,7 +194,7 @@ where
                             parent,
                             serial,
                             seat,
-                            location: (x, y),
+                            location: (x, y).into(),
                             inactive: flags.contains(wl_shell_surface::Transient::Inactive),
                         },
                     },

@@ -2,6 +2,7 @@ use std::{cell::RefCell, collections::HashMap, convert::TryFrom, os::unix::net::
 
 use smithay::{
     reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
+    utils::{Logical, Point},
     wayland::compositor::give_role,
 };
 
@@ -67,7 +68,7 @@ struct X11State {
     conn: Rc<RustConnection>,
     atoms: Atoms,
     log: slog::Logger,
-    unpaired_surfaces: HashMap<u32, (Window, (i32, i32))>,
+    unpaired_surfaces: HashMap<u32, (Window, Point<i32, Logical>)>,
     window_map: Rc<RefCell<WindowMap>>,
 }
 
@@ -169,7 +170,7 @@ impl X11State {
 
                     let location = {
                         match self.conn.get_geometry(msg.window)?.reply() {
-                            Ok(geo) => (geo.x.into(), geo.y.into()),
+                            Ok(geo) => (geo.x as i32, geo.y as i32).into(),
                             Err(err) => {
                                 error!(
                                     self.log,
@@ -177,7 +178,7 @@ impl X11State {
                                     msg.window;
                                     "err" => format!("{:?}", err),
                                 );
-                                (0, 0)
+                                (0, 0).into()
                             }
                         }
                     };
@@ -201,7 +202,7 @@ impl X11State {
         Ok(())
     }
 
-    fn new_window(&mut self, window: Window, surface: WlSurface, location: (i32, i32)) {
+    fn new_window(&mut self, window: Window, surface: WlSurface, location: Point<i32, Logical>) {
         debug!(self.log, "Matched X11 surface {:x?} to {:x?}", window, surface);
 
         if give_role(&surface, "x11_surface").is_err() {

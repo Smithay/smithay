@@ -62,7 +62,7 @@
 //! that you are given (in an `Arc<Mutex<_>>`) as return value of the `init` function.
 
 use crate::utils::DeadResource;
-use crate::utils::Rectangle;
+use crate::utils::{Logical, Point, Rectangle, Size};
 use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
 use crate::wayland::{Serial, SERIAL_COUNTER};
@@ -220,11 +220,11 @@ xdg_role!(
         /// Minimum size requested for this surface
         ///
         /// A value of 0 on an axis means this axis is not constrained
-        pub min_size: (i32, i32),
+        pub min_size: Size<i32, Logical>,
         /// Maximum size requested for this surface
         ///
         /// A value of 0 on an axis means this axis is not constrained
-        pub max_size: (i32, i32),
+        pub max_size: Size<i32, Logical>,
         /// Holds the pending state as set by the server.
         pub server_pending: Option<ToplevelState>,
         /// Holds the last server_pending state that has been acknowledged
@@ -315,7 +315,7 @@ pub struct PopupState {
     /// `Rectangle::x` and `Rectangle::y` holds the position of the popup
     /// The position is relative to the window geometry as defined by
     /// xdg_surface.set_window_geometry of the parent surface.
-    pub geometry: Rectangle,
+    pub geometry: Rectangle<i32, Logical>,
 }
 
 impl Default for PopupState {
@@ -330,10 +330,10 @@ impl Default for PopupState {
 /// The state of a positioner, as set by the client
 pub struct PositionerState {
     /// Size of the rectangle that needs to be positioned
-    pub rect_size: (i32, i32),
+    pub rect_size: Size<i32, Logical>,
     /// Anchor rectangle in the parent surface coordinates
     /// relative to which the surface must be positioned
-    pub anchor_rect: Rectangle,
+    pub anchor_rect: Rectangle<i32, Logical>,
     /// Edges defining the anchor point
     pub anchor_edges: xdg_positioner::Anchor,
     /// Gravity direction for positioning the child surface
@@ -343,7 +343,7 @@ pub struct PositionerState {
     /// surface
     pub constraint_adjustment: xdg_positioner::ConstraintAdjustment,
     /// Offset placement relative to the anchor point
-    pub offset: (i32, i32),
+    pub offset: Point<i32, Logical>,
 }
 
 impl Default for PositionerState {
@@ -353,29 +353,13 @@ impl Default for PositionerState {
             anchor_rect: Default::default(),
             constraint_adjustment: xdg_positioner::ConstraintAdjustment::empty(),
             gravity: xdg_positioner::Gravity::None,
-            offset: (0, 0),
-            rect_size: (0, 0),
+            offset: Default::default(),
+            rect_size: Default::default(),
         }
     }
 }
 
 impl PositionerState {
-    pub(crate) fn new() -> PositionerState {
-        PositionerState {
-            rect_size: (0, 0),
-            anchor_rect: Rectangle {
-                x: 0,
-                y: 0,
-                width: 0,
-                height: 0,
-            },
-            anchor_edges: xdg_positioner::Anchor::None,
-            gravity: xdg_positioner::Gravity::None,
-            constraint_adjustment: xdg_positioner::ConstraintAdjustment::None,
-            offset: (0, 0),
-        }
-    }
-
     pub(crate) fn anchor_has_edge(&self, edge: xdg_positioner::Anchor) -> bool {
         match edge {
             xdg_positioner::Anchor::Top => {
@@ -440,7 +424,7 @@ impl PositionerState {
     /// The `constraint_adjustment` will not be considered by this
     /// implementation and the position and size should be re-calculated
     /// in the compositor if the compositor implements `constraint_adjustment`
-    pub(crate) fn get_geometry(&self) -> Rectangle {
+    pub(crate) fn get_geometry(&self) -> Rectangle<i32, Logical> {
         // From the `xdg_shell` prococol specification:
         //
         // set_offset:
@@ -451,10 +435,8 @@ impl PositionerState {
         //  has the gravity bottom|right, and the offset is (ox, oy), the calculated
         //  surface position will be (x + ox, y + oy)
         let mut geometry = Rectangle {
-            x: self.offset.0,
-            y: self.offset.1,
-            width: self.rect_size.0,
-            height: self.rect_size.1,
+            loc: self.offset,
+            size: self.rect_size,
         };
 
         // Defines the anchor point for the anchor rectangle. The specified anchor
@@ -464,19 +446,19 @@ impl PositionerState {
         // otherwise, the derived anchor point will be centered on the specified
         // edge, or in the center of the anchor rectangle if no edge is specified.
         if self.anchor_has_edge(xdg_positioner::Anchor::Top) {
-            geometry.y += self.anchor_rect.y;
+            geometry.loc.y += self.anchor_rect.loc.y;
         } else if self.anchor_has_edge(xdg_positioner::Anchor::Bottom) {
-            geometry.y += self.anchor_rect.y + self.anchor_rect.height;
+            geometry.loc.y += self.anchor_rect.loc.y + self.anchor_rect.size.h;
         } else {
-            geometry.y += self.anchor_rect.y + self.anchor_rect.height / 2;
+            geometry.loc.y += self.anchor_rect.loc.y + self.anchor_rect.size.h / 2;
         }
 
         if self.anchor_has_edge(xdg_positioner::Anchor::Left) {
-            geometry.x += self.anchor_rect.x;
+            geometry.loc.x += self.anchor_rect.loc.x;
         } else if self.anchor_has_edge(xdg_positioner::Anchor::Right) {
-            geometry.x += self.anchor_rect.x + self.anchor_rect.width;
+            geometry.loc.x += self.anchor_rect.loc.x + self.anchor_rect.size.w;
         } else {
-            geometry.x += self.anchor_rect.x + self.anchor_rect.width / 2;
+            geometry.loc.x += self.anchor_rect.loc.x + self.anchor_rect.size.w / 2;
         }
 
         // Defines in what direction a surface should be positioned, relative to
@@ -486,15 +468,15 @@ impl PositionerState {
         // surface will be centered over the anchor point on any axis that had no
         // gravity specified.
         if self.gravity_has_edge(xdg_positioner::Gravity::Top) {
-            geometry.y -= geometry.height;
+            geometry.loc.y -= geometry.size.h;
         } else if !self.gravity_has_edge(xdg_positioner::Gravity::Bottom) {
-            geometry.y -= geometry.height / 2;
+            geometry.loc.y -= geometry.size.h / 2;
         }
 
         if self.gravity_has_edge(xdg_positioner::Gravity::Left) {
-            geometry.x -= geometry.width;
+            geometry.loc.x -= geometry.size.w;
         } else if !self.gravity_has_edge(xdg_positioner::Gravity::Right) {
-            geometry.x -= geometry.width / 2;
+            geometry.loc.x -= geometry.size.w / 2;
         }
 
         geometry
@@ -505,7 +487,7 @@ impl PositionerState {
 #[derive(Debug, PartialEq)]
 pub struct ToplevelState {
     /// The suggested size of the surface
-    pub size: Option<(i32, i32)>,
+    pub size: Option<Size<i32, Logical>>,
 
     /// The states for this surface
     pub states: ToplevelStateSet,
@@ -603,29 +585,29 @@ impl From<ToplevelStateSet> for Vec<xdg_toplevel::State> {
 pub struct SurfaceCachedState {
     /// Holds the double-buffered geometry that may be specified
     /// by xdg_surface.set_window_geometry.
-    pub geometry: Option<Rectangle>,
+    pub geometry: Option<Rectangle<i32, Logical>>,
     /// Minimum size requested for this surface
     ///
     /// A value of 0 on an axis means this axis is not constrained
     ///
     /// This is only relevant for xdg_toplevel, and will always be
     /// `(0, 0)` for xdg_popup.
-    pub min_size: (i32, i32),
+    pub min_size: Size<i32, Logical>,
     /// Maximum size requested for this surface
     ///
     /// A value of 0 on an axis means this axis is not constrained
     ///
     /// This is only relevant for xdg_toplevel, and will always be
     /// `(0, 0)` for xdg_popup.
-    pub max_size: (i32, i32),
+    pub max_size: Size<i32, Logical>,
 }
 
 impl Default for SurfaceCachedState {
     fn default() -> Self {
         Self {
             geometry: None,
-            min_size: (0, 0),
-            max_size: (0, 0),
+            min_size: Default::default(),
+            max_size: Default::default(),
         }
     }
 }
@@ -1593,8 +1575,8 @@ pub enum XdgRequest {
         seat: wl_seat::WlSeat,
         /// the grab serial
         serial: Serial,
-        /// location of the menu request
-        location: (i32, i32),
+        /// location of the menu request relative to the surface geometry
+        location: Point<i32, Logical>,
     },
     /// A surface has acknowledged a configure serial.
     AckConfigure {

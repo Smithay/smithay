@@ -26,6 +26,7 @@ use crate::backend::egl::{
     EGLContext, EGLSurface, MakeCurrentError,
 };
 use crate::backend::SwapBuffersError;
+use crate::utils::{Physical, Size};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use super::ImportEgl;
@@ -34,7 +35,7 @@ use super::{ImportDma, ImportShm};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
 #[cfg(feature = "wayland_frontend")]
-use crate::utils::Rectangle;
+use crate::utils::{Buffer, Rectangle};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
@@ -514,7 +515,7 @@ impl ImportShm for Gles2Renderer {
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
-        damage: &[Rectangle],
+        damage: &[Rectangle<i32, Buffer>],
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;
 
@@ -591,15 +592,15 @@ impl ImportShm for Gles2Renderer {
                 } else {
                     for region in damage.iter() {
                         trace!(self.logger, "Uploading partial shm texture for {:?}", buffer);
-                        self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.x);
-                        self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.y);
+                        self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
+                        self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
                         self.gl.TexSubImage2D(
                             ffi::TEXTURE_2D,
                             0,
-                            region.x,
-                            region.y,
-                            region.width,
-                            region.height,
+                            region.loc.x,
+                            region.loc.y,
+                            region.size.w,
+                            region.size.h,
                             gl_format,
                             ffi::UNSIGNED_BYTE as u32,
                             slice.as_ptr().offset(offset as isize) as *const _,
@@ -1014,8 +1015,7 @@ impl Renderer for Gles2Renderer {
 
     fn render<F, R>(
         &mut self,
-        width: u32,
-        height: u32,
+        size: Size<i32, Physical>,
         transform: Transform,
         rendering: F,
     ) -> Result<R, Self::Error>
@@ -1027,7 +1027,7 @@ impl Renderer for Gles2Renderer {
         self.cleanup()?;
 
         unsafe {
-            self.gl.Viewport(0, 0, width as i32, height as i32);
+            self.gl.Viewport(0, 0, size.w, size.h);
 
             self.gl.Enable(ffi::BLEND);
             self.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
@@ -1037,8 +1037,8 @@ impl Renderer for Gles2Renderer {
         // glOrtho(0, width, 0, height, 1, 1);
         let mut renderer = Matrix3::<f32>::identity();
         let t = Matrix3::<f32>::identity();
-        let x = 2.0 / (width as f32);
-        let y = 2.0 / (height as f32);
+        let x = 2.0 / (size.w as f32);
+        let y = 2.0 / (size.h as f32);
 
         // Rotation & Reflection
         renderer[0][0] = x * t[0][0];

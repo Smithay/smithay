@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 use smithay::{
     reexports::{wayland_protocols::xdg_shell::server::xdg_toplevel, wayland_server::protocol::wl_surface},
-    utils::Rectangle,
+    utils::{Logical, Point, Rectangle},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, SubsurfaceCachedState, TraversalAction},
         shell::{
@@ -98,12 +98,12 @@ impl PopupKind {
         .flatten()
     }
 
-    pub fn location(&self) -> (i32, i32) {
+    pub fn location(&self) -> Point<i32, Logical> {
         let wl_surface = match self.get_surface() {
             Some(s) => s,
-            None => return (0, 0),
+            None => return (0, 0).into(),
         };
-        let geometry = with_states(wl_surface, |states| {
+        with_states(wl_surface, |states| {
             states
                 .data_map
                 .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
@@ -113,26 +113,26 @@ impl PopupKind {
                 .current
                 .geometry
         })
-        .unwrap_or_default();
-        (geometry.x, geometry.y)
+        .unwrap_or_default()
+        .loc
     }
 }
 
 struct Window {
-    location: (i32, i32),
+    location: Point<i32, Logical>,
     /// A bounding box over this window and its children.
     ///
     /// Used for the fast path of the check in `matching`, and as the fall-back for the window
     /// geometry if that's not set explicitly.
-    bbox: Rectangle,
+    bbox: Rectangle<i32, Logical>,
     toplevel: Kind,
 }
 
 impl Window {
     /// Finds the topmost surface under this point if any and returns it together with the location of this
     /// surface.
-    fn matching(&self, point: (f64, f64)) -> Option<(wl_surface::WlSurface, (f64, f64))> {
-        if !self.bbox.contains((point.0 as i32, point.1 as i32)) {
+    fn matching(&self, point: Point<f64, Logical>) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
+        if !self.bbox.to_f64().contains(point) {
             return None;
         }
         // need to check more carefully
@@ -141,27 +141,26 @@ impl Window {
             with_surface_tree_downward(
                 wl_surface,
                 self.location,
-                |wl_surface, states, &(mut x, mut y)| {
+                |wl_surface, states, location| {
+                    let mut location = *location;
                     let data = states.data_map.get::<RefCell<SurfaceData>>();
 
                     if states.role == Some("subsurface") {
                         let current = states.cached_state.current::<SubsurfaceCachedState>();
-                        x += current.location.0;
-                        y += current.location.1;
+                        location += current.location;
                     }
 
-                    let surface_local_point = (point.0 - x as f64, point.1 - y as f64);
                     let contains_the_point = data
                         .map(|data| {
                             data.borrow()
-                                .contains_point(&*states.cached_state.current(), surface_local_point)
+                                .contains_point(&*states.cached_state.current(), point - location.to_f64())
                         })
                         .unwrap_or(false);
                     if contains_the_point {
-                        *found.borrow_mut() = Some((wl_surface.clone(), (x as f64, y as f64)));
+                        *found.borrow_mut() = Some((wl_surface.clone(), location));
                     }
 
-                    TraversalAction::DoChildren((x, y))
+                    TraversalAction::DoChildren(location)
                 },
                 |_, _, _| {},
                 |_, _, _| {
@@ -174,29 +173,25 @@ impl Window {
     }
 
     fn self_update(&mut self) {
-        let (base_x, base_y) = self.location;
-        let (mut min_x, mut min_y, mut max_x, mut max_y) = (base_x, base_y, base_x, base_y);
+        let mut bounding_box = Rectangle::from_loc_and_size(self.location, (0, 0));
         if let Some(wl_surface) = self.toplevel.get_surface() {
             with_surface_tree_downward(
                 wl_surface,
-                (base_x, base_y),
-                |_, states, &(mut x, mut y)| {
+                self.location,
+                |_, states, &loc| {
+                    let mut loc = loc;
                     let data = states.data_map.get::<RefCell<SurfaceData>>();
 
-                    if let Some((w, h)) = data.and_then(|d| d.borrow().size()) {
+                    if let Some(size) = data.and_then(|d| d.borrow().size()) {
                         if states.role == Some("subsurface") {
                             let current = states.cached_state.current::<SubsurfaceCachedState>();
-                            x += current.location.0;
-                            y += current.location.1;
+                            loc += current.location;
                         }
 
                         // Update the bounding box.
-                        min_x = min_x.min(x);
-                        min_y = min_y.min(y);
-                        max_x = max_x.max(x + w);
-                        max_y = max_y.max(y + h);
+                        bounding_box = bounding_box.merge(Rectangle::from_loc_and_size(loc, size));
 
-                        TraversalAction::DoChildren((x, y))
+                        TraversalAction::DoChildren(loc)
                     } else {
                         // If the parent surface is unmapped, then the child surfaces are hidden as
                         // well, no need to consider them here.
@@ -207,16 +202,11 @@ impl Window {
                 |_, _, _| true,
             );
         }
-        self.bbox = Rectangle {
-            x: min_x,
-            y: min_y,
-            width: max_x - min_x,
-            height: max_y - min_y,
-        };
+        self.bbox = bounding_box;
     }
 
     /// Returns the geometry of this window.
-    pub fn geometry(&self) -> Rectangle {
+    pub fn geometry(&self) -> Rectangle<i32, Logical> {
         // It's the set geometry with the full bounding box as the fallback.
         with_states(self.toplevel.get_surface().unwrap(), |states| {
             states.cached_state.current::<SurfaceCachedState>().geometry
@@ -261,7 +251,7 @@ impl WindowMap {
         }
     }
 
-    pub fn insert(&mut self, toplevel: Kind, location: (i32, i32)) {
+    pub fn insert(&mut self, toplevel: Kind, location: Point<i32, Logical>) {
         let mut window = Window {
             location,
             bbox: Rectangle::default(),
@@ -276,7 +266,10 @@ impl WindowMap {
         self.popups.push(popup);
     }
 
-    pub fn get_surface_under(&self, point: (f64, f64)) -> Option<(wl_surface::WlSurface, (f64, f64))> {
+    pub fn get_surface_under(
+        &self,
+        point: Point<f64, Logical>,
+    ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
         for w in &self.windows {
             if let Some(surface) = w.matching(point) {
                 return Some(surface);
@@ -287,8 +280,8 @@ impl WindowMap {
 
     pub fn get_surface_and_bring_to_top(
         &mut self,
-        point: (f64, f64),
-    ) -> Option<(wl_surface::WlSurface, (f64, f64))> {
+        point: Point<f64, Logical>,
+    ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
         let mut found = None;
         for (i, w) in self.windows.iter().enumerate() {
             if let Some(surface) = w.matching(point) {
@@ -316,7 +309,7 @@ impl WindowMap {
 
     pub fn with_windows_from_bottom_to_top<Func>(&self, mut f: Func)
     where
-        Func: FnMut(&Kind, (i32, i32), &Rectangle),
+        Func: FnMut(&Kind, Point<i32, Logical>, &Rectangle<i32, Logical>),
     {
         for w in self.windows.iter().rev() {
             f(&w.toplevel, w.location, &w.bbox)
@@ -386,7 +379,7 @@ impl WindowMap {
     }
 
     /// Returns the location of the toplevel, if it exists.
-    pub fn location(&self, toplevel: &Kind) -> Option<(i32, i32)> {
+    pub fn location(&self, toplevel: &Kind) -> Option<Point<i32, Logical>> {
         self.windows
             .iter()
             .find(|w| &w.toplevel == toplevel)
@@ -394,7 +387,7 @@ impl WindowMap {
     }
 
     /// Sets the location of the toplevel, if it exists.
-    pub fn set_location(&mut self, toplevel: &Kind, location: (i32, i32)) {
+    pub fn set_location(&mut self, toplevel: &Kind, location: Point<i32, Logical>) {
         if let Some(w) = self.windows.iter_mut().find(|w| &w.toplevel == toplevel) {
             w.location = location;
             w.self_update();
@@ -402,7 +395,7 @@ impl WindowMap {
     }
 
     /// Returns the geometry of the toplevel, if it exists.
-    pub fn geometry(&self, toplevel: &Kind) -> Option<Rectangle> {
+    pub fn geometry(&self, toplevel: &Kind) -> Option<Rectangle<i32, Logical>> {
         self.windows
             .iter()
             .find(|w| &w.toplevel == toplevel)

@@ -5,9 +5,12 @@ use wayland_server::{
     Main,
 };
 
-use crate::wayland::{
-    seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
-    Serial,
+use crate::{
+    utils::{Logical, Point},
+    wayland::{
+        seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
+        Serial,
+    },
 };
 
 use super::{with_source_metadata, DataDeviceData, SeatData};
@@ -51,12 +54,11 @@ impl PointerGrab for DnDGrab {
     fn motion(
         &mut self,
         _handle: &mut PointerInnerHandle<'_>,
-        location: (f64, f64),
-        focus: Option<(wl_surface::WlSurface, (f64, f64))>,
+        location: Point<f64, Logical>,
+        focus: Option<(wl_surface::WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
-        let (x, y) = location;
         let seat_data = self
             .seat
             .user_data()
@@ -81,12 +83,13 @@ impl PointerGrab for DnDGrab {
                 }
             }
         }
-        if let Some((surface, (sx, sy))) = focus {
+        if let Some((surface, surface_location)) = focus {
             // early return if the surface is no longer valid
             let client = match surface.as_ref().client() {
                 Some(c) => c,
                 None => return,
             };
+            let (x, y) = (location - surface_location.to_f64()).into();
             if self.current_focus.is_none() {
                 // We entered a new surface, send the data offer if appropriate
                 if let Some(ref source) = self.data_source {
@@ -129,7 +132,7 @@ impl PointerGrab for DnDGrab {
                             offer.source_actions(meta.dnd_action);
                         })
                         .unwrap();
-                        device.enter(serial.into(), &surface, x - sx, y - sy, Some(&offer));
+                        device.enter(serial.into(), &surface, x, y, Some(&offer));
                         self.pending_offers.push(offer);
                     }
                     self.offer_data = Some(offer_data);
@@ -138,7 +141,7 @@ impl PointerGrab for DnDGrab {
                     if self.origin.as_ref().same_client_as(&surface.as_ref()) {
                         for device in &seat_data.known_devices {
                             if device.as_ref().same_client_as(&surface.as_ref()) {
-                                device.enter(serial.into(), &surface, x - sx, y - sy, None);
+                                device.enter(serial.into(), &surface, x, y, None);
                             }
                         }
                     }
@@ -149,7 +152,7 @@ impl PointerGrab for DnDGrab {
                 if self.data_source.is_some() || self.origin.as_ref().same_client_as(&surface.as_ref()) {
                     for device in &seat_data.known_devices {
                         if device.as_ref().same_client_as(&surface.as_ref()) {
-                            device.motion(time, x - sx, y - sy);
+                            device.motion(time, x, y);
                         }
                     }
                 }

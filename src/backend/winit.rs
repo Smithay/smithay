@@ -19,24 +19,28 @@
 //! The other types in this module are the instances of the associated types of these
 //! two traits for the winit backend.
 
-use crate::backend::egl::display::EGLDisplay;
-use crate::backend::{
-    egl::{context::GlAttributes, native, EGLContext, EGLSurface, Error as EGLError},
-    input::{
-        Axis, AxisSource, ButtonState, Device, DeviceCapability, Event as BackendEvent, InputBackend,
-        InputEvent, KeyState, KeyboardKeyEvent, MouseButton, PointerAxisEvent, PointerButtonEvent,
-        PointerMotionAbsoluteEvent, TouchCancelEvent, TouchDownEvent, TouchMotionEvent, TouchSlot,
-        TouchUpEvent, UnusedEvent,
+use crate::{
+    backend::{
+        egl::{
+            context::GlAttributes, display::EGLDisplay, native, EGLContext, EGLSurface, Error as EGLError,
+        },
+        input::{
+            Axis, AxisSource, ButtonState, Device, DeviceCapability, Event as BackendEvent, InputBackend,
+            InputEvent, KeyState, KeyboardKeyEvent, MouseButton, PointerAxisEvent, PointerButtonEvent,
+            PointerMotionAbsoluteEvent, TouchCancelEvent, TouchDownEvent, TouchMotionEvent, TouchSlot,
+            TouchUpEvent, UnusedEvent,
+        },
+        renderer::{
+            gles2::{Gles2Error, Gles2Frame, Gles2Renderer},
+            Bind, Renderer, Transform, Unbind,
+        },
     },
-    renderer::{
-        gles2::{Gles2Error, Gles2Frame, Gles2Renderer},
-        Bind, Renderer, Transform, Unbind,
-    },
+    utils::{Logical, Physical, Size},
 };
 use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Instant};
 use wayland_egl as wegl;
 use winit::{
-    dpi::{LogicalPosition, LogicalSize, PhysicalSize},
+    dpi::{LogicalPosition, LogicalSize},
     event::{
         ElementState, Event, KeyboardInput, MouseButton as WinitMouseButton, MouseScrollDelta, Touch,
         TouchPhase, WindowEvent,
@@ -71,9 +75,15 @@ pub enum Error {
 #[derive(Debug, Clone)]
 pub struct WindowSize {
     /// Pixel side of the window
-    pub physical_size: PhysicalSize<u32>,
+    pub physical_size: Size<i32, Physical>,
     /// Scaling factor of the window
     pub scale_factor: f64,
+}
+
+impl WindowSize {
+    fn logical_size(&self) -> Size<f64, Logical> {
+        self.physical_size.to_f64().to_logical(self.scale_factor)
+    }
 }
 
 /// Window with an active EGL Context created by `winit`. Implements the [`Renderer`] trait
@@ -84,7 +94,7 @@ pub struct WinitGraphicsBackend {
     egl: Rc<EGLSurface>,
     window: Rc<WinitWindow>,
     size: Rc<RefCell<WindowSize>>,
-    resize_notification: Rc<Cell<Option<(u32, u32)>>>,
+    resize_notification: Rc<Cell<Option<Size<i32, Physical>>>>,
 }
 
 /// Abstracted event loop of a [`WinitWindow`] implementing the [`InputBackend`] trait
@@ -100,7 +110,7 @@ pub struct WinitInputBackend {
     logger: ::slog::Logger,
     initialized: bool,
     size: Rc<RefCell<WindowSize>>,
-    resize_notification: Rc<Cell<Option<(u32, u32)>>>,
+    resize_notification: Rc<Cell<Option<Size<i32, Physical>>>>,
 }
 
 /// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait and a corresponding [`WinitInputBackend`],
@@ -196,8 +206,9 @@ where
         (display, context, surface)
     };
 
+    let (w, h): (u32, u32) = winit_window.inner_size().into();
     let size = Rc::new(RefCell::new(WindowSize {
-        physical_size: winit_window.inner_size(), // TODO: original code check if window is alive or not using inner_size().expect()
+        physical_size: (w as i32, h as i32).into(),
         scale_factor: winit_window.scale_factor(),
     }));
 
@@ -234,7 +245,7 @@ pub enum WinitEvent {
     /// The window has been resized
     Resized {
         /// The new physical size (in pixels)
-        size: (f64, f64),
+        size: Size<i32, Physical>,
         /// The new scale factor
         scale_factor: f64,
     },
@@ -267,19 +278,17 @@ impl WinitGraphicsBackend {
         F: FnOnce(&mut Gles2Renderer, &mut Gles2Frame) -> R,
     {
         // Were we told to resize?
-        if let Some((width, height)) = self.resize_notification.take() {
-            self.egl.resize(width as i32, height as i32, 0, 0);
+        if let Some(size) = self.resize_notification.take() {
+            self.egl.resize(size.w, size.h, 0, 0);
         }
 
-        let (width, height) = {
+        let size = {
             let size = self.size.borrow();
-            size.physical_size.into()
+            size.physical_size
         };
 
         self.renderer.bind(self.egl.clone())?;
-        let result = self
-            .renderer
-            .render(width, height, Transform::Normal, rendering)?;
+        let result = self.renderer.render(size, Transform::Normal, rendering)?;
         self.egl.swap_buffers()?;
         self.renderer.unbind()?;
         Ok(result)
@@ -390,13 +399,13 @@ impl PointerMotionAbsoluteEvent<WinitInputBackend> for WinitMouseMovedEvent {
 
     fn x_transformed(&self, width: u32) -> f64 {
         let wsize = self.size.borrow();
-        let w_width = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).width;
+        let w_width = wsize.logical_size().w;
         f64::max(self.logical_position.x * width as f64 / w_width, 0.0)
     }
 
     fn y_transformed(&self, height: u32) -> f64 {
         let wsize = self.size.borrow();
-        let w_height = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).height;
+        let w_height = wsize.logical_size().h;
         f64::max(self.logical_position.y * height as f64 / w_height, 0.0)
     }
 }
@@ -476,7 +485,7 @@ impl PointerButtonEvent<WinitInputBackend> for WinitMouseInputEvent {
 pub struct WinitTouchStartedEvent {
     size: Rc<RefCell<WindowSize>>,
     time: u32,
-    location: (f64, f64),
+    location: LogicalPosition<f64>,
     id: u64,
 }
 
@@ -497,24 +506,24 @@ impl TouchDownEvent<WinitInputBackend> for WinitTouchStartedEvent {
 
     fn x(&self) -> f64 {
         let wsize = self.size.borrow();
-        self.location.0 * wsize.scale_factor
+        self.location.x * wsize.scale_factor
     }
 
     fn y(&self) -> f64 {
         let wsize = self.size.borrow();
-        self.location.1 * wsize.scale_factor
+        self.location.y * wsize.scale_factor
     }
 
     fn x_transformed(&self, width: u32) -> f64 {
         let wsize = self.size.borrow();
-        let w_width = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).width;
-        f64::max(self.location.0 * width as f64 / w_width, 0.0)
+        let w_width = wsize.logical_size().w;
+        f64::max(self.location.x * width as f64 / w_width, 0.0)
     }
 
     fn y_transformed(&self, height: u32) -> f64 {
         let wsize = self.size.borrow();
-        let w_height = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).height;
-        f64::max(self.location.1 * height as f64 / w_height, 0.0)
+        let w_height = wsize.logical_size().h;
+        f64::max(self.location.y * height as f64 / w_height, 0.0)
     }
 }
 
@@ -523,7 +532,7 @@ impl TouchDownEvent<WinitInputBackend> for WinitTouchStartedEvent {
 pub struct WinitTouchMovedEvent {
     size: Rc<RefCell<WindowSize>>,
     time: u32,
-    location: (f64, f64),
+    location: LogicalPosition<f64>,
     id: u64,
 }
 
@@ -544,24 +553,24 @@ impl TouchMotionEvent<WinitInputBackend> for WinitTouchMovedEvent {
 
     fn x(&self) -> f64 {
         let wsize = self.size.borrow();
-        self.location.0 * wsize.scale_factor
+        self.location.x * wsize.scale_factor
     }
 
     fn y(&self) -> f64 {
         let wsize = self.size.borrow();
-        self.location.1 * wsize.scale_factor
+        self.location.y * wsize.scale_factor
     }
 
     fn x_transformed(&self, width: u32) -> f64 {
         let wsize = self.size.borrow();
-        let w_width = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).width;
-        f64::max(self.location.0 * width as f64 / w_width, 0.0)
+        let w_width = wsize.logical_size().w;
+        f64::max(self.location.x * width as f64 / w_width, 0.0)
     }
 
     fn y_transformed(&self, height: u32) -> f64 {
         let wsize = self.size.borrow();
-        let w_height = wsize.physical_size.to_logical::<f64>(wsize.scale_factor).height;
-        f64::max(self.location.1 * height as f64 / w_height, 0.0)
+        let w_height = wsize.logical_size().h;
+        f64::max(self.location.y * height as f64 / w_height, 0.0)
     }
 }
 
@@ -687,13 +696,14 @@ impl InputBackend for WinitInputBackend {
                                 trace!(logger, "Resizing window to {:?}", psize);
                                 let scale_factor = window.scale_factor();
                                 let mut wsize = window_size.borrow_mut();
-                                wsize.physical_size = psize;
+                                let (pw, ph): (u32, u32) = psize.into();
+                                wsize.physical_size = (pw as i32, ph as i32).into();
                                 wsize.scale_factor = scale_factor;
 
-                                resize_notification.set(Some((psize.width, psize.height)));
+                                resize_notification.set(Some(wsize.physical_size));
 
                                 callback(InputEvent::Special(WinitEvent::Resized {
-                                    size: psize.into(),
+                                    size: wsize.physical_size,
                                     scale_factor,
                                 }));
                             }
@@ -708,11 +718,11 @@ impl InputBackend for WinitInputBackend {
                                 let mut wsize = window_size.borrow_mut();
                                 wsize.scale_factor = scale_factor;
 
-                                resize_notification.set(Some((new_psize.width, new_psize.height)));
+                                let (pw, ph): (u32, u32) = (*new_psize).into();
+                                resize_notification.set(Some((pw as i32, ph as i32).into()));
 
-                                let psize_f64: (f64, f64) = (new_psize.width.into(), new_psize.height.into());
                                 callback(InputEvent::Special(WinitEvent::Resized {
-                                    size: psize_f64,
+                                    size: (pw as i32, ph as i32).into(),
                                     scale_factor: wsize.scale_factor,
                                 }));
                             }
@@ -761,11 +771,12 @@ impl InputBackend for WinitInputBackend {
                                 id,
                                 ..
                             }) => {
+                                let location = location.to_logical(window_size.borrow().scale_factor);
                                 callback(InputEvent::TouchDown {
                                     event: WinitTouchStartedEvent {
                                         size: window_size.clone(),
                                         time,
-                                        location: location.into(),
+                                        location,
                                         id,
                                     },
                                 });
@@ -776,11 +787,12 @@ impl InputBackend for WinitInputBackend {
                                 id,
                                 ..
                             }) => {
+                                let location = location.to_logical(window_size.borrow().scale_factor);
                                 callback(InputEvent::TouchMotion {
                                     event: WinitTouchMovedEvent {
                                         size: window_size.clone(),
                                         time,
-                                        location: location.into(),
+                                        location,
                                         id,
                                     },
                                 });
@@ -792,11 +804,12 @@ impl InputBackend for WinitInputBackend {
                                 id,
                                 ..
                             }) => {
+                                let location = location.to_logical(window_size.borrow().scale_factor);
                                 callback(InputEvent::TouchMotion {
                                     event: WinitTouchMovedEvent {
                                         size: window_size.clone(),
                                         time,
-                                        location: location.into(),
+                                        location,
                                         id,
                                     },
                                 });
