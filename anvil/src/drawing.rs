@@ -9,7 +9,7 @@ use smithay::{
         SwapBuffersError,
     },
     reexports::wayland_server::protocol::{wl_buffer, wl_surface},
-    utils::Rectangle,
+    utils::{Logical, Point, Rectangle},
     wayland::{
         compositor::{
             get_role, with_states, with_surface_tree_upward, Damage, SubsurfaceCachedState,
@@ -38,7 +38,7 @@ pub fn draw_cursor<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
     surface: &wl_surface::WlSurface,
-    (x, y): (i32, i32),
+    location: Point<i32, Logical>,
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -59,24 +59,24 @@ where
         )
     })
     .unwrap_or(None);
-    let (dx, dy) = match ret {
+    let delta = match ret {
         Some(h) => h,
         None => {
             warn!(
                 log,
                 "Trying to display as a cursor a surface that does not have the CursorImage role."
             );
-            (0, 0)
+            (0, 0).into()
         }
     };
-    draw_surface_tree(renderer, frame, surface, (x - dx, y - dy), log)
+    draw_surface_tree(renderer, frame, surface, location - delta, log)
 }
 
 fn draw_surface_tree<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
     root: &wl_surface::WlSurface,
-    location: (i32, i32),
+    location: Point<i32, Logical>,
     log: &Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -90,7 +90,8 @@ where
     with_surface_tree_upward(
         root,
         location,
-        |_surface, states, &(mut x, mut y)| {
+        |_surface, states, location| {
+            let mut location = *location;
             // Pull a new buffer if available
             if let Some(data) = states.data_map.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
@@ -103,7 +104,7 @@ where
                             .map(|dmg| match dmg {
                                 Damage::Buffer(rect) => *rect,
                                 // TODO also apply transformations
-                                Damage::Surface(rect) => rect.scale(attributes.buffer_scale),
+                                Damage::Surface(rect) => rect.to_buffer(attributes.buffer_scale),
                             })
                             .collect::<Vec<_>>();
 
@@ -136,10 +137,9 @@ where
                     // if yes, also process the children
                     if states.role == Some("subsurface") {
                         let current = states.cached_state.current::<SubsurfaceCachedState>();
-                        x += current.location.0;
-                        y += current.location.1;
+                        location += current.location;
                     }
-                    TraversalAction::DoChildren((x, y))
+                    TraversalAction::DoChildren(location)
                 } else {
                     // we are not displayed, so our children are neither
                     TraversalAction::SkipChildren
@@ -149,7 +149,8 @@ where
                 TraversalAction::SkipChildren
             }
         },
-        |_surface, states, &(mut x, mut y)| {
+        |_surface, states, location| {
+            let mut location = *location;
             if let Some(ref data) = states.data_map.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
                 if let Some(texture) = data
@@ -161,13 +162,12 @@ where
                     // only passes it to our children
                     if states.role == Some("subsurface") {
                         let current = states.cached_state.current::<SubsurfaceCachedState>();
-                        x += current.location.0;
-                        y += current.location.1;
+                        location += current.location;
                     }
                     if let Err(err) = frame.render_texture_at(
                         &texture.texture,
-                        (x, y),
-                        Transform::Normal, /* TODO */
+                        location.to_physical(1), // TODO: handle output scaling factor
+                        Transform::Normal,       /* TODO */
                         1.0,
                     ) {
                         result = Err(err.into());
@@ -185,7 +185,7 @@ pub fn draw_windows<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
     window_map: &WindowMap,
-    output_rect: Rectangle,
+    output_rect: Rectangle<i32, Logical>,
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -197,12 +197,12 @@ where
     let mut result = Ok(());
 
     // redraw the frame, in a simple but inneficient way
-    window_map.with_windows_from_bottom_to_top(|toplevel_surface, mut initial_place, bounding_box| {
+    window_map.with_windows_from_bottom_to_top(|toplevel_surface, mut initial_place, &bounding_box| {
         // skip windows that do not overlap with a given output
         if !output_rect.overlaps(bounding_box) {
             return;
         }
-        initial_place.0 -= output_rect.x;
+        initial_place.x -= output_rect.loc.x;
         if let Some(wl_surface) = toplevel_surface.get_surface() {
             // this surface is a root of a subsurface tree that needs to be drawn
             if let Err(err) = draw_surface_tree(renderer, frame, &wl_surface, initial_place, log) {
@@ -211,14 +211,11 @@ where
             // furthermore, draw its popups
             let toplevel_geometry_offset = window_map
                 .geometry(toplevel_surface)
-                .map(|g| (g.x, g.y))
+                .map(|g| g.loc)
                 .unwrap_or_default();
             window_map.with_child_popups(&wl_surface, |popup| {
                 let location = popup.location();
-                let draw_location = (
-                    initial_place.0 + location.0 + toplevel_geometry_offset.0,
-                    initial_place.1 + location.1 + toplevel_geometry_offset.1,
-                );
+                let draw_location = initial_place + location + toplevel_geometry_offset;
                 if let Some(wl_surface) = popup.get_surface() {
                     if let Err(err) = draw_surface_tree(renderer, frame, &wl_surface, draw_location, log) {
                         result = Err(err);
@@ -235,7 +232,7 @@ pub fn draw_dnd_icon<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
     surface: &wl_surface::WlSurface,
-    (x, y): (i32, i32),
+    location: Point<i32, Logical>,
     log: &::slog::Logger,
 ) -> Result<(), SwapBuffersError>
 where
@@ -250,5 +247,5 @@ where
             "Trying to display as a dnd icon a surface that does not have the DndIcon role."
         );
     }
-    draw_surface_tree(renderer, frame, surface, (x, y), log)
+    draw_surface_tree(renderer, frame, surface, location, log)
 }

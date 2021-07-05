@@ -132,7 +132,7 @@ fn implement_positioner(
                         "Invalid size for positioner.".into(),
                     );
                 } else {
-                    state.rect_size = (width, height);
+                    state.rect_size = (width, height).into();
                 }
             }
             zxdg_positioner_v6::Request::SetAnchorRect { x, y, width, height } => {
@@ -142,7 +142,7 @@ fn implement_positioner(
                         "Invalid size for positioner's anchor rectangle.".into(),
                     );
                 } else {
-                    state.anchor_rect = Rectangle { x, y, width, height };
+                    state.anchor_rect = Rectangle::from_loc_and_size((x, y), (width, height));
                 }
             }
             zxdg_positioner_v6::Request::SetAnchor { anchor } => {
@@ -173,7 +173,7 @@ fn implement_positioner(
                 state.constraint_adjustment = zxdg_constraints_adg_to_xdg(constraint_adjustment);
             }
             zxdg_positioner_v6::Request::SetOffset { x, y } => {
-                state.offset = (x, y);
+                state.offset = (x, y).into();
             }
             _ => unreachable!(),
         }
@@ -181,7 +181,7 @@ fn implement_positioner(
     positioner
         .as_ref()
         .user_data()
-        .set(|| RefCell::new(PositionerState::new()));
+        .set(|| RefCell::new(PositionerState::default()));
 
     positioner.deref().clone()
 }
@@ -377,7 +377,7 @@ fn xdg_surface_implementation(
 
             compositor::with_states(surface, |states| {
                 states.cached_state.pending::<SurfaceCachedState>().geometry =
-                    Some(Rectangle { x, y, width, height });
+                    Some(Rectangle::from_loc_and_size((x, y), (width, height)));
             })
             .unwrap();
         }
@@ -516,7 +516,7 @@ pub fn send_toplevel_configure(resource: &zxdg_toplevel_v6::ZxdgToplevelV6, conf
         .get::<ShellSurfaceUserData>()
         .unwrap();
 
-    let (width, height) = configure.state.size.unwrap_or((0, 0));
+    let (width, height) = configure.state.size.unwrap_or_default().into();
     // convert the Vec<State> (which is really a Vec<u32>) into Vec<u8>
     let states = {
         let mut states: Vec<xdg_toplevel::State> = configure.state.states.into();
@@ -595,7 +595,7 @@ fn toplevel_implementation(
                     surface: handle,
                     seat,
                     serial,
-                    location: (x, y),
+                    location: (x, y).into(),
                 },
                 dispatch_data,
             );
@@ -631,12 +631,12 @@ fn toplevel_implementation(
         }
         zxdg_toplevel_v6::Request::SetMaxSize { width, height } => {
             with_toplevel_pending_state(&toplevel, |toplevel_data| {
-                toplevel_data.max_size = (width, height);
+                toplevel_data.max_size = (width, height).into();
             });
         }
         zxdg_toplevel_v6::Request::SetMinSize { width, height } => {
             with_toplevel_pending_state(&toplevel, |toplevel_data| {
-                toplevel_data.min_size = (width, height);
+                toplevel_data.min_size = (width, height).into();
             });
         }
         zxdg_toplevel_v6::Request::SetMaximized => {
@@ -709,7 +709,7 @@ pub(crate) fn send_popup_configure(resource: &zxdg_popup_v6::ZxdgPopupV6, config
     let geometry = configure.state.geometry;
 
     // Send the popup configure
-    resource.configure(geometry.x, geometry.y, geometry.width, geometry.height);
+    resource.configure(geometry.loc.x, geometry.loc.y, geometry.size.w, geometry.size.h);
 
     // Send the base xdg_surface configure event to mark
     // the configure as finished

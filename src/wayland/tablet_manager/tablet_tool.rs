@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::backend::input::{ButtonState, TabletToolCapabilitys, TabletToolDescriptor, TabletToolType};
+use crate::utils::{Logical, Point};
 use crate::wayland::seat::{CursorImageAttributes, CursorImageStatus};
 use wayland_protocols::unstable::tablet::v2::server::{
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
@@ -35,8 +36,8 @@ struct TabletTool {
 impl TabletTool {
     fn proximity_in(
         &mut self,
-        (x, y): (f64, f64),
-        (focus, (sx, sy)): (WlSurface, (f64, f64)),
+        loc: Point<f64, Logical>,
+        (focus, sloc): (WlSurface, Point<i32, Logical>),
         tablet: &TabletHandle,
         serial: Serial,
         time: u32,
@@ -50,7 +51,8 @@ impl TabletTool {
             tablet.with_focused_tablet(&focus, |wl_tablet| {
                 wl_tool.proximity_in(serial.into(), wl_tablet, &focus);
                 // proximity_in has to be followed by motion event (required by protocol)
-                wl_tool.motion(x - sx, y - sy);
+                let srel_loc = loc - sloc.to_f64();
+                wl_tool.motion(srel_loc.x, srel_loc.y);
                 wl_tool.frame(time);
             });
         }
@@ -114,8 +116,8 @@ impl TabletTool {
 
     fn motion(
         &mut self,
-        pos: (f64, f64),
-        focus: Option<(WlSurface, (f64, f64))>,
+        pos: Point<f64, Logical>,
+        focus: Option<(WlSurface, Point<i32, Logical>)>,
         tablet: &TabletHandle,
         serial: Serial,
         time: u32,
@@ -128,9 +130,8 @@ impl TabletTool {
                         .iter()
                         .find(|i| i.as_ref().same_client_as(focus.0.as_ref()))
                     {
-                        let (x, y) = pos;
-                        let (sx, sy) = focus.1;
-                        wl_tool.motion(x - sx, y - sy);
+                        let srel_loc = pos - focus.1.to_f64();
+                        wl_tool.motion(srel_loc.x, srel_loc.y);
 
                         if let Some(pressure) = self.pending_pressure.take() {
                             wl_tool.pressure((pressure * 65535.0).round() as u32);
@@ -271,7 +272,9 @@ impl TabletToolHandle {
 
                                     compositor::with_states(&surface, |states| {
                                         states.data_map.insert_if_missing_threadsafe(|| {
-                                            Mutex::new(CursorImageAttributes { hotspot: (0, 0) })
+                                            Mutex::new(CursorImageAttributes {
+                                                hotspot: (0, 0).into(),
+                                            })
                                         });
                                         states
                                             .data_map
@@ -279,7 +282,7 @@ impl TabletToolHandle {
                                             .unwrap()
                                             .lock()
                                             .unwrap()
-                                            .hotspot = (hotspot_x, hotspot_y);
+                                            .hotspot = (hotspot_x, hotspot_y).into();
                                     })
                                     .unwrap();
 
@@ -356,8 +359,8 @@ impl TabletToolHandle {
     ///   origin in the global compositor space.
     pub fn proximity_in(
         &self,
-        pos: (f64, f64),
-        focus: (WlSurface, (f64, f64)),
+        pos: Point<f64, Logical>,
+        focus: (WlSurface, Point<i32, Logical>),
         tablet: &TabletHandle,
         serial: Serial,
         time: u32,
@@ -395,8 +398,8 @@ impl TabletToolHandle {
     /// of proximity_in/proximity_out events.
     pub fn motion(
         &self,
-        pos: (f64, f64),
-        focus: Option<(WlSurface, (f64, f64))>,
+        pos: Point<f64, Logical>,
+        focus: Option<(WlSurface, Point<i32, Logical>)>,
         tablet: &TabletHandle,
         serial: Serial,
         time: u32,

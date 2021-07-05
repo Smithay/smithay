@@ -1,9 +1,9 @@
 //! Various utilities functions and types
 
-mod rectangle;
+mod geometry;
 pub mod signaling;
 
-pub use self::rectangle::Rectangle;
+pub use self::geometry::{Buffer, Logical, Physical, Point, Raw, Rectangle, Size};
 
 /// This resource is not managed by Smithay
 #[derive(Debug)]

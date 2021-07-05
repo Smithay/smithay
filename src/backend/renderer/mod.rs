@@ -10,6 +10,8 @@
 use std::collections::HashSet;
 use std::error::Error;
 
+use crate::utils::{Buffer, Physical, Point, Size};
+
 #[cfg(feature = "wayland_frontend")]
 use crate::{utils::Rectangle, wayland::compositor::SurfaceData};
 use cgmath::{prelude::*, Matrix3, Vector2};
@@ -178,7 +180,7 @@ pub trait Frame {
     fn render_texture_at(
         &mut self,
         texture: &Self::TextureId,
-        pos: (i32, i32),
+        pos: Point<i32, Physical>,
         transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
@@ -186,7 +188,7 @@ pub trait Frame {
 
         // position and scale
         let size = texture.size();
-        mat = mat * Matrix3::from_translation(Vector2::new(pos.0 as f32, pos.1 as f32));
+        mat = mat * Matrix3::from_translation(Vector2::new(pos.x as f32, pos.y as f32));
         mat = mat * Matrix3::from_nonuniform_scale(size.0 as f32, size.1 as f32);
 
         //apply surface transformation
@@ -234,8 +236,7 @@ pub trait Renderer {
     /// - (Renderers not implementing `Bind` always have a default target.)
     fn render<F, R>(
         &mut self,
-        width: u32,
-        height: u32,
+        size: Size<i32, Physical>,
         transform: Transform,
         rendering: F,
     ) -> Result<R, Self::Error>
@@ -265,7 +266,7 @@ pub trait ImportShm: Renderer {
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
-        damage: &[Rectangle],
+        damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 
     /// Returns supported formats for shared memory buffers.
@@ -405,7 +406,7 @@ pub trait ImportAll: Renderer {
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
-        damage: &[Rectangle],
+        damage: &[Rectangle<i32, Buffer>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>>;
 }
 
@@ -420,7 +421,7 @@ impl<R: Renderer + ImportShm + ImportEgl + ImportDma> ImportAll for R {
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&SurfaceData>,
-        damage: &[Rectangle],
+        damage: &[Rectangle<i32, Buffer>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
         match buffer_type(buffer) {
             Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
@@ -440,7 +441,7 @@ impl<R: Renderer + ImportShm + ImportDma> ImportAll for R {
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&SurfaceData>,
-        damage: &[Rectangle],
+        damage: &[Rectangle<i32, Buffer>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
         match buffer_type(buffer) {
             Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
@@ -497,29 +498,23 @@ pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
 ///
 /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`])
 #[cfg(feature = "wayland_frontend")]
-pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<(i32, i32)> {
+pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Physical>> {
     use crate::backend::allocator::Buffer;
 
     if let Some(buf) = buffer.as_ref().user_data().get::<Dmabuf>() {
-        return Some((buf.width() as i32, buf.height() as i32));
+        return Some((buf.width() as i32, buf.height() as i32).into());
     }
 
     #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
-    if let Some((w, h)) = BUFFER_READER
+    if let Some(dim) = BUFFER_READER
         .lock()
         .unwrap()
         .as_ref()
         .and_then(|x| x.upgrade())
         .and_then(|x| x.egl_buffer_dimensions(&buffer))
     {
-        return Some((w, h));
+        return Some(dim);
     }
 
-    if let Ok((w, h)) =
-        crate::wayland::shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height))
-    {
-        return Some((w, h));
-    }
-
-    None
+    crate::wayland::shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height).into()).ok()
 }

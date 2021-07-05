@@ -8,8 +8,10 @@ use wayland_server::{
     Filter, Main,
 };
 
-use crate::wayland::compositor;
-use crate::wayland::Serial;
+use crate::{
+    utils::{Logical, Point},
+    wayland::{compositor, Serial},
+};
 
 static CURSOR_IMAGE_ROLE: &str = "cursor_image";
 
@@ -17,7 +19,7 @@ static CURSOR_IMAGE_ROLE: &str = "cursor_image";
 #[derive(Debug, Default, Copy, Clone)]
 pub struct CursorImageAttributes {
     /// Location of the hotspot of the pointer in the surface
-    pub hotspot: (i32, i32),
+    pub hotspot: Point<i32, Logical>,
 }
 
 /// Possible status of a cursor as requested by clients
@@ -50,9 +52,9 @@ impl fmt::Debug for GrabStatus {
 
 struct PointerInternal {
     known_pointers: Vec<WlPointer>,
-    focus: Option<(WlSurface, (f64, f64))>,
-    pending_focus: Option<(WlSurface, (f64, f64))>,
-    location: (f64, f64),
+    focus: Option<(WlSurface, Point<i32, Logical>)>,
+    pending_focus: Option<(WlSurface, Point<i32, Logical>)>,
+    location: Point<f64, Logical>,
     grab: GrabStatus,
     pressed_buttons: Vec<u32>,
     image_callback: Box<dyn FnMut(CursorImageStatus)>,
@@ -82,7 +84,7 @@ impl PointerInternal {
             known_pointers: Vec::new(),
             focus: None,
             pending_focus: None,
-            location: (0.0, 0.0),
+            location: (0.0, 0.0).into(),
             grab: GrabStatus::None,
             pressed_buttons: Vec::new(),
             image_callback: Box::new(cb) as Box<_>,
@@ -201,8 +203,8 @@ impl PointerHandle {
     /// of enter/motion/leave events.
     pub fn motion(
         &self,
-        location: (f64, f64),
-        focus: Option<(WlSurface, (f64, f64))>,
+        location: Point<f64, Logical>,
+        focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
@@ -243,7 +245,7 @@ impl PointerHandle {
     }
 
     /// Access the current location of this pointer in the global space
-    pub fn current_location(&self) -> (f64, f64) {
+    pub fn current_location(&self) -> Point<f64, Logical> {
         self.inner.borrow().location
     }
 }
@@ -254,11 +256,11 @@ pub struct GrabStartData {
     /// The focused surface and its location, if any, at the start of the grab.
     ///
     /// The location coordinates are in the global compositor space.
-    pub focus: Option<(WlSurface, (f64, f64))>,
+    pub focus: Option<(WlSurface, Point<i32, Logical>)>,
     /// The button that initiated the grab.
     pub button: u32,
     /// The location of the click that initiated the grab, in the global compositor space.
-    pub location: (f64, f64),
+    pub location: Point<f64, Logical>,
 }
 
 /// A trait to implement a pointer grab
@@ -281,8 +283,8 @@ pub trait PointerGrab {
     fn motion(
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
-        location: (f64, f64),
-        focus: Option<(WlSurface, (f64, f64))>,
+        location: Point<f64, Logical>,
+        focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     );
@@ -328,12 +330,12 @@ impl<'a> PointerInnerHandle<'a> {
     }
 
     /// Access the current focus of this pointer
-    pub fn current_focus(&self) -> Option<&(WlSurface, (f64, f64))> {
+    pub fn current_focus(&self) -> Option<&(WlSurface, Point<i32, Logical>)> {
         self.inner.focus.as_ref()
     }
 
     /// Access the current location of this pointer in the global space
-    pub fn current_location(&self) -> (f64, f64) {
+    pub fn current_location(&self) -> Point<f64, Logical> {
         self.inner.location
     }
 
@@ -358,14 +360,14 @@ impl<'a> PointerInnerHandle<'a> {
     /// of enter/motion/leave events.
     pub fn motion(
         &mut self,
-        (x, y): (f64, f64),
-        focus: Option<(WlSurface, (f64, f64))>,
+        location: Point<f64, Logical>,
+        focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
         // do we leave a surface ?
         let mut leave = true;
-        self.inner.location = (x, y);
+        self.inner.location = location;
         if let Some((ref current_focus, _)) = self.inner.focus {
             if let Some((ref surface, _)) = focus {
                 if current_focus.as_ref().equals(surface.as_ref()) {
@@ -385,14 +387,15 @@ impl<'a> PointerInnerHandle<'a> {
         }
 
         // do we enter one ?
-        if let Some((surface, (sx, sy))) = focus {
+        if let Some((surface, surface_location)) = focus {
             let entered = self.inner.focus.is_none();
             // in all cases, update the focus, the coordinates of the surface
             // might have changed
-            self.inner.focus = Some((surface, (sx, sy)));
+            self.inner.focus = Some((surface, surface_location));
+            let (x, y) = (location - surface_location.to_f64()).into();
             if entered {
                 self.inner.with_focused_pointers(|pointer, surface| {
-                    pointer.enter(serial.into(), &surface, x - sx, y - sy);
+                    pointer.enter(serial.into(), &surface, x, y);
                     if pointer.as_ref().version() >= 5 {
                         pointer.frame();
                     }
@@ -400,7 +403,7 @@ impl<'a> PointerInnerHandle<'a> {
             } else {
                 // we were on top of a surface and remained on it
                 self.inner.with_focused_pointers(|pointer, _| {
-                    pointer.motion(time, x - sx, y - sy);
+                    pointer.motion(time, x, y);
                     if pointer.as_ref().version() >= 5 {
                         pointer.frame();
                     }
@@ -600,7 +603,9 @@ pub(crate) fn implement_pointer(pointer: Main<WlPointer>, handle: Option<&Pointe
                                     }
                                     compositor::with_states(&surface, |states| {
                                         states.data_map.insert_if_missing_threadsafe(|| {
-                                            Mutex::new(CursorImageAttributes { hotspot: (0, 0) })
+                                            Mutex::new(CursorImageAttributes {
+                                                hotspot: (0, 0).into(),
+                                            })
                                         });
                                         states
                                             .data_map
@@ -608,7 +613,7 @@ pub(crate) fn implement_pointer(pointer: Main<WlPointer>, handle: Option<&Pointe
                                             .unwrap()
                                             .lock()
                                             .unwrap()
-                                            .hotspot = (hotspot_x, hotspot_y);
+                                            .hotspot = (hotspot_x, hotspot_y).into();
                                     })
                                     .unwrap();
 
@@ -653,8 +658,8 @@ impl PointerGrab for DefaultGrab {
     fn motion(
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
-        location: (f64, f64),
-        focus: Option<(WlSurface, (f64, f64))>,
+        location: Point<f64, Logical>,
+        focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
@@ -701,8 +706,8 @@ impl PointerGrab for ClickGrab {
     fn motion(
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
-        location: (f64, f64),
-        _focus: Option<(WlSurface, (f64, f64))>,
+        location: Point<f64, Logical>,
+        _focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {

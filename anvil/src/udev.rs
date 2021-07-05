@@ -48,7 +48,10 @@ use smithay::{
             Display,
         },
     },
-    utils::signaling::{Linkable, SignalToken, Signaler},
+    utils::{
+        signaling::{Linkable, SignalToken, Signaler},
+        Logical, Point,
+    },
     wayland::{
         output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,
@@ -335,8 +338,7 @@ fn scan_connectors(
                     let mode = connector_info.modes()[0];
                     let size = mode.size();
                     let mode = Mode {
-                        width: size.0 as i32,
-                        height: size.1 as i32,
+                        size: (size.0 as i32, size.1 as i32).into(),
                         refresh: (mode.vrefresh() * 1000) as i32,
                     };
 
@@ -346,11 +348,11 @@ fn scan_connectors(
                         connector_info.interface_id()
                     );
 
+                    let (phys_w, phys_h) = connector_info.size().unwrap_or((0, 0));
                     output_map.add(
                         &output_name,
                         PhysicalProperties {
-                            width: connector_info.size().unwrap_or((0, 0)).0 as i32,
-                            height: connector_info.size().unwrap_or((0, 0)).1 as i32,
+                            size: (phys_w as i32, phys_h as i32).into(),
                             subpixel: wl_output::Subpixel::Unknown,
                             make: "Smithay".into(),
                             model: "Generic DRM".into(),
@@ -618,7 +620,7 @@ impl AnvilState<UdevData> {
                 &mut *self.window_map.borrow_mut(),
                 &self.backend_data.output_map,
                 &*self.output_map.borrow(),
-                &self.pointer_location,
+                self.pointer_location,
                 &device_backend.pointer_image,
                 &*self.dnd_icon.lock().unwrap(),
                 &mut *self.cursor_status.lock().unwrap(),
@@ -666,7 +668,7 @@ fn render_surface(
     window_map: &mut WindowMap,
     backend_output_map: &[UdevOutputMap],
     output_map: &crate::output_map::OutputMap,
-    pointer_location: &(f64, f64),
+    pointer_location: Point<f64, Logical>,
     pointer_image: &Gles2Texture,
     dnd_icon: &Option<wl_surface::WlSurface>,
     cursor_status: &mut CursorImageStatus,
@@ -692,27 +694,24 @@ fn render_surface(
     // and draw to our buffer
     match renderer
         .render(
-            output_geometry.width as u32,
-            output_geometry.height as u32,
+            // TODO: handle scale factor
+            output_geometry.size.to_physical(1),
             Transform::Flipped180, // Scanout is rotated
             |renderer, frame| {
                 frame.clear([0.8, 0.8, 0.9, 1.0])?;
                 // draw the surfaces
                 draw_windows(renderer, frame, window_map, output_geometry, logger)?;
 
-                // get pointer coordinates
-                let (ptr_x, ptr_y) = *pointer_location;
-                let ptr_x = ptr_x.trunc().abs() as i32 - output_geometry.x;
-                let ptr_y = ptr_y.trunc().abs() as i32 - output_geometry.y;
-
                 // set cursor
-                if ptr_x >= 0 && ptr_x < output_geometry.width && ptr_y >= 0 && ptr_y < output_geometry.height
-                {
+                if output_geometry.to_f64().contains(pointer_location) {
+                    let (ptr_x, ptr_y) = pointer_location.into();
+                    let relative_ptr_location =
+                        Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)) - output_geometry.loc;
                     // draw the dnd icon if applicable
                     {
                         if let Some(ref wl_surface) = dnd_icon.as_ref() {
                             if wl_surface.as_ref().is_alive() {
-                                draw_dnd_icon(renderer, frame, wl_surface, (ptr_x, ptr_y), logger)?;
+                                draw_dnd_icon(renderer, frame, wl_surface, relative_ptr_location, logger)?;
                             }
                         }
                     }
@@ -728,9 +727,15 @@ fn render_surface(
                         }
 
                         if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
-                            draw_cursor(renderer, frame, wl_surface, (ptr_x, ptr_y), logger)?;
+                            draw_cursor(renderer, frame, wl_surface, relative_ptr_location, logger)?;
                         } else {
-                            frame.render_texture_at(pointer_image, (ptr_x, ptr_y), Transform::Normal, 1.0)?;
+                            // TODO: handle output scale factor
+                            frame.render_texture_at(
+                                pointer_image,
+                                relative_ptr_location.to_physical(1),
+                                Transform::Normal,
+                                1.0,
+                            )?;
                         }
                     }
                 }
@@ -776,7 +781,7 @@ fn initial_render(surface: &mut RenderSurface, renderer: &mut Gles2Renderer) -> 
     renderer.bind(dmabuf)?;
     // Does not matter if we render an empty frame
     renderer
-        .render(1, 1, Transform::Normal, |_, frame| {
+        .render((1, 1).into(), Transform::Normal, |_, frame| {
             frame
                 .clear([0.8, 0.8, 0.9, 1.0])
                 .map_err(Into::<SwapBuffersError>::into)

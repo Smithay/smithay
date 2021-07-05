@@ -93,7 +93,7 @@ pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::SubsurfaceCachedState;
 use self::tree::PrivateSurfaceData;
 pub use self::tree::{AlreadyHasRole, TraversalAction};
-use crate::utils::{DeadResource, Rectangle};
+use crate::utils::{Buffer, DeadResource, Logical, Point, Rectangle};
 use wayland_server::{
     protocol::{
         wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor, wl_surface::WlSurface,
@@ -106,11 +106,11 @@ use wayland_server::{
 #[derive(Debug)]
 pub enum Damage {
     /// A rectangle containing the damaged zone, in surface coordinates
-    Surface(Rectangle),
+    Surface(Rectangle<i32, Logical>),
     /// A rectangle containing the damaged zone, in buffer coordinates
     ///
     /// Note: Buffer scaling must be taken into consideration
-    Buffer(Rectangle),
+    Buffer(Rectangle<i32, Buffer>),
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -155,7 +155,7 @@ pub enum BufferAssignment {
         /// The buffer object
         buffer: wl_buffer::WlBuffer,
         /// location of the new buffer relative to the previous one
-        delta: (i32, i32),
+        delta: Point<i32, Logical>,
     },
 }
 
@@ -227,29 +227,6 @@ impl Default for SurfaceAttributes {
     }
 }
 
-/// Attributes defining the behaviour of a sub-surface relative to its parent
-#[derive(Copy, Clone, Debug)]
-pub struct SubsurfaceRole {
-    /// Location of the top-left corner of this sub-surface relative to
-    /// the top-left corner of its parent
-    pub location: (i32, i32),
-    /// Sync status of this sub-surface
-    ///
-    /// If `true`, this surface should be repainted synchronously with its parent
-    /// if `false`, it should be considered independent of its parent regarding
-    /// repaint timings.
-    pub sync: bool,
-}
-
-impl Default for SubsurfaceRole {
-    fn default() -> SubsurfaceRole {
-        SubsurfaceRole {
-            location: (0, 0),
-            sync: true,
-        }
-    }
-}
-
 /// Kind of a rectangle part of a region
 #[derive(Copy, Clone, Debug)]
 pub enum RectangleKind {
@@ -270,7 +247,7 @@ pub enum RectangleKind {
 #[derive(Clone, Debug)]
 pub struct RegionAttributes {
     /// List of rectangle part of this region
-    pub rects: Vec<(RectangleKind, Rectangle)>,
+    pub rects: Vec<(RectangleKind, Rectangle<i32, Logical>)>,
 }
 
 impl Default for RegionAttributes {
@@ -281,7 +258,8 @@ impl Default for RegionAttributes {
 
 impl RegionAttributes {
     /// Checks whether given point is inside the region.
-    pub fn contains(&self, point: (i32, i32)) -> bool {
+    pub fn contains<P: Into<Point<i32, Logical>>>(&self, point: P) -> bool {
+        let point: Point<i32, Logical> = point.into();
         let mut contains = false;
         for (kind, rect) in &self.rects {
             if rect.contains(point) {
@@ -483,15 +461,7 @@ mod tests {
     #[test]
     fn region_attributes_add() {
         let region = RegionAttributes {
-            rects: vec![(
-                RectangleKind::Add,
-                Rectangle {
-                    x: 0,
-                    y: 0,
-                    width: 10,
-                    height: 10,
-                },
-            )],
+            rects: vec![(RectangleKind::Add, Rectangle::from_loc_and_size((0, 0), (10, 10)))],
         };
 
         assert_eq!(region.contains((0, 0)), true);
@@ -501,23 +471,10 @@ mod tests {
     fn region_attributes_add_subtract() {
         let region = RegionAttributes {
             rects: vec![
-                (
-                    RectangleKind::Add,
-                    Rectangle {
-                        x: 0,
-                        y: 0,
-                        width: 10,
-                        height: 10,
-                    },
-                ),
+                (RectangleKind::Add, Rectangle::from_loc_and_size((0, 0), (10, 10))),
                 (
                     RectangleKind::Subtract,
-                    Rectangle {
-                        x: 0,
-                        y: 0,
-                        width: 5,
-                        height: 5,
-                    },
+                    Rectangle::from_loc_and_size((0, 0), (5, 5)),
                 ),
             ],
         };
@@ -530,33 +487,12 @@ mod tests {
     fn region_attributes_add_subtract_add() {
         let region = RegionAttributes {
             rects: vec![
-                (
-                    RectangleKind::Add,
-                    Rectangle {
-                        x: 0,
-                        y: 0,
-                        width: 10,
-                        height: 10,
-                    },
-                ),
+                (RectangleKind::Add, Rectangle::from_loc_and_size((0, 0), (10, 10))),
                 (
                     RectangleKind::Subtract,
-                    Rectangle {
-                        x: 0,
-                        y: 0,
-                        width: 5,
-                        height: 5,
-                    },
+                    Rectangle::from_loc_and_size((0, 0), (5, 5)),
                 ),
-                (
-                    RectangleKind::Add,
-                    Rectangle {
-                        x: 2,
-                        y: 2,
-                        width: 2,
-                        height: 2,
-                    },
-                ),
+                (RectangleKind::Add, Rectangle::from_loc_and_size((2, 2), (2, 2))),
             ],
         };
 

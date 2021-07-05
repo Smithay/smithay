@@ -49,7 +49,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::wayland::{compositor, Serial};
+use crate::{
+    utils::{Logical, Point, Size},
+    wayland::{compositor, Serial},
+};
 
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_shell, wl_shell_surface, wl_surface},
@@ -132,8 +135,8 @@ impl ShellSurface {
     }
 
     /// Send a configure event to this toplevel surface to suggest it a new configuration
-    pub fn send_configure(&self, size: (u32, u32), edges: wl_shell_surface::Resize) {
-        self.shell_surface.configure(edges, size.0 as i32, size.1 as i32)
+    pub fn send_configure(&self, size: Size<i32, Logical>, edges: wl_shell_surface::Resize) {
+        self.shell_surface.configure(edges, size.w, size.h)
     }
 
     /// Signal a popup surface that it has lost focus
@@ -155,7 +158,7 @@ pub enum ShellSurfaceKind {
         /// The surface considered as parent
         parent: wl_surface::WlSurface,
         /// Location relative to the parent
-        location: (i32, i32),
+        location: Point<i32, Logical>,
         /// Wether this window should be marked as inactive
         inactive: bool,
     },
@@ -181,7 +184,7 @@ pub enum ShellSurfaceKind {
         /// Wether this popup should be marked as inactive
         inactive: bool,
         /// Location of the popup relative to its parent
-        location: (i32, i32),
+        location: Point<i32, Logical>,
         /// Seat associated this the input that triggered the creation of the
         /// popup. Used to define when the "popup done" event is sent.
         seat: wl_seat::WlSeat,

@@ -1,4 +1,5 @@
 use super::{ButtonState, Event, InputBackend, UnusedEvent};
+use crate::utils::{Logical, Point, Raw};
 use bitflags::bitflags;
 
 /// Description of physical tablet tool
@@ -62,21 +63,22 @@ pub trait TabletToolEvent<B: InputBackend> {
     fn tool(&self) -> TabletToolDescriptor;
 
     /// Delta between the last and new pointer device position interpreted as pixel movement
-    fn delta(&self) -> (f64, f64) {
-        (self.delta_x(), self.delta_y())
+    fn delta(&self) -> Point<f64, Logical> {
+        (self.delta_x(), self.delta_y()).into()
     }
 
     /// Tool position in the device's native coordinate space
-    fn position(&self) -> (f64, f64) {
-        (self.x(), self.y())
+    fn position(&self) -> Point<f64, Raw> {
+        (self.x(), self.y()).into()
     }
 
     /// Tool position converted into the target coordinate space.
-    fn position_transformed(&self, coordinate_space: (u32, u32)) -> (f64, f64) {
+    fn position_transformed(&self, coordinate_space: Point<u32, Logical>) -> Point<f64, Logical> {
         (
-            self.x_transformed(coordinate_space.0),
-            self.y_transformed(coordinate_space.1),
+            self.x_transformed(coordinate_space.x),
+            self.y_transformed(coordinate_space.y),
         )
+            .into()
     }
 
     /// Returns the current tilt along the (X,Y) axis of the tablet's current logical

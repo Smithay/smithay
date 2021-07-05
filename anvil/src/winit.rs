@@ -65,7 +65,7 @@ pub fn run_winit(
         );
     };
 
-    let (w, h): (u32, u32) = renderer.borrow().window_size().physical_size.into();
+    let size = renderer.borrow().window_size().physical_size;
 
     /*
      * Initialize the globals
@@ -74,16 +74,14 @@ pub fn run_winit(
     let mut state = AnvilState::init(display.clone(), event_loop.handle(), WinitData, log.clone());
 
     let mode = Mode {
-        width: w as i32,
-        height: h as i32,
+        size,
         refresh: 60_000,
     };
 
     state.output_map.borrow_mut().add(
         OUTPUT_NAME,
         PhysicalProperties {
-            width: 0,
-            height: 0,
+            size: (0, 0).into(),
             subpixel: wl_output::Subpixel::Unknown,
             make: "Smithay".into(),
             model: "Winit".into(),
@@ -132,13 +130,13 @@ pub fn run_winit(
                         &log,
                     )?;
 
-                    let (x, y) = state.pointer_location;
+                    let (x, y) = state.pointer_location.into();
                     // draw the dnd icon if any
                     {
                         let guard = state.dnd_icon.lock().unwrap();
                         if let Some(ref surface) = *guard {
                             if surface.as_ref().is_alive() {
-                                draw_dnd_icon(renderer, frame, surface, (x as i32, y as i32), &log)?;
+                                draw_dnd_icon(renderer, frame, surface, (x as i32, y as i32).into(), &log)?;
                             }
                         }
                     }
@@ -157,7 +155,7 @@ pub fn run_winit(
                         // draw as relevant
                         if let CursorImageStatus::Image(ref surface) = *guard {
                             cursor_visible = false;
-                            draw_cursor(renderer, frame, surface, (x as i32, y as i32), &log)?;
+                            draw_cursor(renderer, frame, surface, (x as i32, y as i32).into(), &log)?;
                         } else {
                             cursor_visible = true;
                         }
