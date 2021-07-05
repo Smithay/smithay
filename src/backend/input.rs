@@ -20,11 +20,8 @@ pub trait Device: PartialEq + Eq + std::hash::Hash {
     /// Test if this device has a specific capability
     fn has_capability(&self, capability: DeviceCapability) -> bool;
 
-    /// Get the product ID for this device.
-    fn id_product(&self) -> Option<u32>;
-
-    /// Get the vendor ID for this device.
-    fn id_vendor(&self) -> Option<u32>;
+    /// Returns device USB (product,vendor) id
+    fn usb_id(&self) -> Option<(u32, u32)>;
 
     /// Returns the syspath of the device.
     ///

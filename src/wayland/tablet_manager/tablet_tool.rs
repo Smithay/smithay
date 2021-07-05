@@ -2,7 +2,7 @@ use std::ops::Deref as _;
 use std::sync::Mutex;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::backend::input::{ButtonState, TabletToolDescriptor, TabletToolType};
+use crate::backend::input::{ButtonState, TabletToolCapabilitys, TabletToolDescriptor, TabletToolType};
 use crate::wayland::seat::{CursorImageAttributes, CursorImageStatus};
 use wayland_protocols::unstable::tablet::v2::server::{
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
@@ -318,27 +318,27 @@ impl TabletToolHandle {
             let low: u32 = tool.hardware_id_wacom as u32;
             wl_tool.hardware_id_wacom(high, low);
 
-            if tool.capabilitys.pressure {
+            if tool.capabilitys.contains(TabletToolCapabilitys::PRESSURE) {
                 wl_tool.capability(zwp_tablet_tool_v2::Capability::Pressure);
             }
 
-            if tool.capabilitys.distance {
+            if tool.capabilitys.contains(TabletToolCapabilitys::DISTANCE) {
                 wl_tool.capability(zwp_tablet_tool_v2::Capability::Distance);
             }
 
-            if tool.capabilitys.tilt {
+            if tool.capabilitys.contains(TabletToolCapabilitys::TILT) {
                 wl_tool.capability(zwp_tablet_tool_v2::Capability::Tilt);
             }
 
-            if tool.capabilitys.slider {
+            if tool.capabilitys.contains(TabletToolCapabilitys::SLIDER) {
                 wl_tool.capability(zwp_tablet_tool_v2::Capability::Slider);
             }
 
-            if tool.capabilitys.rotation {
+            if tool.capabilitys.contains(TabletToolCapabilitys::ROTATION) {
                 wl_tool.capability(zwp_tablet_tool_v2::Capability::Rotation);
             }
 
-            if tool.capabilitys.wheel {
+            if tool.capabilitys.contains(TabletToolCapabilitys::WHEEL) {
                 wl_tool.capability(zwp_tablet_tool_v2::Capability::Wheel);
             }
 

@@ -1,4 +1,5 @@
 use super::{ButtonState, Event, InputBackend, UnusedEvent};
+use bitflags::bitflags;
 
 /// Description of physical tablet tool
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -35,23 +36,24 @@ pub enum TabletToolType {
     Totem,
 }
 
-/// Describes extra capabilities on a tablet.
-///
-/// Any tool must provide x and y values, extra axes are device-specific.
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct TabletToolCapabilitys {
-    /// Tilt axes
-    pub tilt: bool,
-    /// Pressure axis
-    pub pressure: bool,
-    /// Distance axis
-    pub distance: bool,
-    /// Z-rotation axis
-    pub rotation: bool,
-    /// Slider axis
-    pub slider: bool,
-    /// Wheel axis
-    pub wheel: bool,
+bitflags! {
+    /// Describes extra capabilities on a tablet.
+    ///
+    /// Any tool must provide x and y values, extra axes are device-specific.
+    pub struct TabletToolCapabilitys: u32 {
+        /// Tilt axes
+        const TILT = 1;
+        /// Pressure axis
+        const PRESSURE = 2;
+        /// Distance axis
+        const DISTANCE = 4;
+        /// Z-rotation axis
+        const ROTATION = 16;
+        /// Slider axis
+        const SLIDER = 32;
+        /// Wheel axis
+        const WHEEL = 64;
+    }
 }
 
 /// Tablet tool event
@@ -110,7 +112,7 @@ pub trait TabletToolEvent<B: InputBackend> {
     /// Return the current absolute Y coordinate of the tablet tool event, transformed to screen coordinates.
     fn y_transformed(&self, height: u32) -> f64;
 
-    /// Returns the current pressure being applied on the tool in use, normalized to the range [0, 1].
+    /// Returns the current distance from the tablet's sensor, normalized to the range [0, 1]
     ///
     /// If this axis does not exist on the current tool, this function returns 0.
     fn distance(&self) -> f64;
@@ -118,7 +120,7 @@ pub trait TabletToolEvent<B: InputBackend> {
     /// Check if the distance axis was updated in this event.
     fn distance_has_changed(&self) -> bool;
 
-    /// Returns the current distance from the tablet's sensor, normalized to the range [0, 1]
+    /// Returns the current pressure being applied on the tool in use, normalized to the range [0, 1].
     ///
     /// If this axis does not exist on the current tool, this function returns 0.
     fn pressure(&self) -> f64;
@@ -168,7 +170,8 @@ pub trait TabletToolEvent<B: InputBackend> {
 
     /// Returns the current z rotation of the tool in degrees, clockwise from the tool's logical neutral position.
     ///
-    /// For tools of type Mouse and Lens the logical neutral position is pointing to the current logical north of the tablet. For tools of type Brush, the logical neutral position is with the buttons pointing up.
+    /// For tools of type Mouse and Lens the logical neutral position is pointing to the current logical north of the tablet.
+    /// For tools of type Brush, the logical neutral position is with the buttons pointing up.
     ///
     /// If this axis does not exist on the current tool, this function returns 0.
     fn rotation(&self) -> f64;
@@ -264,7 +267,8 @@ impl<B: InputBackend> TabletToolAxisEvent<B> for UnusedEvent {}
 /// detectable distance of the tablet device. A tool that is out of proximity cannot
 /// generate events.
 ///
-/// On some hardware a tool goes out of proximity when it ceases to touch the surface. On /// other hardware, the tool is still detectable within a short distance (a few cm) off
+/// On some hardware a tool goes out of proximity when it ceases to touch the surface. On
+/// other hardware, the tool is still detectable within a short distance (a few cm) off
 /// the surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProximityState {
@@ -339,7 +343,8 @@ pub trait TabletToolButtonEvent<B: InputBackend>: TabletToolEvent<B> + Event<B> 
     /// Return the button that triggered this event.
     fn button(&self) -> u32;
 
-    /// For the button of a TabletToolButtonEvent, return the total number of buttons pressed on all devices on the associated seat after the the event was triggered.
+    /// For the button of a TabletToolButtonEvent,
+    /// return the total number of buttons pressed on all devices on the associated seat after the the event was triggered.
     fn seat_button_count(&self) -> u32;
 
     /// Return the button state of the event.

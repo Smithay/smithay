@@ -308,11 +308,7 @@ impl Device for WinitVirtualDevice {
         )
     }
 
-    fn id_product(&self) -> Option<u32> {
-        None
-    }
-
-    fn id_vendor(&self) -> Option<u32> {
+    fn usb_id(&self) -> Option<(u32, u32)> {
         None
     }
 

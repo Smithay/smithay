@@ -26,8 +26,7 @@
 //!    .tablet_seat()                     // Get TabletSeat asosiated with this seat
 //!    .add_tablet(&TabletDescriptor {    // Add a new tablet to a seat
 //!        name: "Test".into(),
-//!        id_product: None,
-//!        id_vendor: None,
+//!        usb_id: None,
 //!        syspath: None,
 //!    });
 //!
@@ -75,11 +74,9 @@ pub fn init_tablet_manager_global(display: &mut Display) -> Global<ZwpTabletMana
                         user_data.insert_if_missing(TabletSeatHandle::default);
 
                         let instance = tablet_seat;
-                        let tablet_seat = user_data.get::<TabletSeatHandle>();
+                        let tablet_seat = user_data.get::<TabletSeatHandle>().unwrap();
 
-                        if let Some(tablet_seat) = tablet_seat {
-                            tablet_seat.add_instance(instance);
-                        }
+                        tablet_seat.add_instance(instance);
                     }
                     zwp_tablet_manager_v2::Request::Destroy => {
                         // Nothing to do

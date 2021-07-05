@@ -97,12 +97,11 @@ impl backend::Device for libinput::Device {
         libinput::Device::has_capability(self, capability.into())
     }
 
-    fn id_product(&self) -> Option<u32> {
-        Some(libinput::Device::id_product(self))
-    }
-
-    fn id_vendor(&self) -> Option<u32> {
-        Some(libinput::Device::id_vendor(self))
+    fn usb_id(&self) -> Option<(u32, u32)> {
+        Some((
+            libinput::Device::id_product(self),
+            libinput::Device::id_vendor(self),
+        ))
     }
 
     fn syspath(&self) -> Option<PathBuf> {

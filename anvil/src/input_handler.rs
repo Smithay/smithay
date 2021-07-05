@@ -16,7 +16,7 @@ use smithay::{
     wayland::{
         output::Mode,
         seat::{keysyms as xkb, AxisFrame, Keysym, ModifiersState},
-        tablet_manager::TabletSeatTrait,
+        tablet_manager::{TabletDescriptor, TabletSeatTrait},
         SERIAL_COUNTER as SCOUNTER,
     },
 };
@@ -246,14 +246,16 @@ impl AnvilState<UdevData> {
             InputEvent::TabletToolButton { event, .. } => self.on_tablet_button::<B>(event),
             InputEvent::DeviceAdded { device } => {
                 if device.has_capability(DeviceCapability::TabletTool) {
-                    self.seat.tablet_seat().add_tablet(&device.into());
+                    self.seat
+                        .tablet_seat()
+                        .add_tablet(&TabletDescriptor::from(&device));
                 }
             }
             InputEvent::DeviceRemoved { device } => {
                 if device.has_capability(DeviceCapability::TabletTool) {
                     let tablet_seat = self.seat.tablet_seat();
 
-                    tablet_seat.remove_tablet(&device.into());
+                    tablet_seat.remove_tablet(&TabletDescriptor::from(&device));
 
                     // If there are no tablets in seat we can remove all tools
                     if tablet_seat.count_tablets() == 0 {
@@ -283,68 +285,84 @@ impl AnvilState<UdevData> {
     }
 
     fn on_tablet_tool_axis<B: InputBackend>(&mut self, evt: B::TabletToolAxisEvent) {
-        if let Some(out) = self.backend_data.output_map.first() {
-            self.pointer_location = evt.position_transformed(out.size);
+        let output_map = self.output_map.borrow();
+        let pointer_location = &mut self.pointer_location;
+        let tablet_seat = self.seat.tablet_seat();
+        let window_map = self.window_map.borrow();
 
-            let under = self.window_map.borrow().get_surface_under(self.pointer_location);
-            let tablet = self.seat.tablet_seat().get_tablet(&evt.device().into());
-            let tool = self.seat.tablet_seat().get_tool(&evt.tool());
+        output_map
+            .with_primary(|_, rect| {
+                pointer_location.0 = evt.x_transformed(rect.width as u32) + rect.x as f64;
+                pointer_location.1 = evt.y_transformed(rect.height as u32) + rect.y as f64;
 
-            if let (Some(tablet), Some(tool)) = (tablet, tool) {
-                if evt.pressure_has_changed() {
-                    tool.pressure(evt.pressure());
-                }
-                if evt.distance_has_changed() {
-                    tool.distance(evt.distance());
-                }
-                if evt.tilt_has_changed() {
-                    tool.tilt(evt.tilt());
-                }
-                if evt.slider_has_changed() {
-                    tool.slider_position(evt.slider_position());
-                }
-                if evt.rotation_has_changed() {
-                    tool.rotation(evt.rotation());
-                }
-                if evt.wheel_has_changed() {
-                    tool.wheel(evt.wheel_delta(), evt.wheel_delta_discrete());
-                }
+                let under = window_map.get_surface_under(*pointer_location);
+                let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
+                let tool = tablet_seat.get_tool(&evt.tool());
 
-                tool.motion(
-                    self.pointer_location,
-                    under,
-                    &tablet,
-                    SCOUNTER.next_serial(),
-                    evt.time(),
-                );
-            }
-        }
-    }
+                if let (Some(tablet), Some(tool)) = (tablet, tool) {
+                    if evt.pressure_has_changed() {
+                        tool.pressure(evt.pressure());
+                    }
+                    if evt.distance_has_changed() {
+                        tool.distance(evt.distance());
+                    }
+                    if evt.tilt_has_changed() {
+                        tool.tilt(evt.tilt());
+                    }
+                    if evt.slider_has_changed() {
+                        tool.slider_position(evt.slider_position());
+                    }
+                    if evt.rotation_has_changed() {
+                        tool.rotation(evt.rotation());
+                    }
+                    if evt.wheel_has_changed() {
+                        tool.wheel(evt.wheel_delta(), evt.wheel_delta_discrete());
+                    }
 
-    fn on_tablet_tool_proximity<B: InputBackend>(&mut self, evt: B::TabletToolProximityEvent) {
-        if let Some(out) = self.backend_data.output_map.first() {
-            let tool = evt.tool();
-            self.seat.tablet_seat().add_tool(&tool);
-
-            self.pointer_location = evt.position_transformed(out.size);
-
-            let under = self.window_map.borrow().get_surface_under(self.pointer_location);
-            let tablet = self.seat.tablet_seat().get_tablet(&evt.device().into());
-            let tool = self.seat.tablet_seat().get_tool(&tool);
-
-            if let (Some(under), Some(tablet), Some(tool)) = (under, tablet, tool) {
-                match evt.state() {
-                    ProximityState::In => tool.proximity_in(
-                        self.pointer_location,
+                    tool.motion(
+                        *pointer_location,
                         under,
                         &tablet,
                         SCOUNTER.next_serial(),
                         evt.time(),
-                    ),
-                    ProximityState::Out => tool.proximity_out(evt.time()),
+                    );
                 }
-            }
-        }
+            })
+            .unwrap();
+    }
+
+    fn on_tablet_tool_proximity<B: InputBackend>(&mut self, evt: B::TabletToolProximityEvent) {
+        let output_map = self.output_map.borrow();
+        let pointer_location = &mut self.pointer_location;
+        let tablet_seat = self.seat.tablet_seat();
+        let window_map = self.window_map.borrow();
+
+        output_map
+            .with_primary(|_, rect| {
+                let tool = evt.tool();
+                tablet_seat.add_tool(&tool);
+
+                pointer_location.0 = evt.x_transformed(rect.width as u32) + rect.x as f64;
+                pointer_location.1 = evt.y_transformed(rect.height as u32) + rect.y as f64;
+
+                let under = window_map.get_surface_under(*pointer_location);
+                let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
+                let tool = tablet_seat.get_tool(&tool);
+
+                if let (Some(under), Some(tablet), Some(tool)) = (under, tablet, tool) {
+                    match evt.state() {
+                        ProximityState::In => tool.proximity_in(
+                            *pointer_location,
+                            under,
+                            &tablet,
+                            SCOUNTER.next_serial(),
+                            evt.time(),
+                        ),
+                        ProximityState::Out => tool.proximity_out(evt.time()),
+                    }
+                }
+            })
+            .unwrap();
     }
 
     fn on_tablet_tool_tip<B: InputBackend>(&mut self, evt: B::TabletToolTipEvent) {

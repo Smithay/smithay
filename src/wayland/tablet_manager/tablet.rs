@@ -14,21 +14,18 @@ use crate::backend::input::Device;
 pub struct TabletDescriptor {
     /// Tablet device name
     pub name: String,
-    /// Tablet device USB product id
-    pub id_product: Option<u32>,
-    /// Tablet device USB vendor id
-    pub id_vendor: Option<u32>,
+    /// Tablet device USB (product,vendor) id
+    pub usb_id: Option<(u32, u32)>,
     /// Path to the device
     pub syspath: Option<PathBuf>,
 }
 
-impl<D: Device> From<D> for TabletDescriptor {
-    fn from(device: D) -> Self {
+impl<D: Device> From<&D> for TabletDescriptor {
+    fn from(device: &D) -> Self {
         TabletDescriptor {
             name: device.name(),
             syspath: device.syspath(),
-            id_product: device.id_product(),
-            id_vendor: device.id_vendor(),
+            usb_id: device.usb_id(),
         }
     }
 }
@@ -67,7 +64,7 @@ impl TabletHandle {
 
             wl_tablet.name(tablet.name.clone());
 
-            if let (Some(id_product), Some(id_vendor)) = (tablet.id_product, tablet.id_vendor) {
+            if let Some((id_product, id_vendor)) = tablet.usb_id {
                 wl_tablet.id(id_product, id_vendor);
             }
 

@@ -43,7 +43,7 @@ impl fmt::Debug for TabletSeat {
 ///
 /// TabletSeat extends `Seat` with graphic tablet specyfic functionality
 ///
-/// TabletSeatHandle can be used to advertise avalible graphics tablets and tools to wayland clients
+/// TabletSeatHandle can be used to advertise available graphics tablets and tools to wayland clients
 #[derive(Default, Debug, Clone)]
 pub struct TabletSeatHandle {
     inner: Rc<RefCell<TabletSeat>>,
@@ -53,12 +53,12 @@ impl TabletSeatHandle {
     pub(super) fn add_instance(&self, seat: Main<ZwpTabletSeatV2>) {
         let mut inner = self.inner.borrow_mut();
 
-        // Notify new instance about avaluble tablets
+        // Notify new instance about available tablets
         for (desc, tablet) in inner.tablets.iter_mut() {
             tablet.new_instance(seat.deref(), desc);
         }
 
-        // Notify new instance about avalible tools
+        // Notify new instance about available tools
         for (desc, tool) in inner.tools.iter_mut() {
             let inner = self.inner.clone();
             tool.new_instance(seat.deref(), desc, move |desc, status| {
@@ -89,7 +89,7 @@ impl TabletSeatHandle {
 
     /// Add a new tablet to a seat.
     ///
-    /// You can either add tablet on [LibinputEvent::NewDevice](crate::backend::libinput::LibinputEvent::NewDevice) event,
+    /// You can either add tablet on [input::Event::DeviceAdded](crate::backend::input::InputEvent::DeviceAdded) event,
     /// or you can add tablet based on tool event, then clients will not know about devices that are not being used
     ///
     /// Returns new [TabletHandle] if tablet was not know by this seat, if tablet was allready know it returns exsisting handle.
@@ -124,7 +124,7 @@ impl TabletSeatHandle {
     /// Remove tablet device
     ///
     /// Called when tablet is no longer avalible
-    /// For example on [LibinputEvent::RemovedDevice](crate::backend::libinput::LibinputEvent::RemovedDevice) event.
+    /// For example on [input::Event::DeviceRemoved](crate::backend::input::InputEvent::DeviceRemoved) event.
     pub fn remove_tablet(&self, tablet_desc: &TabletDescriptor) {
         self.inner.borrow_mut().tablets.remove(tablet_desc);
     }

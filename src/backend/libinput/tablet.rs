@@ -9,16 +9,16 @@ use input::event::{tablet_tool, EventTrait};
 use super::LibinputInputBackend;
 
 /// Marker for tablet tool events
-pub trait IsTabetEvent: tablet_tool::TabletToolEventTrait + EventTrait {}
+pub trait IsTabletEvent: tablet_tool::TabletToolEventTrait + EventTrait {}
 
-impl IsTabetEvent for tablet_tool::TabletToolAxisEvent {}
-impl IsTabetEvent for tablet_tool::TabletToolProximityEvent {}
-impl IsTabetEvent for tablet_tool::TabletToolTipEvent {}
-impl IsTabetEvent for tablet_tool::TabletToolButtonEvent {}
+impl IsTabletEvent for tablet_tool::TabletToolAxisEvent {}
+impl IsTabletEvent for tablet_tool::TabletToolProximityEvent {}
+impl IsTabletEvent for tablet_tool::TabletToolTipEvent {}
+impl IsTabletEvent for tablet_tool::TabletToolButtonEvent {}
 
 impl<E> backend::Event<LibinputInputBackend> for E
 where
-    E: IsTabetEvent,
+    E: IsTabletEvent,
 {
     fn time(&self) -> u32 {
         tablet_tool::TabletToolEventTrait::time(self)
@@ -51,7 +51,7 @@ impl backend::TabletToolTipEvent<LibinputInputBackend> for tablet_tool::TabletTo
 
 impl<E> backend::TabletToolEvent<LibinputInputBackend> for E
 where
-    E: IsTabetEvent + event::EventTrait,
+    E: IsTabletEvent + event::EventTrait,
 {
     fn tool(&self) -> TabletToolDescriptor {
         let tool = self.tool();
@@ -70,14 +70,14 @@ where
         let hardware_serial = tool.serial();
         let hardware_id_wacom = tool.tool_id();
 
-        let capabilitys = TabletToolCapabilitys {
-            tilt: tool.has_tilt(),
-            pressure: tool.has_pressure(),
-            distance: tool.has_distance(),
-            rotation: tool.has_rotation(),
-            slider: tool.has_slider(),
-            wheel: tool.has_wheel(),
-        };
+        let mut capabilitys = TabletToolCapabilitys::empty();
+
+        capabilitys.set(TabletToolCapabilitys::TILT, tool.has_tilt());
+        capabilitys.set(TabletToolCapabilitys::PRESSURE, tool.has_pressure());
+        capabilitys.set(TabletToolCapabilitys::DISTANCE, tool.has_distance());
+        capabilitys.set(TabletToolCapabilitys::ROTATION, tool.has_rotation());
+        capabilitys.set(TabletToolCapabilitys::SLIDER, tool.has_slider());
+        capabilitys.set(TabletToolCapabilitys::WHEEL, tool.has_wheel());
 
         TabletToolDescriptor {
             tool_type,
