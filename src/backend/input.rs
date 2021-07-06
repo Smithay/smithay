@@ -1,6 +1,13 @@
 //! Common traits for input backends to receive input from.
 
-use std::error::Error;
+use std::{error::Error, path::PathBuf};
+
+mod tablet;
+
+pub use tablet::{
+    ProximityState, TabletToolAxisEvent, TabletToolButtonEvent, TabletToolCapabilitys, TabletToolDescriptor,
+    TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TabletToolType,
+};
 
 /// Trait for generic functions every input device does provide
 pub trait Device: PartialEq + Eq + std::hash::Hash {
@@ -12,6 +19,14 @@ pub trait Device: PartialEq + Eq + std::hash::Hash {
     fn name(&self) -> String;
     /// Test if this device has a specific capability
     fn has_capability(&self, capability: DeviceCapability) -> bool;
+
+    /// Returns device USB (product,vendor) id
+    fn usb_id(&self) -> Option<(u32, u32)>;
+
+    /// Returns the syspath of the device.
+    ///
+    /// The path is an absolute path and includes the sys mount point.
+    fn syspath(&self) -> Option<PathBuf>;
 }
 
 /// Set of input types a device may provide
@@ -105,9 +120,9 @@ pub enum MouseButton {
     Other(u8),
 }
 
-/// State of a button on a mouse. Either pressed or released
+/// State of a button on a pointer device, like mouse or tablet tool. Either pressed or released
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum MouseButtonState {
+pub enum ButtonState {
     /// Button is released
     Released,
     /// Button is pressed
@@ -119,7 +134,7 @@ pub trait PointerButtonEvent<B: InputBackend>: Event<B> {
     /// Pressed button of the event
     fn button(&self) -> MouseButton;
     /// State of the button
-    fn state(&self) -> MouseButtonState;
+    fn state(&self) -> ButtonState;
 }
 
 impl<B: InputBackend> PointerButtonEvent<B> for UnusedEvent {
@@ -127,7 +142,7 @@ impl<B: InputBackend> PointerButtonEvent<B> for UnusedEvent {
         match *self {}
     }
 
-    fn state(&self) -> MouseButtonState {
+    fn state(&self) -> ButtonState {
         match *self {}
     }
 }
@@ -481,6 +496,14 @@ pub trait InputBackend: Sized {
     type TouchCancelEvent: TouchCancelEvent<Self>;
     /// Type representing touch frame events
     type TouchFrameEvent: TouchFrameEvent<Self>;
+    /// Type representing axis events on tablet devices
+    type TabletToolAxisEvent: TabletToolAxisEvent<Self>;
+    /// Type representing proximity events on tablet devices
+    type TabletToolProximityEvent: TabletToolProximityEvent<Self>;
+    /// Type representing tip events on tablet devices
+    type TabletToolTipEvent: TabletToolTipEvent<Self>;
+    /// Type representing button events on tablet tool devices
+    type TabletToolButtonEvent: TabletToolButtonEvent<Self>;
 
     /// Special events that are custom to this backend
     type SpecialEvent;
@@ -557,6 +580,31 @@ pub enum InputEvent<B: InputBackend> {
         /// The touch frame event
         event: B::TouchFrameEvent,
     },
+
+    /// A tablet tool axis was emited
+    TabletToolAxis {
+        /// The tablet tool axis event
+        event: B::TabletToolAxisEvent,
+    },
+
+    /// A tablet tool proximity was emited
+    TabletToolProximity {
+        /// The tablet tool proximity  event
+        event: B::TabletToolProximityEvent,
+    },
+
+    /// A tablet tool tip event was emited
+    TabletToolTip {
+        /// The tablet tool axis event
+        event: B::TabletToolTipEvent,
+    },
+
+    /// A tablet tool button was pressed or released
+    TabletToolButton {
+        /// The pointer button event
+        event: B::TabletToolButtonEvent,
+    },
+
     /// Special event specific of this backend
     Special(B::SpecialEvent),
 }

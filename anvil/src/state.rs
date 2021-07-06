@@ -16,6 +16,7 @@ use smithay::{
         data_device::{default_action_chooser, init_data_device, set_data_device_focus, DataDeviceEvent},
         seat::{CursorImageStatus, KeyboardHandle, PointerHandle, Seat, XkbConfig},
         shm::init_shm_global,
+        tablet_manager::{init_tablet_manager_global, TabletSeatTrait},
     },
 };
 
@@ -41,6 +42,7 @@ pub struct AnvilState<BackendData> {
     pub pointer_location: (f64, f64),
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
     pub seat_name: String,
+    pub seat: Seat,
     pub start_time: std::time::Instant,
     // things we must keep alive
     #[cfg(feature = "xwayland")]
@@ -121,6 +123,14 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             *cursor_status2.lock().unwrap() = new_status
         });
 
+        init_tablet_manager_global(&mut display.borrow_mut());
+
+        let cursor_status3 = cursor_status.clone();
+        seat.tablet_seat().on_cursor_surface(move |_tool, new_status| {
+            // TODO: tablet tools should have their own cursors
+            *cursor_status3.lock().unwrap() = new_status;
+        });
+
         let keyboard = seat
             .add_keyboard(XkbConfig::default(), 200, 25, |seat, focus| {
                 set_data_device_focus(seat, focus.and_then(|s| s.as_ref().client()))
@@ -159,6 +169,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             cursor_status,
             pointer_location: (0.0, 0.0),
             seat_name,
+            seat,
             start_time: std::time::Instant::now(),
             #[cfg(feature = "xwayland")]
             xwayland,

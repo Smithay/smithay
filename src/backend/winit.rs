@@ -23,8 +23,8 @@ use crate::backend::egl::display::EGLDisplay;
 use crate::backend::{
     egl::{context::GlAttributes, native, EGLContext, EGLSurface, Error as EGLError},
     input::{
-        Axis, AxisSource, Device, DeviceCapability, Event as BackendEvent, InputBackend, InputEvent,
-        KeyState, KeyboardKeyEvent, MouseButton, MouseButtonState, PointerAxisEvent, PointerButtonEvent,
+        Axis, AxisSource, ButtonState, Device, DeviceCapability, Event as BackendEvent, InputBackend,
+        InputEvent, KeyState, KeyboardKeyEvent, MouseButton, PointerAxisEvent, PointerButtonEvent,
         PointerMotionAbsoluteEvent, TouchCancelEvent, TouchDownEvent, TouchMotionEvent, TouchSlot,
         TouchUpEvent, UnusedEvent,
     },
@@ -33,7 +33,7 @@ use crate::backend::{
         Bind, Renderer, Transform, Unbind,
     },
 };
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Instant};
 use wayland_egl as wegl;
 use winit::{
     dpi::{LogicalPosition, LogicalSize, PhysicalSize},
@@ -307,6 +307,14 @@ impl Device for WinitVirtualDevice {
             DeviceCapability::Keyboard | DeviceCapability::Pointer | DeviceCapability::Touch
         )
     }
+
+    fn usb_id(&self) -> Option<(u32, u32)> {
+        None
+    }
+
+    fn syspath(&self) -> Option<PathBuf> {
+        None
+    }
 }
 
 /// Errors that may happen when driving the event loop of [`WinitInputBackend`]
@@ -460,7 +468,7 @@ impl PointerButtonEvent<WinitInputBackend> for WinitMouseInputEvent {
         self.button.into()
     }
 
-    fn state(&self) -> MouseButtonState {
+    fn state(&self) -> ButtonState {
         self.state.into()
     }
 }
@@ -619,6 +627,10 @@ impl InputBackend for WinitInputBackend {
     type TouchMotionEvent = WinitTouchMovedEvent;
     type TouchCancelEvent = WinitTouchCancelledEvent;
     type TouchFrameEvent = UnusedEvent;
+    type TabletToolAxisEvent = UnusedEvent;
+    type TabletToolProximityEvent = UnusedEvent;
+    type TabletToolTipEvent = UnusedEvent;
+    type TabletToolButtonEvent = UnusedEvent;
 
     type SpecialEvent = WinitEvent;
 
@@ -846,11 +858,11 @@ impl From<ElementState> for KeyState {
     }
 }
 
-impl From<ElementState> for MouseButtonState {
+impl From<ElementState> for ButtonState {
     fn from(state: ElementState) -> Self {
         match state {
-            ElementState::Pressed => MouseButtonState::Pressed,
-            ElementState::Released => MouseButtonState::Released,
+            ElementState::Pressed => ButtonState::Pressed,
+            ElementState::Released => ButtonState::Released,
         }
     }
 }
