@@ -19,7 +19,7 @@ use smithay::{
         egl::{EGLContext, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
-            gles2::{Gles2Renderer, Gles2Texture},
+            gles2::{Gles2Error, Gles2Renderer, Gles2Texture},
             Bind, Frame, Renderer, Transform,
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
@@ -469,9 +469,7 @@ impl AnvilState<UdevData> {
                 &self.log,
             )));
 
-            let pointer_image = renderer
-                .borrow_mut()
-                .import_bitmap(&self.backend_data.pointer_image)
+            let pointer_image = import_bitmap(&mut *renderer.borrow_mut(), &self.backend_data.pointer_image)
                 .expect("Failed to load pointer");
 
             let dev_id = device.device_id();
@@ -800,4 +798,33 @@ fn initial_render(surface: &mut RenderSurface, renderer: &mut Gles2Renderer) -> 
         .and_then(|x| x.map_err(Into::<SwapBuffersError>::into))?;
     surface.queue_buffer()?;
     Ok(())
+}
+
+fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
+    renderer: &mut Gles2Renderer,
+    image: &image::ImageBuffer<image::Rgba<u8>, C>,
+) -> Result<Gles2Texture, Gles2Error> {
+    use smithay::backend::renderer::gles2::ffi;
+
+    renderer.with_context(|renderer, gl| unsafe {
+        let mut tex = 0;
+        gl.GenTextures(1, &mut tex);
+        gl.BindTexture(ffi::TEXTURE_2D, tex);
+        gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
+        gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+        gl.TexImage2D(
+            ffi::TEXTURE_2D,
+            0,
+            ffi::RGBA as i32,
+            image.width() as i32,
+            image.height() as i32,
+            0,
+            ffi::RGBA,
+            ffi::UNSIGNED_BYTE as u32,
+            image.as_ptr() as *const _,
+        );
+        gl.BindTexture(ffi::TEXTURE_2D, 0);
+
+        Gles2Texture::from_raw(renderer, tex, image.width(), image.height())
+    })
 }

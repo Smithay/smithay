@@ -217,20 +217,6 @@ pub trait Renderer {
     /// Type representing a currently in-progress frame during the [`Renderer::render`]-call
     type Frame: Frame<Error = Self::Error, TextureId = Self::TextureId>;
 
-    /// Import a given bitmap into the renderer.
-    ///
-    /// Returns a texture_id, which can be used with `render_texture(_at)` or implementation-specific functions.
-    ///
-    /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it,
-    /// and needs to be freed by calling `destroy_texture` on this renderer to avoid a resource leak.
-    ///
-    /// This operation needs no bound or default rendering target.
-    #[cfg(feature = "image")]
-    fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
-        &mut self,
-        image: &image::ImageBuffer<image::Rgba<u8>, C>,
-    ) -> Result<Self::TextureId, Self::Error>;
-
     /// Initialize a rendering context on the current rendering target with given dimensions and transformation.
     ///
     /// This function *may* error, if:

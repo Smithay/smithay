@@ -1015,50 +1015,6 @@ impl Renderer for Gles2Renderer {
     type TextureId = Gles2Texture;
     type Frame = Gles2Frame;
 
-    #[cfg(feature = "image")]
-    fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
-        &mut self,
-        image: &image::ImageBuffer<image::Rgba<u8>, C>,
-    ) -> Result<Self::TextureId, Self::Error> {
-        self.make_current()?;
-
-        let mut tex = 0;
-        unsafe {
-            self.gl.GenTextures(1, &mut tex);
-            self.gl.BindTexture(ffi::TEXTURE_2D, tex);
-            self.gl
-                .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
-            self.gl
-                .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
-            self.gl.TexImage2D(
-                ffi::TEXTURE_2D,
-                0,
-                ffi::RGBA as i32,
-                image.width() as i32,
-                image.height() as i32,
-                0,
-                ffi::RGBA,
-                ffi::UNSIGNED_BYTE as u32,
-                image.as_ptr() as *const _,
-            );
-            self.gl.BindTexture(ffi::TEXTURE_2D, 0);
-        }
-
-        let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
-            texture: tex,
-            texture_kind: 0,
-            is_external: false,
-            y_inverted: false,
-            width: image.width(),
-            height: image.height(),
-            egl_images: None,
-            destruction_callback_sender: self.destruction_callback_sender.clone(),
-        }));
-        self.egl.unbind()?;
-
-        Ok(texture)
-    }
-
     fn render<F, R>(
         &mut self,
         size: Size<i32, Physical>,

@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 bitflags = "1.2.1"
 input = { version = "0.5.0", features = ["udev"], optional = true }
-image = { version = "0.23.0", optional = true, default-features = false }
+image = { version = "0.23.14", default-features = false, optional = true }
 rand = "0.7"
 slog = { version = "2.1.1" }
 slog-term = "2.8"
@@ -36,7 +36,7 @@ gl_generator = "0.14"
 default = [ "winit", "udev", "logind", "egl", "xwayland" ]
 egl = [ "smithay/use_system_lib", "smithay/backend_egl" ]
 winit = [ "smithay/backend_winit" ]
-udev = [ "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_drm", "smithay/backend_gbm", "smithay/backend_egl", "smithay/backend_session", "input", "image", "smithay/image"]
+udev = [ "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_drm", "smithay/backend_gbm", "smithay/backend_egl", "smithay/backend_session", "input", "image" ]
 logind = [ "smithay/backend_session_logind" ]
 elogind = ["logind", "smithay/backend_session_elogind" ]
 libseat = ["smithay/backend_session_libseat" ]
