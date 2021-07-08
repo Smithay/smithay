@@ -143,7 +143,7 @@ pub fn run_udev(log: Logger) {
         pointer_image: ImageBuffer::from_raw(64, 64, pointer_bytes.to_vec()).unwrap(),
         render_timer: timer.handle(),
     };
-    let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone());
+    let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone(), true);
 
     // re-render timer
     event_loop

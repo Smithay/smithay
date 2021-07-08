@@ -8,7 +8,7 @@ repository = "https://github.com/Smithay/smithay"
 edition = "2018"
 
 [workspace]
-members = [ "anvil" ]
+members = [ "anvil", "wlcs_anvil" ]
 
 [dependencies]
 appendlist = "1.4"
