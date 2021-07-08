@@ -100,11 +100,10 @@ impl Backend for UdevData {
     }
 }
 
-pub fn run_udev(
-    display: Rc<RefCell<Display>>,
-    event_loop: &mut EventLoop<'static, AnvilState<UdevData>>,
-    log: Logger,
-) -> Result<(), ()> {
+pub fn run_udev(log: Logger) {
+    let mut event_loop = EventLoop::try_new().unwrap();
+    let display = Rc::new(RefCell::new(Display::new()));
+
     let name = display
         .borrow_mut()
         .add_socket_auto()
@@ -116,7 +115,13 @@ pub fn run_udev(
     /*
      * Initialize session
      */
-    let (session, notifier) = AutoSession::new(log.clone()).ok_or(())?;
+    let (session, notifier) = match AutoSession::new(log.clone()) {
+        Some(ret) => ret,
+        None => {
+            crit!(log, "Could not initialize a session");
+            return;
+        }
+    };
     let session_signal = notifier.signaler();
 
     /*
@@ -150,7 +155,13 @@ pub fn run_udev(
     /*
      * Initialize the udev backend
      */
-    let udev_backend = UdevBackend::new(state.seat_name.clone(), log.clone()).map_err(|_| ())?;
+    let udev_backend = match UdevBackend::new(state.seat_name.clone(), log.clone()) {
+        Ok(ret) => ret,
+        Err(err) => {
+            crit!(log, "Failed to initialize udev backend"; "error" => err);
+            return;
+        }
+    };
 
     /*
      * Initialize a fake output (we render one screen to every device in this example)
@@ -248,8 +259,6 @@ pub fn run_udev(
     event_loop.handle().remove(session_event_source);
     event_loop.handle().remove(libinput_event_source);
     event_loop.handle().remove(udev_event_source);
-
-    Ok(())
 }
 
 pub type RenderSurface = GbmBufferedSurface<SessionFd>;
