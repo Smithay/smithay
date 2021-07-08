@@ -29,7 +29,7 @@ use crate::shell::init_shell;
 
 pub struct AnvilState<BackendData> {
     pub backend_data: BackendData,
-    pub socket_name: String,
+    pub socket_name: Option<String>,
     pub running: Arc<AtomicBool>,
     pub display: Rc<RefCell<Display>>,
     pub handle: LoopHandle<'static, AnvilState<BackendData>>,
@@ -57,6 +57,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         handle: LoopHandle<'static, AnvilState<BackendData>>,
         backend_data: BackendData,
         log: slog::Logger,
+        listen_on_socket: bool,
     ) -> AnvilState<BackendData> {
         // init the wayland connection
         handle
@@ -85,14 +86,19 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         init_xdg_output_manager(&mut display.borrow_mut(), log.clone());
 
-        let socket_name = display
-            .borrow_mut()
-            .add_socket_auto()
-            .unwrap()
-            .into_string()
-            .unwrap();
-        info!(log, "Listening on wayland socket"; "name" => socket_name.clone());
-        ::std::env::set_var("WAYLAND_DISPLAY", &socket_name);
+        let socket_name = if listen_on_socket {
+            let socket_name = display
+                .borrow_mut()
+                .add_socket_auto()
+                .unwrap()
+                .into_string()
+                .unwrap();
+            info!(log, "Listening on wayland socket"; "name" => socket_name.clone());
+            ::std::env::set_var("WAYLAND_DISPLAY", &socket_name);
+            Some(socket_name)
+        } else {
+            None
+        };
 
         // init data device
 
