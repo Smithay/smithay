@@ -94,7 +94,7 @@ pub fn run_winit(log: Logger) {
         #[cfg(feature = "debug")]
         fps: fps_ticker::Fps::default(),
     };
-    let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone());
+    let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone(), true);
 
     let mode = Mode {
         size,

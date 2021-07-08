@@ -142,7 +142,7 @@ pub fn run_udev(log: Logger) {
         pointer_image: crate::cursor::Cursor::load(&log),
         render_timer: timer.handle(),
     };
-    let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone());
+    let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone(), true);
 
     // re-render timer
     event_loop

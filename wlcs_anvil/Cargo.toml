@@ -1,0 +1,20 @@
+[package]
+name = "wlcs_anvil"
+version = "0.0.1"
+authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victor Brekenfeld)"]
+license = "MIT"
+publish = false
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+smithay = { path = "..", default-features=false, features=["wayland_frontend"] }
+anvil = { path = "../anvil", default-features=false }
+wayland-sys = { version = "0.28.6", features=["client"] }
+libc = "0.2"
+memoffset = "0.6"
+slog = "2.0"
+cgmath = "0.18"
+nix = "0.20"
