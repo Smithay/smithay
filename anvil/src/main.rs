@@ -44,6 +44,8 @@ fn main() {
         //std::sync::Mutex::new(slog_term::term_full().fuse()).fuse(),
         o!(),
     );
+    let _guard = slog_scope::set_global_logger(log.clone());
+    slog_stdlog::init().expect("Could not setup log backend");
 
     let arg = ::std::env::args().nth(1);
     match arg.as_ref().map(|s| &s[..]) {

@@ -14,12 +14,14 @@ rand = "0.7"
 slog = { version = "2.1.1" }
 slog-term = "2.8"
 slog-async = "2.2"
+slog-stdlog = "4.1.0"
+slog-scope = "4.4.0"
 xkbcommon = "0.4.0"
 
 [dependencies.smithay]
 path = ".."
 default-features = false
-features = [ "renderer_gl", "backend_egl", "wayland_frontend" ]
+features = [ "renderer_gl", "backend_egl", "wayland_frontend", "slog-stdlog" ]
 
 [dependencies.x11rb]
 optional = true

@@ -75,24 +75,9 @@ pub struct EGLDisplay {
 
 fn select_platform_display<N: EGLNativeDisplay + 'static>(
     native: &N,
+    dp_extensions: &[String],
     log: &::slog::Logger,
 ) -> Result<*const c_void, Error> {
-    let dp_extensions = unsafe {
-        let p = wrap_egl_call(|| ffi::egl::QueryString(ffi::egl::NO_DISPLAY, ffi::egl::EXTENSIONS as i32))
-            .map_err(Error::InitFailed)?; //TODO EGL_EXT_client_extensions not supported
-
-        // this possibility is available only with EGL 1.5 or EGL_EXT_platform_base, otherwise
-        // `eglQueryString` returns an error
-        if p.is_null() {
-            return Err(Error::EglExtensionNotSupported(&["EGL_EXT_platform_base"]));
-        } else {
-            let p = CStr::from_ptr(p);
-            let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
-            list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
-        }
-    };
-    debug!(log, "Supported EGL client extensions: {:?}", dp_extensions);
-
     for platform in native.supported_platforms() {
         debug!(log, "Trying EGL platform: {}", platform.platform_name);
 
@@ -160,10 +145,11 @@ impl EGLDisplay {
         L: Into<Option<::slog::Logger>>,
     {
         let log = crate::slog_or_fallback(logger.into()).new(o!("smithay_module" => "backend_egl"));
-        ffi::make_sure_egl_is_loaded();
 
+        let dp_extensions = ffi::make_sure_egl_is_loaded()?;
+        debug!(log, "Supported EGL client extensions: {:?}", dp_extensions);
         // we create an EGLDisplay
-        let display = select_platform_display(native, &log)?;
+        let display = select_platform_display(native, &dp_extensions, &log)?;
 
         // We can then query the egl api version
         let egl_version = {
