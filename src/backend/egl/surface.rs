@@ -6,8 +6,6 @@ use std::sync::{
     Arc,
 };
 
-use nix::libc::c_int;
-
 use crate::backend::egl::{
     display::{EGLDisplay, EGLDisplayHandle, PixelFormat},
     ffi,
@@ -15,7 +13,7 @@ use crate::backend::egl::{
     EGLError, SwapBuffersError,
 };
 
-use slog::{debug, o, trace};
+use slog::{debug, o};
 
 /// EGL surface of a given EGL context for rendering
 pub struct EGLSurface {
@@ -24,7 +22,6 @@ pub struct EGLSurface {
     pub(crate) surface: AtomicPtr<nix::libc::c_void>,
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: PixelFormat,
-    surface_attributes: Vec<c_int>,
     logger: ::slog::Logger,
 }
 
@@ -36,7 +33,6 @@ impl fmt::Debug for EGLSurface {
             .field("surface", &self.surface)
             .field("config_id", &self.config_id)
             .field("pixel_format", &self.pixel_format)
-            .field("surface_attributes", &self.surface_attributes)
             .field("logger", &self.logger)
             .finish()
     }
@@ -58,7 +54,6 @@ impl EGLSurface {
     pub fn new<N, L>(
         display: &EGLDisplay,
         pixel_format: PixelFormat,
-        double_buffered: Option<bool>,
         config: ffi::egl::types::EGLConfig,
         native: N,
         log: L,
@@ -69,29 +64,7 @@ impl EGLSurface {
     {
         let log = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "renderer_egl"));
 
-        let surface_attributes = {
-            let mut out: Vec<c_int> = Vec::with_capacity(3);
-
-            match double_buffered {
-                Some(true) => {
-                    trace!(log, "Setting RENDER_BUFFER to BACK_BUFFER");
-                    out.push(ffi::egl::RENDER_BUFFER as c_int);
-                    out.push(ffi::egl::BACK_BUFFER as c_int);
-                }
-                Some(false) => {
-                    trace!(log, "Setting RENDER_BUFFER to SINGLE_BUFFER");
-                    out.push(ffi::egl::RENDER_BUFFER as c_int);
-                    out.push(ffi::egl::SINGLE_BUFFER as c_int);
-                }
-                None => {}
-            }
-
-            out.push(ffi::egl::NONE as i32);
-            out
-        };
-
-        let surface = native.create(&display.display, config, &surface_attributes)?;
-
+        let surface = native.create(&display.display, config)?;
         if surface == ffi::egl::NO_SURFACE {
             return Err(EGLError::BadSurface);
         }
@@ -102,7 +75,6 @@ impl EGLSurface {
             surface: AtomicPtr::new(surface as *mut _),
             config_id: config,
             pixel_format,
-            surface_attributes,
             logger: log,
         })
     }
@@ -129,7 +101,7 @@ impl EGLSurface {
                 .compare_exchange(
                     surface,
                     self.native
-                        .create(&self.display, self.config_id, &self.surface_attributes)
+                        .create(&self.display, self.config_id)
                         .map_err(SwapBuffersError::EGLCreateSurface)? as *mut _,
                     Ordering::SeqCst,
                     Ordering::SeqCst,

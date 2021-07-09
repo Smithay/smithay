@@ -300,9 +300,6 @@ pub struct PixelFormatRequirements {
     pub depth_bits: Option<u8>,
     /// Minimum number of bits for the depth buffer. `None` means "don't care". The default value is `None`.
     pub stencil_bits: Option<u8>,
-    /// If `true`, only double-buffered formats will be considered. If `false`, only single-buffer formats.
-    /// `None` means "don't care". The default is `None`.
-    pub double_buffer: Option<bool>,
     /// Contains the minimum number of samples per pixel in the color, depth and stencil buffers.
     /// `None` means "don't care". Default is `None`. A value of `Some(0)` indicates that multisampling must not be enabled.
     pub multisampling: Option<u16>,
@@ -317,7 +314,6 @@ impl Default for PixelFormatRequirements {
             alpha_bits: Some(8),
             depth_bits: Some(24),
             stencil_bits: Some(8),
-            double_buffer: Some(true),
             multisampling: None,
         }
     }
