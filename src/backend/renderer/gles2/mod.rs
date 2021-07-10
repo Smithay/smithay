@@ -1019,6 +1019,9 @@ impl Renderer for Gles2Renderer {
         unsafe {
             self.gl.Viewport(0, 0, size.w, size.h);
 
+            self.gl.Scissor(0, 0, size.w, size.h);
+            self.gl.Enable(ffi::SCISSOR_TEST);
+
             self.gl.Enable(ffi::BLEND);
             self.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
         }
