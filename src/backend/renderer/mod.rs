@@ -10,16 +10,18 @@
 use std::collections::HashSet;
 use std::error::Error;
 
-use crate::utils::{Physical, Point, Size};
+use crate::utils::{Buffer, Physical, Point, Rectangle, Size};
 
 #[cfg(feature = "wayland_frontend")]
-use crate::{utils::Rectangle, wayland::compositor::SurfaceData};
-use cgmath::{prelude::*, Matrix3, Vector2};
+use crate::wayland::compositor::SurfaceData;
+use cgmath::{prelude::*, Matrix3, Vector2, Vector3};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
+#[cfg(feature = "wayland_frontend")]
+use crate::backend::allocator::{dmabuf::Dmabuf, Format};
 #[cfg(all(
     feature = "wayland_frontend",
     feature = "backend_egl",
@@ -28,11 +30,6 @@ pub mod gles2;
 use crate::backend::egl::{
     display::{EGLBufferReader, BUFFER_READER},
     Error as EglError,
-};
-#[cfg(feature = "wayland_frontend")]
-use crate::{
-    backend::allocator::{dmabuf::Dmabuf, Format},
-    utils::Buffer,
 };
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -142,9 +139,9 @@ pub trait Unbind: Renderer {
 
 /// A two dimensional texture
 pub trait Texture {
-    /// Size of the texture plane (w x h)
-    fn size(&self) -> (u32, u32) {
-        (self.width(), self.height())
+    /// Size of the texture plane
+    fn size(&self) -> Size<i32, Buffer> {
+        Size::from((self.width() as i32, self.height() as i32))
     }
 
     /// Width of the texture plane
@@ -166,34 +163,57 @@ pub trait Frame {
     /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
     fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error>;
     /// Render a texture to the current target using given projection matrix and alpha.
-    ///
-    /// This operation is only valid in between a `begin` and `finish`-call.
-    /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
+    /// The given verticies are used to source the texture. This is mostly useful for cropping the texture.
     fn render_texture(
         &mut self,
         texture: &Self::TextureId,
         matrix: Matrix3<f32>,
+        tex_coords: [Vector2<f32>; 4],
         alpha: f32,
     ) -> Result<(), Self::Error>;
+
     /// Render a texture to the current target as a flat 2d-plane at a given
-    /// position, applying the given transformation with the given alpha value.
-    ///
-    /// This operation is only valid in between a `begin` and `finish`-call.
-    /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
+    /// position and applying the given transformation with the given alpha value.
     fn render_texture_at(
         &mut self,
         texture: &Self::TextureId,
-        pos: Point<i32, Physical>,
+        pos: Point<f64, Physical>,
+        texture_scale: i32,
+        output_scale: f64,
         transform: Transform,
-        scale: f32,
+        alpha: f32,
+    ) -> Result<(), Self::Error> {
+        self.render_texture_from_to(
+            texture,
+            Rectangle::from_loc_and_size(Point::<i32, Buffer>::from((0, 0)), texture.size()),
+            Rectangle::from_loc_and_size(
+                pos,
+                texture
+                    .size()
+                    .to_logical(texture_scale)
+                    .to_f64()
+                    .to_physical(output_scale),
+            ),
+            transform,
+            alpha,
+        )
+    }
+
+    /// Render part of a texture as given by src to the current target into the rectangle described by dest
+    /// as a flat 2d-plane after applying the given transformations.
+    fn render_texture_from_to(
+        &mut self,
+        texture: &Self::TextureId,
+        src: Rectangle<i32, Buffer>,
+        dest: Rectangle<f64, Physical>,
+        transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
         let mut mat = Matrix3::<f32>::identity();
 
         // position and scale
-        let size = texture.size();
-        mat = mat * Matrix3::from_translation(Vector2::new(pos.x as f32, pos.y as f32));
-        mat = mat * Matrix3::from_nonuniform_scale(size.0 as f32 * scale, size.1 as f32 * scale);
+        mat = mat * Matrix3::from_translation(Vector2::new(dest.loc.x as f32, dest.loc.y as f32));
+        mat = mat * Matrix3::from_nonuniform_scale(dest.size.w as f32, dest.size.h as f32);
 
         //apply surface transformation
         mat = mat * Matrix3::from_translation(Vector2::new(0.5, 0.5));
@@ -204,7 +224,24 @@ pub trait Frame {
         mat = mat * transform.invert().matrix();
         mat = mat * Matrix3::from_translation(Vector2::new(-0.5, -0.5));
 
-        self.render_texture(texture, mat, alpha)
+        // this matrix should be regular, we can expect invert to succeed
+        let tex_size = texture.size();
+        let texture_mat = Matrix3::from_nonuniform_scale(tex_size.w as f32, tex_size.h as f32)
+            .invert()
+            .unwrap();
+        let verts = [
+            (texture_mat * Vector3::new((src.loc.x + src.size.w) as f32, src.loc.y as f32, 0.0)).truncate(), // top-right
+            (texture_mat * Vector3::new(src.loc.x as f32, src.loc.y as f32, 0.0)).truncate(), // top-left
+            (texture_mat
+                * Vector3::new(
+                    (src.loc.x + src.size.w) as f32,
+                    (src.loc.y + src.size.h) as f32,
+                    0.0,
+                ))
+            .truncate(), // bottom-right
+            (texture_mat * Vector3::new(src.loc.x as f32, (src.loc.y + src.size.h) as f32, 0.0)).truncate(), // bottom-left
+        ];
+        self.render_texture(texture, mat, verts, alpha)
     }
 }
 

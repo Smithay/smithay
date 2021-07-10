@@ -755,8 +755,9 @@ fn render_surface(
                                     .to_f64()
                                     .to_physical(output_scale as f64)
                                     .to_i32_round(),
+                                1,
+                                output_scale as f64,
                                 Transform::Normal,
-                                output_scale,
                                 1.0,
                             )?;
                         }

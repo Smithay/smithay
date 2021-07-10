@@ -155,7 +155,7 @@ where
             let mut location = *location;
             if let Some(ref data) = states.data_map.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
-                let buffer_scale = data.buffer_scale as f32;
+                let buffer_scale = data.buffer_scale;
                 if let Some(texture) = data
                     .texture
                     .as_mut()
@@ -167,12 +167,12 @@ where
                         let current = states.cached_state.current::<SubsurfaceCachedState>();
                         location += current.location;
                     }
-                    let render_scale = output_scale as f32 / buffer_scale;
                     if let Err(err) = frame.render_texture_at(
                         &texture.texture,
                         location.to_f64().to_physical(output_scale as f64).to_i32_round(),
+                        buffer_scale,
+                        output_scale as f64,
                         Transform::Normal, /* TODO */
-                        render_scale,
                         1.0,
                     ) {
                         result = Err(err.into());

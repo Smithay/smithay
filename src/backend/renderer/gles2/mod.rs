@@ -11,7 +11,7 @@ use std::sync::{
 };
 use std::{collections::HashSet, os::raw::c_char};
 
-use cgmath::{prelude::*, Matrix3};
+use cgmath::{prelude::*, Matrix3, Vector2};
 
 mod shaders;
 mod version;
@@ -76,7 +76,9 @@ impl Gles2Texture {
     ///
     /// Ownership over the texture is taken by the renderer, you should not free the texture yourself.
     ///
-    /// *Safety*: The renderer cannot make sure `tex` is a valid texture id.
+    /// # Safety
+    ///
+    /// The renderer cannot make sure `tex` is a valid texture id.
     pub unsafe fn from_raw(
         renderer: &Gles2Renderer,
         tex: ffi::types::GLuint,
@@ -979,20 +981,6 @@ impl Drop for Gles2Renderer {
     }
 }
 
-static VERTS: [ffi::types::GLfloat; 8] = [
-    1.0, 0.0, // top right
-    0.0, 0.0, // top left
-    1.0, 1.0, // bottom right
-    0.0, 1.0, // bottom left
-];
-
-static TEX_COORDS: [ffi::types::GLfloat; 8] = [
-    1.0, 0.0, // top right
-    0.0, 0.0, // top left
-    1.0, 1.0, // bottom right
-    0.0, 1.0, // bottom left
-];
-
 impl Gles2Renderer {
     /// Run custom code in the GL context owned by this renderer.
     ///
@@ -1085,6 +1073,13 @@ impl Renderer for Gles2Renderer {
     }
 }
 
+static VERTS: [ffi::types::GLfloat; 8] = [
+    1.0, 0.0, // top right
+    0.0, 0.0, // top left
+    1.0, 1.0, // bottom right
+    0.0, 1.0, // bottom left
+];
+
 impl Frame for Gles2Frame {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
@@ -1102,6 +1097,7 @@ impl Frame for Gles2Frame {
         &mut self,
         tex: &Self::TextureId,
         mut matrix: Matrix3<f32>,
+        tex_coords: [Vector2<f32>; 4],
         alpha: f32,
     ) -> Result<(), Self::Error> {
         //apply output transformation
@@ -1150,7 +1146,7 @@ impl Frame for Gles2Frame {
                 ffi::FLOAT,
                 ffi::FALSE,
                 0,
-                TEX_COORDS.as_ptr() as *const _,
+                tex_coords.as_ptr() as *const _, // cgmath::Vector2 is marked as repr(C), this cast should be safe
             );
 
             self.gl
