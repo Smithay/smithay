@@ -67,6 +67,35 @@ struct Gles2Program {
 #[derive(Debug, Clone)]
 pub struct Gles2Texture(Rc<Gles2TextureInternal>);
 
+impl Gles2Texture {
+    /// Create a Gles2Texture from a raw gl texture id.
+    ///
+    /// This expects the texture to be in RGBA format to be rendered
+    /// correctly by the `render_texture*`-functions of [`Frame`](super::Frame).
+    /// It is also expected to not be external or y_inverted.
+    ///
+    /// Ownership over the texture is taken by the renderer, you should not free the texture yourself.
+    ///
+    /// *Safety*: The renderer cannot make sure `tex` is a valid texture id.
+    pub unsafe fn from_raw(
+        renderer: &Gles2Renderer,
+        tex: ffi::types::GLuint,
+        width: u32,
+        height: u32,
+    ) -> Gles2Texture {
+        Gles2Texture(Rc::new(Gles2TextureInternal {
+            texture: tex,
+            texture_kind: 0,
+            is_external: false,
+            y_inverted: false,
+            width,
+            height,
+            egl_images: None,
+            destruction_callback_sender: renderer.destruction_callback_sender.clone(),
+        }))
+    }
+}
+
 #[derive(Debug)]
 struct Gles2TextureInternal {
     texture: ffi::types::GLuint,
@@ -963,6 +992,23 @@ static TEX_COORDS: [ffi::types::GLfloat; 8] = [
     1.0, 1.0, // bottom right
     0.0, 1.0, // bottom left
 ];
+
+impl Gles2Renderer {
+    /// Run custom code in the GL context owned by this renderer.
+    ///
+    /// *Note*: Any changes to the GL state should be restored at the end of this function.
+    /// Otherwise this can lead to rendering errors while using functions of this renderer.
+    /// Relying on any state set by the renderer may break on any smithay update as the
+    /// details about how this renderer works are considered an implementation detail.
+    pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
+    where
+        F: FnOnce(&mut Self, &ffi::Gles2) -> R,
+    {
+        self.make_current()?;
+        let gl = self.gl.clone();
+        Ok(func(self, &gl))
+    }
+}
 
 impl Renderer for Gles2Renderer {
     type Error = Gles2Error;
