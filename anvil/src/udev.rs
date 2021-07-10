@@ -90,7 +90,7 @@ pub struct UdevData {
     primary_gpu: Option<PathBuf>,
     backends: HashMap<dev_t, BackendData>,
     signaler: Signaler<SessionSignal>,
-    pointer_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
+    pointer_image: crate::cursor::Cursor,
     render_timer: TimerHandle<(u64, crtc::Handle)>,
 }
 
@@ -122,7 +122,6 @@ pub fn run_udev(
     /*
      * Initialize the compositor
      */
-    let pointer_bytes = include_bytes!("../resources/cursor2.rgba");
     #[cfg(feature = "egl")]
     let primary_gpu = primary_gpu(&session.seat()).unwrap_or_default();
 
@@ -135,7 +134,7 @@ pub fn run_udev(
         primary_gpu,
         backends: HashMap::new(),
         signaler: session_signal.clone(),
-        pointer_image: ImageBuffer::from_raw(64, 64, pointer_bytes.to_vec()).unwrap(),
+        pointer_image: crate::cursor::Cursor::load(&log),
         render_timer: timer.handle(),
     };
     let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone());
@@ -258,7 +257,7 @@ pub type RenderSurface = GbmBufferedSurface<SessionFd>;
 struct BackendData {
     _restart_token: SignalToken,
     surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>>>>,
-    pointer_image: Gles2Texture,
+    pointer_images: Vec<(xcursor::parser::Image, Gles2Texture)>,
     renderer: Rc<RefCell<Gles2Renderer>>,
     gbm: GbmDevice<SessionFd>,
     registration_token: RegistrationToken,
@@ -469,9 +468,6 @@ impl AnvilState<UdevData> {
                 &self.log,
             )));
 
-            let pointer_image = import_bitmap(&mut *renderer.borrow_mut(), &self.backend_data.pointer_image)
-                .expect("Failed to load pointer");
-
             let dev_id = device.device_id();
             let handle = self.handle.clone();
             let restart_token = self.backend_data.signaler.register(move |signal| match signal {
@@ -509,7 +505,7 @@ impl AnvilState<UdevData> {
                     surfaces: backends,
                     renderer,
                     gbm,
-                    pointer_image,
+                    pointer_images: Vec::new(),
                     dev_id,
                 },
             );
@@ -608,15 +604,34 @@ impl AnvilState<UdevData> {
             };
 
         for (&crtc, surface) in to_render_iter {
+            // TODO get scale from the rendersurface when supporting HiDPI
+            let frame = self
+                .backend_data
+                .pointer_image
+                .get_image(1 /*scale*/, self.start_time.elapsed().as_millis() as u32);
+            let renderer = &mut *device_backend.renderer.borrow_mut();
+            let pointer_images = &mut device_backend.pointer_images;
+            let pointer_image = pointer_images
+                .iter()
+                .find_map(|(image, texture)| if image == &frame { Some(texture) } else { None })
+                .cloned()
+                .unwrap_or_else(|| {
+                    let image =
+                        ImageBuffer::from_raw(frame.width, frame.height, &*frame.pixels_rgba).unwrap();
+                    let texture = import_bitmap(renderer, &image).expect("Failed to import cursor bitmap");
+                    pointer_images.push((frame, texture.clone()));
+                    texture
+                });
+
             let result = render_surface(
                 &mut *surface.borrow_mut(),
-                &mut *device_backend.renderer.borrow_mut(),
+                renderer,
                 device_backend.dev_id,
                 crtc,
                 &mut *self.window_map.borrow_mut(),
                 &*self.output_map.borrow(),
                 self.pointer_location,
-                &device_backend.pointer_image,
+                &pointer_image,
                 &*self.dnd_icon.lock().unwrap(),
                 &mut *self.cursor_status.lock().unwrap(),
                 &self.log,
@@ -802,7 +817,7 @@ fn initial_render(surface: &mut RenderSurface, renderer: &mut Gles2Renderer) -> 
 
 fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
     renderer: &mut Gles2Renderer,
-    image: &image::ImageBuffer<image::Rgba<u8>, C>,
+    image: &ImageBuffer<Rgba<u8>, C>,
 ) -> Result<Gles2Texture, Gles2Error> {
     use smithay::backend::renderer::gles2::ffi;
 
