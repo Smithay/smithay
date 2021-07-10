@@ -441,10 +441,13 @@ impl AnvilState<UdevData> {
             #[cfg(feature = "egl")]
             if path.canonicalize().ok() == self.backend_data.primary_gpu {
                 info!(self.log, "Initializing EGL Hardware Acceleration via {:?}", path);
-                renderer
+                if renderer
                     .borrow_mut()
                     .bind_wl_display(&*self.display.borrow())
-                    .expect("Unable to bind Wl Display?");
+                    .is_ok()
+                {
+                    info!(self.log, "EGL hardware-acceleration enabled");
+                }
             }
 
             let backends = Rc::new(RefCell::new(scan_connectors(
