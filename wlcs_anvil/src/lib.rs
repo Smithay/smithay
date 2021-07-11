@@ -5,7 +5,10 @@ mod renderer;
 
 use std::{os::unix::net::UnixStream, thread::JoinHandle};
 
-use smithay::reexports::calloop;
+use smithay::{
+    reexports::calloop,
+    utils::{Logical, Point},
+};
 
 use ffi_api::{WlcsExtensionDescriptor, WlcsIntegrationDescriptor};
 
@@ -50,7 +53,7 @@ pub enum WlcsEvent {
     PositionWindow {
         client_id: i32,
         surface_id: u32,
-        location: (i32, i32),
+        location: Point<i32, Logical>,
     },
     /* Pointer related events */
     /// A new pointer device is available
@@ -60,12 +63,12 @@ pub enum WlcsEvent {
     /// Move the pointer in absolute coordinate space
     PointerMoveAbsolute {
         device_id: u32,
-        location: (f64, f64),
+        location: Point<f64, Logical>,
     },
     /// Move the pointer in relative coordinate space
     PointerMoveRelative {
         device_id: u32,
-        delta: (f64, f64),
+        delta: Point<f64, Logical>,
     },
     /// Press a pointer button
     PointerButtonDown {
@@ -89,12 +92,12 @@ pub enum WlcsEvent {
     /// A touch point is down
     TouchDown {
         device_id: u32,
-        location: (f64, f64),
+        location: Point<f64, Logical>,
     },
     /// A touch point moved
     TouchMove {
         device_id: u32,
-        location: (f64, f64),
+        location: Point<f64, Logical>,
     },
     /// A touch point is up
     TouchUp {

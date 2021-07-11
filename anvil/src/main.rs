@@ -1,4 +1,4 @@
-use slog::{crit, info, o, Drain};
+use slog::{crit, o, Drain};
 
 static POSSIBLE_BACKENDS: &[&str] = &[
     #[cfg(feature = "winit")]

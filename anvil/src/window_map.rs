@@ -255,6 +255,10 @@ impl WindowMap {
         self.windows.insert(0, window);
     }
 
+    pub fn windows(&self) -> impl Iterator<Item = Kind> + '_ {
+        self.windows.iter().map(|w| w.toplevel.clone())
+    }
+
     pub fn insert_popup(&mut self, popup: PopupKind) {
         let popup = Popup { popup };
         self.popups.push(popup);
