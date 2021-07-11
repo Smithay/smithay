@@ -120,7 +120,7 @@ impl DisplayServerHandle {
             let _ = sender.send(WlcsEvent::PositionWindow {
                 client_id,
                 surface_id,
-                location: (x, y),
+                location: (x, y).into(),
             });
         }
     }
@@ -178,7 +178,7 @@ impl PointerHandle {
         let me = &mut *container_of!(ptr, PointerHandle, wlcs_pointer);
         let _ = me.sender.send(WlcsEvent::PointerMoveAbsolute {
             device_id: me.device_id,
-            location: (wl_fixed_to_double(x), wl_fixed_to_double(y)),
+            location: (wl_fixed_to_double(x), wl_fixed_to_double(y)).into(),
         });
     }
 
@@ -186,7 +186,7 @@ impl PointerHandle {
         let me = &mut *container_of!(ptr, PointerHandle, wlcs_pointer);
         let _ = me.sender.send(WlcsEvent::PointerMoveRelative {
             device_id: me.device_id,
-            delta: (wl_fixed_to_double(x), wl_fixed_to_double(y)),
+            delta: (wl_fixed_to_double(x), wl_fixed_to_double(y)).into(),
         });
     }
 
@@ -236,7 +236,7 @@ impl TouchHandle {
         let me = &mut *container_of!(ptr, TouchHandle, wlcs_touch);
         let _ = me.sender.send(WlcsEvent::TouchDown {
             device_id: me.device_id,
-            location: (wl_fixed_to_double(x), wl_fixed_to_double(y)),
+            location: (wl_fixed_to_double(x), wl_fixed_to_double(y)).into(),
         });
     }
 
@@ -244,7 +244,7 @@ impl TouchHandle {
         let me = &mut *container_of!(ptr, TouchHandle, wlcs_touch);
         let _ = me.sender.send(WlcsEvent::TouchMove {
             device_id: me.device_id,
-            location: (wl_fixed_to_double(x), wl_fixed_to_double(y)),
+            location: (wl_fixed_to_double(x), wl_fixed_to_double(y)).into(),
         });
     }
 
