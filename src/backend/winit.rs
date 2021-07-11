@@ -172,7 +172,6 @@ where
             EGLSurface::new(
                 &display,
                 context.pixel_format().unwrap(),
-                reqs.double_buffer,
                 context.config_id(),
                 surface,
                 log.clone(),
@@ -183,7 +182,6 @@ where
             EGLSurface::new(
                 &display,
                 context.pixel_format().unwrap(),
-                reqs.double_buffer,
                 context.config_id(),
                 xlib_window,
                 log.clone(),

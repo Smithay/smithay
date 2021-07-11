@@ -1,11 +1,14 @@
 #![allow(missing_docs)]
 
+use super::Error;
 use nix::libc::{c_long, c_uint, c_void};
 
 pub type khronos_utime_nanoseconds_t = khronos_uint64_t;
 pub type khronos_uint64_t = u64;
 pub type khronos_ssize_t = c_long;
 pub type EGLint = i32;
+pub type EGLchar = char;
+pub type EGLLabelKHR = *const c_void;
 pub type EGLNativeDisplayType = NativeDisplayType;
 pub type EGLNativePixmapType = NativePixmapType;
 pub type EGLNativeWindowType = NativeWindowType;
@@ -13,17 +16,46 @@ pub type NativeDisplayType = *const c_void;
 pub type NativePixmapType = *const c_void;
 pub type NativeWindowType = *const c_void;
 
-pub fn make_sure_egl_is_loaded() {
-    use std::{ffi::CString, ptr};
+extern "system" fn egl_debug_log(
+    severity: egl::types::EGLenum,
+    command: *const EGLchar,
+    _id: EGLint,
+    _thread: EGLLabelKHR,
+    _obj: EGLLabelKHR,
+    message: *const EGLchar,
+) {
+    let _ = std::panic::catch_unwind(move || unsafe {
+        let msg = std::ffi::CStr::from_ptr(message as *const _);
+        let message_utf8 = msg.to_string_lossy();
+        let cmd = std::ffi::CStr::from_ptr(command as *const _);
+        let command_utf8 = cmd.to_string_lossy();
+        let logger = crate::slog_or_fallback(None).new(slog::o!("backend" => "egl"));
+        match severity {
+            egl::DEBUG_MSG_CRITICAL_KHR | egl::DEBUG_MSG_ERROR_KHR => {
+                slog::error!(logger, "[EGL] {}: {}", command_utf8, message_utf8)
+            }
+            egl::DEBUG_MSG_WARN_KHR => slog::warn!(logger, "[EGL] {}: {}", command_utf8, message_utf8),
+            egl::DEBUG_MSG_INFO_KHR => slog::info!(logger, "[EGL] {}: {}", command_utf8, message_utf8),
+            _ => slog::debug!(logger, "[EGL] {}: {}", command_utf8, message_utf8),
+        };
+    });
+}
+
+pub fn make_sure_egl_is_loaded() -> Result<Vec<String>, Error> {
+    use std::{
+        ffi::{CStr, CString},
+        ptr,
+    };
+
+    fn constrain<F>(f: F) -> F
+    where
+        F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
+    {
+        f
+    }
+    let proc_address = constrain(|sym| unsafe { super::get_proc_address(sym) });
 
     egl::LOAD.call_once(|| unsafe {
-        fn constrain<F>(f: F) -> F
-        where
-            F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
-        {
-            f
-        }
-
         egl::load_with(|sym| {
             let name = CString::new(sym).unwrap();
             let symbol = egl::LIB.get::<*mut c_void>(name.as_bytes());
@@ -32,14 +64,47 @@ pub fn make_sure_egl_is_loaded() {
                 Err(_) => ptr::null(),
             }
         });
-        let proc_address = constrain(|sym| super::get_proc_address(sym));
         egl::load_with(&proc_address);
         egl::BindWaylandDisplayWL::load_with(&proc_address);
         egl::UnbindWaylandDisplayWL::load_with(&proc_address);
         egl::QueryWaylandBufferWL::load_with(&proc_address);
-        #[cfg(feature = "backend_drm_eglstream")]
-        egl::StreamConsumerAcquireAttribNV::load_with(&proc_address);
+        egl::DebugMessageControlKHR::load_with(&proc_address);
     });
+
+    let extensions = unsafe {
+        let p = super::wrap_egl_call(|| egl::QueryString(egl::NO_DISPLAY, egl::EXTENSIONS as i32))
+            .map_err(Error::InitFailed)?; //TODO EGL_EXT_client_extensions not supported
+
+        // this possibility is available only with EGL 1.5 or EGL_EXT_platform_base, otherwise
+        // `eglQueryString` returns an error
+        if p.is_null() {
+            return Err(Error::EglExtensionNotSupported(&["EGL_EXT_platform_base"]));
+        } else {
+            let p = CStr::from_ptr(p);
+            let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
+            list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
+        }
+    };
+
+    egl::DEBUG.call_once(|| unsafe {
+        if extensions.iter().any(|ext| ext == "EGL_KHR_debug") {
+            let debug_attribs = [
+                egl::DEBUG_MSG_CRITICAL_KHR as isize,
+                egl::TRUE as isize,
+                egl::DEBUG_MSG_ERROR_KHR as isize,
+                egl::TRUE as isize,
+                egl::DEBUG_MSG_WARN_KHR as isize,
+                egl::TRUE as isize,
+                egl::DEBUG_MSG_INFO_KHR as isize,
+                egl::TRUE as isize,
+                egl::NONE as isize,
+            ];
+            // we do not check for success, because there is not much we can do otherwise.
+            egl::DebugMessageControlKHR(Some(egl_debug_log), debug_attribs.as_ptr());
+        }
+    });
+
+    Ok(extensions)
 }
 
 #[allow(clippy::all, missing_debug_implementations)]
@@ -53,9 +118,40 @@ pub mod egl {
     }
 
     pub static LOAD: Once = Once::new();
+    pub static DEBUG: Once = Once::new();
 
     include!(concat!(env!("OUT_DIR"), "/egl_bindings.rs"));
 
+    type EGLDEBUGPROCKHR = Option<
+        extern "system" fn(
+            _error: egl::types::EGLenum,
+            command: *const EGLchar,
+            _id: EGLint,
+            _thread: EGLLabelKHR,
+            _obj: EGLLabelKHR,
+            message: *const EGLchar,
+        ),
+    >;
+    #[allow(dead_code, non_upper_case_globals)]
+    pub const DEBUG_MSG_CRITICAL_KHR: types::EGLenum = 0x33B9;
+    #[allow(dead_code, non_upper_case_globals)]
+    pub const DEBUG_MSG_ERROR_KHR: types::EGLenum = 0x33BA;
+    #[allow(dead_code, non_upper_case_globals)]
+    pub const DEBUG_MSG_INFO_KHR: types::EGLenum = 0x33BC;
+    #[allow(dead_code, non_upper_case_globals)]
+    pub const DEBUG_MSG_WARN_KHR: types::EGLenum = 0x33BB;
+
+    #[allow(non_snake_case, unused_variables, dead_code)]
+    #[inline]
+    pub unsafe fn DebugMessageControlKHR(
+        callback: EGLDEBUGPROCKHR,
+        attrib_list: *const types::EGLAttrib,
+    ) -> types::EGLint {
+        __gl_imports::mem::transmute::<
+            _,
+            extern "system" fn(EGLDEBUGPROCKHR, *const types::EGLAttrib) -> types::EGLint,
+        >(wayland_storage::DebugMessageControlKHR.f)(callback, attrib_list)
+    }
     /*
      * `gl_generator` cannot generate bindings for the `EGL_WL_bind_wayland_display` extension.
      *  Lets do it ourselves...
@@ -118,6 +214,34 @@ pub mod egl {
             f: super::missing_fn_panic as *const raw::c_void,
             is_loaded: false,
         };
+        pub static mut DebugMessageControlKHR: FnPtr = FnPtr {
+            f: super::missing_fn_panic as *const raw::c_void,
+            is_loaded: false,
+        };
+    }
+
+    #[allow(non_snake_case)]
+    pub mod DebugMessageControlKHR {
+        use super::FnPtr;
+        use super::__gl_imports::raw;
+        use super::{metaloadfn, wayland_storage};
+
+        #[inline]
+        #[allow(dead_code)]
+        pub fn is_loaded() -> bool {
+            unsafe { wayland_storage::DebugMessageControlKHR.is_loaded }
+        }
+
+        #[allow(dead_code)]
+        pub fn load_with<F>(mut loadfn: F)
+        where
+            F: FnMut(&'static str) -> *const raw::c_void,
+        {
+            unsafe {
+                wayland_storage::DebugMessageControlKHR =
+                    FnPtr::new(metaloadfn(&mut loadfn, "eglDebugMessageControlKHR", &[]))
+            }
+        }
     }
 
     #[allow(non_snake_case)]

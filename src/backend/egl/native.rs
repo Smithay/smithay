@@ -182,7 +182,6 @@ pub unsafe trait EGLNativeSurface: Send + Sync {
         &self,
         display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
-        surface_attributes: &[c_int],
     ) -> Result<*const c_void, super::EGLError>;
 
     /// Will be called to check if any internal resources will need
@@ -225,6 +224,13 @@ pub unsafe trait EGLNativeSurface: Send + Sync {
 }
 
 #[cfg(feature = "backend_winit")]
+static WINIT_SURFACE_ATTRIBUTES: [c_int; 3] = [
+    ffi::egl::RENDER_BUFFER as c_int,
+    ffi::egl::BACK_BUFFER as c_int,
+    ffi::egl::NONE as c_int,
+];
+
+#[cfg(feature = "backend_winit")]
 /// Typed Xlib window for the `X11` backend
 #[derive(Debug)]
 pub struct XlibWindow(pub std::os::raw::c_ulong);
@@ -235,7 +241,6 @@ unsafe impl EGLNativeSurface for XlibWindow {
         &self,
         display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
-        surface_attributes: &[c_int],
     ) -> Result<*const c_void, super::EGLError> {
         wrap_egl_call(|| unsafe {
             let mut id = self.0;
@@ -243,7 +248,7 @@ unsafe impl EGLNativeSurface for XlibWindow {
                 display.handle,
                 config_id,
                 (&mut id) as *mut std::os::raw::c_ulong as *mut _,
-                surface_attributes.as_ptr(),
+                WINIT_SURFACE_ATTRIBUTES.as_ptr(),
             )
         })
     }
@@ -255,14 +260,13 @@ unsafe impl EGLNativeSurface for wegl::WlEglSurface {
         &self,
         display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
-        surface_attributes: &[c_int],
     ) -> Result<*const c_void, super::EGLError> {
         wrap_egl_call(|| unsafe {
             ffi::egl::CreatePlatformWindowSurfaceEXT(
                 display.handle,
                 config_id,
                 self.ptr() as *mut _,
-                surface_attributes.as_ptr(),
+                WINIT_SURFACE_ATTRIBUTES.as_ptr(),
             )
         })
     }
