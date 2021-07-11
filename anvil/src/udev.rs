@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use image::{ImageBuffer, Rgba};
+use image::ImageBuffer;
 use slog::Logger;
 
 use smithay::{
@@ -19,7 +19,7 @@ use smithay::{
         egl::{EGLContext, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
-            gles2::{Gles2Error, Gles2Renderer, Gles2Texture},
+            gles2::{Gles2Renderer, Gles2Texture},
             Bind, Frame, Renderer, Transform,
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
@@ -254,10 +254,18 @@ pub fn run_udev(
 
 pub type RenderSurface = GbmBufferedSurface<SessionFd>;
 
+struct SurfaceData {
+    surface: RenderSurface,
+    #[cfg(feature = "debug")]
+    fps: fps_ticker::Fps,
+}
+
 struct BackendData {
     _restart_token: SignalToken,
-    surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>>>>,
+    surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>>>>,
     pointer_images: Vec<(xcursor::parser::Image, Gles2Texture)>,
+    #[cfg(feature = "debug")]
+    fps_texture: Gles2Texture,
     renderer: Rc<RefCell<Gles2Renderer>>,
     gbm: GbmDevice<SessionFd>,
     registration_token: RegistrationToken,
@@ -272,7 +280,7 @@ fn scan_connectors(
     output_map: &mut crate::output_map::OutputMap,
     signaler: &Signaler<SessionSignal>,
     logger: &::slog::Logger,
-) -> HashMap<crtc::Handle, Rc<RefCell<RenderSurface>>> {
+) -> HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>> {
     // Get a set of all modesetting resource handles (excluding planes):
     let res_handles = device.resource_handles().unwrap();
 
@@ -321,7 +329,7 @@ fn scan_connectors(
                     let renderer_formats =
                         Bind::<Dmabuf>::supported_formats(renderer).expect("Dmabuf renderer without formats");
 
-                    let renderer =
+                    let gbm_surface =
                         match GbmBufferedSurface::new(surface, gbm.clone(), renderer_formats, logger.clone())
                         {
                             Ok(renderer) => renderer,
@@ -373,7 +381,11 @@ fn scan_connectors(
                         device_id: device.device_id(),
                     });
 
-                    entry.insert(Rc::new(RefCell::new(renderer)));
+                    entry.insert(Rc::new(RefCell::new(SurfaceData {
+                        surface: gbm_surface,
+                        #[cfg(feature = "debug")]
+                        fps: fps_ticker::Fps::default(),
+                    })));
                     break 'outer;
                 }
             }
@@ -496,6 +508,19 @@ impl AnvilState<UdevData> {
                 schedule_initial_render(backend.clone(), renderer.clone(), &self.handle, self.log.clone());
             }
 
+            #[cfg(feature = "debug")]
+            let fps_texture = import_bitmap(
+                &mut renderer.borrow_mut(),
+                &image::io::Reader::with_format(
+                    std::io::Cursor::new(FPS_NUMBERS_PNG),
+                    image::ImageFormat::Png,
+                )
+                .decode()
+                .unwrap()
+                .to_rgba8(),
+            )
+            .expect("Unable to upload FPS texture");
+
             self.backend_data.backends.insert(
                 dev_id,
                 BackendData {
@@ -506,6 +531,8 @@ impl AnvilState<UdevData> {
                     renderer,
                     gbm,
                     pointer_images: Vec::new(),
+                    #[cfg(feature = "debug")]
+                    fps_texture,
                     dev_id,
                 },
             );
@@ -596,7 +623,7 @@ impl AnvilState<UdevData> {
             .iter()
             .flat_map(|crtc| surfaces.get(&crtc).map(|surface| (crtc, surface)));
 
-        let to_render_iter: &mut dyn Iterator<Item = (&crtc::Handle, &Rc<RefCell<RenderSurface>>)> =
+        let to_render_iter: &mut dyn Iterator<Item = (&crtc::Handle, &Rc<RefCell<SurfaceData>>)> =
             if crtc.is_some() {
                 &mut option_iter
             } else {
@@ -632,6 +659,8 @@ impl AnvilState<UdevData> {
                 &*self.output_map.borrow(),
                 self.pointer_location,
                 &pointer_image,
+                #[cfg(feature = "debug")]
+                &device_backend.fps_texture,
                 &*self.dnd_icon.lock().unwrap(),
                 &mut *self.cursor_status.lock().unwrap(),
                 &self.log,
@@ -671,7 +700,7 @@ impl AnvilState<UdevData> {
 
 #[allow(clippy::too_many_arguments)]
 fn render_surface(
-    surface: &mut RenderSurface,
+    surface: &mut SurfaceData,
     renderer: &mut Gles2Renderer,
     device_id: dev_t,
     crtc: crtc::Handle,
@@ -679,11 +708,12 @@ fn render_surface(
     output_map: &crate::output_map::OutputMap,
     pointer_location: Point<f64, Logical>,
     pointer_image: &Gles2Texture,
+    #[cfg(feature = "debug")] fps_texture: &Gles2Texture,
     dnd_icon: &Option<wl_surface::WlSurface>,
     cursor_status: &mut CursorImageStatus,
     logger: &slog::Logger,
 ) -> Result<(), SwapBuffersError> {
-    surface.frame_submitted()?;
+    surface.surface.frame_submitted()?;
 
     let output = output_map
         .find(|o| o.userdata().get::<UdevOutputId>() == Some(&UdevOutputId { device_id, crtc }))
@@ -696,7 +726,7 @@ fn render_surface(
         return Ok(());
     };
 
-    let dmabuf = surface.next_buffer()?;
+    let dmabuf = surface.surface.next_buffer()?;
     renderer.bind(dmabuf)?;
     // and draw to our buffer
     match renderer
@@ -763,6 +793,18 @@ fn render_surface(
                         }
                     }
                 }
+
+                #[cfg(feature = "debug")]
+                {
+                    draw_fps(
+                        renderer,
+                        frame,
+                        fps_texture,
+                        output_scale as f64,
+                        surface.fps.avg().round() as u32,
+                    )?;
+                    surface.fps.tick();
+                }
                 Ok(())
             },
         )
@@ -770,13 +812,16 @@ fn render_surface(
         .and_then(|x| x)
         .map_err(Into::<SwapBuffersError>::into)
     {
-        Ok(()) => surface.queue_buffer().map_err(Into::<SwapBuffersError>::into),
+        Ok(()) => surface
+            .surface
+            .queue_buffer()
+            .map_err(Into::<SwapBuffersError>::into),
         Err(err) => Err(err),
     }
 }
 
 fn schedule_initial_render<Data: 'static>(
-    surface: Rc<RefCell<RenderSurface>>,
+    surface: Rc<RefCell<SurfaceData>>,
     renderer: Rc<RefCell<Gles2Renderer>>,
     evt_handle: &LoopHandle<'static, Data>,
     logger: ::slog::Logger,
@@ -784,7 +829,7 @@ fn schedule_initial_render<Data: 'static>(
     let result = {
         let mut surface = surface.borrow_mut();
         let mut renderer = renderer.borrow_mut();
-        initial_render(&mut *surface, &mut *renderer)
+        initial_render(&mut surface.surface, &mut *renderer)
     };
     if let Err(err) = result {
         match err {
@@ -814,33 +859,4 @@ fn initial_render(surface: &mut RenderSurface, renderer: &mut Gles2Renderer) -> 
         .and_then(|x| x.map_err(Into::<SwapBuffersError>::into))?;
     surface.queue_buffer()?;
     Ok(())
-}
-
-fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
-    renderer: &mut Gles2Renderer,
-    image: &ImageBuffer<Rgba<u8>, C>,
-) -> Result<Gles2Texture, Gles2Error> {
-    use smithay::backend::renderer::gles2::ffi;
-
-    renderer.with_context(|renderer, gl| unsafe {
-        let mut tex = 0;
-        gl.GenTextures(1, &mut tex);
-        gl.BindTexture(ffi::TEXTURE_2D, tex);
-        gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
-        gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
-        gl.TexImage2D(
-            ffi::TEXTURE_2D,
-            0,
-            ffi::RGBA as i32,
-            image.width() as i32,
-            image.height() as i32,
-            0,
-            ffi::RGBA,
-            ffi::UNSIGNED_BYTE as u32,
-            image.as_ptr() as *const _,
-        );
-        gl.BindTexture(ffi::TEXTURE_2D, 0);
-
-        Gles2Texture::from_raw(renderer, tex, image.width(), image.height())
-    })
 }
