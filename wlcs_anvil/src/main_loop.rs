@@ -13,11 +13,15 @@ use smithay::{
             channel::{Channel, Event as ChannelEvent},
             EventLoop,
         },
-        wayland_server::{protocol::wl_output, Client, Display},
+        wayland_server::{
+            protocol::{wl_output, wl_pointer},
+            Client, Display,
+        },
     },
     wayland::{
         output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,
+        SERIAL_COUNTER as SCOUNTER,
     },
 };
 
@@ -187,9 +191,71 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
             let client = unsafe { display.borrow_mut().create_client(stream.into_raw_fd(), state) };
             state.backend_data.clients.insert(client_id, client);
         }
-        e => {
-            // TODO: handle the actual events
-            eprintln!("Unhandled event: {:?}", e);
+        WlcsEvent::PositionWindow {
+            client_id,
+            surface_id,
+            location,
+        } => {
+            // find the surface
+            let client = state.backend_data.clients.get(&client_id);
+            let mut wmap = state.window_map.borrow_mut();
+            let toplevel = wmap.windows().find(|kind| {
+                let surface = kind.get_surface().unwrap();
+                surface.as_ref().client().as_ref() == client && surface.as_ref().id() == surface_id
+            });
+            if let Some(toplevel) = toplevel {
+                // set its location
+                wmap.set_location(&toplevel, location);
+            }
         }
+        // pointer inputs
+        WlcsEvent::NewPointer { .. } => {}
+        WlcsEvent::PointerMoveAbsolute { location, .. } => {
+            state.pointer_location = location;
+            let serial = SCOUNTER.next_serial();
+            let under = state.window_map.borrow().get_surface_under(location);
+            let time = state.start_time.elapsed().as_millis() as u32;
+            state.pointer.motion(location, under, serial, time);
+        }
+        WlcsEvent::PointerMoveRelative { delta, .. } => {
+            state.pointer_location += delta;
+            let serial = SCOUNTER.next_serial();
+            let under = state
+                .window_map
+                .borrow()
+                .get_surface_under(state.pointer_location);
+            let time = state.start_time.elapsed().as_millis() as u32;
+            state.pointer.motion(state.pointer_location, under, serial, time);
+        }
+        WlcsEvent::PointerButtonDown { button_id, .. } => {
+            let serial = SCOUNTER.next_serial();
+            if !state.pointer.is_grabbed() {
+                let under = state
+                    .window_map
+                    .borrow_mut()
+                    .get_surface_and_bring_to_top(state.pointer_location);
+                state
+                    .keyboard
+                    .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
+            }
+            let time = state.start_time.elapsed().as_millis() as u32;
+            state
+                .pointer
+                .button(button_id as u32, wl_pointer::ButtonState::Pressed, serial, time);
+        }
+        WlcsEvent::PointerButtonUp { button_id, .. } => {
+            let serial = SCOUNTER.next_serial();
+            let time = state.start_time.elapsed().as_millis() as u32;
+            state
+                .pointer
+                .button(button_id as u32, wl_pointer::ButtonState::Released, serial, time);
+        }
+        WlcsEvent::PointerRemoved { .. } => {}
+        // touch inputs
+        WlcsEvent::NewTouch { .. } => {}
+        WlcsEvent::TouchDown { .. } => {}
+        WlcsEvent::TouchMove { .. } => {}
+        WlcsEvent::TouchUp { .. } => {}
+        WlcsEvent::TouchRemoved { .. } => {}
     }
 }
