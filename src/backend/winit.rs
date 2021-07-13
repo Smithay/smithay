@@ -397,13 +397,13 @@ impl PointerMotionAbsoluteEvent<WinitInputBackend> for WinitMouseMovedEvent {
         self.logical_position.y * wsize.scale_factor
     }
 
-    fn x_transformed(&self, width: u32) -> f64 {
+    fn x_transformed(&self, width: i32) -> f64 {
         let wsize = self.size.borrow();
         let w_width = wsize.logical_size().w;
         f64::max(self.logical_position.x * width as f64 / w_width, 0.0)
     }
 
-    fn y_transformed(&self, height: u32) -> f64 {
+    fn y_transformed(&self, height: i32) -> f64 {
         let wsize = self.size.borrow();
         let w_height = wsize.logical_size().h;
         f64::max(self.logical_position.y * height as f64 / w_height, 0.0)
@@ -514,13 +514,13 @@ impl TouchDownEvent<WinitInputBackend> for WinitTouchStartedEvent {
         self.location.y * wsize.scale_factor
     }
 
-    fn x_transformed(&self, width: u32) -> f64 {
+    fn x_transformed(&self, width: i32) -> f64 {
         let wsize = self.size.borrow();
         let w_width = wsize.logical_size().w;
         f64::max(self.location.x * width as f64 / w_width, 0.0)
     }
 
-    fn y_transformed(&self, height: u32) -> f64 {
+    fn y_transformed(&self, height: i32) -> f64 {
         let wsize = self.size.borrow();
         let w_height = wsize.logical_size().h;
         f64::max(self.location.y * height as f64 / w_height, 0.0)
@@ -561,13 +561,13 @@ impl TouchMotionEvent<WinitInputBackend> for WinitTouchMovedEvent {
         self.location.y * wsize.scale_factor
     }
 
-    fn x_transformed(&self, width: u32) -> f64 {
+    fn x_transformed(&self, width: i32) -> f64 {
         let wsize = self.size.borrow();
         let w_width = wsize.logical_size().w;
         f64::max(self.location.x * width as f64 / w_width, 0.0)
     }
 
-    fn y_transformed(&self, height: u32) -> f64 {
+    fn y_transformed(&self, height: i32) -> f64 {
         let wsize = self.size.borrow();
         let w_height = wsize.logical_size().h;
         f64::max(self.location.y * height as f64 / w_height, 0.0)

@@ -217,7 +217,7 @@ impl AnvilState<WinitData> {
             .output_map
             .borrow()
             .find_by_name(crate::winit::OUTPUT_NAME)
-            .map(|o| (o.size().w as u32, o.size().h as u32).into())
+            .map(|o| o.size())
             .unwrap();
         let pos = evt.position_transformed(output_size);
         self.pointer_location = pos;
@@ -365,8 +365,7 @@ impl AnvilState<UdevData> {
         let output_geometry = output_map.with_primary().map(|o| o.geometry());
 
         if let Some(rect) = output_geometry {
-            let rect_size = (rect.size.w as u32, rect.size.h as u32).into();
-            *pointer_location = evt.position_transformed(rect_size) + rect.loc.to_f64();
+            *pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
 
             let under = window_map.get_surface_under(*pointer_location);
             let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
@@ -415,8 +414,7 @@ impl AnvilState<UdevData> {
             let tool = evt.tool();
             tablet_seat.add_tool(&tool);
 
-            let rect_size = (rect.size.h as u32, rect.size.w as u32).into();
-            *pointer_location = evt.position_transformed(rect_size) + rect.loc.to_f64();
+            *pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
 
             let under = window_map.get_surface_under(*pointer_location);
             let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));

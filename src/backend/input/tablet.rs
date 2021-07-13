@@ -1,5 +1,5 @@
 use super::{ButtonState, Event, InputBackend, UnusedEvent};
-use crate::utils::{Logical, Point, Raw};
+use crate::utils::{Logical, Point, Raw, Size};
 use bitflags::bitflags;
 
 /// Description of physical tablet tool
@@ -73,10 +73,10 @@ pub trait TabletToolEvent<B: InputBackend> {
     }
 
     /// Tool position converted into the target coordinate space.
-    fn position_transformed(&self, coordinate_space: Point<u32, Logical>) -> Point<f64, Logical> {
+    fn position_transformed(&self, coordinate_space: Size<i32, Logical>) -> Point<f64, Logical> {
         (
-            self.x_transformed(coordinate_space.x),
-            self.y_transformed(coordinate_space.y),
+            self.x_transformed(coordinate_space.w),
+            self.y_transformed(coordinate_space.h),
         )
             .into()
     }
@@ -110,9 +110,9 @@ pub trait TabletToolEvent<B: InputBackend> {
     fn y(&self) -> f64;
 
     /// Return the current absolute X coordinate of the tablet tool event, transformed to screen coordinates.
-    fn x_transformed(&self, width: u32) -> f64;
+    fn x_transformed(&self, width: i32) -> f64;
     /// Return the current absolute Y coordinate of the tablet tool event, transformed to screen coordinates.
-    fn y_transformed(&self, height: u32) -> f64;
+    fn y_transformed(&self, height: i32) -> f64;
 
     /// Returns the current distance from the tablet's sensor, normalized to the range [0, 1]
     ///
@@ -205,10 +205,10 @@ impl<B: InputBackend> TabletToolEvent<B> for UnusedEvent {
     fn y(&self) -> f64 {
         match *self {}
     }
-    fn x_transformed(&self, _width: u32) -> f64 {
+    fn x_transformed(&self, _width: i32) -> f64 {
         match *self {}
     }
-    fn y_transformed(&self, _height: u32) -> f64 {
+    fn y_transformed(&self, _height: i32) -> f64 {
         match *self {}
     }
     fn distance(&self) -> f64 {
