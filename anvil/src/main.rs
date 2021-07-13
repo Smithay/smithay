@@ -14,6 +14,8 @@ use std::{cell::RefCell, rc::Rc};
 use slog::Drain;
 use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
 
+#[cfg(feature = "udev")]
+mod cursor;
 mod drawing;
 mod input_handler;
 mod shell;

@@ -808,8 +808,7 @@ impl EGLBufferReader {
 
         Ok(EGLBuffer {
             display: self.display.clone(),
-            width: width as u32,
-            height: height as u32,
+            size: (width, height).into(),
             // y_inverted is negated here because the gles2 renderer
             // already inverts the buffer during rendering.
             y_inverted: !y_inverted,

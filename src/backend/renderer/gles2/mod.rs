@@ -11,7 +11,7 @@ use std::sync::{
 };
 use std::{collections::HashSet, os::raw::c_char};
 
-use cgmath::{prelude::*, Matrix3};
+use cgmath::{prelude::*, Matrix3, Vector2};
 
 mod shaders;
 mod version;
@@ -34,7 +34,6 @@ use super::ImportEgl;
 use super::{ImportDma, ImportShm};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
-#[cfg(feature = "wayland_frontend")]
 use crate::utils::{Buffer, Rectangle};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
@@ -67,14 +66,42 @@ struct Gles2Program {
 #[derive(Debug, Clone)]
 pub struct Gles2Texture(Rc<Gles2TextureInternal>);
 
+impl Gles2Texture {
+    /// Create a Gles2Texture from a raw gl texture id.
+    ///
+    /// This expects the texture to be in RGBA format to be rendered
+    /// correctly by the `render_texture*`-functions of [`Frame`](super::Frame).
+    /// It is also expected to not be external or y_inverted.
+    ///
+    /// Ownership over the texture is taken by the renderer, you should not free the texture yourself.
+    ///
+    /// # Safety
+    ///
+    /// The renderer cannot make sure `tex` is a valid texture id.
+    pub unsafe fn from_raw(
+        renderer: &Gles2Renderer,
+        tex: ffi::types::GLuint,
+        size: Size<i32, Buffer>,
+    ) -> Gles2Texture {
+        Gles2Texture(Rc::new(Gles2TextureInternal {
+            texture: tex,
+            texture_kind: 0,
+            is_external: false,
+            y_inverted: false,
+            size,
+            egl_images: None,
+            destruction_callback_sender: renderer.destruction_callback_sender.clone(),
+        }))
+    }
+}
+
 #[derive(Debug)]
 struct Gles2TextureInternal {
     texture: ffi::types::GLuint,
     texture_kind: usize,
     is_external: bool,
     y_inverted: bool,
-    width: u32,
-    height: u32,
+    size: Size<i32, Buffer>,
     egl_images: Option<Vec<EGLImage>>,
     destruction_callback_sender: Sender<CleanupResource>,
 }
@@ -101,10 +128,13 @@ enum CleanupResource {
 
 impl Texture for Gles2Texture {
     fn width(&self) -> u32 {
-        self.0.width
+        self.0.size.w as u32
     }
     fn height(&self) -> u32 {
-        self.0.height
+        self.0.size.h as u32
+    }
+    fn size(&self) -> Size<i32, Buffer> {
+        self.0.size
     }
 }
 
@@ -559,8 +589,7 @@ impl ImportShm for Gles2Renderer {
                             texture_kind: shader_idx,
                             is_external: false,
                             y_inverted: false,
-                            width: width as u32,
-                            height: height as u32,
+                            size: (width, height).into(),
                             egl_images: None,
                             destruction_callback_sender: self.destruction_callback_sender.clone(),
                         })
@@ -689,8 +718,7 @@ impl ImportEgl for Gles2Renderer {
             },
             is_external: egl.format == EGLFormat::External,
             y_inverted: egl.y_inverted,
-            width: egl.width,
-            height: egl.height,
+            size: egl.size,
             egl_images: Some(egl.into_images()),
             destruction_callback_sender: self.destruction_callback_sender.clone(),
         }));
@@ -723,8 +751,7 @@ impl ImportDma for Gles2Renderer {
                 texture_kind: if is_external { 2 } else { 0 },
                 is_external,
                 y_inverted: buffer.y_inverted(),
-                width: buffer.width(),
-                height: buffer.height(),
+                size: buffer.size(),
                 egl_images: Some(vec![image]),
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
             }));
@@ -950,68 +977,27 @@ impl Drop for Gles2Renderer {
     }
 }
 
-static VERTS: [ffi::types::GLfloat; 8] = [
-    1.0, 0.0, // top right
-    0.0, 0.0, // top left
-    1.0, 1.0, // bottom right
-    0.0, 1.0, // bottom left
-];
-
-static TEX_COORDS: [ffi::types::GLfloat; 8] = [
-    1.0, 0.0, // top right
-    0.0, 0.0, // top left
-    1.0, 1.0, // bottom right
-    0.0, 1.0, // bottom left
-];
+impl Gles2Renderer {
+    /// Run custom code in the GL context owned by this renderer.
+    ///
+    /// *Note*: Any changes to the GL state should be restored at the end of this function.
+    /// Otherwise this can lead to rendering errors while using functions of this renderer.
+    /// Relying on any state set by the renderer may break on any smithay update as the
+    /// details about how this renderer works are considered an implementation detail.
+    pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
+    where
+        F: FnOnce(&mut Self, &ffi::Gles2) -> R,
+    {
+        self.make_current()?;
+        let gl = self.gl.clone();
+        Ok(func(self, &gl))
+    }
+}
 
 impl Renderer for Gles2Renderer {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
     type Frame = Gles2Frame;
-
-    #[cfg(feature = "image")]
-    fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
-        &mut self,
-        image: &image::ImageBuffer<image::Rgba<u8>, C>,
-    ) -> Result<Self::TextureId, Self::Error> {
-        self.make_current()?;
-
-        let mut tex = 0;
-        unsafe {
-            self.gl.GenTextures(1, &mut tex);
-            self.gl.BindTexture(ffi::TEXTURE_2D, tex);
-            self.gl
-                .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
-            self.gl
-                .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
-            self.gl.TexImage2D(
-                ffi::TEXTURE_2D,
-                0,
-                ffi::RGBA as i32,
-                image.width() as i32,
-                image.height() as i32,
-                0,
-                ffi::RGBA,
-                ffi::UNSIGNED_BYTE as u32,
-                image.as_ptr() as *const _,
-            );
-            self.gl.BindTexture(ffi::TEXTURE_2D, 0);
-        }
-
-        let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
-            texture: tex,
-            texture_kind: 0,
-            is_external: false,
-            y_inverted: false,
-            width: image.width(),
-            height: image.height(),
-            egl_images: None,
-            destruction_callback_sender: self.destruction_callback_sender.clone(),
-        }));
-        self.egl.unbind()?;
-
-        Ok(texture)
-    }
 
     fn render<F, R>(
         &mut self,
@@ -1028,6 +1014,9 @@ impl Renderer for Gles2Renderer {
 
         unsafe {
             self.gl.Viewport(0, 0, size.w, size.h);
+
+            self.gl.Scissor(0, 0, size.w, size.h);
+            self.gl.Enable(ffi::SCISSOR_TEST);
 
             self.gl.Enable(ffi::BLEND);
             self.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
@@ -1083,6 +1072,13 @@ impl Renderer for Gles2Renderer {
     }
 }
 
+static VERTS: [ffi::types::GLfloat; 8] = [
+    1.0, 0.0, // top right
+    0.0, 0.0, // top left
+    1.0, 1.0, // bottom right
+    0.0, 1.0, // bottom left
+];
+
 impl Frame for Gles2Frame {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
@@ -1100,6 +1096,7 @@ impl Frame for Gles2Frame {
         &mut self,
         tex: &Self::TextureId,
         mut matrix: Matrix3<f32>,
+        tex_coords: [Vector2<f32>; 4],
         alpha: f32,
     ) -> Result<(), Self::Error> {
         //apply output transformation
@@ -1148,7 +1145,7 @@ impl Frame for Gles2Frame {
                 ffi::FLOAT,
                 ffi::FALSE,
                 0,
-                TEX_COORDS.as_ptr() as *const _,
+                tex_coords.as_ptr() as *const _, // cgmath::Vector2 is marked as repr(C), this cast should be safe
             );
 
             self.gl

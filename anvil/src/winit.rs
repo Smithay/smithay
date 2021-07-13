@@ -1,5 +1,7 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
+#[cfg(feature = "debug")]
+use smithay::backend::renderer::gles2::Gles2Texture;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::renderer::{ImportDma, ImportEgl},
@@ -24,7 +26,12 @@ use crate::state::{AnvilState, Backend};
 
 pub const OUTPUT_NAME: &str = "winit";
 
-pub struct WinitData;
+pub struct WinitData {
+    #[cfg(feature = "debug")]
+    fps_texture: Gles2Texture,
+    #[cfg(feature = "debug")]
+    pub fps: fps_ticker::Fps,
+}
 
 impl Backend for WinitData {
     fn seat_name(&self) -> String {
@@ -71,7 +78,20 @@ pub fn run_winit(
      * Initialize the globals
      */
 
-    let mut state = AnvilState::init(display.clone(), event_loop.handle(), WinitData, log.clone());
+    let data = WinitData {
+        #[cfg(feature = "debug")]
+        fps_texture: import_bitmap(
+            &mut renderer.borrow_mut().renderer(),
+            &image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
+                .decode()
+                .unwrap()
+                .to_rgba8(),
+        )
+        .expect("Unable to upload FPS texture"),
+        #[cfg(feature = "debug")]
+        fps: fps_ticker::Fps::default(),
+    };
+    let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone());
 
     let mode = Mode {
         size,
@@ -176,6 +196,18 @@ pub fn run_winit(
                         }
                     }
 
+                    #[cfg(feature = "debug")]
+                    {
+                        let fps = state.backend_data.fps.avg().round() as u32;
+                        draw_fps(
+                            renderer,
+                            frame,
+                            &state.backend_data.fps_texture,
+                            output_scale as f64,
+                            fps,
+                        )?;
+                    }
+
                     Ok(())
                 })
                 .map_err(Into::<SwapBuffersError>::into)
@@ -206,6 +238,9 @@ pub fn run_winit(
             state.window_map.borrow_mut().refresh();
             state.output_map.borrow_mut().refresh();
         }
+
+        #[cfg(feature = "debug")]
+        state.backend_data.fps.tick();
     }
 
     // Cleanup stuff

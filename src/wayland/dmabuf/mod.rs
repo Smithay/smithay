@@ -260,12 +260,7 @@ where
             return;
         }
 
-        let mut buf = Dmabuf::builder(
-            width as u32,
-            height as u32,
-            format,
-            DmabufFlags::from_bits_truncate(flags),
-        );
+        let mut buf = Dmabuf::builder((width, height), format, DmabufFlags::from_bits_truncate(flags));
         let planes = std::mem::take(&mut self.pending_planes);
         for (i, plane) in planes.into_iter().enumerate() {
             let offset = plane.offset;
@@ -350,12 +345,7 @@ where
             return;
         }
 
-        let mut buf = Dmabuf::builder(
-            width as u32,
-            height as u32,
-            format,
-            DmabufFlags::from_bits_truncate(flags),
-        );
+        let mut buf = Dmabuf::builder((width, height), format, DmabufFlags::from_bits_truncate(flags));
         let planes = ::std::mem::take(&mut self.pending_planes);
         for (i, plane) in planes.into_iter().enumerate() {
             let offset = plane.offset;

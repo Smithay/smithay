@@ -22,6 +22,7 @@ pub mod dumb;
 pub mod gbm;
 
 mod swapchain;
+use crate::utils::{Buffer as BufferCoords, Size};
 pub use swapchain::{Slot, Swapchain};
 
 pub use drm_fourcc::{
@@ -32,13 +33,15 @@ pub use drm_fourcc::{
 /// Common trait describing common properties of most types of buffers.
 pub trait Buffer {
     /// Width of the two-dimensional buffer
-    fn width(&self) -> u32;
-    /// Height of the two-dimensional buffer
-    fn height(&self) -> u32;
-    /// Size (w x h) of the two-dimensional buffer
-    fn size(&self) -> (u32, u32) {
-        (self.width(), self.height())
+    fn width(&self) -> u32 {
+        self.size().w as u32
     }
+    /// Height of the two-dimensional buffer
+    fn height(&self) -> u32 {
+        self.size().h as u32
+    }
+    /// Size of the two-dimensional buffer
+    fn size(&self) -> Size<i32, BufferCoords>;
     /// Pixel format of the buffer
     fn format(&self) -> Format;
 }
