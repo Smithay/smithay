@@ -2,7 +2,7 @@
 //!
 //! ## DrmDevice
 //!
-//! A device  exposes certain properties, which are directly derived
+//! A device exposes certain properties, which are directly derived
 //! from the *device* as perceived by the direct rendering manager api (drm). These resources consists
 //! out of connectors, encoders, framebuffers, planes and crtcs.
 //!
@@ -20,13 +20,13 @@
 //!
 //! A [`connector`](drm::control::connector) represents a port on your computer, possibly with a connected monitor, TV, capture card, etc.
 //!
-//! A [`framebuffer`](drm::control::framebuffer) represents a buffer you may be rendering to, see `Surface` below.
+//! A [`framebuffer`](drm::control::framebuffer) represents a buffer you may be rendering to, see `DrmSurface` below.
 //!
 //! A [`plane`](drm::control::plane) adds another layer on top of the crtcs, which allow us to layer multiple images on top of each other more efficiently
-//! then by combining the rendered images in the rendering phase, e.g. via OpenGL. Planes can be explicitly used by the user.
+//! then by combining the rendered images in the rendering phase, e.g. via OpenGL. Planes have to be explicitly used by the user to be useful.
 //! Every device has at least one primary plane used to display an image to the whole crtc. Additionally cursor and overlay planes may be present.
 //! Cursor planes are usually very restricted in size and meant to be used for hardware cursors, while overlay planes may
-//! be used for performance reasons to display any overlay on top of the image, e.g. top-most windows.
+//! be used for performance reasons to display any overlay on top of the image, e.g. the top-most windows.
 //!
 //! The main functionality of a `Device` in smithay is to give access to all these properties for the user to
 //! choose an appropriate rendering configuration. What that means is defined by the requirements and constraints documented

@@ -28,8 +28,8 @@ pub enum Error {
     /// Mode is not compatible with all given connectors
     #[error("Mode `{0:?}` is not compatible with all given connectors")]
     ModeNotSuitable(Mode),
-    /// The given crtc is already in use by another backend
-    #[error("Crtc `{0:?}` is already in use by another backend")]
+    /// The given crtc is already in use by another surface
+    #[error("Crtc `{0:?}` is already in use by another surface")]
     CrtcAlreadyInUse(crtc::Handle),
     /// This operation would result in a surface without connectors.
     #[error("Surface of crtc `{0:?}` would have no connectors, which is not accepted")]

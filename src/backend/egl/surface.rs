@@ -46,10 +46,10 @@ impl EGLSurface {
     /// Create a new `EGLSurface`.
     ///
     /// Requires:
-    /// - A EGLDisplay supported by the corresponding plattform matching the surface type
+    /// - A EGLDisplay supported by the corresponding platform matching the surface type
     /// - A pixel format
-    /// - An (optional) preference for double_buffering
     /// - A valid `EGLConfig` (see `EGLContext::config_id()`)
+    /// - A native type backing the surface matching the used platform
     /// - An (optional) Logger
     pub fn new<N, L>(
         display: &EGLDisplay,

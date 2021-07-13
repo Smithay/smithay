@@ -407,7 +407,7 @@ impl Gles2Renderer {
     /// # Implementation details
     ///
     /// - Texture handles created by the resulting renderer are valid for every rendered created with an
-    /// `EGLContext` shared with the given one (see `EGLContext::new_shared`) and can be used and destroyed on
+    /// `EGLContext` shared with the given one (see `EGLContext::new_shared`) and can be used on
     /// any of these renderers.
     /// - This renderer has no default framebuffer, use `Bind::bind` before rendering.
     /// - Binding a new target, while another one is already bound, will replace the current target.

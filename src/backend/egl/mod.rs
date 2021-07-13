@@ -1,30 +1,30 @@
 //! Common traits and types for egl rendering
 //!
-//! Large parts of this module are taken from
-//! [glutin src/api/egl](https://github.com/tomaka/glutin/tree/044e651edf67a2029eecc650dd42546af1501414/src/api/egl/)
+//! This module has multiple responsibilities related to functionality provided by libEGL:
+//! Initializing EGL objects to:
+//! - initialize usage of EGL based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)s via `wl_drm`.
+//! - initialize OpenGL contexts from.
+//! - Import/Export external resources to/from OpenGL
 //!
-//! It therefore falls under
-//! [glutin's Apache 2.0 license](https://github.com/tomaka/glutin/tree/044e651edf67a2029eecc650dd42546af1501414/LICENSE)
+//! To use this module, you first need to create a [`EGLDisplay`] through a supported EGL platform
+//! as inidicated by an implementation of the `native::EGLNativeDisplay` trait.
 //!
-//! Wayland specific EGL functionality - EGL based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)s.
+//! You may bind the [`EGLDisplay`], that shall be used by clients for rendering (so pick one initialized by a fast platform)
+//! to the [`wayland_server::Display`] of your compositor. Note only one backend may be bound to any [`Display`](wayland_server::Display) at any time.
 //!
-//! The types of this module can be used to initialize hardware acceleration rendering
-//! based on EGL for clients as it may enabled usage of `EGLImage` based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)s.
-//!
-//! To use it bind the [`EGLDisplay`] trait, that shall do the
-//! rendering (so pick a fast one), to the [`wayland_server::Display`] of your compositor.
-//! Note only one backend may be bound to any [`Display`](wayland_server::Display) at any time.
-//!
-//! You may then use the resulting [`EGLDisplay`] to receive [`EGLBuffer`]
+//! You may then use the resulting [`display::EGLBufferReader`] to receive [`EGLBuffer`]
 //! of an EGL-based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer) for rendering.
+//! Renderers implementing the [`ImportEGL`](crate::backend::renderer::ImportEGL)-trait can manage the buffer reader for you.
+//!
+//! To create OpenGL contexts you may create [`EGLContext`]s from the display and if the context is initialized with a config
+//! it may also be used to initialize an [`EGLSurface`], which can be [bound](crate::backend::renderer::Bind) to some renderers.
+//!
+//! Alternatively you may import [`dmabuf`](crate::backend::allocator::dmabuf)s using the display, which result
+//! in an [`EGLImage`], which can be rendered into by OpenGL. This is perferrable to using surfaces as the dmabuf can be
+//! passed around freely making resource-management and more complex use-cases like Multi-GPU rendering easier to manage.
+//! Renderers based on EGL may support doing this for you by allowing you to [`Bind`](crate::backend::renderer::Bind) a dmabuf directly.
+//!
 
-/*
-#[cfg(feature = "renderer_gl")]
-use crate::backend::graphics::{
-    gl::{ffi as gl_ffi, GLGraphicsBackend},
-    SwapBuffersError as GraphicsSwapBuffersError,
-};
-*/
 use std::fmt;
 
 pub mod context;
@@ -92,7 +92,7 @@ pub enum BufferAccessError {
     /// This buffer is not managed by the EGL buffer
     #[error("This buffer is not managed by EGL. Err: {0:}")]
     NotManaged(#[source] EGLError),
-    /// Failed to create `EGLImages` from the buffer
+    /// Failed to create `EGLBuffer` from the buffer
     #[error("Failed to create EGLImages from the buffer. Err: {0:}")]
     EGLImageCreationFailed(#[source] EGLError),
     /// The required EGL extension is not supported by the underlying EGL implementation
@@ -186,35 +186,6 @@ impl From<MakeCurrentError> for GraphicsSwapBuffersError {
     }
 }
 
-/// Error that might happen when binding an `EGLImage` to a GL texture
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
-pub enum TextureCreationError {
-    /// The given plane index is out of bounds
-    #[error("This buffer is not managed by EGL")]
-    PlaneIndexOutOfBounds,
-    /// The OpenGL context has been lost and needs to be recreated.
-    ///
-    /// All the objects associated to it (textures, buffers, programs, etc.)
-    /// need to be recreated from scratch.
-    ///
-    /// Operations will have no effect. Functions that read textures, buffers, etc.
-    /// from OpenGL will return uninitialized data instead.
-    ///
-    /// A context loss usually happens on mobile devices when the user puts the
-    /// application on sleep and wakes it up later. However any OpenGL implementation
-    /// can theoretically lose the context at any time.
-    #[error("The context has been lost, it needs to be recreated")]
-    ContextLost,
-    /// Required OpenGL Extension for texture creation is missing
-    #[error("Required OpenGL Extension for texture creation is missing: {0}")]
-    GLExtensionNotSupported(&'static str),
-    /// Failed to bind the `EGLImage` to the given texture
-    ///
-    /// The given argument is the GL error code
-    #[error("Failed to create EGLImages from the buffer (GL error code {0:x}")]
-    TextureBindingFailed(u32),
-}
-
 /// Texture format types
 #[repr(i32)]
 #[allow(non_camel_case_types)]
@@ -261,7 +232,7 @@ pub struct EGLBuffer {
 
 #[cfg(feature = "wayland_frontend")]
 impl EGLBuffer {
-    /// Amount of planes of these `EGLImages`
+    /// Amount of planes of this EGLBuffer
     pub fn num_planes(&self) -> usize {
         self.format.num_planes()
     }

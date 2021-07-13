@@ -39,11 +39,11 @@ pub enum Error {
     /// No EGLDisplay is currently bound to this `WlDisplay`
     #[error("No EGLDisplay is currently bound to this `WlDisplay`")]
     NoEGLDisplayBound,
-    /// Index of plane is out of bounds for `EGLImages`
-    #[error("Index of plane is out of bounds for `EGLImages`")]
+    /// Index of plane is out of bounds for `EGLBuffer`
+    #[error("Index of plane is out of bounds for `EGLBuffer`")]
     PlaneIndexOutOfBounds,
-    /// Failed to create `EGLImages` from the buffer
-    #[error("Failed to create `EGLImages` from the buffer")]
+    /// Failed to create `EGLBuffer` from the buffer
+    #[error("Failed to create `EGLBuffer` from the buffer")]
     EGLImageCreationFailed,
 }
 
@@ -135,7 +135,8 @@ impl EGLError {
     }
 }
 
-pub(crate) fn wrap_egl_call<R, F: FnOnce() -> R>(call: F) -> Result<R, EGLError> {
+/// Wraps a raw egl call and returns error codes from `eglGetError`, if it fails.
+pub fn wrap_egl_call<R, F: FnOnce() -> R>(call: F) -> Result<R, EGLError> {
     let res = call();
     EGLError::from_last_call().map(|()| res)
 }
