@@ -1,7 +1,9 @@
 //! Type safe native types for safe context/surface creation
 
 use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, SwapBuffersError};
-use nix::libc::{c_int, c_void};
+#[cfg(feature = "backend_winit")]
+use std::os::raw::c_int;
+use std::os::raw::c_void;
 #[cfg(feature = "backend_gbm")]
 use std::os::unix::io::AsRawFd;
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
@@ -9,9 +11,7 @@ use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 #[cfg(feature = "backend_winit")]
 use wayland_egl as wegl;
 #[cfg(feature = "backend_winit")]
-use winit::platform::unix::WindowExtUnix;
-#[cfg(feature = "backend_winit")]
-use winit::window::Window as WinitWindow;
+use winit::{platform::unix::WindowExtUnix, window::Window as WinitWindow};
 
 #[cfg(feature = "backend_gbm")]
 use gbm::{AsRaw, Device as GbmDevice};
