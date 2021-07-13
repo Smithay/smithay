@@ -9,7 +9,7 @@ pub use tablet::{
     TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TabletToolType,
 };
 
-use crate::utils::{Logical, Point, Raw};
+use crate::utils::{Logical, Point, Raw, Size};
 
 /// Trait for generic functions every input device does provide
 pub trait Device: PartialEq + Eq + std::hash::Hash {
@@ -265,21 +265,21 @@ pub trait PointerMotionAbsoluteEvent<B: InputBackend>: Event<B> {
 
     /// Device position converted to the targets coordinate space.
     /// E.g. the focused output's resolution.
-    fn position_transformed(&self, coordinate_space: Point<u32, Logical>) -> Point<f64, Logical> {
+    fn position_transformed(&self, coordinate_space: Size<i32, Logical>) -> Point<f64, Logical> {
         (
-            self.x_transformed(coordinate_space.x),
-            self.y_transformed(coordinate_space.y),
+            self.x_transformed(coordinate_space.w),
+            self.y_transformed(coordinate_space.h),
         )
             .into()
     }
 
     /// Device x position converted to the targets coordinate space's width.
     /// E.g. the focused output's width.
-    fn x_transformed(&self, width: u32) -> f64;
+    fn x_transformed(&self, width: i32) -> f64;
 
     /// Device y position converted to the targets coordinate space's height.
     /// E.g. the focused output's height.
-    fn y_transformed(&self, height: u32) -> f64;
+    fn y_transformed(&self, height: i32) -> f64;
 }
 
 impl<B: InputBackend> PointerMotionAbsoluteEvent<B> for UnusedEvent {
@@ -291,11 +291,11 @@ impl<B: InputBackend> PointerMotionAbsoluteEvent<B> for UnusedEvent {
         match *self {}
     }
 
-    fn x_transformed(&self, _width: u32) -> f64 {
+    fn x_transformed(&self, _width: i32) -> f64 {
         match *self {}
     }
 
-    fn y_transformed(&self, _height: u32) -> f64 {
+    fn y_transformed(&self, _height: i32) -> f64 {
         match *self {}
     }
 }
@@ -331,10 +331,10 @@ pub trait TouchDownEvent<B: InputBackend>: Event<B> {
 
     /// Touch position converted into the target coordinate space.
     /// E.g. the focused output's resolution.
-    fn position_transformed(&self, coordinate_space: Point<u32, Logical>) -> Point<f64, Logical> {
+    fn position_transformed(&self, coordinate_space: Size<i32, Logical>) -> Point<f64, Logical> {
         (
-            self.x_transformed(coordinate_space.x),
-            self.y_transformed(coordinate_space.y),
+            self.x_transformed(coordinate_space.w),
+            self.y_transformed(coordinate_space.h),
         )
             .into()
     }
@@ -351,11 +351,11 @@ pub trait TouchDownEvent<B: InputBackend>: Event<B> {
 
     /// Touch event's x position converted to the targets coordinate space's width.
     /// E.g. the focused output's width.
-    fn x_transformed(&self, width: u32) -> f64;
+    fn x_transformed(&self, width: i32) -> f64;
 
     /// Touch event's y position converted to the targets coordinate space's width.
     /// E.g. the focused output's width.
-    fn y_transformed(&self, height: u32) -> f64;
+    fn y_transformed(&self, height: i32) -> f64;
 }
 
 impl<B: InputBackend> TouchDownEvent<B> for UnusedEvent {
@@ -371,11 +371,11 @@ impl<B: InputBackend> TouchDownEvent<B> for UnusedEvent {
         match *self {}
     }
 
-    fn x_transformed(&self, _width: u32) -> f64 {
+    fn x_transformed(&self, _width: i32) -> f64 {
         match *self {}
     }
 
-    fn y_transformed(&self, _height: u32) -> f64 {
+    fn y_transformed(&self, _height: i32) -> f64 {
         match *self {}
     }
 }
@@ -394,10 +394,10 @@ pub trait TouchMotionEvent<B: InputBackend>: Event<B> {
 
     /// Touch position converted into the target coordinate space.
     /// E.g. the focused output's resolution.
-    fn position_transformed(&self, coordinate_space: Point<u32, Logical>) -> Point<f64, Logical> {
+    fn position_transformed(&self, coordinate_space: Size<i32, Logical>) -> Point<f64, Logical> {
         (
-            self.x_transformed(coordinate_space.x),
-            self.y_transformed(coordinate_space.y),
+            self.x_transformed(coordinate_space.w),
+            self.y_transformed(coordinate_space.h),
         )
             .into()
     }
@@ -414,11 +414,11 @@ pub trait TouchMotionEvent<B: InputBackend>: Event<B> {
 
     /// Touch event's x position converted to the targets coordinate space's width.
     /// E.g. the focused output's width.
-    fn x_transformed(&self, width: u32) -> f64;
+    fn x_transformed(&self, width: i32) -> f64;
 
     /// Touch event's y position converted to the targets coordinate space's width.
     /// E.g. the focused output's width.
-    fn y_transformed(&self, height: u32) -> f64;
+    fn y_transformed(&self, height: i32) -> f64;
 }
 
 impl<B: InputBackend> TouchMotionEvent<B> for UnusedEvent {
@@ -434,11 +434,11 @@ impl<B: InputBackend> TouchMotionEvent<B> for UnusedEvent {
         match *self {}
     }
 
-    fn x_transformed(&self, _width: u32) -> f64 {
+    fn x_transformed(&self, _width: i32) -> f64 {
         match *self {}
     }
 
-    fn y_transformed(&self, _height: u32) -> f64 {
+    fn y_transformed(&self, _height: i32) -> f64 {
         match *self {}
     }
 }

@@ -242,12 +242,12 @@ impl backend::PointerMotionAbsoluteEvent<LibinputInputBackend>
         self.absolute_y()
     }
 
-    fn x_transformed(&self, width: u32) -> f64 {
-        self.absolute_x_transformed(width)
+    fn x_transformed(&self, width: i32) -> f64 {
+        self.absolute_x_transformed(width as u32)
     }
 
-    fn y_transformed(&self, height: u32) -> f64 {
-        self.absolute_y_transformed(height)
+    fn y_transformed(&self, height: i32) -> f64 {
+        self.absolute_y_transformed(height as u32)
     }
 }
 
@@ -274,12 +274,12 @@ impl backend::TouchDownEvent<LibinputInputBackend> for event::touch::TouchDownEv
         event::touch::TouchEventPosition::y(self)
     }
 
-    fn x_transformed(&self, width: u32) -> f64 {
-        event::touch::TouchEventPosition::x_transformed(self, width)
+    fn x_transformed(&self, width: i32) -> f64 {
+        event::touch::TouchEventPosition::x_transformed(self, width as u32)
     }
 
-    fn y_transformed(&self, height: u32) -> f64 {
-        event::touch::TouchEventPosition::y_transformed(self, height)
+    fn y_transformed(&self, height: i32) -> f64 {
+        event::touch::TouchEventPosition::y_transformed(self, height as u32)
     }
 }
 
@@ -306,12 +306,12 @@ impl backend::TouchMotionEvent<LibinputInputBackend> for event::touch::TouchMoti
         event::touch::TouchEventPosition::y(self)
     }
 
-    fn x_transformed(&self, width: u32) -> f64 {
-        event::touch::TouchEventPosition::x_transformed(self, width)
+    fn x_transformed(&self, width: i32) -> f64 {
+        event::touch::TouchEventPosition::x_transformed(self, width as u32)
     }
 
-    fn y_transformed(&self, height: u32) -> f64 {
-        event::touch::TouchEventPosition::y_transformed(self, height)
+    fn y_transformed(&self, height: i32) -> f64 {
+        event::touch::TouchEventPosition::y_transformed(self, height as u32)
     }
 }
 
