@@ -389,7 +389,7 @@ impl EGLDisplay {
         Ok((desc, config_id))
     }
 
-    /// Get a handle to the underlying native EGLDisplay
+    /// Get a handle to the underlying raw EGLDisplay handle
     pub fn get_display_handle(&self) -> Arc<EGLDisplayHandle> {
         self.display.clone()
     }
@@ -404,7 +404,7 @@ impl EGLDisplay {
         self.extensions.clone()
     }
 
-    /// Imports a dmabuf as an eglimage
+    /// Imports a [`Dmabuf`] as an [`EGLImage`]
     pub fn create_image_from_dmabuf(&self, dmabuf: &Dmabuf) -> Result<EGLImage, Error> {
         if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base")
             && !self

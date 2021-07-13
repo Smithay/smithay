@@ -63,7 +63,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
         self.primary
     }
 
-    /// Currently used [`connector`](drm::control::connector)s of this `Surface`
+    /// Currently used [`connector`](drm::control::connector)s of this surface
     pub fn current_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.current_connectors(),
@@ -72,7 +72,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
     }
 
     /// Returns the pending [`connector`](drm::control::connector)s
-    /// used after the next [`commit`](DrmSurface::commit) of this [`DrmSurface`]
+    /// used after the next [`commit`](DrmSurface::commit) of this surface
     pub fn pending_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.pending_connectors(),

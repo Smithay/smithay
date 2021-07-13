@@ -213,8 +213,6 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
     /// - [`crtcs`](drm::control::crtc) represent scanout engines of the device pointing to one framebuffer. \
     ///     Their responsibility is to read the data of the framebuffer and export it into an "Encoder". \
     ///     The number of crtc's represent the number of independant output devices the hardware may handle.
-    /// - [`planes`](drm::control::plane) represent a single plane on a crtc, which is composite together with
-    ///     other planes on the same crtc to present the final image.
     /// - [`mode`](drm::control::Mode) describes the resolution and rate of images produced by the crtc and \
     ///     has to be compatible with the provided `connectors`.
     /// - [`connectors`](drm::control::connector) - List of connectors driven by the crtc. At least one(!) connector needs to be \
