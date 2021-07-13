@@ -32,14 +32,17 @@ impl Backend for WinitData {
     }
 }
 
-pub fn run_winit(
-    display: Rc<RefCell<Display>>,
-    event_loop: &mut EventLoop<'static, AnvilState<WinitData>>,
-    log: Logger,
-) -> Result<(), ()> {
-    let (renderer, mut input) = winit::init(log.clone()).map_err(|err| {
-        slog::crit!(log, "Failed to initialize Winit backend: {}", err);
-    })?;
+pub fn run_winit(log: Logger) {
+    let mut event_loop = EventLoop::try_new().unwrap();
+    let display = Rc::new(RefCell::new(Display::new()));
+
+    let (renderer, mut input) = match winit::init(log.clone()) {
+        Ok(ret) => ret,
+        Err(err) => {
+            slog::crit!(log, "Failed to initialize Winit backend: {}", err);
+            return;
+        }
+    };
     let renderer = Rc::new(RefCell::new(renderer));
 
     #[cfg(feature = "egl")]
@@ -71,7 +74,7 @@ pub fn run_winit(
      * Initialize the globals
      */
 
-    let mut state = AnvilState::init(display.clone(), event_loop.handle(), WinitData, log.clone());
+    let mut state = AnvilState::init(display.clone(), event_loop.handle(), WinitData, log.clone(), true);
 
     let mode = Mode {
         size,
@@ -210,6 +213,4 @@ pub fn run_winit(
 
     // Cleanup stuff
     state.window_map.borrow_mut().clear();
-
-    Ok(())
 }

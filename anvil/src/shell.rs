@@ -335,7 +335,7 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
     );
 
     // Init a window map, to track the location of our windows
-    let window_map = Rc::new(RefCell::new(WindowMap::new()));
+    let window_map = Rc::new(RefCell::new(WindowMap::default()));
     let output_map = Rc::new(RefCell::new(OutputMap::new(
         display.clone(),
         window_map.clone(),

@@ -238,19 +238,13 @@ pub struct Popup {
     popup: PopupKind,
 }
 
+#[derive(Default)]
 pub struct WindowMap {
     windows: Vec<Window>,
     popups: Vec<Popup>,
 }
 
 impl WindowMap {
-    pub fn new() -> Self {
-        WindowMap {
-            windows: Vec::new(),
-            popups: Vec::new(),
-        }
-    }
-
     pub fn insert(&mut self, toplevel: Kind, location: Point<i32, Logical>) {
         let mut window = Window {
             location,
@@ -259,6 +253,10 @@ impl WindowMap {
         };
         window.self_update();
         self.windows.insert(0, window);
+    }
+
+    pub fn windows(&self) -> impl Iterator<Item = Kind> + '_ {
+        self.windows.iter().map(|w| w.toplevel.clone())
     }
 
     pub fn insert_popup(&mut self, popup: PopupKind) {
