@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 use std::error::Error;
 
-use crate::utils::{Buffer, Physical, Point, Size};
+use crate::utils::{Physical, Point, Size};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::{utils::Rectangle, wayland::compositor::SurfaceData};
@@ -20,8 +20,6 @@ use wayland_server::protocol::{wl_buffer, wl_shm};
 
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
-#[cfg(feature = "wayland_frontend")]
-use crate::backend::allocator::{dmabuf::Dmabuf, Format};
 #[cfg(all(
     feature = "wayland_frontend",
     feature = "backend_egl",
@@ -30,6 +28,11 @@ use crate::backend::allocator::{dmabuf::Dmabuf, Format};
 use crate::backend::egl::{
     display::{EGLBufferReader, BUFFER_READER},
     Error as EglError,
+};
+#[cfg(feature = "wayland_frontend")]
+use crate::{
+    backend::allocator::{dmabuf::Dmabuf, Format},
+    utils::Buffer,
 };
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
