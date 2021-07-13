@@ -135,7 +135,8 @@ impl EGLError {
     }
 }
 
-pub(crate) fn wrap_egl_call<R, F: FnOnce() -> R>(call: F) -> Result<R, EGLError> {
+/// Wraps a raw egl call and returns error codes from `eglGetError`, if it fails.
+pub fn wrap_egl_call<R, F: FnOnce() -> R>(call: F) -> Result<R, EGLError> {
     let res = call();
     EGLError::from_last_call().map(|()| res)
 }

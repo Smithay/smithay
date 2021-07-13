@@ -172,7 +172,6 @@ impl EGLNativeDisplay for WinitWindow {
 /// The returned [`NativeWindowType`](ffi::NativeWindowType) must be valid for EGL
 /// and there is no way to test that.
 pub unsafe trait EGLNativeSurface: Send + Sync {
-    /// Error type thrown by the surface creation in case of failure.
     /// Create an EGLSurface from the internal native type.
     ///
     /// Must be able to deal with re-creation of existing resources,
