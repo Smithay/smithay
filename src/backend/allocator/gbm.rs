@@ -8,6 +8,7 @@ use super::{
     dmabuf::{AsDmabuf, Dmabuf, DmabufFlags, MAX_PLANES},
     Allocator, Buffer, Format, Fourcc, Modifier,
 };
+use crate::utils::{Buffer as BufferCoords, Size};
 pub use gbm::{BufferObject as GbmBuffer, BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
 use std::os::unix::io::AsRawFd;
 
@@ -39,12 +40,12 @@ impl<A: AsRawFd + 'static, T> Allocator<GbmBuffer<T>> for GbmDevice<A> {
 }
 
 impl<T> Buffer for GbmBuffer<T> {
-    fn width(&self) -> u32 {
-        self.width().unwrap_or(0)
-    }
-
-    fn height(&self) -> u32 {
-        self.height().unwrap_or(0)
+    fn size(&self) -> Size<i32, BufferCoords> {
+        (
+            self.width().unwrap_or(0) as i32,
+            self.height().unwrap_or(0) as i32,
+        )
+            .into()
     }
 
     fn format(&self) -> Format {

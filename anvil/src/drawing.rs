@@ -338,6 +338,10 @@ pub fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
         );
         gl.BindTexture(ffi::TEXTURE_2D, 0);
 
-        Gles2Texture::from_raw(renderer, tex, image.width(), image.height())
+        Gles2Texture::from_raw(
+            renderer,
+            tex,
+            (image.width() as i32, image.height() as i32).into(),
+        )
     })
 }

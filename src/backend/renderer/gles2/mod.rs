@@ -34,7 +34,6 @@ use super::ImportEgl;
 use super::{ImportDma, ImportShm};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
-#[cfg(feature = "wayland_frontend")]
 use crate::utils::{Buffer, Rectangle};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
@@ -82,16 +81,14 @@ impl Gles2Texture {
     pub unsafe fn from_raw(
         renderer: &Gles2Renderer,
         tex: ffi::types::GLuint,
-        width: u32,
-        height: u32,
+        size: Size<i32, Buffer>,
     ) -> Gles2Texture {
         Gles2Texture(Rc::new(Gles2TextureInternal {
             texture: tex,
             texture_kind: 0,
             is_external: false,
             y_inverted: false,
-            width,
-            height,
+            size,
             egl_images: None,
             destruction_callback_sender: renderer.destruction_callback_sender.clone(),
         }))
@@ -104,8 +101,7 @@ struct Gles2TextureInternal {
     texture_kind: usize,
     is_external: bool,
     y_inverted: bool,
-    width: u32,
-    height: u32,
+    size: Size<i32, Buffer>,
     egl_images: Option<Vec<EGLImage>>,
     destruction_callback_sender: Sender<CleanupResource>,
 }
@@ -132,10 +128,13 @@ enum CleanupResource {
 
 impl Texture for Gles2Texture {
     fn width(&self) -> u32 {
-        self.0.width
+        self.0.size.w as u32
     }
     fn height(&self) -> u32 {
-        self.0.height
+        self.0.size.h as u32
+    }
+    fn size(&self) -> Size<i32, Buffer> {
+        self.0.size
     }
 }
 
@@ -590,8 +589,7 @@ impl ImportShm for Gles2Renderer {
                             texture_kind: shader_idx,
                             is_external: false,
                             y_inverted: false,
-                            width: width as u32,
-                            height: height as u32,
+                            size: (width, height).into(),
                             egl_images: None,
                             destruction_callback_sender: self.destruction_callback_sender.clone(),
                         })
@@ -720,8 +718,7 @@ impl ImportEgl for Gles2Renderer {
             },
             is_external: egl.format == EGLFormat::External,
             y_inverted: egl.y_inverted,
-            width: egl.width,
-            height: egl.height,
+            size: egl.size,
             egl_images: Some(egl.into_images()),
             destruction_callback_sender: self.destruction_callback_sender.clone(),
         }));
@@ -754,8 +751,7 @@ impl ImportDma for Gles2Renderer {
                 texture_kind: if is_external { 2 } else { 0 },
                 is_external,
                 y_inverted: buffer.y_inverted(),
-                width: buffer.width(),
-                height: buffer.height(),
+                size: buffer.size(),
                 egl_images: Some(vec![image]),
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
             }));

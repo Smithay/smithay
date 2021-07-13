@@ -9,6 +9,7 @@ use drm::control::{dumbbuffer::DumbBuffer as Handle, Device as ControlDevice};
 
 use super::{Allocator, Buffer, Format, Fourcc, Modifier};
 use crate::backend::drm::device::{DrmDevice, DrmDeviceInternal, FdWrapper};
+use crate::utils::{Buffer as BufferCoords, Size};
 
 /// Wrapper around raw DumbBuffer handles.
 pub struct DumbBuffer<A: AsRawFd + 'static> {
@@ -61,12 +62,9 @@ impl<A: AsRawFd + 'static> Allocator<DumbBuffer<A>> for DrmDevice<A> {
 }
 
 impl<A: AsRawFd + 'static> Buffer for DumbBuffer<A> {
-    fn width(&self) -> u32 {
-        self.handle.size().0
-    }
-
-    fn height(&self) -> u32 {
-        self.handle.size().1
+    fn size(&self) -> Size<i32, BufferCoords> {
+        let (w, h) = self.handle.size();
+        (w as i32, h as i32).into()
     }
 
     fn format(&self) -> Format {

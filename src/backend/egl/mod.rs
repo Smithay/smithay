@@ -32,6 +32,8 @@ pub use self::context::EGLContext;
 mod error;
 pub use self::error::*;
 use crate::backend::SwapBuffersError as GraphicsSwapBuffersError;
+#[cfg(feature = "wayland_frontend")]
+use crate::utils::{Buffer, Size};
 
 use nix::libc::c_void;
 
@@ -248,10 +250,8 @@ impl Format {
 #[derive(Debug)]
 pub struct EGLBuffer {
     display: Arc<EGLDisplayHandle>,
-    /// Width in pixels
-    pub width: u32,
-    /// Height in pixels
-    pub height: u32,
+    /// Size of the buffer
+    pub size: Size<i32, Buffer>,
     /// If the y-axis is inverted or not
     pub y_inverted: bool,
     /// Format of these images

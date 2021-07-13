@@ -11,6 +11,7 @@
 //! the lifetime of the buffer. E.g. when you are only caching associated resources for a dmabuf.
 
 use super::{Buffer, Format, Fourcc, Modifier};
+use crate::utils::{Buffer as BufferCoords, Size};
 use std::hash::{Hash, Hasher};
 use std::os::unix::io::{IntoRawFd, RawFd};
 use std::sync::{Arc, Weak};
@@ -22,10 +23,8 @@ pub const MAX_PLANES: usize = 4;
 pub(crate) struct DmabufInternal {
     /// The submitted planes
     pub planes: Vec<Plane>,
-    /// The width of this buffer
-    pub width: i32,
-    /// The height of this buffer
-    pub height: i32,
+    /// The size of this buffer
+    pub size: Size<i32, BufferCoords>,
     /// The format in use
     pub format: Fourcc,
     /// The flags applied to it
@@ -107,12 +106,8 @@ impl Hash for WeakDmabuf {
 }
 
 impl Buffer for Dmabuf {
-    fn width(&self) -> u32 {
-        self.0.width as u32
-    }
-
-    fn height(&self) -> u32 {
-        self.0.height as u32
+    fn size(&self) -> Size<i32, BufferCoords> {
+        self.0.size
     }
 
     fn format(&self) -> Format {
@@ -172,8 +167,7 @@ impl Dmabuf {
         DmabufBuilder {
             internal: DmabufInternal {
                 planes: Vec::with_capacity(MAX_PLANES),
-                width: src.width() as i32,
-                height: src.height() as i32,
+                size: src.size(),
                 format: src.format().code,
                 flags,
             },
@@ -181,12 +175,15 @@ impl Dmabuf {
     }
 
     /// Create a new Dmabuf builder
-    pub fn builder(width: u32, height: u32, format: Fourcc, flags: DmabufFlags) -> DmabufBuilder {
+    pub fn builder(
+        size: impl Into<Size<i32, BufferCoords>>,
+        format: Fourcc,
+        flags: DmabufFlags,
+    ) -> DmabufBuilder {
         DmabufBuilder {
             internal: DmabufInternal {
                 planes: Vec::with_capacity(MAX_PLANES),
-                width: width as i32,
-                height: height as i32,
+                size: size.into(),
                 format,
                 flags,
             },
