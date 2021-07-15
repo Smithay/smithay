@@ -16,13 +16,7 @@ use crate::backend::SwapBuffersError;
 
 use slog::{debug, error, o, trace, warn};
 
-/// Simplified by limited abstraction to link single [`DrmSurface`]s to renderers.
-///
-/// # Use-case
-///
-/// In some scenarios it might be enough to use of a drm-surface as the one and only target
-/// of a single renderer. In these cases `DrmRenderSurface` provides a way to quickly
-/// get up and running without manually handling and binding buffers.
+/// Simplified abstraction of a swapchain for gbm-buffers displayed on a [`DrmSurface`].
 pub struct GbmBufferedSurface<D: AsRawFd + 'static> {
     buffers: Buffers<D>,
     swapchain: Swapchain<GbmDevice<D>, BufferObject<()>, (Dmabuf, FbHandle<D>)>,
@@ -43,15 +37,12 @@ impl<D> GbmBufferedSurface<D>
 where
     D: AsRawFd + 'static,
 {
-    /// Create a new `DrmRendererSurface` from a given compatible combination
-    /// of a surface, an allocator and a renderer.
+    /// Create a new `GbmBufferedSurface` from a given compatible combination
+    /// of a surface, an allocator and renderer formats.
     ///
     /// To sucessfully call this function, you need to have a renderer,
-    /// which can render into a Dmabuf, and an allocator, which can create
-    /// a buffer type, which can be converted into a Dmabuf.
-    ///
-    /// The function will futhermore check for compatibility by enumerating
-    /// supported pixel formats and choosing an appropriate one.
+    /// which can render into a Dmabuf, and a gbm allocator that can produce
+    /// buffers of a supported format for rendering.
     #[allow(clippy::type_complexity)]
     pub fn new<L>(
         drm: DrmSurface<D>,

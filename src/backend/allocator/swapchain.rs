@@ -99,7 +99,7 @@ where
     B: Buffer,
     U: 'static,
 {
-    /// Create a new swapchain with the desired allocator and dimensions and pixel format for the created buffers.
+    /// Create a new swapchain with the desired allocator, dimensions and pixel format for the created buffers.
     pub fn new(
         allocator: A,
         width: u32,

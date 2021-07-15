@@ -171,7 +171,7 @@ impl EGLContext {
     /// # Safety
     ///
     /// This function is marked unsafe, because the context cannot be made current
-    /// on multiple threads.
+    /// on multiple threads without being unbound again (see `unbind`).
     pub unsafe fn make_current_with_surface(&self, surface: &EGLSurface) -> Result<(), MakeCurrentError> {
         let surface_ptr = surface.surface.load(Ordering::SeqCst);
         wrap_egl_call(|| {
@@ -186,7 +186,7 @@ impl EGLContext {
     /// # Safety
     ///
     /// This function is marked unsafe, because the context cannot be made current
-    /// on multiple threads without being unbound again (see `unbind`)
+    /// on multiple threads without being unbound again (see `unbind`).
     pub unsafe fn make_current(&self) -> Result<(), MakeCurrentError> {
         wrap_egl_call(|| {
             ffi::egl::MakeCurrent(
@@ -217,7 +217,7 @@ impl EGLContext {
 
     /// Unbinds this context from the current thread, if set.
     ///
-    /// This does nothing if this context is not the current context
+    /// This does nothing if this context is not the current context.
     pub fn unbind(&self) -> Result<(), MakeCurrentError> {
         if self.is_current() {
             wrap_egl_call(|| unsafe {
@@ -232,12 +232,12 @@ impl EGLContext {
         Ok(())
     }
 
-    /// Returns a list of formats for dmabufs that can be rendered to
+    /// Returns a list of formats for dmabufs that can be rendered to.
     pub fn dmabuf_render_formats(&self) -> &HashSet<DrmFormat> {
         &self.display.dmabuf_render_formats
     }
 
-    /// Returns a list of formats for dmabufs that can be used as textures
+    /// Returns a list of formats for dmabufs that can be used as textures.
     pub fn dmabuf_texture_formats(&self) -> &HashSet<DrmFormat> {
         &self.display.dmabuf_import_formats
     }
@@ -262,7 +262,7 @@ pub struct GlAttributes {
     /// `(3, 0)` will request a OpenGL ES 3.0 context for example.
     /// `(2, 0)` is the minimum.
     pub version: (u8, u8),
-    /// OpenGL profile to use
+    /// OpenGL profile to use.
     pub profile: Option<GlProfile>,
     /// Whether to enable the debug flag of the context.
     ///
@@ -276,7 +276,7 @@ pub struct GlAttributes {
 /// Describes the requested OpenGL context profiles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlProfile {
-    /// Include all the immediate more functions and definitions.
+    /// Include all the immediate functions and definitions.
     Compatibility,
     /// Include all the future-compatible functions and definitions.
     Core,
