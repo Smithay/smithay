@@ -50,9 +50,8 @@ pub struct Swapchain<A: Allocator<B>, B: Buffer, U: 'static> {
 
 /// Slot of a swapchain containing an allocated buffer and its userdata.
 ///
-/// Can be cloned and passed around freely, the buffer is marked for re-use
-/// once all copies are dropped. Holding on to this struct will block the
-/// buffer in the swapchain.
+/// The buffer is marked for re-use once all copies are dropped.
+/// Holding on to this struct will block the buffer in the swapchain.
 #[derive(Debug)]
 pub struct Slot<B: Buffer, U: 'static>(Arc<InternalSlot<B, U>>);
 
