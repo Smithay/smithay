@@ -20,13 +20,15 @@
 //!
 //! A [`connector`](drm::control::connector) represents a port on your computer, possibly with a connected monitor, TV, capture card, etc.
 //!
-//! A [`framebuffer`](drm::control::framebuffer) represents a buffer you may be rendering to, see `DrmSurface` below.
+//! A [`framebuffer`](drm::control::framebuffer) represents a buffer you may display, see `DrmSurface` below.
 //!
 //! A [`plane`](drm::control::plane) adds another layer on top of the crtcs, which allow us to layer multiple images on top of each other more efficiently
 //! then by combining the rendered images in the rendering phase, e.g. via OpenGL. Planes have to be explicitly used by the user to be useful.
 //! Every device has at least one primary plane used to display an image to the whole crtc. Additionally cursor and overlay planes may be present.
 //! Cursor planes are usually very restricted in size and meant to be used for hardware cursors, while overlay planes may
 //! be used for performance reasons to display any overlay on top of the image, e.g. the top-most windows.
+//! Overlay planes may have a bunch of weird limitation, that you cannot query, e.g. only working on round pixel coordinates.
+//! You code should never rely on a fixed set of overlay planes, but always have a fallback solution in place.
 //!
 //! The main functionality of a `Device` in smithay is to give access to all these properties for the user to
 //! choose an appropriate rendering configuration. What that means is defined by the requirements and constraints documented
@@ -41,11 +43,11 @@
 //!
 //! A surface is a part of a `Device` that may output a picture to a number of connectors. It pumps pictures of buffers to outputs.
 //!
-//! On surface creation a matching encoder for your `encoder`-`connector` is automatically selected,
-//! if it exists, which means you still need to check your configuration.
+//! On surface creation a matching encoder for your `connector` is automatically selected, if one exists(!),
+//! which means you still need to check your configuration beforehand, even if you do not need to provide an encoder.
 //!
 //! A surface consists of one `crtc` that is rendered to by the user. This is fixed for the `Surface`s lifetime and cannot be changed.
-//! A surface also always needs at least one connector to output the resulting image to as well as a `Mode` that is valid for the given connector.
+//! A surface also always needs at least one connector to output the resulting image to as well as a `Mode` that is valid for the given connectors.
 //!
 //! The state of a `Surface` is double-buffered, meaning all operations that chance the set of `connector`s or their `Mode` are stored and
 //! only applied on the next commit. `Surface`s do their best to validate these changes, if possible.

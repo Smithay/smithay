@@ -320,7 +320,7 @@ impl Default for PixelFormatRequirements {
 }
 
 impl PixelFormatRequirements {
-    /// Append the  requirements to the given attribute list
+    /// Append the requirements to the given attribute list
     pub fn create_attributes(&self, out: &mut Vec<c_int>, logger: &slog::Logger) {
         if let Some(hardware_accelerated) = self.hardware_accelerated {
             out.push(ffi::egl::CONFIG_CAVEAT as c_int);
