@@ -407,6 +407,20 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                     return;
                 }
 
+                // If surface is maximized then unmaximize it
+                if let Some(current_state) = surface.current_state() {
+                    if current_state.states.contains(xdg_toplevel::State::Maximized) {
+                        let fs_changed = surface.with_pending_state(|state| {
+                            state.states.unset(xdg_toplevel::State::Maximized);
+                            state.size = None;
+                        });
+
+                        if fs_changed.is_ok() {
+                            surface.send_configure();
+                        }
+                    }
+                }
+
                 let toplevel = SurfaceKind::Xdg(surface);
                 let initial_window_location = xdg_window_map.borrow().location(&toplevel).unwrap();
 
