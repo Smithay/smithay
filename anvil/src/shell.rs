@@ -407,6 +407,9 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                     return;
                 }
 
+                let toplevel = SurfaceKind::Xdg(surface.clone());
+                let mut initial_window_location = xdg_window_map.borrow().location(&toplevel).unwrap();
+
                 // If surface is maximized then unmaximize it
                 if let Some(current_state) = surface.current_state() {
                     if current_state.states.contains(xdg_toplevel::State::Maximized) {
@@ -417,12 +420,23 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
 
                         if fs_changed.is_ok() {
                             surface.send_configure();
+
+                            // NOTE: In real compositor mouse location should be mapped to a new window size
+                            // For example, you could:
+                            // 1) transform mouse pointer position from compositor space to window space (location relative)
+                            // 2) divide the x coordinate by width of the window to get the percentage
+                            //   - 0.0 would be on the far left of the window
+                            //   - 0.5 would be in middle of the window
+                            //   - 1.0 would be on the far right of the window
+                            // 3) multiply the percentage by new window width
+                            // 4) by doing that, drag will look a lot more natural
+                            //
+                            // but for anvil needs setting location to pointer location is fine
+                            let pos = pointer.current_location();
+                            initial_window_location = (pos.x as i32, pos.y as i32).into();
                         }
                     }
                 }
-
-                let toplevel = SurfaceKind::Xdg(surface);
-                let initial_window_location = xdg_window_map.borrow().location(&toplevel).unwrap();
 
                 let grab = MoveSurfaceGrab {
                     start_data,
