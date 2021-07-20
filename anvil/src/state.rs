@@ -15,6 +15,7 @@ use smithay::{
     utils::{Logical, Point},
     wayland::{
         data_device::{default_action_chooser, init_data_device, set_data_device_focus, DataDeviceEvent},
+        output::xdg::init_xdg_output_manager,
         seat::{CursorImageStatus, KeyboardHandle, PointerHandle, Seat, XkbConfig},
         shm::init_shm_global,
         tablet_manager::{init_tablet_manager_global, TabletSeatTrait},
@@ -81,6 +82,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         init_shm_global(&mut (*display).borrow_mut(), vec![], log.clone());
 
         let shell_handles = init_shell::<BackendData>(display.clone(), log.clone());
+
+        init_xdg_output_manager(&mut display.borrow_mut(), log.clone());
 
         let socket_name = display
             .borrow_mut()

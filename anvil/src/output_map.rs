@@ -51,7 +51,7 @@ impl Output {
 
         let output_scale = scale.round() as i32;
 
-        output.change_current_state(Some(mode), None, Some(output_scale));
+        output.change_current_state(Some(mode), None, Some(output_scale), Some(location));
         output.set_preferred(mode);
 
         Self {
@@ -159,6 +159,11 @@ impl OutputMap {
 
             output.location.x = output_x;
             output.location.y = 0;
+
+            output
+                .output
+                .change_current_state(None, None, None, Some(output.location));
+
             output_x += output.size().w;
         }
 
@@ -314,7 +319,7 @@ impl OutputMap {
                 output.output.delete_mode(output.current_mode);
                 output
                     .output
-                    .change_current_state(Some(mode), None, Some(output.output_scale));
+                    .change_current_state(Some(mode), None, Some(output.output_scale), None);
                 output.output.set_preferred(mode);
                 output.current_mode = mode;
             }
@@ -356,9 +361,12 @@ impl OutputMap {
 
                 if output.output_scale != output_scale {
                     output.output_scale = output_scale;
-                    output
-                        .output
-                        .change_current_state(Some(output.current_mode), None, Some(output_scale));
+                    output.output.change_current_state(
+                        Some(output.current_mode),
+                        None,
+                        Some(output_scale),
+                        None,
+                    );
                 }
             }
         }
