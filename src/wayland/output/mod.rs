@@ -39,6 +39,7 @@
 //!     Some(Mode { size: (1920, 1080).into(), refresh: 60000 }), // the resolution mode,
 //!     Some(wl_output::Transform::Normal), // global screen transformation
 //!     Some(1), // global screen scaling factor
+//!     Some((0,0).into()) // output position
 //! );
 //! // set the preferred mode
 //! output.set_preferred(Mode { size: (1920, 1080).into(), refresh: 60000 });
@@ -46,6 +47,8 @@
 //! output.add_mode(Mode { size: (800, 600).into(), refresh: 60000 });
 //! output.add_mode(Mode { size: (1024, 768).into(), refresh: 60000 });
 //! ```
+
+pub mod xdg;
 
 use std::{
     ops::Deref as _,
@@ -64,6 +67,8 @@ use wayland_server::{
 use slog::{info, o, trace, warn};
 
 use crate::utils::{Logical, Physical, Point, Raw, Size};
+
+use self::xdg::XdgOutput;
 
 /// An output mode
 ///
@@ -106,6 +111,8 @@ struct Inner {
     modes: Vec<Mode>,
     current_mode: Option<Mode>,
     preferred_mode: Option<Mode>,
+
+    xdg_output: Option<XdgOutput>,
 }
 
 impl Inner {
@@ -194,6 +201,7 @@ impl Output {
             modes: Vec::new(),
             current_mode: None,
             preferred_mode: None,
+            xdg_output: None,
         }));
 
         let output = Output { inner: inner.clone() };
@@ -218,6 +226,16 @@ impl Output {
         );
 
         (output, global)
+    }
+
+    /// Attempt to retrieve a [`Output`] from an existing resource
+    pub fn from_resource(output: &WlOutput) -> Option<Output> {
+        output
+            .as_ref()
+            .user_data()
+            .get::<Arc<Mutex<Inner>>>()
+            .cloned()
+            .map(|inner| Output { inner })
     }
 
     /// Sets the preferred mode of this output
@@ -257,7 +275,7 @@ impl Output {
 
     /// Change the current state of this output
     ///
-    /// You can changed the current mode, transform status or scale of this output. Providing
+    /// You can changed the current mode, transform status, location or scale of this output. Providing
     /// `None` to any of these field means that the value does not change.
     ///
     /// If the provided mode was not previously known to this output, it is added to its
@@ -269,6 +287,7 @@ impl Output {
         new_mode: Option<Mode>,
         new_transform: Option<Transform>,
         new_scale: Option<i32>,
+        new_location: Option<Point<i32, Logical>>,
     ) {
         let mut inner = self.inner.lock().unwrap();
         if let Some(mode) = new_mode {
@@ -287,11 +306,21 @@ impl Output {
         if inner.preferred_mode == new_mode {
             flags |= WMode::Preferred;
         }
+        if let Some(new_location) = new_location {
+            inner.location = new_location;
+        }
+
+        // XdgOutput has to be updated before WlOutput
+        // Because WlOutput::done() has to allways be called last
+        if let Some(xdg_output) = inner.xdg_output.as_ref() {
+            xdg_output.change_current_state(new_mode, new_scale, new_location);
+        }
+
         for output in &inner.instances {
             if let Some(mode) = new_mode {
                 output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
             }
-            if new_transform.is_some() {
+            if new_transform.is_some() || new_location.is_some() {
                 inner.send_geometry(output);
             }
             if let Some(scale) = new_scale {
