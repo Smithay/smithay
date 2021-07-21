@@ -1,6 +1,31 @@
 # Smithay Changelog
 
-## Unreleased
+## version 0.3.0 (to be released)
+
+Large parts of Smithay were changed with numerous API changes. It is thus recommended to
+approach version 0.3 as if it was a new crate altogether compared to 0.2.
+
+The most notable changes are:
+
+- Deep refactor of the graphics backends around a workflows centered on allocating graphics buffers,
+  and a Gles2-based renderer abstraction is provided.
+- Support for DRM atomic modesetting as well as client-provided DMABUF
+- Most backends are now `calloop` event sources generating events. The recommended organization for
+  your smithay-based compositor is thus to centralize most of your logic on a global state struct,
+  and delegate event handling to it via the shared data mechanism of `calloop`. Most of the callbacks
+  you provide to Smithay are given mutable access to this shared data.
+- The `wayland::compositor` handling logic now automatically handles state tracking and delayed commit
+  for wayland surfaces.
+
+Many thanks to the new contributors to Smithay, who contributed the following:
+
+- Support for [`libseat`](https://sr.ht/~kennylevinsen/seatd/) as a session backend, by
+  @PolyMeilex
+- Support for graphics tablets via the `tablet` protocol extension, by @PolyMeilex
+- Support for running Smithay on `aarch64` architectures, by @cmeissl
+- A rework of the `xdg-shell` handlers to better fit the protocol logic and correctly track configure
+  events, by @cmeissl
+- Basic Xwayland support, by @psychon
 
 ## version 0.2.0 (2019-01-03)
 
