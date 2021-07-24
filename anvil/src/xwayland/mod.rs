@@ -89,7 +89,7 @@ impl X11State {
         // Actually become the WM by redirecting some operations
         conn.change_window_attributes(
             screen.root,
-            &ChangeWindowAttributesAux::default().event_mask(EventMask::SubstructureRedirect),
+            &ChangeWindowAttributesAux::default().event_mask(EventMask::SUBSTRUCTURE_REDIRECT),
         )?;
 
         // Tell XWayland that we are the WM by acquiring the WM_S0 selection. No X11 clients are accepted before this.
@@ -104,14 +104,14 @@ impl X11State {
             1,
             1,
             0,
-            WindowClass::InputOutput,
+            WindowClass::INPUT_OUTPUT,
             x11rb::COPY_FROM_PARENT,
             &Default::default(),
         )?;
         conn.set_selection_owner(win, atoms.WM_S0, x11rb::CURRENT_TIME)?;
 
         // XWayland wants us to do this to function properly...?
-        conn.composite_redirect_subwindows(screen.root, Redirect::Manual)?;
+        conn.composite_redirect_subwindows(screen.root, Redirect::MANUAL)?;
 
         conn.flush()?;
 
@@ -133,10 +133,10 @@ impl X11State {
             Event::ConfigureRequest(r) => {
                 // Just grant the wish
                 let mut aux = ConfigureWindowAux::default();
-                if r.value_mask & u16::from(ConfigWindow::StackMode) != 0 {
+                if r.value_mask & u16::from(ConfigWindow::STACK_MODE) != 0 {
                     aux = aux.stack_mode(r.stack_mode);
                 }
-                if r.value_mask & u16::from(ConfigWindow::Sibling) != 0 {
+                if r.value_mask & u16::from(ConfigWindow::SIBLING) != 0 {
                     aux = aux.sibling(r.sibling);
                 }
                 if r.value_mask & u16::from(ConfigWindow::X) != 0 {
@@ -145,13 +145,13 @@ impl X11State {
                 if r.value_mask & u16::from(ConfigWindow::Y) != 0 {
                     aux = aux.y(i32::try_from(r.y).unwrap());
                 }
-                if r.value_mask & u16::from(ConfigWindow::Width) != 0 {
+                if r.value_mask & u16::from(ConfigWindow::WIDTH) != 0 {
                     aux = aux.width(u32::try_from(r.width).unwrap());
                 }
-                if r.value_mask & u16::from(ConfigWindow::Height) != 0 {
+                if r.value_mask & u16::from(ConfigWindow::HEIGHT) != 0 {
                     aux = aux.height(u32::try_from(r.height).unwrap());
                 }
-                if r.value_mask & u16::from(ConfigWindow::BorderWidth) != 0 {
+                if r.value_mask & u16::from(ConfigWindow::BORDER_WIDTH) != 0 {
                     aux = aux.border_width(u32::try_from(r.border_width).unwrap());
                 }
                 self.conn.configure_window(r.window, &aux)?;

@@ -376,10 +376,7 @@ impl Session for DirectSession {
 
 impl AsErrno for NixError {
     fn as_errno(&self) -> Option<i32> {
-        match *self {
-            NixError::Sys(errno) => Some(errno as i32),
-            _ => None,
-        }
+        Some(*self as i32)
     }
 }
 
