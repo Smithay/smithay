@@ -42,7 +42,7 @@ use std::{
     any::Any,
     cell::RefCell,
     env,
-    io::{Error as IOError, Read, Result as IOResult},
+    io::{Read, Result as IOResult},
     os::unix::{
         io::{AsRawFd, IntoRawFd, RawFd},
         net::UnixStream,
@@ -60,8 +60,6 @@ use calloop::{
 };
 
 use slog::{error, info, o};
-
-use nix::Error as NixError;
 
 use wayland_server::{Client, Display, Filter};
 
@@ -420,21 +418,12 @@ fn spawn_xwayland(
     Ok(child.stdout.take().expect("stdout should be piped"))
 }
 
-fn nix_error_to_io(err: NixError) -> IOError {
-    use std::io::ErrorKind;
-    match err {
-        NixError::Sys(errno) => errno.into(),
-        NixError::InvalidPath | NixError::InvalidUtf8 => IOError::new(ErrorKind::InvalidInput, err),
-        NixError::UnsupportedOperation => IOError::new(ErrorKind::Other, err),
-    }
-}
-
 /// Remove the `O_CLOEXEC` flag from this `Fd`
 ///
 /// This means that the `Fd` will *not* be automatically
 /// closed when we `exec()` into XWayland
 fn unset_cloexec(fd: RawFd) -> IOResult<()> {
     use nix::fcntl::{fcntl, FcntlArg, FdFlag};
-    fcntl(fd, FcntlArg::F_SETFD(FdFlag::empty())).map_err(nix_error_to_io)?;
+    fcntl(fd, FcntlArg::F_SETFD(FdFlag::empty()))?;
     Ok(())
 }

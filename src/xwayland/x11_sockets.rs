@@ -5,7 +5,7 @@ use std::{
 
 use slog::{debug, info, warn};
 
-use nix::{errno::Errno, sys::socket, Error as NixError, Result as NixResult};
+use nix::{errno::Errno, sys::socket, Result as NixResult};
 
 /// Find a free X11 display slot and setup
 pub(crate) fn prepare_x11_sockets(log: ::slog::Logger) -> Result<(X11Lock, [UnixStream; 2]), std::io::Error> {
@@ -74,7 +74,7 @@ impl X11Lock {
                         .parse::<i32>()
                         .map_err(|_| ())?,
                 );
-                if let Err(NixError::Sys(Errno::ESRCH)) = ::nix::sys::signal::kill(pid, None) {
+                if let Err(Errno::ESRCH) = ::nix::sys::signal::kill(pid, None) {
                     // no process whose pid equals the contents of the lockfile exists
                     // remove the lockfile and try grabbing it again
                     if let Ok(()) = ::std::fs::remove_file(filename) {

@@ -49,7 +49,8 @@ use std::{
 
 use wayland_protocols::unstable::linux_dmabuf::v1::server::{
     zwp_linux_buffer_params_v1::{
-        Error as ParamError, Request as ParamsRequest, ZwpLinuxBufferParamsV1 as BufferParams,
+        Error as ParamError, Flags as BufferFlags, Request as ParamsRequest,
+        ZwpLinuxBufferParamsV1 as BufferParams,
     },
     zwp_linux_dmabuf_v1,
 };
@@ -224,7 +225,7 @@ where
         width: i32,
         height: i32,
         format: u32,
-        flags: u32,
+        flags: BufferFlags,
         ddata: DispatchData<'a>,
     ) {
         // Cannot reuse a params:
@@ -260,7 +261,11 @@ where
             return;
         }
 
-        let mut buf = Dmabuf::builder((width, height), format, DmabufFlags::from_bits_truncate(flags));
+        let mut buf = Dmabuf::builder(
+            (width, height),
+            format,
+            DmabufFlags::from_bits_truncate(flags.bits()),
+        );
         let planes = std::mem::take(&mut self.pending_planes);
         for (i, plane) in planes.into_iter().enumerate() {
             let offset = plane.offset;
@@ -309,7 +314,7 @@ where
         width: i32,
         height: i32,
         format: u32,
-        flags: u32,
+        flags: BufferFlags,
         ddata: DispatchData<'a>,
     ) {
         // Cannot reuse a params:
@@ -345,7 +350,11 @@ where
             return;
         }
 
-        let mut buf = Dmabuf::builder((width, height), format, DmabufFlags::from_bits_truncate(flags));
+        let mut buf = Dmabuf::builder(
+            (width, height),
+            format,
+            DmabufFlags::from_bits_truncate(flags.bits()),
+        );
         let planes = ::std::mem::take(&mut self.pending_planes);
         for (i, plane) in planes.into_iter().enumerate() {
             let offset = plane.offset;
