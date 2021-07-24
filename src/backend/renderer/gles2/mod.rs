@@ -93,6 +93,13 @@ impl Gles2Texture {
             destruction_callback_sender: renderer.destruction_callback_sender.clone(),
         }))
     }
+
+    /// OpenGL texture id of this texture
+    ///
+    /// This id will become invalid, when the Gles2Texture is dropped and does not transfer ownership.
+    pub fn tex_id(&self) -> ffi::types::GLuint {
+        self.0.texture
+    }
 }
 
 #[derive(Debug)]
