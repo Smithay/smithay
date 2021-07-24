@@ -27,8 +27,12 @@ extern "system" fn egl_debug_log(
     let _ = std::panic::catch_unwind(move || unsafe {
         let msg = std::ffi::CStr::from_ptr(message as *const _);
         let message_utf8 = msg.to_string_lossy();
-        let cmd = std::ffi::CStr::from_ptr(command as *const _);
-        let command_utf8 = cmd.to_string_lossy();
+        let command_utf8 = if !command.is_null() {
+            let cmd = std::ffi::CStr::from_ptr(command as *const _);
+            cmd.to_string_lossy()
+        } else {
+            std::borrow::Cow::Borrowed("")
+        };
         let logger = crate::slog_or_fallback(None).new(slog::o!("backend" => "egl"));
         match severity {
             egl::DEBUG_MSG_CRITICAL_KHR | egl::DEBUG_MSG_ERROR_KHR => {
