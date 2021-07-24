@@ -455,7 +455,7 @@ impl<B: InputBackend> TouchUpEvent<B> for UnusedEvent {
     }
 }
 
-/// Trait for touch events cancelling the chain
+/// Trait for touch events canceling the chain
 pub trait TouchCancelEvent<B: InputBackend>: Event<B> {
     /// [`TouchSlot`], if the device has multi-touch capabilities
     fn slot(&self) -> Option<TouchSlot>;
@@ -497,7 +497,7 @@ pub trait InputBackend: Sized {
     type TouchUpEvent: TouchUpEvent<Self>;
     /// Type representing touch events from moving
     type TouchMotionEvent: TouchMotionEvent<Self>;
-    /// Type representing cancelling of touch events
+    /// Type representing canceling of touch events
     type TouchCancelEvent: TouchCancelEvent<Self>;
     /// Type representing touch frame events
     type TouchFrameEvent: TouchFrameEvent<Self>;
@@ -532,17 +532,17 @@ pub enum InputEvent<B: InputBackend> {
         /// The removed device
         device: B::Device,
     },
-    /// A keyboard event occured
+    /// A keyboard event occurred
     Keyboard {
         /// The keyboard event
         event: B::KeyboardKeyEvent,
     },
-    /// A relative pointer motion occured
+    /// A relative pointer motion occurred
     PointerMotion {
         /// The pointer motion event
         event: B::PointerMotionEvent,
     },
-    /// An absolute pointer motion occures
+    /// An absolute pointer motion occurs
     PointerMotionAbsolute {
         /// The absolute pointer motion event
         event: B::PointerMotionAbsoluteEvent,
@@ -552,7 +552,7 @@ pub enum InputEvent<B: InputBackend> {
         /// The pointer button event
         event: B::PointerButtonEvent,
     },
-    /// A pointer axis was actionned
+    /// A pointer action occurred while scrolling on an axis
     PointerAxis {
         /// The pointer axis event
         event: B::PointerAxisEvent,
@@ -577,7 +577,7 @@ pub enum InputEvent<B: InputBackend> {
         /// The touch cancel event
         event: B::TouchCancelEvent,
     },
-    /// A touch frame was emmited
+    /// A touch frame was emitted
     ///
     /// A set of two events received on the same seat between two frames should
     /// be interpreted as an atomic event.
@@ -586,19 +586,19 @@ pub enum InputEvent<B: InputBackend> {
         event: B::TouchFrameEvent,
     },
 
-    /// A tablet tool axis was emited
+    /// A tablet tool axis was emitted
     TabletToolAxis {
         /// The tablet tool axis event
         event: B::TabletToolAxisEvent,
     },
 
-    /// A tablet tool proximity was emited
+    /// A tablet tool proximity was emitted
     TabletToolProximity {
         /// The tablet tool proximity  event
         event: B::TabletToolProximityEvent,
     },
 
-    /// A tablet tool tip event was emited
+    /// A tablet tool tip event was emitted
     TabletToolTip {
         /// The tablet tool axis event
         event: B::TabletToolTipEvent,

@@ -40,7 +40,7 @@ where
     /// Create a new `GbmBufferedSurface` from a given compatible combination
     /// of a surface, an allocator and renderer formats.
     ///
-    /// To sucessfully call this function, you need to have a renderer,
+    /// To successfully call this function, you need to have a renderer,
     /// which can render into a Dmabuf, and a gbm allocator that can produce
     /// buffers of a supported format for rendering.
     #[allow(clippy::type_complexity)]

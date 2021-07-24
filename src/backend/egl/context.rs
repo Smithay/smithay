@@ -292,7 +292,7 @@ pub struct PixelFormatRequirements {
     pub color_bits: Option<u8>,
     /// If `true`, the color buffer must be in a floating point format. Default is `false`.
     ///
-    /// Using floating points allows you to write values outside of the `[0.0, 1.0]` range.
+    /// Using floating points allows you to write values outside the `[0.0, 1.0]` range.
     pub float_color_buffer: bool,
     /// Minimum number of bits for the alpha in the color buffer. `None` means "don't care". The default is `None`.
     pub alpha_bits: Option<u8>,

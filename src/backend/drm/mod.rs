@@ -60,7 +60,7 @@
 //! It just provides a way to create framebuffers from various buffer types (mainly `DumbBuffer`s and hardware-backed gbm `BufferObject`s).
 //!
 //! Buffer management and details about the various types can be found in the [`allocator`-Module](crate::backend::allocator) and
-//! renderering abstractions, which can target these buffers can be found in the [`renderer`-Module](crate::backend::renderer).
+//! rendering abstractions, which can target these buffers can be found in the [`renderer`-Module](crate::backend::renderer).
 
 pub(crate) mod device;
 pub(self) mod error;

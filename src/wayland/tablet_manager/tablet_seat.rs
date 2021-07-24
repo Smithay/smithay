@@ -41,7 +41,7 @@ impl fmt::Debug for TabletSeat {
 
 /// Handle to a tablet seat
 ///
-/// TabletSeat extends `Seat` with graphic tablet specyfic functionality
+/// TabletSeat extends `Seat` with graphic tablet specific functionality
 ///
 /// TabletSeatHandle can be used to advertise available graphics tablets and tools to wayland clients
 #[derive(Default, Debug, Clone)]
@@ -92,7 +92,7 @@ impl TabletSeatHandle {
     /// You can either add tablet on [input::Event::DeviceAdded](crate::backend::input::InputEvent::DeviceAdded) event,
     /// or you can add tablet based on tool event, then clients will not know about devices that are not being used
     ///
-    /// Returns new [TabletHandle] if tablet was not know by this seat, if tablet was allready know it returns exsisting handle.
+    /// Returns new [TabletHandle] if tablet was not know by this seat, if tablet was already know it returns existing handle.
     pub fn add_tablet(&self, tablet_desc: &TabletDescriptor) -> TabletHandle {
         let inner = &mut *self.inner.borrow_mut();
 
@@ -123,7 +123,7 @@ impl TabletSeatHandle {
 
     /// Remove tablet device
     ///
-    /// Called when tablet is no longer avalible
+    /// Called when tablet is no longer available
     /// For example on [input::Event::DeviceRemoved](crate::backend::input::InputEvent::DeviceRemoved) event.
     pub fn remove_tablet(&self, tablet_desc: &TabletDescriptor) {
         self.inner.borrow_mut().tablets.remove(tablet_desc);
@@ -138,7 +138,7 @@ impl TabletSeatHandle {
     ///
     /// Tool is usually added on [TabletToolProximityEvent](crate::backend::input::InputEvent::TabletToolProximity) event.
     ///
-    /// Returns new [TabletToolHandle] if tool was not know by this seat, if tool was allready know it returns exsisting handle,
+    /// Returns new [TabletToolHandle] if tool was not know by this seat, if tool was already know it returns existing handle,
     /// it allows you to send tool input events to clients.
     pub fn add_tool(&self, tool_desc: &TabletToolDescriptor) -> TabletToolHandle {
         let inner = &mut *self.inner.borrow_mut();
@@ -177,7 +177,7 @@ impl TabletSeatHandle {
     ///
     /// Policy of tool removal is a compositor-specific.
     ///
-    /// One posible policy would be to remove a tool when all tablets the tool was used on are removed.
+    /// One possible policy would be to remove a tool when all tablets the tool was used on are removed.
     pub fn remove_tool(&self, tool_desc: &TabletToolDescriptor) {
         self.inner.borrow_mut().tools.remove(tool_desc);
     }

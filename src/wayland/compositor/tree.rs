@@ -52,7 +52,7 @@ pub enum Location {
     After,
 }
 
-/// Possible actions to do after handling a node diring tree traversal
+/// Possible actions to do after handling a node during tree traversal
 #[derive(Debug)]
 pub enum TraversalAction<T> {
     /// Traverse its children as well, providing them the data T

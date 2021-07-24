@@ -5,7 +5,7 @@
 //! underlying resources are freed.
 //!
 //! If you want to hold on to a potentially alive dmabuf without blocking the free up
-//! of the underlying resouces, you may `downgrade` a `Dmabuf` reference to a `WeakDmabuf`.
+//! of the underlying resources, you may `downgrade` a `Dmabuf` reference to a `WeakDmabuf`.
 //!
 //! This can be especially useful in resources where other parts of the stack should decide upon
 //! the lifetime of the buffer. E.g. when you are only caching associated resources for a dmabuf.
@@ -125,9 +125,9 @@ pub struct DmabufBuilder {
 }
 
 impl DmabufBuilder {
-    /// Add a plane to the construted Dmabuf
+    /// Add a plane to the constructed Dmabuf
     ///
-    /// *Note*: Each Dmabuf needs atleast one plane.
+    /// *Note*: Each Dmabuf needs at least one plane.
     /// MAX_PLANES notes the maximum amount of planes any format may use with this implementation.
     pub fn add_plane(&mut self, fd: RawFd, idx: u32, offset: u32, stride: u32, modifier: Modifier) -> bool {
         if self.internal.planes.len() == MAX_PLANES {
@@ -158,7 +158,7 @@ impl DmabufBuilder {
 }
 
 impl Dmabuf {
-    /// Create a new Dmabuf by intializing with values from an existing buffer
+    /// Create a new Dmabuf by initializing with values from an existing buffer
     ///
     // Note: the `src` Buffer is only used a reference for size and format.
     // The contents are determined by the provided file descriptors, which

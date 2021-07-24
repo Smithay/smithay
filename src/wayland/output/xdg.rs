@@ -1,6 +1,6 @@
 //! XDG Output advertising capabilities
 //!
-//! This protocol is ment for describing outputs in a way
+//! This protocol is meant for describing outputs in a way
 //! which is more in line with the concept of an output on desktop oriented systems.
 
 use std::{

@@ -7,7 +7,7 @@
 //! - Import/Export external resources to/from OpenGL
 //!
 //! To use this module, you first need to create a [`EGLDisplay`] through a supported EGL platform
-//! as inidicated by an implementation of the `native::EGLNativeDisplay` trait.
+//! as indicated by an implementation of the `native::EGLNativeDisplay` trait.
 //!
 //! You may bind the [`EGLDisplay`], that shall be used by clients for rendering (so pick one initialized by a fast platform)
 //! to the [`wayland_server::Display`] of your compositor. Note only one backend may be bound to any [`Display`](wayland_server::Display) at any time.
@@ -20,7 +20,7 @@
 //! it may also be used to initialize an [`EGLSurface`], which can be [bound](crate::backend::renderer::Bind) to some renderers.
 //!
 //! Alternatively you may import [`dmabuf`](crate::backend::allocator::dmabuf)s using the display, which result
-//! in an [`EGLImage`], which can be rendered into by OpenGL. This is perferrable to using surfaces as the dmabuf can be
+//! in an [`EGLImage`], which can be rendered into by OpenGL. This is preferable to using surfaces as the dmabuf can be
 //! passed around freely making resource-management and more complex use-cases like Multi-GPU rendering easier to manage.
 //! Renderers based on EGL may support doing this for you by allowing you to [`Bind`](crate::backend::renderer::Bind) a dmabuf directly.
 //!

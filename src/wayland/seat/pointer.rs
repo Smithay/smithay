@@ -161,7 +161,7 @@ impl PointerHandle {
         self.inner.borrow_mut().grab = GrabStatus::Active(serial, Box::new(grab));
     }
 
-    /// Remove any current grab on this pointer, reseting it to the default behavior
+    /// Remove any current grab on this pointer, resetting it to the default behavior
     pub fn unset_grab(&self) {
         self.inner.borrow_mut().grab = GrabStatus::None;
     }

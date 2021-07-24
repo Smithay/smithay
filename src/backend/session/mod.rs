@@ -14,7 +14,7 @@
 //! Session handling in Smithay is done through a pair of types that each session provider implements.
 //!
 //! The first is a handle implementing the [`Session`] trait, which allows you to request the opening
-//! of devices, a VT change, or informations about the session state.
+//! of devices, a VT change, or information about the session state.
 //!
 //! The second is a notifier which informs you when the session is enabled or disabled by the system.
 //! This notifier takes the form of a [`calloop`] event source, but it does not generates any event
