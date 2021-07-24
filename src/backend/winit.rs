@@ -644,7 +644,7 @@ impl InputBackend for WinitInputBackend {
     /// Processes new events of the underlying event loop and calls the provided callback.
     ///
     /// You need to periodically call this function to keep the underlying event loop and
-    /// [`WinitWindow`] active. Otherwise the window may no respond to user interaction.
+    /// [`WinitWindow`] active. Otherwise the window may not respond to user interaction.
     ///
     /// Returns an error if the [`WinitWindow`] the window has been closed. Calling
     /// `dispatch_new_events` again after the [`WinitWindow`] has been closed is considered an

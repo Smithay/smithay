@@ -22,7 +22,7 @@ pub enum ServerDndEvent {
     Action(DndAction),
     /// The DnD resource was dropped by the user
     ///
-    /// After that, the client can still interract with your ressource
+    /// After that, the client can still interact with your resource
     Dropped,
     /// The Dnd was cancelled
     ///

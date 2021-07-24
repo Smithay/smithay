@@ -13,7 +13,7 @@
 //!
 //! The session may be used to open devices manually through the [`Session`] interface
 //! or be passed to other objects that need it to open devices themselves.
-//! The [`AutoSession`] is clonable
+//! The [`AutoSession`] is cloneable
 //! and may be passed to multiple devices easily.
 //!
 //! Examples for those are e.g. the [`LibinputInputBackend`](crate::backend::libinput::LibinputInputBackend)

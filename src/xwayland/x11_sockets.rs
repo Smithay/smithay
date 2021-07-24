@@ -111,7 +111,7 @@ impl Drop for X11Lock {
 
 /// Open the two unix sockets an X server listens on
 ///
-/// Should only be done after the associated lockfile is aquired!
+/// Should only be done after the associated lockfile is acquired!
 fn open_x11_sockets_for_display(display: u32) -> NixResult<[UnixStream; 2]> {
     let path = format!("/tmp/.X11-unix/X{}", display);
     let _ = ::std::fs::remove_file(&path);

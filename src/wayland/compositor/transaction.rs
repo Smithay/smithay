@@ -185,7 +185,7 @@ pub(crate) struct Transaction {
 }
 
 impl Transaction {
-    /// Computes the global state of the transaction wrt its blockers
+    /// Computes the global state of the transaction with regard to its blockers
     ///
     /// The logic is:
     ///

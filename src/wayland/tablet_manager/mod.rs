@@ -46,9 +46,9 @@ pub use tablet::{TabletDescriptor, TabletHandle};
 pub use tablet_seat::TabletSeatHandle;
 pub use tablet_tool::TabletToolHandle;
 
-/// Extends [Seat] with graphic tablet specyfic functionality
+/// Extends [Seat] with graphic tablet specific functionality
 pub trait TabletSeatTrait {
-    /// Get tablet seat asosiated with this seat
+    /// Get tablet seat associated with this seat
     fn tablet_seat(&self) -> TabletSeatHandle;
 }
 

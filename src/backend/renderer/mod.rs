@@ -163,7 +163,7 @@ pub trait Frame {
     /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
     fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error>;
     /// Render a texture to the current target using given projection matrix and alpha.
-    /// The given verticies are used to source the texture. This is mostly useful for cropping the texture.
+    /// The given vertices are used to source the texture. This is mostly useful for cropping the texture.
     fn render_texture(
         &mut self,
         texture: &Self::TextureId,
@@ -257,7 +257,7 @@ pub trait Renderer {
     /// Initialize a rendering context on the current rendering target with given dimensions and transformation.
     ///
     /// This function *may* error, if:
-    /// - The given dimensions are unsuppored (too large) for this renderer
+    /// - The given dimensions are unsupported (too large) for this renderer
     /// - The given Transformation is not supported by the renderer (`Transform::Normal` is always supported).
     /// - This renderer implements `Bind`, no target was bound *and* has no default target.
     /// - (Renderers not implementing `Bind` always have a default target.)

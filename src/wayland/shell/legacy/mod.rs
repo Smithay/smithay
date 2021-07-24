@@ -4,7 +4,7 @@
 //! as a global handler for `wl_shell`. This protocol is deprecated in favor of `xdg_shell`,
 //! thus this module is provided as a compatibility layer with older clients. As a consequence,
 //! you can as a compositor-writer decide to only support its functionality in a best-effort
-//! maneer: as this global is part of the core protocol, you are still required to provide
+//! manner: as this global is part of the core protocol, you are still required to provide
 //! some support for it.
 //!
 //! ## Why use this implementation
@@ -159,7 +159,7 @@ pub enum ShellSurfaceKind {
         parent: wl_surface::WlSurface,
         /// Location relative to the parent
         location: Point<i32, Logical>,
-        /// Wether this window should be marked as inactive
+        /// Weather this window should be marked as inactive
         inactive: bool,
     },
     /// Fullscreen surface, covering an entire output
@@ -181,7 +181,7 @@ pub enum ShellSurfaceKind {
         /// The serial of the input event triggering the creation of this
         /// popup
         serial: Serial,
-        /// Wether this popup should be marked as inactive
+        /// Weather this popup should be marked as inactive
         inactive: bool,
         /// Location of the popup relative to its parent
         location: Point<i32, Logical>,

@@ -162,7 +162,7 @@ impl Seat {
             .map(|arc| Seat { arc })
     }
 
-    /// Acces the `UserDataMap` associated with this `Seat`
+    /// Access the `UserDataMap` associated with this `Seat`
     pub fn user_data(&self) -> &UserDataMap {
         &self.arc.user_data
     }

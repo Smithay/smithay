@@ -76,7 +76,7 @@ pub struct XWayland<Data> {
 /// This is a very low-level interface, only notifying you when the connection
 /// with XWayland is up, or when it terminates.
 ///
-/// Your WM code must be able handle the XWayland server connecting then
+/// Your WM code must be able to handle the XWayland server connecting then
 /// disconnecting several time in a row, but only a single connection will
 /// be active at any given time.
 #[derive(Debug)]

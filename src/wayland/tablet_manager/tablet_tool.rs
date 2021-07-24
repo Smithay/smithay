@@ -350,7 +350,7 @@ impl TabletToolHandle {
         }
     }
 
-    /// Notifify that this tool is focused on a certain surface.
+    /// Notify that this tool is focused on a certain surface.
     ///
     /// You provide the location of the tool, in the form of:
     ///
@@ -370,7 +370,7 @@ impl TabletToolHandle {
             .proximity_in(pos, focus, tablet, serial, time)
     }
 
-    /// Notifify that this tool has left proximity.
+    /// Notify that this tool has left proximity.
     pub fn proximity_out(&self, time: u32) {
         self.inner.borrow_mut().proximity_out(time);
     }

@@ -79,7 +79,7 @@ impl<'a> EGLPlatform<'a> {
     ///
     /// * `platform` - The platform defined in `ffi::egl::`
     /// * `platform_name` - A human readable representation of the platform
-    /// * `native_display` - The native display raw pointer which can be casted to `*mut c_void`
+    /// * `native_display` - The native display raw pointer which can be cast to `*mut c_void`
     /// * `attrib_list` - A list of `ffi::EGLint` like defined in the EGL Extension
     /// * `required_extensions` - The names of the required EGL Extensions for this platform
     ///
@@ -185,7 +185,7 @@ pub unsafe trait EGLNativeSurface: Send + Sync {
 
     /// Will be called to check if any internal resources will need
     /// to be recreated. Old resources must be used until `create`
-    /// was called again and a new surface was optained.
+    /// was called again and a new surface was obtained.
     ///
     /// Only needs to be recreated, if this may return true.
     /// The default implementation always returns false.

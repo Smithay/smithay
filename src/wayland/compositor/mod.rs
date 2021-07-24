@@ -8,7 +8,7 @@
 //! ## Why use this implementation
 //!
 //! This implementation does a simple job: it stores in a coherent way the state of
-//! surface trees with subsurfaces, to provide you a direct access to the tree
+//! surface trees with subsurfaces, to provide you direct access to the tree
 //! structure and all surface attributes, and handles the application of double-buffered
 //! state.
 //!
@@ -17,7 +17,7 @@
 //! need to display the subsurface tree.
 //!
 //! This implementation will not do anything more than present you the metadata specified by the
-//! client in a coherent and practical way. All the logic regarding to drawing itself, and
+//! client in a coherent and practical way. All the logic regarding drawing itself, and
 //! the positioning of windows (surface trees) one relative to another is out of its scope.
 //!
 //! ## How to use it

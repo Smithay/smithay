@@ -9,9 +9,9 @@
 //!
 //! ### Session management
 //!
-//! Session management relates to mechanisms allowing the compositor to access the ressources
+//! Session management relates to mechanisms allowing the compositor to access the resources
 //! it needs to function. It contains interaction with the login manager if any ((e)logind or
-//! seatd), as well as releasing thoses ressources when TTY-switching. It is handled by the
+//! seatd), as well as releasing those resources when TTY-switching. It is handled by the
 //! [`session`] module, gated by the `backend_session` cargo feature. You will generally need
 //! it to run your compositor directly on a TTY.
 //!

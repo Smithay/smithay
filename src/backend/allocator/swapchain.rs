@@ -146,7 +146,7 @@ where
 
     /// Change the dimensions of newly returned buffers.
     ///
-    /// Already optained buffers are unaffected and will be cleaned up on drop.
+    /// Already obtained buffers are unaffected and will be cleaned up on drop.
     pub fn resize(&mut self, width: u32, height: u32) {
         if self.width == width && self.height == height {
             return;

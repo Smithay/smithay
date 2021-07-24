@@ -32,7 +32,7 @@ use downcast_rs::{impl_downcast, Downcast};
 
 use crate::wayland::Serial;
 
-/// Trait represening a value that can be used in double-buffered storage
+/// Trait representing a value that can be used in double-buffered storage
 ///
 /// The type needs to implement the [`Default`] trait, which will be used
 /// to initialize. You further need to provide two methods:
@@ -46,14 +46,14 @@ use crate::wayland::Serial;
 /// current state.
 ///
 /// In most cases, this method will simply produce a copy of the pending state,
-/// but you might need additionnal logic in some cases, such as for handling
+/// but you might need additional logic in some cases, such as for handling
 /// non-cloneable resources (which thus need to be moved into the produce value).
 ///
 /// Then at some point the [`Cacheable::merge_into`] method of your type will be
 /// invoked. In this method, `self` acts as the update that should be merged into
 /// the current state provided as argument. In simple cases, the action would just
-/// be to copy `self` into the current state, but mre complex cases require
-/// additionnal logic.
+/// be to copy `self` into the current state, but more complex cases require
+/// additional logic.
 pub trait Cacheable: Default {
     /// Produce a new state to be cached from the pending state
     fn commit(&mut self) -> Self;
@@ -117,7 +117,7 @@ impl<T: Cacheable + 'static> Cache for RefCell<CachedState<T>> {
 /// A typemap-like container for double-buffered values
 ///
 /// All values inserted into this container must implement the [`Cacheable`] trait,
-/// which defines their buffering semantics. They futhermore must be `Send` as the surface state
+/// which defines their buffering semantics. They furthermore must be `Send` as the surface state
 /// can be accessed from multiple threads (but `Sync` is not required, the surface internally synchronizes
 /// access to its state).
 ///
@@ -130,7 +130,7 @@ impl<T: Cacheable + 'static> Cache for RefCell<CachedState<T>> {
 /// stored.
 ///
 /// This contained has [`RefCell`]-like semantics: values of multiple stored types can be accessed at the
-/// same time. The stored values are initialized lazyly the first time `current()` or `pending()` are
+/// same time. The stored values are initialized lazily the first time `current()` or `pending()` are
 /// invoked with this type as argument.
 pub struct MultiCache {
     caches: appendlist::AppendList<Box<dyn Cache + Send>>,
@@ -164,7 +164,7 @@ impl MultiCache {
             .unwrap()
     }
 
-    /// Acces the pending state associated with type `T`
+    /// Access the pending state associated with type `T`
     pub fn pending<T: Cacheable + Send + 'static>(&self) -> RefMut<'_, T> {
         RefMut::map(self.find_or_insert::<T>().borrow_mut(), |cs| &mut cs.pending)
     }

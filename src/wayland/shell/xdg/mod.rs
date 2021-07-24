@@ -183,11 +183,11 @@ xdg_role!(
     ///
     /// Unmapping an xdg_toplevel means that the surface cannot be shown
     /// by the compositor until it is explicitly mapped again.
-    /// All active operations (e.g., move, resize) are canceled and all
+    /// All active operations (e.g., move, resize) are cancelled and all
     /// attributes (e.g. title, state, stacking, ...) are discarded for
     /// an xdg_toplevel surface when it is unmapped. The xdg_toplevel returns to
     /// the state it had right after xdg_surface.get_toplevel. The client
-    /// can re-map the toplevel by perfoming a commit without any buffer
+    /// can re-map the toplevel by performing a commit without any buffer
     /// attached, waiting for a configure event and handling it as usual (see
     /// xdg_surface description).
     ///

@@ -16,7 +16,7 @@ pub struct TabletToolDescriptor {
     pub capabilitys: TabletToolCapabilitys,
 }
 
-/// Describes the physical type of a tool. The physical type of a tool generally defines its base usage.
+/// Describes the physical type of tool. The physical type of tool generally defines its base usage.
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum TabletToolType {
     /// A generic pen.

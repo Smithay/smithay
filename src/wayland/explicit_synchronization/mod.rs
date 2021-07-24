@@ -82,11 +82,11 @@ impl ExplicitBufferRelease {
 /// An explicit synchronization state
 ///
 /// The client is not required to fill both. `acquire` being `None` means that you don't need to wait
-/// before acessing the buffer, `release` being `None` means that the client does not require additionnal
+/// before accessing the buffer, `release` being `None` means that the client does not require additional
 /// signaling that you are finished (you still need to send `wl_buffer.release`).
 ///
-/// When processing the current state, the whould [`Option::take`] the values from it. Otherwise they'll
-/// be treated as unused and released when overwritten by the next client commit.
+/// When processing the current state, [`Option::take`] the values from it. Otherwise they'll be
+/// treated as unused and released when overwritten by the next client commit.
 #[derive(Debug)]
 pub struct ExplicitSyncState {
     /// An acquire `dma_fence` object, that you should wait on before accessing the contents of the

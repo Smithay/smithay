@@ -16,7 +16,7 @@
 //!
 //! Some of these modules require you to provide a callback that is invoked for some
 //! client requests that your logic needs to handle. In most cases these callback
-//! are given as input an enum specifying the event that occured, as well as the
+//! are given as input an enum specifying the event that occurred, as well as the
 //! [`DispatchData`](wayland_server::DispatchData) from `wayland_server`.
 //!
 //! ## Provided helpers
@@ -28,7 +28,7 @@
 //! Following this, the [`shell`] module contains the logic allowing clients to use their
 //! surface to build concrete windows with the usual interactions. Different kind of shells
 //! exist, but in general you will want to support at least the [`xdg`](shell::xdg) variant,
-//! which is the standart used by most applications.
+//! which is the standard used by most applications.
 //!
 //! Then, the [`seat`] module contains logic related to input handling. These helpers are used
 //! to forward input (such as pointer action or keystrokes) to clients, and manage the input
@@ -38,7 +38,7 @@
 //! The [`shm`] module provides the necessary logic for client to provide buffers defining the
 //! contents of their windows using shared memory. This is the main mechanism used by clients
 //! that are not hardware accelerated. As a complement, the [`dmabuf`] module provides support
-//! hardware-accelerated clients; it is tighly linked to the
+//! hardware-accelerated clients; it is tightly linked to the
 //! [`backend::allocator`](crate::backend::allocator) module.
 //!
 //! The [`output`] module helps forwarding to clients information about the display monitors that

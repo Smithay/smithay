@@ -31,7 +31,7 @@
 //! as `Rc` and `Arc` and the synchronization they require, [`calloop`] allows you to provide a mutable
 //! reference to a value, that will be passed down to most callbacks (possibly under the form of a
 //! [`DispatchData`](::wayland_server::DispatchData) for wayland-related callbacks). This structure provides
-//! an easy access to a centralized mutable state without synchronization (as the callback invocation is
+//! easy access to a centralized mutable state without synchronization (as the callback invocation is
 //! *always* sequential), and is the recommended way to of structuring your compositor.
 //!
 //! Several objects, in particular on the wayland clients side, can exist as multiple instances where each
