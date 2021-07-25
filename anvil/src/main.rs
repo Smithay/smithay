@@ -1,4 +1,4 @@
-use slog::{crit, info, o, Drain};
+use slog::{crit, o, Drain};
 
 static POSSIBLE_BACKENDS: &[&str] = &[
     #[cfg(feature = "winit")]
@@ -21,12 +21,12 @@ fn main() {
     match arg.as_ref().map(|s| &s[..]) {
         #[cfg(feature = "winit")]
         Some("--winit") => {
-            info!(log, "Starting anvil with winit backend");
+            slog::info!(log, "Starting anvil with winit backend");
             anvil::winit::run_winit(log);
         }
         #[cfg(feature = "udev")]
         Some("--tty-udev") => {
-            info!(log, "Starting anvil on a tty using udev");
+            slog::info!(log, "Starting anvil on a tty using udev");
             anvil::udev::run_udev(log);
         }
         Some(other) => {
