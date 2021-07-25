@@ -273,24 +273,28 @@ fn implement_dnd_data_offer(
                         wl_data_offer::Error::InvalidFinish as u32,
                         "Cannot finish a data offer that is no longer active.".into(),
                     );
+                    return;
                 }
                 if !data.accepted {
                     offer.as_ref().post_error(
                         wl_data_offer::Error::InvalidFinish as u32,
                         "Cannot finish a data offer that has not been accepted.".into(),
                     );
+                    return;
                 }
                 if !data.dropped {
                     offer.as_ref().post_error(
                         wl_data_offer::Error::InvalidFinish as u32,
                         "Cannot finish a data offer that has not been dropped.".into(),
                     );
+                    return;
                 }
                 if data.chosen_action.is_empty() {
                     offer.as_ref().post_error(
                         wl_data_offer::Error::InvalidFinish as u32,
                         "Cannot finish a data offer with no valid action.".into(),
                     );
+                    return;
                 }
                 source.dnd_finished();
                 data.active = false;
@@ -309,6 +313,7 @@ fn implement_dnd_data_offer(
                         wl_data_offer::Error::InvalidAction as u32,
                         "Invalid preferred action.".into(),
                     );
+                    return;
                 }
                 let source_actions = with_source_metadata(&source, |meta| meta.dnd_action)
                     .unwrap_or_else(|_| DndAction::empty());
