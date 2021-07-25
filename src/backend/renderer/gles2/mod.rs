@@ -26,7 +26,7 @@ use crate::backend::egl::{
     EGLContext, EGLSurface, MakeCurrentError,
 };
 use crate::backend::SwapBuffersError;
-use crate::utils::{Physical, Size};
+use crate::utils::{Buffer, Physical, Size};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use super::ImportEgl;
@@ -34,7 +34,8 @@ use super::ImportEgl;
 use super::{ImportDma, ImportShm};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
-use crate::utils::{Buffer, Rectangle};
+#[cfg(feature = "wayland_frontend")]
+use crate::utils::Rectangle;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
