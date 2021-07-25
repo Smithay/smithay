@@ -7,14 +7,16 @@
 //! - Import/Export external resources to/from OpenGL
 //!
 //! To use this module, you first need to create a [`EGLDisplay`] through a supported EGL platform
-//! as indicated by an implementation of the `native::EGLNativeDisplay` trait.
+//! as indicated by an implementation of the [`native::EGLNativeDisplay`] trait.
 //!
 //! You may bind the [`EGLDisplay`], that shall be used by clients for rendering (so pick one initialized by a fast platform)
 //! to the [`wayland_server::Display`] of your compositor. Note only one backend may be bound to any [`Display`](wayland_server::Display) at any time.
 //!
 //! You may then use the resulting [`display::EGLBufferReader`] to receive [`EGLBuffer`]
 //! of an EGL-based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer) for rendering.
-//! Renderers implementing the [`ImportEGL`](crate::backend::renderer::ImportEGL)-trait can manage the buffer reader for you.
+//! Renderers implementing the [`ImportEgl`](crate::backend::renderer::ImportEgl)-trait can manage the buffer reader for you.
+//!
+//! **Note:** The support for binding the [`EGLDisplay`] for use by clients requires the `use_system_lib` cargo feature on Smithay.
 //!
 //! To create OpenGL contexts you may create [`EGLContext`]s from the display and if the context is initialized with a config
 //! it may also be used to initialize an [`EGLSurface`], which can be [bound](crate::backend::renderer::Bind) to some renderers.

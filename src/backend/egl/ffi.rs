@@ -46,7 +46,7 @@ extern "system" fn egl_debug_log(
 }
 
 /// Loads libEGL symbols, if not loaded already.
-/// This normally happens automatically during [`EGLDisplay`] initialization.
+/// This normally happens automatically during [`EGLDisplay`](super::EGLDisplay) initialization.
 pub fn make_sure_egl_is_loaded() -> Result<Vec<String>, Error> {
     use std::{
         ffi::{CStr, CString},

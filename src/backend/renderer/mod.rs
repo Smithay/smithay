@@ -98,19 +98,20 @@ impl Transform {
     }
 }
 
-#[cfg(feature = "wayland-frontend")]
+#[cfg(feature = "wayland_frontend")]
 impl From<wayland_server::protocol::wl_output::Transform> for Transform {
     fn from(transform: wayland_server::protocol::wl_output::Transform) -> Transform {
-        use wayland_server::protocol::wl_output::Transform::*;
+        use wayland_server::protocol::wl_output::Transform as WlTransform;
         match transform {
-            Normal => Transform::Normal,
-            _90 => Transform::_90,
-            _180 => Transform::_180,
-            _270 => Transform::_270,
-            Flipped => Transform::Flipped,
-            Flipped90 => Transform::Flipped90,
-            Flipped180 => Transform::Flipped180,
-            Flipped270 => Transform::Flipped270,
+            WlTransform::Normal => Transform::Normal,
+            WlTransform::_90 => Transform::_90,
+            WlTransform::_180 => Transform::_180,
+            WlTransform::_270 => Transform::_270,
+            WlTransform::Flipped => Transform::Flipped,
+            WlTransform::Flipped90 => Transform::Flipped90,
+            WlTransform::Flipped180 => Transform::Flipped180,
+            WlTransform::Flipped270 => Transform::Flipped270,
+            _ => Transform::Normal,
         }
     }
 }
@@ -319,11 +320,12 @@ pub trait ImportEgl: Renderer {
     ///
     /// ## Errors
     ///
-    /// This might return [`EglExtensionNotSupported`](Error::EglExtensionNotSupported)
+    /// This might return [`EglExtensionNotSupported`](super::egl::Error::EglExtensionNotSupported)
     /// if binding is not supported by the EGL implementation.
     ///
-    /// This might return [`OtherEGLDisplayAlreadyBound`](Error::OtherEGLDisplayAlreadyBound)
-    /// if called for the same [`Display`] multiple times, as only one egl display may be bound at any given time.
+    /// This might return [`OtherEGLDisplayAlreadyBound`](super::egl::Error::OtherEGLDisplayAlreadyBound)
+    /// if called for the same [`Display`](wayland_server::Display) multiple times, as only one egl
+    /// display may be bound at any given time.
     fn bind_wl_display(&mut self, display: &wayland_server::Display) -> Result<(), EglError>;
 
     /// Unbinds a previously bound egl display, if existing.
@@ -336,8 +338,8 @@ pub trait ImportEgl: Renderer {
     ///
     /// The primary use for this is calling [`buffer_dimensions`] or [`buffer_type`].
     ///
-    /// Returns `None` if no [`Display`] was previously bound to the underlying [`EGLDisplay`]
-    /// (see [`ImportEgl::bind_wl_display`]).
+    /// Returns `None` if no [`Display`](wayland_server::Display) was previously bound to the underlying
+    /// [`EGLDisplay`](super::egl::EGLDisplay) (see [`ImportEgl::bind_wl_display`]).
     fn egl_reader(&self) -> Option<&EGLBufferReader>;
 
     /// Import a given wl_drm-based buffer into the renderer (see [`buffer_type`]).

@@ -6,6 +6,13 @@ license = "MIT"
 description = "Smithay is a library for writing wayland compositors."
 repository = "https://github.com/Smithay/smithay"
 edition = "2018"
+readme = "README.md"
+homepage = "https://smithay.github.io/"
+keywords = ["wayland", "compositor", "graphics", "server"]
+categories = ["gui"]
+
+[package.metadata.docs.rs]
+features = ["test_all_features"]
 
 [workspace]
 members = [ "anvil", "wlcs_anvil" ]
@@ -64,7 +71,7 @@ renderer_gl = ["gl_generator", "backend_egl"]
 use_system_lib = ["wayland_frontend", "wayland-sys", "wayland-server/use_system_lib"]
 wayland_frontend = ["wayland-server", "wayland-commons", "wayland-protocols", "tempfile"]
 xwayland = ["wayland_frontend"]
-test_all_features = ["default"]
+test_all_features = ["default", "use_system_lib", "wayland-server/dlopen"]
 
 [[example]]
 name = "raw_drm"

@@ -184,7 +184,7 @@ where
 
     /// Marks the current frame as submitted.
     ///
-    /// *Note*: Needs to be called, after the vblank event of the matching [`DrmDevice`](super::DrmDevice)
+    /// *Note*: Needs to be called, after the vblank event of the matching [`DrmDevice`](super::super::DrmDevice)
     /// was received after calling [`GbmBufferedSurface::queue_buffer`] on this surface.
     /// Otherwise the underlying swapchain will run out of buffers eventually.
     pub fn frame_submitted(&mut self) -> Result<(), Error> {
