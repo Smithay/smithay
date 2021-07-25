@@ -22,7 +22,7 @@ use super::{
 };
 
 static ZXDG_TOPLEVEL_ROLE: &str = "zxdg_toplevel";
-static ZXDG_POPUP_ROLE: &str = "zxdg_toplevel";
+static ZXDG_POPUP_ROLE: &str = "zxdg_popup";
 
 pub(crate) fn implement_shell(
     shell: Main<zxdg_shell_v6::ZxdgShellV6>,

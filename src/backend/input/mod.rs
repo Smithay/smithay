@@ -91,7 +91,7 @@ pub trait KeyboardKeyEvent<B: InputBackend>: Event<B> {
     fn key_code(&self) -> u32;
     /// State of the key
     fn state(&self) -> KeyState;
-    /// Total number of keys pressed on all devices on the associated [`Seat`]
+    /// Total number of keys pressed on all devices on the associated [`Seat`](crate::wayland::seat::Seat)
     fn count(&self) -> u32;
 }
 
