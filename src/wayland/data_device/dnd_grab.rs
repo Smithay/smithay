@@ -300,7 +300,11 @@ fn implement_dnd_data_offer(
                 preferred_action,
             } => {
                 let preferred_action = preferred_action;
-                if ![DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&preferred_action) {
+
+                // preferred_action must only contain one bitflag at the same time
+                if ![DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]
+                    .contains(&preferred_action)
+                {
                     offer.as_ref().post_error(
                         wl_data_offer::Error::InvalidAction as u32,
                         "Invalid preferred action.".into(),
@@ -312,7 +316,8 @@ fn implement_dnd_data_offer(
                 data.chosen_action = (&mut *action_choice.borrow_mut())(possible_actions, preferred_action);
                 // check that the user provided callback respects that one precise action should be chosen
                 debug_assert!(
-                    [DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&data.chosen_action)
+                    [DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]
+                        .contains(&data.chosen_action)
                 );
                 offer.action(data.chosen_action);
                 source.action(data.chosen_action);
