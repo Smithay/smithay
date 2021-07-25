@@ -94,6 +94,9 @@ jobs:
         - default
         - all
 
+    env:
+      RUSTFLAGS: "-D warnings"
+
     runs-on: ubuntu-latest
 
     steps:

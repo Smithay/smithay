@@ -8,25 +8,31 @@ use crate::AnvilState;
 
 use smithay::{
     backend::input::{
-        self, Device, DeviceCapability, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
-        PointerAxisEvent, PointerButtonEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
-        TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+        self, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent,
+        PointerButtonEvent,
     },
     reexports::wayland_server::protocol::wl_pointer,
-    utils::{Logical, Point},
     wayland::{
-        output::Mode,
         seat::{keysyms as xkb, AxisFrame, Keysym, ModifiersState},
-        tablet_manager::{TabletDescriptor, TabletSeatTrait},
         SERIAL_COUNTER as SCOUNTER,
     },
 };
 
 #[cfg(feature = "winit")]
-use smithay::backend::input::PointerMotionAbsoluteEvent;
+use smithay::{backend::input::PointerMotionAbsoluteEvent, wayland::output::Mode};
 
 #[cfg(feature = "udev")]
-use smithay::backend::{input::PointerMotionEvent, session::Session};
+use smithay::{
+    backend::{
+        input::{
+            Device, DeviceCapability, PointerMotionEvent, ProximityState, TabletToolButtonEvent,
+            TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+        },
+        session::Session,
+    },
+    utils::{Logical, Point},
+    wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait},
+};
 
 impl<Backend> AnvilState<Backend> {
     fn keyboard_key_to_action<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) -> KeyAction {
