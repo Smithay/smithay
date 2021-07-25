@@ -268,24 +268,28 @@ where
                         wl_data_offer::Error::InvalidFinish as u32,
                         "Cannot finish a data offer that is no longer active.".into(),
                     );
+                    return;
                 }
                 if !data.accepted {
                     offer.as_ref().post_error(
                         wl_data_offer::Error::InvalidFinish as u32,
                         "Cannot finish a data offer that has not been accepted.".into(),
                     );
+                    return;
                 }
                 if !data.dropped {
                     offer.as_ref().post_error(
                         wl_data_offer::Error::InvalidFinish as u32,
                         "Cannot finish a data offer that has not been dropped.".into(),
                     );
+                    return;
                 }
                 if data.chosen_action.is_empty() {
                     offer.as_ref().post_error(
                         wl_data_offer::Error::InvalidFinish as u32,
                         "Cannot finish a data offer with no valid action.".into(),
                     );
+                    return;
                 }
                 (&mut *callback.borrow_mut())(ServerDndEvent::Finished);
                 data.active = false;
@@ -304,6 +308,7 @@ where
                         wl_data_offer::Error::InvalidAction as u32,
                         "Invalid preferred action.".into(),
                     );
+                    return;
                 }
                 let possible_actions = metadata.dnd_action & dnd_actions;
                 data.chosen_action = (&mut *action_choice.borrow_mut())(possible_actions, preferred_action);
