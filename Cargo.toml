@@ -1,6 +1,6 @@
 [package]
 name = "smithay"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victor Brekenfeld)"]
 license = "MIT"
 description = "Smithay is a library for writing wayland compositors."

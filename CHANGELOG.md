@@ -1,6 +1,8 @@
 # Smithay Changelog
 
-## version 0.3.0 (to be released)
+## Unreleased
+
+## version 0.3.0 (2021-07-25)
 
 Large parts of Smithay were changed with numerous API changes. It is thus recommended to
 approach version 0.3 as if it was a new crate altogether compared to 0.2.
