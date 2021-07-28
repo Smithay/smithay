@@ -535,7 +535,7 @@ impl EGLDisplay {
             ffi::egl::BindWaylandDisplayWL(**self.display, display.c_ptr() as *mut _)
         })
         .map_err(Error::OtherEGLDisplayAlreadyBound)?;
-        let reader = EGLBufferReader::new(self.display.clone(), display.c_ptr());
+        let reader = EGLBufferReader::new(self.display.clone(), display.c_ptr(), self.logger.clone());
         let mut global = BUFFER_READER.lock().unwrap();
         if global.as_ref().and_then(|x| x.upgrade()).is_some() {
             warn!(
@@ -545,6 +545,7 @@ impl EGLDisplay {
         }
         *global = Some(WeakBufferReader {
             display: Arc::downgrade(&self.display),
+            logger: self.logger.clone(),
         });
         Ok(reader)
     }
@@ -672,11 +673,13 @@ fn get_dmabuf_formats(
 pub struct EGLBufferReader {
     display: Arc<EGLDisplayHandle>,
     wayland: Option<Arc<*mut wl_display>>,
+    logger: ::slog::Logger,
 }
 
 #[cfg(feature = "use_system_lib")]
 pub(crate) struct WeakBufferReader {
     display: Weak<EGLDisplayHandle>,
+    logger: ::slog::Logger,
 }
 
 #[cfg(feature = "use_system_lib")]
@@ -685,6 +688,7 @@ impl WeakBufferReader {
         Some(EGLBufferReader {
             display: self.display.upgrade()?,
             wayland: None,
+            logger: self.logger.clone(),
         })
     }
 }
@@ -694,10 +698,16 @@ unsafe impl Send for EGLBufferReader {}
 
 #[cfg(feature = "use_system_lib")]
 impl EGLBufferReader {
-    fn new(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display) -> Self {
+    fn new<L>(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display, log: L) -> Self
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
+        let logger = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "egl_buffer_reader"));
+
         Self {
             display,
             wayland: Some(Arc::new(wayland)),
+            logger,
         }
     }
 
@@ -709,6 +719,11 @@ impl EGLBufferReader {
         &self,
         buffer: &WlBuffer,
     ) -> ::std::result::Result<EGLBuffer, BufferAccessError> {
+        if !buffer.as_ref().is_alive() {
+            debug!(self.logger, "Suplied buffer is no longer alive");
+            return Err(BufferAccessError::NotManaged(EGLError::BadParameter));
+        }
+
         let mut format: i32 = 0;
         let query = wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
@@ -825,6 +840,11 @@ impl EGLBufferReader {
         &self,
         buffer: &WlBuffer,
     ) -> Option<crate::utils::Size<i32, crate::utils::Physical>> {
+        if !buffer.as_ref().is_alive() {
+            debug!(self.logger, "Suplied buffer is no longer alive");
+            return None;
+        }
+
         let mut width: i32 = 0;
         if unsafe {
             ffi::egl::QueryWaylandBufferWL(
