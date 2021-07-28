@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Bugfixes
+
+- EGLBufferReader now checks if buffers are alive before using them.
+
 ## version 0.3.0 (2021-07-25)
 
 Large parts of Smithay were changed with numerous API changes. It is thus recommended to
