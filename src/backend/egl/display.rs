@@ -702,7 +702,7 @@ impl EGLBufferReader {
     where
         L: Into<Option<::slog::Logger>>,
     {
-        let logger = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "backend_egl"));
+        let logger = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "egl_buffer_reader"));
 
         Self {
             display,
