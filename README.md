@@ -43,9 +43,4 @@ The currently available backends are:
   inside of an other X11 or Wayland session.
 - `--tty-udev`: start anvil in a tty with udev support. This is the "traditional" launch of a Wayland
   compositor. Note that this requires you to start anvil as root if your system does not have logind
-  available ([consolekit support is planned](https://github.com/Smithay/smithay/issues/95)). To use logind,
-  you need to activate the associated cargo feature:
-
-  ```
-  cargo run --features logind -- --tty-udev
-  ```
+  available.
