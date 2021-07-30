@@ -92,7 +92,7 @@ impl XdgOutput {
                 .lock()
                 .unwrap()
                 .instances
-                .retain(|o| !o.as_ref().equals(&xdg_output.as_ref()));
+                .retain(|o| !o.as_ref().equals(xdg_output.as_ref()));
         }));
         xdg_output.as_ref().user_data().set_threadsafe({
             let xdg_output = self.clone();

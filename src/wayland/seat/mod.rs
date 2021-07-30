@@ -360,7 +360,7 @@ fn implement_seat(seat: Main<wl_seat::WlSeat>, arc: Rc<SeatRc>) -> wl_seat::WlSe
             .inner
             .borrow_mut()
             .known_seats
-            .retain(|s| !s.as_ref().equals(&seat.as_ref()));
+            .retain(|s| !s.as_ref().equals(seat.as_ref()));
     }));
     seat.as_ref().user_data().set(move || arc);
 

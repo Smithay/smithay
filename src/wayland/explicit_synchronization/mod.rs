@@ -159,7 +159,7 @@ impl std::error::Error for NoExplicitSync {}
 /// the client associated with this `SurfaceAttributes` will be killed as a result of calling this
 /// function.
 pub fn send_explicit_synchronization_error(attrs: &SurfaceData, error: ExplicitSyncError) {
-    if let Some(ref data) = attrs.data_map.get::<ESUserData>() {
+    if let Some(data) = attrs.data_map.get::<ESUserData>() {
         if let Some(sync_resource) = data.state.borrow().deref() {
             match error {
                 ExplicitSyncError::InvalidFence => sync_resource.as_ref().post_error(

@@ -69,9 +69,9 @@ impl PointerGrab for DnDGrab {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 // only leave if there is a data source or we are on the original client
-                if self.data_source.is_some() || self.origin.as_ref().same_client_as(&surface.as_ref()) {
+                if self.data_source.is_some() || self.origin.as_ref().same_client_as(surface.as_ref()) {
                     for device in &seat_data.known_devices {
-                        if device.as_ref().same_client_as(&surface.as_ref()) {
+                        if device.as_ref().same_client_as(surface.as_ref()) {
                             device.leave();
                         }
                     }
@@ -102,7 +102,7 @@ impl PointerGrab for DnDGrab {
                     for device in seat_data
                         .known_devices
                         .iter()
-                        .filter(|d| d.as_ref().same_client_as(&surface.as_ref()))
+                        .filter(|d| d.as_ref().same_client_as(surface.as_ref()))
                     {
                         let action_choice = device
                             .as_ref()
@@ -138,9 +138,9 @@ impl PointerGrab for DnDGrab {
                     self.offer_data = Some(offer_data);
                 } else {
                     // only send if we are on a surface of the same client
-                    if self.origin.as_ref().same_client_as(&surface.as_ref()) {
+                    if self.origin.as_ref().same_client_as(surface.as_ref()) {
                         for device in &seat_data.known_devices {
-                            if device.as_ref().same_client_as(&surface.as_ref()) {
+                            if device.as_ref().same_client_as(surface.as_ref()) {
                                 device.enter(serial.into(), &surface, x, y, None);
                             }
                         }
@@ -149,9 +149,9 @@ impl PointerGrab for DnDGrab {
                 self.current_focus = Some(surface);
             } else {
                 // make a move
-                if self.data_source.is_some() || self.origin.as_ref().same_client_as(&surface.as_ref()) {
+                if self.data_source.is_some() || self.origin.as_ref().same_client_as(surface.as_ref()) {
                     for device in &seat_data.known_devices {
-                        if device.as_ref().same_client_as(&surface.as_ref()) {
+                        if device.as_ref().same_client_as(surface.as_ref()) {
                             device.motion(time, x, y);
                         }
                     }
@@ -183,7 +183,7 @@ impl PointerGrab for DnDGrab {
                 false
             };
             if let Some(ref surface) = self.current_focus {
-                if self.data_source.is_some() || self.origin.as_ref().same_client_as(&surface.as_ref()) {
+                if self.data_source.is_some() || self.origin.as_ref().same_client_as(surface.as_ref()) {
                     for device in &seat_data.known_devices {
                         if device.as_ref().same_client_as(surface.as_ref()) {
                             if validated {

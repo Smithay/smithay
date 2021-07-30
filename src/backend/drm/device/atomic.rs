@@ -195,7 +195,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             let prop = self
                 .prop_mapping
                 .0
-                .get(&conn)
+                .get(conn)
                 .expect("Unknown handle")
                 .get("CRTC_ID")
                 .expect("Unknown property CRTC_ID");
@@ -206,7 +206,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             let prop = self
                 .prop_mapping
                 .3
-                .get(&plane)
+                .get(plane)
                 .expect("Unknown handle")
                 .get("CRTC_ID")
                 .expect("Unknown property CRTC_ID");
@@ -215,7 +215,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             let prop = self
                 .prop_mapping
                 .3
-                .get(&plane)
+                .get(plane)
                 .expect("Unknown handle")
                 .get("FB_ID")
                 .expect("Unknown property FB_ID");
@@ -227,14 +227,14 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             let mode_prop = self
                 .prop_mapping
                 .1
-                .get(&crtc)
+                .get(crtc)
                 .expect("Unknown handle")
                 .get("MODE_ID")
                 .expect("Unknown property MODE_ID");
             let active_prop = self
                 .prop_mapping
                 .1
-                .get(&crtc)
+                .get(crtc)
                 .expect("Unknown handle")
                 .get("ACTIVE")
                 .expect("Unknown property ACTIVE");

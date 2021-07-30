@@ -377,7 +377,7 @@ impl<'a> PointerInnerHandle<'a> {
         }
         if leave {
             self.inner.with_focused_pointers(|pointer, surface| {
-                pointer.leave(serial.into(), &surface);
+                pointer.leave(serial.into(), surface);
                 if pointer.as_ref().version() >= 5 {
                     pointer.frame();
                 }
@@ -395,7 +395,7 @@ impl<'a> PointerInnerHandle<'a> {
             let (x, y) = (location - surface_location.to_f64()).into();
             if entered {
                 self.inner.with_focused_pointers(|pointer, surface| {
-                    pointer.enter(serial.into(), &surface, x, y);
+                    pointer.enter(serial.into(), surface, x, y);
                     if pointer.as_ref().version() >= 5 {
                         pointer.frame();
                     }
@@ -588,7 +588,7 @@ pub(crate) fn implement_pointer(pointer: Main<WlPointer>, handle: Option<&Pointe
                         ..
                     } = *guard;
                     if let Some((ref focus, _)) = *focus {
-                        if focus.as_ref().same_client_as(&pointer.as_ref()) {
+                        if focus.as_ref().same_client_as(pointer.as_ref()) {
                             match surface {
                                 Some(surface) => {
                                     // tolerate re-using the same surface
@@ -640,7 +640,7 @@ pub(crate) fn implement_pointer(pointer: Main<WlPointer>, handle: Option<&Pointe
             inner
                 .borrow_mut()
                 .known_pointers
-                .retain(|p| !p.as_ref().equals(&pointer.as_ref()))
+                .retain(|p| !p.as_ref().equals(pointer.as_ref()))
         }))
     }
 

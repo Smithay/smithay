@@ -66,7 +66,7 @@ impl State {
         for conn in res_handles.connectors() {
             let crtc_prop = prop_mapping
                 .0
-                .get(&conn)
+                .get(conn)
                 .expect("Unknown handle")
                 .get("CRTC_ID")
                 .ok_or_else(|| Error::UnknownProperty {
@@ -1006,7 +1006,7 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmSurface<A> {
             let prop = self
                 .prop_mapping
                 .0
-                .get(&conn)
+                .get(conn)
                 .expect("Unknown Handle")
                 .get("CRTC_ID")
                 .expect("Unknown property CRTC_ID");

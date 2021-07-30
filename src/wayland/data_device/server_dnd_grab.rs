@@ -92,7 +92,7 @@ where
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 for device in &seat_data.known_devices {
-                    if device.as_ref().same_client_as(&surface.as_ref()) {
+                    if device.as_ref().same_client_as(surface.as_ref()) {
                         device.leave();
                     }
                 }
@@ -121,7 +121,7 @@ where
                 for device in seat_data
                     .known_devices
                     .iter()
-                    .filter(|d| d.as_ref().same_client_as(&surface.as_ref()))
+                    .filter(|d| d.as_ref().same_client_as(surface.as_ref()))
                 {
                     let action_choice = device
                         .as_ref()
@@ -157,7 +157,7 @@ where
             } else {
                 // make a move
                 for device in &seat_data.known_devices {
-                    if device.as_ref().same_client_as(&surface.as_ref()) {
+                    if device.as_ref().same_client_as(surface.as_ref()) {
                         device.motion(time, x, y);
                     }
                 }

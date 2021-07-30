@@ -510,13 +510,13 @@ pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
         .unwrap()
         .as_ref()
         .and_then(|x| x.upgrade())
-        .and_then(|x| x.egl_buffer_dimensions(&buffer))
+        .and_then(|x| x.egl_buffer_dimensions(buffer))
         .is_some()
     {
         return Some(BufferType::Egl);
     }
 
-    if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
+    if crate::wayland::shm::with_buffer_contents(buffer, |_, _| ()).is_ok() {
         return Some(BufferType::Shm);
     }
 
@@ -540,10 +540,10 @@ pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Physi
         .unwrap()
         .as_ref()
         .and_then(|x| x.upgrade())
-        .and_then(|x| x.egl_buffer_dimensions(&buffer))
+        .and_then(|x| x.egl_buffer_dimensions(buffer))
     {
         return Some(dim);
     }
 
-    crate::wayland::shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height).into()).ok()
+    crate::wayland::shm::with_buffer_contents(buffer, |_, data| (data.width, data.height).into()).ok()
 }
