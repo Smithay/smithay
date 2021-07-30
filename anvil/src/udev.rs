@@ -630,7 +630,7 @@ impl AnvilState<UdevData> {
         let mut surfaces_iter = surfaces.iter();
         let mut option_iter = crtc
             .iter()
-            .flat_map(|crtc| surfaces.get(&crtc).map(|surface| (crtc, surface)));
+            .flat_map(|crtc| surfaces.get(crtc).map(|surface| (crtc, surface)));
 
         let to_render_iter: &mut dyn Iterator<Item = (&crtc::Handle, &Rc<RefCell<SurfaceData>>)> =
             if crtc.is_some() {

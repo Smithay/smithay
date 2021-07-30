@@ -301,7 +301,7 @@ fn fullscreen_output_geometry(
     // First test if a specific output has been requested
     // if the requested output is not found ignore the request
     if let Some(wl_output) = wl_output {
-        return output_map.find_by_output(&wl_output).map(|o| o.geometry());
+        return output_map.find_by_output(wl_output).map(|o| o.geometry());
     }
 
     // There is no output preference, try to find the output
