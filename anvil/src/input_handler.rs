@@ -211,6 +211,11 @@ impl AnvilState<WinitData> {
                     },
                     crate::winit::OUTPUT_NAME,
                 );
+
+                let output_mut = self.output_map.borrow();
+                let output = output_mut.find_by_name(crate::winit::OUTPUT_NAME).unwrap();
+
+                self.window_map.borrow_mut().layers.arange_layers(output);
             }
             _ => {
                 // other events are not handled in anvil (yet)

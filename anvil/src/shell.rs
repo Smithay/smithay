@@ -22,6 +22,7 @@ use smithay::{
         seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
         shell::{
             legacy::{wl_shell_init, ShellRequest, ShellState as WlShellState, ShellSurfaceKind},
+            wlr_layer::{LayerShellRequest, LayerSurfaceAttributes},
             xdg::{
                 xdg_shell_init, Configure, ShellState as XdgShellState, SurfaceCachedState,
                 XdgPopupSurfaceRoleAttributes, XdgRequest, XdgToplevelSurfaceRoleAttributes,
@@ -329,7 +330,8 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
         move |surface, mut ddata| {
             let anvil_state = ddata.get::<AnvilState<BackendData>>().unwrap();
             let window_map = anvil_state.window_map.as_ref();
-            surface_commit(&surface, &*window_map)
+            let output_map = anvil_state.output_map.as_ref();
+            surface_commit(&surface, &*window_map, &*output_map)
         },
         log.clone(),
     );
@@ -822,6 +824,38 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
         log.clone(),
     );
 
+    let layer_window_map = window_map.clone();
+    let layer_output_map = output_map.clone();
+    smithay::wayland::shell::wlr_layer::wlr_layer_shell_init(
+        &mut *display.borrow_mut(),
+        move |event, mut ddata| match event {
+            LayerShellRequest::NewLayerSurface {
+                surface,
+                output,
+                layer,
+                ..
+            } => {
+                let output_map = layer_output_map.borrow();
+                let anvil_state = ddata.get::<AnvilState<BackendData>>().unwrap();
+
+                let output = output.and_then(|output| output_map.find_by_output(&output));
+                let output = output.unwrap_or_else(|| {
+                    output_map
+                        .find_by_position(anvil_state.pointer_location.to_i32_round())
+                        .unwrap_or_else(|| output_map.with_primary().unwrap())
+                });
+
+                if let Some(wl_surface) = surface.get_surface() {
+                    output.add_layer_surface(wl_surface.clone());
+
+                    layer_window_map.borrow_mut().layers.insert(surface, layer);
+                }
+            }
+            LayerShellRequest::AckConfigure { .. } => {}
+        },
+        log.clone(),
+    );
+
     ShellHandles {
         xdg_state: xdg_shell_state,
         wl_state: wl_shell_state,
@@ -937,7 +971,11 @@ impl SurfaceData {
     }
 }
 
-fn surface_commit(surface: &wl_surface::WlSurface, window_map: &RefCell<WindowMap>) {
+fn surface_commit(
+    surface: &wl_surface::WlSurface,
+    window_map: &RefCell<WindowMap>,
+    output_map: &RefCell<OutputMap>,
+) {
     #[cfg(feature = "xwayland")]
     super::xwayland::commit_hook(surface);
 
@@ -1053,6 +1091,27 @@ fn surface_commit(surface: &wl_surface::WlSurface, window_map: &RefCell<WindowMa
         if !initial_configure_sent {
             // TODO: properly recompute the geometry with the whole of positioner state
             popup.send_configure();
+        }
+    }
+
+    if let Some(layer) = window_map.layers.find(surface) {
+        // send the initial configure if relevant
+        let initial_configure_sent = with_states(surface, |states| {
+            states
+                .data_map
+                .get::<Mutex<LayerSurfaceAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .initial_configure_sent
+        })
+        .unwrap();
+        if !initial_configure_sent {
+            layer.surface.send_configure();
+        }
+
+        if let Some(output) = output_map.borrow().find_by_layer_surface(surface) {
+            window_map.layers.arange_layers(output);
         }
     }
 }

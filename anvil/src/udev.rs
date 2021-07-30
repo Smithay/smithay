@@ -55,6 +55,7 @@ use smithay::{
     wayland::{
         output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,
+        shell::wlr_layer::Layer,
     },
 };
 #[cfg(feature = "egl")]
@@ -744,8 +745,33 @@ fn render_surface(
             Transform::Flipped180, // Scanout is rotated
             |renderer, frame| {
                 frame.clear([0.8, 0.8, 0.9, 1.0])?;
+
+                for layer in [Layer::Background, Layer::Bottom] {
+                    draw_layers(
+                        renderer,
+                        frame,
+                        window_map,
+                        layer,
+                        output_geometry,
+                        output_scale,
+                        logger,
+                    )?;
+                }
+
                 // draw the surfaces
                 draw_windows(renderer, frame, window_map, output_geometry, output_scale, logger)?;
+
+                for layer in [Layer::Top, Layer::Overlay] {
+                    draw_layers(
+                        renderer,
+                        frame,
+                        window_map,
+                        layer,
+                        output_geometry,
+                        output_scale,
+                        logger,
+                    )?;
+                }
 
                 // set cursor
                 if output_geometry.to_f64().contains(pointer_location) {
