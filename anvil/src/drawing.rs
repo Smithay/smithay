@@ -157,7 +157,7 @@ where
         },
         |_surface, states, location| {
             let mut location = *location;
-            if let Some(ref data) = states.data_map.get::<RefCell<SurfaceData>>() {
+            if let Some(data) = states.data_map.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
                 let buffer_scale = data.buffer_scale;
                 if let Some(texture) = data
@@ -215,8 +215,7 @@ where
         initial_place.x -= output_rect.loc.x;
         if let Some(wl_surface) = toplevel_surface.get_surface() {
             // this surface is a root of a subsurface tree that needs to be drawn
-            if let Err(err) =
-                draw_surface_tree(renderer, frame, &wl_surface, initial_place, output_scale, log)
+            if let Err(err) = draw_surface_tree(renderer, frame, wl_surface, initial_place, output_scale, log)
             {
                 result = Err(err);
             }
@@ -225,12 +224,12 @@ where
                 .geometry(toplevel_surface)
                 .map(|g| g.loc)
                 .unwrap_or_default();
-            window_map.with_child_popups(&wl_surface, |popup| {
+            window_map.with_child_popups(wl_surface, |popup| {
                 let location = popup.location();
                 let draw_location = initial_place + location + toplevel_geometry_offset;
                 if let Some(wl_surface) = popup.get_surface() {
                     if let Err(err) =
-                        draw_surface_tree(renderer, frame, &wl_surface, draw_location, output_scale, log)
+                        draw_surface_tree(renderer, frame, wl_surface, draw_location, output_scale, log)
                     {
                         result = Err(err);
                     }
