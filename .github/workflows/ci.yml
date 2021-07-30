@@ -7,12 +7,114 @@ on:
   pull_request:
 
 jobs:
-  smithay-ci:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      - name: Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+          components: rustfmt
+          default: true
+      - name: Cargo cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-rust_stable-${{ hashFiles('**/Cargo.toml') }}
+      - name: Format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+  
+  clippy-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      - name: Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+          components: clippy
+          default: true
+      - name: Cargo cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-rust_stable-${{ hashFiles('**/Cargo.toml') }}
+      - name: Build cache
+        uses: actions/cache@v2
+        with:
+          path: target
+          key: ${{ runner.os }}-build-rust_stable-check-${{ hashFiles('**/Cargo.toml') }}
+      - name: System dependencies
+        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+      - name: Clippy Smithay
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --features "test_all_features" -- -D warnings
+      - name: Clippy Anvil
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" -- -D warnings
+  
+  check-minimal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      - name: Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          profile: minimal
+          default: true
+      - name: Cargo cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-rust_nightly-${{ hashFiles('**/Cargo.toml') }}
+      - name: System dependencies
+        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+      - name: Downgrade to minimal dependencies
+        uses: actions-rs/cargo@v1
+        with:
+          command: update
+          args: -Z minimal-versions
+      - name: Update exceptions
+        uses: actions-rs/cargo@v1
+        with:
+          command: update
+          args: -p libdbus-sys -p calloop:0.6.1
+      - name: Check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --features "test_all_features"
+
+  smithay-tests:
+    needs:
+      - format
+      - clippy-check
     strategy:
       fail-fast: false
       matrix:
-        rust:
-        - stable
         features:
         - ''
         - backend_winit
@@ -28,7 +130,7 @@ jobs:
         - wayland_frontend
         - xwayland
         - default
-        - all
+        - test_all_features
 
     env:
       RUSTFLAGS: "-D warnings"
@@ -40,19 +142,29 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Cargo cache
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
-          path: ~/.cargo
-          key: cargo-${{ matrix.rust }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-rust_stable-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: ${{ matrix.rust }}
+          toolchain: stable
           override: true
+          default: true
+          profile: minimal
       
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+
+      - name: Build cache
+        uses: actions/cache@v2
+        with:
+          path: target
+          key: ${{ runner.os }}-build-rust_stable-smithay-feature_${{ matrix.features }}-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Build and install Libseat
         if: matrix.features == 'backend_session_libseat'
@@ -66,25 +178,21 @@ jobs:
           sudo meson install -C build
 
       - name: Test features
-        if: matrix.features != 'all'
         uses: actions-rs/cargo@v1
+        env:
+          RUST_BACKTRACE: full
         with:
           command: test
           args: --no-default-features --features "${{ matrix.features }}"
-      
-      - name: Test all
-        if: matrix.features == 'all'
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --features "test_all_features"
   
-  anvil-ci:
+  anvil-tests:
+    needs:
+      - format
+      - clippy-check
+      - smithay-tests
     strategy:
       fail-fast: false
       matrix:
-        rust:
-        - stable
         features:
         - ''
         - egl
@@ -92,7 +200,7 @@ jobs:
         - udev
         - logind
         - default
-        - all
+        - test_all_features
 
     env:
       RUSTFLAGS: "-D warnings"
@@ -104,54 +212,83 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Cargo cache
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
-          path: ~/.cargo
-          key: cargo-${{ matrix.rust }}
-
-      - name: Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ matrix.rust }}
-          override: true
-
-      - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
-
-      - name: Test features
-        if: matrix.features != 'all'
-        working-directory: ./anvil
-        run: cargo test --no-default-features --features "${{ matrix.features }}"
-      
-      - name: Test all
-        if: matrix.features == 'all'
-        working-directory: ./anvil
-        run: cargo test --features "test_all_features"
-
-
-  lint:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-rust_stable-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
-          components: rustfmt, clippy
+          default: true
+          profile: minimal
 
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
 
-      - name: Cargo fmt
-        run: cargo fmt --all -- --check
-      
-      - name: Clippy Smithay
-        run: cargo clippy --features "test_all_features" -- -D warnings
+      - name: Build cache
+        uses: actions/cache@v2
+        with:
+          path: target
+          key: ${{ runner.os }}-build-rust_stable-anvil-feature_${{ matrix.features }}-${{ hashFiles('**/Cargo.toml') }}
 
-      - name: Clippy Anvil
-        working-directory: ./anvil
-        run: cargo clippy --features "test_all_features" -- -D warnings
+      - name: Test features
+        uses: actions-rs/cargo@v1
+        env:
+          RUST_BACKTRACE: full
+        with:
+          command: test
+          args: --manifest-path "./anvil/Cargo.toml" --no-default-features --features "${{ matrix.features }}"
+
+  anvil-wlcs:
+    needs:
+      - format
+      - clippy-check
+      - smithay-tests
+      - anvil-tests
+
+    env:
+      RUSTFLAGS: "-D warnings"
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Cargo cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-rust_stable-${{ hashFiles('**/Cargo.toml') }}
+
+      - name: Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          default: true
+          profile: minimal
+
+      - name: System dependencies
+        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+
+      - name: Build cache
+        uses: actions/cache@v2
+        with:
+          path: target
+          key: ${{ runner.os }}-build-rust_stable-wlcs-${{ hashFiles('**/Cargo.toml') }}
+
+      - name: Build WLCS plugin
+        uses: actions-rs/cargo@v1
+        env:
+          RUST_BACKTRACE: full
+        with:
+          command: build
+          args: --manifest-path "./wlcs_anvil/Cargo.toml"
