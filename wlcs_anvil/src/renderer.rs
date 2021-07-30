@@ -98,7 +98,7 @@ impl Frame for DummyFrame {
         &mut self,
         _texture: &Self::TextureId,
         _matrix: cgmath::Matrix3<f32>,
-        tex_coords: [Vector2<f32>; 4],
+        _tex_coords: [Vector2<f32>; 4],
         _alpha: f32,
     ) -> Result<(), Self::Error> {
         Ok(())
