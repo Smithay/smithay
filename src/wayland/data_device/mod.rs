@@ -491,7 +491,7 @@ where
                 .unwrap()
                 .borrow_mut()
                 .known_devices
-                .retain(|ndd| ndd.as_ref().is_alive() && (!ndd.as_ref().equals(&dd.as_ref())))
+                .retain(|ndd| ndd.as_ref().is_alive() && (!ndd.as_ref().equals(dd.as_ref())))
         }
         _ => unreachable!(),
     });

@@ -385,7 +385,7 @@ unsafe fn link_program(
 }
 
 unsafe fn texture_program(gl: &ffi::Gles2, frag: &'static str) -> Result<Gles2Program, Gles2Error> {
-    let program = link_program(&gl, shaders::VERTEX_SHADER, frag)?;
+    let program = link_program(gl, shaders::VERTEX_SHADER, frag)?;
 
     let position = CStr::from_bytes_with_nul(b"position\0").expect("NULL terminated");
     let tex_coords = CStr::from_bytes_with_nul(b"tex_coords\0").expect("NULL terminated");
@@ -557,7 +557,7 @@ impl ImportShm for Gles2Renderer {
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;
 
-        with_buffer_contents(&buffer, |slice, data| {
+        with_buffer_contents(buffer, |slice, data| {
             self.make_current()?;
 
             let offset = data.offset as i32;
@@ -711,7 +711,7 @@ impl ImportEgl for Gles2Renderer {
             .egl_reader
             .as_ref()
             .unwrap()
-            .egl_buffer_contents(&buffer)
+            .egl_buffer_contents(buffer)
             .map_err(Gles2Error::EGLBufferAccessError)?;
 
         let tex = self.import_egl_image(egl.image(0).unwrap(), egl.format == EGLFormat::External, None)?;
@@ -743,14 +743,14 @@ impl ImportDma for Gles2Renderer {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
 
-        self.existing_dmabuf_texture(&buffer)?.map(Ok).unwrap_or_else(|| {
+        self.existing_dmabuf_texture(buffer)?.map(Ok).unwrap_or_else(|| {
             let is_external = !self.egl.dmabuf_render_formats().contains(&buffer.format());
 
             self.make_current()?;
             let image = self
                 .egl
                 .display
-                .create_image_from_dmabuf(&buffer)
+                .create_image_from_dmabuf(buffer)
                 .map_err(Gles2Error::BindBufferEGLError)?;
 
             let tex = self.import_egl_image(image, is_external, None)?;

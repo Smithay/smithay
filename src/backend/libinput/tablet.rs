@@ -175,14 +175,14 @@ where
 
 impl backend::TabletToolButtonEvent<LibinputInputBackend> for tablet_tool::TabletToolButtonEvent {
     fn button(&self) -> u32 {
-        tablet_tool::TabletToolButtonEvent::button(&self)
+        tablet_tool::TabletToolButtonEvent::button(self)
     }
 
     fn seat_button_count(&self) -> u32 {
-        tablet_tool::TabletToolButtonEvent::seat_button_count(&self)
+        tablet_tool::TabletToolButtonEvent::seat_button_count(self)
     }
 
     fn button_state(&self) -> backend::ButtonState {
-        tablet_tool::TabletToolButtonEvent::button_state(&self).into()
+        tablet_tool::TabletToolButtonEvent::button_state(self).into()
     }
 }

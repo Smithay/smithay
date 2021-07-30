@@ -57,7 +57,7 @@ impl TabletHandle {
                 inner
                     .borrow_mut()
                     .instances
-                    .retain(|i| !i.as_ref().equals(&instance.as_ref()));
+                    .retain(|i| !i.as_ref().equals(instance.as_ref()));
             }));
 
             seat.tablet_added(&wl_tablet);

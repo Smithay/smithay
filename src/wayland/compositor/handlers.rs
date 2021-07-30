@@ -424,6 +424,6 @@ fn destroy_subsurface(subsurface: &wl_subsurface::WlSubsurface) {
         .get::<wl_surface::WlSurface>()
         .unwrap();
     if surface.as_ref().is_alive() {
-        PrivateSurfaceData::unset_parent(&surface);
+        PrivateSurfaceData::unset_parent(surface);
     }
 }

@@ -257,7 +257,7 @@ impl TabletToolHandle {
                         let inner = inner.borrow();
 
                         if let Some(ref focus) = inner.focus {
-                            if focus.as_ref().same_client_as(&tool.as_ref()) {
+                            if focus.as_ref().same_client_as(tool.as_ref()) {
                                 if let Some(surface) = surface {
                                     // tolerate re-using the same surface
                                     if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
@@ -305,7 +305,7 @@ impl TabletToolHandle {
                 inner
                     .borrow_mut()
                     .instances
-                    .retain(|i| !i.as_ref().equals(&instance.as_ref()));
+                    .retain(|i| !i.as_ref().equals(instance.as_ref()));
             }));
 
             seat.tool_added(&wl_tool);

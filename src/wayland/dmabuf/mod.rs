@@ -249,14 +249,7 @@ where
             }
         };
 
-        if !buffer_basic_checks(
-            &self.formats,
-            &self.pending_planes,
-            &params,
-            format,
-            width,
-            height,
-        ) {
+        if !buffer_basic_checks(&self.formats, &self.pending_planes, params, format, width, height) {
             trace!(self.log, "Killing client providing bogus dmabuf buffer params.");
             return;
         }
@@ -338,14 +331,7 @@ where
             }
         };
 
-        if !buffer_basic_checks(
-            &self.formats,
-            &self.pending_planes,
-            &params,
-            format,
-            width,
-            height,
-        ) {
+        if !buffer_basic_checks(&self.formats, &self.pending_planes, params, format, width, height) {
             trace!(self.log, "Killing client providing bogus dmabuf buffer params.");
             return;
         }

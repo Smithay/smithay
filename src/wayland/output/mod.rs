@@ -215,7 +215,7 @@ impl Output {
                         .lock()
                         .unwrap()
                         .instances
-                        .retain(|o| !o.as_ref().equals(&output.as_ref()));
+                        .retain(|o| !o.as_ref().equals(output.as_ref()));
                 }));
                 output.as_ref().user_data().set_threadsafe({
                     let inner = inner.clone();

@@ -75,7 +75,7 @@ impl TabletSeatHandle {
             inner
                 .borrow_mut()
                 .instances
-                .retain(|i| !i.as_ref().equals(&seat.as_ref()));
+                .retain(|i| !i.as_ref().equals(seat.as_ref()));
         }));
     }
 

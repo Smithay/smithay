@@ -377,7 +377,7 @@ impl KeyboardHandle {
         if !same {
             // unset old focus
             guard.with_focused_kbds(|kbd, s| {
-                kbd.leave(serial.into(), &s);
+                kbd.leave(serial.into(), s);
             });
 
             // set new focus
@@ -385,7 +385,7 @@ impl KeyboardHandle {
             let (dep, la, lo, gr) = guard.serialize_modifiers();
             let keys = guard.serialize_pressed_keys();
             guard.with_focused_kbds(|kbd, surface| {
-                kbd.enter(serial.into(), &surface, keys.clone());
+                kbd.enter(serial.into(), surface, keys.clone());
                 // Modifiers must be send after enter event.
                 kbd.modifiers(serial.into(), dep, la, lo, gr);
             });
@@ -481,7 +481,7 @@ pub(crate) fn implement_keyboard(keyboard: Main<WlKeyboard>, handle: Option<&Key
             arc.internal
                 .borrow_mut()
                 .known_kbds
-                .retain(|k| !k.as_ref().equals(&keyboard.as_ref()))
+                .retain(|k| !k.as_ref().equals(keyboard.as_ref()))
         }));
     }
 
