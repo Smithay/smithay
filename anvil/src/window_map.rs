@@ -2,7 +2,10 @@ use std::cell::RefCell;
 use std::sync::Mutex;
 
 use smithay::{
-    reexports::{wayland_protocols::xdg_shell::server::xdg_toplevel, wayland_server::protocol::wl_surface},
+    reexports::{
+        wayland_protocols::xdg_shell::server::xdg_toplevel,
+        wayland_server::protocol::wl_surface::{self, WlSurface},
+    },
     utils::{Logical, Point, Rectangle},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, SubsurfaceCachedState, TraversalAction},
@@ -295,6 +298,29 @@ impl WindowMap {
         }
 
         None
+    }
+
+    pub fn bring_surface_to_top(&mut self, surface: &WlSurface) {
+        let found = self.windows.iter().enumerate().find(|(_, w)| {
+            if let Some(s) = w.toplevel.get_surface() {
+                s.as_ref().equals(surface.as_ref())
+            } else {
+                false
+            }
+        });
+
+        if let Some((i, _)) = found {
+            let winner = self.windows.remove(i);
+
+            // Take activation away from all the windows
+            for window in self.windows.iter() {
+                window.toplevel.set_activated(false);
+            }
+
+            // Give activation to our winner
+            winner.toplevel.set_activated(true);
+            self.windows.insert(0, winner);
+        }
     }
 
     pub fn get_surface_and_bring_to_top(

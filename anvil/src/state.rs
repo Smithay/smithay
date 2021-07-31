@@ -19,6 +19,7 @@ use smithay::{
         seat::{CursorImageStatus, KeyboardHandle, PointerHandle, Seat, XkbConfig},
         shm::init_shm_global,
         tablet_manager::{init_tablet_manager_global, TabletSeatTrait},
+        xdg_activation::{init_xdg_activation_global, XdgActivationEvent},
     },
 };
 
@@ -85,6 +86,29 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let shell_handles = init_shell::<BackendData>(display.clone(), log.clone());
 
         init_xdg_output_manager(&mut display.borrow_mut(), log.clone());
+        init_xdg_activation_global(
+            &mut display.borrow_mut(),
+            |state, req, mut ddata| {
+                let anvil_state = ddata.get::<AnvilState<BackendData>>().unwrap();
+                match req {
+                    XdgActivationEvent::RequestActivation {
+                        token,
+                        token_data,
+                        surface,
+                    } => {
+                        if token_data.timestamp.elapsed().as_secs() < 10 {
+                            // Just grant the wish
+                            anvil_state.window_map.borrow_mut().bring_surface_to_top(&surface);
+                        } else {
+                            // Discard the request
+                            state.lock().unwrap().remove_request(&token);
+                        }
+                    }
+                    XdgActivationEvent::DestroyActivationRequest { .. } => {}
+                }
+            },
+            log.clone(),
+        );
 
         let socket_name = if listen_on_socket {
             let socket_name = display
