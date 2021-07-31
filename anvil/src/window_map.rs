@@ -8,6 +8,7 @@ use smithay::{
         compositor::{with_states, with_surface_tree_downward, SubsurfaceCachedState, TraversalAction},
         shell::{
             legacy::ShellSurface,
+            wlr_layer::Layer,
             xdg::{PopupSurface, SurfaceCachedState, ToplevelSurface, XdgPopupSurfaceRoleAttributes},
         },
     },
@@ -16,6 +17,9 @@ use smithay::{
 use crate::shell::SurfaceData;
 #[cfg(feature = "xwayland")]
 use crate::xwayland::X11Surface;
+
+mod layer_map;
+pub use layer_map::{LayerMap, LayerSurface};
 
 #[derive(Clone, PartialEq)]
 pub enum Kind {
@@ -242,6 +246,8 @@ pub struct Popup {
 pub struct WindowMap {
     windows: Vec<Window>,
     popups: Vec<Popup>,
+
+    pub layers: LayerMap,
 }
 
 impl WindowMap {
@@ -268,11 +274,26 @@ impl WindowMap {
         &self,
         point: Point<f64, Logical>,
     ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
+        if let Some(res) = self.layers.get_surface_under(&Layer::Overlay, point) {
+            return Some(res);
+        }
+        if let Some(res) = self.layers.get_surface_under(&Layer::Top, point) {
+            return Some(res);
+        }
+
         for w in &self.windows {
             if let Some(surface) = w.matching(point) {
                 return Some(surface);
             }
         }
+
+        if let Some(res) = self.layers.get_surface_under(&Layer::Bottom, point) {
+            return Some(res);
+        }
+        if let Some(res) = self.layers.get_surface_under(&Layer::Background, point) {
+            return Some(res);
+        }
+
         None
     }
 
@@ -330,6 +351,7 @@ impl WindowMap {
     pub fn refresh(&mut self) {
         self.windows.retain(|w| w.toplevel.alive());
         self.popups.retain(|p| p.popup.alive());
+        self.layers.refresh();
         for w in &mut self.windows {
             w.self_update();
         }
@@ -404,5 +426,6 @@ impl WindowMap {
         for window in &self.windows {
             window.send_frame(time);
         }
+        self.layers.send_frames(time);
     }
 }

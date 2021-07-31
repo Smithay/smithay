@@ -4,7 +4,10 @@ use smithay::{
     reexports::{
         wayland_protocols::xdg_shell::server::xdg_toplevel,
         wayland_server::{
-            protocol::{wl_output, wl_surface::WlSurface},
+            protocol::{
+                wl_output,
+                wl_surface::{self, WlSurface},
+            },
             Display, Global, UserDataMap,
         },
     },
@@ -22,6 +25,7 @@ pub struct Output {
     output: output::Output,
     global: Option<Global<wl_output::WlOutput>>,
     surfaces: Vec<WlSurface>,
+    layer_surfaces: RefCell<Vec<wl_surface::WlSurface>>,
     current_mode: Mode,
     scale: f32,
     output_scale: i32,
@@ -60,6 +64,7 @@ impl Output {
             output,
             location,
             surfaces: Vec::new(),
+            layer_surfaces: Default::default(),
             current_mode: mode,
             scale,
             output_scale,
@@ -100,6 +105,16 @@ impl Output {
 
     pub fn current_mode(&self) -> Mode {
         self.current_mode
+    }
+
+    /// Add a layer surface to this output
+    pub fn add_layer_surface(&self, layer: wl_surface::WlSurface) {
+        self.layer_surfaces.borrow_mut().push(layer);
+    }
+
+    /// Get all layer surfaces assigned to this output
+    pub fn layer_surfaces(&self) -> Vec<wl_surface::WlSurface> {
+        self.layer_surfaces.borrow().iter().cloned().collect()
     }
 }
 
@@ -171,6 +186,7 @@ impl OutputMap {
         // and move them to the primary output
         let primary_output_location = self.with_primary().map(|o| o.location()).unwrap_or_default();
         let mut window_map = self.window_map.borrow_mut();
+
         // TODO: This is a bit unfortunate, we save the windows in a temp vector
         // cause we can not call window_map.set_location within the closure.
         let mut windows_to_move = Vec::new();
@@ -217,6 +233,10 @@ impl OutputMap {
         });
         for (window, location) in windows_to_move.drain(..) {
             window_map.set_location(&window, location);
+        }
+
+        for output in self.outputs.iter() {
+            window_map.layers.arange_layers(output);
         }
     }
 
@@ -291,6 +311,15 @@ impl OutputMap {
 
     pub fn find_by_output(&self, output: &wl_output::WlOutput) -> Option<&Output> {
         self.find(|o| o.output.owns(output))
+    }
+
+    pub fn find_by_layer_surface(&self, surface: &wl_surface::WlSurface) -> Option<&Output> {
+        self.find(|o| {
+            o.layer_surfaces
+                .borrow()
+                .iter()
+                .any(|s| s.as_ref().equals(surface.as_ref()))
+        })
     }
 
     pub fn find_by_name<N>(&self, name: N) -> Option<&Output>
@@ -388,9 +417,10 @@ impl OutputMap {
 
     pub fn refresh(&mut self) {
         // Clean-up dead surfaces
-        self.outputs
-            .iter_mut()
-            .for_each(|o| o.surfaces.retain(|s| s.as_ref().is_alive()));
+        self.outputs.iter_mut().for_each(|o| {
+            o.surfaces.retain(|s| s.as_ref().is_alive());
+            o.layer_surfaces.borrow_mut().retain(|s| s.as_ref().is_alive());
+        });
 
         let window_map = self.window_map.clone();
 

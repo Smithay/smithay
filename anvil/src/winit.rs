@@ -16,6 +16,7 @@ use smithay::{
     wayland::{
         output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,
+        shell::wlr_layer::Layer,
     },
 };
 
@@ -144,15 +145,34 @@ pub fn run_winit(log: Logger) {
                 .render(|renderer, frame| {
                     frame.clear([0.8, 0.8, 0.9, 1.0])?;
 
+                    let window_map = &*state.window_map.borrow();
+
+                    for layer in [Layer::Background, Layer::Bottom] {
+                        draw_layers(
+                            renderer,
+                            frame,
+                            window_map,
+                            layer,
+                            output_geometry,
+                            output_scale,
+                            &log,
+                        )?;
+                    }
+
                     // draw the windows
-                    draw_windows(
-                        renderer,
-                        frame,
-                        &*state.window_map.borrow(),
-                        output_geometry,
-                        output_scale,
-                        &log,
-                    )?;
+                    draw_windows(renderer, frame, window_map, output_geometry, output_scale, &log)?;
+
+                    for layer in [Layer::Top, Layer::Overlay] {
+                        draw_layers(
+                            renderer,
+                            frame,
+                            window_map,
+                            layer,
+                            output_geometry,
+                            output_scale,
+                            &log,
+                        )?;
+                    }
 
                     let (x, y) = state.pointer_location.into();
                     // draw the dnd icon if any
