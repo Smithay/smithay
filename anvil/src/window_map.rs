@@ -300,26 +300,29 @@ impl WindowMap {
         None
     }
 
+    fn bring_nth_window_to_top(&mut self, id: usize) {
+        let winner = self.windows.remove(id);
+
+        // Take activation away from all the windows
+        for window in self.windows.iter() {
+            window.toplevel.set_activated(false);
+        }
+
+        // Give activation to our winner
+        winner.toplevel.set_activated(true);
+        self.windows.insert(0, winner);
+    }
+
     pub fn bring_surface_to_top(&mut self, surface: &WlSurface) {
         let found = self.windows.iter().enumerate().find(|(_, w)| {
-            if let Some(s) = w.toplevel.get_surface() {
-                s.as_ref().equals(surface.as_ref())
-            } else {
-                false
-            }
+            w.toplevel
+                .get_surface()
+                .map(|s| s.as_ref().equals(surface.as_ref()))
+                .unwrap_or(false)
         });
 
-        if let Some((i, _)) = found {
-            let winner = self.windows.remove(i);
-
-            // Take activation away from all the windows
-            for window in self.windows.iter() {
-                window.toplevel.set_activated(false);
-            }
-
-            // Give activation to our winner
-            winner.toplevel.set_activated(true);
-            self.windows.insert(0, winner);
+        if let Some((id, _)) = found {
+            self.bring_nth_window_to_top(id);
         }
     }
 
@@ -334,18 +337,8 @@ impl WindowMap {
                 break;
             }
         }
-        if let Some((i, surface)) = found {
-            let winner = self.windows.remove(i);
-
-            // Take activation away from all the windows
-            for window in self.windows.iter() {
-                window.toplevel.set_activated(false);
-            }
-
-            // Give activation to our winner
-            winner.toplevel.set_activated(true);
-
-            self.windows.insert(0, winner);
+        if let Some((id, surface)) = found {
+            self.bring_nth_window_to_top(id);
             Some(surface)
         } else {
             None
