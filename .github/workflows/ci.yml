@@ -251,6 +251,19 @@ jobs:
       - smithay-tests
       - anvil-tests
 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - job_name: "Core tests"
+            gtest_filter: "SelfTest*:FrameSubmission*"
+          - job_name: "Output tests"
+            gtest_filter: "XdgOutputV1Test*"
+          - job_name: "Pointer input tests"
+            gtest_filter: "*/SurfacePointerMotionTest*"
+
+    name: "WLCS: ${{ matrix.job_name }}"
+
     env:
       RUSTFLAGS: "-D warnings"
 
@@ -277,7 +290,7 @@ jobs:
           profile: minimal
 
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install cmake libgtest-dev google-mock libboost-dev libxkbcommon-dev libwayland-dev
 
       - name: Build cache
         uses: actions/cache@v2
@@ -285,10 +298,22 @@ jobs:
           path: target
           key: ${{ runner.os }}-build-rust_stable-wlcs-${{ hashFiles('**/Cargo.toml') }}
 
-      - name: Build WLCS plugin
+      - name: WLCS build cache
+        uses: actions/cache@v2
+        with:
+          path: wlcs
+          key: ${{ runner.os }}-build-wlcs-${{ hashFiles('./compile_wlcs.sh') }}
+
+      - name: Build WLCS
+        run: ./compile_wlcs.sh
+
+      - name: Build anvil WLCS plugin
         uses: actions-rs/cargo@v1
         env:
           RUST_BACKTRACE: full
         with:
           command: build
           args: --manifest-path "./wlcs_anvil/Cargo.toml"
+
+      - name: Run test suite
+        run: ./wlcs/wlcs ./target/debug/libwlcs_anvil.so --gtest_filter="${{ matrix.gtest_filter }}"
