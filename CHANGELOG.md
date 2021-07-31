@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Additions
+
+#### Clients & Protocols
+
+- Added public api constants for the roles of `wl_shell_surface`, `zxdg_toplevel` and `xdg_toplevel`. See the
+  `shell::legacy` and `shell::xdg` modules for these constants.
+- Whether a surface is toplevel equivalent can be determined with the new function `shell::is_toplevel_equivalent`. 
+- Setting the parent of a toplevel surface is now possible with the `xdg::ToplevelSurface::set_parent` function.
+- Add support for the zxdg-foreign-v2 protocol.
+
 ### Bugfixes
 
 - EGLBufferReader now checks if buffers are alive before using them.

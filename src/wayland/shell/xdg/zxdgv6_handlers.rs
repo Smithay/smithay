@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::{cell::RefCell, ops::Deref as _, sync::Mutex};
 
 use crate::wayland::compositor;
-use crate::wayland::shell::xdg::PopupState;
+use crate::wayland::shell::xdg::{PopupState, ZXDG_POPUP_ROLE, ZXDG_TOPLEVEL_ROLE};
 use crate::wayland::Serial;
 use wayland_protocols::{
     unstable::xdg_shell::v6::server::{
@@ -20,9 +20,6 @@ use super::{
     ShellData, SurfaceCachedState, ToplevelConfigure, ToplevelKind, XdgPopupSurfaceRoleAttributes,
     XdgRequest, XdgToplevelSurfaceRoleAttributes,
 };
-
-static ZXDG_TOPLEVEL_ROLE: &str = "zxdg_toplevel";
-static ZXDG_POPUP_ROLE: &str = "zxdg_popup";
 
 pub(crate) fn implement_shell(
     shell: Main<zxdg_shell_v6::ZxdgShellV6>,
@@ -563,16 +560,18 @@ fn toplevel_implementation(
             // all it done by the destructor
         }
         zxdg_toplevel_v6::Request::SetParent { parent } => {
-            with_surface_toplevel_role_data(&toplevel, |data| {
-                data.parent = parent.map(|toplevel_surface_parent| {
-                    let parent_data = toplevel_surface_parent
-                        .as_ref()
-                        .user_data()
-                        .get::<ShellSurfaceUserData>()
-                        .unwrap();
-                    parent_data.wl_surface.clone()
-                })
+            let parent_surface = parent.map(|toplevel_surface_parent| {
+                toplevel_surface_parent
+                    .as_ref()
+                    .user_data()
+                    .get::<ShellSurfaceUserData>()
+                    .unwrap()
+                    .wl_surface
+                    .clone()
             });
+
+            // Parent is not double buffered, we can set it directly
+            set_parent(&toplevel, parent_surface);
         }
         zxdg_toplevel_v6::Request::SetTitle { title } => {
             // Title is not double buffered, we can set it directly
@@ -818,4 +817,21 @@ fn zxdg_anchor_to_xdg(c: zxdg_positioner_v6::Anchor) -> Option<xdg_positioner::A
         0b1010 => Some(xdg_positioner::Anchor::BottomRight),
         _ => None,
     }
+}
+
+pub(crate) fn get_parent(toplevel: &zxdg_toplevel_v6::ZxdgToplevelV6) -> Option<wl_surface::WlSurface> {
+    with_surface_toplevel_role_data(toplevel, |data| data.parent.clone())
+}
+
+/// Sets the parent of the specified toplevel surface.
+///
+/// The parent must be a toplevel surface.
+///
+/// The parent of a surface is not double buffered and therefore may be set directly.
+///
+/// If the parent is `None`, the parent-child relationship is removed.
+pub(crate) fn set_parent(toplevel: &zxdg_toplevel_v6::ZxdgToplevelV6, parent: Option<wl_surface::WlSurface>) {
+    with_surface_toplevel_role_data(toplevel, |data| {
+        data.parent = parent;
+    });
 }

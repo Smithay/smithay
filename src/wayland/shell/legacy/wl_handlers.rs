@@ -10,9 +10,8 @@ use wayland_server::{
     DispatchData, Filter, Main,
 };
 
-static WL_SHELL_SURFACE_ROLE: &str = "wl_shell_surface";
-
 use crate::wayland::compositor;
+use crate::wayland::shell::legacy::WL_SHELL_SURFACE_ROLE;
 use crate::wayland::Serial;
 
 use super::{ShellRequest, ShellState, ShellSurface, ShellSurfaceAttributes, ShellSurfaceKind};

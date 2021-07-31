@@ -61,6 +61,9 @@ use wayland_server::{
 
 use super::PingError;
 
+/// The role of a wl_shell_surface.
+pub const WL_SHELL_SURFACE_ROLE: &str = "wl_shell_surface";
+
 mod wl_handlers;
 
 /// Metadata associated with the `wl_surface` role

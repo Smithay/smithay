@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::{cell::RefCell, ops::Deref as _, sync::Mutex};
 
 use crate::wayland::compositor;
-use crate::wayland::shell::xdg::PopupState;
+use crate::wayland::shell::xdg::{PopupState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE};
 use crate::wayland::Serial;
 use wayland_protocols::xdg_shell::server::{
     xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base,
@@ -17,9 +17,6 @@ use super::{
     ShellData, SurfaceCachedState, ToplevelConfigure, ToplevelKind, XdgPopupSurfaceRoleAttributes,
     XdgRequest, XdgToplevelSurfaceRoleAttributes,
 };
-
-static XDG_TOPLEVEL_ROLE: &str = "xdg_toplevel";
-static XDG_POPUP_ROLE: &str = "xdg_popup";
 
 pub(crate) fn implement_wm_base(
     shell: Main<xdg_wm_base::XdgWmBase>,
@@ -548,18 +545,18 @@ fn toplevel_implementation(
             // all it done by the destructor
         }
         xdg_toplevel::Request::SetParent { parent } => {
-            // Parent is not double buffered, we can set it directly
-            with_surface_toplevel_role_data(&toplevel, |data| {
-                data.parent = parent.map(|toplevel_surface_parent| {
-                    toplevel_surface_parent
-                        .as_ref()
-                        .user_data()
-                        .get::<ShellSurfaceUserData>()
-                        .unwrap()
-                        .wl_surface
-                        .clone()
-                })
+            let parent_surface = parent.map(|toplevel_surface_parent| {
+                toplevel_surface_parent
+                    .as_ref()
+                    .user_data()
+                    .get::<ShellSurfaceUserData>()
+                    .unwrap()
+                    .wl_surface
+                    .clone()
             });
+
+            // Parent is not double buffered, we can set it directly
+            set_parent(&toplevel, parent_surface);
         }
         xdg_toplevel::Request::SetTitle { title } => {
             // Title is not double buffered, we can set it directly
@@ -755,4 +752,21 @@ fn destroy_popup(popup: xdg_popup::XdgPopup) {
         .unwrap()
         .known_popups
         .retain(|other| other.alive());
+}
+
+pub(crate) fn get_parent(toplevel: &xdg_toplevel::XdgToplevel) -> Option<wl_surface::WlSurface> {
+    with_surface_toplevel_role_data(toplevel, |data| data.parent.clone())
+}
+
+/// Sets the parent of the specified toplevel surface.
+///
+/// The parent must be a toplevel surface.
+///
+/// The parent of a surface is not double buffered and therefore may be set directly.
+///
+/// If the parent is `None`, the parent-child relationship is removed.
+pub(crate) fn set_parent(toplevel: &xdg_toplevel::XdgToplevel, parent: Option<wl_surface::WlSurface>) {
+    with_surface_toplevel_role_data(toplevel, |data| {
+        data.parent = parent;
+    });
 }
