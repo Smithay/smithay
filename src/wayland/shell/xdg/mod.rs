@@ -65,6 +65,7 @@ use crate::utils::DeadResource;
 use crate::utils::{Logical, Point, Rectangle, Size};
 use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
+use crate::wayland::shell::is_toplevel_equivalent;
 use crate::wayland::{Serial, SERIAL_COUNTER};
 use std::fmt::Debug;
 use std::{
@@ -72,6 +73,7 @@ use std::{
     rc::Rc,
     sync::{Arc, Mutex},
 };
+
 use wayland_protocols::unstable::xdg_shell::v6::server::zxdg_surface_v6;
 use wayland_protocols::xdg_shell::server::xdg_surface;
 use wayland_protocols::{
@@ -90,6 +92,38 @@ use super::PingError;
 mod xdg_handlers;
 // compatibility handlers for the zxdg_shell_v6 protocol, its earlier version
 mod zxdgv6_handlers;
+
+/// The role of an XDG toplevel surface.
+///
+/// If you are checking if the surface role is an xdg_toplevel, you should also check if the surface
+/// is an [zxdg_toplevel] since the zxdg toplevel role is equivalent.
+///
+/// [zxdg_toplevel]: self::ZXDG_TOPLEVEL_ROLE
+pub const XDG_TOPLEVEL_ROLE: &str = "xdg_toplevel";
+
+/// The role of an XDG popup surface.
+///
+/// If you are checking if the surface role is an xdg_popup, you should also check if the surface
+/// is a [zxdg_popup] since the zxdg popup role is equivalent.
+///
+/// [zxdg_popup]: self::ZXDG_POPUP_ROLE
+pub const XDG_POPUP_ROLE: &str = "xdg_popup";
+
+/// The role of an ZXDG toplevel surface.
+///
+/// If you are checking if the surface role is an zxdg_toplevel, you should also check if the surface
+/// is an [xdg_toplevel] since the xdg toplevel role is equivalent.
+///
+/// [xdg_toplevel]: self::XDG_TOPLEVEL_ROLE
+pub const ZXDG_TOPLEVEL_ROLE: &str = "zxdg_toplevel";
+
+/// The role of an ZXDG popup surface.
+///
+/// If you are checking if the surface role is an zxdg_popup, you should also check if the surface
+/// is a [xdg_popup] since the xdg popup role is equivalent.
+///
+/// [xdg_popup]: self::XDG_POPUP_ROLE
+pub const ZXDG_POPUP_ROLE: &str = "zxdg_popup";
 
 macro_rules! xdg_role {
     ($configure:ty,
@@ -698,6 +732,13 @@ impl ShellState {
         &self.known_toplevels[..]
     }
 
+    /// Returns a reference to the toplevel surface mapped to the provided wl_surface.
+    pub fn toplevel_surface(&self, surface: &wl_surface::WlSurface) -> Option<&ToplevelSurface> {
+        self.known_toplevels
+            .iter()
+            .find(|toplevel| toplevel.wl_surface == *surface)
+    }
+
     /// Access all the popup surfaces known by this handler
     pub fn popup_surfaces(&self) -> &[PopupSurface] {
         &self.known_popups[..]
@@ -1114,6 +1155,35 @@ impl ToplevelSurface {
             })
             .unwrap(),
         )
+    }
+
+    /// Returns the parent of this toplevel surface.
+    pub fn parent(&self) -> Option<wl_surface::WlSurface> {
+        match &self.shell_surface {
+            ToplevelKind::Xdg(toplevel) => xdg_handlers::get_parent(toplevel),
+            ToplevelKind::ZxdgV6(toplevel) => zxdgv6_handlers::get_parent(toplevel),
+        }
+    }
+
+    /// Sets the parent of this toplevel surface and returns whether the parent was successfully set.
+    ///
+    /// The parent must be another toplevel equivalent surface.
+    ///
+    /// If the parent is `None`, the parent-child relationship is removed.
+    pub fn set_parent(&self, parent: Option<wl_surface::WlSurface>) -> bool {
+        if let Some(parent) = parent {
+            if !is_toplevel_equivalent(&parent) {
+                return false;
+            }
+        }
+
+        // Unset the parent
+        match &self.shell_surface {
+            ToplevelKind::Xdg(toplevel) => xdg_handlers::set_parent(toplevel, None),
+            ToplevelKind::ZxdgV6(toplevel) => zxdgv6_handlers::set_parent(toplevel, None),
+        }
+
+        true
     }
 }
 

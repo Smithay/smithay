@@ -15,7 +15,9 @@
 //!   is now deprecated. You only need it if you want to support apps predating `xdg_shell`.
 
 use super::Serial;
+use crate::wayland::compositor;
 use thiserror::Error;
+use wayland_server::protocol::wl_surface::WlSurface;
 
 pub mod legacy;
 pub mod xdg;
@@ -30,4 +32,18 @@ pub enum PingError {
     /// There is already a pending ping
     #[error("there is already a ping pending `{0:?}`")]
     PingAlreadyPending(Serial),
+}
+
+/// Returns true if the surface is toplevel equivalent.
+///
+/// This is method checks if the surface roles is one of `wl_shell_surface`, `xdg_toplevel`
+/// or `zxdg_toplevel`.
+pub fn is_toplevel_equivalent(surface: &WlSurface) -> bool {
+    // (z)xdg_toplevel and wl_shell_surface are toplevel like, so verify if the roles match.
+    let role = compositor::get_role(surface);
+
+    matches!(
+        role,
+        Some(xdg::XDG_TOPLEVEL_ROLE) | Some(xdg::ZXDG_TOPLEVEL_ROLE) | Some(legacy::WL_SHELL_SURFACE_ROLE)
+    )
 }
