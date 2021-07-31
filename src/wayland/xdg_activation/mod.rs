@@ -161,7 +161,7 @@ impl XdgActivationState {
     }
 
     /// Retain activation requests
-    pub fn retain_reqests<F>(&mut self, mut f: F)
+    pub fn retain_requests<F>(&mut self, mut f: F)
     where
         F: FnMut(&XdgActivationToken, &(XdgActivationTokenData, WlSurface)) -> bool,
     {
