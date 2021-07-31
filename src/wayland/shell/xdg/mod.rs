@@ -89,7 +89,7 @@ use wayland_server::{
 use super::PingError;
 
 // handlers for the xdg_shell protocol
-mod xdg_handlers;
+pub(super) mod xdg_handlers;
 // compatibility handlers for the zxdg_shell_v6 protocol, its earlier version
 mod zxdgv6_handlers;
 

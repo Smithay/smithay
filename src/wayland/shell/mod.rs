@@ -22,6 +22,8 @@ use wayland_server::protocol::wl_surface::WlSurface;
 pub mod legacy;
 pub mod xdg;
 
+pub mod wlr_layer;
+
 /// Represents the possible errors returned from
 /// a surface ping
 #[derive(Debug, Error)]
