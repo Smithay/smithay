@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- `XdgPopupSurfaceRoleAttributes::positioner` changed its type to Arc<Mutex<PositionerState>>
+
 ### Additions
 
 #### Clients & Protocols
@@ -17,6 +21,7 @@
 ### Bugfixes
 
 - EGLBufferReader now checks if buffers are alive before using them.
+- `XdgPopupSurfaceRoleAttributes::positioner` now always contains up to date data
 
 ## version 0.3.0 (2021-07-25)
 
