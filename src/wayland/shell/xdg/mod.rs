@@ -125,6 +125,9 @@ pub const ZXDG_TOPLEVEL_ROLE: &str = "zxdg_toplevel";
 /// [xdg_popup]: self::XDG_POPUP_ROLE
 pub const ZXDG_POPUP_ROLE: &str = "zxdg_popup";
 
+/// Constant for toplevel state version checking
+const XDG_TOPLEVEL_STATE_TILED_SINCE: u32 = 2;
+
 macro_rules! xdg_role {
     ($configure:ty,
      $(#[$attr:meta])* $element:ident {$($(#[$field_attr:meta])* $vis:vis$field:ident:$type:ty),*},
@@ -614,6 +617,39 @@ impl ToplevelStateSet {
             self.states.retain(|s| *s != state);
             true
         }
+    }
+
+    /// Filter the states according to the provided version
+    /// of the [`XdgToplevel`]
+    pub(crate) fn into_filtered_states(self, version: u32) -> Vec<xdg_toplevel::State> {
+        // If the client version supports the tiled states
+        // we can directly return the states which will save
+        // us from allocating another vector
+        if version >= XDG_TOPLEVEL_STATE_TILED_SINCE {
+            return self.states;
+        }
+
+        let is_tiled = |state: &xdg_toplevel::State| {
+            matches!(
+                state,
+                xdg_toplevel::State::TiledTop
+                    | xdg_toplevel::State::TiledBottom
+                    | xdg_toplevel::State::TiledLeft
+                    | xdg_toplevel::State::TiledRight
+            )
+        };
+
+        let contains_tiled = self.states.iter().any(|state| is_tiled(state));
+
+        // If the states do not contain a tiled state
+        // we can directly return the states which will save
+        // us from allocating another vector
+        if !contains_tiled {
+            return self.states;
+        }
+
+        // We need to filter out the unsupported states
+        self.states.into_iter().filter(|state| !is_tiled(state)).collect()
     }
 }
 

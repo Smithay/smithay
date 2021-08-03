@@ -522,7 +522,10 @@ pub fn send_toplevel_configure(resource: &zxdg_toplevel_v6::ZxdgToplevelV6, conf
     let (width, height) = configure.state.size.unwrap_or_default().into();
     // convert the Vec<State> (which is really a Vec<u32>) into Vec<u8>
     let states = {
-        let mut states: Vec<xdg_toplevel::State> = configure.state.states.into();
+        let mut states: Vec<xdg_toplevel::State> = configure
+            .state
+            .states
+            .into_filtered_states(resource.as_ref().version());
         let ptr = states.as_mut_ptr();
         let len = states.len();
         let cap = states.capacity();
