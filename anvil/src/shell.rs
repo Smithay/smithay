@@ -1109,7 +1109,9 @@ fn surface_commit(
         .unwrap();
         if !initial_configure_sent {
             // TODO: properly recompute the geometry with the whole of positioner state
-            popup.send_configure();
+            // NOTE: This should never fail as the initial configure is always
+            // allowed.
+            popup.send_configure().expect("initial configure failed");
         }
     }
 

@@ -1247,6 +1247,21 @@ impl ToplevelSurface {
     }
 }
 
+/// Represents the possible errors that
+/// can be returned from [`PopupSurface::send_configure`]
+#[derive(Debug, thiserror::Error)]
+pub enum PopupConfigureError {
+    /// The popup has already been configured and the
+    /// protocol version forbids the popup to
+    /// be re-configured
+    #[error("The popup has already been configured")]
+    AlreadyConfigured,
+    /// The popup is not allowed to be re-configured,
+    /// the positioner is not reactive
+    #[error("The popup positioner is not reactive")]
+    NotReactive,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum PopupKind {
     Xdg(xdg_popup::XdgPopup),
@@ -1329,6 +1344,14 @@ impl PopupSurface {
         Some(ShellClient { kind: shell })
     }
 
+    /// Get the version of the popup resource
+    fn version(&self) -> u32 {
+        match self.shell_surface {
+            PopupKind::Xdg(ref xdg) => xdg.as_ref().version(),
+            PopupKind::ZxdgV6(ref zxdg) => zxdg.as_ref().version(),
+        }
+    }
+
     /// Internal configure function to re-use the configure
     /// logic for both [`XdgRequest::send_configure`] and [`XdgRequest::send_repositioned`]
     fn send_configure_internal(&self, reposition_token: Option<u32>) {
@@ -1340,6 +1363,7 @@ impl PopupSurface {
                     .unwrap()
                     .lock()
                     .unwrap();
+
                 if !attributes.initial_configure_sent
                     || attributes.server_pending.is_some()
                     || reposition_token.is_some()
@@ -1380,8 +1404,42 @@ impl PopupSurface {
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure(&self) {
-        self.send_configure_internal(None)
+    ///
+    /// Returns [`Err(PopupConfigureError)`] if the initial configure has already been sent and
+    /// the client protocol version disallows a re-configure or the current [`PositionerState`]
+    /// is not reactive
+    pub fn send_configure(&self) -> Result<(), PopupConfigureError> {
+        if let Some(surface) = self.get_surface() {
+            // Check if we are allowed to send a configure
+            compositor::with_states(surface, |states| {
+                let attributes = states
+                    .data_map
+                    .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap();
+
+                if attributes.initial_configure_sent && self.version() < xdg_popup::EVT_REPOSITIONED_SINCE {
+                    // Return error, initial configure already sent and client
+                    // does not support re-configure
+                    return Err(PopupConfigureError::AlreadyConfigured);
+                }
+
+                let is_reactive = attributes.current.positioner.reactive;
+
+                if attributes.initial_configure_sent && !is_reactive {
+                    // Return error, the positioner does not allow re-configure
+                    return Err(PopupConfigureError::NotReactive);
+                }
+
+                Ok(())
+            })
+            .unwrap_or(Ok(()))?;
+
+            self.send_configure_internal(None);
+        }
+
+        Ok(())
     }
 
     /// Send a configure event, including the `repositioned` event to the client
