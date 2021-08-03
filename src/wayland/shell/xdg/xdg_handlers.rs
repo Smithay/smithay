@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::{cell::RefCell, ops::Deref as _, sync::Mutex};
+use std::sync::Arc;
+use std::{ops::Deref as _, sync::Mutex};
 
 use crate::wayland::compositor;
 use crate::wayland::shell::xdg::{PopupState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE};
@@ -115,9 +116,9 @@ fn implement_positioner(positioner: Main<xdg_positioner::XdgPositioner>) -> xdg_
         let mutex = positioner
             .as_ref()
             .user_data()
-            .get::<RefCell<PositionerState>>()
+            .get::<Arc<Mutex<PositionerState>>>()
             .unwrap();
-        let mut state = mutex.borrow_mut();
+        let mut state = mutex.lock().unwrap();
         match request {
             xdg_positioner::Request::Destroy => {
                 // handled by destructor
@@ -164,7 +165,7 @@ fn implement_positioner(positioner: Main<xdg_positioner::XdgPositioner>) -> xdg_
     positioner
         .as_ref()
         .user_data()
-        .set(|| RefCell::new(PositionerState::default()));
+        .set(|| Arc::new(Mutex::new(PositionerState::default())));
 
     positioner.deref().clone()
 }
@@ -268,10 +269,8 @@ fn xdg_surface_implementation(
             let positioner_data = positioner
                 .as_ref()
                 .user_data()
-                .get::<RefCell<PositionerState>>()
-                .unwrap()
-                .borrow()
-                .clone();
+                .get::<Arc<Mutex<PositionerState>>>()
+                .unwrap();
 
             let parent_surface = parent.map(|parent| {
                 let parent_data = parent.as_ref().user_data().get::<XdgSurfaceUserData>().unwrap();
@@ -286,8 +285,9 @@ fn xdg_surface_implementation(
                 parent: parent_surface,
                 server_pending: Some(PopupState {
                     // Set the positioner data as the popup geometry
-                    geometry: positioner_data.get_geometry(),
+                    geometry: positioner_data.lock().unwrap().get_geometry(),
                 }),
+                positioner: positioner_data.clone(),
                 ..Default::default()
             };
             if compositor::give_role(surface, XDG_POPUP_ROLE).is_err() {

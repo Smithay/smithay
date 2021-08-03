@@ -320,7 +320,7 @@ xdg_role!(
         ///
         /// For example the compositor should prevent that a popup
         /// is placed outside the visible rectangle of a output.
-        pub positioner: PositionerState,
+        pub positioner: Arc<Mutex<PositionerState>>,
         /// Holds the last server_pending state that has been acknowledged
         /// by the client. This state should be cloned to the current
         /// during a commit.
