@@ -458,7 +458,7 @@ impl PositionerState {
     /// The `constraint_adjustment` will not be considered by this
     /// implementation and the position and size should be re-calculated
     /// in the compositor if the compositor implements `constraint_adjustment`
-    pub(crate) fn get_geometry(&self) -> Rectangle<i32, Logical> {
+    pub fn get_geometry(&self) -> Rectangle<i32, Logical> {
         // From the `xdg_shell` prococol specification:
         //
         // set_offset:
