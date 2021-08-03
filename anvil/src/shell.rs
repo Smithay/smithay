@@ -374,11 +374,30 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                     .borrow_mut()
                     .insert(SurfaceKind::Xdg(surface), (x, y).into());
             }
-            XdgRequest::NewPopup { surface } => {
+            XdgRequest::NewPopup { surface, .. } => {
                 // Do not send a configure here, the initial configure
                 // of a xdg_surface has to be sent during the commit if
                 // the surface is not already configured
                 xdg_window_map.borrow_mut().insert_popup(PopupKind::Xdg(surface));
+            }
+            XdgRequest::RePosition {
+                surface,
+                positioner,
+                token,
+            } => {
+                let result = surface.with_pending_state(|state| {
+                    // NOTE: This is again a simplification, a proper compositor would
+                    // calculate the geometry of the popup here. For simplicity we just
+                    // use the default implementation here that does not take the
+                    // window position and output constraints into account.
+                    let geometry = positioner.get_geometry();
+                    state.geometry = geometry;
+                    state.positioner = positioner;
+                });
+
+                if result.is_ok() {
+                    surface.send_repositioned(token);
+                }
             }
             XdgRequest::Move {
                 surface,
