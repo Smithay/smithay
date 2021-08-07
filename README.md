@@ -29,15 +29,29 @@ Also:
 
 Like others, Smithay as a compositor library has its own sample compositor: anvil.
 
-You can run it with cargo after having cloned this repository:
+You can run it with cargo after having cloned this repository and installed the required dependencies:
 
+- `libdbus-glib-1`
+- `libudev`
+- `libsystemd`
+- `libxkbcommon`
+- `libinput`
+- `libgbm`
+
+```bash
+# (for Debian/Ubuntu)
+sudo apt install libdbus-glib-1-dev libudev-dev libsystemd-dev libxkbcommon-dev libinput-dev libgbm-dev
 ```
+
+Then, run:
+
+```bash
 cd anvil;
 
 cargo run -- --{backend}
 ```
 
-The currently available backends are:
+Where `--{backend}` is one of the currently available backends:
 
 - `--winit`: start anvil as a [Winit](https://github.com/tomaka/winit) application. This allows you to run it
   inside of an other X11 or Wayland session.
