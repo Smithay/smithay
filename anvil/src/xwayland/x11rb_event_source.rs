@@ -5,7 +5,12 @@ use std::{
 };
 
 use x11rb::{
-    connection::Connection as _, protocol::{Event, xproto::{CLIENT_MESSAGE_EVENT, Atom, ConnectionExt as _, ClientMessageEvent, EventMask, Window}}, rust_connection::RustConnection,
+    connection::Connection as _,
+    protocol::{
+        xproto::{Atom, ClientMessageEvent, ConnectionExt as _, EventMask, Window, CLIENT_MESSAGE_EVENT},
+        Event,
+    },
+    rust_connection::RustConnection,
 };
 
 use smithay::reexports::calloop::{
@@ -39,14 +44,26 @@ impl X11Source {
     /// the given window with the given type. The expectation is that this is a window that was
     /// created by us. Thus, the event reading thread will wake up and check an internal exit flag,
     /// then exit.
-    pub fn new(connection: Arc<RustConnection>, close_window: Window, close_type: Atom, log: slog::Logger) -> Self {
+    pub fn new(
+        connection: Arc<RustConnection>,
+        close_window: Window,
+        close_type: Atom,
+        log: slog::Logger,
+    ) -> Self {
         let (sender, channel) = sync_channel(5);
         let conn = Arc::clone(&connection);
         let log2 = log.clone();
         let event_thread = Some(spawn(move || {
             run_event_thread(conn, sender, log2);
         }));
-        Self { connection, channel, event_thread, close_window, close_type, log }
+        Self {
+            connection,
+            channel,
+            event_thread,
+            close_window,
+            close_type,
+            log,
+        }
     }
 }
 
@@ -66,7 +83,9 @@ impl Drop for X11Source {
             type_: self.close_type,
             data: [0; 20].into(),
         };
-        let _ = self.connection.send_event(false, self.close_window, EventMask::NO_EVENT, event);
+        let _ = self
+            .connection
+            .send_event(false, self.close_window, EventMask::NO_EVENT, event);
         let _ = self.connection.flush();
 
         // Wait for the worker thread to exit
@@ -89,12 +108,11 @@ impl EventSource for X11Source {
         C: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
         let log = self.log.clone();
-        self.channel.process_events(readiness, token, move |event, meta| {
-            match event {
+        self.channel
+            .process_events(readiness, token, move |event, meta| match event {
                 ChannelEvent::Closed => slog::warn!(log, "Event thread exited"),
-                ChannelEvent::Msg(event) => callback(event, meta)
-            }
-        })
+                ChannelEvent::Msg(event) => callback(event, meta),
+            })
     }
 
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> IOResult<()> {
@@ -131,7 +149,7 @@ fn run_event_thread(connection: Arc<RustConnection>, sender: SyncSender<Event>, 
             }
         };
         match sender.send(event) {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(_) => {
                 // The only possible error is that the other end of the channel was dropped.
                 // This happens in X11Source's Drop impl.

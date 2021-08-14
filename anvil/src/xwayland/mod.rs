@@ -1,4 +1,6 @@
-use std::{cell::RefCell, collections::HashMap, convert::TryFrom, os::unix::net::UnixStream, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell, collections::HashMap, convert::TryFrom, os::unix::net::UnixStream, rc::Rc, sync::Arc,
+};
 
 use smithay::{
     reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
@@ -44,7 +46,7 @@ impl<BackendData: 'static> AnvilState<BackendData> {
         self.handle
             .insert_source(source, move |event, _, _| {
                 match wm.borrow_mut().handle_event(event, &client) {
-                    Ok(()) => {},
+                    Ok(()) => {}
                     Err(err) => error!(log, "Error while handling X11 event: {}", err),
                 }
             })
