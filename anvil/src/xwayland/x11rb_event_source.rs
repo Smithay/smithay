@@ -1,6 +1,6 @@
 use std::{
     io::Result as IOResult,
-    sync::{atomic::{AtomicBool, Ordering}, Arc},
+    sync::Arc,
     thread::{spawn, JoinHandle},
 };
 
@@ -24,18 +24,53 @@ use smithay::reexports::calloop::{
 ///
 /// [1]: https://docs.rs/x11rb/0.8.1/x11rb/event_loop_integration/index.html#threads-and-races
 pub struct X11Source {
+    connection: Arc<RustConnection>,
     channel: Channel<Event>,
+    event_thread: Option<JoinHandle<()>>,
+    close_window: Window,
+    close_type: Atom,
+    log: slog::Logger,
 }
 
 impl X11Source {
     /// Create a new X11 source.
-    pub fn new(connection: Arc<RustConnection>, log: slog::Logger) -> Self {
+    ///
+    /// The returned instance will use `SendRequest` to cause a `ClientMessageEvent` to be sent to
+    /// the given window with the given type. The expectation is that this is a window that was
+    /// created by us. Thus, the event reading thread will wake up and check an internal exit flag,
+    /// then exit.
+    pub fn new(connection: Arc<RustConnection>, close_window: Window, close_type: Atom, log: slog::Logger) -> Self {
         let (sender, channel) = sync_channel(5);
         let conn = Arc::clone(&connection);
+        let log2 = log.clone();
         let event_thread = Some(spawn(move || {
-            run_event_thread(connection, sender, log);
+            run_event_thread(conn, sender, log2);
         }));
-        Self { channel }
+        Self { connection, channel, event_thread, close_window, close_type, log }
+    }
+}
+
+impl Drop for X11Source {
+    fn drop(&mut self) {
+        // Signal the worker thread to exit by dropping the read end of the channel.
+        // There is no easy and nice way to do this, so do it the ugly way: Replace it.
+        let (_, channel) = sync_channel(1);
+        self.channel = channel;
+
+        // Send an event to wake up the worker so that it actually exits
+        let event = ClientMessageEvent {
+            response_type: CLIENT_MESSAGE_EVENT,
+            format: 8,
+            sequence: 0,
+            window: self.close_window,
+            type_: self.close_type,
+            data: [0; 20].into(),
+        };
+        let _ = self.connection.send_event(false, self.close_window, EventMask::NO_EVENT, event);
+        let _ = self.connection.flush();
+
+        // Wait for the worker thread to exit
+        self.event_thread.take().map(|handle| handle.join());
     }
 }
 
@@ -99,9 +134,7 @@ fn run_event_thread(connection: Arc<RustConnection>, sender: SyncSender<Event>, 
             Ok(()) => {},
             Err(_) => {
                 // The only possible error is that the other end of the channel was dropped.
-                // This code should be unreachable, because X11Source owns the channel and waits
-                // for this thread to exit in its Drop implementation.
-                slog::info!(log, "Event thread exiting due to send error");
+                // This happens in X11Source's Drop impl.
                 break;
             }
         }
