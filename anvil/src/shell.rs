@@ -374,11 +374,41 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                     .borrow_mut()
                     .insert(SurfaceKind::Xdg(surface), (x, y).into());
             }
-            XdgRequest::NewPopup { surface } => {
+            XdgRequest::NewPopup { surface, positioner } => {
                 // Do not send a configure here, the initial configure
                 // of a xdg_surface has to be sent during the commit if
                 // the surface is not already configured
+
+                // TODO: properly recompute the geometry with the whole of positioner state
+                surface
+                    .with_pending_state(|state| {
+                        // NOTE: This is not really necessary as the default geometry
+                        // is already set the same way, but for demonstrating how
+                        // to set the initial popup geometry this code is left as
+                        // an example
+                        state.geometry = positioner.get_geometry();
+                    })
+                    .unwrap();
                 xdg_window_map.borrow_mut().insert_popup(PopupKind::Xdg(surface));
+            }
+            XdgRequest::RePosition {
+                surface,
+                positioner,
+                token,
+            } => {
+                let result = surface.with_pending_state(|state| {
+                    // NOTE: This is again a simplification, a proper compositor would
+                    // calculate the geometry of the popup here. For simplicity we just
+                    // use the default implementation here that does not take the
+                    // window position and output constraints into account.
+                    let geometry = positioner.get_geometry();
+                    state.geometry = geometry;
+                    state.positioner = positioner;
+                });
+
+                if result.is_ok() {
+                    surface.send_repositioned(token);
+                }
             }
             XdgRequest::Move {
                 surface,
@@ -1089,8 +1119,9 @@ fn surface_commit(
         })
         .unwrap();
         if !initial_configure_sent {
-            // TODO: properly recompute the geometry with the whole of positioner state
-            popup.send_configure();
+            // NOTE: This should never fail as the initial configure is always
+            // allowed.
+            popup.send_configure().expect("initial configure failed");
         }
     }
 

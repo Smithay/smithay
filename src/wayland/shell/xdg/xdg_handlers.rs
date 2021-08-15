@@ -158,6 +158,18 @@ fn implement_positioner(positioner: Main<xdg_positioner::XdgPositioner>) -> xdg_
             xdg_positioner::Request::SetOffset { x, y } => {
                 state.offset = (x, y).into();
             }
+            xdg_positioner::Request::SetReactive => {
+                state.reactive = true;
+            }
+            xdg_positioner::Request::SetParentSize {
+                parent_width,
+                parent_height,
+            } => {
+                state.parent_size = Some((parent_width, parent_height).into());
+            }
+            xdg_positioner::Request::SetParentConfigure { serial } => {
+                state.parent_configure = Some(Serial::from(serial));
+            }
             _ => unreachable!(),
         }
     });
@@ -265,13 +277,12 @@ fn xdg_surface_implementation(
             parent,
             positioner,
         } => {
-            let positioner_data = positioner
+            let positioner_data = *positioner
                 .as_ref()
                 .user_data()
                 .get::<RefCell<PositionerState>>()
                 .unwrap()
-                .borrow()
-                .clone();
+                .borrow();
 
             let parent_surface = parent.map(|parent| {
                 let parent_data = parent.as_ref().user_data().get::<XdgSurfaceUserData>().unwrap();
@@ -287,6 +298,7 @@ fn xdg_surface_implementation(
                 server_pending: Some(PopupState {
                     // Set the positioner data as the popup geometry
                     geometry: positioner_data.get_geometry(),
+                    positioner: positioner_data,
                 }),
                 ..Default::default()
             };
@@ -333,7 +345,13 @@ fn xdg_surface_implementation(
 
             let handle = make_popup_handle(&id);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::NewPopup { surface: handle }, dispatch_data);
+            (&mut *user_impl)(
+                XdgRequest::NewPopup {
+                    surface: handle,
+                    positioner: positioner_data,
+                },
+                dispatch_data,
+            );
         }
         xdg_surface::Request::SetWindowGeometry { x, y, width, height } => {
             // Check the role of the surface, this can be either xdg_toplevel
@@ -501,7 +519,10 @@ pub fn send_toplevel_configure(resource: &xdg_toplevel::XdgToplevel, configure: 
     let (width, height) = configure.state.size.unwrap_or_default().into();
     // convert the Vec<State> (which is really a Vec<u32>) into Vec<u8>
     let states = {
-        let mut states: Vec<xdg_toplevel::State> = configure.state.states.into();
+        let mut states: Vec<xdg_toplevel::State> = configure
+            .state
+            .states
+            .into_filtered_states(resource.as_ref().version());
         let ptr = states.as_mut_ptr();
         let len = states.len();
         let cap = states.capacity();
@@ -693,6 +714,11 @@ pub(crate) fn send_popup_configure(resource: &xdg_popup::XdgPopup, configure: Po
     let serial = configure.serial;
     let geometry = configure.state.geometry;
 
+    // Send repositioned if token is set
+    if let Some(token) = configure.reposition_token {
+        resource.repositioned(token);
+    }
+
     // Send the popup configure
     resource.configure(geometry.loc.x, geometry.loc.y, geometry.size.w, geometry.size.h);
 
@@ -732,6 +758,26 @@ fn xdg_popup_implementation(
                     surface: handle,
                     seat,
                     serial,
+                },
+                dispatch_data,
+            );
+        }
+        xdg_popup::Request::Reposition { positioner, token } => {
+            let handle = make_popup_handle(&popup);
+            let mut user_impl = data.shell_data.user_impl.borrow_mut();
+
+            let positioner_data = *positioner
+                .as_ref()
+                .user_data()
+                .get::<RefCell<PositionerState>>()
+                .unwrap()
+                .borrow();
+
+            (&mut *user_impl)(
+                XdgRequest::RePosition {
+                    surface: handle,
+                    positioner: positioner_data,
+                    token,
                 },
                 dispatch_data,
             );

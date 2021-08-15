@@ -125,6 +125,9 @@ pub const ZXDG_TOPLEVEL_ROLE: &str = "zxdg_toplevel";
 /// [xdg_popup]: self::XDG_POPUP_ROLE
 pub const ZXDG_POPUP_ROLE: &str = "zxdg_popup";
 
+/// Constant for toplevel state version checking
+const XDG_TOPLEVEL_STATE_TILED_SINCE: u32 = 2;
+
 macro_rules! xdg_role {
     ($configure:ty,
      $(#[$attr:meta])* $element:ident {$($(#[$field_attr:meta])* $vis:vis$field:ident:$type:ty),*},
@@ -315,12 +318,6 @@ xdg_role!(
         /// It is a protocol error to call commit on a wl_surface with
         /// the xdg_popup role when no parent is set.
         pub parent: Option<wl_surface::WlSurface>,
-        /// The positioner state can be used by the compositor
-        /// to calculate the best placement for the popup.
-        ///
-        /// For example the compositor should prevent that a popup
-        /// is placed outside the visible rectangle of a output.
-        pub positioner: PositionerState,
         /// Holds the last server_pending state that has been acknowledged
         /// by the client. This state should be cloned to the current
         /// during a commit.
@@ -340,6 +337,12 @@ xdg_role!(
 /// Represents the state of the popup
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PopupState {
+    /// The positioner state can be used by the compositor
+    /// to calculate the best placement for the popup.
+    ///
+    /// For example the compositor should prevent that a popup
+    /// is placed outside the visible rectangle of a output.
+    pub positioner: PositionerState,
     /// Holds the geometry of the popup as defined by the positioner.
     ///
     /// `Rectangle::width` and `Rectangle::height` holds the size of the
@@ -356,11 +359,12 @@ impl Default for PopupState {
     fn default() -> Self {
         Self {
             geometry: Default::default(),
+            positioner: Default::default(),
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 /// The state of a positioner, as set by the client
 pub struct PositionerState {
     /// Size of the rectangle that needs to be positioned
@@ -378,6 +382,26 @@ pub struct PositionerState {
     pub constraint_adjustment: xdg_positioner::ConstraintAdjustment,
     /// Offset placement relative to the anchor point
     pub offset: Point<i32, Logical>,
+    /// When set reactive, the surface is reconstrained if the conditions
+    /// used for constraining changed, e.g. the parent window moved.
+    ///
+    /// If the conditions changed and the popup was reconstrained,
+    /// an xdg_popup.configure event is sent with updated geometry,
+    /// followed by an xdg_surface.configure event.
+    pub reactive: bool,
+    /// The parent window geometry the compositor should use when
+    /// positioning the popup. The compositor may use this information
+    /// to determine the future state the popup should be constrained using.
+    /// If this doesn't match the dimension of the parent the popup is
+    /// eventually positioned against, the behavior is undefined.
+    ///
+    /// The arguments are given in the surface-local coordinate space.
+    pub parent_size: Option<Size<i32, Logical>>,
+    /// The serial of an xdg_surface.configure event this positioner will
+    /// be used in response to. The compositor may use this information
+    /// together with set_parent_size to determine what future state the
+    /// popup should be constrained using.
+    pub parent_configure: Option<Serial>,
 }
 
 impl Default for PositionerState {
@@ -389,6 +413,9 @@ impl Default for PositionerState {
             gravity: xdg_positioner::Gravity::None,
             offset: Default::default(),
             rect_size: Default::default(),
+            reactive: false,
+            parent_size: None,
+            parent_configure: None,
         }
     }
 }
@@ -458,7 +485,7 @@ impl PositionerState {
     /// The `constraint_adjustment` will not be considered by this
     /// implementation and the position and size should be re-calculated
     /// in the compositor if the compositor implements `constraint_adjustment`
-    pub(crate) fn get_geometry(&self) -> Rectangle<i32, Logical> {
+    pub fn get_geometry(&self) -> Rectangle<i32, Logical> {
         // From the `xdg_shell` prococol specification:
         //
         // set_offset:
@@ -591,6 +618,39 @@ impl ToplevelStateSet {
             true
         }
     }
+
+    /// Filter the states according to the provided version
+    /// of the [`XdgToplevel`]
+    pub(crate) fn into_filtered_states(self, version: u32) -> Vec<xdg_toplevel::State> {
+        // If the client version supports the tiled states
+        // we can directly return the states which will save
+        // us from allocating another vector
+        if version >= XDG_TOPLEVEL_STATE_TILED_SINCE {
+            return self.states;
+        }
+
+        let is_tiled = |state: &xdg_toplevel::State| {
+            matches!(
+                state,
+                xdg_toplevel::State::TiledTop
+                    | xdg_toplevel::State::TiledBottom
+                    | xdg_toplevel::State::TiledLeft
+                    | xdg_toplevel::State::TiledRight
+            )
+        };
+
+        let contains_tiled = self.states.iter().any(|state| is_tiled(state));
+
+        // If the states do not contain a tiled state
+        // we can directly return the states which will save
+        // us from allocating another vector
+        if !contains_tiled {
+            return self.states;
+        }
+
+        // We need to filter out the unsupported states
+        self.states.into_iter().filter(|state| !is_tiled(state)).collect()
+    }
 }
 
 impl Default for ToplevelStateSet {
@@ -700,7 +760,7 @@ where
     let shell_data_z = shell_data.clone();
 
     let xdg_shell_global = display.create_global(
-        1,
+        3,
         Filter::new(move |(shell, _version), _, dispatch_data| {
             self::xdg_handlers::implement_wm_base(shell, &shell_data, dispatch_data);
         }),
@@ -1187,6 +1247,21 @@ impl ToplevelSurface {
     }
 }
 
+/// Represents the possible errors that
+/// can be returned from [`PopupSurface::send_configure`]
+#[derive(Debug, thiserror::Error)]
+pub enum PopupConfigureError {
+    /// The popup has already been configured and the
+    /// protocol version forbids the popup to
+    /// be re-configured
+    #[error("The popup has already been configured")]
+    AlreadyConfigured,
+    /// The popup is not allowed to be re-configured,
+    /// the positioner is not reactive
+    #[error("The popup positioner is not reactive")]
+    NotReactive,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum PopupKind {
     Xdg(xdg_popup::XdgPopup),
@@ -1269,13 +1344,17 @@ impl PopupSurface {
         Some(ShellClient { kind: shell })
     }
 
-    /// Send a configure event to this popup surface to suggest it a new configuration
-    ///
-    /// The serial of this configure will be tracked waiting for the client to ACK it.
-    ///
-    /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
-    /// method.
-    pub fn send_configure(&self) {
+    /// Get the version of the popup resource
+    fn version(&self) -> u32 {
+        match self.shell_surface {
+            PopupKind::Xdg(ref xdg) => xdg.as_ref().version(),
+            PopupKind::ZxdgV6(ref zxdg) => zxdg.as_ref().version(),
+        }
+    }
+
+    /// Internal configure function to re-use the configure
+    /// logic for both [`XdgRequest::send_configure`] and [`XdgRequest::send_repositioned`]
+    fn send_configure_internal(&self, reposition_token: Option<u32>) {
         if let Some(surface) = self.get_surface() {
             let next_configure = compositor::with_states(surface, |states| {
                 let mut attributes = states
@@ -1284,12 +1363,17 @@ impl PopupSurface {
                     .unwrap()
                     .lock()
                     .unwrap();
-                if !attributes.initial_configure_sent || attributes.server_pending.is_some() {
+
+                if !attributes.initial_configure_sent
+                    || attributes.server_pending.is_some()
+                    || reposition_token.is_some()
+                {
                     let pending = attributes.server_pending.take().unwrap_or(attributes.current);
 
                     let configure = PopupConfigure {
                         state: pending,
                         serial: SERIAL_COUNTER.next_serial(),
+                        reposition_token,
                     };
 
                     attributes.pending_configures.push(configure);
@@ -1312,6 +1396,58 @@ impl PopupSurface {
                 }
             }
         }
+    }
+
+    /// Send a configure event to this popup surface to suggest it a new configuration
+    ///
+    /// The serial of this configure will be tracked waiting for the client to ACK it.
+    ///
+    /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
+    /// method.
+    ///
+    /// Returns [`Err(PopupConfigureError)`] if the initial configure has already been sent and
+    /// the client protocol version disallows a re-configure or the current [`PositionerState`]
+    /// is not reactive
+    pub fn send_configure(&self) -> Result<(), PopupConfigureError> {
+        if let Some(surface) = self.get_surface() {
+            // Check if we are allowed to send a configure
+            compositor::with_states(surface, |states| {
+                let attributes = states
+                    .data_map
+                    .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap();
+
+                if attributes.initial_configure_sent && self.version() < xdg_popup::EVT_REPOSITIONED_SINCE {
+                    // Return error, initial configure already sent and client
+                    // does not support re-configure
+                    return Err(PopupConfigureError::AlreadyConfigured);
+                }
+
+                let is_reactive = attributes.current.positioner.reactive;
+
+                if attributes.initial_configure_sent && !is_reactive {
+                    // Return error, the positioner does not allow re-configure
+                    return Err(PopupConfigureError::NotReactive);
+                }
+
+                Ok(())
+            })
+            .unwrap_or(Ok(()))?;
+
+            self.send_configure_internal(None);
+        }
+
+        Ok(())
+    }
+
+    /// Send a configure event, including the `repositioned` event to the client
+    /// in response to a `reposition` request.
+    ///
+    /// For further information see [`XdgPopup::send_configure`]
+    pub fn send_repositioned(&self, token: u32) {
+        self.send_configure_internal(Some(token))
     }
 
     /// Handles the role specific commit logic
@@ -1436,6 +1572,10 @@ impl PopupSurface {
     /// It means that the use has dismissed the popup surface, or that
     /// the pointer has left the area of popup grab if there was a grab.
     pub fn send_popup_done(&self) {
+        if !self.alive() {
+            return;
+        }
+
         match self.shell_surface {
             PopupKind::Xdg(ref p) => p.popup_done(),
             PopupKind::ZxdgV6(ref p) => p.popup_done(),
@@ -1511,6 +1651,10 @@ pub struct PopupConfigure {
     /// from a client for a serial will validate all pending lower
     /// serials.
     pub serial: Serial,
+    /// The token the client provided in the `xdg_popup::reposition`
+    /// request. The token itself is opaque, and has no other special meaning.
+    /// The token is sent in the corresponding `xdg_popup::repositioned` event.
+    pub reposition_token: Option<u32>,
 }
 
 /// Defines the possible configure variants
@@ -1574,6 +1718,15 @@ pub enum XdgRequest {
     NewPopup {
         /// the surface
         surface: PopupSurface,
+        /// The state of the positioner at the time
+        /// the popup was requested.
+        ///
+        /// The positioner state can be used by the compositor
+        /// to calculate the best placement for the popup.
+        ///
+        /// For example the compositor should prevent that a popup
+        /// is placed outside the visible rectangle of a output.
+        positioner: PositionerState,
     },
     /// The client requested the start of an interactive move for this surface
     Move {
@@ -1654,5 +1807,25 @@ pub enum XdgRequest {
         surface: wl_surface::WlSurface,
         /// The configure serial.
         configure: Configure,
+    },
+    /// A client requested a reposition, providing a new
+    /// positioner, of a popup.
+    RePosition {
+        /// The popup for which a reposition has been requested
+        surface: PopupSurface,
+        /// The state of the positioner at the time
+        /// the reposition request was made.
+        ///
+        /// The positioner state can be used by the compositor
+        /// to calculate the best placement for the popup.
+        ///
+        /// For example the compositor should prevent that a popup
+        /// is placed outside the visible rectangle of a output.
+        positioner: PositionerState,
+        /// The passed token will be sent in the corresponding xdg_popup.repositioned event.
+        /// The new popup position will not take effect until the corresponding configure event
+        /// is acknowledged by the client. See xdg_popup.repositioned for details.
+        /// The token itself is opaque, and has no other special meaning.
+        token: u32,
     },
 }

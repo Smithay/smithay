@@ -279,13 +279,12 @@ fn xdg_surface_implementation(
             parent,
             positioner,
         } => {
-            let positioner_data = positioner
+            let positioner_data = *positioner
                 .as_ref()
                 .user_data()
                 .get::<RefCell<PositionerState>>()
                 .unwrap()
-                .borrow()
-                .clone();
+                .borrow();
 
             let parent_surface = {
                 let parent_data = parent.as_ref().user_data().get::<XdgSurfaceUserData>().unwrap();
@@ -301,6 +300,7 @@ fn xdg_surface_implementation(
                 server_pending: Some(PopupState {
                     // Set the positioner data as the popup geometry
                     geometry: positioner_data.get_geometry(),
+                    positioner: positioner_data,
                 }),
                 ..Default::default()
             };
@@ -347,7 +347,13 @@ fn xdg_surface_implementation(
 
             let handle = make_popup_handle(&id);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::NewPopup { surface: handle }, dispatch_data);
+            (&mut *user_impl)(
+                XdgRequest::NewPopup {
+                    surface: handle,
+                    positioner: positioner_data,
+                },
+                dispatch_data,
+            );
         }
         zxdg_surface_v6::Request::SetWindowGeometry { x, y, width, height } => {
             // Check the role of the surface, this can be either xdg_toplevel
@@ -516,7 +522,10 @@ pub fn send_toplevel_configure(resource: &zxdg_toplevel_v6::ZxdgToplevelV6, conf
     let (width, height) = configure.state.size.unwrap_or_default().into();
     // convert the Vec<State> (which is really a Vec<u32>) into Vec<u8>
     let states = {
-        let mut states: Vec<xdg_toplevel::State> = configure.state.states.into();
+        let mut states: Vec<xdg_toplevel::State> = configure
+            .state
+            .states
+            .into_filtered_states(resource.as_ref().version());
         let ptr = states.as_mut_ptr();
         let len = states.len();
         let cap = states.capacity();
