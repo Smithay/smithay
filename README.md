@@ -1,6 +1,6 @@
 # Smithay
 
-[![Crates.io](http://meritbadge.herokuapp.com/smithay)](https://crates.io/crates/smithay)
+[![Crates.io](https://img.shields.io/crates/v/smithay.svg)](https://crates.io/crates/smithay)
 [![docs.rs](https://docs.rs/smithay/badge.svg)](https://docs.rs/smithay)
 [![Build Status](https://github.com/Smithay/smithay/workflows/Continuous%20Integration/badge.svg)](https://github.com/Smithay/smithay/actions)
 [![Join the chat on matrix at @smithay:matrix.org](matrix_badge.svg)](https://matrix.to/#/#smithay:matrix.org)
