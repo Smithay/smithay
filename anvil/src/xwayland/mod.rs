@@ -1,4 +1,6 @@
-use std::{cell::RefCell, collections::HashMap, convert::TryFrom, os::unix::net::UnixStream, rc::Rc};
+use std::{
+    cell::RefCell, collections::HashMap, convert::TryFrom, os::unix::net::UnixStream, rc::Rc, sync::Arc,
+};
 
 use smithay::{
     reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
@@ -40,13 +42,13 @@ impl<BackendData: 'static> AnvilState<BackendData> {
         let (wm, source) = X11State::start_wm(connection, self.window_map.clone(), self.log.clone()).unwrap();
         let wm = Rc::new(RefCell::new(wm));
         client.data_map().insert_if_missing(|| Rc::clone(&wm));
+        let log = self.log.clone();
         self.handle
-            .insert_source(source, move |events, _, _| {
-                let mut wm = wm.borrow_mut();
-                for event in events.into_iter() {
-                    wm.handle_event(event, &client)?;
+            .insert_source(source, move |event, _, _| {
+                match wm.borrow_mut().handle_event(event, &client) {
+                    Ok(()) => {}
+                    Err(err) => error!(log, "Error while handling X11 event: {}", err),
                 }
-                Ok(())
             })
             .unwrap();
     }
@@ -60,12 +62,13 @@ x11rb::atom_manager! {
     Atoms: AtomsCookie {
         WM_S0,
         WL_SURFACE_ID,
+        _ANVIL_CLOSE_CONNECTION,
     }
 }
 
 /// The actual runtime state of the XWayland integration.
 struct X11State {
-    conn: Rc<RustConnection>,
+    conn: Arc<RustConnection>,
     atoms: Atoms,
     log: slog::Logger,
     unpaired_surfaces: HashMap<u32, (Window, Point<i32, Logical>)>,
@@ -115,16 +118,16 @@ impl X11State {
 
         conn.flush()?;
 
-        let conn = Rc::new(conn);
+        let conn = Arc::new(conn);
         let wm = Self {
-            conn: Rc::clone(&conn),
+            conn: Arc::clone(&conn),
             atoms,
             unpaired_surfaces: Default::default(),
             window_map,
-            log,
+            log: log.clone(),
         };
 
-        Ok((wm, X11Source::new(conn)))
+        Ok((wm, X11Source::new(conn, win, atoms._ANVIL_CLOSE_CONNECTION, log)))
     }
 
     fn handle_event(&mut self, event: Event, client: &Client) -> Result<(), ReplyOrIdError> {
@@ -199,6 +202,7 @@ impl X11State {
             }
             _ => {}
         }
+        self.conn.flush()?;
         Ok(())
     }
 
