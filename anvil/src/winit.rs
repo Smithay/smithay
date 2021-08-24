@@ -8,7 +8,7 @@ use smithay::{
     wayland::dmabuf::init_dmabuf_global,
 };
 use smithay::{
-    backend::{input::InputBackend, renderer::Frame, winit, SwapBuffersError},
+    backend::{input::InputBackend, winit, SwapBuffersError},
     reexports::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
@@ -16,14 +16,13 @@ use smithay::{
     wayland::{
         output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,
-        shell::wlr_layer::Layer,
     },
 };
 
 use slog::Logger;
 
-use crate::drawing::*;
 use crate::state::{AnvilState, Backend};
+use crate::{drawing::*, render::render_layers_and_windows};
 
 pub const OUTPUT_NAME: &str = "winit";
 
@@ -143,38 +142,17 @@ pub fn run_winit(log: Logger) {
 
             let result = renderer
                 .render(|renderer, frame| {
-                    frame.clear([0.8, 0.8, 0.9, 1.0])?;
-
-                    let window_map = &*state.window_map.borrow();
-
-                    for layer in [Layer::Background, Layer::Bottom] {
-                        draw_layers(
-                            renderer,
-                            frame,
-                            window_map,
-                            layer,
-                            output_geometry,
-                            output_scale,
-                            &log,
-                        )?;
-                    }
-
-                    // draw the windows
-                    draw_windows(renderer, frame, window_map, output_geometry, output_scale, &log)?;
-
-                    for layer in [Layer::Top, Layer::Overlay] {
-                        draw_layers(
-                            renderer,
-                            frame,
-                            window_map,
-                            layer,
-                            output_geometry,
-                            output_scale,
-                            &log,
-                        )?;
-                    }
+                    render_layers_and_windows(
+                        renderer,
+                        frame,
+                        &*state.window_map.borrow(),
+                        output_geometry,
+                        output_scale,
+                        &log,
+                    )?;
 
                     let (x, y) = state.pointer_location.into();
+
                     // draw the dnd icon if any
                     {
                         let guard = state.dnd_icon.lock().unwrap();
@@ -222,6 +200,7 @@ pub fn run_winit(log: Logger) {
                     #[cfg(feature = "debug")]
                     {
                         let fps = state.backend_data.fps.avg().round() as u32;
+
                         draw_fps(
                             renderer,
                             frame,

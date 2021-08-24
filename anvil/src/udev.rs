@@ -55,7 +55,6 @@ use smithay::{
     wayland::{
         output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,
-        shell::wlr_layer::Layer,
     },
 };
 #[cfg(feature = "egl")]
@@ -68,8 +67,11 @@ use smithay::{
     wayland::dmabuf::init_dmabuf_global,
 };
 
-use crate::state::{AnvilState, Backend};
 use crate::{drawing::*, window_map::WindowMap};
+use crate::{
+    render::render_layers_and_windows,
+    state::{AnvilState, Backend},
+};
 
 #[derive(Clone)]
 pub struct SessionFd(RawFd);
@@ -738,40 +740,21 @@ fn render_surface(
 
     let dmabuf = surface.surface.next_buffer()?;
     renderer.bind(dmabuf)?;
+
     // and draw to our buffer
     match renderer
         .render(
             mode.size,
             Transform::Flipped180, // Scanout is rotated
             |renderer, frame| {
-                frame.clear([0.8, 0.8, 0.9, 1.0])?;
-
-                for layer in [Layer::Background, Layer::Bottom] {
-                    draw_layers(
-                        renderer,
-                        frame,
-                        window_map,
-                        layer,
-                        output_geometry,
-                        output_scale,
-                        logger,
-                    )?;
-                }
-
-                // draw the surfaces
-                draw_windows(renderer, frame, window_map, output_geometry, output_scale, logger)?;
-
-                for layer in [Layer::Top, Layer::Overlay] {
-                    draw_layers(
-                        renderer,
-                        frame,
-                        window_map,
-                        layer,
-                        output_geometry,
-                        output_scale,
-                        logger,
-                    )?;
-                }
+                render_layers_and_windows(
+                    renderer,
+                    frame,
+                    window_map,
+                    output_geometry,
+                    output_scale,
+                    logger,
+                )?;
 
                 // set cursor
                 if output_geometry.to_f64().contains(pointer_location) {
@@ -793,6 +776,7 @@ fn render_surface(
                             }
                         }
                     }
+
                     // draw the cursor as relevant
                     {
                         // reset the cursor if the surface is no longer alive
@@ -827,19 +811,21 @@ fn render_surface(
                             )?;
                         }
                     }
+
+                    #[cfg(feature = "debug")]
+                    {
+                        draw_fps(
+                            renderer,
+                            frame,
+                            fps_texture,
+                            output_scale as f64,
+                            surface.fps.avg().round() as u32,
+                        )?;
+
+                        surface.fps.tick();
+                    }
                 }
 
-                #[cfg(feature = "debug")]
-                {
-                    draw_fps(
-                        renderer,
-                        frame,
-                        fps_texture,
-                        output_scale as f64,
-                        surface.fps.avg().round() as u32,
-                    )?;
-                    surface.fps.tick();
-                }
                 Ok(())
             },
         )

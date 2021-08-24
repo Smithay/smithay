@@ -14,6 +14,8 @@ pub mod cursor;
 pub mod drawing;
 pub mod input_handler;
 pub mod output_map;
+#[cfg(any(feature = "udev", feature = "winit"))]
+pub mod render;
 pub mod shell;
 pub mod state;
 #[cfg(feature = "udev")]
