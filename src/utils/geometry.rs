@@ -28,58 +28,156 @@ pub trait Coordinate:
     fn abs(self) -> Self;
 }
 
-impl Coordinate for f64 {
-    #[inline]
-    fn downscale(self, scale: f64) -> f64 {
-        self / scale
-    }
-    #[inline]
-    fn upscale(self, scale: f64) -> f64 {
-        self * scale
-    }
-    #[inline]
-    fn to_f64(self) -> f64 {
-        self
-    }
-    #[inline]
-    fn from_f64(v: f64) -> f64 {
-        v
-    }
-    #[inline]
-    fn non_negative(self) -> bool {
-        self >= 0.0
-    }
-    #[inline]
-    fn abs(self) -> f64 {
-        self.abs()
-    }
+/// Implements Coordinate for an unsigned numerical type.
+macro_rules! unsigned_coordinate_impl {
+    ($ty:ty, $ ($tys:ty),* ) => {
+        unsigned_coordinate_impl!($ty);
+        $(
+            unsigned_coordinate_impl!($tys);
+        )*
+    };
+
+    ($ty:ty) => {
+        impl Coordinate for $ty {
+            #[inline]
+            fn downscale(self, scale: Self) -> Self {
+                self / scale
+            }
+        
+            #[inline]
+            fn upscale(self, scale: Self) -> Self {
+                self.saturating_mul(scale)
+            }
+        
+            #[inline]
+            fn to_f64(self) -> f64 {
+                self as f64
+            }
+        
+            #[inline]
+            fn from_f64(v: f64) -> Self {
+                v as Self
+            }
+        
+            #[inline]
+            fn non_negative(self) -> bool {
+                true
+            }
+        
+            #[inline]
+            fn abs(self) -> Self {
+                self
+            }
+        }
+    };
 }
 
-impl Coordinate for i32 {
-    #[inline]
-    fn downscale(self, scale: i32) -> i32 {
-        self / scale
-    }
-    #[inline]
-    fn upscale(self, scale: i32) -> i32 {
-        self.saturating_mul(scale)
-    }
-    #[inline]
-    fn to_f64(self) -> f64 {
-        self as f64
-    }
-    #[inline]
-    fn from_f64(v: f64) -> i32 {
-        v as i32
-    }
-    #[inline]
-    fn non_negative(self) -> bool {
-        self >= 0
-    }
-    #[inline]
-    fn abs(self) -> i32 {
-        self.abs()
-    }
+unsigned_coordinate_impl! {
+    u8,
+    u16,
+    u32,
+    u64,
+    u128
+}
+
+/// Implements Coordinate for an signed numerical type.
+macro_rules! signed_coordinate_impl {
+    ($ty:ty, $ ($tys:ty),* ) => {
+        signed_coordinate_impl!($ty);
+        $(
+            signed_coordinate_impl!($tys);
+        )*
+    };
+
+    ($ty:ty) => {
+        impl Coordinate for $ty {
+            #[inline]
+            fn downscale(self, scale: Self) -> Self {
+                self / scale
+            }
+
+            #[inline]
+            fn upscale(self, scale: Self) -> Self {
+                self.saturating_mul(scale)
+            }
+
+            #[inline]
+            fn to_f64(self) -> f64 {
+                self as f64
+            }
+
+            #[inline]
+            fn from_f64(v: f64) -> Self {
+                v as Self
+            }
+
+            #[inline]
+            fn non_negative(self) -> bool {
+                self >= 0
+            }
+
+            #[inline]
+            fn abs(self) -> Self {
+                self.abs()
+            }
+        }
+    };
+}
+
+signed_coordinate_impl! {
+    i8,
+    i16,
+    i32,
+    i64,
+    i128
+}
+
+macro_rules! floating_point_coordinate_impl {
+    ($ty:ty, $ ($tys:ty),* ) => {
+        floating_point_coordinate_impl!($ty);
+        $(
+            floating_point_coordinate_impl!($tys);
+        )*
+    };
+
+    ($ty:ty) => {
+        impl Coordinate for $ty {
+            #[inline]
+            fn downscale(self, scale: Self) -> Self {
+                self / scale
+            }
+
+            #[inline]
+            fn upscale(self, scale: Self) -> Self {
+                self * scale
+            }
+
+            #[inline]
+            fn to_f64(self) -> f64 {
+                self as f64
+            }
+
+            #[inline]
+            fn from_f64(v: f64) -> Self {
+                v as Self
+            }
+
+            #[inline]
+            fn non_negative(self) -> bool {
+                self >= 0.0
+            }
+
+            #[inline]
+            fn abs(self) -> Self {
+                self.abs()
+            }
+        }
+    };
+}
+
+floating_point_coordinate_impl! {
+    f32,
+    f64
 }
 
 /*
