@@ -43,27 +43,27 @@ macro_rules! unsigned_coordinate_impl {
             fn downscale(self, scale: Self) -> Self {
                 self / scale
             }
-        
+
             #[inline]
             fn upscale(self, scale: Self) -> Self {
                 self.saturating_mul(scale)
             }
-        
+
             #[inline]
             fn to_f64(self) -> f64 {
                 self as f64
             }
-        
+
             #[inline]
             fn from_f64(v: f64) -> Self {
                 v as Self
             }
-        
+
             #[inline]
             fn non_negative(self) -> bool {
                 true
             }
-        
+
             #[inline]
             fn abs(self) -> Self {
                 self
