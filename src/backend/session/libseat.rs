@@ -18,7 +18,10 @@ use std::{
 
 use nix::{errno::Errno, fcntl::OFlag, unistd::close};
 
-use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
+use calloop::{
+    channel::{self, Channel},
+    EventSource, Poll, PostAction, Readiness, Token, TokenFactory,
+};
 
 use crate::{
     backend::session::{AsErrno, Session, Signal as SessionSignal},
@@ -53,6 +56,7 @@ pub struct LibSeatSession {
 pub struct LibSeatSessionNotifier {
     internal: Rc<LibSeatSessionImpl>,
     signaler: Signaler<SessionSignal>,
+    rx: Channel<SeatEvent>,
     token: Token,
 }
 
@@ -65,26 +69,20 @@ impl LibSeatSession {
         let logger = crate::slog_or_fallback(logger)
             .new(o!("smithay_module" => "backend_session", "session_type" => "libseat"));
 
-        let active = Arc::new(AtomicBool::new(false));
-        let signaler = Signaler::new();
+        let (tx, rx) = calloop::channel::channel();
 
         let seat = {
             let log = logger.clone();
-            let active = active.clone();
-            let signaler = signaler.clone();
 
             Seat::open(
-                move |seat, event| match event {
+                move |_seat, event| match event {
                     SeatEvent::Enable => {
                         debug!(log, "Enable callback called");
-                        active.store(true, Ordering::SeqCst);
-                        signaler.signal(SessionSignal::ActivateSession);
+                        tx.send(event).unwrap();
                     }
                     SeatEvent::Disable => {
                         debug!(log, "Disable callback called");
-                        active.store(false, Ordering::SeqCst);
-                        signaler.signal(SessionSignal::PauseSession);
-                        seat.disable().unwrap();
+                        tx.send(event).unwrap();
                     }
                 },
                 logger.clone(),
@@ -92,30 +90,32 @@ impl LibSeatSession {
         };
 
         seat.map(|mut seat| {
+            let seat_name = seat.name().to_owned();
+
             // In some cases enable_seat event is avalible right after startup
             // so, we can dispatch it
             seat.dispatch(0).unwrap();
 
-            let seat_name = seat.name().to_owned();
-
             let internal = Rc::new(LibSeatSessionImpl {
                 seat: RefCell::new(seat),
-                active,
+                active: Arc::new(AtomicBool::new(false)),
                 devices: RefCell::new(HashMap::new()),
                 logger,
             });
 
-            (
-                LibSeatSession {
-                    internal: Rc::downgrade(&internal),
-                    seat_name,
-                },
-                LibSeatSessionNotifier {
-                    internal,
-                    signaler,
-                    token: Token::invalid(),
-                },
-            )
+            let session = LibSeatSession {
+                internal: Rc::downgrade(&internal),
+                seat_name,
+            };
+
+            let notifier = LibSeatSessionNotifier {
+                internal,
+                signaler: Signaler::new(),
+                rx,
+                token: Token::invalid(),
+            };
+
+            (session, notifier)
         })
         .map_err(|err| Error::FailedToOpenSession(Errno::from_i32(err.into())))
     }
@@ -146,7 +146,7 @@ impl Session for LibSeatSession {
         if let Some(session) = self.internal.upgrade() {
             debug!(session.logger, "Closing device: {:?}", fd);
 
-            let dev = session.devices.borrow().get(&fd).map(|fd| *fd);
+            let dev = session.devices.borrow().get(&fd).copied();
 
             let out = if let Some(dev) = dev {
                 session
@@ -214,17 +214,38 @@ impl EventSource for LibSeatSessionNotifier {
     type Metadata = ();
     type Ret = ();
 
-    fn process_events<F>(&mut self, _readiness: Readiness, token: Token, _: F) -> std::io::Result<PostAction>
+    fn process_events<F>(&mut self, readiness: Readiness, token: Token, _: F) -> std::io::Result<PostAction>
     where
         F: FnMut((), &mut ()),
     {
         if token == self.token {
             self.internal.seat.borrow_mut().dispatch(0).unwrap();
         }
-        Ok(PostAction::Continue)
+
+        let internal = &self.internal;
+        let signaler = &self.signaler;
+
+        self.rx.process_events(readiness, token, |event, _| match event {
+            channel::Event::Msg(event) => match event {
+                SeatEvent::Enable => {
+                    internal.active.store(true, Ordering::SeqCst);
+                    signaler.signal(SessionSignal::ActivateSession);
+                }
+                SeatEvent::Disable => {
+                    internal.active.store(false, Ordering::SeqCst);
+                    signaler.signal(SessionSignal::PauseSession);
+                    internal.seat.borrow_mut().disable().unwrap();
+                }
+            },
+            channel::Event::Closed => {
+                // Tx is stored inside of Seat, and Rc<Seat> is stored in LibSeatSessionNotifier so this is unreachable
+            }
+        })
     }
 
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
+        self.rx.register(poll, factory)?;
+
         self.token = factory.token();
         poll.register(
             self.internal.seat.borrow_mut().get_fd().unwrap(),
@@ -232,11 +253,11 @@ impl EventSource for LibSeatSessionNotifier {
             calloop::Mode::Level,
             self.token,
         )
-        .unwrap();
-        Ok(())
     }
 
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
+        self.rx.reregister(poll, factory)?;
+
         self.token = factory.token();
         poll.reregister(
             self.internal.seat.borrow_mut().get_fd().unwrap(),
@@ -244,15 +265,13 @@ impl EventSource for LibSeatSessionNotifier {
             calloop::Mode::Level,
             self.token,
         )
-        .unwrap();
-        Ok(())
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> std::io::Result<()> {
+        self.rx.unregister(poll)?;
+
         self.token = Token::invalid();
         poll.unregister(self.internal.seat.borrow_mut().get_fd().unwrap())
-            .unwrap();
-        Ok(())
     }
 }
 

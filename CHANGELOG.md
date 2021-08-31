@@ -25,6 +25,7 @@
 ### Bugfixes
 
 - EGLBufferReader now checks if buffers are alive before using them.
+- LibSeat no longer panics on seat disable event.
 
 ## version 0.3.0 (2021-07-25)
 
