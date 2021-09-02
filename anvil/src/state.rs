@@ -26,7 +26,7 @@ use smithay::{
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::{XWayland, XWaylandEvent};
 
-use crate::shell::init_shell;
+use crate::{output_map::OutputMap, shell::init_shell, window_map::WindowMap};
 
 pub struct AnvilState<BackendData> {
     pub backend_data: BackendData,
@@ -79,11 +79,20 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             )
             .expect("Failed to init the wayland event source.");
 
+        // Init a window map, to track the location of our windows
+        let window_map = Rc::new(RefCell::new(WindowMap::default()));
+        let output_map = Rc::new(RefCell::new(OutputMap::new(
+            display.clone(),
+            window_map.clone(),
+            log.clone(),
+        )));
+
         // Init the basic compositor globals
 
         init_shm_global(&mut (*display).borrow_mut(), vec![], log.clone());
 
-        let shell_handles = init_shell::<BackendData>(display.clone(), log.clone());
+        // Init the shell states
+        init_shell::<BackendData>(display.clone(), log.clone());
 
         init_xdg_output_manager(&mut display.borrow_mut(), log.clone());
         init_xdg_activation_global(
@@ -192,8 +201,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             running: Arc::new(AtomicBool::new(true)),
             display,
             handle,
-            window_map: shell_handles.window_map,
-            output_map: shell_handles.output_map,
+            window_map,
+            output_map,
             dnd_icon,
             log,
             socket_name,
