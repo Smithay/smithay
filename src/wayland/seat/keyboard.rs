@@ -282,6 +282,47 @@ struct KbdRc {
     logger: ::slog::Logger,
 }
 
+/// Handle to the underlying keycode to allow for different conversions
+pub struct KeysymHandle<'a> {
+    keycode: u32,
+    keymap: &'a xkb::Keymap,
+    state: &'a xkb::State,
+}
+
+impl<'a> fmt::Debug for KeysymHandle<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.keycode)
+    }
+}
+
+impl<'a> KeysymHandle<'a> {
+    /// Returns the sym for the underlying keycode with all modifications by the current keymap state applied.
+    ///
+    /// This function is similar to [`KeysymHandle::modified_syms`], but is intended for cases where the user
+    /// does not want to or cannot handle multiple keysyms.
+    ///
+    /// If the key does not have exactly one keysym, returns [`keysyms::KEY_NoSymbol`].
+    pub fn modified_sym(&'a self) -> Keysym {
+        self.state.key_get_one_sym(self.keycode)
+    }
+
+    /// Returns the syms for the underlying keycode with all modifications by the current keymap state applied.
+    pub fn modified_syms(&'a self) -> &'a [Keysym] {
+        self.state.key_get_syms(self.keycode)
+    }
+
+    /// Returns the syms for the underlying keycode without any modifications by the current keymap state applied.
+    pub fn raw_syms(&'a self) -> &'a [Keysym] {
+        self.keymap
+            .key_get_syms_by_level(self.keycode, self.state.key_get_layout(self.keycode), 0)
+    }
+
+    /// Returns the raw code in X keycode system (shifted by 8)
+    pub fn raw_code(&'a self) -> u32 {
+        self.keycode
+    }
+}
+
 /// An handle to a keyboard handler
 ///
 /// It can be cloned and all clones manipulate the same internal state.
@@ -313,22 +354,24 @@ impl KeyboardHandle {
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
     pub fn input<F>(&self, keycode: u32, state: KeyState, serial: Serial, time: u32, filter: F)
     where
-        F: FnOnce(&ModifiersState, Keysym) -> bool,
+        F: FnOnce(&ModifiersState, KeysymHandle<'_>) -> bool,
     {
         trace!(self.arc.logger, "Handling keystroke"; "keycode" => keycode, "state" => format_args!("{:?}", state));
         let mut guard = self.arc.internal.borrow_mut();
-
-        // Offset the keycode by 8, as the evdev XKB rules reflect X's
-        // broken keycode system, which starts at 8.
-        let sym = guard.state.key_get_one_sym(keycode + 8);
-
         let mods_changed = guard.key_input(keycode, state);
+        let handle = KeysymHandle {
+            // Offset the keycode by 8, as the evdev XKB rules reflect X's
+            // broken keycode system, which starts at 8.
+            keycode: keycode + 8,
+            state: &guard.state,
+            keymap: &guard.keymap,
+        };
 
         trace!(self.arc.logger, "Calling input filter";
-            "mods_state" => format_args!("{:?}", guard.mods_state), "sym" => xkb::keysym_get_name(sym)
+            "mods_state" => format_args!("{:?}", guard.mods_state), "sym" => xkb::keysym_get_name(handle.modified_sym())
         );
 
-        if !filter(&guard.mods_state, sym) {
+        if !filter(&guard.mods_state, handle) {
             // the filter returned false, we do not forward to client
             trace!(self.arc.logger, "Input was intercepted by filter");
             return;

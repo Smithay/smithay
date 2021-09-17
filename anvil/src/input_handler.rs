@@ -45,7 +45,9 @@ impl<Backend> AnvilState<Backend> {
         let mut action = KeyAction::None;
         let suppressed_keys = &mut self.suppressed_keys;
         self.keyboard
-            .input(keycode, state, serial, time, |modifiers, keysym| {
+            .input(keycode, state, serial, time, |modifiers, handle| {
+                let keysym = handle.modified_sym();
+
                 debug!(log, "keysym";
                     "state" => format!("{:?}", state),
                     "mods" => format!("{:?}", modifiers),
