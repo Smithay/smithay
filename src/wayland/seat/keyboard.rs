@@ -323,6 +323,15 @@ impl<'a> KeysymHandle<'a> {
     }
 }
 
+/// Result for key input filtering (see [`KeyboardHandle::input`])
+#[derive(Debug)]
+pub enum FilterResult<T> {
+    /// Forward the given keycode to the client
+    Forward,
+    /// Do not forward and return value
+    Intercept(T),
+}
+
 /// An handle to a keyboard handler
 ///
 /// It can be cloned and all clones manipulate the same internal state.
@@ -347,14 +356,22 @@ impl KeyboardHandle {
     ///
     /// The `filter` argument is expected to be a closure which will peek at the generated input
     /// as interpreted by the keymap before it is forwarded to the focused client. If this closure
-    /// returns false, the input will not be sent to the client. This mechanism can be used to
-    /// implement compositor-level key bindings for example.
+    /// returns [`FilterResult::Forward`], the input will not be sent to the client. If it returns
+    /// [`FilterResult::Intercept`] a value can be passed to be returned by the whole function.
+    /// This mechanism can be used to implement compositor-level key bindings for example.
     ///
     /// The module [`crate::wayland::seat::keysyms`] exposes definitions of all possible keysyms
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
-    pub fn input<F>(&self, keycode: u32, state: KeyState, serial: Serial, time: u32, filter: F)
+    pub fn input<T, F>(
+        &self,
+        keycode: u32,
+        state: KeyState,
+        serial: Serial,
+        time: u32,
+        filter: F,
+    ) -> Option<T>
     where
-        F: FnOnce(&ModifiersState, KeysymHandle<'_>) -> bool,
+        F: FnOnce(&ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
     {
         trace!(self.arc.logger, "Handling keystroke"; "keycode" => keycode, "state" => format_args!("{:?}", state));
         let mut guard = self.arc.internal.borrow_mut();
@@ -371,10 +388,10 @@ impl KeyboardHandle {
             "mods_state" => format_args!("{:?}", guard.mods_state), "sym" => xkb::keysym_get_name(handle.modified_sym())
         );
 
-        if !filter(&guard.mods_state, handle) {
+        if let FilterResult::Intercept(val) = filter(&guard.mods_state, handle) {
             // the filter returned false, we do not forward to client
             trace!(self.arc.logger, "Input was intercepted by filter");
-            return;
+            return Some(val);
         }
 
         // forward to client if no keybinding is triggered
@@ -400,6 +417,8 @@ impl KeyboardHandle {
         } else {
             trace!(self.arc.logger, "No client currently focused");
         }
+
+        None
     }
 
     /// Set the current focus of this keyboard
