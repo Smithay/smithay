@@ -13,7 +13,7 @@ use smithay::{
     },
     reexports::wayland_server::protocol::wl_pointer,
     wayland::{
-        seat::{keysyms as xkb, AxisFrame, Keysym, ModifiersState},
+        seat::{keysyms as xkb, AxisFrame, FilterResult, Keysym, ModifiersState},
         SERIAL_COUNTER as SCOUNTER,
     },
 };
@@ -42,10 +42,11 @@ impl<Backend> AnvilState<Backend> {
         let serial = SCOUNTER.next_serial();
         let log = &self.log;
         let time = Event::time(&evt);
-        let mut action = KeyAction::None;
         let suppressed_keys = &mut self.suppressed_keys;
         self.keyboard
-            .input(keycode, state, serial, time, |modifiers, keysym| {
+            .input(keycode, state, serial, time, |modifiers, handle| {
+                let keysym = handle.modified_sym();
+
                 debug!(log, "keysym";
                     "state" => format!("{:?}", state),
                     "mods" => format!("{:?}", modifiers),
@@ -58,27 +59,26 @@ impl<Backend> AnvilState<Backend> {
                 // so that we can decide on a release if the key
                 // should be forwarded to the client or not.
                 if let KeyState::Pressed = state {
-                    action = process_keyboard_shortcut(*modifiers, keysym);
+                    let action = process_keyboard_shortcut(*modifiers, keysym);
 
-                    // forward to client only if action == KeyAction::Forward
-                    let forward = matches!(action, KeyAction::Forward);
-
-                    if !forward {
+                    if action.is_some() {
                         suppressed_keys.push(keysym);
                     }
 
-                    forward
+                    action
+                        .map(FilterResult::Intercept)
+                        .unwrap_or(FilterResult::Forward)
                 } else {
                     let suppressed = suppressed_keys.contains(&keysym);
-
                     if suppressed {
                         suppressed_keys.retain(|k| *k != keysym);
+                        FilterResult::Intercept(KeyAction::None)
+                    } else {
+                        FilterResult::Forward
                     }
-
-                    !suppressed
                 }
-            });
-        action
+            })
+            .unwrap_or(KeyAction::None)
     }
 
     fn on_pointer_button<B: InputBackend>(&mut self, evt: B::PointerButtonEvent) {
@@ -155,7 +155,7 @@ impl AnvilState<WinitData> {
 
         match event {
             InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
-                KeyAction::None | KeyAction::Forward => {}
+                KeyAction::None => {}
                 KeyAction::Quit => {
                     info!(self.log, "Quitting.");
                     self.running.store(false, Ordering::SeqCst);
@@ -243,7 +243,7 @@ impl AnvilState<UdevData> {
     pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
         match event {
             InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
-                KeyAction::None | KeyAction::Forward => {}
+                KeyAction::None => {}
                 KeyAction::Quit => {
                     info!(self.log, "Quitting.");
                     self.running.store(false, Ordering::SeqCst);
@@ -520,32 +520,32 @@ enum KeyAction {
     Screen(usize),
     ScaleUp,
     ScaleDown,
-    /// Forward the key to the client
-    Forward,
     /// Do nothing more
     None,
 }
 
-fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> KeyAction {
+fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> Option<KeyAction> {
     if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace
         || modifiers.logo && keysym == xkb::KEY_q
     {
         // ctrl+alt+backspace = quit
         // logo + q = quit
-        KeyAction::Quit
+        Some(KeyAction::Quit)
     } else if (xkb::KEY_XF86Switch_VT_1..=xkb::KEY_XF86Switch_VT_12).contains(&keysym) {
         // VTSwicth
-        KeyAction::VtSwitch((keysym - xkb::KEY_XF86Switch_VT_1 + 1) as i32)
+        Some(KeyAction::VtSwitch(
+            (keysym - xkb::KEY_XF86Switch_VT_1 + 1) as i32,
+        ))
     } else if modifiers.logo && keysym == xkb::KEY_Return {
         // run terminal
-        KeyAction::Run("weston-terminal".into())
+        Some(KeyAction::Run("weston-terminal".into()))
     } else if modifiers.logo && keysym >= xkb::KEY_1 && keysym <= xkb::KEY_9 {
-        KeyAction::Screen((keysym - xkb::KEY_1) as usize)
+        Some(KeyAction::Screen((keysym - xkb::KEY_1) as usize))
     } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_M {
-        KeyAction::ScaleDown
+        Some(KeyAction::ScaleDown)
     } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_P {
-        KeyAction::ScaleUp
+        Some(KeyAction::ScaleUp)
     } else {
-        KeyAction::Forward
+        None
     }
 }

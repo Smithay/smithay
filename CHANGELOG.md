@@ -8,6 +8,7 @@
 
 - `XdgPositionerState` moved to `XdgPopupState` and added to `XdgRequest::NewPopup`
 - `PopupSurface::send_configure` now checks the protocol version and returns an `Result`
+- `KeyboardHandle::input` filter closure now receives a `KeysymHandle` instead of a `Keysym` and returns a `FilterResult`.
 
 ### Additions
 
