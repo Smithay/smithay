@@ -112,7 +112,7 @@ impl PrivateSurfaceData {
                 .retain(|c| !c.as_ref().equals(surface.as_ref()));
         }
         // orphan all our children
-        for child in &my_data.children {
+        for child in my_data.children.drain(..) {
             let child_mutex = child
                 .as_ref()
                 .user_data()
