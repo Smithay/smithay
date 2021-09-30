@@ -22,6 +22,7 @@
 - Setting the parent of a toplevel surface is now possible with the `xdg::ToplevelSurface::set_parent` function.
 - Add support for the zxdg-foreign-v2 protocol.
 - Support for `xdg_wm_base` protocol version 3
+- Added the option to initialize the dmabuf global with a client filter
 
 ### Bugfixes
 
