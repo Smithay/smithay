@@ -96,6 +96,9 @@ impl PointerInternal {
         F: FnMut(&WlPointer, &WlSurface),
     {
         if let Some((ref focus, _)) = self.focus {
+            if !focus.as_ref().is_alive() {
+                return;
+            }
             for ptr in &self.known_pointers {
                 if ptr.as_ref().same_client_as(focus.as_ref()) {
                     f(ptr, focus)
