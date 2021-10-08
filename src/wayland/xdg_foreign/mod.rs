@@ -20,7 +20,7 @@
 //!
 //! # let mut display = wayland_server::Display::new();
 //! // XDG Shell init
-//! let (shell_state, _, _) = xdg_shell_init(
+//! let (shell_state, _) = xdg_shell_init(
 //!     &mut display,
 //!     |event: XdgRequest, dispatch_data| { /* handle the shell requests here */ },
 //!     None
