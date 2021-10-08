@@ -335,7 +335,7 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
     );
 
     // init the xdg_shell
-    let (xdg_shell_state, _, _) = xdg_shell_init(
+    let (xdg_shell_state, _) = xdg_shell_init(
         &mut *display.borrow_mut(),
         move |shell_event, mut ddata| {
             let state = ddata.get::<AnvilState<BackendData>>().unwrap();

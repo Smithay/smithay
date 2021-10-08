@@ -13,9 +13,9 @@ use wayland_server::{protocol::wl_surface, Filter, Main};
 use crate::utils::Rectangle;
 
 use super::{
-    make_shell_client_data, PopupConfigure, PopupKind, PositionerState, ShellClient, ShellClientData,
-    ShellData, SurfaceCachedState, ToplevelConfigure, ToplevelKind, XdgPopupSurfaceRoleAttributes,
-    XdgRequest, XdgToplevelSurfaceRoleAttributes,
+    make_shell_client_data, PopupConfigure, PositionerState, ShellClient, ShellClientData, ShellData,
+    SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes, XdgRequest,
+    XdgToplevelSurfaceRoleAttributes,
 };
 
 pub(crate) fn implement_wm_base(
@@ -49,7 +49,7 @@ pub(crate) struct ShellUserData {
 
 pub(crate) fn make_shell_client(resource: &xdg_wm_base::XdgWmBase) -> ShellClient {
     ShellClient {
-        kind: super::ShellClientKind::Xdg(resource.clone()),
+        kind: resource.clone(),
     }
 }
 
@@ -547,7 +547,7 @@ fn make_toplevel_handle(resource: &xdg_toplevel::XdgToplevel) -> super::Toplevel
         .unwrap();
     super::ToplevelSurface {
         wl_surface: data.wl_surface.clone(),
-        shell_surface: ToplevelKind::Xdg(resource.clone()),
+        shell_surface: resource.clone(),
     }
 }
 
@@ -735,7 +735,7 @@ fn make_popup_handle(resource: &xdg_popup::XdgPopup) -> super::PopupSurface {
         .unwrap();
     super::PopupSurface {
         wl_surface: data.wl_surface.clone(),
-        shell_surface: PopupKind::Xdg(resource.clone()),
+        shell_surface: resource.clone(),
     }
 }
 
