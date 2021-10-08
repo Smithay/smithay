@@ -10,6 +10,7 @@ use std::{
 use smithay::{
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
+        wayland_protocols::unstable::xdg_decoration,
         wayland_server::{protocol::wl_surface::WlSurface, Display},
     },
     utils::{Logical, Point},
@@ -17,6 +18,7 @@ use smithay::{
         data_device::{default_action_chooser, init_data_device, set_data_device_focus, DataDeviceEvent},
         output::xdg::init_xdg_output_manager,
         seat::{CursorImageStatus, KeyboardHandle, PointerHandle, Seat, XkbConfig},
+        shell::xdg::decoration::{init_xdg_decoration_manager, XdgDecorationRequest},
         shm::init_shm_global,
         tablet_manager::{init_tablet_manager_global, TabletSeatTrait},
         xdg_activation::{init_xdg_activation_global, XdgActivationEvent},
@@ -115,6 +117,26 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     }
                     XdgActivationEvent::DestroyActivationRequest { .. } => {}
                 }
+            },
+            log.clone(),
+        );
+
+        init_xdg_decoration_manager(
+            &mut display.borrow_mut(),
+            |req, _ddata| match req {
+                XdgDecorationRequest::NewToplevelDecoration { toplevel } => {
+                    use xdg_decoration::v1::server::zxdg_toplevel_decoration_v1::Mode;
+
+                    let res = toplevel.with_pending_state(|state| {
+                        state.decoration_mode = Some(Mode::ClientSide);
+                    });
+
+                    if res.is_ok() {
+                        toplevel.send_configure();
+                    }
+                }
+                XdgDecorationRequest::SetMode { .. } => {}
+                XdgDecorationRequest::UnsetMode { .. } => {}
             },
             log.clone(),
         );
