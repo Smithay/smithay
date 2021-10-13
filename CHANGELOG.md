@@ -11,6 +11,10 @@
 - `PopupSurface::send_configure` now checks the protocol version and returns an `Result`
 - `KeyboardHandle::input` filter closure now receives a `KeysymHandle` instead of a `Keysym` and returns a `FilterResult`.
 
+#### Backend
+
+- Added `TabletToolType::Unknown` as an option for tablet events
+
 ### Additions
 
 #### Clients & Protocols
