@@ -35,6 +35,8 @@ pub enum TabletToolType {
     Lens,
     /// A rotary device with positional and rotation data.  
     Totem,
+    /// Type of the device is not known or does not match any known ones
+    Unknown,
 }
 
 bitflags! {

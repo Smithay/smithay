@@ -57,14 +57,15 @@ where
         let tool = self.tool();
 
         let tool_type = match tool.tool_type() {
-            tablet_tool::TabletToolType::Pen => TabletToolType::Pen,
-            tablet_tool::TabletToolType::Eraser => TabletToolType::Eraser,
-            tablet_tool::TabletToolType::Brush => TabletToolType::Brush,
-            tablet_tool::TabletToolType::Pencil => TabletToolType::Pencil,
-            tablet_tool::TabletToolType::Airbrush => TabletToolType::Airbrush,
-            tablet_tool::TabletToolType::Mouse => TabletToolType::Mouse,
-            tablet_tool::TabletToolType::Lens => TabletToolType::Lens,
-            tablet_tool::TabletToolType::Totem => TabletToolType::Totem,
+            Some(tablet_tool::TabletToolType::Pen) => TabletToolType::Pen,
+            Some(tablet_tool::TabletToolType::Eraser) => TabletToolType::Eraser,
+            Some(tablet_tool::TabletToolType::Brush) => TabletToolType::Brush,
+            Some(tablet_tool::TabletToolType::Pencil) => TabletToolType::Pencil,
+            Some(tablet_tool::TabletToolType::Airbrush) => TabletToolType::Airbrush,
+            Some(tablet_tool::TabletToolType::Mouse) => TabletToolType::Mouse,
+            Some(tablet_tool::TabletToolType::Lens) => TabletToolType::Lens,
+            Some(tablet_tool::TabletToolType::Totem) => TabletToolType::Totem,
+            _ => TabletToolType::Unknown,
         };
 
         let hardware_serial = tool.serial();

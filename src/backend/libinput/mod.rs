@@ -19,7 +19,7 @@ use std::{
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
-use slog::{info, o};
+use slog::{info, o, trace};
 
 mod tablet;
 
@@ -403,6 +403,9 @@ impl InputBackend for LibinputInputBackend {
 
                         callback(InputEvent::DeviceRemoved { device: removed });
                     }
+                    _ => {
+                        trace!(self.logger, "Unknown libinput device event");
+                    }
                 },
                 libinput::Event::Touch(touch_event) => match touch_event {
                     event::TouchEvent::Down(down_event) => {
@@ -420,10 +423,16 @@ impl InputBackend for LibinputInputBackend {
                     event::TouchEvent::Frame(frame_event) => {
                         callback(InputEvent::TouchFrame { event: frame_event });
                     }
+                    _ => {
+                        trace!(self.logger, "Unknown libinput touch event");
+                    }
                 },
                 libinput::Event::Keyboard(keyboard_event) => match keyboard_event {
                     event::KeyboardEvent::Key(key_event) => {
                         callback(InputEvent::Keyboard { event: key_event });
+                    }
+                    _ => {
+                        trace!(self.logger, "Unknown libinput keyboard event");
                     }
                 },
                 libinput::Event::Pointer(pointer_event) => match pointer_event {
@@ -441,6 +450,9 @@ impl InputBackend for LibinputInputBackend {
                     event::PointerEvent::Button(button_event) => {
                         callback(InputEvent::PointerButton { event: button_event });
                     }
+                    _ => {
+                        trace!(self.logger, "Unknown libinput pointer event");
+                    }
                 },
                 libinput::Event::Tablet(tablet_event) => match tablet_event {
                     event::TabletToolEvent::Axis(event) => {
@@ -454,6 +466,9 @@ impl InputBackend for LibinputInputBackend {
                     }
                     event::TabletToolEvent::Button(event) => {
                         callback(InputEvent::TabletToolButton { event });
+                    }
+                    _ => {
+                        trace!(self.logger, "Unknown libinput tablet event");
                     }
                 },
                 _ => {} //FIXME: What to do with the rest.
