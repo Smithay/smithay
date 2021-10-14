@@ -29,6 +29,10 @@
 - EGLBufferReader now checks if buffers are alive before using them.
 - LibSeat no longer panics on seat disable event.
 
+### Anvil
+
+- Passing `ANVIL_MUTEX_LOG` in environment variables now uses the slower `Mutex` logging drain.
+
 ## version 0.3.0 (2021-07-25)
 
 Large parts of Smithay were changed with numerous API changes. It is thus recommended to
