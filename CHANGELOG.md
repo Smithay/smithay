@@ -28,6 +28,7 @@
 #### Backends
 
 - `x11rb` event source integration used in anvil's XWayland implementation is now part of smithay at `utils::x11rb`. Enabled through the `x11rb_event_source` feature. 
+- `KeyState`, `MouseButton`, `ButtonState` and `Axis` in `backend::input` now derive `Hash`.
 - New `DrmNode` type in drm backend. This is primarily for use a backend which needs to run as client inside another session.
 
 ### Bugfixes

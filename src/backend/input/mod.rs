@@ -77,7 +77,7 @@ impl<B: InputBackend> Event<B> for UnusedEvent {
 }
 
 /// State of key on a keyboard. Either pressed or released
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum KeyState {
     /// Key is released
     Released,
@@ -110,7 +110,7 @@ impl<B: InputBackend> KeyboardKeyEvent<B> for UnusedEvent {
 }
 
 /// A particular mouse button
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum MouseButton {
     /// Left mouse button
     Left,
@@ -123,7 +123,7 @@ pub enum MouseButton {
 }
 
 /// State of a button on a pointer device, like mouse or tablet tool. Either pressed or released
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum ButtonState {
     /// Button is released
     Released,
@@ -150,7 +150,7 @@ impl<B: InputBackend> PointerButtonEvent<B> for UnusedEvent {
 }
 
 /// Axis when scrolling
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Axis {
     /// Vertical axis
     Vertical,
