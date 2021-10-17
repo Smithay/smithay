@@ -91,7 +91,7 @@ where
                                 if data.decoration.borrow().is_none() {
                                     *data.decoration.borrow_mut() = Some(id.deref().clone());
                                 } else {
-                                    use wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1::Error; 
+                                    use wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1::Error;
                                     id.as_ref().post_error(Error::AlreadyConstructed as u32, "toplevel decoration is already constructed".to_string());
                                 }
 
