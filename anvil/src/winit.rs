@@ -8,7 +8,10 @@ use smithay::{
     wayland::dmabuf::init_dmabuf_global,
 };
 use smithay::{
-    backend::{input::InputBackend, winit, SwapBuffersError},
+    backend::{
+        winit::{self, WinitEvent},
+        SwapBuffersError,
+    },
     reexports::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
@@ -43,7 +46,7 @@ pub fn run_winit(log: Logger) {
     let mut event_loop = EventLoop::try_new().unwrap();
     let display = Rc::new(RefCell::new(Display::new()));
 
-    let (renderer, mut input) = match winit::init(log.clone()) {
+    let (renderer, mut winit) = match winit::init(log.clone()) {
         Ok(ret) => ret,
         Err(err) => {
             slog::crit!(log, "Failed to initialize Winit backend: {}", err);
@@ -121,8 +124,27 @@ pub fn run_winit(log: Logger) {
     info!(log, "Initialization completed, starting the main loop.");
 
     while state.running.load(Ordering::SeqCst) {
-        if input
-            .dispatch_new_events(|event| state.process_input_event(event))
+        if winit
+            .dispatch_new_events(|event| match event {
+                WinitEvent::Resized { size, .. } => {
+                    state.output_map.borrow_mut().update_mode_by_name(
+                        Mode {
+                            size,
+                            refresh: 60_000,
+                        },
+                        crate::winit::OUTPUT_NAME,
+                    );
+
+                    let output_mut = state.output_map.borrow();
+                    let output = output_mut.find_by_name(crate::winit::OUTPUT_NAME).unwrap();
+
+                    state.window_map.borrow_mut().layers.arange_layers(output);
+                }
+
+                WinitEvent::Input(event) => state.process_input_event(event),
+
+                _ => (),
+            })
             .is_err()
         {
             state.running.store(false, Ordering::SeqCst);

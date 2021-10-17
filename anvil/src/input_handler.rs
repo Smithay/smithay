@@ -22,7 +22,7 @@ use smithay::{
 };
 
 #[cfg(any(feature = "winit", feature = "x11"))]
-use smithay::{backend::input::PointerMotionAbsoluteEvent, wayland::output::Mode};
+use smithay::backend::input::PointerMotionAbsoluteEvent;
 
 #[cfg(feature = "udev")]
 use smithay::{
@@ -150,12 +150,7 @@ impl<Backend> AnvilState<Backend> {
 
 #[cfg(feature = "winit")]
 impl AnvilState<WinitData> {
-    pub fn process_input_event<B>(&mut self, event: InputEvent<B>)
-    where
-        B: InputBackend<SpecialEvent = smithay::backend::winit::WinitEvent>,
-    {
-        use smithay::backend::winit::WinitEvent;
-
+    pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
         match event {
             InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
                 KeyAction::None => {}
@@ -206,20 +201,6 @@ impl AnvilState<WinitData> {
             InputEvent::PointerMotionAbsolute { event, .. } => self.on_pointer_move_absolute::<B>(event),
             InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(event),
             InputEvent::PointerAxis { event, .. } => self.on_pointer_axis::<B>(event),
-            InputEvent::Special(WinitEvent::Resized { size, .. }) => {
-                self.output_map.borrow_mut().update_mode_by_name(
-                    Mode {
-                        size,
-                        refresh: 60_000,
-                    },
-                    crate::winit::OUTPUT_NAME,
-                );
-
-                let output_mut = self.output_map.borrow();
-                let output = output_mut.find_by_name(crate::winit::OUTPUT_NAME).unwrap();
-
-                self.window_map.borrow_mut().layers.arange_layers(output);
-            }
             _ => {
                 // other events are not handled in anvil (yet)
             }
