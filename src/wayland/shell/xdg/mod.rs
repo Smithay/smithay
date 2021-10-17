@@ -998,7 +998,7 @@ impl ToplevelSurface {
                         .unwrap()
                         .lock()
                         .unwrap();
-                    attributes.current.decoration_mode.clone()
+                    attributes.current.decoration_mode
                 })
                 .unwrap_or(None);
 
