@@ -11,8 +11,13 @@
 - `PopupSurface::send_configure` now checks the protocol version and returns an `Result`
 - `KeyboardHandle::input` filter closure now receives a `KeysymHandle` instead of a `Keysym` and returns a `FilterResult`.
 
-#### Backend
+#### Backends
 
+- Rename `WinitInputBacked` to `WinitEventLoop`.
+- Rename `WinitInputError` to `WinitError`;
+- `WinitInputBackend` no longer implements `InputBackend`. Input events are now received from the `WinitEvent::Input` variant.
+- All winit backend internal event types now use `WinitInput` as the backend type.
+- `WinitEventLoop::dispatch_new_events` is now used to receive some `WinitEvent`s.
 - Added `TabletToolType::Unknown` as an option for tablet events
 
 ### Additions
