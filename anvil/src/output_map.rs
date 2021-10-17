@@ -20,6 +20,7 @@ use smithay::{
 
 use crate::shell::SurfaceData;
 
+#[derive(Debug)]
 pub struct Output {
     name: String,
     output: output::Output,
@@ -124,6 +125,7 @@ impl Drop for Output {
     }
 }
 
+#[derive(Debug)]
 pub struct OutputMap {
     display: Rc<RefCell<Display>>,
     outputs: Vec<Output>,

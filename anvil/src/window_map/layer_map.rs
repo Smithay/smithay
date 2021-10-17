@@ -11,6 +11,7 @@ use smithay::{
 
 use crate::{output_map::Output, shell::SurfaceData};
 
+#[derive(Debug)]
 pub struct LayerSurface {
     pub surface: wlr_layer::LayerSurface,
     pub location: Point<i32, Logical>,
@@ -122,7 +123,7 @@ impl LayerSurface {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct LayerMap {
     surfaces: Vec<LayerSurface>,
 }
