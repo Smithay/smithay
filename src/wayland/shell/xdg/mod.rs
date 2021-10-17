@@ -74,6 +74,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use wayland_protocols::unstable::xdg_decoration;
+use wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1;
 use wayland_protocols::xdg_shell::server::xdg_surface;
 use wayland_protocols::xdg_shell::server::{xdg_popup, xdg_positioner, xdg_toplevel, xdg_wm_base};
 use wayland_server::DispatchData;
@@ -82,7 +84,11 @@ use wayland_server::{
     Display, Filter, Global, UserDataMap,
 };
 
+use self::xdg_handlers::ShellSurfaceUserData;
+
 use super::PingError;
+
+pub mod decoration;
 
 // handlers for the xdg_shell protocol
 pub(super) mod xdg_handlers;
@@ -549,6 +555,9 @@ pub struct ToplevelState {
 
     /// The output for a fullscreen display
     pub fullscreen_output: Option<wl_output::WlOutput>,
+
+    /// The xdg decoration mode of the surface
+    pub decoration_mode: Option<zxdg_toplevel_decoration_v1::Mode>,
 }
 
 impl Default for ToplevelState {
@@ -557,6 +566,7 @@ impl Default for ToplevelState {
             fullscreen_output: None,
             states: Default::default(),
             size: None,
+            decoration_mode: None,
         }
     }
 }
@@ -567,6 +577,7 @@ impl Clone for ToplevelState {
             fullscreen_output: self.fullscreen_output.clone(),
             states: self.states.clone(),
             size: self.size,
+            decoration_mode: self.decoration_mode,
         }
     }
 }
@@ -980,6 +991,35 @@ impl ToplevelSurface {
             })
             .unwrap_or(None);
             if let Some(configure) = configure {
+                let decoration_mode = compositor::with_states(surface, |states| {
+                    let attributes = states
+                        .data_map
+                        .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap();
+                    attributes.current.decoration_mode.clone()
+                })
+                .unwrap_or(None);
+
+                if configure.state.decoration_mode != decoration_mode {
+                    if let Some(data) = self
+                        .shell_surface
+                        .as_ref()
+                        .user_data()
+                        .get::<ShellSurfaceUserData>()
+                    {
+                        if let Some(decoration) = &*data.decoration.borrow() {
+                            self::decoration::send_decoration_configure(
+                                decoration,
+                                configure.state.decoration_mode.unwrap_or(
+                                    xdg_decoration::v1::server::zxdg_toplevel_decoration_v1::Mode::ClientSide,
+                                ),
+                            );
+                        }
+                    }
+                }
+
                 self::xdg_handlers::send_toplevel_configure(&self.shell_surface, configure)
             }
         }
