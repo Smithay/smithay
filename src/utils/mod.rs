@@ -3,6 +3,9 @@
 mod geometry;
 pub mod signaling;
 
+#[cfg(feature = "x11rb_event_source")]
+pub mod x11rb;
+
 pub use self::geometry::{Buffer, Logical, Physical, Point, Raw, Rectangle, Size};
 
 /// This resource is not managed by Smithay

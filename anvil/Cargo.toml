@@ -28,7 +28,7 @@ features = [ "wayland_frontend", "slog-stdlog" ]
 
 [dependencies.x11rb]
 optional = true
-version = "0.8"
+version = "0.9.0"
 default-features = false
 features = [ "composite" ]
 
@@ -43,6 +43,6 @@ udev = [ "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_dr
 logind = [ "smithay/backend_session_logind" ]
 elogind = ["logind", "smithay/backend_session_elogind" ]
 libseat = ["smithay/backend_session_libseat" ]
-xwayland = [ "smithay/xwayland", "x11rb" ]
+xwayland = [ "smithay/xwayland", "x11rb", "smithay/x11rb_event_source" ]
 debug = [ "fps_ticker", "image/png" ]
 test_all_features = ["default", "debug"]

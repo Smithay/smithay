@@ -1,3 +1,8 @@
+//! Helper utilities for using x11rb as an event source in calloop.
+//!
+//! The primary use for this module is XWayland integration but is also widely useful for an X11
+//! backend in a compositor.
+
 use std::{
     io::Result as IOResult,
     sync::Arc,
@@ -13,7 +18,7 @@ use x11rb::{
     rust_connection::RustConnection,
 };
 
-use smithay::reexports::calloop::{
+use calloop::{
     channel::{sync_channel, Channel, Event as ChannelEvent, SyncSender},
     EventSource, Poll, PostAction, Readiness, Token, TokenFactory,
 };
@@ -28,9 +33,10 @@ use smithay::reexports::calloop::{
 /// iteration. Calloop only allows "when an FD becomes readable".
 ///
 /// [1]: https://docs.rs/x11rb/0.8.1/x11rb/event_loop_integration/index.html#threads-and-races
+#[derive(Debug)]
 pub struct X11Source {
     connection: Arc<RustConnection>,
-    channel: Channel<Event>,
+    channel: Option<Channel<Event>>,
     event_thread: Option<JoinHandle<()>>,
     close_window: Window,
     close_type: Atom,
@@ -56,9 +62,10 @@ impl X11Source {
         let event_thread = Some(spawn(move || {
             run_event_thread(conn, sender, log2);
         }));
+
         Self {
             connection,
-            channel,
+            channel: Some(channel),
             event_thread,
             close_window,
             close_type,
@@ -70,9 +77,7 @@ impl X11Source {
 impl Drop for X11Source {
     fn drop(&mut self) {
         // Signal the worker thread to exit by dropping the read end of the channel.
-        // There is no easy and nice way to do this, so do it the ugly way: Replace it.
-        let (_, channel) = sync_channel(1);
-        self.channel = channel;
+        self.channel.take();
 
         // Send an event to wake up the worker so that it actually exits
         let event = ClientMessageEvent {
@@ -83,6 +88,7 @@ impl Drop for X11Source {
             type_: self.close_type,
             data: [0; 20].into(),
         };
+
         let _ = self
             .connection
             .send_event(false, self.close_window, EventMask::NO_EVENT, event);
@@ -108,23 +114,39 @@ impl EventSource for X11Source {
         C: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
         let log = self.log.clone();
-        self.channel
-            .process_events(readiness, token, move |event, meta| match event {
+
+        if let Some(channel) = &mut self.channel {
+            channel.process_events(readiness, token, move |event, meta| match event {
                 ChannelEvent::Closed => slog::warn!(log, "Event thread exited"),
                 ChannelEvent::Msg(event) => callback(event, meta),
             })
+        } else {
+            Ok(PostAction::Remove)
+        }
     }
 
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> IOResult<()> {
-        self.channel.register(poll, factory)
+        if let Some(channel) = &mut self.channel {
+            channel.register(poll, factory)?;
+        }
+
+        Ok(())
     }
 
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> IOResult<()> {
-        self.channel.reregister(poll, factory)
+        if let Some(channel) = &mut self.channel {
+            channel.reregister(poll, factory)?;
+        }
+
+        Ok(())
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> IOResult<()> {
-        self.channel.unregister(poll)
+        if let Some(channel) = &mut self.channel {
+            channel.unregister(poll)?;
+        }
+
+        Ok(())
     }
 }
 
