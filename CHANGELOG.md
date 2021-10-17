@@ -25,6 +25,10 @@
 - Support for `xdg_wm_base` protocol version 3
 - Added the option to initialize the dmabuf global with a client filter
 
+#### Backends
+
+- New `DrmNode` type in drm backend. This is primarily for use a backend which needs to run as client inside another session.
+
 ### Bugfixes
 
 - EGLBufferReader now checks if buffers are alive before using them.
