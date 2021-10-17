@@ -4,6 +4,7 @@ use std::{cell::RefCell, ops::Deref as _, sync::Mutex};
 use crate::wayland::compositor;
 use crate::wayland::shell::xdg::{PopupState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE};
 use crate::wayland::Serial;
+use wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1;
 use wayland_protocols::xdg_shell::server::{
     xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base,
 };
@@ -259,6 +260,7 @@ fn xdg_surface_implementation(
                 wl_surface: data.wl_surface.clone(),
                 xdg_surface: xdg_surface.clone(),
                 wm_base: data.wm_base.clone(),
+                decoration: Default::default(),
             });
 
             data.shell_data
@@ -334,6 +336,7 @@ fn xdg_surface_implementation(
                 wl_surface: data.wl_surface.clone(),
                 xdg_surface: xdg_surface.clone(),
                 wm_base: data.wm_base.clone(),
+                decoration: Default::default(),
             });
 
             data.shell_data
@@ -471,6 +474,7 @@ pub(crate) struct ShellSurfaceUserData {
     pub(crate) wl_surface: wl_surface::WlSurface,
     pub(crate) wm_base: xdg_wm_base::XdgWmBase,
     pub(crate) xdg_surface: xdg_surface::XdgSurface,
+    pub(crate) decoration: RefCell<Option<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1>>,
 }
 
 // Utility functions allowing to factor out a lot of the upcoming logic
