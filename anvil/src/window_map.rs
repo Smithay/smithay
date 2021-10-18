@@ -24,7 +24,7 @@ use crate::xwayland::X11Surface;
 mod layer_map;
 pub use layer_map::{LayerMap, LayerSurface};
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Kind {
     Xdg(ToplevelSurface),
     Wl(ShellSurface),
@@ -68,7 +68,7 @@ impl Kind {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum PopupKind {
     Xdg(PopupSurface),
 }
@@ -125,6 +125,7 @@ impl PopupKind {
     }
 }
 
+#[derive(Debug)]
 struct Window {
     location: Point<i32, Logical>,
     /// A bounding box over this window and its children.
@@ -241,11 +242,12 @@ impl Window {
     }
 }
 
+#[derive(Debug)]
 pub struct Popup {
     popup: PopupKind,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct WindowMap {
     windows: Vec<Window>,
     popups: Vec<Popup>,

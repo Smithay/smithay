@@ -126,6 +126,7 @@ jobs:
         - backend_session
         - backend_session_logind
         - backend_session_libseat
+        - backend_x11
         - renderer_gl
         - wayland_frontend
         - xwayland
@@ -199,6 +200,7 @@ jobs:
         - winit
         - udev
         - logind
+        - x11
         - default
         - test_all_features
 

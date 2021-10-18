@@ -30,7 +30,7 @@ drm-ffi = { version = "0.2.0", optional = true }
 gbm = { version = "0.7.0", optional = true, default-features = false, features = ["drm-support"] }
 input = { version = "0.6", default-features = false, features=["libinput_1_14"], optional = true }
 lazy_static = "1"
-libc = "0.2.70"
+libc = "0.2.103"
 libseat= { version = "0.1.1", optional = true }
 libloading = { version="0.7.0", optional = true } 
 nix = "0.22"
@@ -46,6 +46,7 @@ wayland-protocols = { version = "0.29.0", features = ["unstable_protocols", "sta
 wayland-server = { version = "0.29.0", optional = true }
 wayland-sys = { version = "0.29.0", optional = true }
 winit = { version = "0.25.0", optional = true }
+x11rb = { version = "0.9.0", optional = true }
 xkbcommon = "0.4.0"
 scan_fmt = { version = "0.2.3", default-features = false }
 
@@ -57,8 +58,9 @@ gl_generator = { version = "0.14", optional = true }
 pkg-config = { version = "0.3.17", optional = true }
 
 [features]
-default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_logind", "backend_winit", "renderer_gl", "xwayland", "wayland_frontend", "slog-stdlog"]
+default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_logind", "backend_winit", "renderer_gl", "xwayland", "wayland_frontend", "slog-stdlog", "backend_x11"]
 backend_winit = ["winit", "wayland-server/dlopen", "backend_egl", "wayland-egl", "renderer_gl"]
+backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm"]
 backend_drm = ["drm", "drm-ffi"]
 backend_gbm = ["gbm"]
 backend_egl = ["gl_generator", "libloading"]
@@ -71,6 +73,7 @@ backend_session_libseat = ["backend_session", "libseat"]
 renderer_gl = ["gl_generator", "backend_egl"]
 use_system_lib = ["wayland_frontend", "wayland-sys", "wayland-server/use_system_lib"]
 wayland_frontend = ["wayland-server", "wayland-commons", "wayland-protocols", "tempfile"]
+x11rb_event_source = ["x11rb"]
 xwayland = ["wayland_frontend"]
 test_all_features = ["default", "use_system_lib", "wayland-server/dlopen"]
 

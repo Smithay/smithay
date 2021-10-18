@@ -1,10 +1,13 @@
 use std::{process::Command, sync::atomic::Ordering};
 
+use crate::AnvilState;
+
 #[cfg(feature = "udev")]
 use crate::udev::UdevData;
 #[cfg(feature = "winit")]
 use crate::winit::WinitData;
-use crate::AnvilState;
+#[cfg(feature = "x11")]
+use crate::x11::X11Data;
 
 use smithay::{
     backend::input::{
@@ -18,7 +21,7 @@ use smithay::{
     },
 };
 
-#[cfg(feature = "winit")]
+#[cfg(any(feature = "winit", feature = "x11"))]
 use smithay::{backend::input::PointerMotionAbsoluteEvent, wayland::output::Mode};
 
 #[cfg(feature = "udev")]
@@ -504,6 +507,87 @@ impl AnvilState<UdevData> {
         } else {
             (clamped_x, pos_y).into()
         }
+    }
+}
+
+#[cfg(feature = "x11")]
+impl AnvilState<X11Data> {
+    pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
+        match event {
+            InputEvent::Keyboard { event } => match self.keyboard_key_to_action::<B>(event) {
+                KeyAction::None => (),
+
+                KeyAction::Quit => {
+                    info!(self.log, "Quitting.");
+                    self.running.store(false, Ordering::SeqCst);
+                }
+
+                KeyAction::Run(cmd) => {
+                    info!(self.log, "Starting program"; "cmd" => cmd.clone());
+
+                    if let Err(e) = Command::new(&cmd).spawn() {
+                        error!(self.log,
+                            "Failed to start program";
+                            "cmd" => cmd,
+                            "err" => format!("{:?}", e)
+                        );
+                    }
+                }
+
+                KeyAction::ScaleUp => {
+                    let current_scale = {
+                        self.output_map
+                            .borrow()
+                            .find_by_name(crate::x11::OUTPUT_NAME)
+                            .map(|o| o.scale())
+                            .unwrap_or(1.0)
+                    };
+
+                    self.output_map
+                        .borrow_mut()
+                        .update_scale_by_name(current_scale + 0.25f32, crate::x11::OUTPUT_NAME);
+                }
+
+                KeyAction::ScaleDown => {
+                    let current_scale = {
+                        self.output_map
+                            .borrow()
+                            .find_by_name(crate::x11::OUTPUT_NAME)
+                            .map(|o| o.scale())
+                            .unwrap_or(1.0)
+                    };
+
+                    self.output_map.borrow_mut().update_scale_by_name(
+                        f32::max(1.0f32, current_scale + 0.25f32),
+                        crate::x11::OUTPUT_NAME,
+                    );
+                }
+
+                action => {
+                    warn!(self.log, "Key action {:?} unsupported on x11 backend.", action);
+                }
+            },
+
+            InputEvent::PointerMotionAbsolute { event } => self.on_pointer_move_absolute::<B>(event),
+            InputEvent::PointerButton { event } => self.on_pointer_button::<B>(event),
+            InputEvent::PointerAxis { event } => self.on_pointer_axis::<B>(event),
+            _ => (), // other events are not handled in anvil (yet)
+        }
+    }
+
+    fn on_pointer_move_absolute<B: InputBackend>(&mut self, evt: B::PointerMotionAbsoluteEvent) {
+        let output_size = self
+            .output_map
+            .borrow()
+            .find_by_name(crate::x11::OUTPUT_NAME)
+            .map(|o| o.size())
+            .unwrap();
+
+        let pos = evt.position_transformed(output_size);
+        self.pointer_location = pos;
+        let serial = SCOUNTER.next_serial();
+        let under = self.window_map.borrow().get_surface_under(pos);
+        self.pointer.motion(pos, under, serial, evt.time());
     }
 }
 

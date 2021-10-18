@@ -21,3 +21,5 @@ pub use wayland_protocols;
 pub use wayland_server;
 #[cfg(feature = "backend_winit")]
 pub use winit;
+#[cfg(feature = "x11rb_event_source")]
+pub use x11rb;

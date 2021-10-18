@@ -25,6 +25,13 @@
 - Support for `xdg_wm_base` protocol version 3
 - Added the option to initialize the dmabuf global with a client filter
 
+#### Backends
+
+- New `x11` backend to run the compositor as an X11 client. Enabled through the `backend_x11` feature.
+- `x11rb` event source integration used in anvil's XWayland implementation is now part of smithay at `utils::x11rb`. Enabled through the `x11rb_event_source` feature. 
+- `KeyState`, `MouseButton`, `ButtonState` and `Axis` in `backend::input` now derive `Hash`.
+- New `DrmNode` type in drm backend. This is primarily for use a backend which needs to run as client inside another session.
+
 ### Bugfixes
 
 - EGLBufferReader now checks if buffers are alive before using them.
@@ -32,6 +39,7 @@
 
 ### Anvil
 
+- Anvil now implements the x11 backend in smithay. Run by passing `--x11` into the arguments when launching.
 - Passing `ANVIL_MUTEX_LOG` in environment variables now uses the slower `Mutex` logging drain.
 
 ## version 0.3.0 (2021-07-25)

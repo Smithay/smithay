@@ -16,6 +16,9 @@ use winit::{platform::unix::WindowExtUnix, window::Window as WinitWindow};
 #[cfg(feature = "backend_gbm")]
 use gbm::{AsRaw, Device as GbmDevice};
 
+#[cfg(feature = "backend_x11")]
+use crate::backend::x11::X11Surface;
+
 /// Create a `EGLPlatform<'a>` for the provided platform.
 ///
 /// # Arguments
@@ -162,6 +165,27 @@ impl EGLNativeDisplay for WinitWindow {
         } else {
             unreachable!("No backends for winit other then Wayland and X11 are supported")
         }
+    }
+}
+
+#[cfg(feature = "backend_x11")]
+impl EGLNativeDisplay for X11Surface {
+    fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
+        vec![
+            // todo: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_device.txt
+            // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_gbm.txt
+            egl_platform!(
+                PLATFORM_GBM_KHR,
+                self.device().as_raw(),
+                &["EGL_KHR_platform_gbm"]
+            ),
+            // see: https://www.khronos.org/registry/EGL/extensions/MESA/EGL_MESA_platform_gbm.txt
+            egl_platform!(
+                PLATFORM_GBM_MESA,
+                self.device().as_raw(),
+                &["EGL_MESA_platform_gbm"]
+            ),
+        ]
     }
 }
 

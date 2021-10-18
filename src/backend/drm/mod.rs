@@ -1,6 +1,6 @@
 //! This module represents abstraction on top the linux direct rendering manager api (drm).
 //!
-//! ## DrmDevice
+//! ## [`DrmDevice`]
 //!
 //! A device exposes certain properties, which are directly derived
 //! from the *device* as perceived by the direct rendering manager api (drm). These resources consists
@@ -39,7 +39,7 @@
 //! smithay does not make sure that `connectors` are not already in use by another `Surface`. Overlapping `connector`-Sets may
 //! be an error or result in undefined rendering behavior depending on the `Surface` implementation.
 //!
-//! ## DrmSurface
+//! ## [`DrmSurface`]
 //!
 //! A surface is a part of a `Device` that may output a picture to a number of connectors. It pumps pictures of buffers to outputs.
 //!
@@ -61,15 +61,24 @@
 //!
 //! Buffer management and details about the various types can be found in the [`allocator`-Module](crate::backend::allocator) and
 //! rendering abstractions, which can target these buffers can be found in the [`renderer`-Module](crate::backend::renderer).
+//!
+//! ## [`DrmNode`]
+//!
+//! A drm node refers to a drm device and the capabilities that may be performed using the node.
+//! Generally [`DrmNode`] is primarily used by clients (such as the output backends) which need
+//! to allocate buffers for use in X11 or Wayland. If you need to do mode setting, you should use
+//! [`DrmDevice`] instead.
 
 pub(crate) mod device;
 pub(self) mod error;
+pub(self) mod node;
 #[cfg(feature = "backend_session")]
 pub(self) mod session;
 pub(self) mod surface;
 
 pub use device::{DevPath, DrmDevice, DrmEvent};
 pub use error::Error as DrmError;
+pub use node::{ConvertErrorKind, ConvertNodeError, CreateDrmNodeError, DrmNode, NodeType};
 #[cfg(feature = "backend_gbm")]
 pub use surface::gbm::{Error as GbmBufferedSurfaceError, GbmBufferedSurface};
 pub use surface::DrmSurface;

@@ -4,7 +4,7 @@ use std::{
 
 use smithay::{
     reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
-    utils::{Logical, Point},
+    utils::{x11rb::X11Source, Logical, Point},
     wayland::compositor::give_role,
 };
 
@@ -26,10 +26,6 @@ use crate::{
     window_map::{Kind, WindowMap},
     AnvilState,
 };
-
-use x11rb_event_source::X11Source;
-
-mod x11rb_event_source;
 
 impl<BackendData: 'static> AnvilState<BackendData> {
     pub fn start_xwayland(&mut self) {
@@ -237,7 +233,7 @@ pub fn commit_hook(surface: &WlSurface) {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct X11Surface {
     surface: WlSurface,
 }
