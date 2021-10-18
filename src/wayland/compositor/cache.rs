@@ -176,7 +176,9 @@ impl MultiCache {
 
     /// Check if the container currently contains values for type `T`
     pub fn has<T: Cacheable + Send + 'static>(&self) -> bool {
-        self.caches.iter().any(|c| c.as_any().is::<T>())
+        self.caches
+            .iter()
+            .any(|c| (**c).as_any().is::<RefCell<CachedState<T>>>())
     }
 
     /// Commits the pending state, invoking Cacheable::commit()

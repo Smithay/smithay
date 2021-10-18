@@ -34,6 +34,12 @@
 
 ### Bugfixes
 
+#### Clients & Protocols
+
+- `Multicache::has()` now correctly does what is expected of it
+
+#### Backends
+
 - EGLBufferReader now checks if buffers are alive before using them.
 - LibSeat no longer panics on seat disable event.
 
