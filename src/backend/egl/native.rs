@@ -47,7 +47,7 @@ macro_rules! egl_platform {
             $native_display,
             $required_extensions,
             vec![ffi::egl::NONE as ffi::EGLint]
-        );
+        )
     };
     ($platform:ident, $native_display:expr, $required_extensions:expr, $attrib_list:expr) => {
         EGLPlatform::new(
