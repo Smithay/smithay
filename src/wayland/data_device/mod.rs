@@ -357,7 +357,6 @@ pub fn start_dnd<C>(
             ),
             serial,
         );
-        return;
     }
 }
 
