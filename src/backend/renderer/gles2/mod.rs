@@ -16,7 +16,7 @@ use cgmath::{prelude::*, Matrix3, Vector2};
 mod shaders;
 mod version;
 
-use super::{Bind, Frame, Renderer, Texture, Transform, Unbind};
+use super::{Bind, Frame, Renderer, Texture, TextureFilter, Transform, Unbind};
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
     Format,
@@ -420,6 +420,7 @@ impl Gles2Renderer {
     /// - This renderer has no default framebuffer, use `Bind::bind` before rendering.
     /// - Binding a new target, while another one is already bound, will replace the current target.
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
+    /// - Texture filtering starts with Nearest-downscaling and Linear-upscaling
     pub unsafe fn new<L>(context: EGLContext, logger: L) -> Result<Gles2Renderer, Gles2Error>
     where
         L: Into<Option<::slog::Logger>>,
@@ -495,7 +496,7 @@ impl Gles2Renderer {
         ];
 
         let (tx, rx) = channel();
-        let renderer = Gles2Renderer {
+        let mut renderer = Gles2Renderer {
             id: RENDERER_COUNTER.fetch_add(1, Ordering::SeqCst),
             gl,
             egl: context,
@@ -514,6 +515,8 @@ impl Gles2Renderer {
             logger: log,
             _not_send: std::ptr::null_mut(),
         };
+        renderer.downscale_filter(TextureFilter::Nearest);
+        renderer.upscale_filter(TextureFilter::Linear);
         renderer.egl.unbind()?;
         Ok(renderer)
     }
@@ -1006,6 +1009,28 @@ impl Renderer for Gles2Renderer {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
     type Frame = Gles2Frame;
+    
+    fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
+        self.make_current()?;
+        unsafe {
+            self.gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MIN_FILTER, match filter {
+                TextureFilter::Nearest => ffi::NEAREST as i32,
+                TextureFilter::Linear => ffi::LINEAR as i32,
+            });
+        }
+        Ok(())
+    }
+    fn upscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
+        self.make_current()?;
+        unsafe {
+            self.gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MAG_FILTER, match filter {
+                TextureFilter::Nearest => ffi::NEAREST as i32,
+                TextureFilter::Linear => ffi::LINEAR as i32,
+            });
+        }
+        Ok(())
+    }
+
 
     fn render<F, R>(
         &mut self,

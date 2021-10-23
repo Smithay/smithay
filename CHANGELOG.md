@@ -44,6 +44,7 @@
 - `KeyState`, `MouseButton`, `ButtonState` and `Axis` in `backend::input` now derive `Hash`.
 - New `DrmNode` type in drm backend. This is primarily for use a backend which needs to run as client inside another session.
 - The button code for a `PointerButtonEvent` may now be obtained using `PointerButtonEvent::button_code`. 
+- `Renderer` now allows texture filtering methods to be set.
 
 ### Bugfixes
 

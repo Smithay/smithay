@@ -53,6 +53,15 @@ pub enum Transform {
     Flipped270,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+/// Texture filtering methods
+pub enum TextureFilter {
+    /// Returns the value of the texture element that is nearest (in Manhattan distance) to the center of the pixel being textured.
+    Linear,
+    /// Returns the weighted average of the four texture elements that are closest to the center of the pixel being textured.
+    Nearest,
+}
+
 impl Transform {
     /// A projection matrix to apply this transformation
     pub fn matrix(&self) -> Matrix3<f32> {
@@ -254,6 +263,11 @@ pub trait Renderer {
     type TextureId: Texture;
     /// Type representing a currently in-progress frame during the [`Renderer::render`]-call
     type Frame: Frame<Error = Self::Error, TextureId = Self::TextureId>;
+
+    /// Set the filter method to be used when rendering a texture into a smaller area than its size
+    fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error>;
+    /// Set the filter method to be used when rendering a texture into a larger area than its size
+    fn upscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error>;
 
     /// Initialize a rendering context on the current rendering target with given dimensions and transformation.
     ///
