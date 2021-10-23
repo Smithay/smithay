@@ -14,7 +14,7 @@ use crate::utils::{Buffer, Physical, Point, Rectangle, Size};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::compositor::SurfaceData;
-use cgmath::{prelude::*, Matrix3, Vector2, Vector3};
+use cgmath::Matrix3;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
@@ -172,15 +172,6 @@ pub trait Frame {
     /// This operation is only valid in between a `begin` and `finish`-call.
     /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
     fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error>;
-    /// Render a texture to the current target using given projection matrix and alpha.
-    /// The given vertices are used to source the texture. This is mostly useful for cropping the texture.
-    fn render_texture(
-        &mut self,
-        texture: &Self::TextureId,
-        matrix: Matrix3<f32>,
-        tex_coords: [Vector2<f32>; 4],
-        alpha: f32,
-    ) -> Result<(), Self::Error>;
 
     /// Render a texture to the current target as a flat 2d-plane at a given
     /// position and applying the given transformation with the given alpha value.
@@ -218,41 +209,7 @@ pub trait Frame {
         dest: Rectangle<f64, Physical>,
         transform: Transform,
         alpha: f32,
-    ) -> Result<(), Self::Error> {
-        let mut mat = Matrix3::<f32>::identity();
-
-        // position and scale
-        mat = mat * Matrix3::from_translation(Vector2::new(dest.loc.x as f32, dest.loc.y as f32));
-        mat = mat * Matrix3::from_nonuniform_scale(dest.size.w as f32, dest.size.h as f32);
-
-        //apply surface transformation
-        mat = mat * Matrix3::from_translation(Vector2::new(0.5, 0.5));
-        if transform == Transform::Normal {
-            assert_eq!(mat, mat * transform.invert().matrix());
-            assert_eq!(transform.matrix(), Matrix3::<f32>::identity());
-        }
-        mat = mat * transform.invert().matrix();
-        mat = mat * Matrix3::from_translation(Vector2::new(-0.5, -0.5));
-
-        // this matrix should be regular, we can expect invert to succeed
-        let tex_size = texture.size();
-        let texture_mat = Matrix3::from_nonuniform_scale(tex_size.w as f32, tex_size.h as f32)
-            .invert()
-            .unwrap();
-        let verts = [
-            (texture_mat * Vector3::new((src.loc.x + src.size.w) as f32, src.loc.y as f32, 0.0)).truncate(), // top-right
-            (texture_mat * Vector3::new(src.loc.x as f32, src.loc.y as f32, 0.0)).truncate(), // top-left
-            (texture_mat
-                * Vector3::new(
-                    (src.loc.x + src.size.w) as f32,
-                    (src.loc.y + src.size.h) as f32,
-                    0.0,
-                ))
-            .truncate(), // bottom-right
-            (texture_mat * Vector3::new(src.loc.x as f32, (src.loc.y + src.size.h) as f32, 0.0)).truncate(), // bottom-left
-        ];
-        self.render_texture(texture, mat, verts, alpha)
-    }
+    ) -> Result<(), Self::Error>;
 }
 
 /// Abstraction of commonly used rendering operations for compositors.
