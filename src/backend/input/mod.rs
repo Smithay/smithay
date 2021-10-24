@@ -87,10 +87,17 @@ pub enum KeyState {
 
 /// Trait for keyboard event
 pub trait KeyboardKeyEvent<B: InputBackend>: Event<B> {
-    /// Code of the pressed key. See `linux/input-event-codes.h`
+    /// Returns the numerical button code of the keyboard button.
+    ///
+    /// The value will correspond to one `KEY_` constants from  the Linux [input event codes] inside
+    /// `input-event-codes.h`.
+    ///
+    /// [input event codes]: https://gitlab.freedesktop.org/libinput/libinput/-/blob/main/include/linux/linux/input-event-codes.h
     fn key_code(&self) -> u32;
+
     /// State of the key
     fn state(&self) -> KeyState;
+
     /// Total number of keys pressed on all devices on the associated [`Seat`](crate::wayland::seat::Seat)
     fn count(&self) -> u32;
 }
