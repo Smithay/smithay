@@ -175,13 +175,14 @@ pub trait Frame {
 
     /// Render a texture to the current target as a flat 2d-plane at a given
     /// position and applying the given transformation with the given alpha value.
+    /// (Meaning `src_transform` should match the orientation of surface being rendered).
     fn render_texture_at(
         &mut self,
         texture: &Self::TextureId,
         pos: Point<f64, Physical>,
         texture_scale: i32,
         output_scale: f64,
-        transform: Transform,
+        src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
         self.render_texture_from_to(
@@ -195,19 +196,20 @@ pub trait Frame {
                     .to_f64()
                     .to_physical(output_scale),
             ),
-            transform,
+            src_transform,
             alpha,
         )
     }
 
-    /// Render part of a texture as given by src to the current target into the rectangle described by dest
-    /// as a flat 2d-plane after applying the given transformations.
+    /// Render part of a texture as given by src to the current target into the rectangle described by dst
+    /// as a flat 2d-plane after applying the inverse of the given transformation.
+    /// (Meaning `src_transform` should match the orientation of surface being rendered).
     fn render_texture_from_to(
         &mut self,
         texture: &Self::TextureId,
         src: Rectangle<i32, Buffer>,
-        dest: Rectangle<f64, Physical>,
-        transform: Transform,
+        dst: Rectangle<f64, Physical>,
+        src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error>;
 }
@@ -236,7 +238,7 @@ pub trait Renderer {
     fn render<F, R>(
         &mut self,
         size: Size<i32, Physical>,
-        transform: Transform,
+        dst_transform: Transform,
         rendering: F,
     ) -> Result<R, Self::Error>
     where
