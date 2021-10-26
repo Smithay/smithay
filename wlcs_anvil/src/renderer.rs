@@ -1,10 +1,9 @@
 use std::cell::Cell;
 
-use cgmath::Vector2;
 use smithay::{
     backend::{
         allocator::dmabuf::Dmabuf,
-        renderer::{Frame, ImportDma, ImportShm, Renderer, Texture, Transform},
+        renderer::{Frame, ImportDma, ImportShm, Renderer, Texture, TextureFilter, Transform},
         SwapBuffersError,
     },
     reexports::wayland_server::protocol::wl_buffer,
@@ -28,7 +27,7 @@ impl Renderer for DummyRenderer {
     fn render<F, R>(
         &mut self,
         _size: Size<i32, Physical>,
-        _transform: Transform,
+        _dst_transform: Transform,
         rendering: F,
     ) -> Result<R, Self::Error>
     where
@@ -36,6 +35,14 @@ impl Renderer for DummyRenderer {
     {
         let mut frame = DummyFrame {};
         Ok(rendering(self, &mut frame))
+    }
+
+    fn upscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn downscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
+        Ok(())
     }
 }
 
@@ -94,11 +101,12 @@ impl Frame for DummyFrame {
         Ok(())
     }
 
-    fn render_texture(
+    fn render_texture_from_to(
         &mut self,
         _texture: &Self::TextureId,
-        _matrix: cgmath::Matrix3<f32>,
-        _tex_coords: [Vector2<f32>; 4],
+        _src: Rectangle<i32, Buffer>,
+        _dst: Rectangle<f64, Physical>,
+        _src_transform: Transform,
         _alpha: f32,
     ) -> Result<(), Self::Error> {
         Ok(())
