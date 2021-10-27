@@ -106,6 +106,8 @@ pub struct WinitEventLoop {
     initialized: bool,
     size: Rc<RefCell<WindowSize>>,
     resize_notification: Rc<Cell<Option<Size<i32, Physical>>>>,
+    /// Whether winit is using Wayland or X11 as it's backend.
+    is_x11: bool,
 }
 
 /// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait and a corresponding
@@ -164,41 +166,47 @@ where
     debug!(log, "Window created");
 
     let reqs = Default::default();
-    let (display, context, surface) = {
+    let (display, context, surface, is_x11) = {
         let display = EGLDisplay::new(&winit_window, log.clone())?;
         let context = EGLContext::new_with_config(&display, attributes, reqs, log.clone())?;
 
-        let surface = if let Some(wl_surface) = winit_window.wayland_surface() {
+        let (surface, is_x11) = if let Some(wl_surface) = winit_window.wayland_surface() {
             debug!(log, "Winit backend: Wayland");
             let size = winit_window.inner_size();
             let surface = unsafe {
                 wegl::WlEglSurface::new_from_raw(wl_surface as *mut _, size.width as i32, size.height as i32)
             };
-            EGLSurface::new(
-                &display,
-                context.pixel_format().unwrap(),
-                context.config_id(),
-                surface,
-                log.clone(),
+            (
+                EGLSurface::new(
+                    &display,
+                    context.pixel_format().unwrap(),
+                    context.config_id(),
+                    surface,
+                    log.clone(),
+                )
+                .map_err(EGLError::CreationFailed)?,
+                false,
             )
-            .map_err(EGLError::CreationFailed)?
         } else if let Some(xlib_window) = winit_window.xlib_window().map(native::XlibWindow) {
             debug!(log, "Winit backend: X11");
-            EGLSurface::new(
-                &display,
-                context.pixel_format().unwrap(),
-                context.config_id(),
-                xlib_window,
-                log.clone(),
+            (
+                EGLSurface::new(
+                    &display,
+                    context.pixel_format().unwrap(),
+                    context.config_id(),
+                    xlib_window,
+                    log.clone(),
+                )
+                .map_err(EGLError::CreationFailed)?,
+                true,
             )
-            .map_err(EGLError::CreationFailed)?
         } else {
             unreachable!("No backends for winit other then Wayland and X11 are supported")
         };
 
         let _ = context.unbind();
 
-        (display, context, surface)
+        (display, context, surface, is_x11)
     };
 
     let (w, h): (u32, u32) = winit_window.inner_size().into();
@@ -230,6 +238,7 @@ where
             initialized: false,
             logger: log.new(o!("smithay_winit_component" => "event_loop")),
             size,
+            is_x11,
         },
     ))
 }
@@ -338,6 +347,7 @@ impl WinitEventLoop {
             let resize_notification = &self.resize_notification;
             let logger = &self.logger;
             let window_size = &self.size;
+            let is_x11 = self.is_x11;
 
             if !self.initialized {
                 callback(Input(InputEvent::DeviceAdded {
@@ -428,7 +438,12 @@ impl WinitEventLoop {
                             }
                             WindowEvent::MouseInput { state, button, .. } => {
                                 callback(Input(InputEvent::PointerButton {
-                                    event: WinitMouseInputEvent { time, button, state },
+                                    event: WinitMouseInputEvent {
+                                        time,
+                                        button,
+                                        state,
+                                        is_x11,
+                                    },
                                 }));
                             }
 

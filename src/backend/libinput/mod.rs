@@ -188,13 +188,8 @@ impl backend::Event<LibinputInputBackend> for event::pointer::PointerButtonEvent
 }
 
 impl backend::PointerButtonEvent<LibinputInputBackend> for event::pointer::PointerButtonEvent {
-    fn button(&self) -> backend::MouseButton {
-        match self.button() {
-            0x110 => backend::MouseButton::Left,
-            0x111 => backend::MouseButton::Right,
-            0x112 => backend::MouseButton::Middle,
-            x => backend::MouseButton::Other(x as u8),
-        }
+    fn button_code(&self) -> u32 {
+        self.button()
     }
 
     fn state(&self) -> backend::ButtonState {
