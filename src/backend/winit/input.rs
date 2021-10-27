@@ -6,9 +6,9 @@ use winit::{
 };
 
 use crate::backend::input::{
-    Axis, AxisSource, ButtonState, Device, DeviceCapability, Event, InputBackend, InputEvent, KeyState,
-    KeyboardKeyEvent, MouseButton, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent,
-    TouchCancelEvent, TouchDownEvent, TouchMotionEvent, TouchSlot, TouchUpEvent, UnusedEvent,
+    self, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event, InputBackend, InputEvent, KeyState,
+    KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent, TouchCancelEvent,
+    TouchDownEvent, TouchMotionEvent, TouchSlot, TouchUpEvent, UnusedEvent,
 };
 
 use super::{WindowSize, WinitError};
@@ -170,6 +170,7 @@ pub struct WinitMouseInputEvent {
     pub(crate) time: u32,
     pub(crate) button: WinitMouseButton,
     pub(crate) state: ElementState,
+    pub(crate) is_x11: bool,
 }
 
 impl Event<WinitInput> for WinitMouseInputEvent {
@@ -183,8 +184,19 @@ impl Event<WinitInput> for WinitMouseInputEvent {
 }
 
 impl PointerButtonEvent<WinitInput> for WinitMouseInputEvent {
-    fn button(&self) -> MouseButton {
-        self.button.into()
+    fn button_code(&self) -> u32 {
+        match self.button {
+            WinitMouseButton::Left => 0x110,
+            WinitMouseButton::Right => 0x111,
+            WinitMouseButton::Middle => 0x112,
+            WinitMouseButton::Other(b) => {
+                if self.is_x11 {
+                    input::xorg_mouse_to_libinput(b as u32)
+                } else {
+                    b as u32
+                }
+            }
+        }
     }
 
     fn state(&self) -> ButtonState {
@@ -329,17 +341,6 @@ impl Event<WinitInput> for WinitTouchCancelledEvent {
 impl TouchCancelEvent<WinitInput> for WinitTouchCancelledEvent {
     fn slot(&self) -> Option<TouchSlot> {
         Some(TouchSlot::new(self.id))
-    }
-}
-
-impl From<WinitMouseButton> for MouseButton {
-    fn from(button: WinitMouseButton) -> MouseButton {
-        match button {
-            WinitMouseButton::Left => MouseButton::Left,
-            WinitMouseButton::Right => MouseButton::Right,
-            WinitMouseButton::Middle => MouseButton::Middle,
-            WinitMouseButton::Other(num) => MouseButton::Other(num as u8),
-        }
     }
 }
 

@@ -4,8 +4,7 @@ use super::X11Error;
 use crate::{
     backend::input::{
         self, Axis, AxisSource, ButtonState, Device, DeviceCapability, InputBackend, InputEvent, KeyState,
-        KeyboardKeyEvent, MouseButton, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent,
-        UnusedEvent,
+        KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent, UnusedEvent,
     },
     utils::{Logical, Size},
 };
@@ -120,7 +119,7 @@ impl PointerAxisEvent<X11Input> for X11MouseWheelEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct X11MouseInputEvent {
     pub(crate) time: u32,
-    pub(crate) button: MouseButton,
+    pub(crate) raw: u32,
     pub(crate) state: ButtonState,
 }
 
@@ -135,8 +134,8 @@ impl input::Event<X11Input> for X11MouseInputEvent {
 }
 
 impl PointerButtonEvent<X11Input> for X11MouseInputEvent {
-    fn button(&self) -> MouseButton {
-        self.button
+    fn button_code(&self) -> u32 {
+        input::xorg_mouse_to_libinput(self.raw)
     }
 
     fn state(&self) -> ButtonState {

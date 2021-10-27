@@ -10,6 +10,9 @@
 - `XdgPositionerState` moved to `XdgPopupState` and added to `XdgRequest::NewPopup`
 - `PopupSurface::send_configure` now checks the protocol version and returns an `Result`
 - `KeyboardHandle::input` filter closure now receives a `KeysymHandle` instead of a `Keysym` and returns a `FilterResult`.
+- `PointerButtonEvent::button` now returns an `Option<MouseButton>`.
+- `MouseButton` is now non-exhaustive.
+- Remove `Other` and add `Forward` and `Back` variants to `MouseButton`. Use the new `PointerButtonEvent::button_code` in place of `Other`.
 
 #### Backends
 
@@ -40,6 +43,7 @@
 - `x11rb` event source integration used in anvil's XWayland implementation is now part of smithay at `utils::x11rb`. Enabled through the `x11rb_event_source` feature. 
 - `KeyState`, `MouseButton`, `ButtonState` and `Axis` in `backend::input` now derive `Hash`.
 - New `DrmNode` type in drm backend. This is primarily for use a backend which needs to run as client inside another session.
+- The button code for a `PointerButtonEvent` may now be obtained using `PointerButtonEvent::button_code`. 
 
 ### Bugfixes
 

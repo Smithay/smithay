@@ -59,7 +59,7 @@ use crate::{
     backend::{
         allocator::dmabuf::{AsDmabuf, Dmabuf},
         drm::{DrmNode, NodeType},
-        input::{Axis, ButtonState, InputEvent, KeyState, MouseButton},
+        input::{Axis, ButtonState, InputEvent, KeyState},
     },
     utils::{x11rb::X11Source, Logical, Size},
 };
@@ -625,115 +625,69 @@ impl EventSource for X11Backend {
                         // 6 => Axis::Horizontal -1.0
                         // 7 => Axis::Horizontal +1.0
                         // Others => ??
-                        match button_press.detail {
-                            1..=3 => {
-                                // Clicking a button.
-                                callback(
-                                    Input(InputEvent::PointerButton {
-                                        event: X11MouseInputEvent {
-                                            time: button_press.time,
-                                            button: match button_press.detail {
-                                                1 => MouseButton::Left,
 
-                                                // Confusion: XCB docs for ButtonIndex and what plasma does don't match?
-                                                2 => MouseButton::Middle,
+                        // Scrolling
+                        if button_press.detail >= 4 && button_press.detail <= 7 {
+                            callback(
+                                Input(InputEvent::PointerAxis {
+                                    event: X11MouseWheelEvent {
+                                        time: button_press.time,
+                                        axis: match button_press.detail {
+                                            // Up | Down
+                                            4 | 5 => Axis::Vertical,
 
-                                                3 => MouseButton::Right,
+                                            // Right | Left
+                                            6 | 7 => Axis::Horizontal,
 
-                                                _ => unreachable!(),
-                                            },
-                                            state: ButtonState::Pressed,
+                                            _ => unreachable!(),
                                         },
-                                    }),
-                                    &mut event_window,
-                                )
-                            }
+                                        amount: match button_press.detail {
+                                            // Up | Right
+                                            4 | 7 => 1.0,
 
-                            4..=7 => {
-                                // Scrolling
-                                callback(
-                                    Input(InputEvent::PointerAxis {
-                                        event: X11MouseWheelEvent {
-                                            time: button_press.time,
-                                            axis: match button_press.detail {
-                                                // Up | Down
-                                                4 | 5 => Axis::Vertical,
+                                            // Down | Left
+                                            5 | 6 => -1.0,
 
-                                                // Right | Left
-                                                6 | 7 => Axis::Horizontal,
-
-                                                _ => unreachable!(),
-                                            },
-                                            amount: match button_press.detail {
-                                                // Up | Right
-                                                4 | 7 => 1.0,
-
-                                                // Down | Left
-                                                5 | 6 => -1.0,
-
-                                                _ => unreachable!(),
-                                            },
+                                            _ => unreachable!(),
                                         },
-                                    }),
-                                    &mut event_window,
-                                )
-                            }
-
-                            // Unknown mouse button
-                            _ => callback(
+                                    },
+                                }),
+                                &mut event_window,
+                            )
+                        } else {
+                            callback(
                                 Input(InputEvent::PointerButton {
                                     event: X11MouseInputEvent {
                                         time: button_press.time,
-                                        button: MouseButton::Other(button_press.detail),
+                                        raw: button_press.detail as u32,
                                         state: ButtonState::Pressed,
                                     },
                                 }),
                                 &mut event_window,
-                            ),
+                            )
                         }
                     }
                 }
 
                 x11::Event::ButtonRelease(button_release) => {
                     if button_release.event == window.id {
-                        match button_release.detail {
-                            1..=3 => {
-                                // Releasing a button.
-                                callback(
-                                    Input(InputEvent::PointerButton {
-                                        event: X11MouseInputEvent {
-                                            time: button_release.time,
-                                            button: match button_release.detail {
-                                                1 => MouseButton::Left,
-
-                                                2 => MouseButton::Middle,
-
-                                                3 => MouseButton::Right,
-
-                                                _ => unreachable!(),
-                                            },
-                                            state: ButtonState::Released,
-                                        },
-                                    }),
-                                    &mut event_window,
-                                )
-                            }
-
-                            // We may ignore the release tick for scrolling, as the X server will
-                            // always emit this immediately after press.
-                            4..=7 => (),
-
-                            _ => callback(
-                                Input(InputEvent::PointerButton {
-                                    event: X11MouseInputEvent {
-                                        time: button_release.time,
-                                        button: MouseButton::Other(button_release.detail),
-                                        state: ButtonState::Released,
-                                    },
-                                }),
-                                &mut event_window,
-                            ),
+                        // Ignore release tick because this event is always sent immediately after the press
+                        // tick for scrolling and the backend will dispatch release event automatically during
+                        // the press event.
+                        if button_release.detail >= 4 && button_release.detail <= 7 {
+                            return;
                         }
+
+                        callback(
+                            Input(InputEvent::PointerButton {
+                                event: X11MouseInputEvent {
+                                    time: button_release.time,
+                                    raw: button_release.detail as u32,
+                                    state: ButtonState::Released,
+                                },
+                            }),
+                            &mut event_window,
+                        );
                     }
                 }
 

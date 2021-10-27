@@ -86,12 +86,7 @@ impl<Backend> AnvilState<Backend> {
 
     fn on_pointer_button<B: InputBackend>(&mut self, evt: B::PointerButtonEvent) {
         let serial = SCOUNTER.next_serial();
-        let button = match evt.button() {
-            input::MouseButton::Left => 0x110,
-            input::MouseButton::Right => 0x111,
-            input::MouseButton::Middle => 0x112,
-            input::MouseButton::Other(b) => b as u32,
-        };
+        let button = evt.button_code();
         let state = match evt.state() {
             input::ButtonState::Pressed => {
                 // change the keyboard focus unless the pointer is grabbed
