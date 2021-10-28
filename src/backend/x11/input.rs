@@ -1,9 +1,8 @@
 //! Input backend implementation for the X11 backend.
 
-use super::X11Error;
 use crate::{
     backend::input::{
-        self, Axis, AxisSource, ButtonState, Device, DeviceCapability, InputBackend, InputEvent, KeyState,
+        self, Axis, AxisSource, ButtonState, Device, DeviceCapability, InputBackend, KeyState,
         KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent, UnusedEvent,
     },
     utils::{Logical, Size},
@@ -182,8 +181,6 @@ impl PointerMotionAbsoluteEvent<X11Input> for X11MouseMovedEvent {
 }
 
 impl InputBackend for X11Input {
-    type EventError = X11Error;
-
     type Device = X11VirtualDevice;
     type KeyboardKeyEvent = X11KeyboardInputEvent;
     type PointerAxisEvent = X11MouseWheelEvent;
@@ -204,13 +201,4 @@ impl InputBackend for X11Input {
     type TabletToolButtonEvent = UnusedEvent;
 
     type SpecialEvent = UnusedEvent;
-
-    fn dispatch_new_events<F>(&mut self, _callback: F) -> Result<(), Self::EventError>
-    where
-        F: FnMut(InputEvent<Self>),
-    {
-        // The implementation of the trait here is exclusively for type definitions.
-        // See `X11Event::Input` to handle input events.
-        unreachable!()
-    }
 }

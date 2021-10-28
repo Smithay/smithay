@@ -22,6 +22,8 @@
 - All winit backend internal event types now use `WinitInput` as the backend type.
 - `WinitEventLoop::dispatch_new_events` is now used to receive some `WinitEvent`s.
 - Added `TabletToolType::Unknown` as an option for tablet events
+- Remove `InputBackend::dispatch_new_events`, turning `InputBackend` into a definition of backend event types. Future input backends should be a `calloop::EventSource`.
+- Remove `InputBackend::EventError` associated type as it is unneeded since `dispatch_new_events` was removed.
 
 ### Additions
 
