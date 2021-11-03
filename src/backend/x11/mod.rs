@@ -13,16 +13,33 @@
 //!
 //! ```rust,no_run
 //! # use std::error::Error;
-//! # use smithay::backend::x11::X11Backend;
+//! # use smithay::backend::x11::{X11Backend, X11Surface};
+//! use smithay::backend::allocator::Fourcc;
+//! use smithay::reexports::gbm;
+//!
 //! # struct CompositorState;
 //! fn init_x11_backend(
 //!    handle: calloop::LoopHandle<CompositorState>,
 //!    logger: slog::Logger
 //! ) -> Result<(), Box<dyn Error>> {
 //!     // Create the backend, also yielding a surface that may be used to render to the window.
-//!     let (backend, surface) = X11Backend::new(logger)?;
+//!     let mut backend = X11Backend::new(logger)?;
 //!     // You can get a handle to the window the backend has created for later use.
 //!     let window = backend.window();
+//!
+//!     // To render to the window the X11 backend creates, we need to create an X11 surface.
+//!
+//!     // Get the DRM node used by the X server for direct rendering.
+//!     let drm_node = backend.drm_node()?;
+//!     // Create the gbm device for allocating buffers
+//!     let device = gbm::Device::new(drm_node)?;
+//!
+//!     // Finally create the X11 surface, you will use this to obtain buffers that will be presented to the
+//!     // window.
+//!
+//!     // It is more than likely you will want more robust format detection rather than forcing `Argb8888`,
+//!     // but that is outside of the scope of the example.
+//!     let surface = X11Surface::new(&mut backend, device, Fourcc::Argb8888);
 //!
 //!     // Insert the backend into the event loop to receive events.
 //!     handle.insert_source(backend, |event, _window, state| {
@@ -125,8 +142,12 @@ pub struct X11Backend {
     source: X11Source,
     screen_number: usize,
     window: Arc<WindowInner>,
-    resize: Sender<Size<u16, Logical>>,
+    /// Channel used to send resize notifications to the surface.
+    ///
+    /// This value will be [`None`] if no surface is bound to the window managed by the backend.
+    resize: Option<Sender<Size<u16, Logical>>>,
     key_counter: Arc<AtomicU32>,
+    window_format: DrmFourcc,
 }
 
 atom_manager! {
@@ -143,7 +164,7 @@ impl X11Backend {
     /// Initializes the X11 backend.
     ///
     /// This connects to the X server and configures the window using the default options.
-    pub fn new<L>(logger: L) -> Result<(X11Backend, X11Surface), X11Error>
+    pub fn new<L>(logger: L) -> Result<X11Backend, X11Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -154,7 +175,7 @@ impl X11Backend {
     ///
     /// This connects to the X server and configures the window using the default size and the
     /// specified window title.
-    pub fn with_title<L>(title: &str, logger: L) -> Result<(X11Backend, X11Surface), X11Error>
+    pub fn with_title<L>(title: &str, logger: L) -> Result<X11Backend, X11Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -165,7 +186,7 @@ impl X11Backend {
     ///
     /// This connects to the X server and configures the window using the default window title
     /// and the specified window size.
-    pub fn with_size<L>(size: Size<u16, Logical>, logger: L) -> Result<(X11Backend, X11Surface), X11Error>
+    pub fn with_size<L>(size: Size<u16, Logical>, logger: L) -> Result<X11Backend, X11Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -179,7 +200,7 @@ impl X11Backend {
         size: Size<u16, Logical>,
         title: &str,
         logger: L,
-    ) -> Result<(X11Backend, X11Surface), X11Error>
+    ) -> Result<X11Backend, X11Error>
     where
         L: Into<Option<slog::Logger>>,
     {
@@ -247,21 +268,16 @@ impl X11Backend {
 
         info!(logger, "Window created");
 
-        let (resize_send, resize_recv) = mpsc::channel();
-
-        let backend = X11Backend {
+        Ok(X11Backend {
             log: logger,
             source,
             connection,
             window,
             key_counter: Arc::new(AtomicU32::new(0)),
             screen_number,
-            resize: resize_send,
-        };
-
-        let surface = X11Surface::new(&backend, format, resize_recv)?;
-
-        Ok((backend, surface))
+            resize: None,
+            window_format: format,
+        })
     }
 
     /// Returns the default screen number of the X server.
@@ -277,6 +293,36 @@ impl X11Backend {
     /// Returns a handle to the X11 window created by the backend.
     pub fn window(&self) -> Window {
         self.window.clone().into()
+    }
+
+    /// Returns the format of the window.
+    pub fn format(&self) -> DrmFourcc {
+        self.window_format
+    }
+
+    /// Returns the DRM node the X server uses for direct rendering.
+    ///
+    /// The DRM node may be used to create a [`gbm::Device`] to allocate buffers.
+    pub fn drm_node(&self) -> Result<DrmNode, X11Error> {
+        // Kernel documentation explains why we should prefer the node to be a render node:
+        // https://kernel.readthedocs.io/en/latest/gpu/drm-uapi.html
+        //
+        // > Render nodes solely serve render clients, that is, no modesetting or privileged ioctls
+        // > can be issued on render nodes. Only non-global rendering commands are allowed. If a
+        // > driver supports render nodes, it must advertise it via the DRIVER_RENDER DRM driver
+        // > capability. If not supported, the primary node must be used for render clients together
+        // > with the legacy drmAuth authentication procedure.
+        //
+        // Since giving the X11 backend the ability to do modesetting is a big nono, we try to only
+        // ever create a gbm device from a render node.
+        //
+        // Of course if the DRM device does not support render nodes, no DRIVER_RENDER capability, then
+        // fall back to the primary node.
+
+        // We cannot fallback on the egl_init method, because there is no way for us to authenticate a primary node.
+        // dri3 does not work for closed-source drivers, but *may* give us a authenticated fd as a fallback.
+        // As a result we try to use egl for a cleaner, better supported approach at first and only if that fails use dri3.
+        todo!()
     }
 }
 
@@ -295,83 +341,17 @@ pub struct X11Surface {
 }
 
 impl X11Surface {
-    fn new(
-        backend: &X11Backend,
+    /// Creates a surface that allocates and presents buffers to the window managed by the backend.
+    ///
+    /// This will fail if the backend has already been used to create a surface.
+    pub fn new(
+        backend: &mut X11Backend,
+        device: gbm::Device<DrmNode>,
         format: DrmFourcc,
-        resize: Receiver<Size<u16, Logical>>,
     ) -> Result<X11Surface, X11Error> {
-        let connection = &backend.connection;
-     
-        // Determine which drm-device the Display is using.
-        let screen = &connection.setup().roots[backend.screen()];
-        // provider being NONE tells the X server to use the RandR provider.
-        let dri3 = match connection.dri3_open(screen.root, x11rb::NONE)?.reply() {
-            Ok(reply) => reply,
-            Err(err) => {
-                return Err(if let ReplyError::X11Error(ref protocol_error) = err {
-                    match protocol_error.error_kind {
-                        // Implementation is risen when the renderer is not capable of X server is not capable
-                        // of rendering at all.
-                        ErrorKind::Implementation => X11Error::CannotDirectRender,
-                        // Match may occur when the node cannot be authenticated for the client.
-                        ErrorKind::Match => X11Error::CannotDirectRender,
-                        _ => err.into(),
-                    }
-                } else {
-                    err.into()
-                });
-            }
-        };
-     
-        // Take ownership of the container's inner value so we do not need to duplicate the fd.
-        // This is fine because the X server will always open a new file descriptor.
-        let drm_device_fd = dri3.device_fd.into_raw_fd();
-     
-        let fd_flags =
-            fcntl::fcntl(drm_device_fd.as_raw_fd(), fcntl::F_GETFD).map_err(AllocateBuffersError::from)?;
-     
-        // Enable the close-on-exec flag.
-        fcntl::fcntl(
-            drm_device_fd,
-            fcntl::F_SETFD(fcntl::FdFlag::from_bits_truncate(fd_flags) | fcntl::FdFlag::FD_CLOEXEC),
-        )
-        .map_err(AllocateBuffersError::from)?;
-        let mut drm_node = DrmNode::from_fd(drm_device_fd).map_err(Into::<AllocateBuffersError>::into)?;
-     
-        if drm_node.ty() != NodeType::Render {
-            if drm_node.has_render() {
-                // Try to get the render node.
-                if let Some(path) = drm_node.dev_path_with_type(NodeType::Render) {
-                    if let Ok(node) = fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
-                        .map_err(Into::<std::io::Error>::into)
-                        .map_err(CreateDrmNodeError::Io)
-                        .and_then(DrmNode::from_fd)
-                    {
-                        drm_node = node;
-                    } else {
-                        slog::warn!(&backend.log, "Could not create render node from existing DRM node, falling back to primary node");    
-                    }
-                }
-            }
+        if backend.resize.is_some() {
+            return Err(X11Error::SurfaceExists);
         }
-
-        // Kernel documentation explains why we should prefer the node to be a render node:
-        // https://kernel.readthedocs.io/en/latest/gpu/drm-uapi.html
-        //
-        // > Render nodes solely serve render clients, that is, no modesetting or privileged ioctls
-        // > can be issued on render nodes. Only non-global rendering commands are allowed. If a
-        // > driver supports render nodes, it must advertise it via the DRIVER_RENDER DRM driver
-        // > capability. If not supported, the primary node must be used for render clients together
-        // > with the legacy drmAuth authentication procedure.
-        //
-        // Since giving the X11 backend the ability to do modesetting is a big nono, we try to only
-        // ever create a gbm device from a render node.
-        //
-        // Of course if the DRM device does not support render nodes, no DRIVER_RENDER capability, then
-        // fall back to the primary node.
-
-        // Finally create a GBMDevice to manage the buffers.
-        let device = gbm::Device::new(drm_node).map_err(Into::<AllocateBuffersError>::into)?;
 
         let size = backend.window().size();
         let current = device
@@ -386,6 +366,10 @@ impl X11Surface {
             .export()
             .map_err(Into::<AllocateBuffersError>::into)?;
 
+        let (sender, recv) = mpsc::channel();
+
+        backend.resize = Some(sender);
+
         Ok(X11Surface {
             connection: Arc::downgrade(&backend.connection),
             window: backend.window(),
@@ -395,7 +379,7 @@ impl X11Surface {
             height: size.h,
             current,
             next,
-            resize,
+            resize: recv,
         })
     }
 
@@ -770,7 +754,10 @@ impl EventSource for X11Backend {
                             }
 
                             (callback)(X11Event::Resized(configure_notify_size), &mut event_window);
-                            let _ = resize.send(configure_notify_size);
+
+                            if let Some(resize_sender) = resize {
+                                let _ = resize_sender.send(configure_notify_size);
+                            }
                         }
                     }
                 }

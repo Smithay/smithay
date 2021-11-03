@@ -24,6 +24,10 @@ pub enum X11Error {
     #[error("Creating the window failed")]
     CreateWindow(CreateWindowError),
 
+    /// An X11 surface already exists for this backend.
+    #[error("An X11 surface already exists for this backend")]
+    SurfaceExists,
+
     /// The X server is not capable of direct rendering.
     #[error("The X server is not capable of direct rendering")]
     CannotDirectRender,

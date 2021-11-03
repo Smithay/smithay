@@ -31,6 +31,7 @@ use std::fmt;
 
 pub mod context;
 pub use self::context::EGLContext;
+mod device;
 mod error;
 pub use self::error::*;
 use crate::backend::SwapBuffersError as GraphicsSwapBuffersError;
@@ -47,6 +48,7 @@ use self::{display::EGLDisplayHandle, ffi::egl::types::EGLImage};
 pub mod display;
 pub mod native;
 pub mod surface;
+pub use self::device::EGLDevice;
 pub use self::display::EGLDisplay;
 pub use self::surface::EGLSurface;
 

@@ -12,6 +12,7 @@ use smithay::{
     },
     reexports::{
         calloop::EventLoop,
+        gbm,
         wayland_server::{protocol::wl_output, Display},
     },
     wayland::{
@@ -53,9 +54,17 @@ pub fn run_x11(log: Logger) {
     let mut event_loop = EventLoop::try_new().unwrap();
     let display = Rc::new(RefCell::new(Display::new()));
 
-    let (backend, surface) =
-        X11Backend::with_title("Anvil", log.clone()).expect("Failed to initialize X11 backend");
-    let window = backend.window();
+    let mut backend = X11Backend::with_title("Anvil", log.clone()).expect("Failed to initialize X11 backend");
+    // Obtain the DRM node the X server uses for direct rendering.
+    let drm_node = backend
+        .drm_node()
+        .expect("Could not get DRM node used by X server");
+
+    // Create the gbm device for buffer allocation and the X11 surface which presents to the window.
+    let device = gbm::Device::new(drm_node).expect("Failed to create gbm device");
+    let format = backend.format();
+    let surface =
+        X11Surface::new(&mut backend, device, format).expect("Failed to create X11 surface");
 
     // Initialize EGL using the GBM device setup earlier.
     let egl = EGLDisplay::new(&surface, log.clone()).expect("Failed to create EGLDisplay");
@@ -83,8 +92,10 @@ pub fn run_x11(log: Logger) {
         }
     }
 
+    let window = backend.window();
+
     let size = {
-        let s = backend.window().size();
+        let s = window.size();
 
         (s.w as i32, s.h as i32).into()
     };
