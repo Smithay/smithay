@@ -58,7 +58,7 @@ use self::{buffer::PixmapWrapperExt, window_inner::WindowInner};
 use crate::{
     backend::{
         allocator::dmabuf::{AsDmabuf, Dmabuf},
-        drm::{DrmNode, NodeType},
+        drm::{node::path_to_type, CreateDrmNodeError, DrmNode, NodeType},
         input::{Axis, ButtonState, InputEvent, KeyState},
     },
     utils::{x11rb::X11Source, Logical, Size},
@@ -66,7 +66,10 @@ use crate::{
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm_fourcc::DrmFourcc;
 use gbm::BufferObjectFlags;
-use nix::fcntl;
+use nix::{
+    fcntl::{self, OFlag},
+    sys::stat::Mode,
+};
 use slog::{error, info, o, Logger};
 use std::{
     io, mem,
@@ -298,8 +301,7 @@ impl X11Surface {
         resize: Receiver<Size<u16, Logical>>,
     ) -> Result<X11Surface, X11Error> {
         let connection = &backend.connection;
-        let window = backend.window();
-
+     
         // Determine which drm-device the Display is using.
         let screen = &connection.setup().roots[backend.screen()];
         // provider being NONE tells the X server to use the RandR provider.
@@ -320,20 +322,38 @@ impl X11Surface {
                 });
             }
         };
-
+     
         // Take ownership of the container's inner value so we do not need to duplicate the fd.
         // This is fine because the X server will always open a new file descriptor.
         let drm_device_fd = dri3.device_fd.into_raw_fd();
-
+     
         let fd_flags =
             fcntl::fcntl(drm_device_fd.as_raw_fd(), fcntl::F_GETFD).map_err(AllocateBuffersError::from)?;
-
+     
         // Enable the close-on-exec flag.
         fcntl::fcntl(
             drm_device_fd,
             fcntl::F_SETFD(fcntl::FdFlag::from_bits_truncate(fd_flags) | fcntl::FdFlag::FD_CLOEXEC),
         )
         .map_err(AllocateBuffersError::from)?;
+        let mut drm_node = DrmNode::from_fd(drm_device_fd).map_err(Into::<AllocateBuffersError>::into)?;
+     
+        if drm_node.ty() != NodeType::Render {
+            if drm_node.has_render() {
+                // Try to get the render node.
+                if let Some(path) = drm_node.dev_path_with_type(NodeType::Render) {
+                    if let Ok(node) = fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
+                        .map_err(Into::<std::io::Error>::into)
+                        .map_err(CreateDrmNodeError::Io)
+                        .and_then(DrmNode::from_fd)
+                    {
+                        drm_node = node;
+                    } else {
+                        slog::warn!(&backend.log, "Could not create render node from existing DRM node, falling back to primary node");    
+                    }
+                }
+            }
+        }
 
         // Kernel documentation explains why we should prefer the node to be a render node:
         // https://kernel.readthedocs.io/en/latest/gpu/drm-uapi.html
@@ -349,27 +369,6 @@ impl X11Surface {
         //
         // Of course if the DRM device does not support render nodes, no DRIVER_RENDER capability, then
         // fall back to the primary node.
-        let drm_node = DrmNode::from_fd(drm_device_fd).map_err(Into::<AllocateBuffersError>::into)?;
-        let drm_node = if drm_node.ty() != NodeType::Render {
-            if drm_node.has_render() {
-                // Try to get the render node.
-                match DrmNode::from_node_with_type(drm_node, NodeType::Render) {
-                    Ok(node) => node,
-                    Err(err) => {
-                        slog::warn!(&backend.log, "Could not create render node from existing DRM node, falling back to primary node");
-                        err.node()
-                    }
-                }
-            } else {
-                slog::warn!(
-                    &backend.log,
-                    "DRM Device does not have a render node, falling back to primary node"
-                );
-                drm_node
-            }
-        } else {
-            drm_node
-        };
 
         // Finally create a GBMDevice to manage the buffers.
         let device = gbm::Device::new(drm_node).map_err(Into::<AllocateBuffersError>::into)?;
@@ -388,8 +387,8 @@ impl X11Surface {
             .map_err(Into::<AllocateBuffersError>::into)?;
 
         Ok(X11Surface {
-            connection: Arc::downgrade(connection),
-            window,
+            connection: Arc::downgrade(&backend.connection),
+            window: backend.window(),
             device,
             format,
             width: size.w,

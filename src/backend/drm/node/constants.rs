@@ -37,9 +37,3 @@ pub const RENDER_NAME: &str = "renderD";
 
 #[cfg(target_os = "freebsd")]
 pub const RENDER_NAME: &str = "drmR";
-
-#[cfg(not(target_os = "openbsd"))]
-pub const DIR_NAME: &str = "dev";
-
-#[cfg(target_os = "openbsd")]
-pub const DIR_NAME: &str = "dev/dri";
