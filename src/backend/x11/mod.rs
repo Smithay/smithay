@@ -76,6 +76,7 @@ use crate::{
     backend::{
         allocator::dmabuf::{AsDmabuf, Dmabuf},
         drm::{node::path_to_type, CreateDrmNodeError, DrmNode, NodeType},
+        egl::{native::X11DefaultDisplay, EGLDevice, EGLDisplay, Error as EGLError},
         input::{Axis, ButtonState, InputEvent, KeyState},
     },
     utils::{x11rb::X11Source, Logical, Size},
@@ -322,7 +323,14 @@ impl X11Backend {
         // We cannot fallback on the egl_init method, because there is no way for us to authenticate a primary node.
         // dri3 does not work for closed-source drivers, but *may* give us a authenticated fd as a fallback.
         // As a result we try to use egl for a cleaner, better supported approach at first and only if that fails use dri3.
-        todo!()
+        egl_init(&self).or_else(|err| {
+            slog::warn!(
+                &self.log,
+                "Failed to init X11 surface via egl, falling back to dri3: {}",
+                err
+            );
+            dri3_init(&self)
+        })
     }
 }
 
@@ -338,6 +346,91 @@ pub struct X11Surface {
     height: u16,
     current: Dmabuf,
     next: Dmabuf,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum EGLInitError {
+    #[error(transparent)]
+    EGL(#[from] EGLError),
+    #[error(transparent)]
+    IO(#[from] io::Error),
+}
+
+fn egl_init(_backend: &X11Backend) -> Result<DrmNode, EGLInitError> {
+    let display = EGLDisplay::new(&X11DefaultDisplay, None)?;
+    let device = EGLDevice::device_for_display(&display)?;
+    let path = path_to_type(device.drm_device_path()?, NodeType::Render)?;
+    fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
+        .map_err(Into::<io::Error>::into)
+        .and_then(|fd| {
+            DrmNode::from_fd(fd).map_err(|err| match err {
+                CreateDrmNodeError::Io(err) => err,
+                _ => unreachable!(),
+            })
+        })
+        .map_err(EGLInitError::IO)
+}
+
+fn dri3_init(backend: &X11Backend) -> Result<DrmNode, X11Error> {
+    let connection = &backend.connection;
+
+    // Determine which drm-device the Display is using.
+    let screen = &connection.setup().roots[backend.screen()];
+    // provider being NONE tells the X server to use the RandR provider.
+    let dri3 = match connection.dri3_open(screen.root, x11rb::NONE)?.reply() {
+        Ok(reply) => reply,
+        Err(err) => {
+            return Err(if let ReplyError::X11Error(ref protocol_error) = err {
+                match protocol_error.error_kind {
+                    // Implementation is risen when the renderer is not capable of X server is not capable
+                    // of rendering at all.
+                    ErrorKind::Implementation => X11Error::CannotDirectRender,
+                    // Match may occur when the node cannot be authenticated for the client.
+                    ErrorKind::Match => X11Error::CannotDirectRender,
+                    _ => err.into(),
+                }
+            } else {
+                err.into()
+            });
+        }
+    };
+
+    // Take ownership of the container's inner value so we do not need to duplicate the fd.
+    // This is fine because the X server will always open a new file descriptor.
+    let drm_device_fd = dri3.device_fd.into_raw_fd();
+
+    let fd_flags =
+        fcntl::fcntl(drm_device_fd.as_raw_fd(), fcntl::F_GETFD).map_err(AllocateBuffersError::from)?;
+
+    // Enable the close-on-exec flag.
+    fcntl::fcntl(
+        drm_device_fd,
+        fcntl::F_SETFD(fcntl::FdFlag::from_bits_truncate(fd_flags) | fcntl::FdFlag::FD_CLOEXEC),
+    )
+    .map_err(AllocateBuffersError::from)?;
+    let drm_node = DrmNode::from_fd(drm_device_fd).map_err(Into::<AllocateBuffersError>::into)?;
+
+    if drm_node.ty() != NodeType::Render {
+        if drm_node.has_render() {
+            // Try to get the render node.
+            if let Some(path) = drm_node.dev_path_with_type(NodeType::Render) {
+                return Ok(fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
+                    .map_err(Into::<std::io::Error>::into)
+                    .map_err(CreateDrmNodeError::Io)
+                    .and_then(DrmNode::from_fd)
+                    .unwrap_or_else(|err| {
+                        slog::warn!(&backend.log, "Could not create render node from existing DRM node ({}), falling back to primary node", err);    
+                        drm_node
+                    }));
+            }
+        }
+    }
+
+    slog::warn!(
+        &backend.log,
+        "DRM Device does not have a render node, falling back to primary node"
+    );
+    Ok(drm_node)
 }
 
 impl X11Surface {
