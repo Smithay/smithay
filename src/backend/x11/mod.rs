@@ -83,7 +83,7 @@ use crate::{
 };
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm_fourcc::DrmFourcc;
-use gbm::BufferObjectFlags;
+use gbm::{BufferObject, BufferObjectFlags};
 use nix::{
     fcntl::{self, OFlag},
     sys::stat::Mode,
@@ -344,8 +344,8 @@ pub struct X11Surface {
     format: DrmFourcc,
     width: u16,
     height: u16,
-    current: Dmabuf,
-    next: Dmabuf,
+    current: BufferObject<Dmabuf>,
+    next: BufferObject<Dmabuf>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -447,16 +447,17 @@ impl X11Surface {
         }
 
         let size = backend.window().size();
-        let current = device
-            .create_buffer_object::<()>(size.w as u32, size.h as u32, format, BufferObjectFlags::empty())
-            .map_err(Into::<AllocateBuffersError>::into)?
-            .export()
+        let mut current = device
+            .create_buffer_object(size.w as u32, size.h as u32, format, BufferObjectFlags::empty())
+            .map_err(Into::<AllocateBuffersError>::into)?;
+        current
+            .set_userdata(current.export().map_err(Into::<AllocateBuffersError>::into)?)
             .map_err(Into::<AllocateBuffersError>::into)?;
 
-        let next = device
-            .create_buffer_object::<()>(size.w as u32, size.h as u32, format, BufferObjectFlags::empty())
-            .map_err(Into::<AllocateBuffersError>::into)?
-            .export()
+        let mut next = device
+            .create_buffer_object(size.w as u32, size.h as u32, format, BufferObjectFlags::empty())
+            .map_err(Into::<AllocateBuffersError>::into)?;
+        next.set_userdata(next.export().map_err(Into::<AllocateBuffersError>::into)?)
             .map_err(Into::<AllocateBuffersError>::into)?;
 
         let (sender, recv) = mpsc::channel();
@@ -498,25 +499,30 @@ impl X11Surface {
     }
 
     fn resize(&mut self, size: Size<u16, Logical>) -> Result<(), AllocateBuffersError> {
-        let current = self
+        let mut current = self
             .device
-            .create_buffer_object::<()>(
+            .create_buffer_object(
                 size.w as u32,
                 size.h as u32,
                 self.format,
                 BufferObjectFlags::empty(),
-            )?
-            .export()?;
+            )
+            .map_err(Into::<AllocateBuffersError>::into)?;
+        current
+            .set_userdata(current.export().map_err(Into::<AllocateBuffersError>::into)?)
+            .map_err(Into::<AllocateBuffersError>::into)?;
 
-        let next = self
+        let mut next = self
             .device
-            .create_buffer_object::<()>(
+            .create_buffer_object(
                 size.w as u32,
                 size.h as u32,
                 self.format,
                 BufferObjectFlags::empty(),
-            )?
-            .export()?;
+            )
+            .map_err(Into::<AllocateBuffersError>::into)?;
+        next.set_userdata(next.export().map_err(Into::<AllocateBuffersError>::into)?)
+            .map_err(Into::<AllocateBuffersError>::into)?;
 
         self.width = size.w;
         self.height = size.h;
@@ -556,8 +562,13 @@ impl Present<'_> {
     /// Returns the next buffer that will be presented to the Window.
     ///
     /// You may bind this buffer to a renderer to render.
-    pub fn buffer(&self) -> Dmabuf {
-        self.surface.next.clone()
+    pub fn buffer(&self) -> Result<Dmabuf, AllocateBuffersError> {
+        Ok(self
+            .surface
+            .next
+            .userdata()
+            .map(|dmabuf| dmabuf.cloned())
+            .map(Option::unwrap)?)
     }
 }
 
@@ -569,9 +580,16 @@ impl Drop for Present<'_> {
             // Swap the buffers
             mem::swap(&mut surface.next, &mut surface.current);
 
-            if let Ok(pixmap) = PixmapWrapper::with_dmabuf(&*connection, &surface.window, &surface.current) {
-                // Now present the current buffer
-                let _ = pixmap.present(&*connection, &surface.window);
+            match surface.current.userdata().map(Option::unwrap) {
+                Ok(dmabuf) => {
+                    if let Ok(pixmap) = PixmapWrapper::with_dmabuf(&*connection, &surface.window, &dmabuf) {
+                        // Now present the current buffer
+                        let _ = pixmap.present(&*connection, &surface.window);
+                    }
+                }
+                Err(_err) => {
+                    todo!("Log error")
+                }
             }
 
             // Flush the connection after presenting to the window to ensure we don't run out of buffer space in the X11 connection.

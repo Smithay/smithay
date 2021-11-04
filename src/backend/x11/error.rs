@@ -1,5 +1,6 @@
 use std::io;
 
+use gbm::DeviceDestroyedError;
 use nix::errno::Errno;
 use x11rb::rust_connection::{ConnectError, ConnectionError, ReplyError, ReplyOrIdError};
 
@@ -120,7 +121,11 @@ impl From<CreateWindowError> for X11Error {
 pub enum AllocateBuffersError {
     /// Failed to open the DRM device to allocate buffers.
     #[error("Failed to open the DRM device to allocate buffers.")]
-    OpenDevice(io::Error),
+    OpenDevice(#[from] io::Error),
+
+    /// The gbm device was destroyed
+    #[error("The gbm device was destroyed.")]
+    DeviceDestroyed(#[from] DeviceDestroyedError),
 
     /// The device used to allocate buffers is not the correct drm node type.
     #[error("The device used to allocate buffers is not the correct drm node type.")]
@@ -128,24 +133,12 @@ pub enum AllocateBuffersError {
 
     /// Exporting a dmabuf failed.
     #[error("Exporting a dmabuf failed.")]
-    ExportDmabuf(GbmConvertError),
+    ExportDmabuf(#[from] GbmConvertError),
 }
 
 impl From<Errno> for AllocateBuffersError {
     fn from(err: Errno) -> Self {
         Self::OpenDevice(err.into())
-    }
-}
-
-impl From<io::Error> for AllocateBuffersError {
-    fn from(err: io::Error) -> Self {
-        Self::OpenDevice(err)
-    }
-}
-
-impl From<GbmConvertError> for AllocateBuffersError {
-    fn from(err: GbmConvertError) -> Self {
-        Self::ExportDmabuf(err)
     }
 }
 
