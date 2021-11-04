@@ -25,6 +25,7 @@ macro_rules! extensions {
         $(
             $extension:ident { // Extension name for path lookup
                 $extension_fn:ident, // Function used to look up the version of the extension
+                required: $required:expr,
                 minimum: ($min_major:expr, $min_minor:expr),
                 request: ($req_major:expr, $req_minor:expr),
             },
@@ -34,7 +35,7 @@ macro_rules! extensions {
         pub struct Extensions {
             $(
                 #[doc = concat!(" The version of the `", stringify!($extension), "` extension.")]
-                pub $extension: (u32, u32),
+                pub $extension: Option<(u32, u32)>,
             )*
         }
 
@@ -59,35 +60,43 @@ macro_rules! extensions {
                                     version.minor_version,
                                 );
 
-                                (version.major_version, version.minor_version)
+                                Some((version.major_version, version.minor_version))
                             } else {
-                                slog::error!(
-                                    logger,
-                                    "{} extension version is too low (have {}.{}, expected {}.{})",
-                                    X11_EXTENSION_NAME,
-                                    version.major_version,
-                                    version.minor_version,
-                                    $req_major,
-                                    $req_minor,
-                                );
+                                if $required {
+                                    slog::error!(
+                                        logger,
+                                        "required extension {} version is too low (have {}.{}, expected {}.{})",
+                                        X11_EXTENSION_NAME,
+                                        version.major_version,
+                                        version.minor_version,
+                                        $req_major,
+                                        $req_minor,
+                                    );
 
-                                return Err(MissingExtensionError::WrongVersion {
-                                    name: X11_EXTENSION_NAME,
-                                    required_major: $req_major,
-                                    required_minor: $req_minor,
-                                    available_major: version.major_version,
-                                    available_minor: version.minor_version,
-                                }.into());
+                                    return Err(MissingExtensionError::WrongVersion {
+                                        name: X11_EXTENSION_NAME,
+                                        required_major: $req_major,
+                                        required_minor: $req_minor,
+                                        available_major: version.major_version,
+                                        available_minor: version.minor_version,
+                                    }.into());
+                                } else {
+                                    None
+                                }
                             }
                         } else {
-                            slog::error!(logger, "{} extension not found", X11_EXTENSION_NAME);
+                            if $required {
+                                slog::error!(logger, "required extension {} not found", X11_EXTENSION_NAME);
 
-                            return Err(MissingExtensionError::NotFound {
-                                name: X11_EXTENSION_NAME,
-                                major: $min_major,
-                                minor: $min_minor,
+                                return Err(MissingExtensionError::NotFound {
+                                    name: X11_EXTENSION_NAME,
+                                    major: $min_major,
+                                    minor: $min_minor,
+                                }
+                                .into());
+                            } else {
+                                None
                             }
-                            .into());
                         }
                     };
                 )*
@@ -105,18 +114,21 @@ macro_rules! extensions {
 extensions! {
     present {
         present_query_version,
+        required: true,
         minimum: (1, 0),
         request: (1, 0),
     },
 
     xfixes {
         xfixes_query_version,
+        required: true,
         minimum: (4, 0),
         request: (4, 0),
     },
 
     dri3 {
         dri3_query_version,
+        required: true,
         minimum: (1, 0),
         request: (1, 2),
     },
