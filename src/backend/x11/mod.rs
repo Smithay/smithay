@@ -14,8 +14,9 @@
 //! ```rust,no_run
 //! # use std::error::Error;
 //! # use smithay::backend::x11::{X11Backend, X11Surface};
-//! use smithay::backend::allocator::Fourcc;
+//! use smithay::backend::egl::{EGLDisplay, EGLContext};
 //! use smithay::reexports::gbm;
+//! use std::collections::HashSet;
 //!
 //! # struct CompositorState;
 //! fn init_x11_backend(
@@ -23,7 +24,7 @@
 //!    logger: slog::Logger
 //! ) -> Result<(), Box<dyn Error>> {
 //!     // Create the backend, also yielding a surface that may be used to render to the window.
-//!     let mut backend = X11Backend::new(logger)?;
+//!     let mut backend = X11Backend::new(logger.clone())?;
 //!     // You can get a handle to the window the backend has created for later use.
 //!     let window = backend.window();
 //!
@@ -33,13 +34,14 @@
 //!     let drm_node = backend.drm_node()?;
 //!     // Create the gbm device for allocating buffers
 //!     let device = gbm::Device::new(drm_node)?;
-//!
+//!     // Initialize EGL to retrieve the support modifier list
+//!     let egl = EGLDisplay::new(&device, logger.clone()).expect("Failed to create EGLDisplay");
+//!     let context = EGLContext::new(&egl, logger).expect("Failed to create EGLContext");
+//!     let modifiers = context.dmabuf_render_formats().iter().map(|format| format.modifier).collect::<HashSet<_>>(); 
+//! 
 //!     // Finally create the X11 surface, you will use this to obtain buffers that will be presented to the
 //!     // window.
-//!
-//!     // It is more than likely you will want more robust format detection rather than forcing `Argb8888`,
-//!     // but that is outside of the scope of the example.
-//!     let surface = X11Surface::new(&mut backend, device, Fourcc::Argb8888);
+//!     let surface = X11Surface::new(&mut backend, device, modifiers.into_iter());
 //!
 //!     // Insert the backend into the event loop to receive events.
 //!     handle.insert_source(backend, |event, _window, state| {
@@ -82,7 +84,7 @@ use crate::{
     utils::{x11rb::X11Source, Logical, Size},
 };
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
-use drm_fourcc::DrmFourcc;
+use drm_fourcc::{DrmFourcc, DrmModifier};
 use gbm::{BufferObject, BufferObjectFlags};
 use nix::{
     fcntl::{self, OFlag},
@@ -440,22 +442,36 @@ impl X11Surface {
     pub fn new(
         backend: &mut X11Backend,
         device: gbm::Device<DrmNode>,
-        format: DrmFourcc,
+        modifiers: impl Iterator<Item = DrmModifier>,
     ) -> Result<X11Surface, X11Error> {
         if backend.resize.is_some() {
             return Err(X11Error::SurfaceExists);
         }
 
-        let size = backend.window().size();
+        let modifiers = modifiers.collect::<Vec<_>>();
+
+        let window = backend.window();
+        let format = window.format().unwrap();
+        let size = window.size();
         let mut current = device
-            .create_buffer_object(size.w as u32, size.h as u32, format, BufferObjectFlags::empty())
+            .create_buffer_object_with_modifiers(
+                size.w as u32,
+                size.h as u32,
+                format,
+                modifiers.iter().cloned(),
+            )
             .map_err(Into::<AllocateBuffersError>::into)?;
         current
             .set_userdata(current.export().map_err(Into::<AllocateBuffersError>::into)?)
             .map_err(Into::<AllocateBuffersError>::into)?;
 
         let mut next = device
-            .create_buffer_object(size.w as u32, size.h as u32, format, BufferObjectFlags::empty())
+            .create_buffer_object_with_modifiers(
+                size.w as u32,
+                size.h as u32,
+                format,
+                modifiers.iter().cloned(),
+            )
             .map_err(Into::<AllocateBuffersError>::into)?;
         next.set_userdata(next.export().map_err(Into::<AllocateBuffersError>::into)?)
             .map_err(Into::<AllocateBuffersError>::into)?;
@@ -466,7 +482,7 @@ impl X11Surface {
 
         Ok(X11Surface {
             connection: Arc::downgrade(&backend.connection),
-            window: backend.window(),
+            window,
             device,
             format,
             width: size.w,

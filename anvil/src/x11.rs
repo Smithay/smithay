@@ -62,12 +62,19 @@ pub fn run_x11(log: Logger) {
 
     // Create the gbm device for buffer allocation and the X11 surface which presents to the window.
     let device = gbm::Device::new(drm_node).expect("Failed to create gbm device");
-    let format = backend.format();
-    let surface = X11Surface::new(&mut backend, device, format).expect("Failed to create X11 surface");
-
     // Initialize EGL using the GBM device setup earlier.
-    let egl = EGLDisplay::new(&surface, log.clone()).expect("Failed to create EGLDisplay");
+    let egl = EGLDisplay::new(&device, log.clone()).expect("Failed to create EGLDisplay");
     let context = EGLContext::new(&egl, log.clone()).expect("Failed to create EGLContext");
+    let surface = X11Surface::new(
+        &mut backend,
+        device,
+        context
+            .dmabuf_render_formats()
+            .iter()
+            .map(|format| format.modifier),
+    )
+    .expect("Failed to create X11 surface");
+
     let renderer =
         unsafe { Gles2Renderer::new(context, log.clone()) }.expect("Failed to initialize renderer");
     let renderer = Rc::new(RefCell::new(renderer));
