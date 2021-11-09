@@ -903,6 +903,11 @@ impl ToplevelSurface {
         self.shell_surface.as_ref().is_alive() && self.wl_surface.as_ref().is_alive()
     }
 
+    /// Supported XDG shell protocol version.
+    pub fn version(&self) -> u32 {
+        self.shell_surface.as_ref().version()
+    }
+
     /// Retrieve the shell client owning this toplevel surface
     ///
     /// Returns `None` if the surface does actually no longer exist.
