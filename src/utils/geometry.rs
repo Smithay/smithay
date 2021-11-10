@@ -637,6 +637,14 @@ impl<N: AddAssign, Kind> AddAssign for Size<N, Kind> {
     }
 }
 
+impl<N: SubAssign, Kind> SubAssign for Size<N, Kind> {
+    #[inline]
+    fn sub_assign(&mut self, rhs: Self) {
+        self.w -= rhs.w;
+        self.h -= rhs.h
+    }
+}
+
 impl<N: Clone, Kind> Clone for Size<N, Kind> {
     #[inline]
     fn clone(&self) -> Self {
