@@ -1125,7 +1125,25 @@ impl ToplevelSurface {
                 .lock()
                 .unwrap();
             if attributes.server_pending.is_none() {
-                attributes.server_pending = Some(attributes.current.clone());
+                // We check if there is already an non-acked pending
+                // configure and use its state or otherwise we could
+                // loose some state that was previously configured
+                // and sent, but not acked before calling with_pending_state
+                // again. If there is no pending state we try to use the
+                // last acked state which could contain state changes
+                // already acked but not committed to the current state.
+                // In case no last acked state is available, which is
+                // the case on the first configure we fallback to the
+                // current state.
+                // In both cases the state already contains all previous
+                // sent states. This way all pending state is accumulated
+                // into the current pending state.
+                attributes.server_pending = attributes
+                    .pending_configures
+                    .last()
+                    .map(|c| c.state.clone())
+                    .or_else(|| attributes.last_acked.clone())
+                    .or_else(|| Some(attributes.current.clone()));
             }
 
             let server_pending = attributes.server_pending.as_mut().unwrap();
@@ -1490,7 +1508,25 @@ impl PopupSurface {
                 .lock()
                 .unwrap();
             if attributes.server_pending.is_none() {
-                attributes.server_pending = Some(attributes.current);
+                // We check if there is already an non-acked pending
+                // configure and use its state or otherwise we could
+                // loose some state that was previously configured
+                // and sent, but not acked before calling with_pending_state
+                // again. If there is no pending state we try to use the
+                // last acked state which could contain state changes
+                // already acked but not committed to the current state.
+                // In case no last acked state is available, which is
+                // the case on the first configure we fallback to the
+                // current state.
+                // In both cases the state already contains all previous
+                // sent states. This way all pending state is accumulated
+                // into the current pending state.
+                attributes.server_pending = attributes
+                    .pending_configures
+                    .last()
+                    .map(|c| c.state)
+                    .or(attributes.last_acked)
+                    .or(Some(attributes.current));
             }
 
             let server_pending = attributes.server_pending.as_mut().unwrap();
