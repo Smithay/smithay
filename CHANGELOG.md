@@ -52,6 +52,7 @@
 #### Clients & Protocols
 
 - `Multicache::has()` now correctly does what is expected of it
+- `xdg_shell` had an issue where it was possible that configured state gets overwritten before it was acked/committed.
 
 #### Backends
 
