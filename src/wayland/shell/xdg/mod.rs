@@ -981,6 +981,27 @@ impl ToplevelSurface {
                     .lock()
                     .unwrap();
                 if let Some(pending) = self.get_pending_state(&mut *attributes) {
+                    // Retrieve the last configured decoration mode
+                    // by checking the last non acked configure,
+                    // if no pending is available the last acked
+                    // and finally fall back to the current state.
+                    // This is necessary as send_configure could be
+                    // called before a client ack's or commits the
+                    // last state. Using the current state could lead
+                    // to unnecessary decoration configures sent to clients.
+                    //
+                    // We have to do this check before adding the pending state
+                    // to the pending configures.
+                    let current_decoration_mode = attributes
+                        .pending_configures
+                        .last()
+                        .map(|c| &c.state)
+                        .or_else(|| attributes.last_acked.as_ref())
+                        .unwrap_or(&attributes.current)
+                        .decoration_mode;
+
+                    let decoration_mode_changed = current_decoration_mode != pending.decoration_mode;
+
                     let configure = ToplevelConfigure {
                         serial: SERIAL_COUNTER.next_serial(),
                         state: pending,
@@ -989,25 +1010,14 @@ impl ToplevelSurface {
                     attributes.pending_configures.push(configure.clone());
                     attributes.initial_configure_sent = true;
 
-                    Some(configure)
+                    Some((configure, decoration_mode_changed))
                 } else {
                     None
                 }
             })
             .unwrap_or(None);
-            if let Some(configure) = configure {
-                let decoration_mode = compositor::with_states(surface, |states| {
-                    let attributes = states
-                        .data_map
-                        .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
-                        .unwrap()
-                        .lock()
-                        .unwrap();
-                    attributes.current.decoration_mode
-                })
-                .unwrap_or(None);
-
-                if configure.state.decoration_mode != decoration_mode {
+            if let Some((configure, decoration_mode_changed)) = configure {
+                if decoration_mode_changed {
                     if let Some(data) = self
                         .shell_surface
                         .as_ref()
