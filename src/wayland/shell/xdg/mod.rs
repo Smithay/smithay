@@ -129,39 +129,61 @@ pub const ZXDG_POPUP_ROLE: &str = "zxdg_popup";
 const XDG_TOPLEVEL_STATE_TILED_SINCE: u32 = 2;
 
 macro_rules! xdg_role {
-    ($configure:ty,
-     $(#[$attr:meta])* $element:ident {$($(#[$field_attr:meta])* $vis:vis$field:ident:$type:ty),*},
-     $role_ack_configure:expr) => {
+    ($state:ty,
+     $(#[$configure_meta:meta])* $configure_name:ident {$($(#[$configure_field_meta:meta])* $configure_field_vis:vis$configure_field_name:ident:$configure_field_type:ty),*},
+     $(#[$attributes_meta:meta])* $attributes_name:ident {$($(#[$attributes_field_meta:meta])* $attributes_field_vis:vis$attributes_field_name:ident:$attributes_field_type:ty),*}) => {
 
-        $(#[$attr])*
-        pub struct $element {
+        $(#[$configure_meta])*
+        pub struct $configure_name {
+                /// The state associated with this configure
+                pub state: $state,
+                /// A serial number to track ACK from the client
+                ///
+                /// This should be an ever increasing number, as the ACK-ing
+                /// from a client for a serial will validate all pending lower
+                /// serials.
+                pub serial: Serial,
+
+                $(
+                    $(#[$configure_field_meta])*
+                    $configure_field_vis $configure_field_name: $configure_field_type,
+                )*
+        }
+
+        $(#[$attributes_meta])*
+        pub struct $attributes_name {
                 /// Defines if the surface has received at least one
                 /// xdg_surface.ack_configure from the client
                 pub configured: bool,
-
                 /// The serial of the last acked configure
                 pub configure_serial: Option<Serial>,
-
                 /// Holds the state if the surface has sent the initial
                 /// configure event to the client. It is expected that
                 /// during the first commit a initial
                 /// configure event is sent to the client
                 pub initial_configure_sent: bool,
-
                 /// Holds the configures the server has sent out
                 /// to the client waiting to be acknowledged by
                 /// the client. All pending configures that are older
                 /// than the acknowledged one will be discarded during
                 /// processing xdg_surface.ack_configure.
-                pending_configures: Vec<$configure>,
+                pending_configures: Vec<$configure_name>,
+                /// Holds the pending state as set by the server.
+                pub server_pending: Option<$state>,
+                /// Holds the last server_pending state that has been acknowledged
+                /// by the client. This state should be cloned to the current
+                /// during a commit.
+                pub last_acked: Option<$state>,
+                /// Holds the current state after a successful commit.
+                pub current: $state,
 
                 $(
-                    $(#[$field_attr])*
-                    $vis $field: $type,
+                    $(#[$attributes_field_meta])*
+                    $attributes_field_vis $attributes_field_name: $attributes_field_type,
                 )*
         }
 
-        impl $element {
+        impl $attributes_name {
             fn ack_configure(&mut self, serial: Serial) -> Option<Configure> {
                 let configure = match self
                     .pending_configures
@@ -174,9 +196,8 @@ macro_rules! xdg_role {
                     }
                 };
 
-                // Role specific ack_configure
-                let role_ack_configure: &dyn Fn(&mut Self, $configure) = &$role_ack_configure;
-                role_ack_configure(self, configure.clone());
+                // Save the state as the last acked state
+                self.last_acked = Some(configure.state.clone());
 
                 // Set the xdg_surface to configured
                 self.configured = true;
@@ -189,18 +210,59 @@ macro_rules! xdg_role {
 
                 Some(configure.into())
             }
+
+            /// Gets the latest state that has been configured
+            /// on the server. The state can include changes
+            /// that have been made on the server but not yet
+            /// acked or committed by the client. It does not
+            /// include the current pending state.
+            ///
+            /// This can be used for example to check if the
+            /// pending state is different from the last configured.
+            fn current_server_state(&self) -> &$state {
+                // We check if there is already a non-acked pending
+                // configure and use its state or otherwise we could
+                // loose some state that was previously configured
+                // and sent, but not acked before calling with_pending_state
+                // again. If there is no pending state we try to use the
+                // last acked state which could contain state changes
+                // already acked but not committed to the current state.
+                // In case no last acked state is available, which is
+                // the case on the first configure we fallback to the
+                // current state.
+                // In both cases the state already contains all previous
+                // sent states. This way all pending state is accumulated
+                // into the current state.
+                self.pending_configures
+                    .last()
+                    .map(|c| &c.state)
+                    .or_else(|| self.last_acked.as_ref())
+                    .unwrap_or(&self.current)
+            }
+
+            /// Check if the state has pending changes.
+            ///
+            /// This differs to just checking if the server pending
+            /// state is some in that it also check if a pending
+            /// state is different from the current server state.
+            fn has_pending_changes(&self) -> bool {
+                self.server_pending.as_ref().map(|s| s != self.current_server_state()).unwrap_or(false)
+            }
         }
 
-        impl Default for $element {
+        impl Default for $attributes_name {
             fn default() -> Self {
                 Self {
                     configured: false,
                     configure_serial: None,
                     pending_configures: Vec::new(),
                     initial_configure_sent: false,
+                    server_pending: None,
+                    last_acked: None,
+                    current: Default::default(),
 
                     $(
-                        $field: Default::default(),
+                        $attributes_field_name: Default::default(),
                     )*
                 }
             }
@@ -209,7 +271,11 @@ macro_rules! xdg_role {
 }
 
 xdg_role!(
-    ToplevelConfigure,
+    ToplevelState,
+    /// A configure message for toplevel surfaces
+    #[derive(Debug, Clone)]
+    ToplevelConfigure {
+    },
     /// Role specific attributes for xdg_toplevel
     ///
     /// This interface defines an xdg_surface role which allows a surface to,
@@ -261,24 +327,20 @@ xdg_role!(
         /// Maximum size requested for this surface
         ///
         /// A value of 0 on an axis means this axis is not constrained
-        pub max_size: Size<i32, Logical>,
-        /// Holds the pending state as set by the server.
-        pub server_pending: Option<ToplevelState>,
-        /// Holds the last server_pending state that has been acknowledged
-        /// by the client. This state should be cloned to the current
-        /// during a commit.
-        pub last_acked: Option<ToplevelState>,
-        /// Holds the current state of the toplevel after a successful
-        /// commit.
-        pub current: ToplevelState
-    },
-    |attributes, configure| {
-        attributes.last_acked = Some(configure.state);
+        pub max_size: Size<i32, Logical>
     }
 );
 
 xdg_role!(
-    PopupConfigure,
+    PopupState,
+    /// A configure message for popup surface
+    #[derive(Debug, Clone, Copy)]
+    PopupConfigure {
+        /// The token the client provided in the `xdg_popup::reposition`
+        /// request. The token itself is opaque, and has no other special meaning.
+        /// The token is sent in the corresponding `xdg_popup::repositioned` event.
+        pub reposition_token: Option<u32>
+    },
     /// Role specific attributes for xdg_popup
     ///
     /// A popup surface is a short-lived, temporary surface. It can be used to
@@ -318,19 +380,7 @@ xdg_role!(
         /// It is a protocol error to call commit on a wl_surface with
         /// the xdg_popup role when no parent is set.
         pub parent: Option<wl_surface::WlSurface>,
-        /// Holds the last server_pending state that has been acknowledged
-        /// by the client. This state should be cloned to the current
-        /// during a commit.
-        pub last_acked: Option<PopupState>,
-        /// Holds the current state of the popup after a successful
-        /// commit.
-        pub current: PopupState,
-        /// Holds the pending state as set by the server.
-        pub server_pending: Option<PopupState>,
         popup_handle: Option<xdg_popup::XdgPopup>
-    },
-    |attributes,configure| {
-        attributes.last_acked = Some(configure.state);
     }
 );
 
@@ -943,26 +993,14 @@ impl ToplevelSurface {
             return Some(attributes.server_pending.take().unwrap_or_default());
         }
 
-        let server_pending = match attributes.server_pending.take() {
-            Some(state) => state,
-            None => {
-                return None;
-            }
-        };
-
-        let last_state = attributes
-            .pending_configures
-            .last()
-            .map(|c| &c.state)
-            .or_else(|| attributes.last_acked.as_ref());
-
-        if let Some(state) = last_state {
-            if state == &server_pending {
-                return None;
-            }
+        // Check if the state really changed, it is possible
+        // that with_pending_state has been called without
+        // modifying the state.
+        if !attributes.has_pending_changes() {
+            return None;
         }
 
-        Some(server_pending)
+        attributes.server_pending.take()
     }
 
     /// Send a configure event to this toplevel surface to suggest it a new configuration
@@ -981,26 +1019,12 @@ impl ToplevelSurface {
                     .lock()
                     .unwrap();
                 if let Some(pending) = self.get_pending_state(&mut *attributes) {
-                    // Retrieve the last configured decoration mode
-                    // by checking the last non acked configure,
-                    // if no pending is available the last acked
-                    // and finally fall back to the current state.
-                    // This is necessary as send_configure could be
-                    // called before a client ack's or commits the
-                    // last state. Using the current state could lead
-                    // to unnecessary decoration configures sent to clients.
-                    //
+                    // Retrieve the last configured decoration mode and test
+                    // if the mode has changed.
                     // We have to do this check before adding the pending state
                     // to the pending configures.
-                    let current_decoration_mode = attributes
-                        .pending_configures
-                        .last()
-                        .map(|c| &c.state)
-                        .or_else(|| attributes.last_acked.as_ref())
-                        .unwrap_or(&attributes.current)
-                        .decoration_mode;
-
-                    let decoration_mode_changed = current_decoration_mode != pending.decoration_mode;
+                    let decoration_mode_changed =
+                        pending.decoration_mode != attributes.current_server_state().decoration_mode;
 
                     let configure = ToplevelConfigure {
                         serial: SERIAL_COUNTER.next_serial(),
@@ -1135,25 +1159,7 @@ impl ToplevelSurface {
                 .lock()
                 .unwrap();
             if attributes.server_pending.is_none() {
-                // We check if there is already an non-acked pending
-                // configure and use its state or otherwise we could
-                // loose some state that was previously configured
-                // and sent, but not acked before calling with_pending_state
-                // again. If there is no pending state we try to use the
-                // last acked state which could contain state changes
-                // already acked but not committed to the current state.
-                // In case no last acked state is available, which is
-                // the case on the first configure we fallback to the
-                // current state.
-                // In both cases the state already contains all previous
-                // sent states. This way all pending state is accumulated
-                // into the current pending state.
-                attributes.server_pending = attributes
-                    .pending_configures
-                    .last()
-                    .map(|c| c.state.clone())
-                    .or_else(|| attributes.last_acked.clone())
-                    .or_else(|| Some(attributes.current.clone()));
+                attributes.server_pending = Some(attributes.current_server_state().clone());
             }
 
             let server_pending = attributes.server_pending.as_mut().unwrap();
@@ -1306,10 +1312,13 @@ impl PopupSurface {
                     .unwrap();
 
                 if !attributes.initial_configure_sent
-                    || attributes.server_pending.is_some()
+                    || attributes.has_pending_changes()
                     || reposition_token.is_some()
                 {
-                    let pending = attributes.server_pending.take().unwrap_or(attributes.current);
+                    let pending = attributes
+                        .server_pending
+                        .take()
+                        .unwrap_or_else(|| *attributes.current_server_state());
 
                     let configure = PopupConfigure {
                         state: pending,
@@ -1518,25 +1527,7 @@ impl PopupSurface {
                 .lock()
                 .unwrap();
             if attributes.server_pending.is_none() {
-                // We check if there is already an non-acked pending
-                // configure and use its state or otherwise we could
-                // loose some state that was previously configured
-                // and sent, but not acked before calling with_pending_state
-                // again. If there is no pending state we try to use the
-                // last acked state which could contain state changes
-                // already acked but not committed to the current state.
-                // In case no last acked state is available, which is
-                // the case on the first configure we fallback to the
-                // current state.
-                // In both cases the state already contains all previous
-                // sent states. This way all pending state is accumulated
-                // into the current pending state.
-                attributes.server_pending = attributes
-                    .pending_configures
-                    .last()
-                    .map(|c| c.state)
-                    .or(attributes.last_acked)
-                    .or(Some(attributes.current));
+                attributes.server_pending = Some(*attributes.current_server_state());
             }
 
             let server_pending = attributes.server_pending.as_mut().unwrap();
@@ -1544,37 +1535,6 @@ impl PopupSurface {
         })
         .unwrap())
     }
-}
-
-/// A configure message for toplevel surfaces
-#[derive(Debug, Clone)]
-pub struct ToplevelConfigure {
-    /// The state associated with this configure
-    pub state: ToplevelState,
-
-    /// A serial number to track ACK from the client
-    ///
-    /// This should be an ever increasing number, as the ACK-ing
-    /// from a client for a serial will validate all pending lower
-    /// serials.
-    pub serial: Serial,
-}
-
-/// A configure message for popup surface
-#[derive(Debug, Clone, Copy)]
-pub struct PopupConfigure {
-    /// The state associated with this configure,
-    pub state: PopupState,
-    /// A serial number to track ACK from the client
-    ///
-    /// This should be an ever increasing number, as the ACK-ing
-    /// from a client for a serial will validate all pending lower
-    /// serials.
-    pub serial: Serial,
-    /// The token the client provided in the `xdg_popup::reposition`
-    /// request. The token itself is opaque, and has no other special meaning.
-    /// The token is sent in the corresponding `xdg_popup::repositioned` event.
-    pub reposition_token: Option<u32>,
 }
 
 /// Defines the possible configure variants
