@@ -130,7 +130,7 @@ const XDG_TOPLEVEL_STATE_TILED_SINCE: u32 = 2;
 
 macro_rules! xdg_role {
     ($state:ty,
-     $(#[$configure_meta:meta])* $configure_name:ident {$($(#[$configure_field_meta:meta])* $configure_field_vis:vis$configure_field_name:ident:$configure_field_type:ty),*},
+     $(#[$configure_meta:meta])* $configure_name:ident $({$($(#[$configure_field_meta:meta])* $configure_field_vis:vis$configure_field_name:ident:$configure_field_type:ty),*}),*,
      $(#[$attributes_meta:meta])* $attributes_name:ident {$($(#[$attributes_field_meta:meta])* $attributes_field_vis:vis$attributes_field_name:ident:$attributes_field_type:ty),*}) => {
 
         $(#[$configure_meta])*
@@ -144,10 +144,10 @@ macro_rules! xdg_role {
                 /// serials.
                 pub serial: Serial,
 
-                $(
+                $($(
                     $(#[$configure_field_meta])*
                     $configure_field_vis $configure_field_name: $configure_field_type,
-                )*
+                )*)*
         }
 
         $(#[$attributes_meta])*
@@ -274,8 +274,7 @@ xdg_role!(
     ToplevelState,
     /// A configure message for toplevel surfaces
     #[derive(Debug, Clone)]
-    ToplevelConfigure {
-    },
+    ToplevelConfigure,
     /// Role specific attributes for xdg_toplevel
     ///
     /// This interface defines an xdg_surface role which allows a surface to,
