@@ -2,7 +2,7 @@ use std::{cell::RefCell, ops::Deref as _, os::unix::io::RawFd, rc::Rc};
 
 use wayland_server::{
     protocol::{wl_data_device_manager::DndAction, wl_data_offer, wl_pointer, wl_surface},
-    Main,
+    DispatchData, Main,
 };
 
 use crate::{
@@ -81,6 +81,7 @@ where
         focus: Option<(wl_surface::WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
+        _ddata: DispatchData<'_>,
     ) {
         let seat_data = self
             .seat
@@ -172,6 +173,7 @@ where
         _state: wl_pointer::ButtonState,
         serial: Serial,
         time: u32,
+        _ddata: DispatchData<'_>,
     ) {
         if handle.current_pressed().is_empty() {
             // the user dropped, proceed to the drop
@@ -217,7 +219,7 @@ where
         }
     }
 
-    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame, _ddata: DispatchData<'_>) {
         // we just forward the axis events as is
         handle.axis(details);
     }

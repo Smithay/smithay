@@ -2,7 +2,7 @@ use std::{cell::RefCell, ops::Deref as _, rc::Rc};
 
 use wayland_server::{
     protocol::{wl_data_device_manager::DndAction, wl_data_offer, wl_data_source, wl_pointer, wl_surface},
-    Main,
+    DispatchData, Main,
 };
 
 use crate::{
@@ -58,6 +58,7 @@ impl PointerGrab for DnDGrab {
         focus: Option<(wl_surface::WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
+        _ddata: DispatchData<'_>,
     ) {
         let seat_data = self
             .seat
@@ -167,6 +168,7 @@ impl PointerGrab for DnDGrab {
         _state: wl_pointer::ButtonState,
         serial: Serial,
         time: u32,
+        _ddata: DispatchData<'_>,
     ) {
         if handle.current_pressed().is_empty() {
             // the user dropped, proceed to the drop
@@ -217,7 +219,7 @@ impl PointerGrab for DnDGrab {
         }
     }
 
-    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame, _ddata: DispatchData<'_>) {
         // we just forward the axis events as is
         handle.axis(details);
     }

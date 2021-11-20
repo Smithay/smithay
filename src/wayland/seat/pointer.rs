@@ -5,7 +5,7 @@ use wayland_server::{
         wl_pointer::{self, Axis, AxisSource, ButtonState, Request, WlPointer},
         wl_surface::WlSurface,
     },
-    Filter, Main,
+    DispatchData, Filter, Main,
 };
 
 use crate::{
@@ -204,17 +204,25 @@ impl PointerHandle {
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of enter/motion/leave events.
-    pub fn motion(
+    pub fn motion<D: std::any::Any>(
         &self,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
+        ddata: &mut D,
     ) {
         let mut inner = self.inner.borrow_mut();
         inner.pending_focus = focus.clone();
         inner.with_grab(move |mut handle, grab| {
-            grab.motion(&mut handle, location, focus, serial, time);
+            grab.motion(
+                &mut handle,
+                location,
+                focus,
+                serial,
+                time,
+                DispatchData::wrap(ddata),
+            );
         });
     }
 
@@ -222,7 +230,14 @@ impl PointerHandle {
     ///
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
-    pub fn button(&self, button: u32, state: ButtonState, serial: Serial, time: u32) {
+    pub fn button<D: std::any::Any>(
+        &self,
+        button: u32,
+        state: ButtonState,
+        serial: Serial,
+        time: u32,
+        ddata: &mut D,
+    ) {
         let mut inner = self.inner.borrow_mut();
         match state {
             ButtonState::Pressed => {
@@ -234,16 +249,24 @@ impl PointerHandle {
             _ => unreachable!(),
         }
         inner.with_grab(|mut handle, grab| {
-            grab.button(&mut handle, button, state, serial, time);
+            grab.button(
+                &mut handle,
+                button,
+                state,
+                serial,
+                time,
+                DispatchData::wrap(ddata),
+            );
         });
     }
 
     /// Start an axis frame
     ///
     /// A single frame will group multiple scroll events as if they happened in the same instance.
-    pub fn axis(&self, details: AxisFrame) {
+    pub fn axis<D: std::any::Any>(&self, details: AxisFrame, ddata: &mut D) {
+        let ddata = DispatchData::wrap(ddata);
         self.inner.borrow_mut().with_grab(|mut handle, grab| {
-            grab.axis(&mut handle, details);
+            grab.axis(&mut handle, details, ddata);
         });
     }
 
@@ -290,6 +313,7 @@ pub trait PointerGrab {
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
+        ddata: DispatchData<'_>,
     );
     /// A button press was reported
     fn button(
@@ -299,9 +323,10 @@ pub trait PointerGrab {
         state: ButtonState,
         serial: Serial,
         time: u32,
+        ddata: DispatchData<'_>,
     );
     /// An axis scroll was reported
-    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame);
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame, ddata: DispatchData<'_>);
     /// The data about the event that started the grab.
     fn start_data(&self) -> &GrabStartData;
 }
@@ -665,6 +690,7 @@ impl PointerGrab for DefaultGrab {
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
+        _ddata: DispatchData<'_>,
     ) {
         handle.motion(location, focus, serial, time);
     }
@@ -675,6 +701,7 @@ impl PointerGrab for DefaultGrab {
         state: ButtonState,
         serial: Serial,
         time: u32,
+        _ddata: DispatchData<'_>,
     ) {
         handle.button(button, state, serial, time);
         handle.set_grab(
@@ -688,7 +715,7 @@ impl PointerGrab for DefaultGrab {
             },
         );
     }
-    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame, _ddata: DispatchData<'_>) {
         handle.axis(details);
     }
     fn start_data(&self) -> &GrabStartData {
@@ -713,6 +740,7 @@ impl PointerGrab for ClickGrab {
         _focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
+        _ddata: DispatchData<'_>,
     ) {
         handle.motion(location, self.start_data.focus.clone(), serial, time);
     }
@@ -723,6 +751,7 @@ impl PointerGrab for ClickGrab {
         state: ButtonState,
         serial: Serial,
         time: u32,
+        _ddata: DispatchData<'_>,
     ) {
         handle.button(button, state, serial, time);
         if handle.current_pressed().is_empty() {
@@ -730,7 +759,7 @@ impl PointerGrab for ClickGrab {
             handle.unset_grab(serial, time);
         }
     }
-    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame, _ddata: DispatchData<'_>) {
         handle.axis(details);
     }
     fn start_data(&self) -> &GrabStartData {

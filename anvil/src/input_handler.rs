@@ -102,7 +102,7 @@ impl<Backend> AnvilState<Backend> {
             }
             input::ButtonState::Released => wl_pointer::ButtonState::Released,
         };
-        self.pointer.button(button, state, serial, evt.time());
+        self.pointer.button(button, state, serial, evt.time(), &mut ());
     }
 
     fn on_pointer_axis<B: InputBackend>(&mut self, evt: B::PointerAxisEvent) {
@@ -138,7 +138,7 @@ impl<Backend> AnvilState<Backend> {
             } else if source == wl_pointer::AxisSource::Finger {
                 frame = frame.stop(wl_pointer::Axis::VerticalScroll);
             }
-            self.pointer.axis(frame);
+            self.pointer.clone().axis(frame, &mut ());
         }
     }
 }
@@ -213,7 +213,7 @@ impl AnvilState<WinitData> {
         self.pointer_location = pos;
         let serial = SCOUNTER.next_serial();
         let under = self.window_map.borrow().get_surface_under(pos);
-        self.pointer.motion(pos, under, serial, evt.time());
+        self.pointer.motion(pos, under, serial, evt.time(), &mut ());
     }
 }
 
@@ -274,7 +274,7 @@ impl AnvilState<UdevData> {
 
                         let under = self.window_map.borrow().get_surface_under(self.pointer_location);
                         self.pointer
-                            .motion(self.pointer_location, under, SCOUNTER.next_serial(), 0);
+                            .motion(self.pointer_location, under, SCOUNTER.next_serial(), 0, &mut ());
                     }
                 }
                 KeyAction::ScaleDown => {
@@ -297,7 +297,7 @@ impl AnvilState<UdevData> {
 
                         let under = self.window_map.borrow().get_surface_under(self.pointer_location);
                         self.pointer
-                            .motion(self.pointer_location, under, SCOUNTER.next_serial(), 0);
+                            .motion(self.pointer_location, under, SCOUNTER.next_serial(), 0, &mut ());
                     }
                 }
             },
@@ -343,7 +343,7 @@ impl AnvilState<UdevData> {
 
         let under = self.window_map.borrow().get_surface_under(self.pointer_location);
         self.pointer
-            .motion(self.pointer_location, under, serial, evt.time());
+            .motion(self.pointer_location, under, serial, evt.time(), &mut ());
     }
 
     fn on_tablet_tool_axis<B: InputBackend>(&mut self, evt: B::TabletToolAxisEvent) {
@@ -563,7 +563,7 @@ impl AnvilState<X11Data> {
         self.pointer_location = pos;
         let serial = SCOUNTER.next_serial();
         let under = self.window_map.borrow().get_surface_under(pos);
-        self.pointer.motion(pos, under, serial, evt.time());
+        self.pointer.motion(pos, under, serial, evt.time(), &mut ());
     }
 }
 
