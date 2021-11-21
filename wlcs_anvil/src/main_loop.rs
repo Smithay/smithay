@@ -215,7 +215,7 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
             let serial = SCOUNTER.next_serial();
             let under = state.window_map.borrow().get_surface_under(location);
             let time = state.start_time.elapsed().as_millis() as u32;
-            state.pointer.motion(location, under, serial, time);
+            state.pointer.motion(location, under, serial, time, &mut ());
         }
         WlcsEvent::PointerMoveRelative { delta, .. } => {
             state.pointer_location += delta;
@@ -225,7 +225,9 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
                 .borrow()
                 .get_surface_under(state.pointer_location);
             let time = state.start_time.elapsed().as_millis() as u32;
-            state.pointer.motion(state.pointer_location, under, serial, time);
+            state
+                .pointer
+                .motion(state.pointer_location, under, serial, time, &mut ());
         }
         WlcsEvent::PointerButtonDown { button_id, .. } => {
             let serial = SCOUNTER.next_serial();
@@ -239,16 +241,24 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
                     .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
             }
             let time = state.start_time.elapsed().as_millis() as u32;
-            state
-                .pointer
-                .button(button_id as u32, wl_pointer::ButtonState::Pressed, serial, time);
+            state.pointer.button(
+                button_id as u32,
+                wl_pointer::ButtonState::Pressed,
+                serial,
+                time,
+                &mut (),
+            );
         }
         WlcsEvent::PointerButtonUp { button_id, .. } => {
             let serial = SCOUNTER.next_serial();
             let time = state.start_time.elapsed().as_millis() as u32;
-            state
-                .pointer
-                .button(button_id as u32, wl_pointer::ButtonState::Released, serial, time);
+            state.pointer.button(
+                button_id as u32,
+                wl_pointer::ButtonState::Released,
+                serial,
+                time,
+                &mut (),
+            );
         }
         WlcsEvent::PointerRemoved { .. } => {}
         // touch inputs
