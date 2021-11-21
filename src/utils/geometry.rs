@@ -18,7 +18,7 @@ pub struct Buffer;
 pub struct Raw;
 
 pub trait Coordinate:
-    Sized + Add<Self, Output = Self> + Sub<Self, Output = Self> + PartialOrd + Default + Copy + std::fmt::Debug
+    Sized + Add<Self, Output = Self> + Sub<Self, Output = Self> + PartialOrd + Default + Copy + fmt::Debug
 {
     fn downscale(self, scale: Self) -> Self;
     fn upscale(self, scale: Self) -> Self;
@@ -637,9 +637,16 @@ impl<N: AddAssign, Kind> AddAssign for Size<N, Kind> {
     }
 }
 
-impl<N: SubAssign, Kind> SubAssign for Size<N, Kind> {
+impl<N: SubAssign + fmt::Debug + PartialOrd, Kind> SubAssign for Size<N, Kind> {
     #[inline]
     fn sub_assign(&mut self, rhs: Self) {
+        debug_assert!(
+            self.w >= rhs.w && self.h >= rhs.h,
+            "Attempting to subtract bigger from smaller size: {:?} - {:?}",
+            (&self.w, &self.h),
+            (&rhs.w, &rhs.h),
+        );
+
         self.w -= rhs.w;
         self.h -= rhs.h
     }
