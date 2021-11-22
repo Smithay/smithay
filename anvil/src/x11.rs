@@ -164,7 +164,7 @@ pub fn run_x11(log: Logger) {
                 state.backend_data.render = true;
             }
 
-            X11Event::Input(event) => state.process_input_event(event),
+            X11Event::Input(event) => state.process_input_event_windowed(event, OUTPUT_NAME),
         })
         .expect("Failed to insert X11 Backend into event loop");
 

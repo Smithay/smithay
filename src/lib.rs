@@ -4,7 +4,7 @@
 
 //! # Smithay: the Wayland compositor smithy
 //!
-//! This crate is a general framework for build wayland compositors. It currently focuses on low-level,
+//! This crate is a general framework for building wayland compositors. It currently focuses on low-level,
 //! helpers and abstractions, handling most of the system-level and wayland protocol interactions.
 //! The window management and drawing logic is however at the time not provided (but helpers for this
 //! are planned for future version).

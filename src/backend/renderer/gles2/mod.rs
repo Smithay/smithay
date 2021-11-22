@@ -11,12 +11,12 @@ use std::sync::{
 };
 use std::{collections::HashSet, os::raw::c_char};
 
-use cgmath::{prelude::*, Matrix3, Vector2};
+use cgmath::{prelude::*, Matrix3, Vector2, Vector3};
 
 mod shaders;
 mod version;
 
-use super::{Bind, Frame, Renderer, Texture, Transform, Unbind};
+use super::{Bind, Frame, Renderer, Texture, TextureFilter, Transform, Unbind};
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
     Format,
@@ -26,7 +26,7 @@ use crate::backend::egl::{
     EGLContext, EGLSurface, MakeCurrentError,
 };
 use crate::backend::SwapBuffersError;
-use crate::utils::{Buffer, Physical, Size};
+use crate::utils::{Buffer, Physical, Rectangle, Size};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use super::ImportEgl;
@@ -34,8 +34,6 @@ use super::ImportEgl;
 use super::{ImportDma, ImportShm};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
-#[cfg(feature = "wayland_frontend")]
-use crate::utils::Rectangle;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
@@ -420,6 +418,7 @@ impl Gles2Renderer {
     /// - This renderer has no default framebuffer, use `Bind::bind` before rendering.
     /// - Binding a new target, while another one is already bound, will replace the current target.
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
+    /// - Texture filtering starts with Nearest-downscaling and Linear-upscaling
     pub unsafe fn new<L>(context: EGLContext, logger: L) -> Result<Gles2Renderer, Gles2Error>
     where
         L: Into<Option<::slog::Logger>>,
@@ -495,7 +494,7 @@ impl Gles2Renderer {
         ];
 
         let (tx, rx) = channel();
-        let renderer = Gles2Renderer {
+        let mut renderer = Gles2Renderer {
             id: RENDERER_COUNTER.fetch_add(1, Ordering::SeqCst),
             gl,
             egl: context,
@@ -514,6 +513,8 @@ impl Gles2Renderer {
             logger: log,
             _not_send: std::ptr::null_mut(),
         };
+        renderer.downscale_filter(TextureFilter::Nearest)?;
+        renderer.upscale_filter(TextureFilter::Linear)?;
         renderer.egl.unbind()?;
         Ok(renderer)
     }
@@ -1007,6 +1008,35 @@ impl Renderer for Gles2Renderer {
     type TextureId = Gles2Texture;
     type Frame = Gles2Frame;
 
+    fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
+        self.make_current()?;
+        unsafe {
+            self.gl.TexParameteri(
+                ffi::TEXTURE_2D,
+                ffi::TEXTURE_MIN_FILTER,
+                match filter {
+                    TextureFilter::Nearest => ffi::NEAREST as i32,
+                    TextureFilter::Linear => ffi::LINEAR as i32,
+                },
+            );
+        }
+        Ok(())
+    }
+    fn upscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
+        self.make_current()?;
+        unsafe {
+            self.gl.TexParameteri(
+                ffi::TEXTURE_2D,
+                ffi::TEXTURE_MAG_FILTER,
+                match filter {
+                    TextureFilter::Nearest => ffi::NEAREST as i32,
+                    TextureFilter::Linear => ffi::LINEAR as i32,
+                },
+            );
+        }
+        Ok(())
+    }
+
     fn render<F, R>(
         &mut self,
         size: Size<i32, Physical>,
@@ -1100,13 +1130,60 @@ impl Frame for Gles2Frame {
         Ok(())
     }
 
-    fn render_texture(
+    fn render_texture_from_to(
         &mut self,
-        tex: &Self::TextureId,
+        texture: &Self::TextureId,
+        src: Rectangle<i32, Buffer>,
+        dest: Rectangle<f64, Physical>,
+        transform: Transform,
+        alpha: f32,
+    ) -> Result<(), Self::Error> {
+        let mut mat = Matrix3::<f32>::identity();
+
+        // position and scale
+        mat = mat * Matrix3::from_translation(Vector2::new(dest.loc.x as f32, dest.loc.y as f32));
+        mat = mat * Matrix3::from_nonuniform_scale(dest.size.w as f32, dest.size.h as f32);
+
+        //apply surface transformation
+        mat = mat * Matrix3::from_translation(Vector2::new(0.5, 0.5));
+        if transform == Transform::Normal {
+            assert_eq!(mat, mat * transform.invert().matrix());
+            assert_eq!(transform.matrix(), Matrix3::<f32>::identity());
+        }
+        mat = mat * transform.invert().matrix();
+        mat = mat * Matrix3::from_translation(Vector2::new(-0.5, -0.5));
+
+        // this matrix should be regular, we can expect invert to succeed
+        let tex_size = texture.size();
+        let texture_mat = Matrix3::from_nonuniform_scale(tex_size.w as f32, tex_size.h as f32)
+            .invert()
+            .unwrap();
+        let verts = [
+            (texture_mat * Vector3::new((src.loc.x + src.size.w) as f32, src.loc.y as f32, 0.0)).truncate(), // top-right
+            (texture_mat * Vector3::new(src.loc.x as f32, src.loc.y as f32, 0.0)).truncate(), // top-left
+            (texture_mat
+                * Vector3::new(
+                    (src.loc.x + src.size.w) as f32,
+                    (src.loc.y + src.size.h) as f32,
+                    0.0,
+                ))
+            .truncate(), // bottom-right
+            (texture_mat * Vector3::new(src.loc.x as f32, (src.loc.y + src.size.h) as f32, 0.0)).truncate(), // bottom-left
+        ];
+        self.render_texture(texture, mat, verts, alpha)
+    }
+}
+
+impl Gles2Frame {
+    /// Render a texture to the current target using given projection matrix and alpha.
+    /// The given vertices are used to source the texture. This is mostly useful for cropping the texture.    
+    pub fn render_texture(
+        &mut self,
+        tex: &Gles2Texture,
         mut matrix: Matrix3<f32>,
         tex_coords: [Vector2<f32>; 4],
         alpha: f32,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), Gles2Error> {
         //apply output transformation
         matrix = self.current_projection * matrix;
 

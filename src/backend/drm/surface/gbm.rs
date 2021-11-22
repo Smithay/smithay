@@ -62,16 +62,21 @@ where
         // Once we have proper color management and possibly HDR support,
         // we need to have a more sophisticated picker.
         // (Or maybe just pick ARGB2101010, if available, we will see.)
-        let code = Fourcc::Argb8888;
+        let mut code = Fourcc::Argb8888;
         let logger = crate::slog_or_fallback(log).new(o!("backend" => "drm_render"));
 
         // select a format
-        let plane_formats = drm
+        let mut plane_formats = drm
             .supported_formats(drm.plane())?
             .iter()
-            .filter(|fmt| fmt.code == code)
             .cloned()
             .collect::<HashSet<_>>();
+
+        // try non alpha variant if not available
+        if !plane_formats.iter().any(|fmt| fmt.code == code) {
+            code = Fourcc::Xrgb8888;
+        }
+        plane_formats.retain(|fmt| fmt.code == code);
         renderer_formats.retain(|fmt| fmt.code == code);
 
         trace!(logger, "Plane formats: {:?}", plane_formats);

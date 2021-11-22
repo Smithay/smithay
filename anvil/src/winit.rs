@@ -132,16 +132,16 @@ pub fn run_winit(log: Logger) {
                             size,
                             refresh: 60_000,
                         },
-                        crate::winit::OUTPUT_NAME,
+                        OUTPUT_NAME,
                     );
 
                     let output_mut = state.output_map.borrow();
-                    let output = output_mut.find_by_name(crate::winit::OUTPUT_NAME).unwrap();
+                    let output = output_mut.find_by_name(OUTPUT_NAME).unwrap();
 
                     state.window_map.borrow_mut().layers.arange_layers(output);
                 }
 
-                WinitEvent::Input(event) => state.process_input_event(event),
+                WinitEvent::Input(event) => state.process_input_event_windowed(event, OUTPUT_NAME),
 
                 _ => (),
             })

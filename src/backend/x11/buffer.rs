@@ -129,7 +129,7 @@ where
         }
 
         // We need dri3 >= 1.2 in order to use the enhanced dri3_pixmap_from_buffers function.
-        let xid = if window_inner.extensions.dri3 >= (1, 2) {
+        let xid = if window_inner.extensions.dri3 >= Some((1, 2)) {
             if dmabuf.num_planes() > 4 {
                 return Err(CreatePixmapError::TooManyPlanes);
             }

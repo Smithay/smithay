@@ -4,10 +4,6 @@ use crate::AnvilState;
 
 #[cfg(feature = "udev")]
 use crate::udev::UdevData;
-#[cfg(feature = "winit")]
-use crate::winit::WinitData;
-#[cfg(feature = "x11")]
-use crate::x11::X11Data;
 
 use smithay::{
     backend::input::{
@@ -38,6 +34,34 @@ use smithay::{
 };
 
 impl<Backend> AnvilState<Backend> {
+    fn process_common_key_action(&mut self, action: KeyAction) {
+        match action {
+            KeyAction::None => (),
+
+            KeyAction::Quit => {
+                info!(self.log, "Quitting.");
+                self.running.store(false, Ordering::SeqCst);
+            }
+
+            KeyAction::Run(cmd) => {
+                info!(self.log, "Starting program"; "cmd" => cmd.clone());
+
+                if let Err(e) = Command::new(&cmd).spawn() {
+                    error!(self.log,
+                        "Failed to start program";
+                        "cmd" => cmd,
+                        "err" => format!("{:?}", e)
+                    );
+                }
+            }
+
+            _ => unreachable!(
+                "Common key action handler encountered backend specific action {:?}",
+                action
+            ),
+        }
+    }
+
     fn keyboard_key_to_action<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) -> KeyAction {
         let keycode = evt.key_code();
         let state = evt.state();
@@ -143,72 +167,72 @@ impl<Backend> AnvilState<Backend> {
     }
 }
 
-#[cfg(feature = "winit")]
-impl AnvilState<WinitData> {
-    pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
+#[cfg(any(feature = "winit", feature = "x11"))]
+impl<Backend> AnvilState<Backend> {
+    pub fn process_input_event_windowed<B: InputBackend>(&mut self, event: InputEvent<B>, output_name: &str) {
         match event {
-            InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
-                KeyAction::None => {}
-                KeyAction::Quit => {
-                    info!(self.log, "Quitting.");
-                    self.running.store(false, Ordering::SeqCst);
-                }
-                KeyAction::Run(cmd) => {
-                    info!(self.log, "Starting program"; "cmd" => cmd.clone());
-                    if let Err(e) = Command::new(&cmd).spawn() {
-                        error!(self.log,
-                            "Failed to start program";
-                            "cmd" => cmd,
-                            "err" => format!("{:?}", e)
-                        );
-                    }
-                }
+            InputEvent::Keyboard { event } => match self.keyboard_key_to_action::<B>(event) {
                 KeyAction::ScaleUp => {
                     let current_scale = {
                         self.output_map
                             .borrow()
-                            .find_by_name(crate::winit::OUTPUT_NAME)
+                            .find_by_name(output_name)
                             .map(|o| o.scale())
                             .unwrap_or(1.0)
                     };
+
                     self.output_map
                         .borrow_mut()
-                        .update_scale_by_name(current_scale + 0.25f32, crate::winit::OUTPUT_NAME);
+                        .update_scale_by_name(current_scale + 0.25f32, output_name);
                 }
+
                 KeyAction::ScaleDown => {
                     let current_scale = {
                         self.output_map
                             .borrow()
-                            .find_by_name(crate::winit::OUTPUT_NAME)
+                            .find_by_name(output_name)
                             .map(|o| o.scale())
                             .unwrap_or(1.0)
                     };
 
-                    self.output_map.borrow_mut().update_scale_by_name(
-                        f32::max(1.0f32, current_scale - 0.25f32),
-                        crate::winit::OUTPUT_NAME,
-                    );
+                    self.output_map
+                        .borrow_mut()
+                        .update_scale_by_name(f32::max(1.0f32, current_scale + 0.25f32), output_name);
                 }
-                action => {
-                    warn!(self.log, "Key action {:?} unsupported on winit backend.", action);
-                }
+
+                action => match action {
+                    KeyAction::None | KeyAction::Quit | KeyAction::Run(_) => {
+                        self.process_common_key_action(action)
+                    }
+
+                    _ => warn!(
+                        self.log,
+                        "Key action {:?} unsupported on on output {} backend.", action, output_name
+                    ),
+                },
             },
-            InputEvent::PointerMotionAbsolute { event, .. } => self.on_pointer_move_absolute::<B>(event),
-            InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(event),
-            InputEvent::PointerAxis { event, .. } => self.on_pointer_axis::<B>(event),
-            _ => {
-                // other events are not handled in anvil (yet)
+
+            InputEvent::PointerMotionAbsolute { event } => {
+                self.on_pointer_move_absolute_windowed::<B>(event, output_name)
             }
+            InputEvent::PointerButton { event } => self.on_pointer_button::<B>(event),
+            InputEvent::PointerAxis { event } => self.on_pointer_axis::<B>(event),
+            _ => (), // other events are not handled in anvil (yet)
         }
     }
 
-    fn on_pointer_move_absolute<B: InputBackend>(&mut self, evt: B::PointerMotionAbsoluteEvent) {
+    fn on_pointer_move_absolute_windowed<B: InputBackend>(
+        &mut self,
+        evt: B::PointerMotionAbsoluteEvent,
+        output_name: &str,
+    ) {
         let output_size = self
             .output_map
             .borrow()
-            .find_by_name(crate::winit::OUTPUT_NAME)
+            .find_by_name(output_name)
             .map(|o| o.size())
             .unwrap();
+
         let pos = evt.position_transformed(output_size);
         self.pointer_location = pos;
         let serial = SCOUNTER.next_serial();
@@ -222,26 +246,11 @@ impl AnvilState<UdevData> {
     pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
         match event {
             InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
-                KeyAction::None => {}
-                KeyAction::Quit => {
-                    info!(self.log, "Quitting.");
-                    self.running.store(false, Ordering::SeqCst);
-                }
                 #[cfg(feature = "udev")]
                 KeyAction::VtSwitch(vt) => {
                     info!(self.log, "Trying to switch to vt {}", vt);
                     if let Err(err) = self.backend_data.session.change_vt(vt) {
                         error!(self.log, "Error switching to vt {}: {}", vt, err);
-                    }
-                }
-                KeyAction::Run(cmd) => {
-                    info!(self.log, "Starting program"; "cmd" => cmd.clone());
-                    if let Err(e) = Command::new(&cmd).spawn() {
-                        error!(self.log,
-                            "Failed to start program";
-                            "cmd" => cmd,
-                            "err" => format!("{:?}", e)
-                        );
                     }
                 }
                 KeyAction::Screen(num) => {
@@ -300,6 +309,14 @@ impl AnvilState<UdevData> {
                             .motion(self.pointer_location, under, SCOUNTER.next_serial(), 0);
                     }
                 }
+
+                action => match action {
+                    KeyAction::None | KeyAction::Quit | KeyAction::Run(_) => {
+                        self.process_common_key_action(action)
+                    }
+
+                    _ => unreachable!(),
+                },
             },
             InputEvent::PointerMotion { event, .. } => self.on_pointer_move::<B>(event),
             InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(event),
@@ -483,87 +500,6 @@ impl AnvilState<UdevData> {
         } else {
             (clamped_x, pos_y).into()
         }
-    }
-}
-
-#[cfg(feature = "x11")]
-impl AnvilState<X11Data> {
-    pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
-        match event {
-            InputEvent::Keyboard { event } => match self.keyboard_key_to_action::<B>(event) {
-                KeyAction::None => (),
-
-                KeyAction::Quit => {
-                    info!(self.log, "Quitting.");
-                    self.running.store(false, Ordering::SeqCst);
-                }
-
-                KeyAction::Run(cmd) => {
-                    info!(self.log, "Starting program"; "cmd" => cmd.clone());
-
-                    if let Err(e) = Command::new(&cmd).spawn() {
-                        error!(self.log,
-                            "Failed to start program";
-                            "cmd" => cmd,
-                            "err" => format!("{:?}", e)
-                        );
-                    }
-                }
-
-                KeyAction::ScaleUp => {
-                    let current_scale = {
-                        self.output_map
-                            .borrow()
-                            .find_by_name(crate::x11::OUTPUT_NAME)
-                            .map(|o| o.scale())
-                            .unwrap_or(1.0)
-                    };
-
-                    self.output_map
-                        .borrow_mut()
-                        .update_scale_by_name(current_scale + 0.25f32, crate::x11::OUTPUT_NAME);
-                }
-
-                KeyAction::ScaleDown => {
-                    let current_scale = {
-                        self.output_map
-                            .borrow()
-                            .find_by_name(crate::x11::OUTPUT_NAME)
-                            .map(|o| o.scale())
-                            .unwrap_or(1.0)
-                    };
-
-                    self.output_map.borrow_mut().update_scale_by_name(
-                        f32::max(1.0f32, current_scale + 0.25f32),
-                        crate::x11::OUTPUT_NAME,
-                    );
-                }
-
-                action => {
-                    warn!(self.log, "Key action {:?} unsupported on x11 backend.", action);
-                }
-            },
-
-            InputEvent::PointerMotionAbsolute { event } => self.on_pointer_move_absolute::<B>(event),
-            InputEvent::PointerButton { event } => self.on_pointer_button::<B>(event),
-            InputEvent::PointerAxis { event } => self.on_pointer_axis::<B>(event),
-            _ => (), // other events are not handled in anvil (yet)
-        }
-    }
-
-    fn on_pointer_move_absolute<B: InputBackend>(&mut self, evt: B::PointerMotionAbsoluteEvent) {
-        let output_size = self
-            .output_map
-            .borrow()
-            .find_by_name(crate::x11::OUTPUT_NAME)
-            .map(|o| o.size())
-            .unwrap();
-
-        let pos = evt.position_transformed(output_size);
-        self.pointer_location = pos;
-        let serial = SCOUNTER.next_serial();
-        let under = self.window_map.borrow().get_surface_under(pos);
-        self.pointer.motion(pos, under, serial, evt.time());
     }
 }
 
