@@ -1391,7 +1391,7 @@ impl PopupSurface {
     /// Send a configure event, including the `repositioned` event to the client
     /// in response to a `reposition` request.
     ///
-    /// For further information see [`XdgPopup::send_configure`]
+    /// For further information see [`send_configure`](#method.send_configure)
     pub fn send_repositioned(&self, token: u32) {
         self.send_configure_internal(Some(token))
     }
