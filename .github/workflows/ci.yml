@@ -72,6 +72,9 @@ jobs:
           args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" -- -D warnings
   
   check-minimal:
+    env:
+      RUSTFLAGS: "-D warnings"
+
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
