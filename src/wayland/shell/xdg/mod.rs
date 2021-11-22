@@ -212,14 +212,17 @@ macro_rules! xdg_role {
             }
 
             /// Gets the latest state that has been configured
-            /// on the server. The state can include changes
-            /// that have been made on the server but not yet
-            /// acked or committed by the client. It does not
-            /// include the current pending state.
+            /// on the server and sent to the client.
+            ///
+            /// The state includes all changes that have been
+            /// made on the server, including all not yet
+            /// acked or committed changes, but excludes the
+            /// current [`server_pending`](#structfield.server_pending) state.
             ///
             /// This can be used for example to check if the
-            /// pending state is different from the last configured.
-            fn current_server_state(&self) -> &$state {
+            /// [`server_pending`](#structfield.server_pending) state
+            /// is different from the last configured.
+            pub fn current_server_state(&self) -> &$state {
                 // We check if there is already a non-acked pending
                 // configure and use its state or otherwise we could
                 // loose some state that was previously configured
@@ -240,12 +243,13 @@ macro_rules! xdg_role {
                     .unwrap_or(&self.current)
             }
 
-            /// Check if the state has pending changes.
+            /// Check if the state has pending changes that have
+            /// not been sent to the client.
             ///
-            /// This differs to just checking if the server pending
-            /// state is some in that it also check if a pending
-            /// state is different from the current server state.
-            fn has_pending_changes(&self) -> bool {
+            /// This differs from just checking if the [`server_pending`](#structfield.server_pending)
+            /// state is [`Some`] in that it also checks if a current pending
+            /// state is different from the [`current_server_state`](#method.current_server_state).
+            pub fn has_pending_changes(&self) -> bool {
                 self.server_pending.as_ref().map(|s| s != self.current_server_state()).unwrap_or(false)
             }
         }
