@@ -9,7 +9,7 @@
 //!
 //! Smithay currently provides two of them:
 //!
-//! - The [`xdg`](xdg/index.hmtl) module provides handlers for the `xdg_shell` protocol, which is
+//! - The [`xdg`](xdg/index.html) module provides handlers for the `xdg_shell` protocol, which is
 //!   the current standard for desktop apps
 //! - The [`legacy`](legacy/index.html) module provides handlers for the `wl_shell` protocol, which
 //!   is now deprecated. You only need it if you want to support apps predating `xdg_shell`.
