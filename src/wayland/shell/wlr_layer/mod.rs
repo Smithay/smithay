@@ -165,7 +165,7 @@ impl LayerShellState {
 
 #[derive(Clone)]
 struct ShellUserData {
-    log: ::slog::Logger,
+    _log: ::slog::Logger,
     user_impl: Rc<RefCell<dyn FnMut(LayerShellRequest, DispatchData<'_>)>>,
     shell_state: Arc<Mutex<LayerShellState>>,
 }
@@ -189,7 +189,7 @@ where
     }));
 
     let shell_data = ShellUserData {
-        log: log.new(slog::o!("smithay_module" => "layer_shell_handler")),
+        _log: log.new(slog::o!("smithay_module" => "layer_shell_handler")),
         user_impl: Rc::new(RefCell::new(implementation)),
         shell_state: shell_state.clone(),
     };

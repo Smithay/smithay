@@ -29,7 +29,7 @@ struct Inner {
     scale: i32,
 
     instances: Vec<ZxdgOutputV1>,
-    log: ::slog::Logger,
+    _log: ::slog::Logger,
 }
 
 #[derive(Debug, Clone)]
@@ -58,7 +58,7 @@ impl XdgOutput {
                 scale: output.scale,
 
                 instances: Vec::new(),
-                log,
+                _log: log,
             })),
         }
     }

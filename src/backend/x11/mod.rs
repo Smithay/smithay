@@ -83,7 +83,7 @@ use x11rb::{
     protocol::{
         self as x11,
         dri3::ConnectionExt as _,
-        xproto::{ColormapAlloc, ConnectionExt, Depth, PixmapWrapper, VisualClass},
+        xproto::{ColormapAlloc, ConnectionExt, PixmapWrapper, VisualClass},
         ErrorKind,
     },
     rust_connection::{ReplyError, RustConnection},
@@ -124,8 +124,6 @@ pub struct X11Backend {
     window: Arc<WindowInner>,
     resize: Sender<Size<u16, Logical>>,
     key_counter: Arc<AtomicU32>,
-    depth: Depth,
-    visual_id: u32,
 }
 
 atom_manager! {
@@ -231,7 +229,7 @@ impl X11Backend {
             title,
             format,
             atoms,
-            depth.clone(),
+            depth,
             visual_id,
             colormap,
             extensions,
@@ -254,8 +252,6 @@ impl X11Backend {
             connection,
             window,
             key_counter: Arc::new(AtomicU32::new(0)),
-            depth,
-            visual_id,
             screen_number,
             resize: resize_send,
         };

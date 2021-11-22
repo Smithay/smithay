@@ -47,8 +47,7 @@ use wayland_server::{Display, Filter, Global, Main};
 /// Manages all exported and imported surfaces.
 #[derive(Debug)]
 pub struct XdgForeignState {
-    log: ::slog::Logger,
-    shell: Arc<Mutex<ShellState>>,
+    _log: ::slog::Logger,
     exports: Vec<Export>,
 }
 
@@ -85,9 +84,8 @@ where
     let log = crate::slog_or_fallback(logger);
 
     let state = Arc::new(Mutex::new(XdgForeignState {
-        log: log.new(slog::o!("smithay_module" => "xdg_foreign_handler")),
+        _log: log.new(slog::o!("smithay_module" => "xdg_foreign_handler")),
         exports: vec![],
-        shell: xdg_shell_state.clone(),
     }));
 
     // Borrow checking does not like us cloning the state inside the filter's closure so we clone
@@ -121,8 +119,6 @@ struct Export {
     inner: zxdg_exported_v2::ZxdgExportedV2,
     /// All imports made from this export.
     imports: Vec<Import>,
-    /// Whether this export was created by the compositor or a client.
-    compositor_created: bool,
 }
 
 impl Export {
@@ -152,7 +148,6 @@ impl PartialEq for Export {
 struct Import {
     inner: zxdg_imported_v2::ZxdgImportedV2,
     surface: WlSurface,
-    handle: String,
     /// Child surfaces which have imported this surface as a parent.
     children: Vec<WlSurface>,
 }
@@ -291,7 +286,6 @@ fn exporter_implementation(
                     handle: handle.clone(),
                     inner: id.deref().clone(),
                     imports: vec![],
-                    compositor_created: false,
                 });
 
                 handle
@@ -370,7 +364,6 @@ fn importer_implementation(
                         export.imports.push(Import {
                             inner,
                             surface: export.surface.clone(),
-                            handle: export.handle.clone(),
                             children: vec![],
                         });
                     }
