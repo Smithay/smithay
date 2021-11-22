@@ -85,7 +85,8 @@ impl WindowSize {
 #[derive(Debug)]
 pub struct WinitGraphicsBackend {
     renderer: Gles2Renderer,
-    display: EGLDisplay,
+    // The display isn't used past this point but must be kept alive.
+    _display: EGLDisplay,
     egl: Rc<EGLSurface>,
     window: Rc<WinitWindow>,
     size: Rc<RefCell<WindowSize>>,
@@ -223,7 +224,7 @@ where
     Ok((
         WinitGraphicsBackend {
             window: window.clone(),
-            display,
+            _display: display,
             egl,
             renderer,
             size: size.clone(),

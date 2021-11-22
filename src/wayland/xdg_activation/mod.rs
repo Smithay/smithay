@@ -133,7 +133,7 @@ impl XdgActivationTokenData {
 /// Tracks the list of pending and current activation requests
 #[derive(Debug)]
 pub struct XdgActivationState {
-    log: ::slog::Logger,
+    _log: ::slog::Logger,
     user_data: UserDataMap,
 
     pending_tokens: HashMap<XdgActivationToken, XdgActivationTokenData>,
@@ -203,7 +203,7 @@ where
     let implementation = Rc::new(RefCell::new(implementation));
 
     let activation_state = Arc::new(Mutex::new(XdgActivationState {
-        log: log.new(slog::o!("smithay_module" => "xdg_activation_handler")),
+        _log: log.new(slog::o!("smithay_module" => "xdg_activation_handler")),
         user_data: UserDataMap::new(),
         pending_tokens: HashMap::new(),
         activation_requests: HashMap::new(),
