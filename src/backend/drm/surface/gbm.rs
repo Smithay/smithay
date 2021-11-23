@@ -167,11 +167,11 @@ where
         }
     }
 
-    /// Retrieves the next buffer to be rendered into.
+    /// Retrieves the next buffer to be rendered into and it's age.
     ///
     /// *Note*: This function can be called multiple times and
     /// will return the same buffer until it is queued (see [`GbmBufferedSurface::queue_buffer`]).
-    pub fn next_buffer(&mut self) -> Result<Dmabuf, Error> {
+    pub fn next_buffer(&mut self) -> Result<(Dmabuf, u8), Error> {
         if self.next_fb.is_none() {
             let slot = self.swapchain.acquire()?.ok_or(Error::NoFreeSlotsError)?;
 
@@ -189,7 +189,7 @@ where
         }
 
         let slot = self.next_fb.as_ref().unwrap();
-        Ok(slot.userdata().get::<Dmabuf>().unwrap().clone())
+        Ok((slot.userdata().get::<Dmabuf>().unwrap().clone(), slot.age()))
     }
 
     /// Queues the current buffer for rendering.
@@ -213,6 +213,7 @@ where
     pub fn frame_submitted(&mut self) -> Result<(), Error> {
         if let Some(mut pending) = self.pending_fb.take() {
             std::mem::swap(&mut pending, &mut self.current_fb);
+            self.swapchain.submitted(pending);
             if self.queued_fb.is_some() {
                 self.submit()?;
             }
