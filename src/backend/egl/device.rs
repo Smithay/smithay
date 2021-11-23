@@ -44,7 +44,8 @@ impl EGLDevice {
 
             // Passing 0 for max devices and a null-pointer for devices is safe because we indicate we only
             // want the number of devices.
-            if unsafe { ffi::egl::QueryDevicesEXT(0, ptr::null_mut(), amount.as_mut_ptr()) } == ffi::egl::FALSE
+            if unsafe { ffi::egl::QueryDevicesEXT(0, ptr::null_mut(), amount.as_mut_ptr()) }
+                == ffi::egl::FALSE
             {
                 0
             } else {
@@ -63,7 +64,8 @@ impl EGLDevice {
             // - Vector used as pointer is correct size.
             // - Device amount will accommodate all available devices because we have checked the size earlier.
             ffi::egl::QueryDevicesEXT(device_amount, devices.as_mut_ptr(), &mut device_amount)
-        }).map_err(Error::QueryDevices)?;
+        })
+        .map_err(Error::QueryDevices)?;
 
         // Set the length of the vec so that rust does not think it is still empty.
 

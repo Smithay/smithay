@@ -37,8 +37,8 @@
 //!     // Initialize EGL to retrieve the support modifier list
 //!     let egl = EGLDisplay::new(&device, logger.clone()).expect("Failed to create EGLDisplay");
 //!     let context = EGLContext::new(&egl, logger).expect("Failed to create EGLContext");
-//!     let modifiers = context.dmabuf_render_formats().iter().map(|format| format.modifier).collect::<HashSet<_>>(); 
-//! 
+//!     let modifiers = context.dmabuf_render_formats().iter().map(|format| format.modifier).collect::<HashSet<_>>();
+//!
 //!     // Finally create the X11 surface, you will use this to obtain buffers that will be presented to the
 //!     // window.
 //!     let surface = X11Surface::new(&mut backend, device, modifiers.into_iter());
@@ -325,13 +325,13 @@ impl X11Backend {
         // We cannot fallback on the egl_init method, because there is no way for us to authenticate a primary node.
         // dri3 does not work for closed-source drivers, but *may* give us a authenticated fd as a fallback.
         // As a result we try to use egl for a cleaner, better supported approach at first and only if that fails use dri3.
-        egl_init(&self).or_else(|err| {
+        egl_init(self).or_else(|err| {
             slog::warn!(
                 &self.log,
                 "Failed to init X11 surface via egl, falling back to dri3: {}",
                 err
             );
-            dri3_init(&self)
+            dri3_init(self)
         })
     }
 }
@@ -412,19 +412,17 @@ fn dri3_init(backend: &X11Backend) -> Result<DrmNode, X11Error> {
     .map_err(AllocateBuffersError::from)?;
     let drm_node = DrmNode::from_fd(drm_device_fd).map_err(Into::<AllocateBuffersError>::into)?;
 
-    if drm_node.ty() != NodeType::Render {
-        if drm_node.has_render() {
-            // Try to get the render node.
-            if let Some(path) = drm_node.dev_path_with_type(NodeType::Render) {
-                return Ok(fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
-                    .map_err(Into::<std::io::Error>::into)
-                    .map_err(CreateDrmNodeError::Io)
-                    .and_then(DrmNode::from_fd)
-                    .unwrap_or_else(|err| {
-                        slog::warn!(&backend.log, "Could not create render node from existing DRM node ({}), falling back to primary node", err);    
-                        drm_node
-                    }));
-            }
+    if drm_node.ty() != NodeType::Render && drm_node.has_render() {
+        // Try to get the render node.
+        if let Some(path) = drm_node.dev_path_with_type(NodeType::Render) {
+            return Ok(fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
+                .map_err(Into::<std::io::Error>::into)
+                .map_err(CreateDrmNodeError::Io)
+                .and_then(DrmNode::from_fd)
+                .unwrap_or_else(|err| {
+                    slog::warn!(&backend.log, "Could not create render node from existing DRM node ({}), falling back to primary node", err);
+                    drm_node
+                }));
         }
     }
 
@@ -598,7 +596,7 @@ impl Drop for Present<'_> {
 
             match surface.current.userdata().map(Option::unwrap) {
                 Ok(dmabuf) => {
-                    if let Ok(pixmap) = PixmapWrapper::with_dmabuf(&*connection, &surface.window, &dmabuf) {
+                    if let Ok(pixmap) = PixmapWrapper::with_dmabuf(&*connection, &surface.window, dmabuf) {
                         // Now present the current buffer
                         let _ = pixmap.present(&*connection, &surface.window);
                     }
