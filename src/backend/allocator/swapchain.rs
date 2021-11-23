@@ -1,10 +1,11 @@
 use std::ops::Deref;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex, MutexGuard,
+    Arc,
 };
 
 use crate::backend::allocator::{Allocator, Buffer, Fourcc, Modifier};
+use crate::utils::user_data::UserDataMap;
 
 pub const SLOT_CAP: usize = 4;
 
@@ -36,7 +37,7 @@ pub const SLOT_CAP: usize = 4;
 /// you can store then in the `Slot`s userdata field. If a buffer is re-used, its userdata is preserved for the next time
 /// it is returned by `acquire()`.
 #[derive(Debug)]
-pub struct Swapchain<A: Allocator<B>, B: Buffer, U: 'static> {
+pub struct Swapchain<A: Allocator<B>, B: Buffer> {
     /// Allocator used by the swapchain
     pub allocator: A,
 
@@ -45,7 +46,7 @@ pub struct Swapchain<A: Allocator<B>, B: Buffer, U: 'static> {
     fourcc: Fourcc,
     modifiers: Vec<Modifier>,
 
-    slots: [Arc<InternalSlot<B, U>>; SLOT_CAP],
+    slots: [Arc<InternalSlot<B>>; SLOT_CAP],
 }
 
 /// Slot of a swapchain containing an allocated buffer and its userdata.
@@ -53,50 +54,49 @@ pub struct Swapchain<A: Allocator<B>, B: Buffer, U: 'static> {
 /// The buffer is marked for re-use once all copies are dropped.
 /// Holding on to this struct will block the buffer in the swapchain.
 #[derive(Debug)]
-pub struct Slot<B: Buffer, U: 'static>(Arc<InternalSlot<B, U>>);
+pub struct Slot<B: Buffer>(Arc<InternalSlot<B>>);
 
 #[derive(Debug)]
-struct InternalSlot<B: Buffer, U: 'static> {
+struct InternalSlot<B: Buffer> {
     buffer: Option<B>,
     acquired: AtomicBool,
-    userdata: Mutex<Option<U>>,
+    userdata: UserDataMap,
 }
 
-impl<B: Buffer, U: 'static> Slot<B, U> {
+impl<B: Buffer> Slot<B> {
     /// Retrieve userdata for this slot.
-    pub fn userdata(&self) -> MutexGuard<'_, Option<U>> {
-        self.0.userdata.lock().unwrap()
+    pub fn userdata(&self) -> &UserDataMap {
+        &self.0.userdata
     }
 }
 
-impl<B: Buffer, U: 'static> Default for InternalSlot<B, U> {
+impl<B: Buffer> Default for InternalSlot<B> {
     fn default() -> Self {
         InternalSlot {
             buffer: None,
             acquired: AtomicBool::new(false),
-            userdata: Mutex::new(None),
+            userdata: UserDataMap::new(),
         }
     }
 }
 
-impl<B: Buffer, U: 'static> Deref for Slot<B, U> {
+impl<B: Buffer> Deref for Slot<B> {
     type Target = B;
     fn deref(&self) -> &B {
         Option::as_ref(&self.0.buffer).unwrap()
     }
 }
 
-impl<B: Buffer, U: 'static> Drop for Slot<B, U> {
+impl<B: Buffer> Drop for Slot<B> {
     fn drop(&mut self) {
         self.0.acquired.store(false, Ordering::SeqCst);
     }
 }
 
-impl<A, B, U> Swapchain<A, B, U>
+impl<A, B> Swapchain<A, B>
 where
     A: Allocator<B>,
     B: Buffer,
-    U: 'static,
 {
     /// Create a new swapchain with the desired allocator, dimensions and pixel format for the created buffers.
     pub fn new(
@@ -105,7 +105,7 @@ where
         height: u32,
         fourcc: Fourcc,
         modifiers: Vec<Modifier>,
-    ) -> Swapchain<A, B, U> {
+    ) -> Swapchain<A, B> {
         Swapchain {
             allocator,
             width,
@@ -120,7 +120,7 @@ where
     ///
     /// The swapchain has an internal maximum of four re-usable buffers.
     /// This function returns the first free one.
-    pub fn acquire(&mut self) -> Result<Option<Slot<B, U>>, A::Error> {
+    pub fn acquire(&mut self) -> Result<Option<Slot<B>>, A::Error> {
         if let Some(free_slot) = self
             .slots
             .iter_mut()

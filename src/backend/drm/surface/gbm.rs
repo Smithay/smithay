@@ -19,7 +19,7 @@ use slog::{debug, error, o, trace, warn};
 /// Simplified abstraction of a swapchain for gbm-buffers displayed on a [`DrmSurface`].
 pub struct GbmBufferedSurface<D: AsRawFd + 'static> {
     buffers: Buffers<D>,
-    swapchain: Swapchain<GbmDevice<D>, BufferObject<()>, (Dmabuf, FbHandle<D>)>,
+    swapchain: Swapchain<GbmDevice<D>, BufferObject<()>>,
     drm: Arc<DrmSurface<D>>,
 }
 
@@ -127,7 +127,7 @@ where
 
         let mode = drm.pending_mode();
 
-        let mut swapchain: Swapchain<GbmDevice<D>, BufferObject<()>, (Dmabuf, FbHandle<D>)> = Swapchain::new(
+        let mut swapchain: Swapchain<GbmDevice<D>, BufferObject<()>> = Swapchain::new(
             allocator,
             mode.size().0 as u32,
             mode.size().1 as u32,
@@ -148,7 +148,8 @@ where
         let fb = attach_framebuffer(&drm, &*buffer)?;
         let dmabuf = buffer.export()?;
         let handle = fb.fb;
-        *buffer.userdata() = Some((dmabuf, fb));
+        buffer.userdata().insert_if_missing(|| dmabuf);
+        buffer.userdata().insert_if_missing(|| fb);
 
         match drm.test_buffer(handle, &mode, true) {
             Ok(_) => {
@@ -284,14 +285,12 @@ impl<A: AsRawFd + 'static> Drop for FbHandle<A> {
     }
 }
 
-type DmabufSlot<D> = Slot<BufferObject<()>, (Dmabuf, FbHandle<D>)>;
-
 struct Buffers<D: AsRawFd + 'static> {
     drm: Arc<DrmSurface<D>>,
-    _current_fb: DmabufSlot<D>,
-    pending_fb: Option<DmabufSlot<D>>,
-    queued_fb: Option<DmabufSlot<D>>,
-    next_fb: Option<DmabufSlot<D>>,
+    _current_fb: Slot<BufferObject<()>>,
+    pending_fb: Option<Slot<BufferObject<()>>>,
+    queued_fb: Option<Slot<BufferObject<()>>>,
+    next_fb: Option<Slot<BufferObject<()>>>,
 }
 
 // TODO: Replace with #[derive(Debug)] once gbm::BufferObject implements debug
@@ -307,7 +306,7 @@ impl<D> Buffers<D>
 where
     D: AsRawFd + 'static,
 {
-    pub fn new(drm: Arc<DrmSurface<D>>, slot: DmabufSlot<D>) -> Buffers<D> {
+    pub fn new(drm: Arc<DrmSurface<D>>, slot: Slot<BufferObject<()>>) -> Buffers<D> {
         Buffers {
             drm,
             _current_fb: slot,
@@ -319,28 +318,26 @@ where
 
     pub fn next(
         &mut self,
-        swapchain: &mut Swapchain<GbmDevice<D>, BufferObject<()>, (Dmabuf, FbHandle<D>)>,
+        swapchain: &mut Swapchain<GbmDevice<D>, BufferObject<()>>,
     ) -> Result<Dmabuf, Error> {
-        if let Some(slot) = self.next_fb.as_ref() {
-            return Ok(slot.userdata().as_ref().unwrap().0.clone());
+        if self.next_fb.is_none() {
+            let slot = swapchain.acquire()?.ok_or(Error::NoFreeSlotsError)?;
+
+            let maybe_buffer = slot.userdata().get::<Dmabuf>().clone();
+            if maybe_buffer.is_none() {
+                let dmabuf = slot.export().map_err(Error::AsDmabufError)?;
+                let fb_handle = attach_framebuffer(&self.drm, &*slot)?;
+
+                let userdata = slot.userdata();
+                userdata.insert_if_missing(|| dmabuf);
+                userdata.insert_if_missing(|| fb_handle);
+            }
+
+            self.next_fb = Some(slot);
         }
 
-        let slot = swapchain.acquire()?.ok_or(Error::NoFreeSlotsError)?;
-
-        let maybe_buffer = slot.userdata().as_ref().map(|(buf, _)| buf.clone());
-        let dmabuf = match maybe_buffer {
-            Some(buf) => buf,
-            None => {
-                let dmabuf = slot.export()?;
-                let fb_handle = attach_framebuffer(&self.drm, &*slot)?;
-                *slot.userdata() = Some((dmabuf.clone(), fb_handle));
-                dmabuf
-            }
-        };
-
-        self.next_fb = Some(slot);
-
-        Ok(dmabuf)
+        let slot = self.next_fb.as_ref().unwrap();
+        Ok(slot.userdata().get::<Dmabuf>().unwrap().clone())
     }
 
     pub fn queue(&mut self) -> Result<(), Error> {
@@ -367,7 +364,7 @@ where
     fn submit(&mut self) -> Result<(), Error> {
         // yes it does not look like it, but both of these lines should be safe in all cases.
         let slot = self.queued_fb.take().unwrap();
-        let fb = slot.userdata().as_ref().unwrap().1.fb;
+        let fb = slot.userdata().get::<FbHandle<D>>().unwrap().fb;
 
         let flip = if self.drm.commit_pending() {
             self.drm.commit([(fb, self.drm.plane())].iter(), true)
