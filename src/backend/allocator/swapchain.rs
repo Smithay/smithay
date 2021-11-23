@@ -1,6 +1,6 @@
 use std::ops::Deref;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU8, Ordering},
     Arc,
 };
 
@@ -60,6 +60,7 @@ pub struct Slot<B: Buffer>(Arc<InternalSlot<B>>);
 struct InternalSlot<B: Buffer> {
     buffer: Option<B>,
     acquired: AtomicBool,
+    age: AtomicU8,
     userdata: UserDataMap,
 }
 
@@ -68,6 +69,11 @@ impl<B: Buffer> Slot<B> {
     pub fn userdata(&self) -> &UserDataMap {
         &self.0.userdata
     }
+
+    /// Retrieve the age of the buffer
+    pub fn age(&self) -> u8 {
+        self.0.age.load(Ordering::SeqCst)
+    }
 }
 
 impl<B: Buffer> Default for InternalSlot<B> {
@@ -75,6 +81,7 @@ impl<B: Buffer> Default for InternalSlot<B> {
         InternalSlot {
             buffer: None,
             acquired: AtomicBool::new(false),
+            age: AtomicU8::new(0),
             userdata: UserDataMap::new(),
         }
     }
@@ -144,6 +151,27 @@ where
         Ok(None)
     }
 
+    /// Mark a given buffer as submitted.
+    ///
+    /// This might effect internal data (e.g. buffer age) and may only be called,
+    /// if the buffer was actually used for display.
+    /// Buffers can always just be safely discarded by dropping them, but not
+    /// calling this function may affect performance characteristics
+    /// (e.g. by not tracking the buffer age).
+    pub fn submitted(&self, slot: Slot<B>) {
+        // don't mess up the state, if the user submitted and old buffer, after e.g. a resize
+        if !self.slots.iter().any(|other| Arc::ptr_eq(&slot.0, other)) {
+            return;
+        }
+
+        slot.0.age.store(1, Ordering::SeqCst);
+        for other_slot in &self.slots {
+            if !Arc::ptr_eq(other_slot, &slot.0) {
+                other_slot.age.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+    }
+
     /// Change the dimensions of newly returned buffers.
     ///
     /// Already obtained buffers are unaffected and will be cleaned up on drop.
@@ -154,6 +182,11 @@ where
 
         self.width = width;
         self.height = height;
+        self.slots = Default::default();
+    }
+
+    /// Remove all internally cached buffers to e.g. reset age values
+    pub fn reset_buffers(&mut self) {
         self.slots = Default::default();
     }
 }
