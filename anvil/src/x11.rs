@@ -204,122 +204,116 @@ pub fn run_x11(log: Logger) {
         if state.backend_data.render {
             state.backend_data.render = false;
             let backend_data = &mut state.backend_data;
+            let mut renderer = renderer.borrow_mut();
 
-            match backend_data.surface.present() {
-                Ok(present) => {
-                    let mut renderer = renderer.borrow_mut();
+            // We need to borrow everything we want to refer to inside the renderer callback otherwise rustc is unhappy.
+            let window_map = state.window_map.borrow();
+            let (x, y) = state.pointer_location.into();
+            let dnd_icon = &state.dnd_icon;
+            let cursor_status = &state.cursor_status;
+            #[cfg(feature = "debug")]
+            let fps = backend_data.fps.avg().round() as u32;
+            #[cfg(feature = "debug")]
+            let fps_texture = &backend_data.fps_texture;
 
-                    // We need to borrow everything we want to refer to inside the renderer callback otherwise rustc is unhappy.
-                    let window_map = state.window_map.borrow();
-                    let (x, y) = state.pointer_location.into();
-                    let dnd_icon = &state.dnd_icon;
-                    let cursor_status = &state.cursor_status;
-                    #[cfg(feature = "debug")]
-                    let fps = backend_data.fps.avg().round() as u32;
-                    #[cfg(feature = "debug")]
-                    let fps_texture = &backend_data.fps_texture;
+            let (buffer, _age) = backend_data.surface.buffer().expect("gbm device was destroyed");
+            if let Err(err) = renderer.bind(buffer) {
+                error!(log, "Error while binding buffer: {}", err);
+            }
 
-                    if let Err(err) = renderer.bind(present.buffer().expect("gbm device was destroyed")) {
-                        error!(log, "Error while binding buffer: {}", err);
-                    }
+            // drawing logic
+            match renderer
+                // X11 scanout for a Dmabuf is upside down
+                // TODO: Address this issue in renderer.
+                .render(
+                    backend_data.mode.size,
+                    Transform::Flipped180,
+                    |renderer, frame| {
+                        render_layers_and_windows(
+                            renderer,
+                            frame,
+                            &*window_map,
+                            output_geometry,
+                            output_scale,
+                            &log,
+                        )?;
 
-                    // drawing logic
-                    match renderer
-                        // X11 scanout for a Dmabuf is upside down
-                        // TODO: Address this issue in renderer.
-                        .render(
-                            backend_data.mode.size,
-                            Transform::Flipped180,
-                            |renderer, frame| {
-                                render_layers_and_windows(
+                        // draw the dnd icon if any
+                        {
+                            let guard = dnd_icon.lock().unwrap();
+                            if let Some(ref surface) = *guard {
+                                if surface.as_ref().is_alive() {
+                                    draw_dnd_icon(
+                                        renderer,
+                                        frame,
+                                        surface,
+                                        (x as i32, y as i32).into(),
+                                        output_scale,
+                                        &log,
+                                    )?;
+                                }
+                            }
+                        }
+
+                        // draw the cursor as relevant
+                        {
+                            let mut guard = cursor_status.lock().unwrap();
+                            // reset the cursor if the surface is no longer alive
+                            let mut reset = false;
+
+                            if let CursorImageStatus::Image(ref surface) = *guard {
+                                reset = !surface.as_ref().is_alive();
+                            }
+
+                            if reset {
+                                *guard = CursorImageStatus::Default;
+                            }
+
+                            // draw as relevant
+                            if let CursorImageStatus::Image(ref surface) = *guard {
+                                cursor_visible = false;
+                                draw_cursor(
                                     renderer,
                                     frame,
-                                    &*window_map,
-                                    output_geometry,
+                                    surface,
+                                    (x as i32, y as i32).into(),
                                     output_scale,
                                     &log,
                                 )?;
-
-                                // draw the dnd icon if any
-                                {
-                                    let guard = dnd_icon.lock().unwrap();
-                                    if let Some(ref surface) = *guard {
-                                        if surface.as_ref().is_alive() {
-                                            draw_dnd_icon(
-                                                renderer,
-                                                frame,
-                                                surface,
-                                                (x as i32, y as i32).into(),
-                                                output_scale,
-                                                &log,
-                                            )?;
-                                        }
-                                    }
-                                }
-
-                                // draw the cursor as relevant
-                                {
-                                    let mut guard = cursor_status.lock().unwrap();
-                                    // reset the cursor if the surface is no longer alive
-                                    let mut reset = false;
-
-                                    if let CursorImageStatus::Image(ref surface) = *guard {
-                                        reset = !surface.as_ref().is_alive();
-                                    }
-
-                                    if reset {
-                                        *guard = CursorImageStatus::Default;
-                                    }
-
-                                    // draw as relevant
-                                    if let CursorImageStatus::Image(ref surface) = *guard {
-                                        cursor_visible = false;
-                                        draw_cursor(
-                                            renderer,
-                                            frame,
-                                            surface,
-                                            (x as i32, y as i32).into(),
-                                            output_scale,
-                                            &log,
-                                        )?;
-                                    } else {
-                                        cursor_visible = true;
-                                    }
-                                }
-
-                                #[cfg(feature = "debug")]
-                                {
-                                    use crate::drawing::draw_fps;
-
-                                    draw_fps(renderer, frame, fps_texture, output_scale as f64, fps)?;
-                                }
-
-                                Ok(())
-                            },
-                        )
-                        .map_err(Into::<SwapBuffersError>::into)
-                        .and_then(|x| x)
-                        .map_err(Into::<SwapBuffersError>::into)
-                    {
-                        Ok(()) => {
-                            // Unbind the buffer and now let the scope end to present.
-                            if let Err(err) = renderer.unbind() {
-                                error!(log, "Error while unbinding buffer: {}", err);
+                            } else {
+                                cursor_visible = true;
                             }
                         }
 
-                        Err(err) => {
-                            if let SwapBuffersError::ContextLost(err) = err {
-                                error!(log, "Critical Rendering Error: {}", err);
-                                state.running.store(false, Ordering::SeqCst);
-                            }
+                        #[cfg(feature = "debug")]
+                        {
+                            use crate::drawing::draw_fps;
+
+                            draw_fps(renderer, frame, fps_texture, output_scale as f64, fps)?;
                         }
+
+                        Ok(())
+                    },
+                )
+                .map_err(Into::<SwapBuffersError>::into)
+                .and_then(|x| x)
+                .map_err(Into::<SwapBuffersError>::into)
+            {
+                Ok(()) => {
+                    // Unbind the buffer
+                    if let Err(err) = renderer.unbind() {
+                        error!(log, "Error while unbinding buffer: {}", err);
                     }
+
+                    // Submit the buffer
+                    backend_data.surface.submit();
                 }
 
                 Err(err) => {
-                    error!(log, "Failed to allocate buffers to present to window: {}", err);
-                    state.running.store(false, Ordering::SeqCst);
+                    if let SwapBuffersError::ContextLost(err) = err {
+                        error!(log, "Critical Rendering Error: {}", err);
+                        state.running.store(false, Ordering::SeqCst);
+                    }
                 }
             }
 
@@ -328,10 +322,9 @@ pub fn run_x11(log: Logger) {
             window.set_cursor_visible(cursor_visible);
 
             // Send frame events so that client start drawing their next frame
-            state
-                .window_map
-                .borrow()
-                .send_frames(start_time.elapsed().as_millis() as u32);
+            window_map.send_frames(start_time.elapsed().as_millis() as u32);
+            std::mem::drop(window_map);
+
             display.borrow_mut().flush_clients(&mut state);
         }
 

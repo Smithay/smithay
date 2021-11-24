@@ -134,6 +134,10 @@ pub enum AllocateBuffersError {
     /// Exporting a dmabuf failed.
     #[error("Exporting a dmabuf failed.")]
     ExportDmabuf(#[from] GbmConvertError),
+
+    /// No free slots
+    #[error("No free slots in the swapchain")]
+    NoFreeSlots,
 }
 
 impl From<Errno> for AllocateBuffersError {
