@@ -23,6 +23,8 @@
 - `WinitEventLoop::dispatch_new_events` is now used to receive some `WinitEvent`s.
 - Added `TabletToolType::Unknown` as an option for tablet events
 - `render_texture` was removed from `Frame`, use `render_texture_at` or `render_texture_from_to` instead or use `Gles2Renderer::render_texture` as a direct replacement.
+- Remove `InputBackend::dispatch_new_events`, turning `InputBackend` into a definition of backend event types. Future input backends should be a `calloop::EventSource`.
+- Remove `InputBackend::EventError` associated type as it is unneeded since `dispatch_new_events` was removed.
 
 ### Additions
 

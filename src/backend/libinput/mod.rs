@@ -12,7 +12,6 @@ use input::event;
 #[cfg(feature = "backend_session")]
 use std::path::Path;
 use std::{
-    io::Error as IoError,
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
 };
@@ -355,8 +354,6 @@ impl backend::Event<LibinputInputBackend> for event::touch::TouchFrameEvent {
 impl backend::TouchFrameEvent<LibinputInputBackend> for event::touch::TouchFrameEvent {}
 
 impl InputBackend for LibinputInputBackend {
-    type EventError = IoError;
-
     type Device = libinput::Device;
     type KeyboardKeyEvent = event::keyboard::KeyboardKeyEvent;
     type PointerAxisEvent = event::pointer::PointerAxisEvent;
@@ -374,103 +371,6 @@ impl InputBackend for LibinputInputBackend {
     type TabletToolButtonEvent = event::tablet_tool::TabletToolButtonEvent;
 
     type SpecialEvent = backend::UnusedEvent;
-
-    fn dispatch_new_events<F>(&mut self, mut callback: F) -> Result<(), IoError>
-    where
-        F: FnMut(InputEvent<Self>),
-    {
-        self.context.dispatch()?;
-
-        for event in &mut self.context {
-            match event {
-                libinput::Event::Device(device_event) => match device_event {
-                    event::DeviceEvent::Added(device_added_event) => {
-                        let added = event::EventTrait::device(&device_added_event);
-
-                        info!(self.logger, "New device {:?}", added.sysname(),);
-
-                        callback(InputEvent::DeviceAdded { device: added });
-                    }
-                    event::DeviceEvent::Removed(device_removed_event) => {
-                        let removed = event::EventTrait::device(&device_removed_event);
-
-                        info!(self.logger, "Removed device {:?}", removed.sysname(),);
-
-                        callback(InputEvent::DeviceRemoved { device: removed });
-                    }
-                    _ => {
-                        trace!(self.logger, "Unknown libinput device event");
-                    }
-                },
-                libinput::Event::Touch(touch_event) => match touch_event {
-                    event::TouchEvent::Down(down_event) => {
-                        callback(InputEvent::TouchDown { event: down_event });
-                    }
-                    event::TouchEvent::Motion(motion_event) => {
-                        callback(InputEvent::TouchMotion { event: motion_event });
-                    }
-                    event::TouchEvent::Up(up_event) => {
-                        callback(InputEvent::TouchUp { event: up_event });
-                    }
-                    event::TouchEvent::Cancel(cancel_event) => {
-                        callback(InputEvent::TouchCancel { event: cancel_event });
-                    }
-                    event::TouchEvent::Frame(frame_event) => {
-                        callback(InputEvent::TouchFrame { event: frame_event });
-                    }
-                    _ => {
-                        trace!(self.logger, "Unknown libinput touch event");
-                    }
-                },
-                libinput::Event::Keyboard(keyboard_event) => match keyboard_event {
-                    event::KeyboardEvent::Key(key_event) => {
-                        callback(InputEvent::Keyboard { event: key_event });
-                    }
-                    _ => {
-                        trace!(self.logger, "Unknown libinput keyboard event");
-                    }
-                },
-                libinput::Event::Pointer(pointer_event) => match pointer_event {
-                    event::PointerEvent::Motion(motion_event) => {
-                        callback(InputEvent::PointerMotion { event: motion_event });
-                    }
-                    event::PointerEvent::MotionAbsolute(motion_abs_event) => {
-                        callback(InputEvent::PointerMotionAbsolute {
-                            event: motion_abs_event,
-                        });
-                    }
-                    event::PointerEvent::Axis(axis_event) => {
-                        callback(InputEvent::PointerAxis { event: axis_event });
-                    }
-                    event::PointerEvent::Button(button_event) => {
-                        callback(InputEvent::PointerButton { event: button_event });
-                    }
-                    _ => {
-                        trace!(self.logger, "Unknown libinput pointer event");
-                    }
-                },
-                libinput::Event::Tablet(tablet_event) => match tablet_event {
-                    event::TabletToolEvent::Axis(event) => {
-                        callback(InputEvent::TabletToolAxis { event });
-                    }
-                    event::TabletToolEvent::Proximity(event) => {
-                        callback(InputEvent::TabletToolProximity { event });
-                    }
-                    event::TabletToolEvent::Tip(event) => {
-                        callback(InputEvent::TabletToolTip { event });
-                    }
-                    event::TabletToolEvent::Button(event) => {
-                        callback(InputEvent::TabletToolButton { event });
-                    }
-                    _ => {
-                        trace!(self.logger, "Unknown libinput tablet event");
-                    }
-                },
-                _ => {} //FIXME: What to do with the rest.
-            }
-        }
-        Ok(())
-    }
 }
 
 impl From<event::keyboard::KeyState> for backend::KeyState {
@@ -568,8 +468,101 @@ impl EventSource for LibinputInputBackend {
         F: FnMut(Self::Event, &mut ()) -> Self::Ret,
     {
         if token == self.token {
-            self.dispatch_new_events(|evt| callback(evt, &mut ()))?;
+            self.context.dispatch()?;
+
+            for event in &mut self.context {
+                match event {
+                    libinput::Event::Device(device_event) => match device_event {
+                        event::DeviceEvent::Added(device_added_event) => {
+                            let added = event::EventTrait::device(&device_added_event);
+
+                            info!(self.logger, "New device {:?}", added.sysname(),);
+
+                            callback(InputEvent::DeviceAdded { device: added }, &mut ());
+                        }
+                        event::DeviceEvent::Removed(device_removed_event) => {
+                            let removed = event::EventTrait::device(&device_removed_event);
+
+                            info!(self.logger, "Removed device {:?}", removed.sysname(),);
+
+                            callback(InputEvent::DeviceRemoved { device: removed }, &mut ());
+                        }
+                        _ => {
+                            trace!(self.logger, "Unknown libinput device event");
+                        }
+                    },
+                    libinput::Event::Touch(touch_event) => match touch_event {
+                        event::TouchEvent::Down(down_event) => {
+                            callback(InputEvent::TouchDown { event: down_event }, &mut ());
+                        }
+                        event::TouchEvent::Motion(motion_event) => {
+                            callback(InputEvent::TouchMotion { event: motion_event }, &mut ());
+                        }
+                        event::TouchEvent::Up(up_event) => {
+                            callback(InputEvent::TouchUp { event: up_event }, &mut ());
+                        }
+                        event::TouchEvent::Cancel(cancel_event) => {
+                            callback(InputEvent::TouchCancel { event: cancel_event }, &mut ());
+                        }
+                        event::TouchEvent::Frame(frame_event) => {
+                            callback(InputEvent::TouchFrame { event: frame_event }, &mut ());
+                        }
+                        _ => {
+                            trace!(self.logger, "Unknown libinput touch event");
+                        }
+                    },
+                    libinput::Event::Keyboard(keyboard_event) => match keyboard_event {
+                        event::KeyboardEvent::Key(key_event) => {
+                            callback(InputEvent::Keyboard { event: key_event }, &mut ());
+                        }
+                        _ => {
+                            trace!(self.logger, "Unknown libinput keyboard event");
+                        }
+                    },
+                    libinput::Event::Pointer(pointer_event) => match pointer_event {
+                        event::PointerEvent::Motion(motion_event) => {
+                            callback(InputEvent::PointerMotion { event: motion_event }, &mut ());
+                        }
+                        event::PointerEvent::MotionAbsolute(motion_abs_event) => {
+                            callback(
+                                InputEvent::PointerMotionAbsolute {
+                                    event: motion_abs_event,
+                                },
+                                &mut (),
+                            );
+                        }
+                        event::PointerEvent::Axis(axis_event) => {
+                            callback(InputEvent::PointerAxis { event: axis_event }, &mut ());
+                        }
+                        event::PointerEvent::Button(button_event) => {
+                            callback(InputEvent::PointerButton { event: button_event }, &mut ());
+                        }
+                        _ => {
+                            trace!(self.logger, "Unknown libinput pointer event");
+                        }
+                    },
+                    libinput::Event::Tablet(tablet_event) => match tablet_event {
+                        event::TabletToolEvent::Axis(event) => {
+                            callback(InputEvent::TabletToolAxis { event }, &mut ());
+                        }
+                        event::TabletToolEvent::Proximity(event) => {
+                            callback(InputEvent::TabletToolProximity { event }, &mut ());
+                        }
+                        event::TabletToolEvent::Tip(event) => {
+                            callback(InputEvent::TabletToolTip { event }, &mut ());
+                        }
+                        event::TabletToolEvent::Button(event) => {
+                            callback(InputEvent::TabletToolButton { event }, &mut ());
+                        }
+                        _ => {
+                            trace!(self.logger, "Unknown libinput tablet event");
+                        }
+                    },
+                    _ => {} //FIXME: What to do with the rest.
+                }
+            }
         }
+
         Ok(PostAction::Continue)
     }
 

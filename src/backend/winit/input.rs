@@ -6,12 +6,12 @@ use winit::{
 };
 
 use crate::backend::input::{
-    self, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event, InputBackend, InputEvent, KeyState,
+    self, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event, InputBackend, KeyState,
     KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent, TouchCancelEvent,
     TouchDownEvent, TouchMotionEvent, TouchSlot, TouchUpEvent, UnusedEvent,
 };
 
-use super::{WindowSize, WinitError};
+use super::WindowSize;
 
 /// Marker used to define the `InputBackend` types for the winit backend.
 #[derive(Debug)]
@@ -363,8 +363,6 @@ impl From<ElementState> for ButtonState {
 }
 
 impl InputBackend for WinitInput {
-    type EventError = WinitError;
-
     type Device = WinitVirtualDevice;
     type KeyboardKeyEvent = WinitKeyboardInputEvent;
     type PointerAxisEvent = WinitMouseWheelEvent;
@@ -382,11 +380,4 @@ impl InputBackend for WinitInput {
     type TabletToolButtonEvent = UnusedEvent;
 
     type SpecialEvent = UnusedEvent;
-
-    fn dispatch_new_events<F>(&mut self, _callback: F) -> Result<(), Self::EventError>
-    where
-        F: FnMut(InputEvent<Self>),
-    {
-        unreachable!()
-    }
 }
