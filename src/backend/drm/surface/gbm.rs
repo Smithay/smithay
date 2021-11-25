@@ -17,20 +17,14 @@ use crate::backend::SwapBuffersError;
 use slog::{debug, error, o, trace, warn};
 
 /// Simplified abstraction of a swapchain for gbm-buffers displayed on a [`DrmSurface`].
+#[derive(Debug)]
 pub struct GbmBufferedSurface<D: AsRawFd + 'static> {
-    buffers: Buffers<D>,
-    swapchain: Swapchain<GbmDevice<D>, BufferObject<()>, (Dmabuf, FbHandle<D>)>,
+    current_fb: Slot<BufferObject<()>>,
+    pending_fb: Option<Slot<BufferObject<()>>>,
+    queued_fb: Option<Slot<BufferObject<()>>>,
+    next_fb: Option<Slot<BufferObject<()>>>,
+    swapchain: Swapchain<GbmDevice<D>, BufferObject<()>>,
     drm: Arc<DrmSurface<D>>,
-}
-
-// TODO: Replace with #[derive(Debug)] once gbm::BufferObject implements debug
-impl<D: std::fmt::Debug + AsRawFd + 'static> std::fmt::Debug for GbmBufferedSurface<D> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GbmBufferedSurface")
-            .field("buffers", &self.buffers)
-            .field("drm", &self.drm)
-            .finish_non_exhaustive()
-    }
 }
 
 impl<D> GbmBufferedSurface<D>
@@ -127,7 +121,7 @@ where
 
         let mode = drm.pending_mode();
 
-        let mut swapchain: Swapchain<GbmDevice<D>, BufferObject<()>, (Dmabuf, FbHandle<D>)> = Swapchain::new(
+        let mut swapchain: Swapchain<GbmDevice<D>, BufferObject<()>> = Swapchain::new(
             allocator,
             mode.size().0 as u32,
             mode.size().1 as u32,
@@ -148,14 +142,17 @@ where
         let fb = attach_framebuffer(&drm, &*buffer)?;
         let dmabuf = buffer.export()?;
         let handle = fb.fb;
-        *buffer.userdata() = Some((dmabuf, fb));
+        buffer.userdata().insert_if_missing(|| dmabuf);
+        buffer.userdata().insert_if_missing(|| fb);
 
         match drm.test_buffer(handle, &mode, true) {
             Ok(_) => {
                 debug!(logger, "Choosen format: {:?}", format);
-                let buffers = Buffers::new(drm.clone(), buffer);
                 Ok(GbmBufferedSurface {
-                    buffers,
+                    current_fb: buffer,
+                    pending_fb: None,
+                    queued_fb: None,
+                    next_fb: None,
                     swapchain,
                     drm,
                 })
@@ -170,12 +167,29 @@ where
         }
     }
 
-    /// Retrieves the next buffer to be rendered into.
+    /// Retrieves the next buffer to be rendered into and it's age.
     ///
     /// *Note*: This function can be called multiple times and
     /// will return the same buffer until it is queued (see [`GbmBufferedSurface::queue_buffer`]).
-    pub fn next_buffer(&mut self) -> Result<Dmabuf, Error> {
-        self.buffers.next(&mut self.swapchain)
+    pub fn next_buffer(&mut self) -> Result<(Dmabuf, u8), Error> {
+        if self.next_fb.is_none() {
+            let slot = self.swapchain.acquire()?.ok_or(Error::NoFreeSlotsError)?;
+
+            let maybe_buffer = slot.userdata().get::<Dmabuf>().cloned();
+            if maybe_buffer.is_none() {
+                let dmabuf = slot.export().map_err(Error::AsDmabufError)?;
+                let fb_handle = attach_framebuffer(&self.drm, &*slot)?;
+
+                let userdata = slot.userdata();
+                userdata.insert_if_missing(|| dmabuf);
+                userdata.insert_if_missing(|| fb_handle);
+            }
+
+            self.next_fb = Some(slot);
+        }
+
+        let slot = self.next_fb.as_ref().unwrap();
+        Ok((slot.userdata().get::<Dmabuf>().unwrap().clone(), slot.age()))
     }
 
     /// Queues the current buffer for rendering.
@@ -184,7 +198,11 @@ where
     /// when a vblank event is received, that denotes successful scanout of the buffer.
     /// Otherwise the underlying swapchain will eventually run out of buffers.
     pub fn queue_buffer(&mut self) -> Result<(), Error> {
-        self.buffers.queue()
+        self.queued_fb = self.next_fb.take();
+        if self.pending_fb.is_none() && self.queued_fb.is_some() {
+            self.submit()?;
+        }
+        Ok(())
     }
 
     /// Marks the current frame as submitted.
@@ -193,7 +211,31 @@ where
     /// was received after calling [`GbmBufferedSurface::queue_buffer`] on this surface.
     /// Otherwise the underlying swapchain will run out of buffers eventually.
     pub fn frame_submitted(&mut self) -> Result<(), Error> {
-        self.buffers.submitted()
+        if let Some(mut pending) = self.pending_fb.take() {
+            std::mem::swap(&mut pending, &mut self.current_fb);
+            self.swapchain.submitted(pending);
+            if self.queued_fb.is_some() {
+                self.submit()?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn submit(&mut self) -> Result<(), Error> {
+        // yes it does not look like it, but both of these lines should be safe in all cases.
+        let slot = self.queued_fb.take().unwrap();
+        let fb = slot.userdata().get::<FbHandle<D>>().unwrap().fb;
+
+        let flip = if self.drm.commit_pending() {
+            self.drm.commit([(fb, self.drm.plane())].iter(), true)
+        } else {
+            self.drm.page_flip([(fb, self.drm.plane())].iter(), true)
+        };
+        if flip.is_ok() {
+            self.pending_fb = Some(slot);
+        }
+        flip.map_err(Error::DrmError)
     }
 
     /// Returns the underlying [`crtc`](drm::control::crtc) of this surface
@@ -281,103 +323,6 @@ struct FbHandle<D: AsRawFd + 'static> {
 impl<A: AsRawFd + 'static> Drop for FbHandle<A> {
     fn drop(&mut self) {
         let _ = self.drm.destroy_framebuffer(self.fb);
-    }
-}
-
-type DmabufSlot<D> = Slot<BufferObject<()>, (Dmabuf, FbHandle<D>)>;
-
-struct Buffers<D: AsRawFd + 'static> {
-    drm: Arc<DrmSurface<D>>,
-    _current_fb: DmabufSlot<D>,
-    pending_fb: Option<DmabufSlot<D>>,
-    queued_fb: Option<DmabufSlot<D>>,
-    next_fb: Option<DmabufSlot<D>>,
-}
-
-// TODO: Replace with #[derive(Debug)] once gbm::BufferObject implements debug
-impl<D: std::fmt::Debug + AsRawFd + 'static> std::fmt::Debug for Buffers<D> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Buffers")
-            .field("drm", &self.drm)
-            .finish_non_exhaustive()
-    }
-}
-
-impl<D> Buffers<D>
-where
-    D: AsRawFd + 'static,
-{
-    pub fn new(drm: Arc<DrmSurface<D>>, slot: DmabufSlot<D>) -> Buffers<D> {
-        Buffers {
-            drm,
-            _current_fb: slot,
-            pending_fb: None,
-            queued_fb: None,
-            next_fb: None,
-        }
-    }
-
-    pub fn next(
-        &mut self,
-        swapchain: &mut Swapchain<GbmDevice<D>, BufferObject<()>, (Dmabuf, FbHandle<D>)>,
-    ) -> Result<Dmabuf, Error> {
-        if let Some(slot) = self.next_fb.as_ref() {
-            return Ok(slot.userdata().as_ref().unwrap().0.clone());
-        }
-
-        let slot = swapchain.acquire()?.ok_or(Error::NoFreeSlotsError)?;
-
-        let maybe_buffer = slot.userdata().as_ref().map(|(buf, _)| buf.clone());
-        let dmabuf = match maybe_buffer {
-            Some(buf) => buf,
-            None => {
-                let dmabuf = slot.export()?;
-                let fb_handle = attach_framebuffer(&self.drm, &*slot)?;
-                *slot.userdata() = Some((dmabuf.clone(), fb_handle));
-                dmabuf
-            }
-        };
-
-        self.next_fb = Some(slot);
-
-        Ok(dmabuf)
-    }
-
-    pub fn queue(&mut self) -> Result<(), Error> {
-        self.queued_fb = self.next_fb.take();
-        if self.pending_fb.is_none() && self.queued_fb.is_some() {
-            self.submit()
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn submitted(&mut self) -> Result<(), Error> {
-        if self.pending_fb.is_none() {
-            return Ok(());
-        }
-        self._current_fb = self.pending_fb.take().unwrap();
-        if self.queued_fb.is_some() {
-            self.submit()
-        } else {
-            Ok(())
-        }
-    }
-
-    fn submit(&mut self) -> Result<(), Error> {
-        // yes it does not look like it, but both of these lines should be safe in all cases.
-        let slot = self.queued_fb.take().unwrap();
-        let fb = slot.userdata().as_ref().unwrap().1.fb;
-
-        let flip = if self.drm.commit_pending() {
-            self.drm.commit([(fb, self.drm.plane())].iter(), true)
-        } else {
-            self.drm.page_flip([(fb, self.drm.plane())].iter(), true)
-        };
-        if flip.is_ok() {
-            self.pending_fb = Some(slot);
-        }
-        flip.map_err(Error::DrmError)
     }
 }
 

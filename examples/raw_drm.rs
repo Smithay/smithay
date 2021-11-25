@@ -105,9 +105,9 @@ fn main() {
         })
         .collect::<Vec<_>>();
     let mut swapchain = Swapchain::new(allocator, w.into(), h.into(), Fourcc::Argb8888, mods);
-    let first_buffer: Slot<DumbBuffer<FdWrapper>, _> = swapchain.acquire().unwrap().unwrap();
+    let first_buffer: Slot<DumbBuffer<FdWrapper>> = swapchain.acquire().unwrap().unwrap();
     let framebuffer = surface.add_framebuffer(first_buffer.handle(), 32, 32).unwrap();
-    *first_buffer.userdata() = Some(framebuffer);
+    first_buffer.userdata().insert_if_missing(|| framebuffer);
 
     // Get the device as an allocator into the
     let mut vblank_handler = VBlankHandler {
@@ -137,8 +137,8 @@ fn main() {
 }
 
 pub struct VBlankHandler {
-    swapchain: Swapchain<DrmDevice<FdWrapper>, DumbBuffer<FdWrapper>, framebuffer::Handle>,
-    current: Slot<DumbBuffer<FdWrapper>, framebuffer::Handle>,
+    swapchain: Swapchain<DrmDevice<FdWrapper>, DumbBuffer<FdWrapper>>,
+    current: Slot<DumbBuffer<FdWrapper>>,
     surface: Rc<DrmSurface<FdWrapper>>,
 }
 
@@ -147,9 +147,9 @@ impl VBlankHandler {
         {
             // Next buffer
             let next = self.swapchain.acquire().unwrap().unwrap();
-            if next.userdata().is_none() {
+            if next.userdata().get::<framebuffer::Handle>().is_none() {
                 let fb = self.surface.add_framebuffer(next.handle(), 32, 32).unwrap();
-                *next.userdata() = Some(fb);
+                next.userdata().insert_if_missing(|| fb);
             }
 
             // now we could render to the mapping via software rendering.
@@ -165,7 +165,7 @@ impl VBlankHandler {
             self.current = next;
         }
 
-        let fb = self.current.userdata().unwrap();
+        let fb = *self.current.userdata().get::<framebuffer::Handle>().unwrap();
         self.surface
             .page_flip([(fb, self.surface.plane())].iter(), true)
             .unwrap();

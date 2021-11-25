@@ -25,6 +25,8 @@
 - `render_texture` was removed from `Frame`, use `render_texture_at` or `render_texture_from_to` instead or use `Gles2Renderer::render_texture` as a direct replacement.
 - Remove `InputBackend::dispatch_new_events`, turning `InputBackend` into a definition of backend event types. Future input backends should be a `calloop::EventSource`.
 - Remove `InputBackend::EventError` associated type as it is unneeded since `dispatch_new_events` was removed.
+- `Swapchain` does not have a generic Userdata-parameter anymore, but utilizes `UserDataMap` instead
+- `GbmBufferedSurface::next_buffer` now additionally returns the age of the buffer
 
 ### Additions
 
