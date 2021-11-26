@@ -1,3 +1,5 @@
+//! Module for abstractions on drm device nodes
+
 pub(crate) mod constants;
 
 use constants::*;
@@ -7,12 +9,11 @@ use std::{
     fmt::{self, Display, Formatter},
     fs, io,
     os::unix::prelude::{AsRawFd, IntoRawFd, RawFd},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use nix::{
-    fcntl::{self, OFlag},
-    sys::stat::{fstat, major, minor, Mode},
+    sys::stat::{fstat, major, minor, stat},
     unistd::close,
 };
 
@@ -62,15 +63,6 @@ impl DrmNode {
         })
     }
 
-    /// Creates a DRM node of the specified type using the same DRM device as the provided node.
-    /// The provided node will be consumed if the new node is successfully created.
-    ///
-    /// This function is useful for obtaining the render node of a DRM device when the provided
-    /// node is a primary node.
-    pub fn from_node_with_type(node: DrmNode, ty: NodeType) -> Result<DrmNode, ConvertNodeError> {
-        from_node_with_type(node, ty)
-    }
-
     /// Returns the type of the DRM node.
     pub fn ty(&self) -> NodeType {
         self.ty
@@ -83,7 +75,12 @@ impl DrmNode {
 
     /// Returns the path of the open device if possible.
     pub fn dev_path(&self) -> Option<PathBuf> {
-        fs::read_link(format!("/proc/self/fd/{:?}", self.as_raw_fd())).ok()
+        node_path(self, self.ty).ok()
+    }
+
+    /// Returns the path of the specified node type matching the open device if possible.
+    pub fn dev_path_with_type(&self, ty: NodeType) -> Option<PathBuf> {
+        node_path(self, ty).ok()
     }
 
     /// Returns the major device number of the DRM device.
@@ -206,54 +203,14 @@ impl From<io::Error> for CreateDrmNodeError {
     }
 }
 
-/// A DRM node could not be used to get an alternative type of node.
-///
-/// If this error is returned, the original DRM node may be retrieved using [`ConvertNodeError::node`].
-#[derive(Debug, thiserror::Error)]
-#[error("{kind}")]
-pub struct ConvertNodeError {
-    node: DrmNode,
-    kind: ConvertErrorKind,
-}
-
-impl ConvertNodeError {
-    /// Returns the original DrmNode.
-    pub fn node(self) -> DrmNode {
-        self.node
-    }
-
-    /// Returns the kind of error that occurred when obtaining a different type of DRM node.
-    pub fn kind(&self) -> &ConvertErrorKind {
-        &self.kind
-    }
-}
-
-/// An error that may occur when obtaining a different type of DRM node.
-#[derive(Debug, thiserror::Error)]
-pub enum ConvertErrorKind {
-    /// The requested node type is not available.
-    #[error("the requested node type, {0}, is not available.")]
-    NodeTypeNotAvailable(NodeType),
-
-    /// An IO error occurred when when obtaining a different type of DRM node.
-    #[error("{0}")]
-    Io(io::Error),
-}
-
-impl From<io::Error> for ConvertErrorKind {
-    fn from(err: io::Error) -> Self {
-        ConvertErrorKind::Io(err)
-    }
-}
-
+/// Returns if the given device by major:minor pair is a drm device
 #[cfg(target_os = "linux")]
-fn is_device_drm(major: u64, minor: u64) -> bool {
-    use nix::sys::stat::stat;
-
+pub fn is_device_drm(major: u64, minor: u64) -> bool {
     let path = format!("/sys/dev/char/{}:{}/device/drm", major, minor);
     stat(path.as_str()).is_ok()
 }
 
+/// Returns if the given device by major:minor pair is a drm device
 #[cfg(target_os = "freebsd")]
 pub fn is_device_drm(major: u64, _minor: u64) -> bool {
     use nix::sys::stat::makedev;
@@ -287,70 +244,43 @@ pub fn is_device_drm(major: u64, _minor: u64) -> bool {
         || dev_name.starts_with("dri/renderD")
 }
 
+/// Returns if the given device by major:minor pair is a drm device
 #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
 pub fn is_device_drm(major: u64, _minor: u64) -> bool {
     major == DRM_MAJOR
 }
 
+/// Returns the path of a specific type of node from the same DRM device as another path of the same node.
 #[cfg(target_os = "linux")]
-fn from_node_with_type(node: DrmNode, ty: NodeType) -> Result<DrmNode, ConvertNodeError> {
-    match node_path(&node, ty) {
-        Ok(path) => {
-            let fd = match fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
-                .map_err(Into::<io::Error>::into)
-                .map_err(Into::<ConvertErrorKind>::into)
-            {
-                Ok(fd) => fd,
-                Err(kind) => return Err(ConvertNodeError { node, kind }),
-            };
+pub fn path_to_type<P: AsRef<Path>>(path: P, ty: NodeType) -> io::Result<PathBuf> {
+    let stat = stat(path.as_ref()).map_err(Into::<io::Error>::into)?;
+    let dev = stat.st_rdev;
+    let major = major(dev);
+    let minor = minor(dev);
 
-            let result = DrmNode::from_fd(fd);
-
-            match result {
-                Ok(node) => Ok(node),
-
-                // Some error occurred while opening the new node
-                Err(CreateDrmNodeError::Io(err)) => Err(ConvertNodeError {
-                    node,
-                    kind: err.into(),
-                }),
-
-                _ => unreachable!(),
-            }
-        }
-
-        Err(err) => Err(ConvertNodeError {
-            node,
-            kind: err.into(),
-        }),
-    }
-}
-
-#[cfg(target_os = "freebsd")]
-fn from_node_with_type(node: DrmNode, ty: NodeType) -> Result<DrmNode, ConvertNodeError> {
-    // TODO: Not implemented yet, so fail conversion
-    Err(ConvertNodeError {
-        node,
-        kind: ConvertErrorKind::NodeTypeNotAvailable(ty),
-    })
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
-fn from_node_with_type(node: DrmNode, ty: NodeType) -> Result<DrmNode, ConvertNodeError> {
-    // TODO: Not implemented yet, so fail conversion
-    Err(ConvertNodeError {
-        node,
-        kind: ConvertErrorKind::NodeTypeNotAvailable(ty),
-    })
+    dev_path(major, minor, ty)
 }
 
 /// Returns the path of a specific type of node from the same DRM device as an existing DrmNode.
 #[cfg(target_os = "linux")]
-fn node_path(node: &DrmNode, ty: NodeType) -> io::Result<PathBuf> {
-    use std::io::ErrorKind;
-
+pub fn node_path(node: &DrmNode, ty: NodeType) -> io::Result<PathBuf> {
     let major = node.major();
     let minor = node.minor();
+
+    dev_path(major, minor, ty)
+}
+
+/// Returns the path of a specific type of node from the DRM device described by major and minor device numbers.
+#[cfg(target_os = "linux")]
+pub fn dev_path(major: u64, minor: u64, ty: NodeType) -> io::Result<PathBuf> {
+    use std::io::ErrorKind;
+
+    if !is_device_drm(major, minor) {
+        return Err(io::Error::new(
+            ErrorKind::NotFound,
+            format!("{}:{} is no DRM device", major, minor),
+        ));
+    }
 
     let read = fs::read_dir(format!("/sys/dev/char/{}:{}/device/drm", major, minor))?;
 
@@ -361,9 +291,7 @@ fn node_path(node: &DrmNode, ty: NodeType) -> io::Result<PathBuf> {
         // Only 1 primary, control and render node may exist simultaneously, so the
         // first occurrence is good enough.
         if name.starts_with(ty.minor_name_prefix()) {
-            let mut path = entry.path();
-            path.push(DIR_NAME);
-
+            let path = [r"/", "dev", "dri", &name].iter().collect::<PathBuf>();
             if path.exists() {
                 return Ok(path);
             }

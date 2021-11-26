@@ -129,6 +129,8 @@ pub mod egl {
 
     include!(concat!(env!("OUT_DIR"), "/egl_bindings.rs"));
 
+    pub const RESOURCE_BUSY_EXT: u32 = 0x3353;
+
     type EGLDEBUGPROCKHR = Option<
         extern "system" fn(
             _error: egl::types::EGLenum,

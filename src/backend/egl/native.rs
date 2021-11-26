@@ -1,6 +1,6 @@
 //! Type safe native types for safe context/surface creation
 
-use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, SwapBuffersError};
+use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, EGLDevice, SwapBuffersError};
 #[cfg(feature = "backend_winit")]
 use std::os::raw::c_int;
 use std::os::raw::c_void;
@@ -15,9 +15,6 @@ use winit::{platform::unix::WindowExtUnix, window::Window as WinitWindow};
 
 #[cfg(feature = "backend_gbm")]
 use gbm::{AsRaw, Device as GbmDevice};
-
-#[cfg(feature = "backend_x11")]
-use crate::backend::x11::X11Surface;
 
 /// Create a `EGLPlatform<'a>` for the provided platform.
 ///
@@ -168,24 +165,35 @@ impl EGLNativeDisplay for WinitWindow {
     }
 }
 
-#[cfg(feature = "backend_x11")]
-impl EGLNativeDisplay for X11Surface {
+/// Shallow type for EGL_PLATFORM_X11_EXT with the default X11 display
+#[derive(Debug)]
+pub struct X11DefaultDisplay;
+
+impl EGLNativeDisplay for X11DefaultDisplay {
     fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
-        vec![
-            // todo: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_device.txt
-            // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_gbm.txt
-            egl_platform!(
-                PLATFORM_GBM_KHR,
-                self.device().as_raw(),
-                &["EGL_KHR_platform_gbm"]
-            ),
-            // see: https://www.khronos.org/registry/EGL/extensions/MESA/EGL_MESA_platform_gbm.txt
-            egl_platform!(
-                PLATFORM_GBM_MESA,
-                self.device().as_raw(),
-                &["EGL_MESA_platform_gbm"]
-            ),
-        ]
+        vec![egl_platform!(
+            PLATFORM_X11_EXT,
+            // We pass DEFAULT_DISPLAY (null pointer) because the driver should open a connection to the X server.
+            ffi::egl::DEFAULT_DISPLAY,
+            &["EGL_EXT_platform_x11"]
+        )]
+    }
+}
+
+impl EGLNativeDisplay for EGLDevice {
+    fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
+        // see: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_device.txt
+        vec![egl_platform!(
+            PLATFORM_DEVICE_EXT,
+            self.inner,
+            &["EGL_EXT_platform_device"]
+        )]
+    }
+
+    fn surface_type(&self) -> ffi::EGLint {
+        // EGLDisplays based on EGLDevices do not support normal windowed surfaces.
+        // But they may support streams, so lets allow users to create them themselves.
+        ffi::egl::STREAM_BIT_KHR as ffi::EGLint
     }
 }
 

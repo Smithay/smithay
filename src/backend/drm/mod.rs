@@ -71,14 +71,14 @@
 
 pub(crate) mod device;
 pub(self) mod error;
-pub(self) mod node;
+pub mod node;
 #[cfg(feature = "backend_session")]
 pub(self) mod session;
 pub(self) mod surface;
 
 pub use device::{DevPath, DrmDevice, DrmEvent};
 pub use error::Error as DrmError;
-pub use node::{ConvertErrorKind, ConvertNodeError, CreateDrmNodeError, DrmNode, NodeType};
+pub use node::{CreateDrmNodeError, DrmNode, NodeType};
 #[cfg(feature = "backend_gbm")]
 pub use surface::gbm::{Error as GbmBufferedSurfaceError, GbmBufferedSurface};
 pub use surface::DrmSurface;
