@@ -197,7 +197,7 @@ impl<Backend> AnvilState<Backend> {
 
                     self.output_map
                         .borrow_mut()
-                        .update_scale_by_name(f32::max(1.0f32, current_scale + 0.25f32), output_name);
+                        .update_scale_by_name(f32::max(1.0f32, current_scale - 0.25f32), output_name);
                 }
 
                 action => match action {
