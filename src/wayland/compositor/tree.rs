@@ -1,11 +1,17 @@
 use crate::wayland::Serial;
 
 use super::{
-    cache::MultiCache, get_children, handlers::is_effectively_sync, transaction::PendingTransaction,
+    cache::MultiCache,
+    get_children,
+    handlers::{is_effectively_sync, SurfaceUserData},
+    transaction::PendingTransaction,
     SurfaceData,
 };
-use std::sync::{atomic::Ordering, Mutex};
-use wayland_server::protocol::wl_surface::WlSurface;
+use std::{
+    fmt,
+    sync::{atomic::Ordering, Mutex},
+};
+use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 pub(crate) static SUBSURFACE_ROLE: &str = "subsurface";
 
@@ -29,6 +35,20 @@ pub struct PrivateSurfaceData {
     pending_transaction: PendingTransaction,
     current_txid: Serial,
     commit_hooks: Vec<fn(&WlSurface)>,
+}
+
+impl fmt::Debug for PrivateSurfaceData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PrivateSurfaceData")
+            .field("parent", &self.parent)
+            .field("children", &self.children)
+            .field("public_data", &self.public_data)
+            .field("pending_transaction", &"...")
+            .field("current_txid", &self.current_txid)
+            .field("commit_hooks", &"...")
+            .field("commit_hooks.len", &self.commit_hooks.len())
+            .finish()
+    }
 }
 
 /// An error type signifying that the surface already has a role and
@@ -81,43 +101,25 @@ impl PrivateSurfaceData {
 
     /// Initializes the surface, must be called at creation for state coherence
     pub fn init(surface: &WlSurface) {
-        let my_data_mutex = surface
-            .as_ref()
-            .user_data()
-            .get::<Mutex<PrivateSurfaceData>>()
-            .unwrap();
+        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         debug_assert!(my_data.children.is_empty());
         my_data.children.push(surface.clone());
     }
 
     /// Cleans the `as_ref().user_data` of that surface, must be called when it is destroyed
-    pub fn cleanup(surface: &WlSurface) {
-        let my_data_mutex = surface
-            .as_ref()
-            .user_data()
-            .get::<Mutex<PrivateSurfaceData>>()
-            .unwrap();
+    pub fn cleanup(surface_data: &SurfaceUserData, surface_id: ObjectId) {
+        let my_data_mutex = &surface_data.inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         if let Some(old_parent) = my_data.parent.take() {
             // We had a parent, lets unregister ourselves from it
-            let old_parent_mutex = old_parent
-                .as_ref()
-                .user_data()
-                .get::<Mutex<PrivateSurfaceData>>()
-                .unwrap();
+            let old_parent_mutex = &old_parent.data::<SurfaceUserData>().unwrap().inner;
             let mut old_parent_guard = old_parent_mutex.lock().unwrap();
-            old_parent_guard
-                .children
-                .retain(|c| !c.as_ref().equals(surface.as_ref()));
+            old_parent_guard.children.retain(|c| c.id() != surface_id);
         }
         // orphan all our children
         for child in my_data.children.drain(..) {
-            let child_mutex = child
-                .as_ref()
-                .user_data()
-                .get::<Mutex<PrivateSurfaceData>>()
-                .unwrap();
+            let child_mutex = &child.data::<SurfaceUserData>().unwrap().inner;
             if std::ptr::eq(child_mutex, my_data_mutex) {
                 // This child is ourselves, don't do anything.
                 continue;
@@ -129,11 +131,7 @@ impl PrivateSurfaceData {
     }
 
     pub fn set_role(surface: &WlSurface, role: &'static str) -> Result<(), AlreadyHasRole> {
-        let my_data_mutex = surface
-            .as_ref()
-            .user_data()
-            .get::<Mutex<PrivateSurfaceData>>()
-            .unwrap();
+        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         if my_data.public_data.role.is_some() {
             return Err(AlreadyHasRole);
@@ -143,31 +141,19 @@ impl PrivateSurfaceData {
     }
 
     pub fn get_role(surface: &WlSurface) -> Option<&'static str> {
-        let my_data_mutex = surface
-            .as_ref()
-            .user_data()
-            .get::<Mutex<PrivateSurfaceData>>()
-            .unwrap();
+        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let my_data = my_data_mutex.lock().unwrap();
         my_data.public_data.role
     }
 
     pub fn with_states<T, F: FnOnce(&SurfaceData) -> T>(surface: &WlSurface, f: F) -> T {
-        let my_data_mutex = surface
-            .as_ref()
-            .user_data()
-            .get::<Mutex<PrivateSurfaceData>>()
-            .unwrap();
+        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let my_data = my_data_mutex.lock().unwrap();
         f(&my_data.public_data)
     }
 
     pub fn add_commit_hook(surface: &WlSurface, hook: fn(&WlSurface)) {
-        let my_data_mutex = surface
-            .as_ref()
-            .user_data()
-            .get::<Mutex<PrivateSurfaceData>>()
-            .unwrap();
+        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         my_data.commit_hooks.push(hook);
     }
@@ -175,11 +161,7 @@ impl PrivateSurfaceData {
     pub fn invoke_commit_hooks(surface: &WlSurface) {
         // don't hold the mutex while the hooks are invoked
         let hooks = {
-            let my_data_mutex = surface
-                .as_ref()
-                .user_data()
-                .get::<Mutex<PrivateSurfaceData>>()
-                .unwrap();
+            let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
             let my_data = my_data_mutex.lock().unwrap();
             my_data.commit_hooks.clone()
         };
@@ -188,25 +170,17 @@ impl PrivateSurfaceData {
         }
     }
 
-    pub fn commit(surface: &WlSurface) {
+    pub fn commit(surface: &WlSurface, dh: &mut DisplayHandle<'_>) {
         let is_sync = is_effectively_sync(surface);
-        let children = get_children(surface);
-        let my_data_mutex = surface
-            .as_ref()
-            .user_data()
-            .get::<Mutex<PrivateSurfaceData>>()
-            .unwrap();
+        let children = get_children(dh, surface);
+        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         // commit our state
         let current_txid = my_data.current_txid;
-        my_data.public_data.cached_state.commit(Some(current_txid));
+        my_data.public_data.cached_state.commit(Some(current_txid), dh);
         // take all our children state into our pending transaction
         for child in children {
-            let child_data_mutex = child
-                .as_ref()
-                .user_data()
-                .get::<Mutex<PrivateSurfaceData>>()
-                .unwrap();
+            let child_data_mutex = &child.data::<SurfaceUserData>().unwrap().inner;
             // if the child is effectively sync, take its state
             // this is the case if either we are effectively sync, or the child is explicitly sync
             let mut child_data = child_data_mutex.lock().unwrap();
@@ -233,16 +207,16 @@ impl PrivateSurfaceData {
             // release the mutex, as applying the transaction will try to lock it
             std::mem::drop(my_data);
             // apply the transaction
-            tx.finalize().apply();
+            tx.finalize().apply(dh);
         }
     }
 
     /// Checks if the first surface is an ancestor of the second
     pub fn is_ancestor(a: &WlSurface, b: &WlSurface) -> bool {
-        let b_mutex = b.as_ref().user_data().get::<Mutex<PrivateSurfaceData>>().unwrap();
+        let b_mutex = &b.data::<SurfaceUserData>().unwrap().inner;
         let b_guard = b_mutex.lock().unwrap();
         if let Some(ref parent) = b_guard.parent {
-            if parent.as_ref().equals(a.as_ref()) {
+            if parent.id() == a.id() {
                 true
             } else {
                 Self::is_ancestor(a, parent)
@@ -257,8 +231,9 @@ impl PrivateSurfaceData {
     /// if this surface already has a role, does nothing and fails, otherwise
     /// its role is now to be a subsurface
     pub fn set_parent(child: &WlSurface, parent: &WlSurface) -> Result<(), AlreadyHasRole> {
-        debug_assert!(child.as_ref().is_alive());
-        debug_assert!(parent.as_ref().is_alive());
+        // debug_assert!(child.as_ref().is_alive());
+        // debug_assert!(parent.as_ref().is_alive());
+
         // ensure the child is not already a parent of the parent
         if Self::is_ancestor(child, parent) {
             return Err(AlreadyHasRole);
@@ -266,11 +241,7 @@ impl PrivateSurfaceData {
 
         // change child's parent
         {
-            let child_mutex = child
-                .as_ref()
-                .user_data()
-                .get::<Mutex<PrivateSurfaceData>>()
-                .unwrap();
+            let child_mutex = &child.data::<SurfaceUserData>().unwrap().inner;
             let mut child_guard = child_mutex.lock().unwrap();
             // if surface already has a role, it cannot become a subsurface
             if child_guard.public_data.role.is_some() && child_guard.public_data.role != Some(SUBSURFACE_ROLE)
@@ -283,14 +254,11 @@ impl PrivateSurfaceData {
         }
         // register child to new parent
         {
-            let parent_mutex = parent
-                .as_ref()
-                .user_data()
-                .get::<Mutex<PrivateSurfaceData>>()
-                .unwrap();
+            let parent_mutex = &parent.data::<SurfaceUserData>().unwrap().inner;
             let mut parent_guard = parent_mutex.lock().unwrap();
             parent_guard.children.push(child.clone())
         }
+
         Ok(())
     }
 
@@ -298,53 +266,35 @@ impl PrivateSurfaceData {
     ///
     /// Does nothing if it has no parent
     pub fn unset_parent(child: &WlSurface) {
-        debug_assert!(child.as_ref().is_alive());
+        // debug_assert!(child.as_ref().is_alive());
         let old_parent = {
-            let child_mutex = child
-                .as_ref()
-                .user_data()
-                .get::<Mutex<PrivateSurfaceData>>()
-                .unwrap();
+            let child_mutex = &child.data::<SurfaceUserData>().unwrap().inner;
             let mut child_guard = child_mutex.lock().unwrap();
             child_guard.parent.take()
         };
         // unregister from our parent
         if let Some(old_parent) = old_parent {
-            let parent_mutex = old_parent
-                .as_ref()
-                .user_data()
-                .get::<Mutex<PrivateSurfaceData>>()
-                .unwrap();
+            let parent_mutex = &old_parent.data::<SurfaceUserData>().unwrap().inner;
             let mut parent_guard = parent_mutex.lock().unwrap();
-            parent_guard
-                .children
-                .retain(|c| !c.as_ref().equals(child.as_ref()));
+            parent_guard.children.retain(|c| c.id() != child.id());
         }
     }
 
     /// Retrieve the parent surface (if any) of this surface
     pub fn get_parent(child: &WlSurface) -> Option<WlSurface> {
-        let child_mutex = child
-            .as_ref()
-            .user_data()
-            .get::<Mutex<PrivateSurfaceData>>()
-            .unwrap();
+        let child_mutex = &child.data::<SurfaceUserData>().unwrap().inner;
         let child_guard = child_mutex.lock().unwrap();
         child_guard.parent.as_ref().cloned()
     }
 
     /// Retrieve the children surface (if any) of this surface
     pub fn get_children(parent: &WlSurface) -> Vec<WlSurface> {
-        let parent_mutex = parent
-            .as_ref()
-            .user_data()
-            .get::<Mutex<PrivateSurfaceData>>()
-            .unwrap();
+        let parent_mutex = &parent.data::<SurfaceUserData>().unwrap().inner;
         let parent_guard = parent_mutex.lock().unwrap();
         parent_guard
             .children
             .iter()
-            .filter(|s| !s.as_ref().equals(parent.as_ref()))
+            .filter(|s| s.id() != parent.id())
             .cloned()
             .collect()
     }
@@ -354,29 +304,21 @@ impl PrivateSurfaceData {
     /// Fails if `relative_to` is not a sibling or parent of `surface`.
     pub fn reorder(surface: &WlSurface, to: Location, relative_to: &WlSurface) -> Result<(), ()> {
         let parent = {
-            let data_mutex = surface
-                .as_ref()
-                .user_data()
-                .get::<Mutex<PrivateSurfaceData>>()
-                .unwrap();
+            let data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
             let data_guard = data_mutex.lock().unwrap();
             data_guard.parent.as_ref().cloned().unwrap()
         };
 
         fn index_of(surface: &WlSurface, slice: &[WlSurface]) -> Option<usize> {
             for (i, s) in slice.iter().enumerate() {
-                if s.as_ref().equals(surface.as_ref()) {
+                if s.id() == surface.id() {
                     return Some(i);
                 }
             }
             None
         }
 
-        let parent_mutex = parent
-            .as_ref()
-            .user_data()
-            .get::<Mutex<PrivateSurfaceData>>()
-            .unwrap();
+        let parent_mutex = &parent.data::<SurfaceUserData>().unwrap().inner;
         let mut parent_guard = parent_mutex.lock().unwrap();
         let my_index = index_of(surface, &parent_guard.children).unwrap();
         let mut other_index = match index_of(relative_to, &parent_guard.children) {
@@ -392,6 +334,7 @@ impl PrivateSurfaceData {
             Location::After => other_index + 1,
         };
         parent_guard.children.insert(new_index, me);
+
         Ok(())
     }
 }
@@ -446,11 +389,7 @@ impl PrivateSurfaceData {
         F2: FnMut(&WlSurface, &SurfaceData, &T),
         F3: FnMut(&WlSurface, &SurfaceData, &T) -> bool,
     {
-        let data_mutex = surface
-            .as_ref()
-            .user_data()
-            .get::<Mutex<PrivateSurfaceData>>()
-            .unwrap();
+        let data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut data_guard = data_mutex.lock().unwrap();
         let data_guard = &mut *data_guard;
         // call the filter on ourselves
@@ -459,7 +398,7 @@ impl PrivateSurfaceData {
                 // loop over children
                 if reverse {
                     for c in data_guard.children.iter().rev() {
-                        if c.as_ref().equals(surface.as_ref()) {
+                        if c.id() == surface.id() {
                             processor(surface, &data_guard.public_data, initial);
                         } else if !Self::map(c, &t, filter, processor, post_filter, true) {
                             return false;
@@ -467,7 +406,7 @@ impl PrivateSurfaceData {
                     }
                 } else {
                     for c in &data_guard.children {
-                        if c.as_ref().equals(surface.as_ref()) {
+                        if c.id() == surface.id() {
                             processor(surface, &data_guard.public_data, initial);
                         } else if !Self::map(c, &t, filter, processor, post_filter, false) {
                             return false;

@@ -1,16 +1,19 @@
-use std::{
-    cell::RefCell,
-    ops::Deref as _,
-    rc::Rc,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Mutex,
-    },
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
 };
 
 use wayland_server::{
-    protocol::{wl_compositor, wl_region, wl_subcompositor, wl_subsurface, wl_surface},
-    DispatchData, Filter, Main,
+    protocol::{
+        wl_callback::{self, WlCallback},
+        wl_compositor::{self, WlCompositor},
+        wl_region::{self, WlRegion},
+        wl_subcompositor::{self, WlSubcompositor},
+        wl_subsurface::{self, WlSubsurface},
+        wl_surface::{self, WlSurface},
+    },
+    DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
+    DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
 use crate::utils::{Logical, Point};
@@ -18,7 +21,8 @@ use crate::utils::{Logical, Point};
 use super::{
     cache::Cacheable,
     tree::{Location, PrivateSurfaceData},
-    AlreadyHasRole, BufferAssignment, Damage, Rectangle, RectangleKind, RegionAttributes, SurfaceAttributes,
+    AlreadyHasRole, BufferAssignment, CompositorHandler, CompositorState, Damage, Rectangle, RectangleKind,
+    RegionAttributes, SurfaceAttributes,
 };
 
 use slog::trace;
@@ -27,59 +31,159 @@ use slog::trace;
  * wl_compositor
  */
 
-pub(crate) fn implement_compositor<Impl>(
-    compositor: Main<wl_compositor::WlCompositor>,
-    log: ::slog::Logger,
-    implem: Rc<RefCell<Impl>>,
-) -> wl_compositor::WlCompositor
+impl DelegateGlobalDispatchBase<WlCompositor> for CompositorState {
+    type GlobalData = ();
+}
+
+impl<D> DelegateGlobalDispatch<WlCompositor, D> for CompositorState
 where
-    Impl: for<'a> FnMut(wl_surface::WlSurface, DispatchData<'a>) + 'static,
+    D: GlobalDispatch<WlCompositor, GlobalData = ()>,
+    D: Dispatch<WlCompositor, UserData = ()>,
+    D: Dispatch<WlSurface, UserData = SurfaceUserData>,
+    D: Dispatch<WlRegion, UserData = RegionUserData>,
+    D: CompositorHandler,
+    D: 'static,
 {
-    compositor.quick_assign(move |_compositor, request, _| match request {
-        wl_compositor::Request::CreateSurface { id } => {
-            trace!(log, "Creating a new wl_surface.");
-            implement_surface(id, log.clone(), implem.clone());
+    fn bind(
+        _state: &mut D,
+        _handle: &mut DisplayHandle<'_>,
+        _client: &wayland_server::Client,
+        resource: New<WlCompositor>,
+        _global_data: &Self::GlobalData,
+        data_init: &mut DataInit<'_, D>,
+    ) {
+        data_init.init(resource, ());
+    }
+}
+
+impl DelegateDispatchBase<WlCompositor> for CompositorState {
+    type UserData = ();
+}
+
+impl<D> DelegateDispatch<WlCompositor, D> for CompositorState
+where
+    D: Dispatch<WlCompositor, UserData = ()>,
+    D: Dispatch<WlSurface, UserData = SurfaceUserData>,
+    D: Dispatch<WlRegion, UserData = RegionUserData>,
+    D: CompositorHandler,
+    D: 'static,
+{
+    fn request(
+        state: &mut D,
+        _client: &wayland_server::Client,
+        _resource: &WlCompositor,
+        request: wl_compositor::Request,
+        _data: &Self::UserData,
+        _dhandle: &mut DisplayHandle<'_>,
+        data_init: &mut DataInit<'_, D>,
+    ) {
+        let log = &state.compositor_state().log;
+        match request {
+            wl_compositor::Request::CreateSurface { id } => {
+                trace!(log, "Creating a new wl_surface.");
+
+                let surface = data_init.init(
+                    id,
+                    SurfaceUserData {
+                        inner: PrivateSurfaceData::new(),
+                    },
+                );
+                PrivateSurfaceData::init(&surface);
+            }
+            wl_compositor::Request::CreateRegion { id } => {
+                trace!(log, "Creating a new wl_region.");
+
+                data_init.init(
+                    id,
+                    RegionUserData {
+                        inner: Default::default(),
+                    },
+                );
+            }
+            _ => unreachable!(),
         }
-        wl_compositor::Request::CreateRegion { id } => {
-            trace!(log, "Creating a new wl_region.");
-            implement_region(id);
-        }
-        _ => unreachable!(),
-    });
-    compositor.deref().clone()
+    }
 }
 
 /*
  * wl_surface
  */
 
-type SurfaceImplemFn = dyn for<'a> FnMut(wl_surface::WlSurface, DispatchData<'a>);
+impl Cacheable for SurfaceAttributes {
+    fn commit(&mut self, _dh: &mut DisplayHandle<'_>) -> Self {
+        SurfaceAttributes {
+            buffer: self.buffer.take(),
+            buffer_scale: self.buffer_scale,
+            buffer_transform: self.buffer_transform,
+            damage: std::mem::take(&mut self.damage),
+            opaque_region: self.opaque_region.clone(),
+            input_region: self.input_region.clone(),
+            frame_callbacks: std::mem::take(&mut self.frame_callbacks),
+        }
+    }
+    fn merge_into(self, into: &mut Self, dh: &mut DisplayHandle<'_>) {
+        if self.buffer.is_some() {
+            if let Some(BufferAssignment::NewBuffer { buffer, .. }) =
+                std::mem::replace(&mut into.buffer, self.buffer)
+            {
+                let new_buffer = into.buffer.as_ref().and_then(|b| match b {
+                    BufferAssignment::Removed => None,
+                    BufferAssignment::NewBuffer { buffer, .. } => Some(buffer),
+                });
 
-// Internal implementation data of surfaces
-pub(crate) struct SurfaceImplem {
-    log: ::slog::Logger,
-    implem: Rc<RefCell<SurfaceImplemFn>>,
-}
-
-impl SurfaceImplem {
-    fn make<Impl>(log: ::slog::Logger, implem: Rc<RefCell<Impl>>) -> SurfaceImplem
-    where
-        Impl: for<'a> FnMut(wl_surface::WlSurface, DispatchData<'a>) + 'static,
-    {
-        SurfaceImplem { log, implem }
+                if Some(&buffer) != new_buffer {
+                    buffer.release(dh);
+                }
+            }
+        }
+        into.buffer_scale = self.buffer_scale;
+        into.buffer_transform = self.buffer_transform;
+        into.damage.extend(self.damage);
+        into.opaque_region = self.opaque_region;
+        into.input_region = self.input_region;
+        into.frame_callbacks.extend(self.frame_callbacks);
     }
 }
 
-impl SurfaceImplem {
-    fn receive_surface_request(
-        &mut self,
-        req: wl_surface::Request,
-        surface: wl_surface::WlSurface,
-        ddata: DispatchData<'_>,
+/// User data for WlSurface
+#[derive(Debug)]
+pub struct SurfaceUserData {
+    pub(crate) inner: Mutex<PrivateSurfaceData>,
+}
+
+impl DestructionNotify for SurfaceUserData {
+    fn object_destroyed(
+        &self,
+        _client_id: wayland_server::backend::ClientId,
+        object_id: wayland_server::backend::ObjectId,
     ) {
-        match req {
+        PrivateSurfaceData::cleanup(self, object_id);
+    }
+}
+
+impl DelegateDispatchBase<WlSurface> for CompositorState {
+    type UserData = SurfaceUserData;
+}
+
+impl<D> DelegateDispatch<WlSurface, D> for CompositorState
+where
+    D: Dispatch<WlSurface, UserData = SurfaceUserData>,
+    D: Dispatch<WlCallback, UserData = ()>,
+    D: CompositorHandler,
+    D: 'static,
+{
+    fn request(
+        state: &mut D,
+        _client: &wayland_server::Client,
+        surface: &WlSurface,
+        request: wl_surface::Request,
+        _data: &Self::UserData,
+        handle: &mut DisplayHandle<'_>,
+        data_init: &mut wayland_server::DataInit<'_, D>,
+    ) {
+        match request {
             wl_surface::Request::Attach { buffer, x, y } => {
-                PrivateSurfaceData::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states.cached_state.pending::<SurfaceAttributes>().buffer = Some(match buffer {
                         Some(buffer) => BufferAssignment::NewBuffer {
                             buffer,
@@ -90,7 +194,7 @@ impl SurfaceImplem {
                 });
             }
             wl_surface::Request::Damage { x, y, width, height } => {
-                PrivateSurfaceData::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
                         .pending::<SurfaceAttributes>()
@@ -102,58 +206,68 @@ impl SurfaceImplem {
                 });
             }
             wl_surface::Request::Frame { callback } => {
-                PrivateSurfaceData::with_states(&surface, |states| {
+                let callback = data_init.init(callback, ());
+
+                PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
                         .pending::<SurfaceAttributes>()
                         .frame_callbacks
-                        .push((*callback).clone());
+                        .push(callback.clone());
                 });
             }
             wl_surface::Request::SetOpaqueRegion { region } => {
                 let attributes = region.map(|r| {
-                    let attributes_mutex = r.as_ref().user_data().get::<Mutex<RegionAttributes>>().unwrap();
+                    let attributes_mutex = &r.data::<RegionUserData>().unwrap().inner;
                     attributes_mutex.lock().unwrap().clone()
                 });
-                PrivateSurfaceData::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states.cached_state.pending::<SurfaceAttributes>().opaque_region = attributes;
                 });
             }
             wl_surface::Request::SetInputRegion { region } => {
                 let attributes = region.map(|r| {
-                    let attributes_mutex = r.as_ref().user_data().get::<Mutex<RegionAttributes>>().unwrap();
+                    let attributes_mutex = &r.data::<RegionUserData>().unwrap().inner;
                     attributes_mutex.lock().unwrap().clone()
                 });
-                PrivateSurfaceData::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states.cached_state.pending::<SurfaceAttributes>().input_region = attributes;
                 });
             }
             wl_surface::Request::Commit => {
-                let mut user_impl = self.implem.borrow_mut();
-                PrivateSurfaceData::invoke_commit_hooks(&surface);
-                if !surface.as_ref().is_alive() {
+                PrivateSurfaceData::invoke_commit_hooks(surface);
+
+                // is_alive check
+                if handle.object_info(surface.id()).is_err() {
                     // the client was killed by a hook, abort
                     return;
                 }
-                PrivateSurfaceData::commit(&surface);
-                trace!(self.log, "Calling user implementation for wl_surface.commit");
-                (*user_impl)(surface, ddata);
+
+                PrivateSurfaceData::commit(surface, handle);
+                trace!(
+                    state.compositor_state().log,
+                    "Calling user implementation for wl_surface.commit"
+                );
+
+                state.commit(handle, surface);
             }
             wl_surface::Request::SetBufferTransform { transform } => {
-                PrivateSurfaceData::with_states(&surface, |states| {
-                    states
-                        .cached_state
-                        .pending::<SurfaceAttributes>()
-                        .buffer_transform = transform;
-                });
+                if let WEnum::Value(transform) = transform {
+                    PrivateSurfaceData::with_states(surface, |states| {
+                        states
+                            .cached_state
+                            .pending::<SurfaceAttributes>()
+                            .buffer_transform = transform;
+                    });
+                }
             }
             wl_surface::Request::SetBufferScale { scale } => {
-                PrivateSurfaceData::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states.cached_state.pending::<SurfaceAttributes>().buffer_scale = scale;
                 });
             }
             wl_surface::Request::DamageBuffer { x, y, width, height } => {
-                PrivateSurfaceData::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
                         .pending::<SurfaceAttributes>()
@@ -172,129 +286,160 @@ impl SurfaceImplem {
     }
 }
 
-impl Cacheable for SurfaceAttributes {
-    fn commit(&mut self) -> Self {
-        SurfaceAttributes {
-            buffer: self.buffer.take(),
-            buffer_scale: self.buffer_scale,
-            buffer_transform: self.buffer_transform,
-            damage: std::mem::take(&mut self.damage),
-            opaque_region: self.opaque_region.clone(),
-            input_region: self.input_region.clone(),
-            frame_callbacks: std::mem::take(&mut self.frame_callbacks),
-        }
-    }
-    fn merge_into(self, into: &mut Self) {
-        if self.buffer.is_some() {
-            if let Some(BufferAssignment::Removed) = &self.buffer {
-                into.damage.clear();
-            }
-            if let Some(BufferAssignment::NewBuffer { buffer, .. }) =
-                std::mem::replace(&mut into.buffer, self.buffer)
-            {
-                let new_buffer = into.buffer.as_ref().and_then(|b| match b {
-                    BufferAssignment::Removed => None,
-                    BufferAssignment::NewBuffer { buffer, .. } => Some(buffer),
-                });
-
-                if Some(&buffer) != new_buffer {
-                    buffer.release();
-                }
-            }
-        }
-        into.buffer_scale = self.buffer_scale;
-        into.buffer_transform = self.buffer_transform;
-        into.damage.extend(self.damage);
-        into.opaque_region = self.opaque_region;
-        into.input_region = self.input_region;
-        into.frame_callbacks.extend(self.frame_callbacks);
-    }
-}
-
-fn implement_surface<Impl>(
-    surface: Main<wl_surface::WlSurface>,
-    log: ::slog::Logger,
-    implem: Rc<RefCell<Impl>>,
-) -> wl_surface::WlSurface
-where
-    Impl: for<'a> FnMut(wl_surface::WlSurface, DispatchData<'a>) + 'static,
-{
-    surface.quick_assign({
-        let mut implem = SurfaceImplem::make(log, implem);
-        move |surface, req, ddata| implem.receive_surface_request(req, surface.deref().clone(), ddata)
-    });
-    surface.assign_destructor(Filter::new(|surface, _, _| PrivateSurfaceData::cleanup(&surface)));
-    surface
-        .as_ref()
-        .user_data()
-        .set_threadsafe(PrivateSurfaceData::new);
-    PrivateSurfaceData::init(&surface);
-    surface.deref().clone()
-}
-
 /*
  * wl_region
  */
 
-fn region_implem(request: wl_region::Request, region: wl_region::WlRegion) {
-    let attributes_mutex = region
-        .as_ref()
-        .user_data()
-        .get::<Mutex<RegionAttributes>>()
-        .unwrap();
-    let mut guard = attributes_mutex.lock().unwrap();
-    match request {
-        wl_region::Request::Add { x, y, width, height } => guard.rects.push((
-            RectangleKind::Add,
-            Rectangle::from_loc_and_size((x, y), (width, height)),
-        )),
-        wl_region::Request::Subtract { x, y, width, height } => guard.rects.push((
-            RectangleKind::Subtract,
-            Rectangle::from_loc_and_size((x, y), (width, height)),
-        )),
-        wl_region::Request::Destroy => {
-            // all is handled by our destructor
-        }
-        _ => unreachable!(),
+/// User data of WlRegion
+#[derive(Debug)]
+pub struct RegionUserData {
+    pub(crate) inner: Mutex<RegionAttributes>,
+}
+
+impl DestructionNotify for RegionUserData {
+    fn object_destroyed(
+        &self,
+        _client_id: wayland_server::backend::ClientId,
+        _object_id: wayland_server::backend::ObjectId,
+    ) {
     }
 }
 
-fn implement_region(region: Main<wl_region::WlRegion>) -> wl_region::WlRegion {
-    region.quick_assign(|region, req, _| region_implem(req, region.deref().clone()));
-    region
-        .as_ref()
-        .user_data()
-        .set_threadsafe(|| Mutex::new(RegionAttributes::default()));
-    region.deref().clone()
+impl DelegateDispatchBase<WlRegion> for CompositorState {
+    type UserData = RegionUserData;
+}
+
+impl<D> DelegateDispatch<WlRegion, D> for CompositorState
+where
+    D: Dispatch<WlRegion, UserData = RegionUserData>,
+    D: CompositorHandler,
+{
+    fn request(
+        _state: &mut D,
+        _client: &wayland_server::Client,
+        _resource: &WlRegion,
+        request: wl_region::Request,
+        data: &Self::UserData,
+        _dhandle: &mut DisplayHandle<'_>,
+        _init: &mut wayland_server::DataInit<'_, D>,
+    ) {
+        let mut guard = data.inner.lock().unwrap();
+        match request {
+            wl_region::Request::Add { x, y, width, height } => guard.rects.push((
+                RectangleKind::Add,
+                Rectangle::from_loc_and_size((x, y), (width, height)),
+            )),
+            wl_region::Request::Subtract { x, y, width, height } => guard.rects.push((
+                RectangleKind::Subtract,
+                Rectangle::from_loc_and_size((x, y), (width, height)),
+            )),
+            wl_region::Request::Destroy => {
+                // all is handled by our destructor
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 /*
  * wl_subcompositor
  */
 
-pub(crate) fn implement_subcompositor(
-    subcompositor: Main<wl_subcompositor::WlSubcompositor>,
-) -> wl_subcompositor::WlSubcompositor {
-    subcompositor.quick_assign(move |subcompositor, request, _| match request {
-        wl_subcompositor::Request::GetSubsurface { id, surface, parent } => {
-            if let Err(AlreadyHasRole) = PrivateSurfaceData::set_parent(&surface, &parent) {
-                subcompositor.as_ref().post_error(
-                    wl_subcompositor::Error::BadSurface as u32,
-                    "Surface already has a role.".into(),
+impl DelegateGlobalDispatchBase<WlSubcompositor> for CompositorState {
+    type GlobalData = ();
+}
+
+impl<D> DelegateGlobalDispatch<WlSubcompositor, D> for CompositorState
+where
+    D: GlobalDispatch<WlSubcompositor, GlobalData = ()>,
+    D: Dispatch<WlSubcompositor, UserData = ()>,
+    D: Dispatch<WlSubsurface, UserData = SubsurfaceUserData>,
+    D: CompositorHandler,
+    D: 'static,
+{
+    fn bind(
+        _state: &mut D,
+        _handle: &mut DisplayHandle<'_>,
+        _client: &wayland_server::Client,
+        resource: New<WlSubcompositor>,
+        _global_data: &Self::GlobalData,
+        data_init: &mut DataInit<'_, D>,
+    ) {
+        data_init.init(resource, ());
+    }
+}
+
+impl DelegateDispatchBase<WlSubcompositor> for CompositorState {
+    type UserData = ();
+}
+
+impl<D> DelegateDispatch<WlSubcompositor, D> for CompositorState
+where
+    D: Dispatch<WlSubcompositor, UserData = ()>,
+    D: Dispatch<WlSubsurface, UserData = SubsurfaceUserData>,
+    D: CompositorHandler,
+    D: 'static,
+{
+    fn request(
+        _state: &mut D,
+        _client: &wayland_server::Client,
+        subcompositor: &WlSubcompositor,
+        request: wl_subcompositor::Request,
+        _data: &Self::UserData,
+        handle: &mut DisplayHandle<'_>,
+        data_init: &mut DataInit<'_, D>,
+    ) {
+        match request {
+            wl_subcompositor::Request::GetSubsurface { id, surface, parent } => {
+                if let Err(AlreadyHasRole) = PrivateSurfaceData::set_parent(&surface, &parent) {
+                    subcompositor.post_error(
+                        handle,
+                        wl_subcompositor::Error::BadSurface,
+                        "Surface already has a role.",
+                    );
+                    return;
+                }
+
+                data_init.init(
+                    id,
+                    SubsurfaceUserData {
+                        surface: surface.clone(),
+                    },
                 );
-                return;
+
+                super::with_states(&surface, |states| {
+                    states.data_map.insert_if_missing_threadsafe(SubsurfaceState::new)
+                })
+                .unwrap();
             }
-            implement_subsurface(id, surface);
+            wl_subcompositor::Request::Destroy => {}
+            _ => unreachable!(),
         }
-        wl_subcompositor::Request::Destroy => {}
-        _ => unreachable!(),
-    });
-    subcompositor.deref().clone()
+    }
 }
 
 /*
  * wl_subsurface
  */
+
+/// User data of WlSubsurface
+#[derive(Debug)]
+pub struct SubsurfaceUserData {
+    surface: WlSurface,
+}
+
+impl DestructionNotify for SubsurfaceUserData {
+    fn object_destroyed(
+        &self,
+        _client_id: wayland_server::backend::ClientId,
+        _object_id: wayland_server::backend::ObjectId,
+    ) {
+        // TODO
+        // if surface.as_ref().is_alive() {
+        PrivateSurfaceData::unset_parent(&self.surface);
+        // }
+    }
+}
 
 /// The cached state associated with a subsurface
 #[derive(Debug)]
@@ -313,13 +458,13 @@ impl Default for SubsurfaceCachedState {
 }
 
 impl Cacheable for SubsurfaceCachedState {
-    fn commit(&mut self) -> Self {
-        SubsurfaceCachedState {
+    fn commit(&mut self, _dh: &mut DisplayHandle<'_>) -> Self {
+        Self {
             location: self.location,
         }
     }
 
-    fn merge_into(self, into: &mut Self) {
+    fn merge_into(self, into: &mut Self, _dh: &mut DisplayHandle<'_>) {
         into.location = self.location;
     }
 }
@@ -355,45 +500,50 @@ pub fn is_effectively_sync(surface: &wl_surface::WlSurface) -> bool {
     }
 }
 
-fn implement_subsurface(
-    subsurface: Main<wl_subsurface::WlSubsurface>,
-    surface: wl_surface::WlSurface,
-) -> wl_subsurface::WlSubsurface {
-    let data_surface = surface.clone();
-    subsurface.quick_assign(move |subsurface, request, _| {
+impl DelegateDispatchBase<WlSubsurface> for CompositorState {
+    type UserData = SubsurfaceUserData;
+}
+
+impl<D> DelegateDispatch<WlSubsurface, D> for CompositorState
+where
+    D: Dispatch<WlSubsurface, UserData = SubsurfaceUserData>,
+    D: CompositorHandler,
+    D: 'static,
+{
+    fn request(
+        _state: &mut D,
+        _client: &wayland_server::Client,
+        subsurface: &WlSubsurface,
+        request: wl_subsurface::Request,
+        data: &Self::UserData,
+        handle: &mut DisplayHandle<'_>,
+        _data_init: &mut DataInit<'_, D>,
+    ) {
         match request {
             wl_subsurface::Request::SetPosition { x, y } => {
-                PrivateSurfaceData::with_states(&surface, |state| {
+                PrivateSurfaceData::with_states(&data.surface, |state| {
                     state.cached_state.pending::<SubsurfaceCachedState>().location = (x, y).into();
                 })
             }
             wl_subsurface::Request::PlaceAbove { sibling } => {
-                let surface = subsurface
-                    .as_ref()
-                    .user_data()
-                    .get::<wl_surface::WlSurface>()
-                    .unwrap();
-                if let Err(()) = PrivateSurfaceData::reorder(surface, Location::After, &sibling) {
-                    subsurface.as_ref().post_error(
-                        wl_subsurface::Error::BadSurface as u32,
-                        "Provided surface is not a sibling or parent.".into(),
+                if let Err(()) = PrivateSurfaceData::reorder(&data.surface, Location::After, &sibling) {
+                    subsurface.post_error(
+                        handle,
+                        wl_subsurface::Error::BadSurface,
+                        "Provided surface is not a sibling or parent.",
                     )
                 }
             }
             wl_subsurface::Request::PlaceBelow { sibling } => {
-                let surface = subsurface
-                    .as_ref()
-                    .user_data()
-                    .get::<wl_surface::WlSurface>()
-                    .unwrap();
-                if let Err(()) = PrivateSurfaceData::reorder(surface, Location::Before, &sibling) {
-                    subsurface.as_ref().post_error(
-                        wl_subsurface::Error::BadSurface as u32,
-                        "Provided surface is not a sibling or parent.".into(),
+                if let Err(()) = PrivateSurfaceData::reorder(&data.surface, Location::Before, &sibling) {
+                    subsurface.post_error(
+                        handle,
+                        wl_subsurface::Error::BadSurface,
+                        "Provided surface is not a sibling or parent.",
                     )
                 }
             }
-            wl_subsurface::Request::SetSync => PrivateSurfaceData::with_states(&surface, |state| {
+            wl_subsurface::Request::SetSync => PrivateSurfaceData::with_states(&data.surface, |state| {
                 state
                     .data_map
                     .get::<SubsurfaceState>()
@@ -401,7 +551,7 @@ fn implement_subsurface(
                     .sync
                     .store(true, Ordering::Release);
             }),
-            wl_subsurface::Request::SetDesync => PrivateSurfaceData::with_states(&surface, |state| {
+            wl_subsurface::Request::SetDesync => PrivateSurfaceData::with_states(&data.surface, |state| {
                 state
                     .data_map
                     .get::<SubsurfaceState>()
@@ -414,26 +564,27 @@ fn implement_subsurface(
             }
             _ => unreachable!(),
         }
-    });
-    super::with_states(&data_surface, |states| {
-        states.data_map.insert_if_missing_threadsafe(SubsurfaceState::new)
-    })
-    .unwrap();
-    subsurface.assign_destructor(Filter::new(|subsurface, _, _| destroy_subsurface(&subsurface)));
-    subsurface
-        .as_ref()
-        .user_data()
-        .set_threadsafe(move || data_surface);
-    subsurface.deref().clone()
+    }
 }
 
-fn destroy_subsurface(subsurface: &wl_subsurface::WlSubsurface) {
-    let surface = subsurface
-        .as_ref()
-        .user_data()
-        .get::<wl_surface::WlSurface>()
-        .unwrap();
-    if surface.as_ref().is_alive() {
-        PrivateSurfaceData::unset_parent(surface);
+impl DelegateDispatchBase<WlCallback> for CompositorState {
+    type UserData = ();
+}
+
+impl<D> DelegateDispatch<WlCallback, D> for CompositorState
+where
+    D: Dispatch<WlCallback, UserData = ()>,
+    D: CompositorHandler,
+    D: 'static,
+{
+    fn request(
+        _state: &mut D,
+        _client: &wayland_server::Client,
+        _subsurface: &WlCallback,
+        _request: wl_callback::Request,
+        _data: &Self::UserData,
+        _handle: &mut DisplayHandle<'_>,
+        _data_init: &mut DataInit<'_, D>,
+    ) {
     }
 }
