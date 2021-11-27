@@ -1077,11 +1077,14 @@ impl Renderer for Gles2Renderer {
         renderer[2][0] = -(1.0f32.copysign(renderer[0][0] + renderer[1][0]));
         renderer[2][1] = -(1.0f32.copysign(renderer[0][1] + renderer[1][1]));
 
+        // We account for OpenGLs coordinate system here
+        let flip180 = Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0);
+
         let mut frame = Gles2Frame {
             gl: self.gl.clone(),
             programs: self.programs.clone(),
             // output transformation passed in by the user
-            current_projection: transform.matrix() * renderer,
+            current_projection: flip180 * transform.matrix() * renderer,
         };
 
         let result = rendering(self, &mut frame);

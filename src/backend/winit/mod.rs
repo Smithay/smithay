@@ -298,7 +298,8 @@ impl WinitGraphicsBackend {
         };
 
         self.renderer.bind(self.egl.clone())?;
-        let result = self.renderer.render(size, Transform::Normal, rendering)?;
+        // Why is winit falling out of place with the coordinate system?
+        let result = self.renderer.render(size, Transform::Flipped180, rendering)?;
         self.egl.swap_buffers()?;
         self.renderer.unbind()?;
         Ok(result)

@@ -33,6 +33,7 @@
 - `X11Surface` is now multi-window capable.
 - `Renderer::clear` now expects a second argument to optionally only clear parts of the buffer/surface
 - `Transform::transform_size` now takes a `Size` instead of two `u32`
+- `Gles2Renderer` now automatically flips the `render` result to account for OpenGLs coordinate system
 
 ### Additions
 

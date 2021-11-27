@@ -743,53 +743,19 @@ fn render_surface(
 
     // and draw to our buffer
     match renderer
-        .render(
-            mode.size,
-            Transform::Flipped180, // Scanout is rotated
-            |renderer, frame| {
-                render_layers_and_windows(
-                    renderer,
-                    frame,
-                    window_map,
-                    output_geometry,
-                    output_scale,
-                    logger,
-                )?;
+        .render(mode.size, Transform::Normal, |renderer, frame| {
+            render_layers_and_windows(renderer, frame, window_map, output_geometry, output_scale, logger)?;
 
-                // set cursor
-                if output_geometry.to_f64().contains(pointer_location) {
-                    let (ptr_x, ptr_y) = pointer_location.into();
-                    let relative_ptr_location =
-                        Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)) - output_geometry.loc;
-                    // draw the dnd icon if applicable
-                    {
-                        if let Some(ref wl_surface) = dnd_icon.as_ref() {
-                            if wl_surface.as_ref().is_alive() {
-                                draw_dnd_icon(
-                                    renderer,
-                                    frame,
-                                    wl_surface,
-                                    relative_ptr_location,
-                                    output_scale,
-                                    logger,
-                                )?;
-                            }
-                        }
-                    }
-
-                    // draw the cursor as relevant
-                    {
-                        // reset the cursor if the surface is no longer alive
-                        let mut reset = false;
-                        if let CursorImageStatus::Image(ref surface) = *cursor_status {
-                            reset = !surface.as_ref().is_alive();
-                        }
-                        if reset {
-                            *cursor_status = CursorImageStatus::Default;
-                        }
-
-                        if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
-                            draw_cursor(
+            // set cursor
+            if output_geometry.to_f64().contains(pointer_location) {
+                let (ptr_x, ptr_y) = pointer_location.into();
+                let relative_ptr_location =
+                    Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)) - output_geometry.loc;
+                // draw the dnd icon if applicable
+                {
+                    if let Some(ref wl_surface) = dnd_icon.as_ref() {
+                        if wl_surface.as_ref().is_alive() {
+                            draw_dnd_icon(
                                 renderer,
                                 frame,
                                 wl_surface,
@@ -797,38 +763,61 @@ fn render_surface(
                                 output_scale,
                                 logger,
                             )?;
-                        } else {
-                            frame.render_texture_at(
-                                pointer_image,
-                                relative_ptr_location
-                                    .to_f64()
-                                    .to_physical(output_scale as f64)
-                                    .to_i32_round(),
-                                1,
-                                output_scale as f64,
-                                Transform::Normal,
-                                1.0,
-                            )?;
                         }
-                    }
-
-                    #[cfg(feature = "debug")]
-                    {
-                        draw_fps(
-                            renderer,
-                            frame,
-                            fps_texture,
-                            output_scale as f64,
-                            surface.fps.avg().round() as u32,
-                        )?;
-
-                        surface.fps.tick();
                     }
                 }
 
-                Ok(())
-            },
-        )
+                // draw the cursor as relevant
+                {
+                    // reset the cursor if the surface is no longer alive
+                    let mut reset = false;
+                    if let CursorImageStatus::Image(ref surface) = *cursor_status {
+                        reset = !surface.as_ref().is_alive();
+                    }
+                    if reset {
+                        *cursor_status = CursorImageStatus::Default;
+                    }
+
+                    if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
+                        draw_cursor(
+                            renderer,
+                            frame,
+                            wl_surface,
+                            relative_ptr_location,
+                            output_scale,
+                            logger,
+                        )?;
+                    } else {
+                        frame.render_texture_at(
+                            pointer_image,
+                            relative_ptr_location
+                                .to_f64()
+                                .to_physical(output_scale as f64)
+                                .to_i32_round(),
+                            1,
+                            output_scale as f64,
+                            Transform::Normal,
+                            1.0,
+                        )?;
+                    }
+                }
+
+                #[cfg(feature = "debug")]
+                {
+                    draw_fps(
+                        renderer,
+                        frame,
+                        fps_texture,
+                        output_scale as f64,
+                        surface.fps.avg().round() as u32,
+                    )?;
+
+                    surface.fps.tick();
+                }
+            }
+
+            Ok(())
+        })
         .map_err(Into::<SwapBuffersError>::into)
         .and_then(|x| x)
         .map_err(Into::<SwapBuffersError>::into)
