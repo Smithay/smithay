@@ -1121,10 +1121,17 @@ impl Frame for Gles2Frame {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
 
-    fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error> {
+    fn clear(&mut self, color: [f32; 4], at: Option<Rectangle<i32, Physical>>) -> Result<(), Self::Error> {
         unsafe {
+            if let Some(rect) = at {
+                self.gl.Enable(ffi::SCISSOR_TEST);
+                self.gl.Scissor(rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
+            }
             self.gl.ClearColor(color[0], color[1], color[2], color[3]);
             self.gl.Clear(ffi::COLOR_BUFFER_BIT);
+            if at.is_some() {
+                self.gl.Disable(ffi::SCISSOR_TEST);
+            }
         }
 
         Ok(())

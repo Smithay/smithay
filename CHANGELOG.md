@@ -31,6 +31,7 @@
 - `X11Surface::buffer` now additionally returns the age of the buffer
 - `X11Surface` now has an explicit `submit` function
 - `X11Surface` is now multi-window capable.
+- `Renderer::clear` now expects a second argument to optionally only clear parts of the buffer/surface
 
 ### Additions
 

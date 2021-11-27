@@ -873,7 +873,7 @@ fn initial_render(surface: &mut RenderSurface, renderer: &mut Gles2Renderer) -> 
     renderer
         .render((1, 1).into(), Transform::Normal, |_, frame| {
             frame
-                .clear([0.8, 0.8, 0.9, 1.0])
+                .clear([0.8, 0.8, 0.9, 1.0], None)
                 .map_err(Into::<SwapBuffersError>::into)
         })
         .map_err(Into::<SwapBuffersError>::into)
