@@ -725,6 +725,29 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     }
 }
 
+impl<Kind> Rectangle<f64, Kind> {
+    /// Convert to i32 for integer-space manipulations by rounding float values
+    #[inline]
+    pub fn to_i32_round<N: Coordinate>(self) -> Rectangle<N, Kind> {
+        Rectangle {
+            loc: self.loc.to_i32_round(),
+            size: self.size.to_i32_round(),
+        }
+    }
+
+    /// Convert to i32 by returning the largest integer-space rectangle fitting into the float-based rectangle
+    #[inline]
+    pub fn to_i32_down<N: Coordinate>(self) -> Rectangle<N, Kind> {
+        Rectangle::from_extemities(self.loc.to_i32_ceil(), (self.loc + self.size).to_i32_floor())
+    }
+
+    /// Convert to i32 by returning the smallest integet-space rectangle encapsulating the float-based rectangle
+    #[inline]
+    pub fn to_i32_up<N: Coordinate>(self) -> Rectangle<N, Kind> {
+        Rectangle::from_extemities(self.loc.to_i32_floor(), (self.loc + self.size).to_i32_ceil())
+    }
+}
+
 impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     /// Create a new [`Rectangle`] from the coordinates of its top-left corner and its dimensions
     #[inline]

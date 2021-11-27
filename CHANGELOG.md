@@ -55,6 +55,10 @@
 - The button code for a `PointerButtonEvent` may now be obtained using `PointerButtonEvent::button_code`. 
 - `Renderer` now allows texture filtering methods to be set.
 
+#### Utils
+
+- `Rectangle` can now also be converted from f64 to i32 variants
+
 ### Bugfixes
 
 #### Clients & Protocols
