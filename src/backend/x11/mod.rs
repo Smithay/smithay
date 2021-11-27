@@ -76,7 +76,10 @@ mod window_inner;
 use self::{buffer::PixmapWrapperExt, window_inner::WindowInner};
 use crate::{
     backend::{
-        allocator::dmabuf::{AsDmabuf, Dmabuf},
+        allocator::{
+            dmabuf::{AsDmabuf, Dmabuf},
+            Slot, Swapchain,
+        },
         drm::{node::path_to_type, CreateDrmNodeError, DrmNode, NodeType},
         egl::{native::X11DefaultDisplay, EGLDevice, EGLDisplay, Error as EGLError},
         input::{Axis, ButtonState, InputEvent, KeyState},
@@ -85,7 +88,7 @@ use crate::{
 };
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm_fourcc::{DrmFourcc, DrmModifier};
-use gbm::{BufferObject, BufferObjectFlags};
+use gbm::BufferObject;
 use nix::{
     fcntl::{self, OFlag},
     sys::stat::Mode,
@@ -342,12 +345,12 @@ pub struct X11Surface {
     connection: Weak<RustConnection>,
     window: Window,
     resize: Receiver<Size<u16, Logical>>,
-    device: gbm::Device<DrmNode>,
+    swapchain: Swapchain<gbm::Device<DrmNode>, BufferObject<()>>,
     format: DrmFourcc,
     width: u16,
     height: u16,
-    current: BufferObject<Dmabuf>,
-    next: BufferObject<Dmabuf>,
+    current: Option<Slot<BufferObject<()>>>,
+    next: Option<Slot<BufferObject<()>>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -451,28 +454,7 @@ impl X11Surface {
         let window = backend.window();
         let format = window.format().unwrap();
         let size = window.size();
-        let mut current = device
-            .create_buffer_object_with_modifiers(
-                size.w as u32,
-                size.h as u32,
-                format,
-                modifiers.iter().cloned(),
-            )
-            .map_err(Into::<AllocateBuffersError>::into)?;
-        current
-            .set_userdata(current.export().map_err(Into::<AllocateBuffersError>::into)?)
-            .map_err(Into::<AllocateBuffersError>::into)?;
-
-        let mut next = device
-            .create_buffer_object_with_modifiers(
-                size.w as u32,
-                size.h as u32,
-                format,
-                modifiers.iter().cloned(),
-            )
-            .map_err(Into::<AllocateBuffersError>::into)?;
-        next.set_userdata(next.export().map_err(Into::<AllocateBuffersError>::into)?)
-            .map_err(Into::<AllocateBuffersError>::into)?;
+        let swapchain = Swapchain::new(device, size.w as u32, size.h as u32, format, modifiers);
 
         let (sender, recv) = mpsc::channel();
 
@@ -481,19 +463,19 @@ impl X11Surface {
         Ok(X11Surface {
             connection: Arc::downgrade(&backend.connection),
             window,
-            device,
+            swapchain,
             format,
             width: size.w,
             height: size.h,
-            current,
-            next,
+            current: None,
+            next: None,
             resize: recv,
         })
     }
 
     /// Returns a handle to the GBM device used to allocate buffers.
     pub fn device(&self) -> &gbm::Device<DrmNode> {
-        &self.device
+        &self.swapchain.allocator
     }
 
     /// Returns the format of the buffers the surface accepts.
@@ -501,114 +483,78 @@ impl X11Surface {
         self.format
     }
 
-    /// Returns an RAII scoped object which provides the next buffer.
+    /// Returns the next buffer that will be presented to the Window and its age.
     ///
-    /// When the object is dropped, the contents of the buffer are swapped and then presented.
-    pub fn present(&mut self) -> Result<Present<'_>, AllocateBuffersError> {
+    /// You may bind this buffer to a renderer to render.
+    /// This function will return the same buffer until [`submit`](Self::submit) is called
+    /// or [`reset_buffers`](Self::reset_buffer) is used to reset the buffers.
+    pub fn buffer(&mut self) -> Result<(Dmabuf, u8), AllocateBuffersError> {
         if let Some(new_size) = self.resize.try_iter().last() {
             self.resize(new_size)?;
         }
 
-        Ok(Present { surface: self })
+        if self.next.is_none() {
+            self.next = Some(
+                self.swapchain
+                    .acquire()
+                    .map_err(Into::<AllocateBuffersError>::into)?
+                    .ok_or(AllocateBuffersError::NoFreeSlots)?,
+            );
+        }
+
+        let slot = self.next.as_ref().unwrap();
+        let age = slot.age();
+        match slot.userdata().get::<Dmabuf>() {
+            Some(dmabuf) => Ok((dmabuf.clone(), age)),
+            None => {
+                let dmabuf = slot.export().map_err(Into::<AllocateBuffersError>::into)?;
+                slot.userdata().insert_if_missing(|| dmabuf.clone());
+                Ok((dmabuf, age))
+            }
+        }
     }
 
-    fn resize(&mut self, size: Size<u16, Logical>) -> Result<(), AllocateBuffersError> {
-        let mut current = self
-            .device
-            .create_buffer_object(
-                size.w as u32,
-                size.h as u32,
-                self.format,
-                BufferObjectFlags::empty(),
-            )
-            .map_err(Into::<AllocateBuffersError>::into)?;
-        current
-            .set_userdata(current.export().map_err(Into::<AllocateBuffersError>::into)?)
-            .map_err(Into::<AllocateBuffersError>::into)?;
-
-        let mut next = self
-            .device
-            .create_buffer_object(
-                size.w as u32,
-                size.h as u32,
-                self.format,
-                BufferObjectFlags::empty(),
-            )
-            .map_err(Into::<AllocateBuffersError>::into)?;
-        next.set_userdata(next.export().map_err(Into::<AllocateBuffersError>::into)?)
-            .map_err(Into::<AllocateBuffersError>::into)?;
-
-        self.width = size.w;
-        self.height = size.h;
-        self.current = current;
-        self.next = next;
-
-        Ok(())
-    }
-}
-
-/// An RAII scope containing the next buffer that will be presented to the window. Presentation
-/// occurs when the `Present` is dropped.
-///
-/// The provided buffer may be bound to a [Renderer](crate::backend::renderer::Renderer) to draw to
-/// the window.
-///
-/// ```rust,ignore
-/// // Instantiate a new present object to start the process of presenting.
-/// let present = surface.present()?;
-///
-/// // Bind the buffer to the renderer in order to render.
-/// renderer.bind(present.buffer())?;
-///
-/// // Rendering here!
-///
-/// // Make sure to unbind the buffer when done.
-/// renderer.unbind()?;
-///
-/// // When the `present` is dropped, what was rendered will be presented to the window.
-/// ```
-#[derive(Debug)]
-pub struct Present<'a> {
-    surface: &'a mut X11Surface,
-}
-
-impl Present<'_> {
-    /// Returns the next buffer that will be presented to the Window.
-    ///
-    /// You may bind this buffer to a renderer to render.
-    pub fn buffer(&self) -> Result<Dmabuf, AllocateBuffersError> {
-        Ok(self
-            .surface
-            .next
-            .userdata()
-            .map(|dmabuf| dmabuf.cloned())
-            .map(Option::unwrap)?)
-    }
-}
-
-impl Drop for Present<'_> {
-    fn drop(&mut self) {
-        let surface = &mut self.surface;
-
-        if let Some(connection) = surface.connection.upgrade() {
+    /// Consume and submit the buffer to the window.
+    pub fn submit(&mut self) {
+        if let Some(connection) = self.connection.upgrade() {
             // Swap the buffers
-            mem::swap(&mut surface.next, &mut surface.current);
+            if let Some(mut next) = self.next.take() {
+                if let Some(current) = self.current.as_mut() {
+                    mem::swap(&mut next, current);
+                    self.swapchain.submitted(next);
+                } else {
+                    self.current = Some(next);
+                }
+            }
 
-            match surface.current.userdata().map(Option::unwrap) {
-                Ok(dmabuf) => {
-                    if let Ok(pixmap) = PixmapWrapper::with_dmabuf(&*connection, &surface.window, dmabuf) {
-                        // Now present the current buffer
-                        let _ = pixmap.present(&*connection, &surface.window);
-                    }
-                }
-                Err(_err) => {
-                    todo!("Log error")
-                }
+            if let Ok(pixmap) = PixmapWrapper::with_dmabuf(
+                &*connection,
+                &self.window,
+                self.current.as_ref().unwrap().userdata().get::<Dmabuf>().unwrap(),
+            ) {
+                // Now present the current buffer
+                let _ = pixmap.present(&*connection, &self.window);
             }
 
             // Flush the connection after presenting to the window to ensure we don't run out of buffer space in the X11 connection.
             let _ = connection.flush();
         }
+    }
+
+    /// Resets the internal buffers, e.g. to reset age values
+    pub fn reset_buffers(&mut self) {
+        self.swapchain.reset_buffers();
+        self.next = None;
+    }
+
+    fn resize(&mut self, size: Size<u16, Logical>) -> Result<(), AllocateBuffersError> {
+        self.swapchain.resize(size.w as u32, size.h as u32);
+        self.next = None;
+
+        self.width = size.w;
+        self.height = size.h;
+
+        Ok(())
     }
 }
 
