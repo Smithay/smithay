@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 use std::error::Error;
 
-use crate::utils::{Buffer, Physical, Point, Rectangle, Size};
+use crate::utils::{Buffer, Coordinate, Physical, Point, Rectangle, Size};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::compositor::SurfaceData;
@@ -94,15 +94,15 @@ impl Transform {
     }
 
     /// Transformed size after applying this transformation.
-    pub fn transform_size(&self, width: u32, height: u32) -> (u32, u32) {
+    pub fn transform_size<N: Coordinate, Kind>(&self, size: Size<N, Kind>) -> Size<N, Kind> {
         if *self == Transform::_90
             || *self == Transform::_270
             || *self == Transform::Flipped90
             || *self == Transform::Flipped270
         {
-            (height, width)
+            (size.h, size.w).into()
         } else {
-            (width, height)
+            size
         }
     }
 }
