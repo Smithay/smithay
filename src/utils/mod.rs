@@ -8,7 +8,7 @@ pub mod x11rb;
 
 pub mod user_data;
 
-pub use self::geometry::{Buffer, Logical, Physical, Point, Raw, Rectangle, Size};
+pub use self::geometry::{Buffer, Coordinate, Logical, Physical, Point, Raw, Rectangle, Size};
 
 /// This resource is not managed by Smithay
 #[derive(Debug)]

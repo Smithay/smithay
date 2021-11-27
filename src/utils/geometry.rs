@@ -17,14 +17,21 @@ pub struct Buffer;
 #[derive(Debug)]
 pub struct Raw;
 
+/// Trait for types serving as a coordinate for other geometry utils
 pub trait Coordinate:
     Sized + Add<Self, Output = Self> + Sub<Self, Output = Self> + PartialOrd + Default + Copy + fmt::Debug
 {
+    /// Downscale the coordinate
     fn downscale(self, scale: Self) -> Self;
+    /// Upscale the coordinate
     fn upscale(self, scale: Self) -> Self;
+    /// Convert the coordinate to a f64
     fn to_f64(self) -> f64;
+    /// Convert to this coordinate from a f64
     fn from_f64(v: f64) -> Self;
+    /// Test if the coordinate is not negative
     fn non_negative(self) -> bool;
+    /// Returns the absolute value of this coordinate
     fn abs(self) -> Self;
 }
 

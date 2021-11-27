@@ -59,6 +59,7 @@
 
 - `Rectangle` can now also be converted from f64 to i32 variants
 - `Rectangle::contains_rect` can be used to check if a rectangle is contained within another
+- `Coordinate` is now part of the public api, so it can be used for coordinate agnositic functions outside of the utils module or even out-of-tree
 
 ### Bugfixes
 
