@@ -43,12 +43,12 @@ slog-stdlog = { version = "4", optional = true }
 tempfile = { version = "3.0", optional = true }
 thiserror = "1.0.25"
 udev = { version = "0.6", optional = true }
-wayland-commons = { version = "0.29.0", optional = true }
-wayland-egl = { version = "0.29.0", optional = true }
-wayland-protocols = { version = "0.29.0", features = ["unstable_protocols", "staging_protocols", "server"], optional = true }
-wayland-server = { version = "0.29.0", optional = true }
-wayland-sys = { version = "0.29.0", optional = true }
-winit = { version = "0.26", optional = true }
+# wayland-commons = { git = "https://github.com/Smithay/wayland-rs", branch="rework-317", optional = true }
+wayland-egl = { version = "0.30.0-alpha1", optional = true }
+# wayland-protocols = { git = "https://github.com/Smithay/wayland-rs", branch="rework-317", features = ["unstable_protocols", "staging_protocols", "server"], optional = true }
+wayland-server = { version = "0.30.0-alpha1", optional = true }
+wayland-sys = { version  = "0.30.0-alpha1", optional = true }
+winit = { version = "0.26.0", optional = true }
 x11rb = { version = "0.9.0", optional = true }
 xkbcommon = "0.4.0"
 scan_fmt = { version = "0.2.3", default-features = false }
@@ -61,8 +61,8 @@ gl_generator = { version = "0.14", optional = true }
 pkg-config = { version = "0.3.17", optional = true }
 
 [features]
-default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_logind", "backend_winit", "desktop", "renderer_gl", "xwayland", "wayland_frontend", "slog-stdlog", "backend_x11"]
-backend_winit = ["winit", "wayland-server/dlopen", "backend_egl", "wayland-egl", "renderer_gl"]
+default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_logind", "backend_winit", "renderer_gl", "xwayland", "wayland_frontend", "slog-stdlog", "backend_x11"]
+backend_winit = ["winit", "backend_egl", "wayland-egl", "renderer_gl"]
 backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm", "backend_egl"]
 backend_drm = ["drm", "drm-ffi"]
 backend_gbm = ["gbm"]
@@ -75,11 +75,11 @@ backend_session_elogind = ["backend_session_logind"]
 backend_session_libseat = ["backend_session", "libseat"]
 desktop = ["indexmap", "wayland_frontend"]
 renderer_gl = ["gl_generator", "backend_egl"]
-use_system_lib = ["wayland_frontend", "wayland-sys", "wayland-server/use_system_lib"]
-wayland_frontend = ["wayland-server", "wayland-commons", "wayland-protocols", "tempfile"]
+use_system_lib = ["wayland_frontend", "wayland-sys"]
+wayland_frontend = ["wayland-server",  "tempfile"]
 x11rb_event_source = ["x11rb"]
 xwayland = ["wayland_frontend"]
-test_all_features = ["default", "use_system_lib", "wayland-server/dlopen"]
+test_all_features = ["default"]
 
 [[example]]
 name = "raw_drm"
