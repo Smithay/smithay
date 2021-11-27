@@ -73,63 +73,78 @@
 //!
 //! If you are already using an handler for this signal, you probably don't want to use this handler.
 
-use self::pool::{Pool, ResizeError};
-use std::{ops::Deref as _, rc::Rc, sync::Arc};
 use wayland_server::{
-    protocol::{wl_buffer, wl_shm, wl_shm_pool},
-    Display, Filter, Global, Main,
+    backend::GlobalId,
+    protocol::{
+        wl_buffer::{self},
+        wl_shm::{self, WlShm},
+        wl_shm_pool::WlShmPool,
+    },
+    Dispatch, Display, GlobalDispatch, Resource,
 };
 
+mod handlers;
 mod pool;
 
-#[derive(Debug, Clone)]
-struct ShmGlobalData {
-    formats: Rc<[wl_shm::Format]>,
+pub use handlers::{ShmBufferUserData, ShmPoolUserData};
+
+/// Handler for Wl Shm module
+pub trait ShmHandler {
+    /// [ShmState] getter
+    fn shm_state(&mut self) -> &mut ShmState;
+}
+
+/// State of SHM module
+#[derive(Debug)]
+pub struct ShmState {
+    formats: Vec<wl_shm::Format>,
+    shm: GlobalId,
     log: ::slog::Logger,
 }
 
-/// Create a new SHM global advertizing given supported formats.
-///
-/// This global will always advertize `ARGB8888` and `XRGB8888` format
-/// as they are required by the protocol. Formats given as argument
-/// as additionally advertized.
-///
-/// The global is directly created on the provided [`Display`](wayland_server::Display),
-/// and this function returns the global handle, in case you wish to remove this global in
-/// the future.
-pub fn init_shm_global<L>(
-    display: &mut Display,
-    mut formats: Vec<wl_shm::Format>,
-    logger: L,
-) -> Global<wl_shm::WlShm>
-where
-    L: Into<Option<::slog::Logger>>,
-{
-    let log = crate::slog_or_fallback(logger);
+impl ShmState {
+    /// Create a new SHM global advertizing given supported formats.
+    ///
+    /// This global will always advertize `ARGB8888` and `XRGB8888` format
+    /// as they are required by the protocol. Formats given as argument
+    /// as additionally advertized.
+    ///
+    /// The global is directly created on the provided [`Display`](wayland_server::Display),
+    /// and this function returns the global handle, in case you wish to remove this global in
+    /// the future.
+    pub fn new<L, D>(display: &mut Display<D>, mut formats: Vec<wl_shm::Format>, logger: L) -> ShmState
+    where
+        D: GlobalDispatch<WlShm, GlobalData = ()>,
+        D: Dispatch<WlShm, UserData = ()>,
+        D: Dispatch<WlShmPool, UserData = ShmPoolUserData>,
+        D: ShmHandler,
+        D: 'static,
+        L: Into<Option<::slog::Logger>>,
+    {
+        let log = crate::slog_or_fallback(logger);
 
-    // always add the mandatory formats
-    formats.push(wl_shm::Format::Argb8888);
-    formats.push(wl_shm::Format::Xrgb8888);
-    let data = ShmGlobalData {
-        formats: formats.into(),
-        log: log.new(slog::o!("smithay_module" => "shm_handler")),
-    };
+        // always add the mandatory formats
+        formats.push(wl_shm::Format::Argb8888);
+        formats.push(wl_shm::Format::Xrgb8888);
 
-    display.create_global::<wl_shm::WlShm, _>(
-        1,
-        Filter::new(move |(shm, _version): (Main<wl_shm::WlShm>, _), _, _| {
-            shm.quick_assign({
-                let mut data = data.clone();
-                move |shm, req, _| data.receive_shm_message(req, shm.deref().clone())
-            });
+        let shm = display.create_global::<WlShm>(1, ());
 
-            // send the formats
-            for &f in &data.formats[..] {
-                shm.format(f);
-            }
-        }),
-    )
+        ShmState {
+            formats,
+            shm,
+            log: log.new(slog::o!("smithay_module" => "shm_handler")),
+        }
+    }
+
+    /// Get id of WlShm globabl
+    pub fn shm_global(&self) -> GlobalId {
+        self.shm.clone()
+    }
 }
+
+/// Dispatching type for shm module
+#[derive(Debug)]
+pub struct ShmDispatch<'a>(pub &'a mut ShmState);
 
 /// Error that can occur when accessing an SHM buffer
 #[derive(Debug, thiserror::Error)]
@@ -162,7 +177,7 @@ pub fn with_buffer_contents<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<
 where
     F: FnOnce(&[u8], BufferData) -> T,
 {
-    let data = match buffer.as_ref().user_data().get::<InternalBufferData>() {
+    let data = match buffer.data::<ShmBufferUserData>() {
         Some(d) => d,
         None => return Err(BufferAccessError::NotManaged),
     };
@@ -171,47 +186,13 @@ where
         Ok(t) => Ok(t),
         Err(()) => {
             // SIGBUS error occurred
-            buffer
-                .as_ref()
-                .post_error(wl_shm::Error::InvalidFd as u32, "Bad pool size.".into());
+            // buffer.post_error(display_handle, wl_shm::Error::InvalidFd, "Bad pool size.");
             Err(BufferAccessError::BadMap)
         }
     }
 }
 
-impl ShmGlobalData {
-    fn receive_shm_message(&mut self, request: wl_shm::Request, shm: wl_shm::WlShm) {
-        use self::wl_shm::{Error, Request};
-
-        let (pool, fd, size) = match request {
-            Request::CreatePool { id: pool, fd, size } => (pool, fd, size),
-            _ => unreachable!(),
-        };
-        if size <= 0 {
-            shm.as_ref().post_error(
-                Error::InvalidFd as u32,
-                "Invalid size for a new wl_shm_pool.".into(),
-            );
-            return;
-        }
-        let mmap_pool = match Pool::new(fd, size as usize, self.log.clone()) {
-            Ok(p) => p,
-            Err(()) => {
-                shm.as_ref().post_error(
-                    wl_shm::Error::InvalidFd as u32,
-                    format!("Failed mmap of fd {}.", fd),
-                );
-                return;
-            }
-        };
-        let arc_pool = Arc::new(mmap_pool);
-        pool.quick_assign({
-            let mut data = self.clone();
-            move |pool, req, _| data.receive_pool_message(req, pool.deref().clone())
-        });
-        pool.as_ref().user_data().set(move || arc_pool);
-    }
-}
+impl ShmState {}
 
 /// Details of the contents of a buffer relative to its pool
 #[derive(Copy, Clone, Debug)]
@@ -226,90 +207,4 @@ pub struct BufferData {
     pub stride: i32,
     /// Format used by this buffer
     pub format: wl_shm::Format,
-}
-
-struct InternalBufferData {
-    pool: Arc<Pool>,
-    data: BufferData,
-}
-
-impl ShmGlobalData {
-    fn receive_pool_message(&mut self, request: wl_shm_pool::Request, pool: wl_shm_pool::WlShmPool) {
-        use self::wl_shm_pool::Request;
-
-        let arc_pool = pool.as_ref().user_data().get::<Arc<Pool>>().unwrap();
-
-        match request {
-            Request::CreateBuffer {
-                id: buffer,
-                offset,
-                width,
-                height,
-                stride,
-                format,
-            } => {
-                // Validate client parameters
-                let message = if offset < 0 {
-                    Some("offset must not be negative".to_string())
-                } else if width <= 0 || height <= 0 {
-                    Some(format!("invalid width or height ({}x{})", width, height))
-                } else if stride < width {
-                    Some(format!(
-                        "width must not be larger than stride (width {}, stride {})",
-                        width, stride
-                    ))
-                } else if (i32::MAX / stride) < height {
-                    Some(format!(
-                        "height is too large for stride (max {})",
-                        i32::MAX / stride
-                    ))
-                } else if offset > arc_pool.size() as i32 - (stride * height) {
-                    Some("offset is too large".to_string())
-                } else {
-                    None
-                };
-
-                if let Some(message) = message {
-                    pool.as_ref()
-                        .post_error(wl_shm::Error::InvalidStride as u32, message);
-                    return;
-                }
-
-                if !self.formats.contains(&format) {
-                    pool.as_ref().post_error(
-                        wl_shm::Error::InvalidFormat as u32,
-                        format!("SHM format {:?} is not supported.", format),
-                    );
-                    return;
-                }
-                let data = InternalBufferData {
-                    pool: arc_pool.clone(),
-                    data: BufferData {
-                        offset,
-                        width,
-                        height,
-                        stride,
-                        format,
-                    },
-                };
-                buffer.quick_assign(|_, _, _| {});
-                buffer.as_ref().user_data().set(|| data);
-            }
-            Request::Resize { size } => match arc_pool.resize(size) {
-                Ok(()) => {}
-                Err(ResizeError::InvalidSize) => {
-                    pool.as_ref().post_error(
-                        wl_shm::Error::InvalidFd as u32,
-                        "Invalid new size for a wl_shm_pool.".into(),
-                    );
-                }
-                Err(ResizeError::MremapFailed) => {
-                    pool.as_ref()
-                        .post_error(wl_shm::Error::InvalidFd as u32, "mremap failed.".into());
-                }
-            },
-            Request::Destroy => {}
-            _ => unreachable!(),
-        }
-    }
 }

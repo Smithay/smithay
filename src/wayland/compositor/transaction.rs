@@ -45,7 +45,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 use crate::wayland::Serial;
 
@@ -195,10 +195,10 @@ impl Transaction {
             })
     }
 
-    pub(crate) fn apply(self) {
+    pub(crate) fn apply(self, dh: &mut DisplayHandle<'_>) {
         for (surface, id) in self.surfaces {
             PrivateSurfaceData::with_states(&surface, |states| {
-                states.cached_state.apply_state(id);
+                states.cached_state.apply_state(id, dh);
             })
         }
     }
@@ -217,7 +217,7 @@ impl TransactionQueue {
         self.transactions.push(t);
     }
 
-    pub(crate) fn apply_ready(&mut self) {
+    pub(crate) fn apply_ready<D: 'static>(&mut self, dh: &mut DisplayHandle<'_>) {
         // this is a very non-optimized implementation
         // we just iterate over the queue of transactions, keeping track of which
         // surface we have seen as they encode transaction dependencies
@@ -243,10 +243,10 @@ impl TransactionQueue {
             // if not, does this transaction depend on any previous transaction?
             if !skip {
                 for (s, _) in &self.transactions[i].surfaces {
-                    if !s.as_ref().is_alive() {
+                    if dh.object_info(s.id()).is_err() {
                         continue;
                     }
-                    if self.seen_surfaces.contains(&s.as_ref().id()) {
+                    if self.seen_surfaces.contains(&s.id().protocol_id()) {
                         skip = true;
                         break;
                     }
@@ -257,15 +257,15 @@ impl TransactionQueue {
                 // this transaction is not yet ready and should be skipped, add its surfaces to our
                 // seen list
                 for (s, _) in &self.transactions[i].surfaces {
-                    if !s.as_ref().is_alive() {
+                    if dh.object_info(s.id()).is_err() {
                         continue;
                     }
-                    self.seen_surfaces.insert(s.as_ref().id());
+                    self.seen_surfaces.insert(s.id().protocol_id());
                 }
                 i += 1;
             } else {
                 // this transaction is to be applied, yay!
-                self.transactions.remove(i).apply();
+                self.transactions.remove(i).apply(dh);
             }
         }
     }
