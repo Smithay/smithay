@@ -45,6 +45,7 @@
 - Add support for the zxdg-foreign-v2 protocol.
 - Support for `xdg_wm_base` protocol version 3
 - Added the option to initialize the dmabuf global with a client filter
+- `wayland::output::Output` now has user data attached to it and more functions to query its properties
 
 #### Backends
 

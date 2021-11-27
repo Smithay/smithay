@@ -61,7 +61,7 @@ use wayland_server::protocol::{
 };
 use wayland_server::{
     protocol::wl_output::{Mode as WMode, WlOutput},
-    Client, Display, Filter, Global, Main,
+    Client, Display, Filter, Global, Main, UserDataMap,
 };
 
 use slog::{info, o, trace, warn};
@@ -115,6 +115,8 @@ struct Inner {
     xdg_output: Option<XdgOutput>,
 }
 
+type InnerType = Arc<(Mutex<Inner>, UserDataMap)>;
+
 impl Inner {
     fn new_global(&mut self, output: WlOutput) {
         trace!(self.log, "New global instantiated.");
@@ -166,9 +168,9 @@ impl Inner {
 ///
 /// This handle is stored in the event loop, and allows you to notify clients
 /// about any change in the properties of this output.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Output {
-    inner: Arc<Mutex<Inner>>,
+    inner: InnerType,
 }
 
 impl Output {
@@ -190,19 +192,22 @@ impl Output {
 
         info!(log, "Creating new wl_output"; "name" => &name);
 
-        let inner = Arc::new(Mutex::new(Inner {
-            name,
-            log,
-            instances: Vec::new(),
-            physical,
-            location: (0, 0).into(),
-            transform: Transform::Normal,
-            scale: 1,
-            modes: Vec::new(),
-            current_mode: None,
-            preferred_mode: None,
-            xdg_output: None,
-        }));
+        let inner = Arc::new((
+            Mutex::new(Inner {
+                name,
+                log,
+                instances: Vec::new(),
+                physical,
+                location: (0, 0).into(),
+                transform: Transform::Normal,
+                scale: 1,
+                modes: Vec::new(),
+                current_mode: None,
+                preferred_mode: None,
+                xdg_output: None,
+            }),
+            UserDataMap::default(),
+        ));
 
         let output = Output { inner: inner.clone() };
 
@@ -210,8 +215,9 @@ impl Output {
             3,
             Filter::new(move |(output, _version): (Main<WlOutput>, _), _, _| {
                 output.assign_destructor(Filter::new(|output: WlOutput, _, _| {
-                    let inner = output.as_ref().user_data().get::<Arc<Mutex<Inner>>>().unwrap();
+                    let inner = output.as_ref().user_data().get::<InnerType>().unwrap();
                     inner
+                        .0
                         .lock()
                         .unwrap()
                         .instances
@@ -221,7 +227,7 @@ impl Output {
                     let inner = inner.clone();
                     move || inner
                 });
-                inner.lock().unwrap().new_global(output.deref().clone());
+                inner.0.lock().unwrap().new_global(output.deref().clone());
             }),
         );
 
@@ -233,7 +239,7 @@ impl Output {
         output
             .as_ref()
             .user_data()
-            .get::<Arc<Mutex<Inner>>>()
+            .get::<InnerType>()
             .cloned()
             .map(|inner| Output { inner })
     }
@@ -243,7 +249,7 @@ impl Output {
     /// If the provided mode was not previously known to this output, it is added to its
     /// internal list.
     pub fn set_preferred(&self, mode: Mode) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.0.lock().unwrap();
         inner.preferred_mode = Some(mode);
         if inner.modes.iter().all(|&m| m != mode) {
             inner.modes.push(mode);
@@ -252,10 +258,25 @@ impl Output {
 
     /// Adds a mode to the list of known modes to this output
     pub fn add_mode(&self, mode: Mode) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.0.lock().unwrap();
         if inner.modes.iter().all(|&m| m != mode) {
             inner.modes.push(mode);
         }
+    }
+
+    /// Returns the currently advertised mode of the output
+    pub fn current_mode(&self) -> Option<Mode> {
+        self.inner.0.lock().unwrap().current_mode
+    }
+
+    /// Returns the currently advertised transformation of the output
+    pub fn current_transform(&self) -> Transform {
+        self.inner.0.lock().unwrap().transform
+    }
+
+    /// Returns the name of the output
+    pub fn name(&self) -> String {
+        self.inner.0.lock().unwrap().name.clone()
     }
 
     /// Removes a mode from the list of known modes
@@ -263,7 +284,7 @@ impl Output {
     /// It will not de-advertise it from existing clients (the protocol does not
     /// allow it), but it won't be advertised to now clients from now on.
     pub fn delete_mode(&self, mode: Mode) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.0.lock().unwrap();
         inner.modes.retain(|&m| m != mode);
         if inner.current_mode == Some(mode) {
             inner.current_mode = None;
@@ -289,7 +310,7 @@ impl Output {
         new_scale: Option<i32>,
         new_location: Option<Point<i32, Logical>>,
     ) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.0.lock().unwrap();
         if let Some(mode) = new_mode {
             if inner.modes.iter().all(|&m| m != mode) {
                 inner.modes.push(mode);
@@ -337,6 +358,7 @@ impl Output {
     /// Check is given [`wl_output`](WlOutput) instance is managed by this [`Output`].
     pub fn owns(&self, output: &WlOutput) -> bool {
         self.inner
+            .0
             .lock()
             .unwrap()
             .instances
@@ -351,6 +373,7 @@ impl Output {
         F: FnMut(&WlOutput),
     {
         self.inner
+            .0
             .lock()
             .unwrap()
             .instances
@@ -377,4 +400,17 @@ impl Output {
             self.with_client_outputs(client, |output| surface.leave(output))
         }
     }
+
+    /// Returns the user data of this output
+    pub fn user_data(&self) -> &UserDataMap {
+        &self.inner.1
+    }
 }
+
+impl PartialEq for Output {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl Eq for Output {}
