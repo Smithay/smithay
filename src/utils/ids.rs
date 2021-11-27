@@ -1,3 +1,6 @@
+// TODO: Remove once desktop is back
+#![allow(unused)]
+
 macro_rules! id_gen {
     ($func_name:ident, $id_name:ident, $ids_name:ident) => {
         static $id_name: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

@@ -19,7 +19,10 @@ use std::{
     cell::RefCell,
     collections::{hash_map::Entry, HashMap},
 };
-use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
+use wayland_server::{
+    protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface},
+    DisplayHandle,
+};
 
 #[derive(Default)]
 pub(crate) struct SurfaceState {
@@ -32,16 +35,14 @@ pub(crate) struct SurfaceState {
     pub(crate) renderer_seen: HashMap<(TypeId, usize), usize>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     pub(crate) surface_view: Option<SurfaceView>,
-    #[cfg(feature = "desktop")]
-    pub(crate) space_seen: HashMap<crate::desktop::space::SpaceOutputHash, usize>,
+    // #[cfg(feature = "desktop")]
+    // pub(crate) space_seen: HashMap<crate::desktop::space::SpaceOutputHash, usize>,
 }
 
 const MAX_DAMAGE: usize = 4;
 
 impl SurfaceState {
-    pub fn update_buffer(&mut self, states: &SurfaceData) {
-        let mut attrs = states.cached_state.current::<SurfaceAttributes>();
-
+    pub fn update_buffer(&mut self, dh: &mut DisplayHandle<'_>, attrs: &mut SurfaceAttributes) {
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
@@ -58,7 +59,7 @@ impl SurfaceState {
 
                 if let Some(old_buffer) = std::mem::replace(&mut self.buffer, Some(buffer)) {
                     if &old_buffer != self.buffer.as_ref().unwrap() {
-                        old_buffer.release();
+                        old_buffer.release(dh);
                     }
                 }
                 self.textures.clear();
@@ -94,7 +95,7 @@ impl SurfaceState {
                 // remove the contents
                 self.buffer_dimensions = None;
                 if let Some(buffer) = self.buffer.take() {
-                    buffer.release();
+                    buffer.release(dh);
                 };
                 self.textures.clear();
                 self.commit_count = self.commit_count.wrapping_add(1);
@@ -146,8 +147,8 @@ impl SurfaceState {
 /// not be accessible anymore, but [`draw_surface_tree`] and other
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
-pub fn on_commit_buffer_handler(surface: &WlSurface) {
-    if !is_sync_subsurface(surface) {
+pub fn on_commit_buffer_handler(dh: &mut DisplayHandle<'_>, surface: &WlSurface) {
+    if !is_sync_subsurface(dh, surface) {
         with_surface_tree_upward(
             surface,
             (),
@@ -161,7 +162,7 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
                     .get::<RefCell<SurfaceState>>()
                     .unwrap()
                     .borrow_mut();
-                data.update_buffer(states);
+                data.update_buffer(dh, &mut *states.cached_state.current::<SurfaceAttributes>());
             },
             |_, _, _| true,
         );
