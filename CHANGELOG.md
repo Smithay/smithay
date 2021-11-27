@@ -58,6 +58,7 @@
 #### Utils
 
 - `Rectangle` can now also be converted from f64 to i32 variants
+- `Rectangle::contains_rect` can be used to check if a rectangle is contained within another
 
 ### Bugfixes
 

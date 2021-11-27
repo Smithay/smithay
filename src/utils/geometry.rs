@@ -782,6 +782,13 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
             && (p.y < self.loc.y + self.size.h)
     }
 
+    /// Checks whether given [`Rectangle`] is inside the rectangle
+    #[inline]
+    pub fn contains_rect<R: Into<Rectangle<N, Kind>>>(self, rect: R) -> bool {
+        let r: Rectangle<N, Kind> = rect.into();
+        self.contains(r.loc) && self.contains(r.loc + r.size)
+    }
+
     /// Checks whether a given [`Rectangle`] overlaps with this one
     #[inline]
     pub fn overlaps(self, other: Rectangle<N, Kind>) -> bool {
