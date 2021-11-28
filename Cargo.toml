@@ -29,6 +29,7 @@ drm = { version = "0.5.0", optional = true }
 drm-ffi = { version = "0.2.0", optional = true }
 gbm = { version = "0.7.0", optional = true, default-features = false, features = ["drm-support"] }
 input = { version = "0.7", default-features = false, features=["libinput_1_14"], optional = true }
+indexmap = { version = "1.7", optional = true }
 lazy_static = "1"
 libc = "0.2.103"
 libseat= { version = "0.1.1", optional = true }
@@ -59,7 +60,7 @@ gl_generator = { version = "0.14", optional = true }
 pkg-config = { version = "0.3.17", optional = true }
 
 [features]
-default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_logind", "backend_winit", "renderer_gl", "xwayland", "wayland_frontend", "slog-stdlog", "backend_x11"]
+default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_logind", "backend_winit", "desktop", "renderer_gl", "xwayland", "wayland_frontend", "slog-stdlog", "backend_x11"]
 backend_winit = ["winit", "wayland-server/dlopen", "backend_egl", "wayland-egl", "renderer_gl"]
 backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm", "backend_egl"]
 backend_drm = ["drm", "drm-ffi"]
@@ -71,6 +72,7 @@ backend_udev = ["udev", "input/udev"]
 backend_session_logind = ["dbus", "backend_session", "pkg-config"]
 backend_session_elogind = ["backend_session_logind"]
 backend_session_libseat = ["backend_session", "libseat"]
+desktop = ["indexmap", "wayland_frontend"]
 renderer_gl = ["gl_generator", "backend_egl"]
 use_system_lib = ["wayland_frontend", "wayland-sys", "wayland-server/use_system_lib"]
 wayland_frontend = ["wayland-server", "wayland-commons", "wayland-protocols", "tempfile"]
