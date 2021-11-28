@@ -287,14 +287,15 @@ impl Space {
             if old_geo.map(|old_geo| old_geo != geo).unwrap_or(false) {
                 // Add damage for the old position of the window
                 damage.push(old_geo.unwrap());
-            } /* else {
-                  // window stayed at its place
-                  // TODO: Only push surface damage
-                  //       But this would need to take subsurfaces into account and accumulate damage at least.
-                  //       Even better would be if damage would be ignored that is hidden by subsurfaces...
-              }*/
-            // Add damage for the new position (see TODO above for a better approach)
-            damage.push(geo);
+                damage.push(geo);
+            } else {
+                // window stayed at its place
+                let loc = window_loc(window, &self.id);
+                damage.extend(window.accumulated_damage().into_iter().map(|mut rect| {
+                    rect.loc += loc;
+                    rect
+                }));
+            }
         }
 
         // That is all completely new damage, which we need to store for subsequent renders

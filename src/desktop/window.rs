@@ -374,6 +374,57 @@ impl Window {
         found.into_inner()
     }
 
+    /// Damage of all the surfaces of this window
+    pub(super) fn accumulated_damage(&self) -> Vec<Rectangle<i32, Logical>> {
+        let mut damage = Vec::new();
+        let location = (0, 0).into();
+        if let Some(surface) = self.0.toplevel.get_surface() {
+            with_surface_tree_upward(
+                surface,
+                location,
+                |_surface, states, location| {
+                    let mut location = *location;
+                    if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+                        let data = data.borrow();
+                        if data.texture.is_none() {
+                            if states.role == Some("subsurface") {
+                                let current = states.cached_state.current::<SubsurfaceCachedState>();
+                                location += current.location;
+                            }
+                            return TraversalAction::DoChildren(location);
+                        }
+                    }
+                    TraversalAction::SkipChildren
+                },
+                |_surface, states, location| {
+                    let mut location = *location;
+                    if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+                        let data = data.borrow();
+                        let attributes = states.cached_state.current::<SurfaceAttributes>();
+
+                        if data.texture.is_none() {
+                            if states.role == Some("subsurface") {
+                                let current = states.cached_state.current::<SubsurfaceCachedState>();
+                                location += current.location;
+                            }
+
+                            damage.extend(attributes.damage.iter().map(|dmg| {
+                                let mut rect = match dmg {
+                                    Damage::Buffer(rect) => rect.to_logical(attributes.buffer_scale),
+                                    Damage::Surface(rect) => *rect,
+                                };
+                                rect.loc += location;
+                                rect
+                            }));
+                        }
+                    }
+                },
+                |_, _, _| true,
+            )
+        }
+        damage
+    }
+
     pub fn toplevel(&self) -> &Kind {
         &self.0.toplevel
     }
