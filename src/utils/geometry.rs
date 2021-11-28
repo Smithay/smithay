@@ -652,6 +652,60 @@ impl<N: SubAssign + fmt::Debug + PartialOrd, Kind> SubAssign for Size<N, Kind> {
     }
 }
 
+impl<N: Add<Output = N>, Kind> Add<Point<N, Kind>> for Size<N, Kind> {
+    type Output = Size<N, Kind>;
+    #[inline]
+    fn add(self, other: Point<N, Kind>) -> Size<N, Kind> {
+        Size {
+            w: self.w + other.x,
+            h: self.h + other.y,
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: Sub<Output = N> + fmt::Debug + PartialOrd, Kind> Sub<Point<N, Kind>> for Size<N, Kind> {
+    type Output = Size<N, Kind>;
+    #[inline]
+    fn sub(self, other: Point<N, Kind>) -> Size<N, Kind> {
+        debug_assert!(
+            self.w >= other.x && self.h >= other.y,
+            "Attempting to subtract bigger point from a smaller size: {:?} - {:?}",
+            (&self.w, &self.h),
+            (&other.x, &other.y),
+        );
+
+        Size {
+            w: self.w - other.x,
+            h: self.h - other.y,
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: AddAssign, Kind> AddAssign<Point<N, Kind>> for Size<N, Kind> {
+    #[inline]
+    fn add_assign(&mut self, other: Point<N, Kind>) {
+        self.w += other.x;
+        self.h += other.y;
+    }
+}
+
+impl<N: SubAssign + fmt::Debug + PartialOrd, Kind> SubAssign<Point<N, Kind>> for Size<N, Kind> {
+    #[inline]
+    fn sub_assign(&mut self, other: Point<N, Kind>) {
+        debug_assert!(
+            self.w >= other.x && self.h >= other.y,
+            "Attempting to subtract bigger point from a smaller size: {:?} - {:?}",
+            (&self.w, &self.h),
+            (&other.x, &other.y),
+        );
+
+        self.w -= other.x;
+        self.h -= other.y;
+    }
+}
+
 impl<N: Clone, Kind> Clone for Size<N, Kind> {
     #[inline]
     fn clone(&self) -> Self {
@@ -704,6 +758,22 @@ impl<N: Sub<Output = N>, Kind> Sub<Size<N, Kind>> for Point<N, Kind> {
             y: self.y - other.h,
             _kind: std::marker::PhantomData,
         }
+    }
+}
+
+impl<N: AddAssign, Kind> AddAssign<Size<N, Kind>> for Point<N, Kind> {
+    #[inline]
+    fn add_assign(&mut self, other: Size<N, Kind>) {
+        self.x += other.w;
+        self.y += other.h;
+    }
+}
+
+impl<N: SubAssign, Kind> SubAssign<Size<N, Kind>> for Point<N, Kind> {
+    #[inline]
+    fn sub_assign(&mut self, other: Size<N, Kind>) {
+        self.x -= other.w;
+        self.y -= other.h;
     }
 }
 
