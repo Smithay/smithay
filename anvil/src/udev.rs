@@ -26,6 +26,7 @@ use smithay::{
         udev::{UdevBackend, UdevEvent},
         SwapBuffersError,
     },
+    desktop::space::{DynamicRenderElements, RenderError, Space},
     reexports::{
         calloop::{
             timer::{Timer, TimerHandle},
@@ -45,7 +46,7 @@ use smithay::{
         nix::{fcntl::OFlag, sys::stat::dev_t},
         wayland_server::{
             protocol::{wl_output, wl_surface},
-            Display,
+            Display, Global,
         },
     },
     utils::{
@@ -53,7 +54,7 @@ use smithay::{
         Logical, Point, Rectangle, Transform,
     },
     wayland::{
-        output::{Mode, PhysicalProperties},
+        output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
     },
 };
@@ -67,9 +68,8 @@ use smithay::{
     wayland::dmabuf::init_dmabuf_global,
 };
 
-use crate::{drawing::*, window_map::WindowMap};
 use crate::{
-    render::render_layers_and_windows,
+    drawing::*,
     state::{AnvilState, Backend},
 };
 
@@ -100,6 +100,17 @@ pub struct UdevData {
 impl Backend for UdevData {
     fn seat_name(&self) -> String {
         self.session.seat()
+    }
+
+    fn reset_buffers(&mut self, output: &Output) {
+        if let Some(id) = output.user_data().get::<UdevOutputId>() {
+            if let Some(gpu) = self.backends.get(&id.device_id) {
+                let surfaces = gpu.surfaces.borrow();
+                if let Some(surface) = surfaces.get(&id.crtc) {
+                    surface.borrow_mut().surface.reset_buffers();
+                }
+            }
+        }
     }
 }
 
@@ -242,15 +253,13 @@ pub fn run_udev(log: Logger) {
         {
             state.running.store(false, Ordering::SeqCst);
         } else {
+            state.space.borrow_mut().refresh();
+            state.popups.borrow_mut().cleanup();
             display.borrow_mut().flush_clients(&mut state);
-            state.window_map.borrow_mut().refresh();
-            state.output_map.borrow_mut().refresh();
         }
     }
 
     // Cleanup stuff
-    state.window_map.borrow_mut().clear();
-
     event_loop.handle().remove(session_event_source);
     event_loop.handle().remove(libinput_event_source);
     event_loop.handle().remove(udev_event_source);
@@ -260,8 +269,17 @@ pub type RenderSurface = GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, S
 
 struct SurfaceData {
     surface: RenderSurface,
+    global: Option<Global<wl_output::WlOutput>>,
     #[cfg(feature = "debug")]
     fps: fps_ticker::Fps,
+}
+
+impl Drop for SurfaceData {
+    fn drop(&mut self) {
+        if let Some(global) = self.global.take() {
+            global.destroy();
+        }
+    }
 }
 
 struct BackendData {
@@ -281,7 +299,8 @@ fn scan_connectors(
     device: &mut DrmDevice<SessionFd>,
     gbm: &Rc<RefCell<GbmDevice<SessionFd>>>,
     renderer: &mut Gles2Renderer,
-    output_map: &mut crate::output_map::OutputMap,
+    display: &mut Display,
+    space: &mut Space,
     signaler: &Signaler<SessionSignal>,
     logger: &::slog::Logger,
 ) -> HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>> {
@@ -369,24 +388,36 @@ fn scan_connectors(
                     let output_name = format!("{}-{}", interface_short_name, connector_info.interface_id());
 
                     let (phys_w, phys_h) = connector_info.size().unwrap_or((0, 0));
-                    let output = output_map.add(
-                        &output_name,
+                    let (output, global) = Output::new(
+                        display,
+                        output_name,
                         PhysicalProperties {
                             size: (phys_w as i32, phys_h as i32).into(),
                             subpixel: wl_output::Subpixel::Unknown,
                             make: "Smithay".into(),
                             model: "Generic DRM".into(),
                         },
-                        mode,
+                        None,
                     );
+                    let position = (
+                        space
+                            .outputs()
+                            .fold(0, |acc, o| acc + space.output_geometry(o).unwrap().size.w),
+                        0,
+                    )
+                        .into();
+                    output.change_current_state(Some(mode), None, None, Some(position));
+                    output.set_preferred(mode);
+                    space.map_output(&output, 1.0, position);
 
-                    output.userdata().insert_if_missing(|| UdevOutputId {
+                    output.user_data().insert_if_missing(|| UdevOutputId {
                         crtc,
                         device_id: device.device_id(),
                     });
 
                     entry.insert(Rc::new(RefCell::new(SurfaceData {
                         surface: gbm_surface,
+                        global: Some(global),
                         #[cfg(feature = "debug")]
                         fps: fps_ticker::Fps::default(),
                     })));
@@ -480,7 +511,8 @@ impl AnvilState<UdevData> {
                 &mut device,
                 &gbm,
                 &mut *renderer.borrow_mut(),
-                &mut *self.output_map.borrow_mut(),
+                &mut *self.display.borrow_mut(),
+                &mut *self.space.borrow_mut(),
                 &self.backend_data.signaler,
                 &self.log,
             )));
@@ -550,14 +582,23 @@ impl AnvilState<UdevData> {
             let logger = self.log.clone();
             let loop_handle = self.handle.clone();
             let signaler = self.backend_data.signaler.clone();
+            let mut space = self.space.borrow_mut();
 
-            self.output_map.borrow_mut().retain(|output| {
-                output
-                    .userdata()
-                    .get::<UdevOutputId>()
-                    .map(|id| id.device_id != device)
-                    .unwrap_or(true)
-            });
+            // scan_connectors will recreate the outputs (and sadly also reset the scales)
+            for output in space
+                .outputs()
+                .filter(|o| {
+                    o.user_data()
+                        .get::<UdevOutputId>()
+                        .map(|id| id.device_id == device)
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+                .into_iter()
+            {
+                space.unmap_output(&output);
+            }
 
             let mut source = backend_data.event_dispatcher.as_source_mut();
             let mut backends = backend_data.surfaces.borrow_mut();
@@ -565,10 +606,14 @@ impl AnvilState<UdevData> {
                 &mut *source,
                 &backend_data.gbm,
                 &mut *backend_data.renderer.borrow_mut(),
-                &mut *self.output_map.borrow_mut(),
+                &mut *self.display.borrow_mut(),
+                &mut *self.space.borrow_mut(),
                 &signaler,
                 &logger,
             );
+
+            // fixup window coordinates
+            crate::shell::fixup_positions(&mut *space);
 
             for renderer in backends.values() {
                 let logger = logger.clone();
@@ -589,14 +634,23 @@ impl AnvilState<UdevData> {
             // drop surfaces
             backend_data.surfaces.borrow_mut().clear();
             debug!(self.log, "Surfaces dropped");
+            let mut space = self.space.borrow_mut();
 
-            self.output_map.borrow_mut().retain(|output| {
-                output
-                    .userdata()
-                    .get::<UdevOutputId>()
-                    .map(|id| id.device_id != device)
-                    .unwrap_or(true)
-            });
+            for output in space
+                .outputs()
+                .filter(|o| {
+                    o.user_data()
+                        .get::<UdevOutputId>()
+                        .map(|id| id.device_id == device)
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+                .into_iter()
+            {
+                space.unmap_output(&output);
+            }
+            crate::shell::fixup_positions(&mut *space);
 
             let _device = self.handle.remove(backend_data.registration_token);
             let _device = backend_data.event_dispatcher.into_source_inner();
@@ -660,8 +714,7 @@ impl AnvilState<UdevData> {
                 renderer,
                 device_backend.dev_id,
                 crtc,
-                &mut *self.window_map.borrow_mut(),
-                &*self.output_map.borrow(),
+                &mut *self.space.borrow_mut(),
                 self.pointer_location,
                 &pointer_image,
                 #[cfg(feature = "debug")]
@@ -670,35 +723,36 @@ impl AnvilState<UdevData> {
                 &mut *self.cursor_status.lock().unwrap(),
                 &self.log,
             );
-            if let Err(err) = result {
-                warn!(self.log, "Error during rendering: {:?}", err);
-                let reschedule = match err {
-                    SwapBuffersError::AlreadySwapped => false,
-                    SwapBuffersError::TemporaryFailure(err) => !matches!(
-                        err.downcast_ref::<DrmError>(),
-                        Some(&DrmError::DeviceInactive)
-                            | Some(&DrmError::Access {
-                                source: drm::SystemError::PermissionDenied,
-                                ..
-                            })
-                    ),
-                    SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
-                };
-
-                if reschedule {
-                    debug!(self.log, "Rescheduling");
-                    self.backend_data.render_timer.add_timeout(
-                        Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/),
-                        (device_backend.dev_id, crtc),
-                    );
+            let reschedule = match result {
+                Ok(has_rendered) => !has_rendered,
+                Err(err) => {
+                    warn!(self.log, "Error during rendering: {:?}", err);
+                    match err {
+                        SwapBuffersError::AlreadySwapped => false,
+                        SwapBuffersError::TemporaryFailure(err) => !matches!(
+                            err.downcast_ref::<DrmError>(),
+                            Some(&DrmError::DeviceInactive)
+                                | Some(&DrmError::Access {
+                                    source: drm::SystemError::PermissionDenied,
+                                    ..
+                                })
+                        ),
+                        SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
+                    }
                 }
-            } else {
-                // TODO: only send drawn windows the frames callback
-                // Send frame events so that client start drawing their next frame
-                self.window_map
-                    .borrow()
-                    .send_frames(self.start_time.elapsed().as_millis() as u32);
+            };
+
+            if reschedule {
+                self.backend_data.render_timer.add_timeout(
+                    Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/),
+                    (device_backend.dev_id, crtc),
+                );
             }
+
+            // Send frame events so that client start drawing their next frame
+            self.space
+                .borrow()
+                .send_frames(false, self.start_time.elapsed().as_millis() as u32);
         }
     }
 }
@@ -709,118 +763,98 @@ fn render_surface(
     renderer: &mut Gles2Renderer,
     device_id: dev_t,
     crtc: crtc::Handle,
-    window_map: &mut WindowMap,
-    output_map: &crate::output_map::OutputMap,
+    space: &mut Space,
     pointer_location: Point<f64, Logical>,
     pointer_image: &Gles2Texture,
     #[cfg(feature = "debug")] fps_texture: &Gles2Texture,
     dnd_icon: &Option<wl_surface::WlSurface>,
     cursor_status: &mut CursorImageStatus,
     logger: &slog::Logger,
-) -> Result<(), SwapBuffersError> {
+) -> Result<bool, SwapBuffersError> {
     surface.surface.frame_submitted()?;
 
-    let output = output_map
-        .find(|o| o.userdata().get::<UdevOutputId>() == Some(&UdevOutputId { device_id, crtc }))
-        .map(|output| (output.geometry(), output.scale(), output.current_mode()));
-
-    let (output_geometry, output_scale, mode) = if let Some((geometry, scale, mode)) = output {
-        (geometry, scale, mode)
+    let output = if let Some(output) = space
+        .outputs()
+        .find(|o| o.user_data().get::<UdevOutputId>() == Some(&UdevOutputId { device_id, crtc }))
+    {
+        output.clone()
     } else {
-        // Somehow we got called with a non existing output
-        return Ok(());
+        // somehow we got called with an invalid output
+        return Ok(true);
     };
+    let output_geometry = space.output_geometry(&output).unwrap();
 
-    let (dmabuf, _age) = surface.surface.next_buffer()?;
+    let (dmabuf, age) = surface.surface.next_buffer()?;
     renderer.bind(dmabuf)?;
 
-    // and draw to our buffer
-    match renderer
-        .render(mode.size, Transform::Normal, |renderer, frame| {
-            render_layers_and_windows(renderer, frame, window_map, output_geometry, output_scale, logger)?;
-
-            // set cursor
-            if output_geometry.to_f64().contains(pointer_location) {
-                let (ptr_x, ptr_y) = pointer_location.into();
-                let relative_ptr_location =
-                    Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)) - output_geometry.loc;
-                // draw the dnd icon if applicable
-                {
-                    if let Some(ref wl_surface) = dnd_icon.as_ref() {
-                        if wl_surface.as_ref().is_alive() {
-                            draw_dnd_icon(
-                                renderer,
-                                frame,
-                                wl_surface,
-                                relative_ptr_location,
-                                output_scale,
-                                logger,
-                            )?;
-                        }
-                    }
-                }
-
-                // draw the cursor as relevant
-                {
-                    // reset the cursor if the surface is no longer alive
-                    let mut reset = false;
-                    if let CursorImageStatus::Image(ref surface) = *cursor_status {
-                        reset = !surface.as_ref().is_alive();
-                    }
-                    if reset {
-                        *cursor_status = CursorImageStatus::Default;
-                    }
-
-                    if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
-                        draw_cursor(
-                            renderer,
-                            frame,
-                            wl_surface,
-                            relative_ptr_location,
-                            output_scale,
-                            logger,
-                        )?;
-                    } else {
-                        frame.render_texture_at(
-                            pointer_image,
-                            relative_ptr_location
-                                .to_f64()
-                                .to_physical(output_scale as f64)
-                                .to_i32_round(),
-                            1,
-                            output_scale as f64,
-                            Transform::Normal,
-                            &[Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX))],
-                            1.0,
-                        )?;
-                    }
-                }
-
-                #[cfg(feature = "debug")]
-                {
-                    draw_fps(
-                        renderer,
-                        frame,
-                        fps_texture,
-                        output_scale as f64,
-                        surface.fps.avg().round() as u32,
-                    )?;
-
-                    surface.fps.tick();
+    let mut elements: Vec<DynamicRenderElements<Gles2Renderer>> = Vec::new();
+    // set cursor
+    if output_geometry.to_f64().contains(pointer_location) {
+        let (ptr_x, ptr_y) = pointer_location.into();
+        let relative_ptr_location =
+            Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)) - output_geometry.loc;
+        // draw the dnd icon if applicable
+        {
+            if let Some(ref wl_surface) = dnd_icon.as_ref() {
+                if wl_surface.as_ref().is_alive() {
+                    elements.push(Box::new(draw_dnd_icon(
+                        (*wl_surface).clone(),
+                        relative_ptr_location,
+                        logger,
+                    )));
                 }
             }
+        }
 
-            Ok(())
-        })
-        .map_err(Into::<SwapBuffersError>::into)
-        .and_then(|x| x)
-        .map_err(Into::<SwapBuffersError>::into)
-    {
-        Ok(()) => surface
-            .surface
-            .queue_buffer()
-            .map_err(Into::<SwapBuffersError>::into),
-        Err(err) => Err(err),
+        // draw the cursor as relevant
+        {
+            // reset the cursor if the surface is no longer alive
+            let mut reset = false;
+            if let CursorImageStatus::Image(ref surface) = *cursor_status {
+                reset = !surface.as_ref().is_alive();
+            }
+            if reset {
+                *cursor_status = CursorImageStatus::Default;
+            }
+
+            if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
+                elements.push(Box::new(draw_cursor(
+                    wl_surface.clone(),
+                    relative_ptr_location,
+                    logger,
+                )));
+            } else {
+                elements.push(Box::new(PointerElement::new(
+                    pointer_image.clone(),
+                    relative_ptr_location,
+                )));
+            }
+        }
+
+        #[cfg(feature = "debug")]
+        {
+            elements.push(Box::new(draw_fps(fps_texture, surface.fps.avg().round() as u32)));
+            surface.fps.tick();
+        }
+    }
+
+    // and draw to our buffer
+    // TODO we can pass the damage rectangles inside a AtomicCommitRequest
+    let render_res = crate::render::render_output(&output, space, renderer, age.into(), &*elements, logger)
+        .map(|x| x.is_some());
+
+    match render_res.map_err(|err| match err {
+        RenderError::Rendering(err) => err.into(),
+        _ => unreachable!(),
+    }) {
+        Ok(true) => {
+            surface
+                .surface
+                .queue_buffer()
+                .map_err(Into::<SwapBuffersError>::into)?;
+            Ok(true)
+        }
+        x => x,
     }
 }
 
@@ -856,14 +890,12 @@ fn initial_render(surface: &mut RenderSurface, renderer: &mut Gles2Renderer) -> 
     renderer
         .render((1, 1).into(), Transform::Normal, |_, frame| {
             frame
-                .clear(
-                    [0.8, 0.8, 0.9, 1.0],
-                    &[Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX))],
-                )
+                .clear(CLEAR_COLOR, &[Rectangle::from_loc_and_size((0, 0), (1, 1))])
                 .map_err(Into::<SwapBuffersError>::into)
         })
         .map_err(Into::<SwapBuffersError>::into)
         .and_then(|x| x.map_err(Into::<SwapBuffersError>::into))?;
     surface.queue_buffer()?;
+    surface.reset_buffers();
     Ok(())
 }
