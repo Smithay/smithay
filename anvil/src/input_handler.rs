@@ -1,6 +1,6 @@
 use std::{process::Command, sync::atomic::Ordering};
 
-use crate::AnvilState;
+use crate::{shell::FullscreenSurface, state::Backend, AnvilState};
 
 #[cfg(feature = "udev")]
 use crate::udev::UdevData;
@@ -10,15 +10,18 @@ use smithay::{
         self, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent,
         PointerButtonEvent,
     },
-    reexports::wayland_server::protocol::wl_pointer,
+    desktop::layer_map_for_output,
+    reexports::wayland_server::protocol::{wl_pointer, wl_surface::WlSurface},
     wayland::{
+        compositor::with_states,
         seat::{keysyms as xkb, AxisFrame, FilterResult, Keysym, ModifiersState},
-        SERIAL_COUNTER as SCOUNTER,
+        shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
+        Serial, SERIAL_COUNTER as SCOUNTER,
     },
 };
 
 #[cfg(any(feature = "winit", feature = "x11"))]
-use smithay::backend::input::PointerMotionAbsoluteEvent;
+use smithay::{backend::input::PointerMotionAbsoluteEvent, wayland::output::Output};
 
 #[cfg(feature = "udev")]
 use smithay::{
@@ -70,6 +73,34 @@ impl<Backend> AnvilState<Backend> {
         let log = &self.log;
         let time = Event::time(&evt);
         let suppressed_keys = &mut self.suppressed_keys;
+
+        for layer in self
+            .shells
+            .layer_state
+            .lock()
+            .unwrap()
+            .layer_surfaces()
+            .iter()
+            .rev()
+        {
+            if let Some(data) = layer.get_surface().map(|surface| {
+                with_states(surface, |states| {
+                    *states.cached_state.current::<LayerSurfaceCachedState>()
+                })
+                .unwrap()
+            }) {
+                if data.keyboard_interactivity == KeyboardInteractivity::Exclusive
+                    && (data.layer == WlrLayer::Top || data.layer == WlrLayer::Overlay)
+                {
+                    self.keyboard
+                        .set_focus(Some(layer.get_surface().unwrap()), serial);
+                    self.keyboard
+                        .input::<(), _>(keycode, state, serial, time, |_, _| FilterResult::Forward);
+                    return KeyAction::None;
+                }
+            }
+        }
+
         self.keyboard
             .input(keycode, state, serial, time, |modifiers, handle| {
                 let keysym = handle.modified_sym();
@@ -112,21 +143,126 @@ impl<Backend> AnvilState<Backend> {
         let serial = SCOUNTER.next_serial();
         let button = evt.button_code();
         let state = match evt.state() {
-            input::ButtonState::Pressed => {
-                // change the keyboard focus unless the pointer is grabbed
-                if !self.pointer.is_grabbed() {
-                    let under = self
-                        .window_map
-                        .borrow_mut()
-                        .get_surface_and_bring_to_top(self.pointer_location);
-                    self.keyboard
-                        .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
-                }
-                wl_pointer::ButtonState::Pressed
-            }
+            input::ButtonState::Pressed => wl_pointer::ButtonState::Pressed,
             input::ButtonState::Released => wl_pointer::ButtonState::Released,
         };
+
+        if wl_pointer::ButtonState::Pressed == state {
+            self.update_keyboard_focus(serial);
+        };
         self.pointer.button(button, state, serial, evt.time());
+    }
+
+    fn update_keyboard_focus(&mut self, serial: Serial) {
+        // change the keyboard focus unless the pointer is grabbed
+        if !self.pointer.is_grabbed() {
+            let mut space = self.space.borrow_mut();
+
+            if let Some(output) = space.output_under(self.pointer_location) {
+                let output_geo = space.output_geometry(output).unwrap();
+                if let Some(window) = output
+                    .user_data()
+                    .get::<FullscreenSurface>()
+                    .and_then(|f| f.get())
+                {
+                    let surface = window
+                        .surface_under(self.pointer_location - output_geo.loc.to_f64())
+                        .map(|(s, _)| s);
+                    self.keyboard.set_focus(surface.as_ref(), serial);
+                    return;
+                }
+
+                let layers = layer_map_for_output(output);
+                if let Some(layer) = layers
+                    .layer_under(WlrLayer::Overlay, self.pointer_location)
+                    .or_else(|| layers.layer_under(WlrLayer::Top, self.pointer_location))
+                {
+                    if layer.can_receive_keyboard_focus() {
+                        let surface = layer
+                            .surface_under(
+                                self.pointer_location
+                                    - output_geo.loc.to_f64()
+                                    - layers.layer_geometry(layer).unwrap().loc.to_f64(),
+                            )
+                            .map(|(s, _)| s);
+                        self.keyboard.set_focus(surface.as_ref(), serial);
+                        return;
+                    }
+                }
+            }
+
+            if let Some(window) = space.window_under(self.pointer_location).cloned() {
+                space.raise_window(&window, true);
+                let window_loc = space.window_geometry(&window).unwrap().loc;
+                let surface = window
+                    .surface_under(self.pointer_location - window_loc.to_f64())
+                    .map(|(s, _)| s);
+                self.keyboard.set_focus(surface.as_ref(), serial);
+                return;
+            }
+
+            if let Some(output) = space.output_under(self.pointer_location) {
+                let output_geo = space.output_geometry(output).unwrap();
+                let layers = layer_map_for_output(output);
+                if let Some(layer) = layers
+                    .layer_under(WlrLayer::Bottom, self.pointer_location)
+                    .or_else(|| layers.layer_under(WlrLayer::Background, self.pointer_location))
+                {
+                    if layer.can_receive_keyboard_focus() {
+                        let surface = layer
+                            .surface_under(
+                                self.pointer_location
+                                    - output_geo.loc.to_f64()
+                                    - layers.layer_geometry(layer).unwrap().loc.to_f64(),
+                            )
+                            .map(|(s, _)| s);
+                        self.keyboard.set_focus(surface.as_ref(), serial);
+                    }
+                }
+            }
+        }
+    }
+
+    fn surface_under(&self) -> Option<(WlSurface, Point<i32, Logical>)> {
+        let pos = self.pointer_location;
+        let space = self.space.borrow();
+        let output = space.outputs().find(|o| {
+            let geometry = space.output_geometry(o).unwrap();
+            geometry.contains(pos.to_i32_round())
+        })?;
+        let output_geo = space.output_geometry(output).unwrap();
+        let layers = layer_map_for_output(output);
+
+        let mut under = None;
+        if let Some(window) = output
+            .user_data()
+            .get::<FullscreenSurface>()
+            .and_then(|f| f.get())
+        {
+            under = window.surface_under(pos - output_geo.loc.to_f64());
+        } else if let Some(layer) = layers
+            .layer_under(WlrLayer::Overlay, pos)
+            .or_else(|| layers.layer_under(WlrLayer::Top, pos))
+        {
+            let layer_loc = layers.layer_geometry(layer).unwrap().loc;
+            under = layer
+                .surface_under(pos - output_geo.loc.to_f64() - layer_loc.to_f64())
+                .map(|(s, loc)| (s, loc + layer_loc));
+        } else if let Some(window) = space.window_under(pos) {
+            let window_loc = space.window_geometry(window).unwrap().loc;
+            under = window
+                .surface_under(pos - window_loc.to_f64())
+                .map(|(s, loc)| (s, loc + window_loc));
+        } else if let Some(layer) = layers
+            .layer_under(WlrLayer::Bottom, pos)
+            .or_else(|| layers.layer_under(WlrLayer::Background, pos))
+        {
+            let layer_loc = layers.layer_geometry(layer).unwrap().loc;
+            under = layer
+                .surface_under(pos - output_geo.loc.to_f64() - layer_loc.to_f64())
+                .map(|(s, loc)| (s, loc + layer_loc));
+        };
+        under
     }
 
     fn on_pointer_axis<B: InputBackend>(&mut self, evt: B::PointerAxisEvent) {
@@ -168,36 +304,32 @@ impl<Backend> AnvilState<Backend> {
 }
 
 #[cfg(any(feature = "winit", feature = "x11"))]
-impl<Backend> AnvilState<Backend> {
+impl<Backend: crate::state::Backend> AnvilState<Backend> {
     pub fn process_input_event_windowed<B: InputBackend>(&mut self, event: InputEvent<B>, output_name: &str) {
         match event {
             InputEvent::Keyboard { event } => match self.keyboard_key_to_action::<B>(event) {
                 KeyAction::ScaleUp => {
-                    let current_scale = {
-                        self.output_map
-                            .borrow()
-                            .find_by_name(output_name)
-                            .map(|o| o.scale())
-                            .unwrap_or(1.0)
-                    };
+                    let mut space = self.space.borrow_mut();
+                    let output = space.outputs().find(|o| o.name() == output_name).unwrap().clone();
 
-                    self.output_map
-                        .borrow_mut()
-                        .update_scale_by_name(current_scale + 0.25f32, output_name);
+                    let geometry = space.output_geometry(&output).unwrap();
+                    let current_scale = space.output_scale(&output).unwrap();
+                    let new_scale = current_scale + 0.25;
+                    output.change_current_state(None, None, Some(new_scale.ceil() as i32), None);
+                    space.map_output(&output, new_scale, geometry.loc);
+                    self.backend_data.reset_buffers(&output);
                 }
 
                 KeyAction::ScaleDown => {
-                    let current_scale = {
-                        self.output_map
-                            .borrow()
-                            .find_by_name(output_name)
-                            .map(|o| o.scale())
-                            .unwrap_or(1.0)
-                    };
+                    let mut space = self.space.borrow_mut();
+                    let output = space.outputs().find(|o| o.name() == output_name).unwrap().clone();
 
-                    self.output_map
-                        .borrow_mut()
-                        .update_scale_by_name(f32::max(1.0f32, current_scale - 0.25f32), output_name);
+                    let geometry = space.output_geometry(&output).unwrap();
+                    let current_scale = space.output_scale(&output).unwrap();
+                    let new_scale = current_scale - 0.25;
+                    output.change_current_state(None, None, Some(new_scale.ceil() as i32), None);
+                    space.map_output(&output, new_scale, geometry.loc);
+                    self.backend_data.reset_buffers(&output);
                 }
 
                 action => match action {
@@ -213,7 +345,14 @@ impl<Backend> AnvilState<Backend> {
             },
 
             InputEvent::PointerMotionAbsolute { event } => {
-                self.on_pointer_move_absolute_windowed::<B>(event, output_name)
+                let output = self
+                    .space
+                    .borrow()
+                    .outputs()
+                    .find(|o| o.name() == output_name)
+                    .unwrap()
+                    .clone();
+                self.on_pointer_move_absolute_windowed::<B>(event, &output)
             }
             InputEvent::PointerButton { event } => self.on_pointer_button::<B>(event),
             InputEvent::PointerAxis { event } => self.on_pointer_axis::<B>(event),
@@ -224,19 +363,15 @@ impl<Backend> AnvilState<Backend> {
     fn on_pointer_move_absolute_windowed<B: InputBackend>(
         &mut self,
         evt: B::PointerMotionAbsoluteEvent,
-        output_name: &str,
+        output: &Output,
     ) {
-        let output_size = self
-            .output_map
-            .borrow()
-            .find_by_name(output_name)
-            .map(|o| o.size())
-            .unwrap();
+        let output_geo = self.space.borrow().output_geometry(output).unwrap();
 
-        let pos = evt.position_transformed(output_size);
+        let pos = evt.position_transformed(output_geo.size) + output_geo.loc.to_f64();
         self.pointer_location = pos;
         let serial = SCOUNTER.next_serial();
-        let under = self.window_map.borrow().get_surface_under(pos);
+
+        let under = self.surface_under();
         self.pointer.motion(pos, under, serial, evt.time());
     }
 }
@@ -254,7 +389,12 @@ impl AnvilState<UdevData> {
                     }
                 }
                 KeyAction::Screen(num) => {
-                    let geometry = self.output_map.borrow().find_by_index(num).map(|o| o.geometry());
+                    let space = self.space.borrow();
+                    let geometry = space
+                        .outputs()
+                        .skip(num)
+                        .next()
+                        .map(|o| space.output_geometry(o).unwrap());
 
                     if let Some(geometry) = geometry {
                         let x = geometry.loc.x as f64 + geometry.size.w as f64 / 2.0;
@@ -263,16 +403,24 @@ impl AnvilState<UdevData> {
                     }
                 }
                 KeyAction::ScaleUp => {
-                    let mut output_map = self.output_map.borrow_mut();
+                    let mut space = self.space.borrow_mut();
 
-                    let output = output_map
-                        .find_by_position(self.pointer_location.to_i32_round())
-                        .map(|o| (o.name().to_owned(), o.location(), o.scale()));
+                    let pos = self.pointer_location.to_i32_round();
+                    let output = space
+                        .outputs()
+                        .find(|o| space.output_geometry(o).unwrap().contains(pos))
+                        .cloned();
 
-                    if let Some((name, output_location, scale)) = output {
+                    if let Some(output) = output {
+                        let (output_location, scale) = (
+                            space.output_geometry(&output).unwrap().loc,
+                            space.output_scale(&output).unwrap(),
+                        );
                         let new_scale = scale + 0.25;
-
-                        output_map.update_scale_by_name(new_scale, name);
+                        output.change_current_state(None, None, Some(new_scale.ceil() as i32), None);
+                        // TODO: this might cause underlap... (so we need the code from output_map::update)
+                        space.map_output(&output, new_scale, output_location);
+                        layer_map_for_output(&output).arrange();
 
                         let rescale = scale as f64 / new_scale as f64;
                         let output_location = output_location.to_f64();
@@ -281,21 +429,32 @@ impl AnvilState<UdevData> {
                         pointer_output_location.y *= rescale;
                         self.pointer_location = output_location + pointer_output_location;
 
-                        let under = self.window_map.borrow().get_surface_under(self.pointer_location);
+                        std::mem::drop(space);
+                        let under = self.surface_under();
                         self.pointer
                             .motion(self.pointer_location, under, SCOUNTER.next_serial(), 0);
+                        self.backend_data.reset_buffers(&output);
                     }
                 }
                 KeyAction::ScaleDown => {
-                    let mut output_map = self.output_map.borrow_mut();
+                    let mut space = self.space.borrow_mut();
 
-                    let output = output_map
-                        .find_by_position(self.pointer_location.to_i32_round())
-                        .map(|o| (o.name().to_owned(), o.location(), o.scale()));
+                    let pos = self.pointer_location.to_i32_round();
+                    let output = space
+                        .outputs()
+                        .find(|o| space.output_geometry(o).unwrap().contains(pos))
+                        .cloned();
 
-                    if let Some((name, output_location, scale)) = output {
-                        let new_scale = f32::max(1.0, scale - 0.25);
-                        output_map.update_scale_by_name(new_scale, name);
+                    if let Some(output) = output {
+                        let (output_location, scale) = (
+                            space.output_geometry(&output).unwrap().loc,
+                            space.output_scale(&output).unwrap(),
+                        );
+                        let new_scale = f64::max(1.0, scale - 0.25);
+                        output.change_current_state(None, None, Some(new_scale.ceil() as i32), None);
+                        // TODO: this might cause underlap... (so we need the code from output_map::update)
+                        space.map_output(&output, new_scale, output_location);
+                        layer_map_for_output(&output).arrange();
 
                         let rescale = scale as f64 / new_scale as f64;
                         let output_location = output_location.to_f64();
@@ -304,9 +463,11 @@ impl AnvilState<UdevData> {
                         pointer_output_location.y *= rescale;
                         self.pointer_location = output_location + pointer_output_location;
 
-                        let under = self.window_map.borrow().get_surface_under(self.pointer_location);
+                        std::mem::drop(space);
+                        let under = self.surface_under();
                         self.pointer
                             .motion(self.pointer_location, under, SCOUNTER.next_serial(), 0);
+                        self.backend_data.reset_buffers(&output);
                     }
                 }
 
@@ -358,23 +519,21 @@ impl AnvilState<UdevData> {
         // this event is never generated by winit
         self.pointer_location = self.clamp_coords(self.pointer_location);
 
-        let under = self.window_map.borrow().get_surface_under(self.pointer_location);
+        let under = self.surface_under();
         self.pointer
             .motion(self.pointer_location, under, serial, evt.time());
     }
 
     fn on_tablet_tool_axis<B: InputBackend>(&mut self, evt: B::TabletToolAxisEvent) {
-        let output_map = self.output_map.borrow();
-        let pointer_location = &mut self.pointer_location;
         let tablet_seat = self.seat.tablet_seat();
-        let window_map = self.window_map.borrow();
 
-        let output_geometry = output_map.with_primary().map(|o| o.geometry());
+        let space = self.space.borrow();
+        let output_geometry = space.outputs().next().map(|o| space.output_geometry(o).unwrap());
 
         if let Some(rect) = output_geometry {
-            *pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
+            self.pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
 
-            let under = window_map.get_surface_under(*pointer_location);
+            let under = self.surface_under();
             let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
             let tool = tablet_seat.get_tool(&evt.tool());
 
@@ -399,7 +558,7 @@ impl AnvilState<UdevData> {
                 }
 
                 tool.motion(
-                    *pointer_location,
+                    self.pointer_location,
                     under,
                     &tablet,
                     SCOUNTER.next_serial(),
@@ -410,27 +569,25 @@ impl AnvilState<UdevData> {
     }
 
     fn on_tablet_tool_proximity<B: InputBackend>(&mut self, evt: B::TabletToolProximityEvent) {
-        let output_map = self.output_map.borrow();
-        let pointer_location = &mut self.pointer_location;
+        let space = self.space.borrow();
         let tablet_seat = self.seat.tablet_seat();
-        let window_map = self.window_map.borrow();
 
-        let output_geometry = output_map.with_primary().map(|o| o.geometry());
+        let output_geometry = space.outputs().next().map(|o| space.output_geometry(o).unwrap());
 
         if let Some(rect) = output_geometry {
             let tool = evt.tool();
             tablet_seat.add_tool(&tool);
 
-            *pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
+            self.pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
 
-            let under = window_map.get_surface_under(*pointer_location);
+            let under = self.surface_under();
             let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
             let tool = tablet_seat.get_tool(&tool);
 
             if let (Some(under), Some(tablet), Some(tool)) = (under, tablet, tool) {
                 match evt.state() {
                     ProximityState::In => tool.proximity_in(
-                        *pointer_location,
+                        self.pointer_location,
                         under,
                         &tablet,
                         SCOUNTER.next_serial(),
@@ -448,19 +605,11 @@ impl AnvilState<UdevData> {
         if let Some(tool) = tool {
             match evt.tip_state() {
                 TabletToolTipState::Down => {
-                    tool.tip_down(SCOUNTER.next_serial(), evt.time());
+                    let serial = SCOUNTER.next_serial();
+                    tool.tip_down(serial, evt.time());
 
-                    // change the keyboard focus unless the pointer is grabbed
-                    if !self.pointer.is_grabbed() {
-                        let under = self
-                            .window_map
-                            .borrow_mut()
-                            .get_surface_and_bring_to_top(self.pointer_location);
-
-                        let serial = SCOUNTER.next_serial();
-                        self.keyboard
-                            .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
-                    }
+                    // change the keyboard focus
+                    self.update_keyboard_focus(serial);
                 }
                 TabletToolTipState::Up => {
                     tool.tip_up(evt.time());
@@ -483,19 +632,26 @@ impl AnvilState<UdevData> {
     }
 
     fn clamp_coords(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {
-        if self.output_map.borrow().is_empty() {
+        let space = self.space.borrow();
+        if space.outputs().next().is_none() {
             return pos;
         }
 
         let (pos_x, pos_y) = pos.into();
-        let output_map = self.output_map.borrow();
-        let max_x = output_map.width();
+        let max_x = space
+            .outputs()
+            .fold(0, |acc, o| acc + space.output_geometry(o).unwrap().size.w);
         let clamped_x = pos_x.max(0.0).min(max_x as f64);
-        let max_y = output_map.height(clamped_x as i32);
+        let max_y = space
+            .outputs()
+            .find(|o| {
+                let geo = space.output_geometry(o).unwrap();
+                geo.contains((clamped_x as i32, 0))
+            })
+            .map(|o| space.output_geometry(o).unwrap().size.h);
 
         if let Some(max_y) = max_y {
             let clamped_y = pos_y.max(0.0).min(max_y as f64);
-
             (clamped_x, clamped_y).into()
         } else {
             (clamped_x, pos_y).into()

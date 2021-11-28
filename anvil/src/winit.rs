@@ -9,24 +9,32 @@ use smithay::{
 };
 use smithay::{
     backend::{
-        renderer::{Renderer, Transform},
+        renderer::{gles2::Gles2Renderer, Frame, Renderer},
         winit::{self, WinitEvent},
         SwapBuffersError,
+    },
+    desktop::{
+        draw_window,
+        space::{RenderElement, RenderError},
     },
     reexports::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
     },
+    utils::Rectangle,
     wayland::{
-        output::{Mode, PhysicalProperties},
+        output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
     },
 };
 
 use slog::Logger;
 
-use crate::state::{AnvilState, Backend};
-use crate::{drawing::*, render::render_layers_and_windows};
+use crate::{
+    drawing::*,
+    shell::FullscreenSurface,
+    state::{AnvilState, Backend},
+};
 
 pub const OUTPUT_NAME: &str = "winit";
 
@@ -35,11 +43,15 @@ pub struct WinitData {
     fps_texture: Gles2Texture,
     #[cfg(feature = "debug")]
     pub fps: fps_ticker::Fps,
+    full_redraw: u8,
 }
 
 impl Backend for WinitData {
     fn seat_name(&self) -> String {
         String::from("winit")
+    }
+    fn reset_buffers(&mut self, _output: &Output) {
+        self.full_redraw = 4;
     }
 }
 
@@ -97,6 +109,7 @@ pub fn run_winit(log: Logger) {
         .expect("Unable to upload FPS texture"),
         #[cfg(feature = "debug")]
         fps: fps_ticker::Fps::default(),
+        full_redraw: 0,
     };
     let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone(), true);
 
@@ -105,19 +118,27 @@ pub fn run_winit(log: Logger) {
         refresh: 60_000,
     };
 
-    state.output_map.borrow_mut().add(
-        OUTPUT_NAME,
+    let (output, _global) = Output::new(
+        &mut *display.borrow_mut(),
+        OUTPUT_NAME.to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
             subpixel: wl_output::Subpixel::Unknown,
             make: "Smithay".into(),
             model: "Winit".into(),
         },
-        mode,
+        log.clone(),
     );
+    output.change_current_state(
+        Some(mode),
+        Some(wl_output::Transform::Flipped180),
+        None,
+        Some((0, 0).into()),
+    );
+    output.set_preferred(mode);
+    state.space.borrow_mut().map_output(&output, 1.0, (0, 0));
 
     let start_time = std::time::Instant::now();
-    let mut cursor_visible = true;
 
     #[cfg(feature = "xwayland")]
     state.start_xwayland();
@@ -128,18 +149,17 @@ pub fn run_winit(log: Logger) {
         if winit
             .dispatch_new_events(|event| match event {
                 WinitEvent::Resized { size, .. } => {
-                    state.output_map.borrow_mut().update_mode_by_name(
-                        Mode {
-                            size,
-                            refresh: 60_000,
-                        },
-                        OUTPUT_NAME,
-                    );
-
-                    let output_mut = state.output_map.borrow();
-                    let output = output_mut.find_by_name(OUTPUT_NAME).unwrap();
-
-                    state.window_map.borrow_mut().layers.arange_layers(output);
+                    let mut space = state.space.borrow_mut();
+                    // We only have one output
+                    let output = space.outputs().next().unwrap().clone();
+                    let current_scale = space.output_scale(&output).unwrap();
+                    space.map_output(&output, current_scale, (0, 0));
+                    let mode = Mode {
+                        size,
+                        refresh: 60_000,
+                    };
+                    output.change_current_state(Some(mode), None, None, None);
+                    output.set_preferred(mode);
                 }
 
                 WinitEvent::Input(event) => state.process_input_event_windowed(event, OUTPUT_NAME),
@@ -155,108 +175,135 @@ pub fn run_winit(log: Logger) {
         // drawing logic
         {
             let mut backend = backend.borrow_mut();
-            // This is safe to do as with winit we are guaranteed to have exactly one output
-            let (output_geometry, output_scale) = state
-                .output_map
-                .borrow()
-                .find_by_name(OUTPUT_NAME)
-                .map(|output| (output.geometry(), output.scale()))
-                .unwrap();
+            let cursor_visible: bool;
 
-            let result = backend
-                .bind()
-                .and_then(|_| {
-                    backend
-                        .renderer()
-                        .render(size, Transform::Flipped180, |renderer, frame| {
-                            render_layers_and_windows(
+            let mut elements = Vec::new();
+            let dnd_guard = state.dnd_icon.lock().unwrap();
+            let mut cursor_guard = state.cursor_status.lock().unwrap();
+
+            // draw the dnd icon if any
+            if let Some(ref surface) = *dnd_guard {
+                if surface.as_ref().is_alive() {
+                    elements.push(Box::new(draw_dnd_icon(
+                        surface.clone(),
+                        state.pointer_location.to_i32_round(),
+                        &log,
+                    )) as Box<dyn RenderElement<_, _, _, _>>);
+                }
+            }
+
+            // draw the cursor as relevant
+            // reset the cursor if the surface is no longer alive
+            let mut reset = false;
+            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+                reset = !surface.as_ref().is_alive();
+            }
+            if reset {
+                *cursor_guard = CursorImageStatus::Default;
+            }
+            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+                cursor_visible = false;
+                elements.push(Box::new(draw_cursor(
+                    surface.clone(),
+                    state.pointer_location.to_i32_round(),
+                    &log,
+                )));
+            } else {
+                cursor_visible = true;
+            }
+
+            // draw FPS
+            #[cfg(feature = "debug")]
+            {
+                let fps = state.backend_data.fps.avg().round() as u32;
+                let fps_texture = &state.backend_data.fps_texture;
+                elements.push(Box::new(draw_fps(fps_texture, fps)));
+            }
+
+            let full_redraw = &mut state.backend_data.full_redraw;
+            *full_redraw = full_redraw.saturating_sub(1);
+            let age = if *full_redraw > 0 { 0 } else { backend.buffer_age() };
+            let render_res = backend.bind().and_then(|_| {
+                let renderer = backend.renderer();
+                if let Some(window) = output
+                    .user_data()
+                    .get::<FullscreenSurface>()
+                    .and_then(|f| f.get())
+                {
+                    let transform = output.current_transform().into();
+                    let mode = output.current_mode().unwrap();
+                    let scale = state.space.borrow().output_scale(&output).unwrap();
+                    let res = renderer
+                        .render(mode.size, transform, |renderer, frame| {
+                            let mut damage = Vec::from(window.accumulated_damage(None));
+                            frame.clear(CLEAR_COLOR, &[Rectangle::from_loc_and_size((0, 0), mode.size)])?;
+                            draw_window(
                                 renderer,
                                 frame,
-                                &*state.window_map.borrow(),
-                                output_geometry,
-                                output_scale,
+                                &window,
+                                scale,
+                                (0, 0),
+                                &[Rectangle::from_loc_and_size(
+                                    (0, 0),
+                                    mode.size.to_f64().to_logical(scale).to_i32_round(),
+                                )],
                                 &log,
                             )?;
-
-                            let (x, y) = state.pointer_location.into();
-
-                            // draw the dnd icon if any
-                            {
-                                let guard = state.dnd_icon.lock().unwrap();
-                                if let Some(ref surface) = *guard {
-                                    if surface.as_ref().is_alive() {
-                                        draw_dnd_icon(
-                                            renderer,
-                                            frame,
-                                            surface,
-                                            (x as i32, y as i32).into(),
-                                            output_scale,
-                                            &log,
-                                        )?;
-                                    }
-                                }
-                            }
-                            // draw the cursor as relevant
-                            {
-                                let mut guard = state.cursor_status.lock().unwrap();
-                                // reset the cursor if the surface is no longer alive
-                                let mut reset = false;
-                                if let CursorImageStatus::Image(ref surface) = *guard {
-                                    reset = !surface.as_ref().is_alive();
-                                }
-                                if reset {
-                                    *guard = CursorImageStatus::Default;
-                                }
-
-                                // draw as relevant
-                                if let CursorImageStatus::Image(ref surface) = *guard {
-                                    cursor_visible = false;
-                                    draw_cursor(
-                                        renderer,
-                                        frame,
-                                        surface,
-                                        (x as i32, y as i32).into(),
-                                        output_scale,
-                                        &log,
-                                    )?;
-                                } else {
-                                    cursor_visible = true;
-                                }
-                            }
-
-                            #[cfg(feature = "debug")]
-                            {
-                                let fps = state.backend_data.fps.avg().round() as u32;
-
-                                draw_fps(
+                            for elem in elements {
+                                let geo = elem.geometry();
+                                let elem_damage = elem.accumulated_damage(None);
+                                elem.draw(
                                     renderer,
                                     frame,
-                                    &state.backend_data.fps_texture,
-                                    output_scale as f64,
-                                    fps,
+                                    scale,
+                                    &[Rectangle::from_loc_and_size((0, 0), geo.size)],
+                                    &log,
                                 )?;
+                                damage.extend(elem_damage.into_iter().map(|mut rect| {
+                                    rect.loc += geo.loc;
+                                    rect
+                                }))
                             }
-
-                            Ok(())
+                            Ok(Some(damage))
                         })
-                        .map_err(Into::<SwapBuffersError>::into)
-                        .and_then(|x| x)
+                        .and_then(std::convert::identity)
+                        .map_err(RenderError::<Gles2Renderer>::Rendering);
+                    window.send_frame(start_time.elapsed().as_millis() as u32);
+                    res
+                } else {
+                    state
+                        .space
+                        .borrow_mut()
+                        .render_output(renderer, &output, age, CLEAR_COLOR, &*elements)
+                }
+                .map_err(|err| match err {
+                    RenderError::Rendering(err) => err.into(),
+                    _ => unreachable!(),
                 })
-                .and_then(|_| backend.submit(None, 1.0));
+            });
 
-            backend.window().set_cursor_visible(cursor_visible);
-
-            if let Err(SwapBuffersError::ContextLost(err)) = result {
-                error!(log, "Critical Rendering Error: {}", err);
-                state.running.store(false, Ordering::SeqCst);
+            match render_res {
+                Ok(Some(damage)) => {
+                    let scale = state.space.borrow().output_scale(&output).unwrap_or(1.0);
+                    if let Err(err) = backend.submit(if age == 0 { None } else { Some(&*damage) }, scale) {
+                        warn!(log, "Failed to submit buffer: {}", err);
+                    }
+                    backend.window().set_cursor_visible(cursor_visible);
+                }
+                Ok(None) => {}
+                Err(SwapBuffersError::ContextLost(err)) => {
+                    error!(log, "Critical Rendering Error: {}", err);
+                    state.running.store(false, Ordering::SeqCst);
+                }
+                Err(err) => warn!(log, "Rendering error: {}", err),
             }
         }
 
         // Send frame events so that client start drawing their next frame
         state
-            .window_map
+            .space
             .borrow()
-            .send_frames(start_time.elapsed().as_millis() as u32);
+            .send_frames(false, start_time.elapsed().as_millis() as u32);
         display.borrow_mut().flush_clients(&mut state);
 
         if event_loop
@@ -265,15 +312,11 @@ pub fn run_winit(log: Logger) {
         {
             state.running.store(false, Ordering::SeqCst);
         } else {
+            state.space.borrow_mut().refresh();
             display.borrow_mut().flush_clients(&mut state);
-            state.window_map.borrow_mut().refresh();
-            state.output_map.borrow_mut().refresh();
         }
 
         #[cfg(feature = "debug")]
         state.backend_data.fps.tick();
     }
-
-    // Cleanup stuff
-    state.window_map.borrow_mut().clear();
 }
