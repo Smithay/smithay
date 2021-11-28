@@ -166,8 +166,17 @@ where
 
         slot.0.age.store(1, Ordering::SeqCst);
         for other_slot in &self.slots {
-            if !Arc::ptr_eq(other_slot, &slot.0) {
-                other_slot.age.fetch_add(1, Ordering::SeqCst);
+            if !Arc::ptr_eq(other_slot, &slot.0) && other_slot.buffer.is_some() {
+                assert!(other_slot
+                    .age
+                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |age| {
+                        if age > 0 {
+                            Some(age + 1)
+                        } else {
+                            Some(0)
+                        }
+                    })
+                    .is_ok());
             }
         }
     }
