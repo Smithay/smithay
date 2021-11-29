@@ -100,7 +100,7 @@ use std::{
     sync::{
         atomic::{AtomicU32, Ordering},
         mpsc::{self, Receiver, Sender},
-        Arc, Weak,
+        Arc, Mutex, MutexGuard, Weak,
     },
 };
 use x11rb::{
@@ -345,7 +345,7 @@ pub struct X11Surface {
     connection: Weak<RustConnection>,
     window: Window,
     resize: Receiver<Size<u16, Logical>>,
-    swapchain: Swapchain<gbm::Device<DrmNode>, BufferObject<()>>,
+    swapchain: Swapchain<Arc<Mutex<gbm::Device<DrmNode>>>, BufferObject<()>>,
     format: DrmFourcc,
     width: u16,
     height: u16,
@@ -441,7 +441,7 @@ impl X11Surface {
     /// This will fail if the backend has already been used to create a surface.
     pub fn new(
         backend: &mut X11Backend,
-        device: gbm::Device<DrmNode>,
+        device: Arc<Mutex<gbm::Device<DrmNode>>>,
         modifiers: impl Iterator<Item = DrmModifier>,
     ) -> Result<X11Surface, X11Error> {
         if backend.resize.is_some() {
@@ -472,8 +472,8 @@ impl X11Surface {
     }
 
     /// Returns a handle to the GBM device used to allocate buffers.
-    pub fn device(&self) -> &gbm::Device<DrmNode> {
-        &self.swapchain.allocator
+    pub fn device(&self) -> MutexGuard<'_, gbm::Device<DrmNode>> {
+        self.swapchain.allocator.lock().unwrap()
     }
 
     /// Returns the format of the buffers the surface accepts.

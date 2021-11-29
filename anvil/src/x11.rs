@@ -1,4 +1,9 @@
-use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{atomic::Ordering, Arc, Mutex},
+    time::Duration,
+};
 
 use slog::Logger;
 #[cfg(feature = "egl")]
@@ -64,6 +69,7 @@ pub fn run_x11(log: Logger) {
     let device = gbm::Device::new(drm_node).expect("Failed to create gbm device");
     // Initialize EGL using the GBM device setup earlier.
     let egl = EGLDisplay::new(&device, log.clone()).expect("Failed to create EGLDisplay");
+    let device = Arc::new(Mutex::new(device));
     let context = EGLContext::new(&egl, log.clone()).expect("Failed to create EGLContext");
     let surface = X11Surface::new(
         &mut backend,
