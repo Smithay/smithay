@@ -15,6 +15,7 @@ use super::{extension::Extensions, Atoms, Window, X11Error};
 use drm_fourcc::DrmFourcc;
 use std::sync::{
     atomic::{AtomicU32, AtomicU64},
+    mpsc::Sender,
     Arc, Mutex, Weak,
 };
 use x11rb::{
@@ -60,6 +61,10 @@ pub(crate) struct WindowInner {
     pub atoms: Atoms,
     pub cursor_state: Arc<Mutex<CursorState>>,
     pub size: Mutex<Size<u16, Logical>>,
+    /// Channel used to send resize notifications to the surface that presents to this window.
+    ///
+    /// This value will be [`None`] if no surface is bound to the window.
+    pub resize: Mutex<Option<Sender<Size<u16, Logical>>>>,
     pub next_serial: AtomicU32,
     pub last_msc: Arc<AtomicU64>,
     pub format: DrmFourcc,
@@ -154,6 +159,7 @@ impl WindowInner {
             format,
             depth,
             extensions,
+            resize: Mutex::new(None),
         };
 
         // Enable WM_DELETE_WINDOW so our client is not disconnected upon our toplevel window being destroyed.

@@ -12,8 +12,8 @@
 //! ## Example usage
 //!
 //! ```rust,no_run
-//! # use std::error::Error;
-//! # use smithay::backend::x11::{X11Backend, X11Surface};
+//! # use std::{sync::{Arc, Mutex}, error::Error};
+//! # use smithay::backend::x11::{X11Backend, X11Surface, WindowBuilder};
 //! use smithay::backend::egl::{EGLDisplay, EGLContext};
 //! use smithay::reexports::gbm;
 //! use std::collections::HashSet;
@@ -24,14 +24,20 @@
 //!    logger: slog::Logger
 //! ) -> Result<(), Box<dyn Error>> {
 //!     // Create the backend, also yielding a surface that may be used to render to the window.
-//!     let mut backend = X11Backend::new(logger.clone())?;
-//!     // You can get a handle to the window the backend has created for later use.
-//!     let window = backend.window();
+//!     let backend = X11Backend::new(logger.clone())?;
 //!
-//!     // To render to the window the X11 backend creates, we need to create an X11 surface.
+//!     // Get a handle from the backend to interface with the X server
+//!     let x_handle = backend.handle();
+//!     // Create a window
+//!     let window = WindowBuilder::new()
+//!         .title("Wayland inside X11")
+//!         .build(&x_handle)
+//!         .expect("Could not create window");
+//!
+//!     // To render to a window, we need to create an X11 surface.
 //!
 //!     // Get the DRM node used by the X server for direct rendering.
-//!     let drm_node = backend.drm_node()?;
+//!     let drm_node = x_handle.drm_node()?;
 //!     // Create the gbm device for allocating buffers
 //!     let device = gbm::Device::new(drm_node)?;
 //!     // Initialize EGL to retrieve the support modifier list
@@ -39,9 +45,11 @@
 //!     let context = EGLContext::new(&egl, logger).expect("Failed to create EGLContext");
 //!     let modifiers = context.dmabuf_render_formats().iter().map(|format| format.modifier).collect::<HashSet<_>>();
 //!
+//!     // Wrap up the device for sharing among the created X11 surfaces.
+//!     let device = Arc::new(Mutex::new(device));
 //!     // Finally create the X11 surface, you will use this to obtain buffers that will be presented to the
 //!     // window.
-//!     let surface = X11Surface::new(&mut backend, device, modifiers.into_iter());
+//!     let surface = x_handle.create_surface(&window, device, modifiers.into_iter());
 //!
 //!     // Insert the backend into the event loop to receive events.
 //!     handle.insert_source(backend, |event, _window, state| {
@@ -95,11 +103,12 @@ use nix::{
 };
 use slog::{error, info, o, Logger};
 use std::{
+    collections::HashMap,
     io, mem,
     os::unix::prelude::AsRawFd,
     sync::{
         atomic::{AtomicU32, Ordering},
-        mpsc::{self, Receiver, Sender},
+        mpsc::{self, Receiver},
         Arc, Mutex, MutexGuard, Weak,
     },
 };
@@ -146,14 +155,7 @@ pub struct X11Backend {
     log: Logger,
     connection: Arc<RustConnection>,
     source: X11Source,
-    screen_number: usize,
-    window: Arc<WindowInner>,
-    /// Channel used to send resize notifications to the surface.
-    ///
-    /// This value will be [`None`] if no surface is bound to the window managed by the backend.
-    resize: Option<Sender<Size<u16, Logical>>>,
-    key_counter: Arc<AtomicU32>,
-    window_format: DrmFourcc,
+    inner: Arc<Mutex<X11Inner>>,
 }
 
 atom_manager! {
@@ -167,46 +169,8 @@ atom_manager! {
 }
 
 impl X11Backend {
-    /// Initializes the X11 backend.
-    ///
-    /// This connects to the X server and configures the window using the default options.
+    /// Initializes the X11 backend by connecting to the X server.
     pub fn new<L>(logger: L) -> Result<X11Backend, X11Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        Self::with_size_and_title((1280, 800).into(), "Smithay", logger)
-    }
-
-    /// Initializes the X11 backend.
-    ///
-    /// This connects to the X server and configures the window using the default size and the
-    /// specified window title.
-    pub fn with_title<L>(title: &str, logger: L) -> Result<X11Backend, X11Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        Self::with_size_and_title((1280, 800).into(), title, logger)
-    }
-
-    /// Initializes the X11 backend.
-    ///
-    /// This connects to the X server and configures the window using the default window title
-    /// and the specified window size.
-    pub fn with_size<L>(size: Size<u16, Logical>, logger: L) -> Result<X11Backend, X11Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        Self::with_size_and_title(size, "Smithay", logger)
-    }
-
-    /// Initializes the X11 backend.
-    ///
-    /// This connects to the X server and configures the window using the specified window size and title.
-    pub fn with_size_and_title<L>(
-        size: Size<u16, Logical>,
-        title: &str,
-        logger: L,
-    ) -> Result<X11Backend, X11Error>
     where
         L: Into<Option<slog::Logger>>,
     {
@@ -252,90 +216,41 @@ impl X11Backend {
 
         let atoms = Atoms::new(&*connection)?.reply()?;
 
-        let window = Arc::new(WindowInner::new(
-            Arc::downgrade(&connection),
-            screen,
-            size,
-            title,
-            format,
-            atoms,
-            depth,
-            visual_id,
-            colormap,
-            extensions,
-        )?);
-
         let source = X11Source::new(
             connection.clone(),
-            window.id,
+            0, // send the close request to something to ensure we can wake the reader thread for events.
             atoms._SMITHAY_X11_BACKEND_CLOSE,
             logger.clone(),
         );
 
-        info!(logger, "Window created");
+        let inner = X11Inner {
+            log: logger.clone(),
+            connection: connection.clone(),
+            screen_number,
+            windows: HashMap::new(),
+            key_counter: Arc::new(AtomicU32::new(0)),
+            window_format: format,
+            extensions,
+            colormap,
+            atoms,
+            depth,
+            visual_id,
+        };
 
         Ok(X11Backend {
             log: logger,
-            source,
             connection,
-            window,
-            key_counter: Arc::new(AtomicU32::new(0)),
-            screen_number,
-            resize: None,
-            window_format: format,
+            source,
+            inner: Arc::new(Mutex::new(inner)),
         })
     }
 
-    /// Returns the default screen number of the X server.
-    pub fn screen(&self) -> usize {
-        self.screen_number
-    }
-
-    /// Returns the underlying connection to the X server.
-    pub fn connection(&self) -> &RustConnection {
-        &*self.connection
-    }
-
-    /// Returns a handle to the X11 window created by the backend.
-    pub fn window(&self) -> Window {
-        self.window.clone().into()
-    }
-
-    /// Returns the format of the window.
-    pub fn format(&self) -> DrmFourcc {
-        self.window_format
-    }
-
-    /// Returns the DRM node the X server uses for direct rendering.
-    ///
-    /// The DRM node may be used to create a [`gbm::Device`] to allocate buffers.
-    pub fn drm_node(&self) -> Result<DrmNode, X11Error> {
-        // Kernel documentation explains why we should prefer the node to be a render node:
-        // https://kernel.readthedocs.io/en/latest/gpu/drm-uapi.html
-        //
-        // > Render nodes solely serve render clients, that is, no modesetting or privileged ioctls
-        // > can be issued on render nodes. Only non-global rendering commands are allowed. If a
-        // > driver supports render nodes, it must advertise it via the DRIVER_RENDER DRM driver
-        // > capability. If not supported, the primary node must be used for render clients together
-        // > with the legacy drmAuth authentication procedure.
-        //
-        // Since giving the X11 backend the ability to do modesetting is a big nono, we try to only
-        // ever create a gbm device from a render node.
-        //
-        // Of course if the DRM device does not support render nodes, no DRIVER_RENDER capability, then
-        // fall back to the primary node.
-
-        // We cannot fallback on the egl_init method, because there is no way for us to authenticate a primary node.
-        // dri3 does not work for closed-source drivers, but *may* give us a authenticated fd as a fallback.
-        // As a result we try to use egl for a cleaner, better supported approach at first and only if that fails use dri3.
-        egl_init(self).or_else(|err| {
-            slog::warn!(
-                &self.log,
-                "Failed to init X11 surface via egl, falling back to dri3: {}",
-                err
-            );
-            dri3_init(self)
-        })
+    /// Returns a handle to the X11 backend.
+    pub fn handle(&self) -> X11Handle {
+        X11Handle {
+            log: self.log.clone(),
+            inner: self.inner.clone(),
+        }
     }
 }
 
@@ -360,7 +275,7 @@ enum EGLInitError {
     IO(#[from] io::Error),
 }
 
-fn egl_init(_backend: &X11Backend) -> Result<DrmNode, EGLInitError> {
+fn egl_init(_: &X11Inner) -> Result<DrmNode, EGLInitError> {
     let display = EGLDisplay::new(&X11DefaultDisplay, None)?;
     let device = EGLDevice::device_for_display(&display)?;
     let path = path_to_type(device.drm_device_path()?, NodeType::Render)?;
@@ -375,11 +290,11 @@ fn egl_init(_backend: &X11Backend) -> Result<DrmNode, EGLInitError> {
         .map_err(EGLInitError::IO)
 }
 
-fn dri3_init(backend: &X11Backend) -> Result<DrmNode, X11Error> {
-    let connection = &backend.connection;
+fn dri3_init(x11: &X11Inner) -> Result<DrmNode, X11Error> {
+    let connection = &x11.connection;
 
     // Determine which drm-device the Display is using.
-    let screen = &connection.setup().roots[backend.screen()];
+    let screen = &connection.setup().roots[x11.screen_number];
     // provider being NONE tells the X server to use the RandR provider.
     let dri3 = match connection.dri3_open(screen.root, x11rb::NONE)?.reply() {
         Ok(reply) => reply,
@@ -422,53 +337,137 @@ fn dri3_init(backend: &X11Backend) -> Result<DrmNode, X11Error> {
                 .map_err(CreateDrmNodeError::Io)
                 .and_then(DrmNode::from_fd)
                 .unwrap_or_else(|err| {
-                    slog::warn!(&backend.log, "Could not create render node from existing DRM node ({}), falling back to primary node", err);
+                    slog::warn!(&x11.log, "Could not create render node from existing DRM node ({}), falling back to primary node", err);
                     drm_node
                 }));
         }
     }
 
     slog::warn!(
-        &backend.log,
+        &x11.log,
         "DRM Device does not have a render node, falling back to primary node"
     );
     Ok(drm_node)
 }
 
-impl X11Surface {
-    /// Creates a surface that allocates and presents buffers to the window managed by the backend.
+/// A handle to the X11 backend.
+///
+/// This is the primary object used to interface with the backend.
+#[derive(Debug)]
+pub struct X11Handle {
+    log: Logger,
+    inner: Arc<Mutex<X11Inner>>,
+}
+
+impl X11Handle {
+    /// Returns the default screen number of the X server.
+    pub fn screen(&self) -> usize {
+        self.inner.lock().unwrap().screen_number
+    }
+
+    /// Returns the underlying connection to the X server.
+    pub fn connection(&self) -> Arc<RustConnection> {
+        self.inner.lock().unwrap().connection.clone()
+    }
+
+    /// Returns the format of the window.
+    pub fn format(&self) -> DrmFourcc {
+        self.inner.lock().unwrap().window_format
+    }
+
+    /// Returns the DRM node the X server uses for direct rendering.
     ///
-    /// This will fail if the backend has already been used to create a surface.
-    pub fn new(
-        backend: &mut X11Backend,
+    /// The DRM node may be used to create a [`gbm::Device`] to allocate buffers.
+    pub fn drm_node(&self) -> Result<DrmNode, X11Error> {
+        // Kernel documentation explains why we should prefer the node to be a render node:
+        // https://kernel.readthedocs.io/en/latest/gpu/drm-uapi.html
+        //
+        // > Render nodes solely serve render clients, that is, no modesetting or privileged ioctls
+        // > can be issued on render nodes. Only non-global rendering commands are allowed. If a
+        // > driver supports render nodes, it must advertise it via the DRIVER_RENDER DRM driver
+        // > capability. If not supported, the primary node must be used for render clients together
+        // > with the legacy drmAuth authentication procedure.
+        //
+        // Since giving the X11 backend the ability to do modesetting is a big nono, we try to only
+        // ever create a gbm device from a render node.
+        //
+        // Of course if the DRM device does not support render nodes, no DRIVER_RENDER capability, then
+        // fall back to the primary node.
+
+        // We cannot fallback on the egl_init method, because there is no way for us to authenticate a primary node.
+        // dri3 does not work for closed-source drivers, but *may* give us a authenticated fd as a fallback.
+        // As a result we try to use egl for a cleaner, better supported approach at first and only if that fails use dri3.
+        let inner = self.inner.lock().unwrap();
+
+        egl_init(&*inner).or_else(|err| {
+            slog::warn!(
+                &self.log,
+                "Failed to init X11 surface via egl, falling back to dri3: {}",
+                err
+            );
+            dri3_init(&*inner)
+        })
+    }
+
+    /// Creates a surface that allocates and presents buffers to the window.
+    ///
+    /// This will fail if the window has already been used to create a surface.
+    pub fn create_surface(
+        &self,
+        window: &Window,
         device: Arc<Mutex<gbm::Device<DrmNode>>>,
         modifiers: impl Iterator<Item = DrmModifier>,
     ) -> Result<X11Surface, X11Error> {
-        if backend.resize.is_some() {
-            return Err(X11Error::SurfaceExists);
+        match window.0.upgrade() {
+            Some(window) => {
+                let has_resize = { window.resize.lock().unwrap().is_some() };
+
+                if has_resize {
+                    return Err(X11Error::SurfaceExists);
+                }
+
+                let inner = self.inner.clone();
+                let inner_guard = inner.lock().unwrap();
+
+                // Fail if the window is not managed by this backend or is destroyed
+                if !inner_guard.windows.contains_key(&window.id) {
+                    return Err(X11Error::InvalidWindow);
+                }
+
+                let modifiers = modifiers.collect::<Vec<_>>();
+
+                let format = window.format;
+                let size = window.size();
+                let swapchain = Swapchain::new(device, size.w as u32, size.h as u32, format, modifiers);
+
+                let (sender, recv) = mpsc::channel();
+
+                {
+                    let mut resize = window.resize.lock().unwrap();
+                    *resize = Some(sender);
+                }
+
+                Ok(X11Surface {
+                    connection: Arc::downgrade(&inner_guard.connection),
+                    window: window.into(),
+                    swapchain,
+                    format,
+                    width: size.w,
+                    height: size.h,
+                    buffer: None,
+                    resize: recv,
+                })
+            }
+
+            None => Err(X11Error::InvalidWindow),
         }
+    }
+}
 
-        let modifiers = modifiers.collect::<Vec<_>>();
-
-        let window = backend.window();
-        let format = window.format().unwrap();
-        let size = window.size();
-        let swapchain = Swapchain::new(device, size.w as u32, size.h as u32, format, modifiers);
-
-        let (sender, recv) = mpsc::channel();
-
-        backend.resize = Some(sender);
-
-        Ok(X11Surface {
-            connection: Arc::downgrade(&backend.connection),
-            window,
-            swapchain,
-            format,
-            width: size.w,
-            height: size.h,
-            buffer: None,
-            resize: recv,
-        })
+impl X11Surface {
+    /// Returns the window the surface presents to.
+    pub fn window(&self) -> &Window {
+        &self.window
     }
 
     /// Returns a handle to the GBM device used to allocate buffers.
@@ -560,6 +559,68 @@ impl X11Surface {
     }
 }
 
+/// Builder used to construct a window.
+#[derive(Debug)]
+pub struct WindowBuilder<'a> {
+    name: Option<&'a str>,
+    size: Option<Size<u16, Logical>>,
+}
+
+impl<'a> WindowBuilder<'a> {
+    #[allow(clippy::new_without_default)]
+    /// Returns a new builder.
+    pub fn new() -> WindowBuilder<'a> {
+        WindowBuilder {
+            name: None,
+            size: None,
+        }
+    }
+
+    /// Sets the title of the window that will be created by the builder.
+    pub fn title(self, name: &'a str) -> Self {
+        Self {
+            name: Some(name),
+            ..self
+        }
+    }
+
+    /// Sets the size of the window that will be created.
+    ///
+    /// There is no guarantee the size specified here will be the actual size of the window when it is
+    /// presented.
+    pub fn size(self, size: Size<u16, Logical>) -> Self {
+        Self {
+            size: Some(size),
+            ..self
+        }
+    }
+
+    /// Creates a window using the options specified in the builder.
+    pub fn build(self, handle: &X11Handle) -> Result<Window, X11Error> {
+        let connection = handle.connection();
+
+        let inner = &mut *handle.inner.lock().unwrap();
+
+        let window = Arc::new(WindowInner::new(
+            Arc::downgrade(&connection),
+            &connection.setup().roots[inner.screen_number],
+            self.size.unwrap_or_else(|| (1280, 800).into()),
+            self.name.unwrap_or("Smithay"),
+            inner.window_format,
+            inner.atoms,
+            inner.depth.clone(),
+            inner.visual_id,
+            inner.colormap,
+            inner.extensions,
+        )?);
+
+        let downgrade = Arc::downgrade(&window);
+        inner.windows.insert(window.id, window);
+
+        Ok(Window(downgrade))
+    }
+}
+
 /// An X11 window.
 #[derive(Debug)]
 pub struct Window(Weak<WindowInner>);
@@ -647,243 +708,18 @@ impl EventSource for X11Backend {
     where
         F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
-        use self::X11Event::Input;
-
         let connection = self.connection.clone();
-        let window = self.window.clone();
-        let key_counter = self.key_counter.clone();
-        let log = self.log.clone();
-        let mut event_window = window.clone().into();
-        let resize = &self.resize;
 
-        self.source.process_events(readiness, token, |event, _| {
-            match event {
-                x11::Event::ButtonPress(button_press) => {
-                    if button_press.event == window.id {
-                        // X11 decided to associate scroll wheel with a button, 4, 5, 6 and 7 for
-                        // up, down, right and left. For scrolling, a press event is emitted and a
-                        // release is them immediately followed for scrolling. This means we can
-                        // ignore release for scrolling.
+        let inner = self.inner.clone();
+        let mut inner = inner.lock().unwrap();
+        let post_action = self.source.process_events(readiness, token, |event, _| {
+            inner.process_event(event, &mut callback);
+        })?;
 
-                        // Ideally we would use `ButtonIndex` from XCB, however it does not cover 6 and 7
-                        // for horizontal scroll and does not work nicely in match statements, so we
-                        // use magic constants here:
-                        //
-                        // 1 => MouseButton::Left
-                        // 2 => MouseButton::Middle
-                        // 3 => MouseButton::Right
-                        // 4 => Axis::Vertical +1.0
-                        // 5 => Axis::Vertical -1.0
-                        // 6 => Axis::Horizontal -1.0
-                        // 7 => Axis::Horizontal +1.0
-                        // Others => ??
+        // Flush the connection so changes to the window state during callbacks can be emitted.
+        let _ = connection.flush();
 
-                        // Scrolling
-                        if button_press.detail >= 4 && button_press.detail <= 7 {
-                            callback(
-                                Input(InputEvent::PointerAxis {
-                                    event: X11MouseWheelEvent {
-                                        time: button_press.time,
-                                        axis: match button_press.detail {
-                                            // Up | Down
-                                            4 | 5 => Axis::Vertical,
-
-                                            // Right | Left
-                                            6 | 7 => Axis::Horizontal,
-
-                                            _ => unreachable!(),
-                                        },
-                                        amount: match button_press.detail {
-                                            // Up | Right
-                                            4 | 7 => 1.0,
-
-                                            // Down | Left
-                                            5 | 6 => -1.0,
-
-                                            _ => unreachable!(),
-                                        },
-                                    },
-                                }),
-                                &mut event_window,
-                            )
-                        } else {
-                            callback(
-                                Input(InputEvent::PointerButton {
-                                    event: X11MouseInputEvent {
-                                        time: button_press.time,
-                                        raw: button_press.detail as u32,
-                                        state: ButtonState::Pressed,
-                                    },
-                                }),
-                                &mut event_window,
-                            )
-                        }
-                    }
-                }
-
-                x11::Event::ButtonRelease(button_release) => {
-                    if button_release.event == window.id {
-                        // Ignore release tick because this event is always sent immediately after the press
-                        // tick for scrolling and the backend will dispatch release event automatically during
-                        // the press event.
-                        if button_release.detail >= 4 && button_release.detail <= 7 {
-                            return;
-                        }
-
-                        callback(
-                            Input(InputEvent::PointerButton {
-                                event: X11MouseInputEvent {
-                                    time: button_release.time,
-                                    raw: button_release.detail as u32,
-                                    state: ButtonState::Released,
-                                },
-                            }),
-                            &mut event_window,
-                        );
-                    }
-                }
-
-                x11::Event::KeyPress(key_press) => {
-                    if key_press.event == window.id {
-                        callback(
-                            Input(InputEvent::Keyboard {
-                                event: X11KeyboardInputEvent {
-                                    time: key_press.time,
-                                    // X11's keycodes are +8 relative to the libinput keycodes
-                                    // that are expected, so subtract 8 from each keycode to
-                                    // match libinput.
-                                    //
-                                    // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
-                                    key: key_press.detail as u32 - 8,
-                                    count: key_counter.fetch_add(1, Ordering::SeqCst) + 1,
-                                    state: KeyState::Pressed,
-                                },
-                            }),
-                            &mut event_window,
-                        )
-                    }
-                }
-
-                x11::Event::KeyRelease(key_release) => {
-                    if key_release.event == window.id {
-                        // atomic u32 has no checked_sub, so load and store to do the same.
-                        let mut key_counter_val = key_counter.load(Ordering::SeqCst);
-                        key_counter_val = key_counter_val.saturating_sub(1);
-                        key_counter.store(key_counter_val, Ordering::SeqCst);
-
-                        callback(
-                            Input(InputEvent::Keyboard {
-                                event: X11KeyboardInputEvent {
-                                    time: key_release.time,
-                                    // X11's keycodes are +8 relative to the libinput keycodes
-                                    // that are expected, so subtract 8 from each keycode to
-                                    // match libinput.
-                                    //
-                                    // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
-                                    key: key_release.detail as u32 - 8,
-                                    count: key_counter_val,
-                                    state: KeyState::Released,
-                                },
-                            }),
-                            &mut event_window,
-                        );
-                    }
-                }
-
-                x11::Event::MotionNotify(motion_notify) => {
-                    if motion_notify.event == window.id {
-                        // Use event_x/y since those are relative the the window receiving events.
-                        let x = motion_notify.event_x as f64;
-                        let y = motion_notify.event_y as f64;
-
-                        callback(
-                            Input(InputEvent::PointerMotionAbsolute {
-                                event: X11MouseMovedEvent {
-                                    time: motion_notify.time,
-                                    x,
-                                    y,
-                                    size: window.size(),
-                                },
-                            }),
-                            &mut event_window,
-                        )
-                    }
-                }
-
-                x11::Event::ConfigureNotify(configure_notify) => {
-                    if configure_notify.window == window.id {
-                        let previous_size = { *window.size.lock().unwrap() };
-
-                        // Did the size of the window change?
-                        let configure_notify_size: Size<u16, Logical> =
-                            (configure_notify.width, configure_notify.height).into();
-
-                        if configure_notify_size != previous_size {
-                            // Intentionally drop the lock on the size mutex incase a user
-                            // requests a resize or does something which causes a resize
-                            // inside the callback.
-                            {
-                                *window.size.lock().unwrap() = configure_notify_size;
-                            }
-
-                            (callback)(X11Event::Resized(configure_notify_size), &mut event_window);
-
-                            if let Some(resize_sender) = resize {
-                                let _ = resize_sender.send(configure_notify_size);
-                            }
-                        }
-                    }
-                }
-
-                x11::Event::EnterNotify(enter_notify) => {
-                    if enter_notify.event == window.id {
-                        window.cursor_enter();
-                    }
-                }
-
-                x11::Event::LeaveNotify(leave_notify) => {
-                    if leave_notify.event == window.id {
-                        window.cursor_leave();
-                    }
-                }
-
-                x11::Event::ClientMessage(client_message) => {
-                    if client_message.data.as_data32()[0] == window.atoms.WM_DELETE_WINDOW // Destroy the window?
-                            && client_message.window == window.id
-                    // Same window
-                    {
-                        (callback)(X11Event::CloseRequested, &mut event_window);
-                    }
-                }
-
-                x11::Event::Expose(expose) => {
-                    if expose.window == window.id && expose.count == 0 {
-                        (callback)(X11Event::Refresh, &mut event_window);
-                    }
-                }
-
-                x11::Event::PresentCompleteNotify(complete_notify) => {
-                    if complete_notify.window == window.id {
-                        window.last_msc.store(complete_notify.msc, Ordering::SeqCst);
-
-                        (callback)(X11Event::PresentCompleted, &mut event_window);
-                    }
-                }
-
-                x11::Event::PresentIdleNotify(_) => {
-                    // Pixmap is reference counted in the X server, so we do not need to take and drop.
-                }
-
-                x11::Event::Error(e) => {
-                    error!(log, "X11 protocol error: {:?}", e);
-                }
-
-                _ => (),
-            }
-
-            // Flush the connection so changes to the window state during callbacks can be emitted.
-            let _ = connection.flush();
-        })
+        Ok(post_action)
     }
 
     fn register(&mut self, poll: &mut Poll, token_factory: &mut TokenFactory) -> io::Result<()> {
@@ -896,5 +732,300 @@ impl EventSource for X11Backend {
 
     fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
         self.source.unregister(poll)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct X11Inner {
+    log: Logger,
+    connection: Arc<RustConnection>,
+    screen_number: usize,
+    windows: HashMap<u32, Arc<WindowInner>>,
+    key_counter: Arc<AtomicU32>,
+    window_format: DrmFourcc,
+    extensions: Extensions,
+    colormap: u32,
+    atoms: Atoms,
+    depth: x11::xproto::Depth,
+    visual_id: u32,
+}
+
+impl X11Inner {
+    pub fn process_event<F>(&mut self, event: x11::Event, callback: &mut F)
+    where
+        F: FnMut(X11Event, &mut Window),
+    {
+        use self::X11Event::Input;
+
+        match event {
+            x11::Event::ButtonPress(button_press) => {
+                if !self.windows.contains_key(&button_press.event) {
+                    return;
+                }
+
+                let window = self.windows.get(&button_press.event).unwrap();
+                // X11 decided to associate scroll wheel with a button, 4, 5, 6 and 7 for
+                // up, down, right and left. For scrolling, a press event is emitted and a
+                // release is them immediately followed for scrolling. This means we can
+                // ignore release for scrolling.
+
+                // Ideally we would use `ButtonIndex` from XCB, however it does not cover 6 and 7
+                // for horizontal scroll and does not work nicely in match statements, so we
+                // use magic constants here:
+                //
+                // 1 => MouseButton::Left
+                // 2 => MouseButton::Middle
+                // 3 => MouseButton::Right
+                // 4 => Axis::Vertical +1.0
+                // 5 => Axis::Vertical -1.0
+                // 6 => Axis::Horizontal -1.0
+                // 7 => Axis::Horizontal +1.0
+                // Others => ??
+
+                // Scrolling
+                if button_press.detail >= 4 && button_press.detail <= 7 {
+                    callback(
+                        Input(InputEvent::PointerAxis {
+                            event: X11MouseWheelEvent {
+                                time: button_press.time,
+                                axis: match button_press.detail {
+                                    // Up | Down
+                                    4 | 5 => Axis::Vertical,
+
+                                    // Right | Left
+                                    6 | 7 => Axis::Horizontal,
+
+                                    _ => unreachable!(),
+                                },
+                                amount: match button_press.detail {
+                                    // Up | Right
+                                    4 | 7 => 1.0,
+
+                                    // Down | Left
+                                    5 | 6 => -1.0,
+
+                                    _ => unreachable!(),
+                                },
+                            },
+                        }),
+                        &mut Window(Arc::downgrade(window)),
+                    )
+                } else {
+                    callback(
+                        Input(InputEvent::PointerButton {
+                            event: X11MouseInputEvent {
+                                time: button_press.time,
+                                raw: button_press.detail as u32,
+                                state: ButtonState::Pressed,
+                            },
+                        }),
+                        &mut Window(Arc::downgrade(window)),
+                    )
+                }
+            }
+
+            x11::Event::ButtonRelease(button_release) => {
+                if !self.windows.contains_key(&button_release.event) {
+                    return;
+                }
+
+                let window = self.windows.get(&button_release.event).unwrap();
+
+                // Ignore release tick because this event is always sent immediately after the press
+                // tick for scrolling and the backend will dispatch release event automatically during
+                // the press event.
+                if button_release.detail >= 4 && button_release.detail <= 7 {
+                    return;
+                }
+
+                callback(
+                    Input(InputEvent::PointerButton {
+                        event: X11MouseInputEvent {
+                            time: button_release.time,
+                            raw: button_release.detail as u32,
+                            state: ButtonState::Released,
+                        },
+                    }),
+                    &mut Window(Arc::downgrade(window)),
+                );
+            }
+
+            x11::Event::KeyPress(key_press) => {
+                if !self.windows.contains_key(&key_press.event) {
+                    return;
+                }
+
+                callback(
+                    Input(InputEvent::Keyboard {
+                        event: X11KeyboardInputEvent {
+                            time: key_press.time,
+                            // X11's keycodes are +8 relative to the libinput keycodes
+                            // that are expected, so subtract 8 from each keycode to
+                            // match libinput.
+                            //
+                            // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
+                            key: key_press.detail as u32 - 8,
+                            count: self.key_counter.fetch_add(1, Ordering::SeqCst) + 1,
+                            state: KeyState::Pressed,
+                        },
+                    }),
+                    &mut Window(Arc::downgrade(self.windows.get(&key_press.event).unwrap())),
+                )
+            }
+
+            x11::Event::KeyRelease(key_release) => {
+                if !self.windows.contains_key(&key_release.event) {
+                    return;
+                }
+
+                // atomic u32 has no checked_sub, so load and store to do the same.
+                let mut key_counter_val = self.key_counter.load(Ordering::SeqCst);
+                key_counter_val = key_counter_val.saturating_sub(1);
+                self.key_counter.store(key_counter_val, Ordering::SeqCst);
+
+                callback(
+                    Input(InputEvent::Keyboard {
+                        event: X11KeyboardInputEvent {
+                            time: key_release.time,
+                            // X11's keycodes are +8 relative to the libinput keycodes
+                            // that are expected, so subtract 8 from each keycode to
+                            // match libinput.
+                            //
+                            // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
+                            key: key_release.detail as u32 - 8,
+                            count: key_counter_val,
+                            state: KeyState::Released,
+                        },
+                    }),
+                    &mut Window(Arc::downgrade(self.windows.get(&key_release.event).unwrap())),
+                );
+            }
+
+            x11::Event::MotionNotify(motion_notify) => {
+                if !self.windows.contains_key(&motion_notify.event) {
+                    return;
+                }
+
+                let window = self.windows.get(&motion_notify.event).unwrap();
+
+                // Use event_x/y since those are relative the the window receiving events.
+                let x = motion_notify.event_x as f64;
+                let y = motion_notify.event_y as f64;
+
+                let window_size = { *window.size.lock().unwrap() };
+
+                callback(
+                    Input(InputEvent::PointerMotionAbsolute {
+                        event: X11MouseMovedEvent {
+                            time: motion_notify.time,
+                            x,
+                            y,
+                            size: window_size,
+                        },
+                    }),
+                    &mut Window(Arc::downgrade(window)),
+                )
+            }
+
+            x11::Event::ConfigureNotify(configure_notify) => {
+                if !self.windows.contains_key(&configure_notify.window) {
+                    return;
+                }
+
+                let window = self.windows.get(&configure_notify.window).unwrap();
+
+                let previous_size = { *window.size.lock().unwrap() };
+
+                // Did the size of the window change?
+                let configure_notify_size: Size<u16, Logical> =
+                    (configure_notify.width, configure_notify.height).into();
+
+                if configure_notify_size != previous_size {
+                    // Intentionally drop the lock on the size mutex incase a user
+                    // requests a resize or does something which causes a resize
+                    // inside the callback.
+                    {
+                        *window.size.lock().unwrap() = configure_notify_size;
+                    }
+
+                    (callback)(
+                        X11Event::Resized(configure_notify_size),
+                        &mut Window(Arc::downgrade(window)),
+                    );
+
+                    if let Some(resize_sender) = &*window.resize.lock().unwrap() {
+                        let _ = resize_sender.send(configure_notify_size);
+                    }
+                }
+            }
+
+            x11::Event::EnterNotify(enter_notify) => {
+                if !self.windows.contains_key(&enter_notify.event) {
+                    return;
+                }
+
+                self.windows.get(&enter_notify.event).unwrap().cursor_enter();
+            }
+
+            x11::Event::LeaveNotify(leave_notify) => {
+                if !self.windows.contains_key(&leave_notify.event) {
+                    return;
+                }
+
+                self.windows.get(&leave_notify.event).unwrap().cursor_leave();
+            }
+
+            x11::Event::ClientMessage(client_message) => {
+                if !self.windows.contains_key(&client_message.window) {
+                    return;
+                }
+
+                let window = self.windows.get(&client_message.window).unwrap();
+
+                if client_message.data.as_data32()[0] == window.atoms.WM_DELETE_WINDOW
+                // Destroy the window?
+                {
+                    (callback)(X11Event::CloseRequested, &mut Window(Arc::downgrade(window)));
+                }
+            }
+
+            x11::Event::Expose(expose) => {
+                if !self.windows.contains_key(&expose.window) {
+                    return;
+                }
+
+                if expose.count == 0 {
+                    (callback)(
+                        X11Event::Refresh,
+                        &mut Window(Arc::downgrade(self.windows.get(&expose.window).unwrap())),
+                    );
+                }
+            }
+
+            x11::Event::PresentCompleteNotify(complete_notify) => {
+                if !self.windows.contains_key(&complete_notify.window) {
+                    return;
+                }
+
+                let window = self.windows.get(&complete_notify.window).unwrap();
+
+                window.last_msc.store(complete_notify.msc, Ordering::SeqCst);
+
+                (callback)(
+                    X11Event::PresentCompleted,
+                    &mut Window(Arc::downgrade(self.windows.get(&complete_notify.window).unwrap())),
+                );
+            }
+
+            x11::Event::PresentIdleNotify(_) => {
+                // Pixmap is reference counted in the X server, so we do not need to take and drop.
+            }
+
+            x11::Event::Error(e) => {
+                error!(self.log, "X11 protocol error: {:?}", e);
+            }
+
+            _ => (),
+        }
     }
 }
