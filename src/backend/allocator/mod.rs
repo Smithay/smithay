@@ -22,6 +22,12 @@ pub mod dumb;
 pub mod gbm;
 
 mod swapchain;
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
+
 use crate::utils::{Buffer as BufferCoords, Size};
 pub use swapchain::{Slot, Swapchain};
 
@@ -59,4 +65,35 @@ pub trait Allocator<B: Buffer> {
         fourcc: Fourcc,
         modifiers: &[Modifier],
     ) -> Result<B, Self::Error>;
+}
+
+// General implementations for interior mutability.
+
+impl<A: Allocator<B>, B: Buffer> Allocator<B> for Arc<Mutex<A>> {
+    type Error = A::Error;
+
+    fn create_buffer(
+        &mut self,
+        width: u32,
+        height: u32,
+        fourcc: Fourcc,
+        modifiers: &[Modifier],
+    ) -> Result<B, Self::Error> {
+        let mut guard = self.lock().unwrap();
+        guard.create_buffer(width, height, fourcc, modifiers)
+    }
+}
+
+impl<A: Allocator<B>, B: Buffer> Allocator<B> for Rc<RefCell<A>> {
+    type Error = A::Error;
+
+    fn create_buffer(
+        &mut self,
+        width: u32,
+        height: u32,
+        fourcc: Fourcc,
+        modifiers: &[Modifier],
+    ) -> Result<B, Self::Error> {
+        self.borrow_mut().create_buffer(width, height, fourcc, modifiers)
+    }
 }
