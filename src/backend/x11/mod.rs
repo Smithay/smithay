@@ -349,8 +349,7 @@ pub struct X11Surface {
     format: DrmFourcc,
     width: u16,
     height: u16,
-    current: Option<Slot<BufferObject<()>>>,
-    next: Option<Slot<BufferObject<()>>>,
+    buffer: Option<Slot<BufferObject<()>>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -467,8 +466,7 @@ impl X11Surface {
             format,
             width: size.w,
             height: size.h,
-            current: None,
-            next: None,
+            buffer: None,
             resize: recv,
         })
     }
@@ -493,8 +491,8 @@ impl X11Surface {
             self.resize(new_size)?;
         }
 
-        if self.next.is_none() {
-            self.next = Some(
+        if self.buffer.is_none() {
+            self.buffer = Some(
                 self.swapchain
                     .acquire()
                     .map_err(Into::<AllocateBuffersError>::into)?
@@ -502,7 +500,7 @@ impl X11Surface {
             );
         }
 
-        let slot = self.next.as_ref().unwrap();
+        let slot = self.buffer.as_ref().unwrap();
         let age = slot.age();
         match slot.userdata().get::<Dmabuf>() {
             Some(dmabuf) => Ok((dmabuf.clone(), age)),
@@ -515,41 +513,45 @@ impl X11Surface {
     }
 
     /// Consume and submit the buffer to the window.
-    pub fn submit(&mut self) {
+    pub fn submit(&mut self) -> Result<(), AllocateBuffersError> {
         if let Some(connection) = self.connection.upgrade() {
+            // Get a new buffer
+            let mut next = self
+                .swapchain
+                .acquire()
+                .map_err(Into::<AllocateBuffersError>::into)?
+                .ok_or(AllocateBuffersError::NoFreeSlots)?;
+
             // Swap the buffers
-            if let Some(mut next) = self.next.take() {
-                if let Some(current) = self.current.as_mut() {
-                    mem::swap(&mut next, current);
-                    self.swapchain.submitted(next);
-                } else {
-                    self.current = Some(next);
-                }
+            if let Some(current) = self.buffer.as_mut() {
+                mem::swap(&mut next, current);
             }
 
             if let Ok(pixmap) = PixmapWrapper::with_dmabuf(
                 &*connection,
                 &self.window,
-                self.current.as_ref().unwrap().userdata().get::<Dmabuf>().unwrap(),
+                next.userdata().get::<Dmabuf>().unwrap(),
             ) {
                 // Now present the current buffer
                 let _ = pixmap.present(&*connection, &self.window);
             }
+            self.swapchain.submitted(next);
 
             // Flush the connection after presenting to the window to ensure we don't run out of buffer space in the X11 connection.
             let _ = connection.flush();
         }
+        Ok(())
     }
 
     /// Resets the internal buffers, e.g. to reset age values
     pub fn reset_buffers(&mut self) {
         self.swapchain.reset_buffers();
-        self.next = None;
+        self.buffer = None;
     }
 
     fn resize(&mut self, size: Size<u16, Logical>) -> Result<(), AllocateBuffersError> {
         self.swapchain.resize(size.w as u32, size.h as u32);
-        self.next = None;
+        self.buffer = None;
 
         self.width = size.w;
         self.height = size.h;

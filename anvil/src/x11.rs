@@ -306,7 +306,9 @@ pub fn run_x11(log: Logger) {
                     }
 
                     // Submit the buffer
-                    backend_data.surface.submit();
+                    if let Err(err) = backend_data.surface.submit() {
+                        error!(log, "Error submitting buffer for display: {}", err);
+                    }
                 }
 
                 Err(err) => {
