@@ -1,8 +1,11 @@
-use super::{draw_window, Window};
+use super::{draw_window, SurfaceState, Window};
 use crate::{
     backend::renderer::{Frame, ImportAll, Renderer, Transform},
     utils::{Logical, Point, Rectangle},
-    wayland::output::Output,
+    wayland::{
+        compositor::{with_surface_tree_downward, SubsurfaceCachedState, TraversalAction},
+        output::Output,
+    },
 };
 use indexmap::{IndexMap, IndexSet};
 use std::{
@@ -13,7 +16,7 @@ use std::{
         Mutex,
     },
 };
-use wayland_server::protocol::wl_surface;
+use wayland_server::protocol::wl_surface::WlSurface;
 
 static SPACE_ID: AtomicUsize = AtomicUsize::new(0);
 lazy_static::lazy_static! {
@@ -56,9 +59,13 @@ fn window_state(space: usize, w: &Window) -> RefMut<'_, WindowState> {
 struct OutputState {
     location: Point<i32, Logical>,
     render_scale: f64,
-    // damage and last_state in space coordinate space
+
+    // damage and last_state are in space coordinate space
     old_damage: VecDeque<Vec<Rectangle<i32, Logical>>>,
     last_state: IndexMap<usize, Rectangle<i32, Logical>>,
+
+    // surfaces for tracking enter and leave events
+    surfaces: Vec<WlSurface>,
 }
 
 type OutputUserdata = RefCell<HashMap<usize, OutputState>>;
@@ -153,7 +160,7 @@ impl Space {
         })
     }
 
-    pub fn window_for_surface(&self, surface: &wl_surface::WlSurface) -> Option<&Window> {
+    pub fn window_for_surface(&self, surface: &WlSurface) -> Option<&Window> {
         if !surface.as_ref().is_alive() {
             return None;
         }
@@ -234,8 +241,124 @@ impl Space {
         self.outputs.get(0).cloned()
     }
 
-    pub fn cleanup(&mut self) {
+    pub fn refresh(&mut self) {
         self.windows.retain(|w| w.toplevel().alive());
+
+        for output in &mut self.outputs {
+            output_state(self.id, output)
+                .surfaces
+                .retain(|s| s.as_ref().is_alive());
+        }
+
+        for window in &self.windows {
+            let bbox = window_rect(window, &self.id);
+            let kind = window.toplevel();
+
+            for output in &self.outputs {
+                let output_geometry = self
+                    .output_geometry(output)
+                    .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (0, 0)));
+                let mut output_state = output_state(self.id, output);
+
+                // Check if the bounding box of the toplevel intersects with
+                // the output, if not no surface in the tree can intersect with
+                // the output.
+                if !output_geometry.overlaps(bbox) {
+                    if let Some(surface) = kind.get_surface() {
+                        with_surface_tree_downward(
+                            surface,
+                            (),
+                            |_, _, _| TraversalAction::DoChildren(()),
+                            |wl_surface, _, _| {
+                                if output_state.surfaces.contains(wl_surface) {
+                                    slog::trace!(
+                                        self.logger,
+                                        "surface ({:?}) leaving output {:?}",
+                                        wl_surface,
+                                        output.name()
+                                    );
+                                    output.leave(wl_surface);
+                                    output_state.surfaces.retain(|s| s != wl_surface);
+                                }
+                            },
+                            |_, _, _| true,
+                        )
+                    }
+                    continue;
+                }
+
+                if let Some(surface) = kind.get_surface() {
+                    with_surface_tree_downward(
+                        surface,
+                        window_loc(window, &self.id),
+                        |_, states, location| {
+                            let mut location = *location;
+                            let data = states.data_map.get::<RefCell<SurfaceState>>();
+
+                            if data.is_some() {
+                                if states.role == Some("subsurface") {
+                                    let current = states.cached_state.current::<SubsurfaceCachedState>();
+                                    location += current.location;
+                                }
+
+                                TraversalAction::DoChildren(location)
+                            } else {
+                                // If the parent surface is unmapped, then the child surfaces are hidden as
+                                // well, no need to consider them here.
+                                TraversalAction::SkipChildren
+                            }
+                        },
+                        |wl_surface, states, &loc| {
+                            let data = states.data_map.get::<RefCell<SurfaceState>>();
+
+                            if let Some(size) = data.and_then(|d| d.borrow().size()) {
+                                let surface_rectangle = Rectangle { loc, size };
+
+                                if output_geometry.overlaps(surface_rectangle) {
+                                    // We found a matching output, check if we already sent enter
+                                    if !output_state.surfaces.contains(wl_surface) {
+                                        slog::trace!(
+                                            self.logger,
+                                            "surface ({:?}) entering output {:?}",
+                                            wl_surface,
+                                            output.name()
+                                        );
+                                        output.enter(wl_surface);
+                                        output_state.surfaces.push(wl_surface.clone());
+                                    }
+                                } else {
+                                    // Surface does not match output, if we sent enter earlier
+                                    // we should now send leave
+                                    if output_state.surfaces.contains(wl_surface) {
+                                        slog::trace!(
+                                            self.logger,
+                                            "surface ({:?}) leaving output {:?}",
+                                            wl_surface,
+                                            output.name()
+                                        );
+                                        output.leave(wl_surface);
+                                        output_state.surfaces.retain(|s| s != wl_surface);
+                                    }
+                                }
+                            } else {
+                                // Maybe the the surface got unmapped, send leave on output
+                                if output_state.surfaces.contains(wl_surface) {
+                                    slog::trace!(
+                                        self.logger,
+                                        "surface ({:?}) leaving output {:?}",
+                                        wl_surface,
+                                        output.name()
+                                    );
+                                    output.leave(wl_surface);
+                                    output_state.surfaces.retain(|s| s != wl_surface);
+                                }
+                            }
+                        },
+                        |_, _, _| true,
+                    )
+                }
+            }
+        }
     }
 
     pub fn render_output<R>(

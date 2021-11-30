@@ -99,7 +99,7 @@ impl Kind {
 }
 
 #[derive(Default)]
-struct SurfaceState {
+pub(super) struct SurfaceState {
     buffer_dimensions: Option<Size<i32, Physical>>,
     buffer_scale: i32,
     buffer: Option<wl_buffer::WlBuffer>,
