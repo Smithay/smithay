@@ -37,11 +37,11 @@
 mod keyboard;
 mod pointer;
 
+pub use keyboard::KeyboardUserData;
+pub use pointer::PointerUserData;
+
 use std::sync::{Arc, Mutex};
 
-use crate::wayland::seat2::pointer::PointerUserData;
-
-use self::keyboard::KeyboardUserData;
 pub use self::{
     keyboard::{
         keysyms, Error as KeyboardError, FilterResult, KeyboardHandle, Keysym, ModifiersState, XkbConfig,
@@ -54,11 +54,65 @@ pub use self::{
 
 use wayland_server::{
     protocol::{
+        wl_keyboard::WlKeyboard,
+        wl_pointer::WlPointer,
         wl_seat::{self, WlSeat},
         wl_surface,
     },
-    DestructionNotify, Dispatch, Display, DisplayHandle, GlobalDispatch, Resource,
+    DataInit, DestructionNotify, Dispatch, Display, DisplayHandle, GlobalDispatch, Resource,
 };
+
+///  Dispatch delegation helper
+pub trait DelegateDispatchBase<I: Resource> {
+    ///  Dispatch delegation helper
+    type UserData: Send + Sync + 'static;
+}
+
+///  Dispatch delegation helper
+pub trait DelegateDispatch<
+    I: Resource,
+    D: Dispatch<I, UserData = <Self as DelegateDispatchBase<I>>::UserData>,
+>: Sized + DelegateDispatchBase<I>
+{
+    ///  Dispatch delegation helper
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &I,
+        request: I::Request,
+        data: &Self::UserData,
+        dhandle: &mut DisplayHandle<'_, D>,
+        init: &mut DataInit<'_, D>,
+    );
+}
+
+///  Dispatch delegation helper
+pub trait DelegateGlobalDispatchBase<I: Resource> {
+    ///  Dispatch delegation helper
+    type GlobalData: Send + Sync + 'static;
+}
+
+///  Dispatch delegation helper
+pub trait DelegateGlobalDispatch<
+    I: Resource,
+    D: GlobalDispatch<I, GlobalData = <Self as DelegateGlobalDispatchBase<I>>::GlobalData>
+        + Dispatch<I, UserData = <Self as DelegateDispatchBase<I>>::UserData>,
+>: Sized + DelegateGlobalDispatchBase<I> + DelegateDispatch<I, D>
+{
+    ///  Dispatch delegation helper
+    fn bind(
+        &mut self,
+        handle: &mut DisplayHandle<'_, D>,
+        client: &wayland_server::Client,
+        resource: &I,
+        global_data: &Self::GlobalData,
+    ) -> <Self as DelegateDispatchBase<I>>::UserData;
+
+    ///  Dispatch delegation helper
+    fn can_view(_client: wayland_server::Client, _global_data: &Self::GlobalData) -> bool {
+        true
+    }
+}
 
 #[derive(Debug)]
 struct Inner {
@@ -313,6 +367,71 @@ impl DestructionNotify for SeatUserData {
     }
 }
 
+impl DelegateDispatchBase<WlSeat> for Seat {
+    type UserData = SeatUserData;
+}
+
+impl<D> DelegateDispatch<WlSeat, D> for Seat
+where
+    D: Dispatch<WlSeat, UserData = SeatUserData>
+        + Dispatch<WlKeyboard, UserData = KeyboardUserData>
+        + Dispatch<WlPointer, UserData = PointerUserData>,
+{
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &WlSeat,
+        request: wl_seat::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, D>,
+        data_init: &mut wayland_server::DataInit<'_, D>,
+    ) {
+        match request {
+            wl_seat::Request::GetPointer { id } => {
+                let inner = self.arc.inner.lock().unwrap();
+
+                let pointer = data_init.init(
+                    id,
+                    PointerUserData {
+                        handle: inner.pointer.clone(),
+                    },
+                );
+
+                // let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref());
+                // if let Some(ref ptr_handle) = inner.pointer {
+                //     ptr_handle.new_pointer(pointer);
+                // } else {
+                //     // we should send a protocol error... but the protocol does not allow
+                //     // us, so this pointer will just remain inactive ¯\_(ツ)_/¯
+                // }
+            }
+            wl_seat::Request::GetKeyboard { id } => {
+                let inner = self.arc.inner.lock().unwrap();
+
+                let keyboard = data_init.init(
+                    id,
+                    KeyboardUserData {
+                        handle: inner.keyboard.clone(),
+                    },
+                );
+
+                if let Some(ref h) = inner.keyboard {
+                    h.new_kbd(cx, keyboard);
+                } else {
+                    // same as pointer, should error but cannot
+                }
+            }
+            wl_seat::Request::GetTouch { .. } => {
+                // TODO
+            }
+            wl_seat::Request::Release => {
+                // Our destructors already handle it
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl Dispatch<WlSeat> for Seat {
     type UserData = SeatUserData;
 
@@ -367,6 +486,39 @@ impl Dispatch<WlSeat> for Seat {
                 // Our destructors already handle it
             }
             _ => unreachable!(),
+        }
+    }
+}
+
+impl DelegateGlobalDispatchBase<WlSeat> for Seat {
+    type GlobalData = ();
+}
+
+impl<D> DelegateGlobalDispatch<WlSeat, D> for Seat
+where
+    D: GlobalDispatch<WlSeat, GlobalData = ()>
+        + Dispatch<WlSeat, UserData = SeatUserData>
+        + Dispatch<WlKeyboard, UserData = KeyboardUserData>
+        + Dispatch<WlPointer, UserData = PointerUserData>,
+{
+    fn bind(
+        &mut self,
+        handle: &mut wayland_server::DisplayHandle<'_, D>,
+        client: &wayland_server::Client,
+        resource: &WlSeat,
+        global_data: &Self::GlobalData,
+    ) -> SeatUserData {
+        if resource.version() >= 2 {
+            resource.name(handle, self.arc.name.clone());
+        }
+
+        let mut inner = self.arc.inner.lock().unwrap();
+        resource.capabilities(handle, inner.compute_caps());
+
+        inner.known_seats.push(resource.clone());
+
+        SeatUserData {
+            seat: Arc::downgrade(&self.arc),
         }
     }
 }

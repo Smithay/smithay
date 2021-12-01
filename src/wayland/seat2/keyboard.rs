@@ -416,6 +416,15 @@ impl KeyboardHandle {
                 kbd.modifiers(cx, serial.into(), dep, la, lo, gr);
             }
         });
+
+        // TODO: Remove this
+        // for kbd in &guard.known_kbds {
+        //     kbd.key(cx, serial.into(), time, keycode, wl_state);
+        //     if let Some((dep, la, lo, gr)) = modifiers {
+        //         kbd.modifiers(cx, serial.into(), dep, la, lo, gr);
+        //     }
+        // }
+
         if guard.focus.is_some() {
             trace!(self.arc.logger, "Input forwarded to client");
         } else {
