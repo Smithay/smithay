@@ -117,16 +117,10 @@ impl Space {
     /// Map window and moves it to top of the stack
     ///
     /// This can safely be called on an already mapped window
-    pub fn map_window(&mut self, window: &Window, location: Point<i32, Logical>) -> Result<(), SpaceError> {
-        window_state(self.id, window).location = location;
+    pub fn map_window(&mut self, window: &Window, location: Point<i32, Logical>) {
+        window_state(self.id, window).location = location - window.geometry().loc;
         self.windows.shift_remove(window);
         self.windows.insert(window.clone());
-        Ok(())
-    }
-
-    pub fn raise_window(&mut self, window: &Window) {
-        let loc = window_state(self.id, window).location;
-        let _ = self.map_window(window, loc);
 
         // TODO: should this be handled by us?
         window.set_activated(true);
@@ -135,6 +129,11 @@ impl Space {
                 w.set_activated(false);
             }
         }
+    }
+
+    pub fn raise_window(&mut self, window: &Window) {
+        let loc = window_geo(window, &self.id).loc;
+        self.map_window(window, loc);
     }
 
     /// Unmap a window from this space by its id
@@ -153,9 +152,7 @@ impl Space {
     /// Get a reference to the window under a given point, if any
     pub fn window_under(&self, point: Point<f64, Logical>) -> Option<&Window> {
         self.windows.iter().find(|w| {
-            let loc = window_state(self.id, w).location;
-            let mut bbox = w.bbox();
-            bbox.loc += loc;
+            let bbox = window_rect(w, &self.id);
             bbox.to_f64().contains(point)
         })
     }
@@ -171,6 +168,14 @@ impl Space {
     }
 
     pub fn window_geometry(&self, w: &Window) -> Option<Rectangle<i32, Logical>> {
+        if !self.windows.contains(w) {
+            return None;
+        }
+
+        Some(window_geo(w, &self.id))
+    }
+
+    pub fn window_bbox(&self, w: &Window) -> Option<Rectangle<i32, Logical>> {
         if !self.windows.contains(w) {
             return None;
         }
@@ -397,7 +402,7 @@ impl Space {
             })
             .collect::<Vec<Rectangle<i32, Logical>>>()
         {
-            slog::debug!(self.logger, "Removing window at: {:?}", old_window);
+            slog::trace!(self.logger, "Removing window at: {:?}", old_window);
             damage.push(old_window);
         }
 
@@ -456,7 +461,7 @@ impl Space {
             |renderer, frame| {
                 // First clear all damaged regions
                 for geo in &damage {
-                    slog::debug!(self.logger, "Clearing at {:?}", geo);
+                    slog::trace!(self.logger, "Clearing at {:?}", geo);
                     frame.clear(
                         clear_color,
                         Some(geo.to_f64().to_physical(state.render_scale).to_i32_ceil()),
@@ -469,7 +474,7 @@ impl Space {
                     let mut loc = window_loc(window, &self.id);
                     if damage.iter().any(|geo| wgeo.overlaps(*geo)) {
                         loc -= output_geo.loc;
-                        slog::debug!(self.logger, "Rendering window at {:?}", wgeo);
+                        slog::trace!(self.logger, "Rendering window at {:?}", wgeo);
                         draw_window(renderer, frame, window, state.render_scale, loc, &self.logger)?;
                         window_state(self.id, window).drawn = true;
                     }
@@ -520,9 +525,18 @@ pub enum RenderError<R: Renderer> {
     OutputNoMode,
 }
 
+fn window_geo(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
+    let loc = window_loc(window, space_id);
+    let mut wgeo = window.geometry();
+    wgeo.loc += loc;
+    wgeo
+}
+
 fn window_rect(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
     let loc = window_loc(window, space_id);
-    window_bbox_with_pos(window, loc)
+    let mut wgeo = window.bbox();
+    wgeo.loc += loc;
+    wgeo
 }
 
 fn window_loc(window: &Window, space_id: &usize) -> Point<i32, Logical> {
@@ -534,10 +548,4 @@ fn window_loc(window: &Window, space_id: &usize) -> Point<i32, Logical> {
         .get(space_id)
         .unwrap()
         .location
-}
-
-fn window_bbox_with_pos(window: &Window, pos: Point<i32, Logical>) -> Rectangle<i32, Logical> {
-    let mut wgeo = window.bbox();
-    wgeo.loc += pos;
-    wgeo
 }
