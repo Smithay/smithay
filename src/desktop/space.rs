@@ -118,7 +118,11 @@ impl Space {
     ///
     /// This can safely be called on an already mapped window
     pub fn map_window(&mut self, window: &Window, location: Point<i32, Logical>) {
-        window_state(self.id, window).location = location - window.geometry().loc;
+        self.raise_window(window);
+        window_state(self.id, window).location = location;
+    }
+
+    pub fn raise_window(&mut self, window: &Window) {
         self.windows.shift_remove(window);
         self.windows.insert(window.clone());
 
@@ -129,11 +133,6 @@ impl Space {
                 w.set_activated(false);
             }
         }
-    }
-
-    pub fn raise_window(&mut self, window: &Window) {
-        let loc = window_geo(window, &self.id).loc;
-        self.map_window(window, loc);
     }
 
     /// Unmap a window from this space by its id
@@ -540,7 +539,7 @@ pub enum RenderError<R: Renderer> {
 fn window_geo(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
     let loc = window_loc(window, space_id);
     let mut wgeo = window.geometry();
-    wgeo.loc += loc;
+    wgeo.loc = loc;
     wgeo
 }
 
