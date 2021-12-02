@@ -229,21 +229,33 @@ impl Space {
         Some(state.render_scale)
     }
 
-    pub fn output_for_window(&self, w: &Window) -> Option<Output> {
+    pub fn outputs_for_window(&self, w: &Window) -> Vec<Output> {
         if !self.windows.contains(w) {
-            return None;
+            return Vec::new();
         }
 
-        let w_geo = self.window_geometry(w).unwrap();
-        for o in &self.outputs {
-            let o_geo = self.output_geometry(o).unwrap();
-            if w_geo.overlaps(o_geo) {
-                return Some(o.clone());
-            }
-        }
-
-        // TODO primary output
-        self.outputs.get(0).cloned()
+        let w_geo = window_rect(w, &self.id);
+        let mut outputs = self
+            .outputs
+            .iter()
+            .cloned()
+            .filter(|o| {
+                let o_geo = self.output_geometry(o).unwrap();
+                w_geo.overlaps(o_geo)
+            })
+            .collect::<Vec<Output>>();
+        outputs.sort_by(|o1, o2| {
+            let overlap = |rect1: Rectangle<i32, Logical>, rect2: Rectangle<i32, Logical>| -> i32 {
+                // x overlap
+                std::cmp::max(0, std::cmp::min(rect1.loc.x + rect1.size.w, rect2.loc.x + rect2.size.w) - std::cmp::max(rect1.loc.x, rect2.loc.x))
+                // y overlap
+                * std::cmp::max(0, std::cmp::min(rect1.loc.y + rect1.size.h, rect2.loc.y + rect2.size.h) - std::cmp::max(rect1.loc.y, rect2.loc.y))
+            };
+            let o1_area = overlap(self.output_geometry(o1).unwrap(), w_geo);
+            let o2_area = overlap(self.output_geometry(o2).unwrap(), w_geo);
+            o1_area.cmp(&o2_area)
+        });
+        outputs
     }
 
     pub fn refresh(&mut self) {
