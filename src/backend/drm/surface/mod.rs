@@ -36,6 +36,7 @@ pub struct DrmSurface<A: AsRawFd + 'static> {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum DrmSurfaceInternal<A: AsRawFd + 'static> {
     Atomic(AtomicDrmSurface<A>),
     Legacy(LegacyDrmSurface<A>),

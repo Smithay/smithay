@@ -388,7 +388,7 @@ xdg_role!(
 );
 
 /// Represents the state of the popup
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct PopupState {
     /// The positioner state can be used by the compositor
     /// to calculate the best placement for the popup.
@@ -406,15 +406,6 @@ pub struct PopupState {
     /// The position is relative to the window geometry as defined by
     /// xdg_surface.set_window_geometry of the parent surface.
     pub geometry: Rectangle<i32, Logical>,
-}
-
-impl Default for PopupState {
-    fn default() -> Self {
-        Self {
-            geometry: Default::default(),
-            positioner: Default::default(),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -598,7 +589,7 @@ impl PositionerState {
 }
 
 /// State of a regular toplevel surface
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct ToplevelState {
     /// The suggested size of the surface
     pub size: Option<Size<i32, Logical>>,
@@ -611,17 +602,6 @@ pub struct ToplevelState {
 
     /// The xdg decoration mode of the surface
     pub decoration_mode: Option<zxdg_toplevel_decoration_v1::Mode>,
-}
-
-impl Default for ToplevelState {
-    fn default() -> Self {
-        ToplevelState {
-            fullscreen_output: None,
-            states: Default::default(),
-            size: None,
-            decoration_mode: None,
-        }
-    }
 }
 
 impl Clone for ToplevelState {
@@ -641,7 +621,7 @@ impl Clone for ToplevelState {
 /// having the same `xdg_toplevel::State` multiple times
 /// and simplifies setting and un-setting a particularly
 /// `xdg_toplevel::State`
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct ToplevelStateSet {
     states: Vec<xdg_toplevel::State>,
 }
@@ -711,12 +691,6 @@ impl ToplevelStateSet {
     }
 }
 
-impl Default for ToplevelStateSet {
-    fn default() -> Self {
-        Self { states: Vec::new() }
-    }
-}
-
 impl IntoIterator for ToplevelStateSet {
     type Item = xdg_toplevel::State;
     type IntoIter = std::vec::IntoIter<Self::Item>;
@@ -733,7 +707,7 @@ impl From<ToplevelStateSet> for Vec<xdg_toplevel::State> {
 }
 
 /// Represents the client pending state
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct SurfaceCachedState {
     /// Holds the double-buffered geometry that may be specified
     /// by xdg_surface.set_window_geometry.
@@ -752,16 +726,6 @@ pub struct SurfaceCachedState {
     /// This is only relevant for xdg_toplevel, and will always be
     /// `(0, 0)` for xdg_popup.
     pub max_size: Size<i32, Logical>,
-}
-
-impl Default for SurfaceCachedState {
-    fn default() -> Self {
-        Self {
-            geometry: None,
-            min_size: Default::default(),
-            max_size: Default::default(),
-        }
-    }
 }
 
 impl Cacheable for SurfaceCachedState {

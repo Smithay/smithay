@@ -87,7 +87,7 @@ pub fn run_winit(log: Logger) {
     let data = WinitData {
         #[cfg(feature = "debug")]
         fps_texture: import_bitmap(
-            &mut renderer.borrow_mut().renderer(),
+            renderer.borrow_mut().renderer(),
             &image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
                 .decode()
                 .unwrap()

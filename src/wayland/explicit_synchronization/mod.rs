@@ -87,7 +87,7 @@ impl ExplicitBufferRelease {
 ///
 /// When processing the current state, [`Option::take`] the values from it. Otherwise they'll be
 /// treated as unused and released when overwritten by the next client commit.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ExplicitSyncState {
     /// An acquire `dma_fence` object, that you should wait on before accessing the contents of the
     /// buffer associated with the surface.
@@ -95,15 +95,6 @@ pub struct ExplicitSyncState {
     /// A buffer release object, that you should use to signal the client when you are done using the
     /// buffer associated with the surface.
     pub release: Option<ExplicitBufferRelease>,
-}
-
-impl Default for ExplicitSyncState {
-    fn default() -> Self {
-        ExplicitSyncState {
-            acquire: None,
-            release: None,
-        }
-    }
 }
 
 impl Cacheable for ExplicitSyncState {
