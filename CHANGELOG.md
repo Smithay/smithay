@@ -60,6 +60,7 @@
 
 - `Multicache::has()` now correctly does what is expected of it
 - `xdg_shell` had an issue where it was possible that configured state gets overwritten before it was acked/committed.
+- `wl_keyboard` rewind the `keymap` file before passing it to the client
 
 #### Backends
 
