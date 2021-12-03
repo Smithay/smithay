@@ -5,7 +5,7 @@ use std::{
     cell::RefCell,
     default::Default,
     fmt,
-    io::{Error as IoError, Write},
+    io::{Error as IoError, Seek, Write},
     ops::Deref as _,
     os::unix::io::AsRawFd,
     rc::Rc,
@@ -481,6 +481,7 @@ impl KeyboardHandle {
         let ret = tempfile().and_then(|mut f| {
             f.write_all(self.arc.keymap.as_bytes())?;
             f.flush()?;
+            f.rewind()?;
             kbd.keymap(
                 KeymapFormat::XkbV1,
                 f.as_raw_fd(),
