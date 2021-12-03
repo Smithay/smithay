@@ -346,7 +346,7 @@ impl Output {
 
     /// This function allows to run a [FnMut] on every
     /// [WlOutput] matching the same [Client] as provided
-    pub fn with_client_outputs<F>(&self, client: Client, mut f: F)
+    pub fn with_client_outputs<F>(&self, client: Client, f: F)
     where
         F: FnMut(&WlOutput),
     {
@@ -359,7 +359,7 @@ impl Output {
                 Some(output_client) => output_client.equals(&client),
                 None => false,
             })
-            .for_each(|output| f(output))
+            .for_each(f)
     }
 
     /// Sends `wl_surface.enter` for the provided surface

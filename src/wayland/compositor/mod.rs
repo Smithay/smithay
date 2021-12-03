@@ -244,16 +244,10 @@ pub enum RectangleKind {
 /// This struct contains an ordered `Vec` containing the rectangles defining
 /// a region. They should be added or subtracted in this order to compute the
 /// actual contents of the region.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RegionAttributes {
     /// List of rectangle part of this region
     pub rects: Vec<(RectangleKind, Rectangle<i32, Logical>)>,
-}
-
-impl Default for RegionAttributes {
-    fn default() -> RegionAttributes {
-        RegionAttributes { rects: Vec::new() }
-    }
 }
 
 impl RegionAttributes {

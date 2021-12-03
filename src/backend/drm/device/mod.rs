@@ -70,6 +70,7 @@ impl<A: AsRawFd + 'static> Drop for FdWrapper<A> {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum DrmDeviceInternal<A: AsRawFd + 'static> {
     Atomic(AtomicDrmDevice<A>),
     Legacy(LegacyDrmDevice<A>),

@@ -61,18 +61,10 @@ pub enum BlockerState {
     Cancelled,
 }
 
+#[derive(Default)]
 struct TransactionState {
     surfaces: Vec<(WlSurface, Serial)>,
     blockers: Vec<Box<dyn Blocker + Send>>,
-}
-
-impl Default for TransactionState {
-    fn default() -> Self {
-        TransactionState {
-            surfaces: Vec::new(),
-            blockers: Vec::new(),
-        }
-    }
 }
 
 impl TransactionState {
@@ -213,19 +205,11 @@ impl Transaction {
 }
 
 // This queue should be per-client
+#[derive(Default)]
 pub(crate) struct TransactionQueue {
     transactions: Vec<Transaction>,
     // we keep the hashset around to reuse allocations
     seen_surfaces: HashSet<u32>,
-}
-
-impl Default for TransactionQueue {
-    fn default() -> Self {
-        TransactionQueue {
-            transactions: Vec::new(),
-            seen_surfaces: HashSet::new(),
-        }
-    }
 }
 
 impl TransactionQueue {

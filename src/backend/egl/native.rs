@@ -199,7 +199,7 @@ impl EGLNativeDisplay for EGLDevice {
 
 /// Trait for types returning valid surface pointers for initializing egl
 ///
-/// ## Unsafety
+/// ## Safety
 ///
 /// The returned [`NativeWindowType`](ffi::NativeWindowType) must be valid for EGL
 /// and there is no way to test that.
