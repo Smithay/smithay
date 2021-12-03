@@ -25,9 +25,16 @@ pub enum X11Error {
     #[error("Creating the window failed")]
     CreateWindow(CreateWindowError),
 
-    /// An X11 surface already exists for this backend.
-    #[error("An X11 surface already exists for this backend")]
+    /// An X11 surface already exists for this window.
+    #[error("An X11 surface already exists for this window")]
     SurfaceExists,
+
+    /// An invalid window was used to create an X11 surface.
+    ///
+    /// This error will be risen if the window was destroyed or the window does not belong to the [`X11Handle`](super::X11Handle)
+    /// in use.
+    #[error("An invalid window was used to create an X11 surface")]
+    InvalidWindow,
 
     /// The X server is not capable of direct rendering.
     #[error("The X server is not capable of direct rendering")]

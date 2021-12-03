@@ -30,6 +30,7 @@
 - `Present` was merged into the `X11Surface`
 - `X11Surface::buffer` now additionally returns the age of the buffer
 - `X11Surface` now has an explicit `submit` function
+- `X11Surface` is now multi-window capable.
 
 ### Additions
 
