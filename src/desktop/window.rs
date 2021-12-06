@@ -1,11 +1,14 @@
 use crate::{
-    backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer, Texture},
-    utils::{Logical, Physical, Point, Rectangle, Size},
+    backend::renderer::{
+        utils::{draw_surface_tree, SurfaceState},
+        Frame, ImportAll, Renderer, Texture,
+    },
+    desktop::PopupManager,
+    utils::{Logical, Point, Rectangle, Size},
     wayland::{
         compositor::{
-            add_commit_hook, is_sync_subsurface, with_states, with_surface_tree_downward,
-            with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState, SurfaceAttributes,
-            TraversalAction,
+            with_states, with_surface_tree_downward, with_surface_tree_upward, Damage, SubsurfaceCachedState,
+            SurfaceAttributes, TraversalAction,
         },
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
@@ -98,62 +101,7 @@ impl Kind {
     }
 }
 
-#[derive(Default)]
-pub(super) struct SurfaceState {
-    buffer_dimensions: Option<Size<i32, Physical>>,
-    buffer_scale: i32,
-    buffer: Option<wl_buffer::WlBuffer>,
-    texture: Option<Box<dyn std::any::Any + 'static>>,
-}
-
-fn surface_commit(surface: &wl_surface::WlSurface) {
-    if !is_sync_subsurface(surface) {
-        with_surface_tree_upward(
-            surface,
-            (),
-            |_, _, _| TraversalAction::DoChildren(()),
-            |_surf, states, _| {
-                states
-                    .data_map
-                    .insert_if_missing(|| RefCell::new(SurfaceState::default()));
-                let mut data = states
-                    .data_map
-                    .get::<RefCell<SurfaceState>>()
-                    .unwrap()
-                    .borrow_mut();
-                data.update_buffer(&mut *states.cached_state.current::<SurfaceAttributes>());
-            },
-            |_, _, _| true,
-        );
-    }
-}
-
 impl SurfaceState {
-    pub fn update_buffer(&mut self, attrs: &mut SurfaceAttributes) {
-        match attrs.buffer.take() {
-            Some(BufferAssignment::NewBuffer { buffer, .. }) => {
-                // new contents
-                self.buffer_dimensions = buffer_dimensions(&buffer);
-                self.buffer_scale = attrs.buffer_scale;
-                if let Some(old_buffer) = std::mem::replace(&mut self.buffer, Some(buffer)) {
-                    if &old_buffer != self.buffer.as_ref().unwrap() {
-                        old_buffer.release();
-                    }
-                }
-                self.texture = None;
-            }
-            Some(BufferAssignment::Removed) => {
-                // remove the contents
-                self.buffer_dimensions = None;
-                if let Some(buffer) = self.buffer.take() {
-                    buffer.release();
-                };
-                self.texture = None;
-            }
-            None => {}
-        }
-    }
-
     /// Returns the size of the surface.
     pub fn size(&self) -> Option<Size<i32, Logical>> {
         self.buffer_dimensions
@@ -248,34 +196,25 @@ impl Window {
     /// A bounding box over this window and its children.
     // TODO: Cache and document when to trigger updates. If possible let space do it
     pub fn bbox(&self) -> Rectangle<i32, Logical> {
-        let mut bounding_box = Rectangle::from_loc_and_size((0, 0), (0, 0));
-        if let Some(wl_surface) = self.0.toplevel.get_surface() {
-            with_surface_tree_downward(
-                wl_surface,
-                (0, 0).into(),
-                |_, states, loc: &Point<i32, Logical>| {
-                    let mut loc = *loc;
-                    let data = states.data_map.get::<RefCell<SurfaceState>>();
+        if let Some(surface) = self.0.toplevel.get_surface() {
+            bbox_from_surface_tree(surface, (0, 0))
+        } else {
+            Rectangle::from_loc_and_size((0, 0), (0, 0))
+        }
+    }
 
-                    if let Some(size) = data.and_then(|d| d.borrow().size()) {
-                        if states.role == Some("subsurface") {
-                            let current = states.cached_state.current::<SubsurfaceCachedState>();
-                            loc += current.location;
-                        }
-
-                        // Update the bounding box.
-                        bounding_box = bounding_box.merge(Rectangle::from_loc_and_size(loc, size));
-
-                        TraversalAction::DoChildren(loc)
-                    } else {
-                        // If the parent surface is unmapped, then the child surfaces are hidden as
-                        // well, no need to consider them here.
-                        TraversalAction::SkipChildren
-                    }
-                },
-                |_, _, _| {},
-                |_, _, _| true,
-            );
+    pub fn bbox_with_popups(&self) -> Rectangle<i32, Logical> {
+        let mut bounding_box = self.bbox();
+        if let Some(surface) = self.0.toplevel.get_surface() {
+            for (popup, location) in PopupManager::popups_for_surface(surface)
+                .ok()
+                .into_iter()
+                .flatten()
+            {
+                if let Some(surface) = popup.get_surface() {
+                    bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, location));
+                }
+            }
         }
         bounding_box
     }
@@ -310,25 +249,17 @@ impl Window {
     /// Sends the frame callback to all the subsurfaces in this
     /// window that requested it
     pub fn send_frame(&self, time: u32) {
-        if let Some(wl_surface) = self.0.toplevel.get_surface() {
-            with_surface_tree_downward(
-                wl_surface,
-                (),
-                |_, _, &()| TraversalAction::DoChildren(()),
-                |_surf, states, &()| {
-                    // the surface may not have any user_data if it is a subsurface and has not
-                    // yet been commited
-                    for callback in states
-                        .cached_state
-                        .current::<SurfaceAttributes>()
-                        .frame_callbacks
-                        .drain(..)
-                    {
-                        callback.done(time);
-                    }
-                },
-                |_, _, &()| true,
-            );
+        if let Some(surface) = self.0.toplevel.get_surface() {
+            send_frames_surface_tree(surface, time);
+            for (popup, _) in PopupManager::popups_for_surface(surface)
+                .ok()
+                .into_iter()
+                .flatten()
+            {
+                if let Some(surface) = popup.get_surface() {
+                    send_frames_surface_tree(surface, time);
+                }
+            }
         }
     }
 
@@ -338,89 +269,41 @@ impl Window {
         &self,
         point: Point<f64, Logical>,
     ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
-        let found = RefCell::new(None);
-        if let Some(wl_surface) = self.0.toplevel.get_surface() {
-            with_surface_tree_downward(
-                wl_surface,
-                (0, 0).into(),
-                |wl_surface, states, location: &Point<i32, Logical>| {
-                    let mut location = *location;
-                    let data = states.data_map.get::<RefCell<SurfaceState>>();
+        if let Some(surface) = self.0.toplevel.get_surface() {
+            for (popup, location) in PopupManager::popups_for_surface(surface)
+                .ok()
+                .into_iter()
+                .flatten()
+            {
+                if let Some(result) = popup
+                    .get_surface()
+                    .and_then(|surface| under_from_surface_tree(surface, point, location))
+                {
+                    return Some(result);
+                }
+            }
 
-                    if states.role == Some("subsurface") {
-                        let current = states.cached_state.current::<SubsurfaceCachedState>();
-                        location += current.location;
-                    }
-
-                    let contains_the_point = data
-                        .map(|data| {
-                            data.borrow()
-                                .contains_point(&*states.cached_state.current(), point - location.to_f64())
-                        })
-                        .unwrap_or(false);
-                    if contains_the_point {
-                        *found.borrow_mut() = Some((wl_surface.clone(), location));
-                    }
-
-                    TraversalAction::DoChildren(location)
-                },
-                |_, _, _| {},
-                |_, _, _| {
-                    // only continue if the point is not found
-                    found.borrow().is_none()
-                },
-            );
+            under_from_surface_tree(surface, point, (0, 0))
+        } else {
+            None
         }
-        found.into_inner()
     }
 
     /// Damage of all the surfaces of this window
     pub(super) fn accumulated_damage(&self) -> Vec<Rectangle<i32, Logical>> {
         let mut damage = Vec::new();
-        let location = (0, 0).into();
         if let Some(surface) = self.0.toplevel.get_surface() {
-            with_surface_tree_upward(
-                surface,
-                location,
-                |_surface, states, location| {
-                    let mut location = *location;
-                    if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
-                        let data = data.borrow();
-                        if data.texture.is_none() {
-                            if states.role == Some("subsurface") {
-                                let current = states.cached_state.current::<SubsurfaceCachedState>();
-                                location += current.location;
-                            }
-                            return TraversalAction::DoChildren(location);
-                        }
-                    }
-                    TraversalAction::SkipChildren
-                },
-                |_surface, states, location| {
-                    let mut location = *location;
-                    if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
-                        let data = data.borrow();
-                        let attributes = states.cached_state.current::<SurfaceAttributes>();
-
-                        if data.texture.is_none() {
-                            if states.role == Some("subsurface") {
-                                let current = states.cached_state.current::<SubsurfaceCachedState>();
-                                location += current.location;
-                            }
-
-                            damage.extend(attributes.damage.iter().map(|dmg| {
-                                let mut rect = match dmg {
-                                    Damage::Buffer(rect) => rect.to_logical(attributes.buffer_scale),
-                                    Damage::Surface(rect) => *rect,
-                                };
-                                rect.loc += location;
-                                rect
-                            }));
-                        }
-                    }
-                },
-                |_, _, _| true,
-            )
+            damage.extend(damage_from_surface_tree(surface, (0, 0)));
+            for (popup, location) in PopupManager::popups_for_surface(surface)
+                .ok()
+                .into_iter()
+                .flatten()
+            {
+                if let Some(surface) = popup.get_surface() {
+                    let popup_damage = damage_from_surface_tree(surface, location);
+                    damage.extend(popup_damage);
+                }
+            }
         }
         damage
     }
@@ -432,32 +315,155 @@ impl Window {
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.user_data
     }
-
-    /// Has to be called on commit - Window handles the buffer for you
-    pub fn commit(surface: &wl_surface::WlSurface) {
-        surface_commit(surface)
-    }
 }
 
-// TODO: This is basically `draw_surface_tree` from anvil.
-// Can we move this somewhere, where it is also usable for other things then windows?
-// Maybe add this as a helper function for surfaces to `backend::renderer`?
-// How do we handle SurfaceState in that case? Like we need a closure to
-// store and retrieve textures for arbitrary surface trees? Or leave this to the
-// compositor, but that feels like a lot of unnecessary code dublication.
+fn damage_from_surface_tree<P>(surface: &wl_surface::WlSurface, location: P) -> Vec<Rectangle<i32, Logical>>
+where
+    P: Into<Point<i32, Logical>>,
+{
+    let mut damage = Vec::new();
+    with_surface_tree_upward(
+        surface,
+        location.into(),
+        |_surface, states, location| {
+            let mut location = *location;
+            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+                let data = data.borrow();
+                if data.texture.is_none() {
+                    if states.role == Some("subsurface") {
+                        let current = states.cached_state.current::<SubsurfaceCachedState>();
+                        location += current.location;
+                    }
+                    return TraversalAction::DoChildren(location);
+                }
+            }
+            TraversalAction::SkipChildren
+        },
+        |_surface, states, location| {
+            let mut location = *location;
+            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+                let data = data.borrow();
+                let attributes = states.cached_state.current::<SurfaceAttributes>();
 
-// TODO: This does not handle ImportAll errors properly and uses only one texture slot.
-// This means it is *not* compatible with MultiGPU setups at all.
-// Current plan is to make sure it does not crash at least in that case and later add
-// A `MultiGpuManager` that opens gpus automatically, creates renderers for them,
-// implements `Renderer` and `ImportAll` itself and dispatches everything accordingly,
-// even copying buffers if necessary. This abstraction will likely also handle dmabuf-
-// protocol(s) (and maybe explicit sync?). Then this function will be fine and all the
-// gore of handling multiple gpus will be hidden away for most if not all cases.
+                if data.texture.is_none() {
+                    if states.role == Some("subsurface") {
+                        let current = states.cached_state.current::<SubsurfaceCachedState>();
+                        location += current.location;
+                    }
 
-// TODO: This function does not crop or scale windows to fit into a space.
-// How do we want to handle this? Add an additional size property to a window?
-// Let the user specify the max size and the method to handle it?
+                    damage.extend(attributes.damage.iter().map(|dmg| {
+                        let mut rect = match dmg {
+                            Damage::Buffer(rect) => rect.to_logical(attributes.buffer_scale),
+                            Damage::Surface(rect) => *rect,
+                        };
+                        rect.loc += location;
+                        rect
+                    }));
+                }
+            }
+        },
+        |_, _, _| true,
+    );
+    damage
+}
+
+fn bbox_from_surface_tree<P>(surface: &wl_surface::WlSurface, location: P) -> Rectangle<i32, Logical>
+where
+    P: Into<Point<i32, Logical>>,
+{
+    let location = location.into();
+    let mut bounding_box = Rectangle::from_loc_and_size(location, (0, 0));
+    with_surface_tree_downward(
+        surface,
+        location,
+        |_, states, loc: &Point<i32, Logical>| {
+            let mut loc = *loc;
+            let data = states.data_map.get::<RefCell<SurfaceState>>();
+
+            if let Some(size) = data.and_then(|d| d.borrow().size()) {
+                if states.role == Some("subsurface") {
+                    let current = states.cached_state.current::<SubsurfaceCachedState>();
+                    loc += current.location;
+                }
+
+                // Update the bounding box.
+                bounding_box = bounding_box.merge(Rectangle::from_loc_and_size(loc, size));
+
+                TraversalAction::DoChildren(loc)
+            } else {
+                // If the parent surface is unmapped, then the child surfaces are hidden as
+                // well, no need to consider them here.
+                TraversalAction::SkipChildren
+            }
+        },
+        |_, _, _| {},
+        |_, _, _| true,
+    );
+    bounding_box
+}
+
+pub fn under_from_surface_tree<P>(
+    surface: &wl_surface::WlSurface,
+    point: Point<f64, Logical>,
+    location: P,
+) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)>
+where
+    P: Into<Point<i32, Logical>>,
+{
+    let found = RefCell::new(None);
+    with_surface_tree_downward(
+        surface,
+        location.into(),
+        |wl_surface, states, location: &Point<i32, Logical>| {
+            let mut location = *location;
+            let data = states.data_map.get::<RefCell<SurfaceState>>();
+
+            if states.role == Some("subsurface") {
+                let current = states.cached_state.current::<SubsurfaceCachedState>();
+                location += current.location;
+            }
+
+            let contains_the_point = data
+                .map(|data| {
+                    data.borrow()
+                        .contains_point(&*states.cached_state.current(), point - location.to_f64())
+                })
+                .unwrap_or(false);
+            if contains_the_point {
+                *found.borrow_mut() = Some((wl_surface.clone(), location));
+            }
+
+            TraversalAction::DoChildren(location)
+        },
+        |_, _, _| {},
+        |_, _, _| {
+            // only continue if the point is not found
+            found.borrow().is_none()
+        },
+    );
+    found.into_inner()
+}
+
+fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
+    with_surface_tree_downward(
+        surface,
+        (),
+        |_, _, &()| TraversalAction::DoChildren(()),
+        |_surf, states, &()| {
+            // the surface may not have any user_data if it is a subsurface and has not
+            // yet been commited
+            for callback in states
+                .cached_state
+                .current::<SurfaceAttributes>()
+                .frame_callbacks
+                .drain(..)
+            {
+                callback.done(time);
+            }
+        },
+        |_, _, &()| true,
+    );
+}
 
 pub fn draw_window<R, E, F, T>(
     renderer: &mut R,
@@ -473,89 +479,17 @@ where
     E: std::error::Error,
     T: Texture + 'static,
 {
-    let mut result = Ok(());
-    if let Some(surface) = window.0.toplevel.get_surface() {
-        with_surface_tree_upward(
-            surface,
-            location,
-            |_surface, states, location| {
-                let mut location = *location;
-                if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
-                    let mut data = data.borrow_mut();
-                    let attributes = states.cached_state.current::<SurfaceAttributes>();
-                    // Import a new buffer if necessary
-                    if data.texture.is_none() {
-                        if let Some(buffer) = data.buffer.as_ref() {
-                            let damage = attributes
-                                .damage
-                                .iter()
-                                .map(|dmg| match dmg {
-                                    Damage::Buffer(rect) => *rect,
-                                    // TODO also apply transformations
-                                    Damage::Surface(rect) => rect.to_buffer(attributes.buffer_scale),
-                                })
-                                .collect::<Vec<_>>();
-
-                            match renderer.import_buffer(buffer, Some(states), &damage) {
-                                Some(Ok(m)) => {
-                                    data.texture = Some(Box::new(m));
-                                }
-                                Some(Err(err)) => {
-                                    slog::warn!(log, "Error loading buffer: {}", err);
-                                }
-                                None => {
-                                    slog::error!(log, "Unknown buffer format for: {:?}", buffer);
-                                }
-                            }
-                        }
-                    }
-                    // Now, should we be drawn ?
-                    if data.texture.is_some() {
-                        // if yes, also process the children
-                        if states.role == Some("subsurface") {
-                            let current = states.cached_state.current::<SubsurfaceCachedState>();
-                            location += current.location;
-                        }
-                        TraversalAction::DoChildren(location)
-                    } else {
-                        // we are not displayed, so our children are neither
-                        TraversalAction::SkipChildren
-                    }
-                } else {
-                    // we are not displayed, so our children are neither
-                    TraversalAction::SkipChildren
-                }
-            },
-            |_surface, states, location| {
-                let mut location = *location;
-                if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
-                    let mut data = data.borrow_mut();
-                    let buffer_scale = data.buffer_scale;
-                    let attributes = states.cached_state.current::<SurfaceAttributes>();
-                    if let Some(texture) = data.texture.as_mut().and_then(|x| x.downcast_mut::<T>()) {
-                        // we need to re-extract the subsurface offset, as the previous closure
-                        // only passes it to our children
-                        if states.role == Some("subsurface") {
-                            let current = states.cached_state.current::<SubsurfaceCachedState>();
-                            location += current.location;
-                        }
-                        // TODO: Take wp_viewporter into account
-                        if let Err(err) = frame.render_texture_at(
-                            texture,
-                            location.to_f64().to_physical(scale).to_i32_round(),
-                            buffer_scale,
-                            scale,
-                            attributes.buffer_transform.into(),
-                            1.0,
-                        ) {
-                            result = Err(err);
-                        }
-                    }
-                }
-            },
-            |_, _, _| true,
-        );
+    if let Some(surface) = window.toplevel().get_surface() {
+        draw_surface_tree(renderer, frame, surface, scale, location, log)?;
+        for (popup, p_location) in PopupManager::popups_for_surface(surface)
+            .ok()
+            .into_iter()
+            .flatten()
+        {
+            if let Some(surface) = popup.get_surface() {
+                draw_surface_tree(renderer, frame, surface, scale, location + p_location, log)?;
+            }
+        }
     }
-
-    result
+    Ok(())
 }

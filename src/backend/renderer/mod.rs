@@ -32,6 +32,8 @@ use crate::backend::egl::{
     Error as EglError,
 };
 
+pub mod utils;
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Possible transformations to two-dimensional planes
 pub enum Transform {

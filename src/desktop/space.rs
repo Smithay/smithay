@@ -1,6 +1,6 @@
-use super::{draw_window, SurfaceState, Window};
+use super::{draw_window, Window};
 use crate::{
-    backend::renderer::{Frame, ImportAll, Renderer, Transform},
+    backend::renderer::{utils::SurfaceState, Frame, ImportAll, Renderer, Transform},
     utils::{Logical, Point, Rectangle},
     wayland::{
         compositor::{with_surface_tree_downward, SubsurfaceCachedState, TraversalAction},
@@ -150,7 +150,7 @@ impl Space {
 
     /// Get a reference to the window under a given point, if any
     pub fn window_under(&self, point: Point<f64, Logical>) -> Option<&Window> {
-        self.windows.iter().find(|w| {
+        self.windows.iter().rev().find(|w| {
             let bbox = window_rect(w, &self.id);
             bbox.to_f64().contains(point)
         })
@@ -419,7 +419,7 @@ impl Space {
 
         // lets iterate front to back and figure out, what new windows or unmoved windows we have
         for window in self.windows.iter().rev() {
-            let geo = window_rect(window, &self.id);
+            let geo = window_rect_with_popups(window, &self.id);
             let old_geo = state.last_state.get(&window.0.id).cloned();
 
             // window was moved or resized
@@ -481,7 +481,7 @@ impl Space {
 
                 // Then re-draw all window overlapping with a damage rect.
                 for window in self.windows.iter() {
-                    let wgeo = window_rect(window, &self.id);
+                    let wgeo = window_rect_with_popups(window, &self.id);
                     let mut loc = window_loc(window, &self.id);
                     if damage.iter().any(|geo| wgeo.overlaps(*geo)) {
                         loc -= output_geo.loc;
@@ -506,7 +506,7 @@ impl Space {
             .windows
             .iter()
             .map(|window| {
-                let wgeo = window_rect(window, &self.id);
+                let wgeo = window_rect_with_popups(window, &self.id);
                 (window.0.id, wgeo)
             })
             .collect();
@@ -546,6 +546,13 @@ fn window_geo(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
 fn window_rect(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
     let loc = window_loc(window, space_id);
     let mut wgeo = window.bbox();
+    wgeo.loc += loc;
+    wgeo
+}
+
+fn window_rect_with_popups(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
+    let loc = window_loc(window, space_id);
+    let mut wgeo = window.bbox_with_popups();
     wgeo.loc += loc;
     wgeo
 }
