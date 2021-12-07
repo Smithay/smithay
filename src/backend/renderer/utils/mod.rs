@@ -1,6 +1,6 @@
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer, Texture},
-    utils::{Logical, Physical, Point, Size},
+    utils::{Buffer, Logical, Physical, Point, Rectangle, Size},
     wayland::compositor::{
         is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
         SurfaceAttributes, TraversalAction,
@@ -66,12 +66,14 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
     }
 }
 
+/// TODO
 pub fn draw_surface_tree<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,
     surface: &WlSurface,
     scale: f64,
     location: Point<i32, Logical>,
+    damage: &[Rectangle<i32, Logical>],
     log: &slog::Logger,
 ) -> Result<(), R::Error>
 where
@@ -81,6 +83,10 @@ where
     T: Texture + 'static,
 {
     let mut result = Ok(());
+    let damage = damage
+        .iter()
+        .map(|geo| geo.to_f64().to_physical(scale).to_i32_round())
+        .collect::<Vec<_>>();
     with_surface_tree_upward(
         surface,
         location,
@@ -137,14 +143,32 @@ where
             if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
                 let mut data = data.borrow_mut();
                 let buffer_scale = data.buffer_scale;
+                let buffer_dimensions = data.buffer_dimensions;
                 let attributes = states.cached_state.current::<SurfaceAttributes>();
                 if let Some(texture) = data.texture.as_mut().and_then(|x| x.downcast_mut::<T>()) {
                     // we need to re-extract the subsurface offset, as the previous closure
                     // only passes it to our children
+                    let mut surface_offset = (0, 0).into();
                     if states.role == Some("subsurface") {
                         let current = states.cached_state.current::<SubsurfaceCachedState>();
+                        surface_offset = current.location;
                         location += current.location;
                     }
+
+                    let rect = Rectangle::<i32, Physical>::from_loc_and_size(
+                        surface_offset.to_f64().to_physical(scale).to_i32_round(),
+                        buffer_dimensions.unwrap(),
+                    );
+                    let new_damage = damage
+                        .iter()
+                        .cloned()
+                        .filter(|geo| geo.overlaps(rect))
+                        .map(|geo| geo.intersection(rect))
+                        .map(|mut geo| {
+                            geo.loc -= rect.loc;
+                            geo
+                        })
+                        .collect::<Vec<_>>();
 
                     // TODO: Take wp_viewporter into account
                     if let Err(err) = frame.render_texture_at(
@@ -153,6 +177,7 @@ where
                         buffer_scale,
                         scale,
                         attributes.buffer_transform.into(),
+                        &new_damage,
                         1.0,
                     ) {
                         result = Err(err);

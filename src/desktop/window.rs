@@ -471,6 +471,7 @@ pub fn draw_window<R, E, F, T>(
     window: &Window,
     scale: f64,
     location: Point<i32, Logical>,
+    damage: &[Rectangle<i32, Logical>],
     log: &slog::Logger,
 ) -> Result<(), R::Error>
 where
@@ -480,14 +481,30 @@ where
     T: Texture + 'static,
 {
     if let Some(surface) = window.toplevel().get_surface() {
-        draw_surface_tree(renderer, frame, surface, scale, location, log)?;
+        draw_surface_tree(renderer, frame, surface, scale, location, damage, log)?;
         for (popup, p_location) in PopupManager::popups_for_surface(surface)
             .ok()
             .into_iter()
             .flatten()
         {
             if let Some(surface) = popup.get_surface() {
-                draw_surface_tree(renderer, frame, surface, scale, location + p_location, log)?;
+                let damage = damage
+                    .iter()
+                    .cloned()
+                    .map(|mut geo| {
+                        geo.loc -= p_location;
+                        geo
+                    })
+                    .collect::<Vec<_>>();
+                draw_surface_tree(
+                    renderer,
+                    frame,
+                    surface,
+                    scale,
+                    location + p_location,
+                    &damage,
+                    log,
+                )?;
             }
         }
     }
