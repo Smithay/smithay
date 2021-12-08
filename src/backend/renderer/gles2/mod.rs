@@ -169,7 +169,7 @@ pub struct Gles2Renderer {
     solid_program: Gles2SolidProgram,
     #[cfg(feature = "wayland_frontend")]
     dmabuf_cache: std::collections::HashMap<WeakDmabuf, Gles2Texture>,
-    egl: EGLContext,
+    pub egl: EGLContext,
     #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
     egl_reader: Option<EGLBufferReader>,
     vbos: [ffi::types::GLuint; 2],

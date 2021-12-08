@@ -237,6 +237,10 @@ pub fn run_x11(log: Logger) {
             if let Err(err) = renderer.bind(buffer) {
                 error!(log, "Error while binding buffer: {}", err);
             }
+            
+            if let Some(mut renderdoc) = state.renderdoc.as_mut() {
+                renderdoc.start_frame_capture(renderer.egl.context, std::ptr::null());
+            }
 
             // drawing logic
             match renderer
@@ -329,6 +333,10 @@ pub fn run_x11(log: Logger) {
                         state.running.store(false, Ordering::SeqCst);
                     }
                 }
+            }
+
+            if let Some(mut renderdoc) = state.renderdoc.as_mut() {
+                renderdoc.end_frame_capture(renderer.egl.context, std::ptr::null());
             }
 
             #[cfg(feature = "debug")]
