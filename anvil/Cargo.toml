@@ -20,6 +20,7 @@ slog-async = "2.2"
 slog-stdlog = "4.1.0"
 slog-scope = "4.4.0"
 xkbcommon = "0.4.0"
+renderdoc = "0.10.1"
 
 [dependencies.smithay]
 path = ".."

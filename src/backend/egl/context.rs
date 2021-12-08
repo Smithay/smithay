@@ -13,7 +13,7 @@ use slog::{info, o, trace};
 /// EGL context for rendering
 #[derive(Debug)]
 pub struct EGLContext {
-    context: ffi::egl::types::EGLContext,
+    pub context: ffi::egl::types::EGLContext,
     pub(crate) display: EGLDisplay,
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: Option<PixelFormat>,

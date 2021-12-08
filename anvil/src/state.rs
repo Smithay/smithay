@@ -55,6 +55,7 @@ pub struct AnvilState<BackendData> {
     // things we must keep alive
     #[cfg(feature = "xwayland")]
     pub xwayland: XWayland<AnvilState<BackendData>>,
+    pub renderdoc: Option<renderdoc::RenderDoc<renderdoc::V141>>,
 }
 
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
@@ -240,6 +241,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             start_time: std::time::Instant::now(),
             #[cfg(feature = "xwayland")]
             xwayland,
+            renderdoc: renderdoc::RenderDoc::new().ok(),
         }
     }
 }

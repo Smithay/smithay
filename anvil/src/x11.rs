@@ -225,6 +225,10 @@ pub fn run_x11(log: Logger) {
                 continue;
             }
 
+            if let Some(mut renderdoc) = state.renderdoc.as_mut() {
+                renderdoc.start_frame_capture(renderer.egl.context, std::ptr::null());
+            }
+
             let mut elements = Vec::new();
             let dnd_guard = dnd_icon.lock().unwrap();
             let mut cursor_guard = cursor_status.lock().unwrap();
@@ -313,6 +317,10 @@ pub fn run_x11(log: Logger) {
                     error!(log, "Rendering error: {}", err);
                     // TODO: convert RenderError into SwapBuffersError and skip temporary (will retry) and panic on ContextLost or recreate
                 }
+            }
+
+            if let Some(mut renderdoc) = state.renderdoc.as_mut() {
+                renderdoc.end_frame_capture(renderer.egl.context, std::ptr::null());
             }
 
             #[cfg(feature = "debug")]
