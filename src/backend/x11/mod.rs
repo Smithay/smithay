@@ -249,6 +249,7 @@ impl X11Backend {
     pub fn handle(&self) -> X11Handle {
         X11Handle {
             log: self.log.clone(),
+            connection: self.connection.clone(),
             inner: self.inner.clone(),
         }
     }
@@ -356,6 +357,7 @@ fn dri3_init(x11: &X11Inner) -> Result<DrmNode, X11Error> {
 #[derive(Debug)]
 pub struct X11Handle {
     log: Logger,
+    connection: Arc<RustConnection>,
     inner: Arc<Mutex<X11Inner>>,
 }
 
@@ -367,7 +369,7 @@ impl X11Handle {
 
     /// Returns the underlying connection to the X server.
     pub fn connection(&self) -> Arc<RustConnection> {
-        self.inner.lock().unwrap().connection.clone()
+        self.connection.clone()
     }
 
     /// Returns the format of the window.
@@ -709,11 +711,11 @@ impl EventSource for X11Backend {
         F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
         let connection = self.connection.clone();
-
+        let log = self.log.clone();
         let inner = self.inner.clone();
-        let mut inner = inner.lock().unwrap();
+
         let post_action = self.source.process_events(readiness, token, |event, _| {
-            inner.process_event(event, &mut callback);
+            X11Inner::process_event(&inner, &log, event, &mut callback);
         })?;
 
         // Flush the connection so changes to the window state during callbacks can be emitted.
@@ -751,86 +753,83 @@ pub(crate) struct X11Inner {
 }
 
 impl X11Inner {
-    pub fn process_event<F>(&mut self, event: x11::Event, callback: &mut F)
+    fn process_event<F>(inner: &Arc<Mutex<X11Inner>>, log: &Logger, event: x11::Event, callback: &mut F)
     where
         F: FnMut(X11Event, &mut Window),
     {
         use self::X11Event::Input;
 
+        fn window_from_id(inner: &Arc<Mutex<X11Inner>>, id: &u32) -> Option<Arc<WindowInner>> {
+            inner.lock().unwrap().windows.get(id).cloned()
+        }
+
+        // If X11 is deadlocking somewhere here, make sure you drop your mutex guards.
+
         match event {
             x11::Event::ButtonPress(button_press) => {
-                if !self.windows.contains_key(&button_press.event) {
-                    return;
-                }
+                if let Some(window) = window_from_id(inner, &button_press.event) {
+                    // X11 decided to associate scroll wheel with a button, 4, 5, 6 and 7 for
+                    // up, down, right and left. For scrolling, a press event is emitted and a
+                    // release is them immediately followed for scrolling. This means we can
+                    // ignore release for scrolling.
 
-                let window = self.windows.get(&button_press.event).unwrap();
-                // X11 decided to associate scroll wheel with a button, 4, 5, 6 and 7 for
-                // up, down, right and left. For scrolling, a press event is emitted and a
-                // release is them immediately followed for scrolling. This means we can
-                // ignore release for scrolling.
+                    // Ideally we would use `ButtonIndex` from XCB, however it does not cover 6 and 7
+                    // for horizontal scroll and does not work nicely in match statements, so we
+                    // use magic constants here:
+                    //
+                    // 1 => MouseButton::Left
+                    // 2 => MouseButton::Middle
+                    // 3 => MouseButton::Right
+                    // 4 => Axis::Vertical +1.0
+                    // 5 => Axis::Vertical -1.0
+                    // 6 => Axis::Horizontal -1.0
+                    // 7 => Axis::Horizontal +1.0
+                    // Others => ??
 
-                // Ideally we would use `ButtonIndex` from XCB, however it does not cover 6 and 7
-                // for horizontal scroll and does not work nicely in match statements, so we
-                // use magic constants here:
-                //
-                // 1 => MouseButton::Left
-                // 2 => MouseButton::Middle
-                // 3 => MouseButton::Right
-                // 4 => Axis::Vertical +1.0
-                // 5 => Axis::Vertical -1.0
-                // 6 => Axis::Horizontal -1.0
-                // 7 => Axis::Horizontal +1.0
-                // Others => ??
+                    // Scrolling
+                    if button_press.detail >= 4 && button_press.detail <= 7 {
+                        callback(
+                            Input(InputEvent::PointerAxis {
+                                event: X11MouseWheelEvent {
+                                    time: button_press.time,
+                                    axis: match button_press.detail {
+                                        // Up | Down
+                                        4 | 5 => Axis::Vertical,
 
-                // Scrolling
-                if button_press.detail >= 4 && button_press.detail <= 7 {
-                    callback(
-                        Input(InputEvent::PointerAxis {
-                            event: X11MouseWheelEvent {
-                                time: button_press.time,
-                                axis: match button_press.detail {
-                                    // Up | Down
-                                    4 | 5 => Axis::Vertical,
+                                        // Right | Left
+                                        6 | 7 => Axis::Horizontal,
 
-                                    // Right | Left
-                                    6 | 7 => Axis::Horizontal,
+                                        _ => unreachable!(),
+                                    },
+                                    amount: match button_press.detail {
+                                        // Up | Right
+                                        4 | 7 => 1.0,
 
-                                    _ => unreachable!(),
+                                        // Down | Left
+                                        5 | 6 => -1.0,
+
+                                        _ => unreachable!(),
+                                    },
                                 },
-                                amount: match button_press.detail {
-                                    // Up | Right
-                                    4 | 7 => 1.0,
-
-                                    // Down | Left
-                                    5 | 6 => -1.0,
-
-                                    _ => unreachable!(),
+                            }),
+                            &mut Window(Arc::downgrade(&window)),
+                        )
+                    } else {
+                        callback(
+                            Input(InputEvent::PointerButton {
+                                event: X11MouseInputEvent {
+                                    time: button_press.time,
+                                    raw: button_press.detail as u32,
+                                    state: ButtonState::Pressed,
                                 },
-                            },
-                        }),
-                        &mut Window(Arc::downgrade(window)),
-                    )
-                } else {
-                    callback(
-                        Input(InputEvent::PointerButton {
-                            event: X11MouseInputEvent {
-                                time: button_press.time,
-                                raw: button_press.detail as u32,
-                                state: ButtonState::Pressed,
-                            },
-                        }),
-                        &mut Window(Arc::downgrade(window)),
-                    )
+                            }),
+                            &mut Window(Arc::downgrade(&window)),
+                        )
+                    }
                 }
             }
 
             x11::Event::ButtonRelease(button_release) => {
-                if !self.windows.contains_key(&button_release.event) {
-                    return;
-                }
-
-                let window = self.windows.get(&button_release.event).unwrap();
-
                 // Ignore release tick because this event is always sent immediately after the press
                 // tick for scrolling and the backend will dispatch release event automatically during
                 // the press event.
@@ -838,183 +837,162 @@ impl X11Inner {
                     return;
                 }
 
-                callback(
-                    Input(InputEvent::PointerButton {
-                        event: X11MouseInputEvent {
-                            time: button_release.time,
-                            raw: button_release.detail as u32,
-                            state: ButtonState::Released,
-                        },
-                    }),
-                    &mut Window(Arc::downgrade(window)),
-                );
+                if let Some(window) = window_from_id(inner, &button_release.event) {
+                    callback(
+                        Input(InputEvent::PointerButton {
+                            event: X11MouseInputEvent {
+                                time: button_release.time,
+                                raw: button_release.detail as u32,
+                                state: ButtonState::Released,
+                            },
+                        }),
+                        &mut Window(Arc::downgrade(&window)),
+                    );
+                }
             }
 
             x11::Event::KeyPress(key_press) => {
-                if !self.windows.contains_key(&key_press.event) {
-                    return;
-                }
+                if let Some(window) = window_from_id(inner, &key_press.event) {
+                    // Do not hold the lock.
+                    let count = { inner.lock().unwrap().key_counter.fetch_add(1, Ordering::SeqCst) + 1 };
 
-                callback(
-                    Input(InputEvent::Keyboard {
-                        event: X11KeyboardInputEvent {
-                            time: key_press.time,
-                            // X11's keycodes are +8 relative to the libinput keycodes
-                            // that are expected, so subtract 8 from each keycode to
-                            // match libinput.
-                            //
-                            // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
-                            key: key_press.detail as u32 - 8,
-                            count: self.key_counter.fetch_add(1, Ordering::SeqCst) + 1,
-                            state: KeyState::Pressed,
-                        },
-                    }),
-                    &mut Window(Arc::downgrade(self.windows.get(&key_press.event).unwrap())),
-                )
+                    callback(
+                        Input(InputEvent::Keyboard {
+                            event: X11KeyboardInputEvent {
+                                time: key_press.time,
+                                // X11's keycodes are +8 relative to the libinput keycodes
+                                // that are expected, so subtract 8 from each keycode to
+                                // match libinput.
+                                //
+                                // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
+                                key: key_press.detail as u32 - 8,
+                                count,
+                                state: KeyState::Pressed,
+                            },
+                        }),
+                        &mut Window(Arc::downgrade(&window)),
+                    )
+                }
             }
 
             x11::Event::KeyRelease(key_release) => {
-                if !self.windows.contains_key(&key_release.event) {
-                    return;
+                if let Some(window) = window_from_id(inner, &key_release.event) {
+                    let count = {
+                        let key_counter = inner.lock().unwrap().key_counter.clone();
+
+                        // atomic u32 has no checked_sub, so load and store to do the same.
+                        let mut count = key_counter.load(Ordering::SeqCst);
+                        count = count.saturating_sub(1);
+                        key_counter.store(count, Ordering::SeqCst);
+
+                        count
+                    };
+
+                    callback(
+                        Input(InputEvent::Keyboard {
+                            event: X11KeyboardInputEvent {
+                                time: key_release.time,
+                                // X11's keycodes are +8 relative to the libinput keycodes
+                                // that are expected, so subtract 8 from each keycode to
+                                // match libinput.
+                                //
+                                // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
+                                key: key_release.detail as u32 - 8,
+                                count,
+                                state: KeyState::Released,
+                            },
+                        }),
+                        &mut Window(Arc::downgrade(&window)),
+                    );
                 }
-
-                // atomic u32 has no checked_sub, so load and store to do the same.
-                let mut key_counter_val = self.key_counter.load(Ordering::SeqCst);
-                key_counter_val = key_counter_val.saturating_sub(1);
-                self.key_counter.store(key_counter_val, Ordering::SeqCst);
-
-                callback(
-                    Input(InputEvent::Keyboard {
-                        event: X11KeyboardInputEvent {
-                            time: key_release.time,
-                            // X11's keycodes are +8 relative to the libinput keycodes
-                            // that are expected, so subtract 8 from each keycode to
-                            // match libinput.
-                            //
-                            // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
-                            key: key_release.detail as u32 - 8,
-                            count: key_counter_val,
-                            state: KeyState::Released,
-                        },
-                    }),
-                    &mut Window(Arc::downgrade(self.windows.get(&key_release.event).unwrap())),
-                );
             }
 
             x11::Event::MotionNotify(motion_notify) => {
-                if !self.windows.contains_key(&motion_notify.event) {
-                    return;
+                if let Some(window) = window_from_id(inner, &motion_notify.event) {
+                    // Use event_x/y since those are relative the the window receiving events.
+                    let x = motion_notify.event_x as f64;
+                    let y = motion_notify.event_y as f64;
+
+                    let window_size = { *window.size.lock().unwrap() };
+
+                    callback(
+                        Input(InputEvent::PointerMotionAbsolute {
+                            event: X11MouseMovedEvent {
+                                time: motion_notify.time,
+                                x,
+                                y,
+                                size: window_size,
+                            },
+                        }),
+                        &mut Window(Arc::downgrade(&window)),
+                    )
                 }
-
-                let window = self.windows.get(&motion_notify.event).unwrap();
-
-                // Use event_x/y since those are relative the the window receiving events.
-                let x = motion_notify.event_x as f64;
-                let y = motion_notify.event_y as f64;
-
-                let window_size = { *window.size.lock().unwrap() };
-
-                callback(
-                    Input(InputEvent::PointerMotionAbsolute {
-                        event: X11MouseMovedEvent {
-                            time: motion_notify.time,
-                            x,
-                            y,
-                            size: window_size,
-                        },
-                    }),
-                    &mut Window(Arc::downgrade(window)),
-                )
             }
 
             x11::Event::ConfigureNotify(configure_notify) => {
-                if !self.windows.contains_key(&configure_notify.window) {
-                    return;
-                }
+                if let Some(window) = window_from_id(inner, &configure_notify.window) {
+                    let previous_size = { *window.size.lock().unwrap() };
 
-                let window = self.windows.get(&configure_notify.window).unwrap();
+                    // Did the size of the window change?
+                    let configure_notify_size: Size<u16, Logical> =
+                        (configure_notify.width, configure_notify.height).into();
 
-                let previous_size = { *window.size.lock().unwrap() };
+                    if configure_notify_size != previous_size {
+                        // Intentionally drop the lock on the size mutex incase a user
+                        // requests a resize or does something which causes a resize
+                        // inside the callback.
+                        {
+                            *window.size.lock().unwrap() = configure_notify_size;
+                        }
 
-                // Did the size of the window change?
-                let configure_notify_size: Size<u16, Logical> =
-                    (configure_notify.width, configure_notify.height).into();
+                        (callback)(
+                            X11Event::Resized(configure_notify_size),
+                            &mut Window(Arc::downgrade(&window)),
+                        );
 
-                if configure_notify_size != previous_size {
-                    // Intentionally drop the lock on the size mutex incase a user
-                    // requests a resize or does something which causes a resize
-                    // inside the callback.
-                    {
-                        *window.size.lock().unwrap() = configure_notify_size;
-                    }
-
-                    (callback)(
-                        X11Event::Resized(configure_notify_size),
-                        &mut Window(Arc::downgrade(window)),
-                    );
-
-                    if let Some(resize_sender) = &*window.resize.lock().unwrap() {
-                        let _ = resize_sender.send(configure_notify_size);
+                        if let Some(resize_sender) = &*window.resize.lock().unwrap() {
+                            let _ = resize_sender.send(configure_notify_size);
+                        }
                     }
                 }
             }
 
             x11::Event::EnterNotify(enter_notify) => {
-                if !self.windows.contains_key(&enter_notify.event) {
-                    return;
+                if let Some(window) = window_from_id(inner, &enter_notify.event) {
+                    window.cursor_enter();
                 }
-
-                self.windows.get(&enter_notify.event).unwrap().cursor_enter();
             }
 
             x11::Event::LeaveNotify(leave_notify) => {
-                if !self.windows.contains_key(&leave_notify.event) {
-                    return;
+                if let Some(window) = window_from_id(inner, &leave_notify.event) {
+                    window.cursor_leave();
                 }
-
-                self.windows.get(&leave_notify.event).unwrap().cursor_leave();
             }
 
             x11::Event::ClientMessage(client_message) => {
-                if !self.windows.contains_key(&client_message.window) {
-                    return;
-                }
-
-                let window = self.windows.get(&client_message.window).unwrap();
-
-                if client_message.data.as_data32()[0] == window.atoms.WM_DELETE_WINDOW
-                // Destroy the window?
-                {
-                    (callback)(X11Event::CloseRequested, &mut Window(Arc::downgrade(window)));
+                if let Some(window) = window_from_id(inner, &client_message.window) {
+                    if client_message.data.as_data32()[0] == window.atoms.WM_DELETE_WINDOW
+                    // Destroy the window?
+                    {
+                        (callback)(X11Event::CloseRequested, &mut Window(Arc::downgrade(&window)));
+                    }
                 }
             }
 
             x11::Event::Expose(expose) => {
-                if !self.windows.contains_key(&expose.window) {
-                    return;
-                }
-
-                if expose.count == 0 {
-                    (callback)(
-                        X11Event::Refresh,
-                        &mut Window(Arc::downgrade(self.windows.get(&expose.window).unwrap())),
-                    );
+                if let Some(window) = window_from_id(inner, &expose.window) {
+                    if expose.count == 0 {
+                        (callback)(X11Event::Refresh, &mut Window(Arc::downgrade(&window)));
+                    }
                 }
             }
 
             x11::Event::PresentCompleteNotify(complete_notify) => {
-                if !self.windows.contains_key(&complete_notify.window) {
-                    return;
+                if let Some(window) = window_from_id(inner, &complete_notify.window) {
+                    window.last_msc.store(complete_notify.msc, Ordering::SeqCst);
+
+                    (callback)(X11Event::PresentCompleted, &mut Window(Arc::downgrade(&window)));
                 }
-
-                let window = self.windows.get(&complete_notify.window).unwrap();
-
-                window.last_msc.store(complete_notify.msc, Ordering::SeqCst);
-
-                (callback)(
-                    X11Event::PresentCompleted,
-                    &mut Window(Arc::downgrade(self.windows.get(&complete_notify.window).unwrap())),
-                );
             }
 
             x11::Event::PresentIdleNotify(_) => {
@@ -1022,7 +1000,7 @@ impl X11Inner {
             }
 
             x11::Event::Error(e) => {
-                error!(self.log, "X11 protocol error: {:?}", e);
+                error!(log, "X11 protocol error: {:?}", e);
             }
 
             _ => (),
