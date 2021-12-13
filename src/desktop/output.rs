@@ -13,12 +13,20 @@ use std::{
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub(super) enum ToplevelId {
     Xdg(usize),
+    Layer(usize),
 }
 
 impl ToplevelId {
     pub fn is_xdg(&self) -> bool {
         match self {
             ToplevelId::Xdg(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_layer(&self) -> bool {
+        match self {
+            ToplevelId::Layer(_) => true,
             _ => false,
         }
     }
