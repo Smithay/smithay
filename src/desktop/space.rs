@@ -1,6 +1,7 @@
 use super::{draw_window, Window};
 use crate::{
     backend::renderer::{utils::SurfaceState, Frame, ImportAll, Renderer, Transform},
+    desktop::output::*,
     utils::{Logical, Point, Rectangle},
     wayland::{
         compositor::{with_surface_tree_downward, SubsurfaceCachedState, TraversalAction},
@@ -55,28 +56,6 @@ fn window_state(space: usize, w: &Window) -> RefMut<'_, WindowState> {
     })
 }
 
-#[derive(Clone, Default)]
-struct OutputState {
-    location: Point<i32, Logical>,
-    render_scale: f64,
-
-    // damage and last_state are in space coordinate space
-    old_damage: VecDeque<Vec<Rectangle<i32, Logical>>>,
-    last_state: IndexMap<usize, Rectangle<i32, Logical>>,
-
-    // surfaces for tracking enter and leave events
-    surfaces: Vec<WlSurface>,
-}
-
-type OutputUserdata = RefCell<HashMap<usize, OutputState>>;
-fn output_state(space: usize, o: &Output) -> RefMut<'_, OutputState> {
-    let userdata = o.user_data();
-    userdata.insert_if_missing(OutputUserdata::default);
-    RefMut::map(userdata.get::<OutputUserdata>().unwrap().borrow_mut(), |m| {
-        m.entry(space).or_default()
-    })
-}
-
 // TODO: Maybe replace UnmanagedResource if nothing else comes up?
 #[derive(Debug, thiserror::Error)]
 pub enum SpaceError {
@@ -118,12 +97,17 @@ impl Space {
     ///
     /// This can safely be called on an already mapped window
     pub fn map_window(&mut self, window: &Window, location: Point<i32, Logical>) {
-        self.raise_window(window);
+        self.insert_window(window);
         window_state(self.id, window).location = location;
     }
 
     pub fn raise_window(&mut self, window: &Window) {
-        self.windows.shift_remove(window);
+        if self.windows.shift_remove(window) {
+            self.insert_window(window);
+        }
+    }
+
+    fn insert_window(&mut self, window: &Window) {
         self.windows.insert(window.clone());
 
         // TODO: should this be handled by us?
@@ -144,7 +128,7 @@ impl Space {
     }
 
     /// Iterate window in z-order back to front
-    pub fn windows(&self) -> impl Iterator<Item = &Window> {
+    pub fn windows(&self) -> impl DoubleEndedIterator<Item = &Window> {
         self.windows.iter()
     }
 
@@ -153,6 +137,14 @@ impl Space {
         self.windows.iter().rev().find(|w| {
             let bbox = window_rect(w, &self.id);
             bbox.to_f64().contains(point)
+        })
+    }
+
+    /// Get a reference to the output under a given point, if any
+    pub fn output_under(&self, point: Point<f64, Logical>) -> Option<&Output> {
+        self.outputs.iter().rev().find(|o| {
+            let bbox = self.output_geometry(o);
+            bbox.map(|bbox| bbox.to_f64().contains(point)).unwrap_or(false)
         })
     }
 
@@ -405,7 +397,7 @@ impl Space {
             .last_state
             .iter()
             .filter_map(|(id, w)| {
-                if !self.windows.iter().any(|w| w.0.id == *id) {
+                if !self.windows.iter().any(|w| ToplevelId::Xdg(w.0.id) == *id) {
                     Some(*w)
                 } else {
                     None
@@ -413,14 +405,14 @@ impl Space {
             })
             .collect::<Vec<Rectangle<i32, Logical>>>()
         {
-            slog::trace!(self.logger, "Removing window at: {:?}", old_window);
+            slog::trace!(self.logger, "Removing toplevel at: {:?}", old_window);
             damage.push(old_window);
         }
 
         // lets iterate front to back and figure out, what new windows or unmoved windows we have
-        for window in self.windows.iter().rev() {
+        for window in self.windows.iter() {
             let geo = window_rect_with_popups(window, &self.id);
-            let old_geo = state.last_state.get(&window.0.id).cloned();
+            let old_geo = state.last_state.get(&ToplevelId::Xdg(window.0.id)).cloned();
 
             // window was moved or resized
             if old_geo.map(|old_geo| old_geo != geo).unwrap_or(false) {
@@ -540,7 +532,7 @@ impl Space {
             .iter()
             .map(|window| {
                 let wgeo = window_rect_with_popups(window, &self.id);
-                (window.0.id, wgeo)
+                (ToplevelId::Xdg(window.0.id), wgeo)
             })
             .collect();
         state.old_damage.push_front(new_damage);

@@ -100,7 +100,7 @@ pub struct PhysicalProperties {
 }
 
 #[derive(Debug)]
-struct Inner {
+pub(crate) struct Inner {
     name: String,
     log: ::slog::Logger,
     instances: Vec<WlOutput>,
@@ -170,7 +170,7 @@ impl Inner {
 /// about any change in the properties of this output.
 #[derive(Debug, Clone)]
 pub struct Output {
-    inner: InnerType,
+    pub(crate) inner: InnerType,
 }
 
 impl Output {
@@ -272,6 +272,11 @@ impl Output {
     /// Returns the currently advertised transformation of the output
     pub fn current_transform(&self) -> Transform {
         self.inner.0.lock().unwrap().transform
+    }
+
+    /// Returns the currenly advertised scale of the output
+    pub fn current_scale(&self) -> i32 {
+        self.inner.0.lock().unwrap().scale
     }
 
     /// Returns the name of the output
