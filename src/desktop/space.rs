@@ -582,7 +582,7 @@ impl Space {
                             .iter()
                             .filter(|geo| geo.overlaps(wgeo))
                             .map(|geo| geo.intersection(wgeo))
-                            .map(|geo| Rectangle::from_loc_and_size(geo.loc - wgeo.loc, geo.size))
+                            .map(|geo| Rectangle::from_loc_and_size(geo.loc - loc, geo.size))
                             .collect::<Vec<_>>();
                         slog::trace!(
                             self.logger,
