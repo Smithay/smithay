@@ -20,6 +20,8 @@ pub mod dmabuf;
 pub mod dumb;
 #[cfg(feature = "backend_gbm")]
 pub mod gbm;
+#[cfg(all(feature = "backend_egl", feature = "renderer_gl"))]
+pub mod egl;
 
 mod swapchain;
 use std::{

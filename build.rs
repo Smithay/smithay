@@ -33,8 +33,10 @@ fn gl_generate() {
                 "EGL_EXT_platform_device",
                 "EGL_WL_bind_wayland_display",
                 "EGL_KHR_image_base",
+                "EGL_KHR_gl_texture_2D_image",
                 "EGL_EXT_image_dma_buf_import",
                 "EGL_EXT_image_dma_buf_import_modifiers",
+                "EGL_MESA_image_dma_buf_export",
             ],
         )
         .write_bindings(gl_generator::GlobalGenerator, &mut file)

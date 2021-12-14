@@ -85,7 +85,9 @@ use self::{buffer::PixmapWrapperExt, window_inner::WindowInner};
 use crate::{
     backend::{
         allocator::{
+            Allocator, Buffer,
             dmabuf::{AsDmabuf, Dmabuf},
+            egl::{EglAllocator, EglBuffer},
             Slot, Swapchain,
         },
         drm::{node::path_to_type, CreateDrmNodeError, DrmNode, NodeType},
@@ -96,7 +98,6 @@ use crate::{
 };
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm_fourcc::{DrmFourcc, DrmModifier};
-use gbm::BufferObject;
 use nix::{
     fcntl::{self, OFlag},
     sys::stat::Mode,
@@ -257,15 +258,15 @@ impl X11Backend {
 
 /// An X11 surface which uses GBM to allocate and present buffers.
 #[derive(Debug)]
-pub struct X11Surface {
+pub struct X11Surface<A: Allocator<B>, B: Buffer + AsDmabuf> {
     connection: Weak<RustConnection>,
     window: Window,
     resize: Receiver<Size<u16, Logical>>,
-    swapchain: Swapchain<Arc<Mutex<gbm::Device<DrmNode>>>, BufferObject<()>>,
+    swapchain: Swapchain<Arc<Mutex<A>>, B>,
     format: DrmFourcc,
     width: u16,
     height: u16,
-    buffer: Option<Slot<BufferObject<()>>>,
+    buffer: Option<Slot<B>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -414,12 +415,12 @@ impl X11Handle {
     /// Creates a surface that allocates and presents buffers to the window.
     ///
     /// This will fail if the window has already been used to create a surface.
-    pub fn create_surface(
+    pub fn create_surface<A: Allocator<B>, B: Buffer + AsDmabuf>(
         &self,
         window: &Window,
-        device: Arc<Mutex<gbm::Device<DrmNode>>>,
+        alloc: Arc<Mutex<A>>,
         modifiers: impl Iterator<Item = DrmModifier>,
-    ) -> Result<X11Surface, X11Error> {
+    ) -> Result<X11Surface<A, B>, X11Error> {
         match window.0.upgrade() {
             Some(window) => {
                 let has_resize = { window.resize.lock().unwrap().is_some() };
@@ -440,7 +441,7 @@ impl X11Handle {
 
                 let format = window.format;
                 let size = window.size();
-                let swapchain = Swapchain::new(device, size.w as u32, size.h as u32, format, modifiers);
+                let swapchain = Swapchain::new(alloc, size.w as u32, size.h as u32, format, modifiers);
 
                 let (sender, recv) = mpsc::channel();
 
@@ -466,14 +467,20 @@ impl X11Handle {
     }
 }
 
-impl X11Surface {
+impl<A, B> X11Surface<A, B>
+where
+    A: Allocator<B>,
+    B: Buffer + AsDmabuf,
+    <A as Allocator<B>>::Error: 'static,
+    <B as AsDmabuf>::Error: 'static,
+{
     /// Returns the window the surface presents to.
     pub fn window(&self) -> &Window {
         &self.window
     }
 
     /// Returns a handle to the GBM device used to allocate buffers.
-    pub fn device(&self) -> MutexGuard<'_, gbm::Device<DrmNode>> {
+    pub fn allocator(&self) -> MutexGuard<'_, A> {
         self.swapchain.allocator.lock().unwrap()
     }
 
@@ -496,7 +503,7 @@ impl X11Surface {
             self.buffer = Some(
                 self.swapchain
                     .acquire()
-                    .map_err(Into::<AllocateBuffersError>::into)?
+                    .map_err(|err| AllocateBuffersError::AllocatorError(Box::new(err)))?
                     .ok_or(AllocateBuffersError::NoFreeSlots)?,
             );
         }
@@ -506,7 +513,7 @@ impl X11Surface {
         match slot.userdata().get::<Dmabuf>() {
             Some(dmabuf) => Ok((dmabuf.clone(), age)),
             None => {
-                let dmabuf = slot.export().map_err(Into::<AllocateBuffersError>::into)?;
+                let dmabuf = slot.export().map_err(|err| AllocateBuffersError::ExportDmabuf(Box::new(err)))?;
                 slot.userdata().insert_if_missing(|| dmabuf.clone());
                 Ok((dmabuf, age))
             }
@@ -520,7 +527,7 @@ impl X11Surface {
             let mut next = self
                 .swapchain
                 .acquire()
-                .map_err(Into::<AllocateBuffersError>::into)?
+                .map_err(|err| AllocateBuffersError::AllocatorError(Box::new(err)))?
                 .ok_or(AllocateBuffersError::NoFreeSlots)?;
 
             // Swap the buffers

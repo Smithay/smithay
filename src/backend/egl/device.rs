@@ -1,5 +1,5 @@
 use std::{ffi::CStr, mem::MaybeUninit, os::raw::c_void, path::PathBuf, ptr};
-
+use crate::backend::drm::DrmNode;
 use super::{
     ffi::{self, egl::types::EGLDeviceEXT},
     wrap_egl_call, EGLDisplay, EGLError, Error,
@@ -133,6 +133,25 @@ impl EGLDevice {
             inner: device,
             device_extensions,
         })
+    }
+
+    pub fn device_for_node(node: &DrmNode) -> Result<EGLDevice, Error> {
+        for device in EGLDevice::enumerate()? {
+            let path = device.drm_device_path()?;
+            let stat = match nix::sys::stat::stat(&path) {
+                Ok(stat) => stat,
+                Err(_err) => {
+                    //TODO warn
+                    continue;
+                }
+            };
+            let dev = stat.st_rdev;
+
+            if dev == node.dev_id() {
+                return Ok(device);
+            }
+        }
+        Err(Error::DisplayNotSupported)
     }
 
     /// Returns a list of extensions the device supports.
