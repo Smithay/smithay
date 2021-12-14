@@ -80,7 +80,7 @@ pub enum SpaceError {
 
 #[derive(Debug)]
 pub struct Space {
-    id: usize,
+    pub(super) id: usize,
     // in z-order, back to front
     windows: IndexSet<Window>,
     outputs: Vec<Output>,
@@ -450,10 +450,15 @@ impl Space {
             } else {
                 // window stayed at its place
                 let loc = window_loc(window, &self.id);
-                damage.extend(window.accumulated_damage().into_iter().map(|mut rect| {
-                    rect.loc += loc;
-                    rect
-                }));
+                damage.extend(
+                    window
+                        .accumulated_damage(Some((self, output)))
+                        .into_iter()
+                        .map(|mut rect| {
+                            rect.loc += loc;
+                            rect
+                        }),
+                );
             }
         }
         for layer in layer_map.layers() {
@@ -467,10 +472,15 @@ impl Space {
                 damage.push(geo);
             } else {
                 let location = geo.loc;
-                damage.extend(layer.accumulated_damage().into_iter().map(|mut rect| {
-                    rect.loc += location;
-                    rect
-                }));
+                damage.extend(
+                    layer
+                        .accumulated_damage(Some((self, output)))
+                        .into_iter()
+                        .map(|mut rect| {
+                            rect.loc += location;
+                            rect
+                        }),
+                );
             }
         }
 

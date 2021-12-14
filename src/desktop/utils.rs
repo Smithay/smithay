@@ -1,14 +1,18 @@
 use crate::{
     backend::renderer::utils::SurfaceState,
+    desktop::Space,
     utils::{Logical, Point, Rectangle, Size},
-    wayland::compositor::{
-        with_surface_tree_downward, with_surface_tree_upward, Damage, SubsurfaceCachedState,
-        SurfaceAttributes, TraversalAction,
+    wayland::{
+        compositor::{
+            with_surface_tree_downward, with_surface_tree_upward, Damage, SubsurfaceCachedState,
+            SurfaceAttributes, TraversalAction,
+        },
+        output::Output,
     },
 };
 use wayland_server::protocol::wl_surface;
 
-use std::cell::RefCell;
+use std::{cell::RefCell, sync::Arc};
 
 impl SurfaceState {
     /// Returns the size of the surface.
@@ -86,11 +90,13 @@ where
 pub fn damage_from_surface_tree<P>(
     surface: &wl_surface::WlSurface,
     location: P,
+    key: Option<(&Space, &Output)>,
 ) -> Vec<Rectangle<i32, Logical>>
 where
     P: Into<Point<i32, Logical>>,
 {
     let mut damage = Vec::new();
+    let key = key.map(|(space, output)| (space.id, Arc::as_ptr(&output.inner) as *const ()));
     with_surface_tree_upward(
         surface,
         location.into(),
@@ -98,7 +104,11 @@ where
             let mut location = *location;
             if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
                 let data = data.borrow();
-                if data.texture.is_none() {
+                if key
+                    .as_ref()
+                    .map(|key| !data.damage_seen.contains(key))
+                    .unwrap_or(true)
+                {
                     if states.role == Some("subsurface") {
                         let current = states.cached_state.current::<SubsurfaceCachedState>();
                         location += current.location;
@@ -110,10 +120,14 @@ where
         |_surface, states, location| {
             let mut location = *location;
             if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
-                let data = data.borrow();
+                let mut data = data.borrow_mut();
                 let attributes = states.cached_state.current::<SurfaceAttributes>();
 
-                if data.texture.is_none() {
+                if key
+                    .as_ref()
+                    .map(|key| !data.damage_seen.contains(key))
+                    .unwrap_or(true)
+                {
                     if states.role == Some("subsurface") {
                         let current = states.cached_state.current::<SubsurfaceCachedState>();
                         location += current.location;
@@ -127,6 +141,10 @@ where
                         rect.loc += location;
                         rect
                     }));
+
+                    if let Some(key) = key {
+                        data.damage_seen.insert(key);
+                    }
                 }
             }
         },
