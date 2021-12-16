@@ -208,6 +208,7 @@ floating_point_coordinate_impl! {
  */
 
 /// A point as defined by its x and y coordinates
+#[repr(C)]
 pub struct Point<N, Kind> {
     /// horizontal coordinate
     pub x: N,
@@ -471,6 +472,7 @@ impl<N: Default, Kind> Default for Point<N, Kind> {
 /// Constructors of this type ensure that the values are always positive via
 /// `debug_assert!()`, however manually changing the values of the fields
 /// can break this invariant.
+#[repr(C)]
 pub struct Size<N, Kind> {
     /// horizontal coordinate
     pub w: N,
@@ -731,6 +733,7 @@ impl<N: Sub<Output = N>, Kind> Sub<Size<N, Kind>> for Point<N, Kind> {
 }
 
 /// A rectangle defined by its top-left corner and dimensions
+#[repr(C)]
 pub struct Rectangle<N, Kind> {
     /// Location of the top-left corner of the rectangle
     pub loc: Point<N, Kind>,
