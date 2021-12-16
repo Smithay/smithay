@@ -34,7 +34,7 @@ use x11rb::{
 
 impl From<Arc<WindowInner>> for Window {
     fn from(inner: Arc<WindowInner>) -> Self {
-        Window(Arc::downgrade(&inner))
+        Window(inner)
     }
 }
 
@@ -287,7 +287,12 @@ impl WindowInner {
 
 impl PartialEq for WindowInner {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
+        match (self.connection.upgrade(), other.connection.upgrade()) {
+            (Some(conn1), Some(conn2)) => Arc::ptr_eq(&conn1, &conn2) && self.id == other.id,
+
+            // A window with no connection to the X server cannot be validated.
+            _ => false,
+        }
     }
 }
 

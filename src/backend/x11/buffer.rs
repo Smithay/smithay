@@ -109,10 +109,8 @@ where
         window: &Window,
         dmabuf: &Dmabuf,
     ) -> Result<PixmapWrapper<'c, C>, CreatePixmapError> {
-        let window_inner = window.0.upgrade().unwrap();
-
-        if dmabuf.format().code != window_inner.format {
-            return Err(CreatePixmapError::IncorrectFormat(window_inner.format));
+        if dmabuf.format().code != window.format() {
+            return Err(CreatePixmapError::IncorrectFormat(window.format()));
         }
 
         let mut fds = Vec::new();
@@ -129,7 +127,7 @@ where
         }
 
         // We need dri3 >= 1.2 in order to use the enhanced dri3_pixmap_from_buffers function.
-        let xid = if window_inner.extensions.dri3 >= Some((1, 2)) {
+        let xid = if window.0.extensions.dri3 >= Some((1, 2)) {
             if dmabuf.num_planes() > 4 {
                 return Err(CreatePixmapError::TooManyPlanes);
             }
@@ -154,7 +152,7 @@ where
                 offsets.next().unwrap_or(x11rb::NONE),
                 window.depth(),
                 // In the future this could be made nicer.
-                match window.format().unwrap() {
+                match window.format() {
                     DrmFourcc::Argb8888 => 32,
                     DrmFourcc::Xrgb8888 => 24,
                     _ => unreachable!(),
@@ -183,7 +181,7 @@ where
                 stride as u16,
                 window.depth(),
                 // In the future this could be made nicer.
-                match window.format().unwrap() {
+                match window.format() {
                     DrmFourcc::Argb8888 => 32,
                     DrmFourcc::Xrgb8888 => 24,
                     _ => unreachable!(),
@@ -198,10 +196,9 @@ where
     }
 
     fn present(self, connection: &C, window: &Window) -> Result<u32, X11Error> {
-        let window_inner = window.0.upgrade().unwrap(); // We have the connection and window alive.
-        let next_serial = window_inner.next_serial.fetch_add(1, Ordering::SeqCst);
+        let next_serial = window.0.next_serial.fetch_add(1, Ordering::SeqCst);
         // We want to present as soon as possible, so wait 1ms so the X server will present when next convenient.
-        let msc = window_inner.last_msc.load(Ordering::SeqCst) + 1;
+        let msc = window.0.last_msc.load(Ordering::SeqCst) + 1;
 
         // options parameter does not take the enum but a u32.
         const OPTIONS: present::Option = present::Option::NONE;
