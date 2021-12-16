@@ -836,7 +836,7 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
         }
     }
 
-    /// Create a new [`Rectangle`] from the coordinates of its top-left corner and its dimensions
+    /// Create a new [`Rectangle`] from the coordinates of its top-left corner and its bottom-right corner
     #[inline]
     pub fn from_extemities(
         topleft: impl Into<Point<N, Kind>>,
