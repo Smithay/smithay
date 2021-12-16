@@ -49,6 +49,13 @@ pub trait Coordinate:
     fn non_negative(self) -> bool;
     /// Returns the absolute value of this coordinate
     fn abs(self) -> Self;
+
+    /// Saturating integer addition. Computes self + other, saturating at the numeric bounds instead of overflowing.
+    fn saturating_add(self, other: Self) -> Self;
+    /// Saturating integer subtraction. Computes self - other, saturating at the numeric bounds instead of overflowing.
+    fn saturating_sub(self, other: Self) -> Self;
+    /// Saturating integer multiplication. Computes self * other, saturating at the numeric bounds instead of overflowing.
+    fn saturating_mul(self, other: Self) -> Self;
 }
 
 /// Implements Coordinate for an unsigned numerical type.
@@ -90,6 +97,19 @@ macro_rules! unsigned_coordinate_impl {
             #[inline]
             fn abs(self) -> Self {
                 self
+            }
+
+            #[inline]
+            fn saturating_add(self, other: Self) -> Self {
+                self.saturating_add(other)
+            }
+            #[inline]
+            fn saturating_sub(self, other: Self) -> Self {
+                self.saturating_sub(other)
+            }
+            #[inline]
+            fn saturating_mul(self, other: Self) -> Self {
+                self.saturating_mul(other)
             }
         }
     };
@@ -143,6 +163,19 @@ macro_rules! signed_coordinate_impl {
             fn abs(self) -> Self {
                 self.abs()
             }
+
+            #[inline]
+            fn saturating_add(self, other: Self) -> Self {
+                self.saturating_add(other)
+            }
+            #[inline]
+            fn saturating_sub(self, other: Self) -> Self {
+                self.saturating_sub(other)
+            }
+            #[inline]
+            fn saturating_mul(self, other: Self) -> Self {
+                self.saturating_mul(other)
+            }
         }
     };
 }
@@ -194,6 +227,19 @@ macro_rules! floating_point_coordinate_impl {
             fn abs(self) -> Self {
                 self.abs()
             }
+
+            #[inline]
+            fn saturating_add(self, other: Self) -> Self {
+                self + other
+            }
+            #[inline]
+            fn saturating_sub(self, other: Self) -> Self {
+                self - other
+            }
+            #[inline]
+            fn saturating_mul(self, other: Self) -> Self {
+                self * other
+            }
         }
     };
 }
@@ -208,6 +254,8 @@ floating_point_coordinate_impl! {
  */
 
 /// A point as defined by its x and y coordinates
+///
+/// Operations on points are saturating.
 #[repr(C)]
 pub struct Point<N, Kind> {
     /// horizontal coordinate
@@ -392,41 +440,41 @@ impl<N, Kind> From<Point<N, Kind>> for (N, N) {
     }
 }
 
-impl<N: Add<Output = N>, Kind> Add for Point<N, Kind> {
+impl<N: Coordinate, Kind> Add for Point<N, Kind> {
     type Output = Point<N, Kind>;
     #[inline]
     fn add(self, other: Point<N, Kind>) -> Point<N, Kind> {
         Point {
-            x: self.x + other.x,
-            y: self.y + other.y,
+            x: self.x.saturating_add(other.x),
+            y: self.y.saturating_add(other.y),
             _kind: std::marker::PhantomData,
         }
     }
 }
 
-impl<N: AddAssign, Kind> AddAssign for Point<N, Kind> {
+impl<N: Coordinate, Kind> AddAssign for Point<N, Kind> {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
-        self.x += rhs.x;
-        self.y += rhs.y
+        self.x = self.x.saturating_add(rhs.x);
+        self.y = self.y.saturating_add(rhs.y);
     }
 }
 
-impl<N: SubAssign, Kind> SubAssign for Point<N, Kind> {
+impl<N: Coordinate, Kind> SubAssign for Point<N, Kind> {
     #[inline]
     fn sub_assign(&mut self, rhs: Self) {
-        self.x -= rhs.x;
-        self.y -= rhs.y
+        self.x = self.x.saturating_sub(rhs.x);
+        self.y = self.y.saturating_sub(rhs.y);
     }
 }
 
-impl<N: Sub<Output = N>, Kind> Sub for Point<N, Kind> {
+impl<N: Coordinate, Kind> Sub for Point<N, Kind> {
     type Output = Point<N, Kind>;
     #[inline]
     fn sub(self, other: Point<N, Kind>) -> Point<N, Kind> {
         Point {
-            x: self.x - other.x,
-            y: self.y - other.y,
+            x: self.x.saturating_sub(other.x),
+            y: self.y.saturating_sub(other.y),
             _kind: std::marker::PhantomData,
         }
     }
@@ -472,6 +520,8 @@ impl<N: Default, Kind> Default for Point<N, Kind> {
 /// Constructors of this type ensure that the values are always positive via
 /// `debug_assert!()`, however manually changing the values of the fields
 /// can break this invariant.
+///
+/// Operations on sizes are saturating.
 #[repr(C)]
 pub struct Size<N, Kind> {
     /// horizontal coordinate
@@ -642,27 +692,27 @@ impl<N, Kind> From<Size<N, Kind>> for (N, N) {
     }
 }
 
-impl<N: Add<Output = N>, Kind> Add for Size<N, Kind> {
+impl<N: Coordinate, Kind> Add for Size<N, Kind> {
     type Output = Size<N, Kind>;
     #[inline]
     fn add(self, other: Size<N, Kind>) -> Size<N, Kind> {
         Size {
-            w: self.w + other.w,
-            h: self.h + other.h,
+            w: self.w.saturating_add(other.w),
+            h: self.h.saturating_add(other.h),
             _kind: std::marker::PhantomData,
         }
     }
 }
 
-impl<N: AddAssign, Kind> AddAssign for Size<N, Kind> {
+impl<N: Coordinate, Kind> AddAssign for Size<N, Kind> {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
-        self.w += rhs.w;
-        self.h += rhs.h
+        self.w = self.w.saturating_add(rhs.w);
+        self.h = self.h.saturating_add(rhs.h);
     }
 }
 
-impl<N: SubAssign + fmt::Debug + PartialOrd, Kind> SubAssign for Size<N, Kind> {
+impl<N: Coordinate, Kind> SubAssign for Size<N, Kind> {
     #[inline]
     fn sub_assign(&mut self, rhs: Self) {
         debug_assert!(
@@ -672,8 +722,8 @@ impl<N: SubAssign + fmt::Debug + PartialOrd, Kind> SubAssign for Size<N, Kind> {
             (&rhs.w, &rhs.h),
         );
 
-        self.w -= rhs.w;
-        self.h -= rhs.h
+        self.w = self.w.saturating_sub(rhs.w);
+        self.h = self.h.saturating_sub(rhs.h);
     }
 }
 
@@ -708,31 +758,33 @@ impl<N: Default, Kind> Default for Size<N, Kind> {
     }
 }
 
-impl<N: Add<Output = N>, Kind> Add<Size<N, Kind>> for Point<N, Kind> {
+impl<N: Coordinate, Kind> Add<Size<N, Kind>> for Point<N, Kind> {
     type Output = Point<N, Kind>;
     #[inline]
     fn add(self, other: Size<N, Kind>) -> Point<N, Kind> {
         Point {
-            x: self.x + other.w,
-            y: self.y + other.h,
+            x: self.x.saturating_add(other.w),
+            y: self.y.saturating_add(other.h),
             _kind: std::marker::PhantomData,
         }
     }
 }
 
-impl<N: Sub<Output = N>, Kind> Sub<Size<N, Kind>> for Point<N, Kind> {
+impl<N: Coordinate, Kind> Sub<Size<N, Kind>> for Point<N, Kind> {
     type Output = Point<N, Kind>;
     #[inline]
     fn sub(self, other: Size<N, Kind>) -> Point<N, Kind> {
         Point {
-            x: self.x - other.w,
-            y: self.y - other.h,
+            x: self.x.saturating_sub(other.w),
+            y: self.y.saturating_sub(other.h),
             _kind: std::marker::PhantomData,
         }
     }
 }
 
 /// A rectangle defined by its top-left corner and dimensions
+///
+/// Operations on retangles are saturating.
 #[repr(C)]
 pub struct Rectangle<N, Kind> {
     /// Location of the top-left corner of the rectangle
@@ -803,9 +855,9 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     pub fn contains<P: Into<Point<N, Kind>>>(self, point: P) -> bool {
         let p: Point<N, Kind> = point.into();
         (p.x >= self.loc.x)
-            && (p.x < self.loc.x + self.size.w)
+            && (p.x < self.loc.x.saturating_add(self.size.w))
             && (p.y >= self.loc.y)
-            && (p.y < self.loc.y + self.size.h)
+            && (p.y < self.loc.y.saturating_add(self.size.h))
     }
 
     /// Checks whether given [`Rectangle`] is inside the rectangle
@@ -823,13 +875,13 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
         // they must overlap
         !(
             // self is left of other
-            self.loc.x + self.size.w < other.loc.x
+            self.loc.x.saturating_add(self.size.w) < other.loc.x
             // self is right of other
-            ||  self.loc.x > other.loc.x + other.size.w
+            ||  self.loc.x > other.loc.x.saturating_add(other.size.w)
             // self is above of other
-            ||  self.loc.y + self.size.h < other.loc.y
+            ||  self.loc.y.saturating_add(self.size.h) < other.loc.y
             // self is below of other
-            ||  self.loc.y > other.loc.y + other.size.h
+            ||  self.loc.y > other.loc.y.saturating_add(other.size.h)
         )
     }
 
@@ -840,8 +892,8 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
         Rectangle::from_extemities(
             (self.loc.x.max(other.loc.x), self.loc.y.max(other.loc.y)),
             (
-                (self.loc.x + self.size.w).min(other.loc.x + other.size.w),
-                (self.loc.y + self.size.h).min(other.loc.y + other.size.h),
+                (self.loc.x.saturating_add(self.size.w)).min(other.loc.x.saturating_add(other.size.w)),
+                (self.loc.y.saturating_add(self.size.h)).min(other.loc.y.saturating_add(other.size.h)),
             ),
         )
     }
