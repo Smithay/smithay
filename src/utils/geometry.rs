@@ -817,7 +817,8 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
 
     /// Checks whether a given [`Rectangle`] overlaps with this one
     #[inline]
-    pub fn overlaps(self, other: Rectangle<N, Kind>) -> bool {
+    pub fn overlaps(self, other: impl Into<Rectangle<N, Kind>>) -> bool {
+        let other = other.into();
         // if the rectangle is not outside of the other
         // they must overlap
         !(
