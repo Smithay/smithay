@@ -833,6 +833,19 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
         )
     }
 
+    /// Clamp rectangle to min and max corners resulting in the overlapping area of two rectangles
+    #[inline]
+    pub fn intersection(self, other: impl Into<Rectangle<N, Kind>>) -> Self {
+        let other = other.into();
+        Rectangle::from_extemities(
+            (self.loc.x.max(other.loc.x), self.loc.y.max(other.loc.y)),
+            (
+                (self.loc.x + self.size.w).min(other.loc.x + other.size.w),
+                (self.loc.y + self.size.h).min(other.loc.y + other.size.h),
+            ),
+        )
+    }
+
     /// Compute the bounding box of a given set of points
     pub fn bounding_box(points: impl IntoIterator<Item = Point<N, Kind>>) -> Self {
         let ret = points.into_iter().fold(None, |acc, point| match acc {
