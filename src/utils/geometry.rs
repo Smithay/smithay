@@ -29,6 +29,22 @@ pub trait Coordinate:
     fn to_f64(self) -> f64;
     /// Convert to this coordinate from a f64
     fn from_f64(v: f64) -> Self;
+    /// Compare and return the smaller one
+    fn min(self, other: Self) -> Self {
+        if self < other {
+            self
+        } else {
+            other
+        }
+    }
+    /// Compare and return the larger one
+    fn max(self, other: Self) -> Self {
+        if self > other {
+            self
+        } else {
+            other
+        }
+    }
     /// Test if the coordinate is not negative
     fn non_negative(self) -> bool;
     /// Returns the absolute value of this coordinate
@@ -815,39 +831,12 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
 
     /// Compute the bounding box of a given set of points
     pub fn bounding_box(points: impl IntoIterator<Item = Point<N, Kind>>) -> Self {
-        let ret = points.into_iter().fold(None, |acc, point| {
-            match acc {
-                None => Some((point, point)),
-                // we don't have cmp::{min,max} for f64 :(
-                Some((min_point, max_point)) => Some((
-                    (
-                        if min_point.x > point.x {
-                            point.x
-                        } else {
-                            min_point.x
-                        },
-                        if min_point.y > point.y {
-                            point.y
-                        } else {
-                            min_point.y
-                        },
-                    )
-                        .into(),
-                    (
-                        if max_point.x < point.x {
-                            point.x
-                        } else {
-                            max_point.x
-                        },
-                        if max_point.y < point.y {
-                            point.y
-                        } else {
-                            max_point.y
-                        },
-                    )
-                        .into(),
-                )),
-            }
+        let ret = points.into_iter().fold(None, |acc, point| match acc {
+            None => Some((point, point)),
+            Some((min_point, max_point)) => Some((
+                (point.x.min(min_point.x), point.y.min(min_point.y)).into(),
+                (point.x.max(max_point.x), point.y.max(max_point.y)).into(),
+            )),
         });
 
         match ret {
