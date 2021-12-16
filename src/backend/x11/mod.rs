@@ -259,7 +259,7 @@ impl X11Backend {
 #[derive(Debug)]
 pub struct X11Surface {
     connection: Weak<RustConnection>,
-    window: Window,
+    window: Weak<WindowInner>,
     resize: Receiver<Size<u16, Logical>>,
     swapchain: Swapchain<Arc<Mutex<gbm::Device<DrmNode>>>, BufferObject<()>>,
     format: DrmFourcc,
@@ -420,56 +420,62 @@ impl X11Handle {
         device: Arc<Mutex<gbm::Device<DrmNode>>>,
         modifiers: impl Iterator<Item = DrmModifier>,
     ) -> Result<X11Surface, X11Error> {
-        match window.0.upgrade() {
-            Some(window) => {
-                let has_resize = { window.resize.lock().unwrap().is_some() };
+        let has_resize = { window.0.resize.lock().unwrap().is_some() };
 
-                if has_resize {
-                    return Err(X11Error::SurfaceExists);
-                }
-
-                let inner = self.inner.clone();
-                let inner_guard = inner.lock().unwrap();
-
-                // Fail if the window is not managed by this backend or is destroyed
-                if !inner_guard.windows.contains_key(&window.id) {
-                    return Err(X11Error::InvalidWindow);
-                }
-
-                let modifiers = modifiers.collect::<Vec<_>>();
-
-                let format = window.format;
-                let size = window.size();
-                let swapchain = Swapchain::new(device, size.w as u32, size.h as u32, format, modifiers);
-
-                let (sender, recv) = mpsc::channel();
-
-                {
-                    let mut resize = window.resize.lock().unwrap();
-                    *resize = Some(sender);
-                }
-
-                Ok(X11Surface {
-                    connection: Arc::downgrade(&inner_guard.connection),
-                    window: window.into(),
-                    swapchain,
-                    format,
-                    width: size.w,
-                    height: size.h,
-                    buffer: None,
-                    resize: recv,
-                })
-            }
-
-            None => Err(X11Error::InvalidWindow),
+        if has_resize {
+            return Err(X11Error::SurfaceExists);
         }
+
+        let inner = self.inner.clone();
+        let inner_guard = inner.lock().unwrap();
+
+        // Fail if the window is not managed by this backend or is destroyed
+        if !inner_guard.windows.contains_key(&window.id()) {
+            return Err(X11Error::InvalidWindow);
+        }
+
+        let modifiers = modifiers.collect::<Vec<_>>();
+
+        let format = window.0.format;
+        let size = window.size();
+        let swapchain = Swapchain::new(device, size.w as u32, size.h as u32, format, modifiers);
+
+        let (sender, recv) = mpsc::channel();
+
+        {
+            let mut resize = window.0.resize.lock().unwrap();
+            *resize = Some(sender);
+        }
+
+        Ok(X11Surface {
+            connection: Arc::downgrade(&inner_guard.connection),
+            window: Arc::downgrade(&window.0),
+            swapchain,
+            format,
+            width: size.w,
+            height: size.h,
+            buffer: None,
+            resize: recv,
+        })
     }
 }
 
 impl X11Surface {
     /// Returns the window the surface presents to.
-    pub fn window(&self) -> &Window {
-        &self.window
+    ///
+    /// This will return [`None`] if the window has been destroyed.
+    pub fn window(&self) -> Option<impl AsRef<Window> + '_> {
+        let window = self.window.upgrade().map(Window).map(WindowTemporary);
+
+        struct WindowTemporary(Window);
+
+        impl AsRef<Window> for WindowTemporary {
+            fn as_ref(&self) -> &Window {
+                &self.0
+            }
+        }
+
+        window
     }
 
     /// Returns a handle to the GBM device used to allocate buffers.
@@ -528,13 +534,15 @@ impl X11Surface {
                 mem::swap(&mut next, current);
             }
 
+            let window = self.window().ok_or(AllocateBuffersError::WindowDestroyed)?;
+
             if let Ok(pixmap) = PixmapWrapper::with_dmabuf(
                 &*connection,
-                &self.window,
+                window.as_ref(),
                 next.userdata().get::<Dmabuf>().unwrap(),
             ) {
                 // Now present the current buffer
-                let _ = pixmap.present(&*connection, &self.window);
+                let _ = pixmap.present(&*connection, window.as_ref());
             }
             self.swapchain.submitted(next);
 
@@ -617,79 +625,67 @@ impl<'a> WindowBuilder<'a> {
         )?);
 
         let downgrade = Arc::downgrade(&window);
-        inner.windows.insert(window.id, window);
+        inner.windows.insert(window.id, downgrade);
 
-        Ok(Window(downgrade))
+        Ok(Window(window))
     }
 }
 
 /// An X11 window.
+///
+/// Dropping an instance of the window will destroy it.
 #[derive(Debug)]
-pub struct Window(Weak<WindowInner>);
+pub struct Window(Arc<WindowInner>);
 
 impl Window {
     /// Sets the title of the window.
     pub fn set_title(&self, title: &str) {
-        if let Some(inner) = self.0.upgrade() {
-            inner.set_title(title);
-        }
+        self.0.set_title(title);
     }
 
     /// Maps the window, making it visible.
     pub fn map(&self) {
-        if let Some(inner) = self.0.upgrade() {
-            inner.map();
-        }
+        self.0.map();
     }
 
     /// Unmaps the window, making it invisible.
     pub fn unmap(&self) {
-        if let Some(inner) = self.0.upgrade() {
-            inner.unmap();
-        }
+        self.0.unmap();
     }
 
     /// Returns the size of this window.
     ///
     /// If the window has been destroyed, the size is `0 x 0`.
     pub fn size(&self) -> Size<u16, Logical> {
-        self.0
-            .upgrade()
-            .map(|inner| inner.size())
-            .unwrap_or_else(|| (0, 0).into())
+        self.0.size()
     }
 
     /// Changes the visibility of the cursor within the confines of the window.
     ///
     /// If `false`, this will hide the cursor. If `true`, this will show the cursor.
     pub fn set_cursor_visible(&self, visible: bool) {
-        if let Some(inner) = self.0.upgrade() {
-            inner.set_cursor_visible(visible);
-        }
+        self.0.set_cursor_visible(visible);
     }
 
     /// Returns the XID of the window.
     pub fn id(&self) -> u32 {
-        self.0.upgrade().map(|inner| inner.id).unwrap_or(0)
+        self.0.id
     }
 
     /// Returns the depth id of this window.
     pub fn depth(&self) -> u8 {
-        self.0.upgrade().map(|inner| inner.depth.depth).unwrap_or(0)
+        self.0.depth.depth
     }
 
     /// Returns the format expected by the window.
-    pub fn format(&self) -> Option<DrmFourcc> {
-        self.0.upgrade().map(|inner| inner.format)
+    pub fn format(&self) -> DrmFourcc {
+        self.0.format
     }
 }
 
 impl PartialEq for Window {
     fn eq(&self, other: &Self) -> bool {
-        match (self.0.upgrade(), other.0.upgrade()) {
-            (Some(self_), Some(other)) => self_ == other,
-            _ => false,
-        }
+        self.0 == other.0
     }
 }
 
@@ -742,7 +738,7 @@ pub(crate) struct X11Inner {
     log: Logger,
     connection: Arc<RustConnection>,
     screen_number: usize,
-    windows: HashMap<u32, Arc<WindowInner>>,
+    windows: HashMap<u32, Weak<WindowInner>>,
     key_counter: Arc<AtomicU32>,
     window_format: DrmFourcc,
     extensions: Extensions,
@@ -760,7 +756,13 @@ impl X11Inner {
         use self::X11Event::Input;
 
         fn window_from_id(inner: &Arc<Mutex<X11Inner>>, id: &u32) -> Option<Arc<WindowInner>> {
-            inner.lock().unwrap().windows.get(id).cloned()
+            inner
+                .lock()
+                .unwrap()
+                .windows
+                .get(id)
+                .cloned()
+                .and_then(|weak| weak.upgrade())
         }
 
         // If X11 is deadlocking somewhere here, make sure you drop your mutex guards.
@@ -812,7 +814,7 @@ impl X11Inner {
                                     },
                                 },
                             }),
-                            &mut Window(Arc::downgrade(&window)),
+                            &mut Window(window),
                         )
                     } else {
                         callback(
@@ -823,7 +825,7 @@ impl X11Inner {
                                     state: ButtonState::Pressed,
                                 },
                             }),
-                            &mut Window(Arc::downgrade(&window)),
+                            &mut Window(window),
                         )
                     }
                 }
@@ -846,7 +848,7 @@ impl X11Inner {
                                 state: ButtonState::Released,
                             },
                         }),
-                        &mut Window(Arc::downgrade(&window)),
+                        &mut Window(window),
                     );
                 }
             }
@@ -870,7 +872,7 @@ impl X11Inner {
                                 state: KeyState::Pressed,
                             },
                         }),
-                        &mut Window(Arc::downgrade(&window)),
+                        &mut Window(window),
                     )
                 }
             }
@@ -902,7 +904,7 @@ impl X11Inner {
                                 state: KeyState::Released,
                             },
                         }),
-                        &mut Window(Arc::downgrade(&window)),
+                        &mut Window(window),
                     );
                 }
             }
@@ -924,7 +926,7 @@ impl X11Inner {
                                 size: window_size,
                             },
                         }),
-                        &mut Window(Arc::downgrade(&window)),
+                        &mut Window(window),
                     )
                 }
             }
@@ -942,15 +944,16 @@ impl X11Inner {
                         // requests a resize or does something which causes a resize
                         // inside the callback.
                         {
-                            *window.size.lock().unwrap() = configure_notify_size;
+                            let mut resize_guard = window.size.lock().unwrap();
+                            *resize_guard = configure_notify_size;
                         }
 
                         (callback)(
                             X11Event::Resized(configure_notify_size),
-                            &mut Window(Arc::downgrade(&window)),
+                            &mut Window(window.clone()),
                         );
 
-                        if let Some(resize_sender) = &*window.resize.lock().unwrap() {
+                        if let Some(resize_sender) = window.resize.lock().unwrap().as_ref() {
                             let _ = resize_sender.send(configure_notify_size);
                         }
                     }
@@ -974,7 +977,7 @@ impl X11Inner {
                     if client_message.data.as_data32()[0] == window.atoms.WM_DELETE_WINDOW
                     // Destroy the window?
                     {
-                        (callback)(X11Event::CloseRequested, &mut Window(Arc::downgrade(&window)));
+                        (callback)(X11Event::CloseRequested, &mut Window(window));
                     }
                 }
             }
@@ -982,7 +985,7 @@ impl X11Inner {
             x11::Event::Expose(expose) => {
                 if let Some(window) = window_from_id(inner, &expose.window) {
                     if expose.count == 0 {
-                        (callback)(X11Event::Refresh, &mut Window(Arc::downgrade(&window)));
+                        (callback)(X11Event::Refresh, &mut Window(window));
                     }
                 }
             }
@@ -991,7 +994,7 @@ impl X11Inner {
                 if let Some(window) = window_from_id(inner, &complete_notify.window) {
                     window.last_msc.store(complete_notify.msc, Ordering::SeqCst);
 
-                    (callback)(X11Event::PresentCompleted, &mut Window(Arc::downgrade(&window)));
+                    (callback)(X11Event::PresentCompleted, &mut Window(window));
                 }
             }
 

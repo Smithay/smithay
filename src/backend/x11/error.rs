@@ -145,6 +145,10 @@ pub enum AllocateBuffersError {
     /// No free slots
     #[error("No free slots in the swapchain")]
     NoFreeSlots,
+
+    /// The window has been destroyed
+    #[error("The window has been destroyed")]
+    WindowDestroyed,
 }
 
 impl From<Errno> for AllocateBuffersError {
