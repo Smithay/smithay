@@ -98,22 +98,22 @@ impl Drop for Space {
 impl Space {
     pub fn new<L>(log: L) -> Space
     where
-        L: Into<slog::Logger>,
+        L: Into<Option<slog::Logger>>,
     {
         Space {
             id: next_space_id(),
             windows: IndexSet::new(),
             outputs: Vec::new(),
-            logger: log.into(),
+            logger: crate::slog_or_fallback(log),
         }
     }
 
     /// Map window and moves it to top of the stack
     ///
     /// This can safely be called on an already mapped window
-    pub fn map_window(&mut self, window: &Window, location: Point<i32, Logical>) {
+    pub fn map_window<P: Into<Point<i32, Logical>>>(&mut self, window: &Window, location: P) {
         self.insert_window(window);
-        window_state(self.id, window).location = location;
+        window_state(self.id, window).location = location.into();
     }
 
     pub fn raise_window(&mut self, window: &Window) {
@@ -148,7 +148,8 @@ impl Space {
     }
 
     /// Get a reference to the window under a given point, if any
-    pub fn window_under(&self, point: Point<f64, Logical>) -> Option<&Window> {
+    pub fn window_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<&Window> {
+        let point = point.into();
         self.windows.iter().rev().find(|w| {
             let bbox = window_rect(w, &self.id);
             bbox.to_f64().contains(point)
@@ -156,7 +157,8 @@ impl Space {
     }
 
     /// Get a reference to the output under a given point, if any
-    pub fn output_under(&self, point: Point<f64, Logical>) -> Option<&Output> {
+    pub fn output_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<&Output> {
+        let point = point.into();
         self.outputs.iter().rev().find(|o| {
             let bbox = self.output_geometry(o);
             bbox.map(|bbox| bbox.to_f64().contains(point)).unwrap_or(false)
@@ -199,10 +201,10 @@ impl Space {
         Some(window_rect(w, &self.id))
     }
 
-    pub fn map_output(&mut self, output: &Output, scale: f64, location: Point<i32, Logical>) {
+    pub fn map_output<P: Into<Point<i32, Logical>>>(&mut self, output: &Output, scale: f64, location: P) {
         let mut state = output_state(self.id, output);
         *state = OutputState {
-            location,
+            location: location.into(),
             render_scale: scale,
             ..Default::default()
         };

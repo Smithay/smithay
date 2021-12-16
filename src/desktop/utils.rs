@@ -21,7 +21,8 @@ impl SurfaceState {
             .map(|dims| dims.to_logical(self.buffer_scale))
     }
 
-    fn contains_point(&self, attrs: &SurfaceAttributes, point: Point<f64, Logical>) -> bool {
+    fn contains_point<P: Into<Point<f64, Logical>>>(&self, attrs: &SurfaceAttributes, point: P) -> bool {
+        let point = point.into();
         let size = match self.size() {
             None => return false, // If the surface has no size, it can't have an input region.
             Some(size) => size,

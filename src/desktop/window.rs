@@ -221,10 +221,11 @@ impl Window {
 
     /// Finds the topmost surface under this point if any and returns it together with the location of this
     /// surface.
-    pub fn surface_under(
+    pub fn surface_under<P: Into<Point<f64, Logical>>>(
         &self,
-        point: Point<f64, Logical>,
+        point: P,
     ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
+        let point = point.into();
         if let Some(surface) = self.0.toplevel.get_surface() {
             for (popup, location) in PopupManager::popups_for_surface(surface)
                 .ok()
@@ -276,12 +277,12 @@ impl Window {
     }
 }
 
-pub fn draw_window<R, E, F, T>(
+pub fn draw_window<R, E, F, T, P>(
     renderer: &mut R,
     frame: &mut F,
     window: &Window,
     scale: f64,
-    location: Point<i32, Logical>,
+    location: P,
     damage: &[Rectangle<i32, Logical>],
     log: &slog::Logger,
 ) -> Result<(), R::Error>
@@ -290,7 +291,9 @@ where
     F: Frame<Error = E, TextureId = T>,
     E: std::error::Error,
     T: Texture + 'static,
+    P: Into<Point<i32, Logical>>,
 {
+    let location = location.into();
     if let Some(surface) = window.toplevel().get_surface() {
         draw_surface_tree(renderer, frame, surface, scale, location, damage, log)?;
         for (popup, p_location) in PopupManager::popups_for_surface(surface)
