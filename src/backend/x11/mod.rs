@@ -79,15 +79,12 @@ mod error;
 #[macro_use]
 mod extension;
 mod input;
+mod surface;
 mod window_inner;
 
-use self::{buffer::PixmapWrapperExt, window_inner::WindowInner};
 use crate::{
     backend::{
-        allocator::{
-            dmabuf::{AsDmabuf, Dmabuf},
-            Slot, Swapchain,
-        },
+        allocator::Swapchain,
         drm::{node::path_to_type, CreateDrmNodeError, DrmNode, NodeType},
         egl::{native::X11DefaultDisplay, EGLDevice, EGLDisplay, Error as EGLError},
         input::{Axis, ButtonState, InputEvent, KeyState},
@@ -96,7 +93,6 @@ use crate::{
 };
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm_fourcc::{DrmFourcc, DrmModifier};
-use gbm::BufferObject;
 use nix::{
     fcntl::{self, OFlag},
     sys::stat::Mode,
@@ -104,12 +100,11 @@ use nix::{
 use slog::{error, info, o, Logger};
 use std::{
     collections::HashMap,
-    io, mem,
+    io,
     os::unix::prelude::AsRawFd,
     sync::{
         atomic::{AtomicU32, Ordering},
-        mpsc::{self, Receiver},
-        Arc, Mutex, MutexGuard, Weak,
+        mpsc, Arc, Mutex, Weak,
     },
 };
 use x11rb::{
@@ -118,18 +113,17 @@ use x11rb::{
     protocol::{
         self as x11,
         dri3::ConnectionExt as _,
-        xproto::{
-            ColormapAlloc, ConnectionExt, CreateWindowAux, PixmapWrapper, VisualClass, WindowClass,
-            WindowWrapper,
-        },
+        xproto::{ColormapAlloc, ConnectionExt, CreateWindowAux, VisualClass, WindowClass, WindowWrapper},
         ErrorKind,
     },
     rust_connection::{ReplyError, RustConnection},
 };
 
+use self::{extension::Extensions, window_inner::WindowInner};
+
 pub use self::error::*;
-use self::extension::Extensions;
 pub use self::input::*;
+pub use self::surface::*;
 
 /// An event emitted by the X11 backend.
 #[derive(Debug)]
@@ -159,16 +153,6 @@ pub struct X11Backend {
     connection: Arc<RustConnection>,
     source: X11Source,
     inner: Arc<Mutex<X11Inner>>,
-}
-
-atom_manager! {
-    pub(crate) Atoms: AtomCollectionCookie {
-        WM_PROTOCOLS,
-        WM_DELETE_WINDOW,
-        _NET_WM_NAME,
-        UTF8_STRING,
-        _SMITHAY_X11_BACKEND_CLOSE,
-    }
 }
 
 impl X11Backend {
@@ -277,100 +261,12 @@ impl X11Backend {
     }
 }
 
-/// An X11 surface which uses GBM to allocate and present buffers.
-#[derive(Debug)]
-pub struct X11Surface {
-    connection: Weak<RustConnection>,
-    window: Weak<WindowInner>,
-    resize: Receiver<Size<u16, Logical>>,
-    swapchain: Swapchain<Arc<Mutex<gbm::Device<DrmNode>>>, BufferObject<()>>,
-    format: DrmFourcc,
-    width: u16,
-    height: u16,
-    buffer: Option<Slot<BufferObject<()>>>,
-}
-
 #[derive(Debug, thiserror::Error)]
 enum EGLInitError {
     #[error(transparent)]
     EGL(#[from] EGLError),
     #[error(transparent)]
     IO(#[from] io::Error),
-}
-
-fn egl_init(_: &X11Inner) -> Result<DrmNode, EGLInitError> {
-    let display = EGLDisplay::new(&X11DefaultDisplay, None)?;
-    let device = EGLDevice::device_for_display(&display)?;
-    let path = path_to_type(device.drm_device_path()?, NodeType::Render)?;
-    fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
-        .map_err(Into::<io::Error>::into)
-        .and_then(|fd| {
-            DrmNode::from_fd(fd).map_err(|err| match err {
-                CreateDrmNodeError::Io(err) => err,
-                _ => unreachable!(),
-            })
-        })
-        .map_err(EGLInitError::IO)
-}
-
-fn dri3_init(x11: &X11Inner) -> Result<DrmNode, X11Error> {
-    let connection = &x11.connection;
-
-    // Determine which drm-device the Display is using.
-    let screen = &connection.setup().roots[x11.screen_number];
-    // provider being NONE tells the X server to use the RandR provider.
-    let dri3 = match connection.dri3_open(screen.root, x11rb::NONE)?.reply() {
-        Ok(reply) => reply,
-        Err(err) => {
-            return Err(if let ReplyError::X11Error(ref protocol_error) = err {
-                match protocol_error.error_kind {
-                    // Implementation is risen when the renderer is not capable of X server is not capable
-                    // of rendering at all.
-                    ErrorKind::Implementation => X11Error::CannotDirectRender,
-                    // Match may occur when the node cannot be authenticated for the client.
-                    ErrorKind::Match => X11Error::CannotDirectRender,
-                    _ => err.into(),
-                }
-            } else {
-                err.into()
-            });
-        }
-    };
-
-    // Take ownership of the container's inner value so we do not need to duplicate the fd.
-    // This is fine because the X server will always open a new file descriptor.
-    let drm_device_fd = dri3.device_fd.into_raw_fd();
-
-    let fd_flags =
-        fcntl::fcntl(drm_device_fd.as_raw_fd(), fcntl::F_GETFD).map_err(AllocateBuffersError::from)?;
-
-    // Enable the close-on-exec flag.
-    fcntl::fcntl(
-        drm_device_fd,
-        fcntl::F_SETFD(fcntl::FdFlag::from_bits_truncate(fd_flags) | fcntl::FdFlag::FD_CLOEXEC),
-    )
-    .map_err(AllocateBuffersError::from)?;
-    let drm_node = DrmNode::from_fd(drm_device_fd).map_err(Into::<AllocateBuffersError>::into)?;
-
-    if drm_node.ty() != NodeType::Render && drm_node.has_render() {
-        // Try to get the render node.
-        if let Some(path) = drm_node.dev_path_with_type(NodeType::Render) {
-            return Ok(fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
-                .map_err(Into::<std::io::Error>::into)
-                .map_err(CreateDrmNodeError::Io)
-                .and_then(DrmNode::from_fd)
-                .unwrap_or_else(|err| {
-                    slog::warn!(&x11.log, "Could not create render node from existing DRM node ({}), falling back to primary node", err);
-                    drm_node
-                }));
-        }
-    }
-
-    slog::warn!(
-        &x11.log,
-        "DRM Device does not have a render node, falling back to primary node"
-    );
-    Ok(drm_node)
 }
 
 /// A handle to the X11 backend.
@@ -479,115 +375,6 @@ impl X11Handle {
             buffer: None,
             resize: recv,
         })
-    }
-}
-
-impl X11Surface {
-    /// Returns the window the surface presents to.
-    ///
-    /// This will return [`None`] if the window has been destroyed.
-    pub fn window(&self) -> Option<impl AsRef<Window> + '_> {
-        let window = self.window.upgrade().map(Window).map(WindowTemporary);
-
-        struct WindowTemporary(Window);
-
-        impl AsRef<Window> for WindowTemporary {
-            fn as_ref(&self) -> &Window {
-                &self.0
-            }
-        }
-
-        window
-    }
-
-    /// Returns a handle to the GBM device used to allocate buffers.
-    pub fn device(&self) -> MutexGuard<'_, gbm::Device<DrmNode>> {
-        self.swapchain.allocator.lock().unwrap()
-    }
-
-    /// Returns the format of the buffers the surface accepts.
-    pub fn format(&self) -> DrmFourcc {
-        self.format
-    }
-
-    /// Returns the next buffer that will be presented to the Window and its age.
-    ///
-    /// You may bind this buffer to a renderer to render.
-    /// This function will return the same buffer until [`submit`](Self::submit) is called
-    /// or [`reset_buffers`](Self::reset_buffer) is used to reset the buffers.
-    pub fn buffer(&mut self) -> Result<(Dmabuf, u8), AllocateBuffersError> {
-        if let Some(new_size) = self.resize.try_iter().last() {
-            self.resize(new_size)?;
-        }
-
-        if self.buffer.is_none() {
-            self.buffer = Some(
-                self.swapchain
-                    .acquire()
-                    .map_err(Into::<AllocateBuffersError>::into)?
-                    .ok_or(AllocateBuffersError::NoFreeSlots)?,
-            );
-        }
-
-        let slot = self.buffer.as_ref().unwrap();
-        let age = slot.age();
-        match slot.userdata().get::<Dmabuf>() {
-            Some(dmabuf) => Ok((dmabuf.clone(), age)),
-            None => {
-                let dmabuf = slot.export().map_err(Into::<AllocateBuffersError>::into)?;
-                slot.userdata().insert_if_missing(|| dmabuf.clone());
-                Ok((dmabuf, age))
-            }
-        }
-    }
-
-    /// Consume and submit the buffer to the window.
-    pub fn submit(&mut self) -> Result<(), AllocateBuffersError> {
-        if let Some(connection) = self.connection.upgrade() {
-            // Get a new buffer
-            let mut next = self
-                .swapchain
-                .acquire()
-                .map_err(Into::<AllocateBuffersError>::into)?
-                .ok_or(AllocateBuffersError::NoFreeSlots)?;
-
-            // Swap the buffers
-            if let Some(current) = self.buffer.as_mut() {
-                mem::swap(&mut next, current);
-            }
-
-            let window = self.window().ok_or(AllocateBuffersError::WindowDestroyed)?;
-
-            if let Ok(pixmap) = PixmapWrapper::with_dmabuf(
-                &*connection,
-                window.as_ref(),
-                next.userdata().get::<Dmabuf>().unwrap(),
-            ) {
-                // Now present the current buffer
-                let _ = pixmap.present(&*connection, window.as_ref());
-            }
-            self.swapchain.submitted(next);
-
-            // Flush the connection after presenting to the window to ensure we don't run out of buffer space in the X11 connection.
-            let _ = connection.flush();
-        }
-        Ok(())
-    }
-
-    /// Resets the internal buffers, e.g. to reset age values
-    pub fn reset_buffers(&mut self) {
-        self.swapchain.reset_buffers();
-        self.buffer = None;
-    }
-
-    fn resize(&mut self, size: Size<u16, Logical>) -> Result<(), AllocateBuffersError> {
-        self.swapchain.resize(size.w as u32, size.h as u32);
-        self.buffer = None;
-
-        self.width = size.w;
-        self.height = size.h;
-
-        Ok(())
     }
 }
 
@@ -752,6 +539,16 @@ impl EventSource for X11Backend {
 
     fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
         self.source.unregister(poll)
+    }
+}
+
+atom_manager! {
+    pub(crate) Atoms: AtomCollectionCookie {
+        WM_PROTOCOLS,
+        WM_DELETE_WINDOW,
+        _NET_WM_NAME,
+        UTF8_STRING,
+        _SMITHAY_X11_BACKEND_CLOSE,
     }
 }
 
@@ -1031,4 +828,79 @@ impl X11Inner {
             _ => (),
         }
     }
+}
+
+fn egl_init(_: &X11Inner) -> Result<DrmNode, EGLInitError> {
+    let display = EGLDisplay::new(&X11DefaultDisplay, None)?;
+    let device = EGLDevice::device_for_display(&display)?;
+    let path = path_to_type(device.drm_device_path()?, NodeType::Render)?;
+    fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
+        .map_err(Into::<io::Error>::into)
+        .and_then(|fd| {
+            DrmNode::from_fd(fd).map_err(|err| match err {
+                CreateDrmNodeError::Io(err) => err,
+                _ => unreachable!(),
+            })
+        })
+        .map_err(EGLInitError::IO)
+}
+
+fn dri3_init(x11: &X11Inner) -> Result<DrmNode, X11Error> {
+    let connection = &x11.connection;
+
+    // Determine which drm-device the Display is using.
+    let screen = &connection.setup().roots[x11.screen_number];
+    // provider being NONE tells the X server to use the RandR provider.
+    let dri3 = match connection.dri3_open(screen.root, x11rb::NONE)?.reply() {
+        Ok(reply) => reply,
+        Err(err) => {
+            return Err(if let ReplyError::X11Error(ref protocol_error) = err {
+                match protocol_error.error_kind {
+                    // Implementation is risen when the renderer is not capable of X server is not capable
+                    // of rendering at all.
+                    ErrorKind::Implementation => X11Error::CannotDirectRender,
+                    // Match may occur when the node cannot be authenticated for the client.
+                    ErrorKind::Match => X11Error::CannotDirectRender,
+                    _ => err.into(),
+                }
+            } else {
+                err.into()
+            });
+        }
+    };
+
+    // Take ownership of the container's inner value so we do not need to duplicate the fd.
+    // This is fine because the X server will always open a new file descriptor.
+    let drm_device_fd = dri3.device_fd.into_raw_fd();
+
+    let fd_flags =
+        fcntl::fcntl(drm_device_fd.as_raw_fd(), fcntl::F_GETFD).map_err(AllocateBuffersError::from)?;
+
+    // Enable the close-on-exec flag.
+    fcntl::fcntl(
+        drm_device_fd,
+        fcntl::F_SETFD(fcntl::FdFlag::from_bits_truncate(fd_flags) | fcntl::FdFlag::FD_CLOEXEC),
+    )
+    .map_err(AllocateBuffersError::from)?;
+    let drm_node = DrmNode::from_fd(drm_device_fd).map_err(Into::<AllocateBuffersError>::into)?;
+
+    if drm_node.ty() != NodeType::Render && drm_node.has_render() {
+        // Try to get the render node.
+        if let Some(path) = drm_node.dev_path_with_type(NodeType::Render) {
+            return Ok(fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
+                .map_err(Into::<std::io::Error>::into)
+                .map_err(CreateDrmNodeError::Io)
+                .and_then(DrmNode::from_fd)
+                .unwrap_or_else(|err| {
+                    slog::warn!(&x11.log, "Could not create render node from existing DRM node ({}), falling back to primary node", err);
+                    drm_node
+                }));
+        }
+    }
+
+    slog::warn!(
+        &x11.log,
+        "DRM Device does not have a render node, falling back to primary node"
+    );
+    Ok(drm_node)
 }
