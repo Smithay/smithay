@@ -4,7 +4,10 @@ use crate::{
     desktop::{layer::*, output::*},
     utils::{Logical, Point, Rectangle},
     wayland::{
-        compositor::{with_surface_tree_downward, SubsurfaceCachedState, TraversalAction},
+        compositor::{
+            get_parent, is_sync_subsurface, with_surface_tree_downward, SubsurfaceCachedState,
+            TraversalAction,
+        },
         output::Output,
         shell::wlr_layer::Layer as WlrLayer,
     },
@@ -393,6 +396,21 @@ impl Space {
                     )
                 }
             }
+        }
+    }
+
+    /// Automatically calls `Window::refresh` for the window that belongs to the given surface,
+    /// if managed by this space.
+    pub fn commit(&mut self, surface: &WlSurface) {
+        if is_sync_subsurface(surface) {
+            return;
+        }
+        let mut root = surface.clone();
+        while let Some(parent) = get_parent(&root) {
+            root = parent;
+        }
+        if let Some(window) = self.windows().find(|w| w.toplevel().get_surface() == Some(&root)) {
+            window.refresh();
         }
     }
 

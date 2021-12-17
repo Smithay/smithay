@@ -9,6 +9,7 @@ use crate::{
     },
 };
 use std::{
+    cell::Cell,
     collections::HashSet,
     hash::{Hash, Hasher},
     rc::Rc,
@@ -99,6 +100,7 @@ impl Kind {
 pub(super) struct WindowInner {
     pub(super) id: usize,
     toplevel: Kind,
+    bbox: Cell<Rectangle<i32, Logical>>,
     user_data: UserDataMap,
 }
 
@@ -135,6 +137,7 @@ impl Window {
         Window(Rc::new(WindowInner {
             id,
             toplevel,
+            bbox: Cell::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
             user_data: UserDataMap::new(),
         }))
     }
@@ -153,7 +156,7 @@ impl Window {
     // TODO: Cache and document when to trigger updates. If possible let space do it
     pub fn bbox(&self) -> Rectangle<i32, Logical> {
         if let Some(surface) = self.0.toplevel.get_surface() {
-            bbox_from_surface_tree(surface, (0, 0))
+            self.0.bbox.get()
         } else {
             Rectangle::from_loc_and_size((0, 0), (0, 0))
         }
@@ -216,6 +219,16 @@ impl Window {
                     send_frames_surface_tree(surface, time);
                 }
             }
+        }
+    }
+
+    /// Updates internal values
+    ///
+    /// Needs to be called whenever the toplevel surface or any unsynchronized subsurfaces of this window are updated
+    /// to correctly update the bounding box of this window.
+    pub fn refresh(&self) {
+        if let Some(surface) = self.0.toplevel.get_surface() {
+            self.0.bbox.set(bbox_from_surface_tree(surface, (0, 0)));
         }
     }
 
