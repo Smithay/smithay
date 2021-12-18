@@ -29,53 +29,22 @@
 
 use std::sync::atomic::Ordering;
 
-use super::{Window, X11Error};
+use super::{PresentError, Window, X11Error};
 use drm_fourcc::DrmFourcc;
 use nix::fcntl;
-use x11rb::connection::Connection;
-use x11rb::protocol::dri3::ConnectionExt as _;
-use x11rb::protocol::present::{self, ConnectionExt};
-use x11rb::protocol::xproto::PixmapWrapper;
-use x11rb::rust_connection::{ConnectionError, ReplyOrIdError};
-use x11rb::utils::RawFdContainer;
+use x11rb::{
+    connection::Connection,
+    protocol::{
+        dri3::ConnectionExt as _,
+        present::{self, ConnectionExt},
+        xproto::PixmapWrapper,
+    },
+    utils::RawFdContainer,
+};
 
-use crate::backend::allocator::dmabuf::Dmabuf;
-use crate::backend::allocator::Buffer;
+use crate::backend::allocator::{dmabuf::Dmabuf, Buffer};
 
 // Shm can be easily supported in the future using, xcb_shm_create_pixmap.
-
-#[derive(Debug, thiserror::Error)]
-pub enum CreatePixmapError {
-    #[error("An x11 protocol error occured")]
-    Protocol(X11Error),
-
-    #[error("The Dmabuf had too many planes")]
-    TooManyPlanes,
-
-    #[error("Duplicating the file descriptors for the dmabuf handles failed")]
-    DupFailed(String),
-
-    #[error("Buffer had incorrect format, expected: {0}")]
-    IncorrectFormat(DrmFourcc),
-}
-
-impl From<X11Error> for CreatePixmapError {
-    fn from(e: X11Error) -> Self {
-        CreatePixmapError::Protocol(e)
-    }
-}
-
-impl From<ReplyOrIdError> for CreatePixmapError {
-    fn from(e: ReplyOrIdError) -> Self {
-        X11Error::from(e).into()
-    }
-}
-
-impl From<ConnectionError> for CreatePixmapError {
-    fn from(e: ConnectionError) -> Self {
-        X11Error::from(e).into()
-    }
-}
 
 pub trait PixmapWrapperExt<'c, C>
 where
@@ -88,7 +57,7 @@ where
         connection: &'c C,
         window: &Window,
         dmabuf: &Dmabuf,
-    ) -> Result<PixmapWrapper<'c, C>, CreatePixmapError>;
+    ) -> Result<PixmapWrapper<'c, C>, X11Error>;
 
     /// Presents the pixmap to the window.
     ///
@@ -108,9 +77,9 @@ where
         connection: &'c C,
         window: &Window,
         dmabuf: &Dmabuf,
-    ) -> Result<PixmapWrapper<'c, C>, CreatePixmapError> {
+    ) -> Result<PixmapWrapper<'c, C>, X11Error> {
         if dmabuf.format().code != window.format() {
-            return Err(CreatePixmapError::IncorrectFormat(window.format()));
+            return Err(PresentError::IncorrectFormat(window.format()).into());
         }
 
         let mut fds = Vec::new();
@@ -121,7 +90,7 @@ where
                 handle,
                 fcntl::FcntlArg::F_DUPFD_CLOEXEC(3), // Set to 3 so the fd cannot become stdin, stdout or stderr
             )
-            .map_err(|e| CreatePixmapError::DupFailed(e.to_string()))?;
+            .map_err(|e| PresentError::DupFailed(e.to_string()))?;
 
             fds.push(RawFdContainer::new(fd))
         }
@@ -129,7 +98,7 @@ where
         // We need dri3 >= 1.2 in order to use the enhanced dri3_pixmap_from_buffers function.
         let xid = if window.0.extensions.dri3 >= Some((1, 2)) {
             if dmabuf.num_planes() > 4 {
-                return Err(CreatePixmapError::TooManyPlanes);
+                return Err(PresentError::TooManyPlanes.into());
             }
 
             let xid = connection.generate_id()?;
@@ -165,7 +134,7 @@ where
         } else {
             // Old codepath can only create a pixmap using one plane from a dmabuf.
             if dmabuf.num_planes() != 1 {
-                return Err(CreatePixmapError::TooManyPlanes);
+                return Err(PresentError::TooManyPlanes.into());
             }
 
             let xid = connection.generate_id()?;

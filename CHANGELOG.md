@@ -73,6 +73,7 @@
 
 - EGLBufferReader now checks if buffers are alive before using them.
 - LibSeat no longer panics on seat disable event.
+- X11 backend will report an error when trying to present a dmabuf fails.
 
 ### Anvil
 

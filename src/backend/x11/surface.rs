@@ -19,6 +19,24 @@ use crate::{
     utils::{Logical, Size},
 };
 
+use super::X11Error;
+
+/// An error that may occur when presenting.
+#[derive(Debug, thiserror::Error)]
+pub enum PresentError {
+    /// The dmabuf being presented has too many planes.
+    #[error("The Dmabuf had too many planes")]
+    TooManyPlanes,
+
+    /// Duplicating the dmabuf handles failed.
+    #[error("Duplicating the file descriptors for the dmabuf handles failed")]
+    DupFailed(String),
+
+    /// The format dmabuf presented does not match the format of the window.
+    #[error("Buffer had incorrect format, expected: {0}")]
+    IncorrectFormat(DrmFourcc),
+}
+
 /// An X11 surface which uses GBM to allocate and present buffers.
 #[derive(Debug)]
 pub struct X11Surface {
@@ -67,7 +85,7 @@ impl X11Surface {
     /// or [`reset_buffers`](Self::reset_buffer) is used to reset the buffers.
     pub fn buffer(&mut self) -> Result<(Dmabuf, u8), AllocateBuffersError> {
         if let Some(new_size) = self.resize.try_iter().last() {
-            self.resize(new_size)?;
+            self.resize(new_size);
         }
 
         if self.buffer.is_none() {
@@ -92,7 +110,7 @@ impl X11Surface {
     }
 
     /// Consume and submit the buffer to the window.
-    pub fn submit(&mut self) -> Result<(), AllocateBuffersError> {
+    pub fn submit(&mut self) -> Result<(), X11Error> {
         if let Some(connection) = self.connection.upgrade() {
             // Get a new buffer
             let mut next = self
@@ -107,15 +125,14 @@ impl X11Surface {
             }
 
             let window = self.window().ok_or(AllocateBuffersError::WindowDestroyed)?;
-
-            if let Ok(pixmap) = PixmapWrapper::with_dmabuf(
+            let pixmap = PixmapWrapper::with_dmabuf(
                 &*connection,
                 window.as_ref(),
                 next.userdata().get::<Dmabuf>().unwrap(),
-            ) {
-                // Now present the current buffer
-                let _ = pixmap.present(&*connection, window.as_ref());
-            }
+            )?;
+
+            // Now present the current buffer
+            let _ = pixmap.present(&*connection, window.as_ref())?;
             self.swapchain.submitted(next);
 
             // Flush the connection after presenting to the window to ensure we don't run out of buffer space in the X11 connection.
@@ -130,13 +147,11 @@ impl X11Surface {
         self.buffer = None;
     }
 
-    fn resize(&mut self, size: Size<u16, Logical>) -> Result<(), AllocateBuffersError> {
+    fn resize(&mut self, size: Size<u16, Logical>) {
         self.swapchain.resize(size.w as u32, size.h as u32);
         self.buffer = None;
 
         self.width = size.w;
         self.height = size.h;
-
-        Ok(())
     }
 }
