@@ -401,7 +401,7 @@ impl Space {
 
     /// Automatically calls `Window::refresh` for the window that belongs to the given surface,
     /// if managed by this space.
-    pub fn commit(&mut self, surface: &WlSurface) {
+    pub fn commit(&self, surface: &WlSurface) {
         if is_sync_subsurface(surface) {
             return;
         }
