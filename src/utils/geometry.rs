@@ -886,16 +886,21 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     }
 
     /// Clamp rectangle to min and max corners resulting in the overlapping area of two rectangles
+    ///
+    /// Returns `None` if the two rectangles don't overlap
     #[inline]
-    pub fn intersection(self, other: impl Into<Rectangle<N, Kind>>) -> Self {
+    pub fn intersection(self, other: impl Into<Rectangle<N, Kind>>) -> Option<Self> {
         let other = other.into();
-        Rectangle::from_extemities(
+        if !self.overlaps(other) {
+            return None;
+        }
+        Some(Rectangle::from_extemities(
             (self.loc.x.max(other.loc.x), self.loc.y.max(other.loc.y)),
             (
                 (self.loc.x.saturating_add(self.size.w)).min(other.loc.x.saturating_add(other.size.w)),
                 (self.loc.y.saturating_add(self.size.h)).min(other.loc.y.saturating_add(other.size.h)),
             ),
-        )
+        ))
     }
 
     /// Compute the bounding box of a given set of points
