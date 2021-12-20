@@ -266,15 +266,20 @@ impl Window {
     ) -> Vec<Rectangle<i32, Logical>> {
         let mut damage = Vec::new();
         if let Some(surface) = self.0.toplevel.get_surface() {
-            damage.extend(damage_from_surface_tree(surface, (0, 0), for_values));
+            damage.extend(
+                damage_from_surface_tree(surface, (0, 0), for_values)
+                    .into_iter()
+                    .flat_map(|rect| rect.intersection(self.bbox())),
+            );
             for (popup, location) in PopupManager::popups_for_surface(surface)
                 .ok()
                 .into_iter()
                 .flatten()
             {
                 if let Some(surface) = popup.get_surface() {
+                    let bbox = bbox_from_surface_tree(surface, location);
                     let popup_damage = damage_from_surface_tree(surface, location, for_values);
-                    damage.extend(popup_damage);
+                    damage.extend(popup_damage.into_iter().flat_map(|rect| rect.intersection(bbox)));
                 }
             }
         }
