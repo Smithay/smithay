@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use wayland_server::protocol::wl_surface::WlSurface;
 
 use std::{
+    any::TypeId,
     cell::{RefCell, RefMut},
     collections::{HashMap, VecDeque},
 };
@@ -14,6 +15,7 @@ use std::{
 pub(super) enum ToplevelId {
     Xdg(usize),
     Layer(usize),
+    Custom(TypeId, usize),
 }
 
 impl ToplevelId {
@@ -27,6 +29,13 @@ impl ToplevelId {
     pub fn is_layer(&self) -> bool {
         match self {
             ToplevelId::Layer(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_custom(&self) -> bool {
+        match self {
+            ToplevelId::Custom(_, _) => true,
             _ => false,
         }
     }

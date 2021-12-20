@@ -1,6 +1,6 @@
 use super::{draw_window, Window};
 use crate::{
-    backend::renderer::{utils::SurfaceState, Frame, ImportAll, Renderer, Transform},
+    backend::renderer::{utils::SurfaceState, Frame, ImportAll, Renderer, Texture, Transform},
     desktop::{layer::*, output::*},
     utils::{Logical, Point, Rectangle},
     wayland::{
@@ -14,6 +14,7 @@ use crate::{
 };
 use indexmap::{IndexMap, IndexSet};
 use std::{
+    any::{Any, TypeId},
     cell::{RefCell, RefMut},
     collections::{HashMap, HashSet, VecDeque},
     sync::{
@@ -420,10 +421,18 @@ impl Space {
         output: &Output,
         age: usize,
         clear_color: [f32; 4],
+        custom_elements: &[&(dyn RenderElement<
+            R,
+            <R as Renderer>::Frame,
+            <R as Renderer>::Error,
+            <R as Renderer>::TextureId,
+        >)],
     ) -> Result<bool, RenderError<R>>
     where
-        R: Renderer + ImportAll,
+        R: Renderer + ImportAll + 'static,
         R::TextureId: 'static,
+        R::Error: 'static,
+        R::Frame: 'static,
     {
         let mut state = output_state(self.id, output);
         let output_size = output
@@ -439,12 +448,15 @@ impl Space {
         // This will hold all the damage we need for this rendering step
         let mut damage = Vec::<Rectangle<i32, Logical>>::new();
         // First add damage for windows gone
-        for old_window in state
+        for old_toplevel in state
             .last_state
             .iter()
             .filter_map(|(id, w)| {
                 if !self.windows.iter().any(|w| ToplevelId::Xdg(w.0.id) == *id)
                     && !layer_map.layers().any(|l| ToplevelId::Layer(l.0.id) == *id)
+                    && !custom_elements
+                        .iter()
+                        .any(|c| ToplevelId::Custom(c.type_of(), c.id()) == *id)
                 {
                     Some(*w)
                 } else {
@@ -453,8 +465,8 @@ impl Space {
             })
             .collect::<Vec<Rectangle<i32, Logical>>>()
         {
-            slog::trace!(self.logger, "Removing toplevel at: {:?}", old_window);
-            damage.push(old_window);
+            slog::trace!(self.logger, "Removing toplevel at: {:?}", old_toplevel);
+            damage.push(old_toplevel);
         }
 
         // lets iterate front to back and figure out, what new windows or unmoved windows we have
@@ -495,6 +507,30 @@ impl Space {
                 damage.extend(
                     layer
                         .accumulated_damage(Some((self, output)))
+                        .into_iter()
+                        .map(|mut rect| {
+                            rect.loc += location;
+                            rect
+                        }),
+                );
+            }
+        }
+        for elem in custom_elements {
+            let geo = elem.geometry();
+            let old_geo = state
+                .last_state
+                .get(&ToplevelId::Custom(elem.type_of(), elem.id()))
+                .cloned();
+
+            // moved of resized
+            if old_geo.map(|old_geo| old_geo != geo).unwrap_or(false) {
+                // Add damage for the old position of the layer
+                damage.push(old_geo.unwrap());
+                damage.push(geo);
+            } else {
+                let location = geo.loc;
+                damage.extend(
+                    elem.accumulated_damage(Some((self, output)))
                         .into_iter()
                         .map(|mut rect| {
                             rect.loc += location;
@@ -577,7 +613,7 @@ impl Space {
                             self.logger,
                             "Rendering layer at {:?} with damage {:#?}",
                             lgeo,
-                            damage
+                            layer_damage
                         );
                         draw_layer(
                             renderer,
@@ -606,7 +642,7 @@ impl Space {
                             self.logger,
                             "Rendering window at {:?} with damage {:#?}",
                             wgeo,
-                            damage
+                            win_damage
                         );
                         draw_window(
                             renderer,
@@ -636,7 +672,7 @@ impl Space {
                             self.logger,
                             "Rendering layer at {:?} with damage {:#?}",
                             lgeo,
-                            damage
+                            layer_damage
                         );
                         draw_layer(
                             renderer,
@@ -648,6 +684,31 @@ impl Space {
                             &self.logger,
                         )?;
                         layer_state(self.id, layer).drawn = true;
+                    }
+                }
+
+                for elem in custom_elements {
+                    let egeo = elem.geometry();
+                    if damage.iter().any(|geo| egeo.overlaps(*geo)) {
+                        let elem_damage = damage
+                            .iter()
+                            .flat_map(|geo| geo.intersection(egeo))
+                            .map(|geo| Rectangle::from_loc_and_size(geo.loc - egeo.loc, geo.size))
+                            .collect::<Vec<_>>();
+                        slog::trace!(
+                            self.logger,
+                            "Rendering custom element at {:?} with damage {:#?}",
+                            egeo,
+                            elem_damage
+                        );
+                        elem.draw(
+                            renderer,
+                            frame,
+                            state.render_scale,
+                            egeo.loc,
+                            &elem_damage,
+                            &self.logger,
+                        )?;
                     }
                 }
 
@@ -672,6 +733,10 @@ impl Space {
             .chain(layer_map.layers().map(|layer| {
                 let lgeo = layer_map.layer_geometry(layer);
                 (ToplevelId::Layer(layer.0.id), lgeo)
+            }))
+            .chain(custom_elements.iter().map(|custom| {
+                let egeo = custom.geometry();
+                (ToplevelId::Custom(custom.type_of(), custom.id()), egeo)
             }))
             .collect();
         state.old_damage.push_front(new_damage);
@@ -700,6 +765,78 @@ impl Space {
                 layer.send_frame(time);
             }
         }
+    }
+}
+
+pub trait RenderElement<R, F, E, T>
+where
+    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
+    F: Frame<Error = E, TextureId = T>,
+    E: std::error::Error,
+    T: Texture + 'static,
+    Self: Any + 'static,
+{
+    fn id(&self) -> usize;
+    fn type_of(&self) -> TypeId {
+        std::any::Any::type_id(self)
+    }
+    fn geometry(&self) -> Rectangle<i32, Logical>;
+    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>>;
+    fn draw(
+        &self,
+        renderer: &mut R,
+        frame: &mut F,
+        scale: f64,
+        location: Point<i32, Logical>,
+        damage: &[Rectangle<i32, Logical>],
+        log: &slog::Logger,
+    ) -> Result<(), R::Error>;
+}
+
+#[derive(Debug)]
+pub struct SurfaceTree {
+    pub surface: WlSurface,
+    pub position: Point<i32, Logical>,
+}
+
+impl<R, F, E, T> RenderElement<R, F, E, T> for SurfaceTree
+where
+    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
+    F: Frame<Error = E, TextureId = T>,
+    E: std::error::Error,
+    T: Texture + 'static,
+{
+    fn id(&self) -> usize {
+        self.surface.as_ref().id() as usize
+    }
+    fn geometry(&self) -> Rectangle<i32, Logical> {
+        let mut bbox = super::utils::bbox_from_surface_tree(&self.surface, (0, 0));
+        bbox.loc += self.position;
+        bbox
+    }
+
+    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
+        super::utils::damage_from_surface_tree(&self.surface, (0, 0), for_values)
+    }
+
+    fn draw(
+        &self,
+        renderer: &mut R,
+        frame: &mut F,
+        scale: f64,
+        location: Point<i32, Logical>,
+        damage: &[Rectangle<i32, Logical>],
+        log: &slog::Logger,
+    ) -> Result<(), R::Error> {
+        crate::backend::renderer::utils::draw_surface_tree(
+            renderer,
+            frame,
+            &self.surface,
+            scale,
+            location,
+            damage,
+            log,
+        )
     }
 }
 
