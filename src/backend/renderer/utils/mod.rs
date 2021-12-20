@@ -165,8 +165,7 @@ where
                     let new_damage = damage
                         .iter()
                         .cloned()
-                        .filter(|geo| geo.overlaps(rect))
-                        .map(|geo| geo.intersection(rect))
+                        .flat_map(|geo| geo.intersection(rect))
                         .map(|mut geo| {
                             geo.loc -= rect.loc;
                             geo
