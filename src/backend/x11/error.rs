@@ -6,24 +6,26 @@ use x11rb::rust_connection::{ConnectError, ConnectionError, ReplyError, ReplyOrI
 
 use crate::backend::{allocator::gbm::GbmConvertError, drm::CreateDrmNodeError};
 
+use super::PresentError;
+
 /// An error emitted by the X11 backend during setup.
 #[derive(Debug, thiserror::Error)]
 pub enum X11Error {
     /// Connecting to the X server failed.
     #[error("Connecting to the X server failed")]
-    ConnectionFailed(ConnectError),
+    ConnectionFailed(#[from] ConnectError),
 
     /// A required X11 extension was not present or has the right version.
     #[error("{0}")]
-    MissingExtension(MissingExtensionError),
+    MissingExtension(#[from] MissingExtensionError),
 
     /// Some protocol error occurred during setup.
     #[error("Some protocol error occurred during setup")]
-    Protocol(ReplyOrIdError),
+    Protocol(#[from] ReplyOrIdError),
 
     /// Creating the window failed.
     #[error("Creating the window failed")]
-    CreateWindow(CreateWindowError),
+    CreateWindow(#[from] CreateWindowError),
 
     /// An X11 surface already exists for this window.
     #[error("An X11 surface already exists for this window")]
@@ -42,13 +44,11 @@ pub enum X11Error {
 
     /// Failed to allocate buffers needed to present to the window.
     #[error("Failed to allocate buffers needed to present to the window")]
-    Allocation(AllocateBuffersError),
-}
+    Allocation(#[from] AllocateBuffersError),
 
-impl From<ConnectError> for X11Error {
-    fn from(err: ConnectError) -> Self {
-        Self::ConnectionFailed(err)
-    }
+    /// Error while presenting to a window.
+    #[error(transparent)]
+    Present(#[from] PresentError),
 }
 
 impl From<ReplyError> for X11Error {
@@ -60,12 +60,6 @@ impl From<ReplyError> for X11Error {
 impl From<ConnectionError> for X11Error {
     fn from(err: ConnectionError) -> Self {
         Self::Protocol(err.into())
-    }
-}
-
-impl From<ReplyOrIdError> for X11Error {
-    fn from(err: ReplyOrIdError) -> Self {
-        Self::Protocol(err)
     }
 }
 
@@ -99,12 +93,6 @@ pub enum MissingExtensionError {
     },
 }
 
-impl From<MissingExtensionError> for X11Error {
-    fn from(err: MissingExtensionError) -> Self {
-        Self::MissingExtension(err)
-    }
-}
-
 /// An error which may occur when creating an X11 window.
 #[derive(Debug, thiserror::Error)]
 pub enum CreateWindowError {
@@ -115,12 +103,6 @@ pub enum CreateWindowError {
     /// No visual fulfilling the pixel format requirements was found.
     #[error("No visual fulfilling the requirements was found")]
     NoVisual,
-}
-
-impl From<CreateWindowError> for X11Error {
-    fn from(err: CreateWindowError) -> Self {
-        Self::CreateWindow(err)
-    }
 }
 
 /// An error which may occur when allocating buffers for presentation to the window.
@@ -163,11 +145,5 @@ impl From<CreateDrmNodeError> for AllocateBuffersError {
             CreateDrmNodeError::Io(err) => AllocateBuffersError::OpenDevice(err),
             CreateDrmNodeError::NotDrmNode => AllocateBuffersError::UnsupportedDrmNode,
         }
-    }
-}
-
-impl From<AllocateBuffersError> for X11Error {
-    fn from(err: AllocateBuffersError) -> Self {
-        Self::Allocation(err)
     }
 }
