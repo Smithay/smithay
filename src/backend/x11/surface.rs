@@ -19,7 +19,7 @@ use crate::{
     utils::{Logical, Size},
 };
 
-use super::X11Error;
+use super::{WindowTemporary, X11Error};
 
 /// An error that may occur when presenting.
 #[derive(Debug, thiserror::Error)]
@@ -55,17 +55,7 @@ impl X11Surface {
     ///
     /// This will return [`None`] if the window has been destroyed.
     pub fn window(&self) -> Option<impl AsRef<Window> + '_> {
-        let window = self.window.upgrade().map(Window).map(WindowTemporary);
-
-        struct WindowTemporary(Window);
-
-        impl AsRef<Window> for WindowTemporary {
-            fn as_ref(&self) -> &Window {
-                &self.0
-            }
-        }
-
-        window
+        self.window.upgrade().map(Window).map(WindowTemporary)
     }
 
     /// Returns a handle to the GBM device used to allocate buffers.

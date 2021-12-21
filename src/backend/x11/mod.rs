@@ -129,21 +129,35 @@ pub use self::surface::*;
 #[derive(Debug)]
 pub enum X11Event {
     /// The X server has required the compositor to redraw the contents of window.
-    Refresh,
+    Refresh {
+        /// XID of the window
+        window_id: u32,
+    },
 
     /// An input event occurred.
     Input(InputEvent<X11Input>),
 
     /// The window was resized.
-    Resized(Size<u16, Logical>),
+    Resized {
+        /// The new size of the window
+        new_size: Size<u16, Logical>,
+        /// XID of the window
+        window_id: u32,
+    },
 
     /// The last buffer presented to the window has been displayed.
     ///
     /// When this event is scheduled, the next frame may be rendered.
-    PresentCompleted,
+    PresentCompleted {
+        /// XID of the window
+        window_id: u32,
+    },
 
     /// The window has received a request to be closed.
-    CloseRequested,
+    CloseRequested {
+        /// XID of the window
+        window_id: u32,
+    },
 }
 
 /// Represents an active connection to the X to manage events on the Window provided by the backend.
@@ -241,6 +255,7 @@ impl X11Backend {
             atoms,
             depth,
             visual_id,
+            devices: false,
         };
 
         Ok(X11Backend {
@@ -376,6 +391,14 @@ impl X11Handle {
             resize: recv,
         })
     }
+
+    /// Get a temporary reference to a window by its XID
+    pub fn window_ref_from_id(&self, id: u32) -> Option<impl AsRef<Window> + '_> {
+        X11Inner::window_ref_from_id(&self.inner, &id)
+            .and_then(|w| w.upgrade())
+            .map(Window)
+            .map(WindowTemporary)
+    }
 }
 
 /// Builder used to construct a window.
@@ -498,11 +521,19 @@ impl PartialEq for Window {
     }
 }
 
+struct WindowTemporary(Window);
+
+impl AsRef<Window> for WindowTemporary {
+    fn as_ref(&self) -> &Window {
+        &self.0
+    }
+}
+
 impl EventSource for X11Backend {
     type Event = X11Event;
 
     /// The window the incoming events are applicable to.
-    type Metadata = Window;
+    type Metadata = ();
 
     type Ret = ();
 
@@ -565,30 +596,27 @@ pub(crate) struct X11Inner {
     atoms: Atoms,
     depth: x11::xproto::Depth,
     visual_id: u32,
+    devices: bool,
 }
 
 impl X11Inner {
+    fn window_ref_from_id(inner: &Arc<Mutex<X11Inner>>, id: &u32) -> Option<Weak<WindowInner>> {
+        let mut inner = inner.lock().unwrap();
+        inner.windows.retain(|_, weak| weak.upgrade().is_some());
+        inner.windows.get(id).cloned()
+    }
+
     fn process_event<F>(inner: &Arc<Mutex<X11Inner>>, log: &Logger, event: x11::Event, callback: &mut F)
     where
-        F: FnMut(X11Event, &mut Window),
+        F: FnMut(X11Event, &mut ()),
     {
         use self::X11Event::Input;
-
-        fn window_from_id(inner: &Arc<Mutex<X11Inner>>, id: &u32) -> Option<Arc<WindowInner>> {
-            inner
-                .lock()
-                .unwrap()
-                .windows
-                .get(id)
-                .cloned()
-                .and_then(|weak| weak.upgrade())
-        }
 
         // If X11 is deadlocking somewhere here, make sure you drop your mutex guards.
 
         match event {
             x11::Event::ButtonPress(button_press) => {
-                if let Some(window) = window_from_id(inner, &button_press.event) {
+                if let Some(window) = X11Inner::window_ref_from_id(inner, &button_press.event) {
                     // X11 decided to associate scroll wheel with a button, 4, 5, 6 and 7 for
                     // up, down, right and left. For scrolling, a press event is emitted and a
                     // release is them immediately followed for scrolling. This means we can
@@ -631,9 +659,10 @@ impl X11Inner {
 
                                         _ => unreachable!(),
                                     },
+                                    window,
                                 },
                             }),
-                            &mut Window(window),
+                            &mut (),
                         )
                     } else {
                         callback(
@@ -642,9 +671,10 @@ impl X11Inner {
                                     time: button_press.time,
                                     raw: button_press.detail as u32,
                                     state: ButtonState::Pressed,
+                                    window,
                                 },
                             }),
-                            &mut Window(window),
+                            &mut (),
                         )
                     }
                 }
@@ -658,22 +688,23 @@ impl X11Inner {
                     return;
                 }
 
-                if let Some(window) = window_from_id(inner, &button_release.event) {
+                if let Some(window) = X11Inner::window_ref_from_id(inner, &button_release.event) {
                     callback(
                         Input(InputEvent::PointerButton {
                             event: X11MouseInputEvent {
                                 time: button_release.time,
                                 raw: button_release.detail as u32,
                                 state: ButtonState::Released,
+                                window,
                             },
                         }),
-                        &mut Window(window),
+                        &mut (),
                     );
                 }
             }
 
             x11::Event::KeyPress(key_press) => {
-                if let Some(window) = window_from_id(inner, &key_press.event) {
+                if let Some(window) = X11Inner::window_ref_from_id(inner, &key_press.event) {
                     // Do not hold the lock.
                     let count = { inner.lock().unwrap().key_counter.fetch_add(1, Ordering::SeqCst) + 1 };
 
@@ -689,15 +720,16 @@ impl X11Inner {
                                 key: key_press.detail as u32 - 8,
                                 count,
                                 state: KeyState::Pressed,
+                                window,
                             },
                         }),
-                        &mut Window(window),
+                        &mut (),
                     )
                 }
             }
 
             x11::Event::KeyRelease(key_release) => {
-                if let Some(window) = window_from_id(inner, &key_release.event) {
+                if let Some(window) = X11Inner::window_ref_from_id(inner, &key_release.event) {
                     let count = {
                         let key_counter = inner.lock().unwrap().key_counter.clone();
 
@@ -721,15 +753,18 @@ impl X11Inner {
                                 key: key_release.detail as u32 - 8,
                                 count,
                                 state: KeyState::Released,
+                                window,
                             },
                         }),
-                        &mut Window(window),
+                        &mut (),
                     );
                 }
             }
 
             x11::Event::MotionNotify(motion_notify) => {
-                if let Some(window) = window_from_id(inner, &motion_notify.event) {
+                if let Some(window) =
+                    X11Inner::window_ref_from_id(inner, &motion_notify.event).and_then(|w| w.upgrade())
+                {
                     // Use event_x/y since those are relative the the window receiving events.
                     let x = motion_notify.event_x as f64;
                     let y = motion_notify.event_y as f64;
@@ -743,15 +778,18 @@ impl X11Inner {
                                 x,
                                 y,
                                 size: window_size,
+                                window: Arc::downgrade(&window),
                             },
                         }),
-                        &mut Window(window),
+                        &mut (),
                     )
                 }
             }
 
             x11::Event::ConfigureNotify(configure_notify) => {
-                if let Some(window) = window_from_id(inner, &configure_notify.window) {
+                if let Some(window) =
+                    X11Inner::window_ref_from_id(inner, &configure_notify.window).and_then(|w| w.upgrade())
+                {
                     let previous_size = { *window.size.lock().unwrap() };
 
                     // Did the size of the window change?
@@ -768,8 +806,11 @@ impl X11Inner {
                         }
 
                         (callback)(
-                            X11Event::Resized(configure_notify_size),
-                            &mut Window(window.clone()),
+                            X11Event::Resized {
+                                new_size: configure_notify_size,
+                                window_id: configure_notify.window,
+                            },
+                            &mut (),
                         );
 
                         if let Some(resize_sender) = window.resize.lock().unwrap().as_ref() {
@@ -780,40 +821,61 @@ impl X11Inner {
             }
 
             x11::Event::EnterNotify(enter_notify) => {
-                if let Some(window) = window_from_id(inner, &enter_notify.event) {
+                if let Some(window) =
+                    X11Inner::window_ref_from_id(inner, &enter_notify.event).and_then(|w| w.upgrade())
+                {
                     window.cursor_enter();
                 }
             }
 
             x11::Event::LeaveNotify(leave_notify) => {
-                if let Some(window) = window_from_id(inner, &leave_notify.event) {
+                if let Some(window) =
+                    X11Inner::window_ref_from_id(inner, &leave_notify.event).and_then(|w| w.upgrade())
+                {
                     window.cursor_leave();
                 }
             }
 
             x11::Event::ClientMessage(client_message) => {
-                if let Some(window) = window_from_id(inner, &client_message.window) {
+                if let Some(window) =
+                    X11Inner::window_ref_from_id(inner, &client_message.window).and_then(|w| w.upgrade())
+                {
                     if client_message.data.as_data32()[0] == window.atoms.WM_DELETE_WINDOW
                     // Destroy the window?
                     {
-                        (callback)(X11Event::CloseRequested, &mut Window(window));
+                        (callback)(
+                            X11Event::CloseRequested {
+                                window_id: client_message.window,
+                            },
+                            &mut (),
+                        );
                     }
                 }
             }
 
             x11::Event::Expose(expose) => {
-                if let Some(window) = window_from_id(inner, &expose.window) {
-                    if expose.count == 0 {
-                        (callback)(X11Event::Refresh, &mut Window(window));
-                    }
+                if expose.count == 0 {
+                    (callback)(
+                        X11Event::Refresh {
+                            window_id: expose.window,
+                        },
+                        &mut (),
+                    );
                 }
             }
 
             x11::Event::PresentCompleteNotify(complete_notify) => {
-                if let Some(window) = window_from_id(inner, &complete_notify.window) {
+                if let Some(window) =
+                    X11Inner::window_ref_from_id(inner, &complete_notify.window).and_then(|w| w.upgrade())
+                {
                     window.last_msc.store(complete_notify.msc, Ordering::SeqCst);
 
-                    (callback)(X11Event::PresentCompleted, &mut Window(window));
+                    (callback)(
+                        X11Event::PresentCompleted {
+                            window_id: complete_notify.window,
+                        },
+                        &mut (),
+                    );
                 }
             }
 
