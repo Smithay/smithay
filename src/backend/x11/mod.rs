@@ -610,6 +610,27 @@ impl X11Inner {
     where
         F: FnMut(X11Event, &mut ()),
     {
+        {
+            let mut inner = inner.lock().unwrap();
+            if !inner.windows.is_empty() && !inner.devices {
+                callback(
+                    Input(InputEvent::DeviceAdded {
+                        device: X11VirtualDevice,
+                    }),
+                    &mut (),
+                );
+                inner.devices = true;
+            } else if inner.windows.is_empty() && inner.devices {
+                callback(
+                    Input(InputEvent::DeviceRemoved {
+                        device: X11VirtualDevice,
+                    }),
+                    &mut (),
+                );
+                inner.devices = false;
+            }
+        }
+
         use self::X11Event::Input;
 
         // If X11 is deadlocking somewhere here, make sure you drop your mutex guards.
