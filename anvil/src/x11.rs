@@ -166,13 +166,13 @@ pub fn run_x11(log: Logger) {
 
     event_loop
         .handle()
-        .insert_source(backend, |event, _window, state| match event {
-            X11Event::CloseRequested => {
+        .insert_source(backend, |event, _, state| match event {
+            X11Event::CloseRequested { .. } => {
                 state.running.store(false, Ordering::SeqCst);
             }
 
-            X11Event::Resized(size) => {
-                let size = { (size.w as i32, size.h as i32).into() };
+            X11Event::Resized { new_size, .. } => {
+                let size = { (new_size.w as i32, new_size.h as i32).into() };
 
                 state.backend_data.mode = Mode {
                     size,
@@ -193,7 +193,7 @@ pub fn run_x11(log: Logger) {
                 state.backend_data.render = true;
             }
 
-            X11Event::PresentCompleted | X11Event::Refresh => {
+            X11Event::PresentCompleted { .. } | X11Event::Refresh { .. } => {
                 state.backend_data.render = true;
             }
 

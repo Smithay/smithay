@@ -1,5 +1,6 @@
 //! Input backend implementation for the X11 backend.
 
+use super::{window_inner::WindowInner, Window, WindowTemporary};
 use crate::{
     backend::input::{
         self, Axis, AxisSource, ButtonState, Device, DeviceCapability, InputBackend, KeyState,
@@ -7,6 +8,7 @@ use crate::{
     },
     utils::{Logical, Size},
 };
+use std::sync::Weak;
 
 /// Marker used to define the `InputBackend` types for the X11 backend.
 #[derive(Debug)]
@@ -43,12 +45,22 @@ impl Device for X11VirtualDevice {
 
 /// X11-Backend internal event wrapping `X11`'s types into a [`KeyboardKeyEvent`].
 #[allow(missing_docs)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct X11KeyboardInputEvent {
     pub(crate) time: u32,
     pub(crate) key: u32,
     pub(crate) count: u32,
     pub(crate) state: KeyState,
+    pub(crate) window: Weak<WindowInner>,
+}
+
+impl X11KeyboardInputEvent {
+    /// Returns a temporary reference to the window belonging to this event.
+    ///
+    /// Returns None if the window is not alive anymore.
+    pub fn window(&self) -> Option<impl AsRef<Window> + '_> {
+        self.window.upgrade().map(Window).map(WindowTemporary)
+    }
 }
 
 impl input::Event<X11Input> for X11KeyboardInputEvent {
@@ -77,11 +89,21 @@ impl KeyboardKeyEvent<X11Input> for X11KeyboardInputEvent {
 
 /// X11-Backend internal event wrapping `X11`'s types into a [`PointerAxisEvent`]
 #[allow(missing_docs)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct X11MouseWheelEvent {
     pub(crate) time: u32,
     pub(crate) axis: Axis,
     pub(crate) amount: f64,
+    pub(crate) window: Weak<WindowInner>,
+}
+
+impl X11MouseWheelEvent {
+    /// Returns a temporary reference to the window belonging to this event.
+    ///
+    /// Returns None if the window is not alive anymore.
+    pub fn window(&self) -> Option<impl AsRef<Window> + '_> {
+        self.window.upgrade().map(Window).map(WindowTemporary)
+    }
 }
 
 impl input::Event<X11Input> for X11MouseWheelEvent {
@@ -115,11 +137,21 @@ impl PointerAxisEvent<X11Input> for X11MouseWheelEvent {
 
 /// X11-Backend internal event wrapping `X11`'s types into a [`PointerButtonEvent`]
 #[allow(missing_docs)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct X11MouseInputEvent {
     pub(crate) time: u32,
     pub(crate) raw: u32,
     pub(crate) state: ButtonState,
+    pub(crate) window: Weak<WindowInner>,
+}
+
+impl X11MouseInputEvent {
+    /// Returns a temporary reference to the window belonging to this event.
+    ///
+    /// Returns None if the window is not alive anymore.
+    pub fn window(&self) -> Option<impl AsRef<Window> + '_> {
+        self.window.upgrade().map(Window).map(WindowTemporary)
+    }
 }
 
 impl input::Event<X11Input> for X11MouseInputEvent {
@@ -144,12 +176,22 @@ impl PointerButtonEvent<X11Input> for X11MouseInputEvent {
 
 /// X11-Backend internal event wrapping `X11`'s types into a [`PointerMotionAbsoluteEvent`]
 #[allow(missing_docs)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct X11MouseMovedEvent {
     pub(crate) time: u32,
     pub(crate) x: f64,
     pub(crate) y: f64,
     pub(crate) size: Size<u16, Logical>,
+    pub(crate) window: Weak<WindowInner>,
+}
+
+impl X11MouseMovedEvent {
+    /// Returns a temporary reference to the window belonging to this event.
+    ///
+    /// Returns None if the window is not alive anymore.
+    pub fn window(&self) -> Option<impl AsRef<Window> + '_> {
+        self.window.upgrade().map(Window).map(WindowTemporary)
+    }
 }
 
 impl input::Event<X11Input> for X11MouseMovedEvent {
