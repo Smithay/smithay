@@ -367,7 +367,12 @@ impl X11Handle {
             return Err(X11Error::InvalidWindow);
         }
 
-        let modifiers = modifiers.collect::<Vec<_>>();
+        let mut modifiers = modifiers.collect::<Vec<_>>();
+        // older dri3 versions do only support buffers with one plane.
+        // we need to make sure, we don't accidently allocate buffers with more.
+        if window.0.extensions.dri3 < Some((1, 2)) {
+            modifiers.retain(|modi| modi == &DrmModifier::Invalid || modi == &DrmModifier::Linear);
+        }
 
         let format = window.0.format;
         let size = window.size();
