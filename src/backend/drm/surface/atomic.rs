@@ -354,7 +354,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 source,
             })?;
 
-        let test_fb = self.create_test_buffer(pending.mode.size())?;
+        let test_fb = self.create_test_buffer(mode.size())?;
         let req = self.build_request(
             &mut pending.connectors.iter(),
             &mut [].iter(),
