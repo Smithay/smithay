@@ -105,11 +105,8 @@ impl Allocator<EglBuffer> for EglStreamAllocator {
             return Err(EglStreamAllocatorBufferError::StreamCreationError(EGLError::from_last_call().err()));
         }
 
-        let mut mods = modifiers.iter().map(|x| (*x).into()).collect::<Vec<u64>>();
-        if unsafe { egl::StreamImageConsumerConnectNV(**self.egl.display, stream, modifiers.len() as i32, mods.as_mut_ptr(), ptr::null()) } == 0 {
-            slog::error!(self.logger, "Unable to link EGLImage consumer to egl stream");
-            return Err(EglStreamAllocatorBufferError::StreamConnectError(EGLError::from_last_call().err()));
-        }
+        slog::debug!(self.logger, "Created egl stream");
+        stream_state(&self.egl, stream, &self.logger);
 
         // create a context
         let context = EGLContext::new_with_config(
@@ -118,11 +115,23 @@ impl Allocator<EglBuffer> for EglStreamAllocator {
                 version: (2, 0),
                 profile: None,
                 debug: false,
-                vsync: false,
+                vsync: true,
             },
             reqs,
             self.logger.clone(),
         )?;
+
+        //let mut mods = modifiers.iter().map(|x| (*x).into()).collect::<Vec<u64>>();
+        let mut mods = context.dmabuf_render_formats().iter().filter(|f| f.code == fourcc).map(|f| f.modifier.into()).collect::<Vec<u64>>();
+        mods.retain(|x| *x != 216172782120099860);
+        if unsafe { egl::StreamImageConsumerConnectNV(**self.egl.display, stream, mods.len() as i32, dbg!(mods).as_mut_ptr(), ptr::null()) } == 0 {
+        //if unsafe { egl::StreamImageConsumerConnectNV(**self.egl.display, stream, 1, [Modifier::Invalid.into()].as_mut_ptr(), ptr::null()) } == 0 {
+            slog::error!(self.logger, "Unable to link EGLImage consumer to egl stream");
+            return Err(EglStreamAllocatorBufferError::StreamConnectError(EGLError::from_last_call().err()));
+        }
+        
+        slog::debug!(self.logger, "Connected egl stream consumer");
+        stream_state(&self.egl, stream, &self.logger);
 
         // create a surface
         let surface_attributes = [
@@ -138,6 +147,9 @@ impl Allocator<EglBuffer> for EglStreamAllocator {
             slog::error!(self.logger, "Failed to create surface: 0x{:X}",  error);
             return Err(EglStreamAllocatorBufferError::SurfaceCreationError(Some(EGLError::from(error as u32))));
         }
+        slog::debug!(self.logger, "Connected egl stream producer");
+        stream_state(&self.egl, stream, &self.logger);
+        stream_event(&self.egl, stream, &self.logger);
 
         // generate an empty frame
         unsafe {
@@ -146,23 +158,44 @@ impl Allocator<EglBuffer> for EglStreamAllocator {
             gl.ClearColor(0.0, 0.0, 0.0, 1.0);
             egl::SwapBuffers(**self.egl.display, surface);
         }
-        
+        slog::debug!(self.logger, "Rendered into egl stream");
+        stream_state(&self.egl, stream, &self.logger);
+        stream_event(&self.egl, stream, &self.logger);
+       
         // acquire that frame
-        let image = unsafe { egl::CreateImage(**self.egl.display, context.context, egl::STREAM_CONSUMER_IMAGE_NV, stream as egl::types::EGLClientBuffer, ptr::null()) };
-        if image == egl::NO_IMAGE_KHR {
-            let error = EGLError::from_last_call().err();
-            slog::error!(self.logger, "Failed to create image: {:?}", error);
-            return Err(EglStreamAllocatorBufferError::ImageCreationError(error));
-        }
-        
-        let mut stream_image = egl::NO_IMAGE_KHR;
-        if unsafe { egl::StreamAcquireImageNV(**self.egl.display, stream, &mut stream_image as *mut _, egl::NO_SYNC) } == egl::FALSE {
-            let error = EGLError::from_last_call().err();
-            slog::error!(self.logger, "Failed to create image: {:?}", error);
-            return Err(EglStreamAllocatorBufferError::ImageAcquireError(error));
+        let mut event: egl::types::EGLenum = 0;
+        let aux = ptr::null_mut();
+        let mut result = unsafe { egl::QueryStreamConsumerEventNV(**self.egl.display, stream, 0, &mut event as *mut _, aux) };
+        while result == egl::TRUE && event == egl::STREAM_IMAGE_ADD_NV {
+            let image = unsafe { egl::CreateImage(**self.egl.display, egl::NO_CONTEXT, egl::STREAM_CONSUMER_IMAGE_NV, stream as egl::types::EGLClientBuffer, ptr::null()) };
+            if image == egl::NO_IMAGE_KHR {
+                let error = EGLError::from_last_call().unwrap_err();
+                slog::error!(self.logger, "Failed to create image: {}", error);
+                return Err(EglStreamAllocatorBufferError::ImageCreationError(Some(error)));
+            }
+            slog::debug!(self.logger, "Added image to egl stream");
+            stream_state(&self.egl, stream, &self.logger);
+            stream_event(&self.egl, stream, &self.logger);
+            result = unsafe { egl::QueryStreamConsumerEventNV(**self.egl.display, stream, 0, &mut event as *mut _, aux) };
         }
 
-        debug_assert!(stream_image == image);
+        if event != egl::STREAM_IMAGE_AVAILABLE_NV {
+            slog::warn!(self.logger, "No available!");
+            stream_state(&self.egl, stream, &self.logger);
+            stream_event(&self.egl, stream, &self.logger);
+        }
+        
+        let mut image = egl::NO_IMAGE_KHR;
+        if unsafe { egl::StreamAcquireImageNV(**self.egl.display, stream, &mut image as *mut _, egl::NO_SYNC) } == egl::FALSE {
+            let error = EGLError::from_last_call().unwrap_err();
+            slog::error!(self.logger, "Failed to acquire image: {}", error);
+            stream_state(&self.egl, stream, &self.logger);
+            stream_event(&self.egl, stream, &self.logger);
+            return Err(EglStreamAllocatorBufferError::ImageAcquireError(Some(error)));
+        }
+        slog::debug!(self.logger, "Acquired frame from egl stream");
+
+        //debug_assert!(stream_image == image);
 
         // check the format & modifiers of the frame
 
@@ -185,7 +218,8 @@ impl Allocator<EglBuffer> for EglStreamAllocator {
         };
 
         if modifier != Modifier::Invalid && !modifiers.contains(&modifier) {
-            return Err(EglStreamAllocatorBufferError::UnsupportedModifierError(modifier));
+            slog::debug!(self.logger, "Requested modifiers: {:#?}\n Got: {:?}", modifiers, modifier);
+            //return Err(EglStreamAllocatorBufferError::UnsupportedModifierError(modifier));
         }
 
         // cleanup
@@ -196,6 +230,28 @@ impl Allocator<EglBuffer> for EglStreamAllocator {
         }
 
         Ok(buffer)
+    }
+}
+
+fn stream_state(display: &EGLDisplay, stream: *const nix::libc::c_void, logger: &slog::Logger) {
+    let mut val = 0;
+    unsafe { egl::QueryStreamKHR(**display.display, stream, egl::STREAM_STATE_KHR, &mut val as *mut _) };
+    slog::debug!(logger, "Stream State: 0x{:x}", val);
+}
+
+fn stream_event(display: &EGLDisplay, stream: *const nix::libc::c_void, logger: &slog::Logger) {
+    let mut event: egl::types::EGLenum = 0;
+    let aux = ptr::null_mut();
+    let mut result = unsafe { egl::QueryStreamConsumerEventNV(**display.display, stream, 0, &mut event as *mut _, aux) };
+    if result == egl::TRUE {
+        match event {
+            egl::STREAM_IMAGE_ADD_NV => slog::info!(logger, "STREAM_IMAGE_ADD"),
+            egl::STREAM_IMAGE_REMOVE_NV => slog::info!(logger, "STREAM_IMAGE_REMOVE"),
+            egl::STREAM_IMAGE_AVAILABLE_NV => slog::info!(logger, "STREAM_IMAGE_AVAILABLE"),
+            x => slog::warn!(logger, "Unknown event: {:X}", x),
+        }
+    } else {
+        slog::warn!(logger, "No stream event");
     }
 }
 

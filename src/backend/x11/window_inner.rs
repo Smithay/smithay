@@ -69,6 +69,7 @@ pub(crate) struct WindowInner {
     pub last_msc: Arc<AtomicU64>,
     pub format: DrmFourcc,
     pub depth: Depth,
+    pub visual_id: u32,
     pub extensions: Extensions,
 }
 
@@ -158,6 +159,7 @@ impl WindowInner {
             last_msc: Arc::new(AtomicU64::new(0)),
             format,
             depth,
+            visual_id,
             extensions,
             resize: Mutex::new(None),
         };

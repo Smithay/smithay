@@ -92,7 +92,7 @@ use crate::{
     utils::{x11rb::X11Source, Logical, Size},
 };
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
-use drm_fourcc::{DrmFourcc, DrmModifier};
+use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use nix::{
     fcntl::{self, OFlag},
     sys::stat::Mode,
@@ -351,7 +351,6 @@ impl X11Handle {
         &self,
         window: &Window,
         allocator: Arc<Mutex<A>>,
-        modifiers: impl Iterator<Item = DrmModifier>,
     ) -> Result<X11Surface<A, B>, X11Error> {
         let has_resize = { window.0.resize.lock().unwrap().is_some() };
 
@@ -367,14 +366,23 @@ impl X11Handle {
             return Err(X11Error::InvalidWindow);
         }
 
-        let mut modifiers = modifiers.collect::<Vec<_>>();
+        let mut modifiers = dbg!(self.connection.dri3_get_supported_modifiers(
+            window.0.id,
+            window.0.depth.depth,
+            window.0.depth.visuals.iter().find(|v| v.visual_id == window.0.visual_id).unwrap().bits_per_rgb_value,
+        )?.reply()?.screen_modifiers.into_iter().map(|x| x.into()).collect::<Vec<DrmModifier>>());
+
+        let format = window.0.format;
         // older dri3 versions do only support buffers with one plane.
         // we need to make sure, we don't accidently allocate buffers with more.
         if window.0.extensions.dri3 < Some((1, 2)) {
-            modifiers.retain(|modi| modi == &DrmModifier::Invalid || modi == &DrmModifier::Linear);
+            if modifiers.iter().any(|modi| modi == &DrmModifier::Invalid || modi == &DrmModifier::Linear) {
+                modifiers.retain(|modi| modi == &DrmModifier::Invalid || modi == &DrmModifier::Linear);
+            } else {
+                slog::warn!(self.log, "We cannot limit the modifiers, good luck");
+            }
         }
 
-        let format = window.0.format;
         let size = window.size();
         let swapchain = Swapchain::new(allocator, size.w as u32, size.h as u32, format, modifiers);
 

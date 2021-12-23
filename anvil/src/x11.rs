@@ -93,10 +93,6 @@ pub fn run_x11(log: Logger) {
         .create_surface(
             &window,
             allocator,
-            context
-                .dmabuf_render_formats()
-                .iter()
-                .map(|format| format.modifier),
         )
         .expect("Failed to create X11 surface");
 

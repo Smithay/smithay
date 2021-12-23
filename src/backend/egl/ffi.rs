@@ -76,6 +76,7 @@ pub fn make_sure_egl_is_loaded() -> Result<Vec<String>, Error> {
         egl::QueryWaylandBufferWL::load_with(&proc_address);
         egl::DebugMessageControlKHR::load_with(&proc_address);
         egl::StreamImageConsumerConnectNV::load_with(&proc_address);
+        egl::QueryStreamConsumerEventNV::load_with(&proc_address);
         egl::StreamAcquireImageNV::load_with(&proc_address);
     });
 
@@ -133,6 +134,9 @@ pub mod egl {
 
     pub const RESOURCE_BUSY_EXT: u32 = 0x3353;
     pub const STREAM_CONSUMER_IMAGE_NV: u32 = 0x3373;
+    pub const STREAM_IMAGE_ADD_NV: u32 = 0x3374;
+    pub const STREAM_IMAGE_REMOVE_NV: u32 = 0x3375;
+    pub const STREAM_IMAGE_AVAILABLE_NV: u32 = 0x3376;
 
     type EGLDEBUGPROCKHR = Option<
         extern "system" fn(
@@ -232,6 +236,27 @@ pub mod egl {
             ) -> types::EGLBoolean,
         >(nvidia_storage::StreamImageConsumerConnectNV.f)(dpy, stream, max_modifiers, modifiers, attrib_list)
     }
+
+    #[allow(non_snake_case, unused_variables, dead_code)]
+    #[inline]
+    pub unsafe fn QueryStreamConsumerEventNV(
+        dpy: types::EGLDisplay,
+        stream: types::EGLStreamKHR,
+        timeout: types::EGLTime,
+        event: *mut types::EGLenum,
+        aux: *mut types::EGLAttrib,
+    ) -> types::EGLBoolean {
+        __gl_imports::mem::transmute::<
+            _,
+            extern "system" fn(
+                types::EGLDisplay,
+                types::EGLStreamKHR,
+                types::EGLTime,
+                *const types::EGLenum,
+                *const types::EGLAttrib,
+            ) -> types::EGLBoolean,
+        >(nvidia_storage::QueryStreamConsumerEventNV.f)(dpy, stream, timeout, event, aux)
+    }
     
     #[allow(non_snake_case, unused_variables, dead_code)]
     #[inline]
@@ -275,6 +300,10 @@ pub mod egl {
     mod nvidia_storage {
         use super::{FnPtr, __gl_imports::raw};
         pub static mut StreamImageConsumerConnectNV: FnPtr = FnPtr {
+            f: super::missing_fn_panic as *const raw::c_void,
+            is_loaded: false,
+        };
+        pub static mut QueryStreamConsumerEventNV: FnPtr = FnPtr {
             f: super::missing_fn_panic as *const raw::c_void,
             is_loaded: false,
         };
@@ -392,6 +421,28 @@ pub mod egl {
             unsafe {
                 nvidia_storage::StreamImageConsumerConnectNV =
                     FnPtr::new(metaloadfn(&mut loadfn, "eglStreamImageConsumerConnectNV", &[]))
+            }
+        }
+    }
+
+    #[allow(non_snake_case)]
+    pub mod QueryStreamConsumerEventNV {
+        use super::{FnPtr, __gl_imports::raw, metaloadfn, nvidia_storage};
+
+        #[inline]
+        #[allow(dead_code)]
+        pub fn is_loaded() -> bool {
+            unsafe { nvidia_storage::QueryStreamConsumerEventNV.is_loaded }
+        }
+
+        #[allow(dead_code)]
+        pub fn load_with<F>(mut loadfn: F)
+        where
+            F: FnMut(&str) -> *const raw::c_void,
+        {
+            unsafe {
+                nvidia_storage::QueryStreamConsumerEventNV =
+                    FnPtr::new(metaloadfn(&mut loadfn, "eglQueryStreamConsumerEventNV", &[]))
             }
         }
     }

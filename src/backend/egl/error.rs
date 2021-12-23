@@ -104,7 +104,7 @@ pub enum EGLError {
     #[error("A power management event has occurred. The application must destroy all contexts and reinitialise OpenGL ES state and objects to continue rendering.")]
     ContextLost,
     /// An unknown error
-    #[error("An unknown error ({0:x})")]
+    #[error("An unknown error ({0:X})")]
     Unknown(u32),
 }
 
