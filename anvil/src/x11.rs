@@ -10,7 +10,8 @@ use slog::Logger;
 use smithay::{backend::renderer::ImportDma, wayland::dmabuf::init_dmabuf_global};
 use smithay::{
     backend::{
-        egl::{EGLContext, EGLDisplay},
+        allocator::eglstream::{EglStreamAllocator, EglBuffer},
+        egl::{EGLContext, EGLDisplay, EGLDevice, native::X11DefaultDisplay},
         renderer::{gles2::Gles2Renderer, Bind, ImportEgl, Renderer, Transform, Unbind},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
         SwapBuffersError,
@@ -42,7 +43,7 @@ pub const OUTPUT_NAME: &str = "x11";
 pub struct X11Data {
     render: bool,
     mode: Mode,
-    surface: X11Surface,
+    surface: X11Surface<EglStreamAllocator, EglBuffer>,
     #[cfg(feature = "debug")]
     fps_texture: Gles2Texture,
     #[cfg(feature = "debug")]
@@ -63,14 +64,20 @@ pub fn run_x11(log: Logger) {
     let handle = backend.handle();
 
     // Obtain the DRM node the X server uses for direct rendering.
+    /*
     let drm_node = handle
         .drm_node()
         .expect("Could not get DRM node used by X server");
+    */
 
     // Create the gbm device for buffer allocation.
-    let device = gbm::Device::new(drm_node).expect("Failed to create gbm device");
+    //let device = gbm::Device::new(drm_node).expect("Failed to create gbm device");
     // Initialize EGL using the GBM device.
-    let egl = EGLDisplay::new(&device, log.clone()).expect("Failed to create EGLDisplay");
+    //let egl = EGLDisplay::new(&device, log.clone()).expect("Failed to create EGLDisplay");
+    
+    let egl = EGLDisplay::new(&X11DefaultDisplay, None).expect("Failed to create EGLDisplay.");
+    let device = EGLDevice::device_for_display(&egl).expect("Failed to get EGLDevice");
+
     // Create the OpenGL context
     let context = EGLContext::new(&egl, log.clone()).expect("Failed to create EGLContext");
 
@@ -79,13 +86,13 @@ pub fn run_x11(log: Logger) {
         .build(&handle)
         .expect("Failed to create first window");
 
-    let device = Arc::new(Mutex::new(device));
+    let allocator = Arc::new(Mutex::new(EglStreamAllocator::new(&device, log.clone()).expect("Failed to create allocator")));
 
     // Create the surface for the window.
     let surface = handle
         .create_surface(
             &window,
-            device,
+            allocator,
             context
                 .dmabuf_render_formats()
                 .iter()

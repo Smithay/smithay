@@ -75,6 +75,8 @@ pub fn make_sure_egl_is_loaded() -> Result<Vec<String>, Error> {
         egl::UnbindWaylandDisplayWL::load_with(&proc_address);
         egl::QueryWaylandBufferWL::load_with(&proc_address);
         egl::DebugMessageControlKHR::load_with(&proc_address);
+        egl::StreamImageConsumerConnectNV::load_with(&proc_address);
+        egl::StreamAcquireImageNV::load_with(&proc_address);
     });
 
     let extensions = unsafe {
@@ -130,6 +132,7 @@ pub mod egl {
     include!(concat!(env!("OUT_DIR"), "/egl_bindings.rs"));
 
     pub const RESOURCE_BUSY_EXT: u32 = 0x3353;
+    pub const STREAM_CONSUMER_IMAGE_NV: u32 = 0x3373;
 
     type EGLDEBUGPROCKHR = Option<
         extern "system" fn(
@@ -208,6 +211,46 @@ pub mod egl {
             ) -> types::EGLBoolean,
         >(wayland_storage::QueryWaylandBufferWL.f)(dpy, buffer, attribute, value)
     }
+    
+    #[allow(non_snake_case, unused_variables, dead_code)]
+    #[inline]
+    pub unsafe fn StreamImageConsumerConnectNV(
+        dpy: types::EGLDisplay,
+        stream: types::EGLStreamKHR,
+        max_modifiers: types::EGLint,
+        modifiers: *mut types::EGLuint64KHR,
+        attrib_list: *const types::EGLAttrib,
+    ) -> types::EGLBoolean {
+        __gl_imports::mem::transmute::<
+            _,
+            extern "system" fn(
+                types::EGLDisplay,
+                types::EGLStreamKHR,
+                types::EGLint,
+                *const types::EGLuint64KHR,
+                *const types::EGLAttrib,
+            ) -> types::EGLBoolean,
+        >(nvidia_storage::StreamImageConsumerConnectNV.f)(dpy, stream, max_modifiers, modifiers, attrib_list)
+    }
+    
+    #[allow(non_snake_case, unused_variables, dead_code)]
+    #[inline]
+    pub unsafe fn StreamAcquireImageNV(
+        dpy: types::EGLDisplay,
+        stream: types::EGLStreamKHR,
+        image: *mut types::EGLImage,
+        sync: types::EGLSync,
+    ) -> types::EGLBoolean {
+        __gl_imports::mem::transmute::<
+            _,
+            extern "system" fn(
+                types::EGLDisplay,
+                types::EGLStreamKHR,
+                *const types::EGLImage,
+                types::EGLSync
+            ) -> types::EGLBoolean,
+        >(nvidia_storage::StreamAcquireImageNV.f)(dpy, stream, image, sync)
+    }
 
     mod wayland_storage {
         use super::{FnPtr, __gl_imports::raw};
@@ -224,6 +267,18 @@ pub mod egl {
             is_loaded: false,
         };
         pub static mut DebugMessageControlKHR: FnPtr = FnPtr {
+            f: super::missing_fn_panic as *const raw::c_void,
+            is_loaded: false,
+        };
+    }
+
+    mod nvidia_storage {
+        use super::{FnPtr, __gl_imports::raw};
+        pub static mut StreamImageConsumerConnectNV: FnPtr = FnPtr {
+            f: super::missing_fn_panic as *const raw::c_void,
+            is_loaded: false,
+        };
+        pub static mut StreamAcquireImageNV: FnPtr = FnPtr {
             f: super::missing_fn_panic as *const raw::c_void,
             is_loaded: false,
         };
@@ -315,6 +370,50 @@ pub mod egl {
             unsafe {
                 wayland_storage::QueryWaylandBufferWL =
                     FnPtr::new(metaloadfn(&mut loadfn, "eglQueryWaylandBufferWL", &[]))
+            }
+        }
+    }
+    
+    #[allow(non_snake_case)]
+    pub mod StreamImageConsumerConnectNV {
+        use super::{FnPtr, __gl_imports::raw, metaloadfn, nvidia_storage};
+
+        #[inline]
+        #[allow(dead_code)]
+        pub fn is_loaded() -> bool {
+            unsafe { nvidia_storage::StreamImageConsumerConnectNV.is_loaded }
+        }
+
+        #[allow(dead_code)]
+        pub fn load_with<F>(mut loadfn: F)
+        where
+            F: FnMut(&str) -> *const raw::c_void,
+        {
+            unsafe {
+                nvidia_storage::StreamImageConsumerConnectNV =
+                    FnPtr::new(metaloadfn(&mut loadfn, "eglStreamImageConsumerConnectNV", &[]))
+            }
+        }
+    }
+
+    #[allow(non_snake_case)]
+    pub mod StreamAcquireImageNV {
+        use super::{FnPtr, __gl_imports::raw, metaloadfn, nvidia_storage};
+
+        #[inline]
+        #[allow(dead_code)]
+        pub fn is_loaded() -> bool {
+            unsafe { nvidia_storage::StreamAcquireImageNV.is_loaded }
+        }
+
+        #[allow(dead_code)]
+        pub fn load_with<F>(mut loadfn: F)
+        where
+            F: FnMut(&str) -> *const raw::c_void,
+        {
+            unsafe {
+                nvidia_storage::StreamAcquireImageNV =
+                    FnPtr::new(metaloadfn(&mut loadfn, "eglStreamAcquireImageNV", &[]))
             }
         }
     }

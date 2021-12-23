@@ -23,6 +23,7 @@ fn gl_generate() {
                 "EGL_EXT_device_drm",
                 "EGL_KHR_stream",
                 "EGL_KHR_stream_producer_eglsurface",
+                "EGL_NV_stream_consumer_eglimage",
                 "EGL_EXT_platform_base",
                 "EGL_KHR_platform_x11",
                 "EGL_EXT_platform_x11",
@@ -35,6 +36,7 @@ fn gl_generate() {
                 "EGL_KHR_image_base",
                 "EGL_EXT_image_dma_buf_import",
                 "EGL_EXT_image_dma_buf_import_modifiers",
+                "EGL_MESA_image_dma_buf_export",
             ],
         )
         .write_bindings(gl_generator::GlobalGenerator, &mut file)

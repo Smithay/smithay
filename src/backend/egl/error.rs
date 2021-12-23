@@ -132,7 +132,7 @@ impl From<u32> for EGLError {
 }
 
 impl EGLError {
-    pub(super) fn from_last_call() -> Result<(), EGLError> {
+    pub(crate) fn from_last_call() -> Result<(), EGLError> {
         match unsafe { ffi::egl::GetError() as u32 } {
             ffi::egl::SUCCESS => Ok(()),
             x => Err(EGLError::from(x)),

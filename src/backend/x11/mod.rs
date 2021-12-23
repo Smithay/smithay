@@ -84,7 +84,7 @@ mod window_inner;
 
 use crate::{
     backend::{
-        allocator::Swapchain,
+        allocator::{Allocator, Buffer, Swapchain, dmabuf::AsDmabuf},
         drm::{node::path_to_type, CreateDrmNodeError, DrmNode, NodeType},
         egl::{native::X11DefaultDisplay, EGLDevice, EGLDisplay, Error as EGLError},
         input::{Axis, ButtonState, InputEvent, KeyState},
@@ -347,12 +347,12 @@ impl X11Handle {
     /// Creates a surface that allocates and presents buffers to the window.
     ///
     /// This will fail if the window has already been used to create a surface.
-    pub fn create_surface(
+    pub fn create_surface<A: Allocator<B>, B: Buffer + AsDmabuf>(
         &self,
         window: &Window,
-        device: Arc<Mutex<gbm::Device<DrmNode>>>,
+        allocator: Arc<Mutex<A>>,
         modifiers: impl Iterator<Item = DrmModifier>,
-    ) -> Result<X11Surface, X11Error> {
+    ) -> Result<X11Surface<A, B>, X11Error> {
         let has_resize = { window.0.resize.lock().unwrap().is_some() };
 
         if has_resize {
@@ -376,7 +376,7 @@ impl X11Handle {
 
         let format = window.0.format;
         let size = window.size();
-        let swapchain = Swapchain::new(device, size.w as u32, size.h as u32, format, modifiers);
+        let swapchain = Swapchain::new(allocator, size.w as u32, size.h as u32, format, modifiers);
 
         let (sender, recv) = mpsc::channel();
 
@@ -918,9 +918,15 @@ impl X11Inner {
     }
 }
 
-fn egl_init(_: &X11Inner) -> Result<DrmNode, EGLInitError> {
+fn egl_device() -> Result<EGLDevice, EGLInitError> {
     let display = EGLDisplay::new(&X11DefaultDisplay, None)?;
     let device = EGLDevice::device_for_display(&display)?;
+    Ok(device)
+}
+
+
+fn egl_init(_: &X11Inner) -> Result<DrmNode, EGLInitError> {
+    let device = egl_device()?;
     let path = path_to_type(device.drm_device_path()?, NodeType::Render)?;
     fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
         .map_err(Into::<io::Error>::into)

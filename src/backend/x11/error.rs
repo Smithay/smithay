@@ -114,7 +114,7 @@ pub enum AllocateBuffersError {
 
     /// The gbm device was destroyed
     #[error("The gbm device was destroyed.")]
-    DeviceDestroyed(#[from] DeviceDestroyedError),
+    AllocatorError(#[source] Box<dyn std::error::Error + 'static>),
 
     /// The device used to allocate buffers is not the correct drm node type.
     #[error("The device used to allocate buffers is not the correct drm node type.")]
@@ -122,7 +122,7 @@ pub enum AllocateBuffersError {
 
     /// Exporting a dmabuf failed.
     #[error("Exporting a dmabuf failed.")]
-    ExportDmabuf(#[from] GbmConvertError),
+    ExportDmabuf(#[source] Box<dyn std::error::Error + 'static>),
 
     /// No free slots
     #[error("No free slots in the swapchain")]

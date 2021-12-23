@@ -21,6 +21,8 @@ pub mod dumb;
 #[cfg(feature = "backend_gbm")]
 pub mod gbm;
 
+pub mod eglstream;
+
 mod swapchain;
 use std::{
     cell::RefCell,

@@ -1,19 +1,17 @@
 use std::{
     mem,
-    sync::{mpsc::Receiver, Arc, Mutex, MutexGuard, Weak},
+    sync::{mpsc::Receiver, Arc, Mutex, Weak},
 };
 
 use drm_fourcc::DrmFourcc;
-use gbm::BufferObject;
 use x11rb::{connection::Connection, protocol::xproto::PixmapWrapper, rust_connection::RustConnection};
 
 use crate::{
     backend::{
         allocator::{
             dmabuf::{AsDmabuf, Dmabuf},
-            Slot, Swapchain,
+            Allocator, Buffer, Slot, Swapchain,
         },
-        drm::DrmNode,
         x11::{buffer::PixmapWrapperExt, window_inner::WindowInner, AllocateBuffersError, Window},
     },
     utils::{Logical, Size},
@@ -39,28 +37,29 @@ pub enum PresentError {
 
 /// An X11 surface which uses GBM to allocate and present buffers.
 #[derive(Debug)]
-pub struct X11Surface {
+pub struct X11Surface<A: Allocator<B>, B: Buffer + AsDmabuf> {
     pub(crate) connection: Weak<RustConnection>,
     pub(crate) window: Weak<WindowInner>,
     pub(crate) resize: Receiver<Size<u16, Logical>>,
-    pub(crate) swapchain: Swapchain<Arc<Mutex<gbm::Device<DrmNode>>>, BufferObject<()>>,
+    pub(crate) swapchain: Swapchain<Arc<Mutex<A>>, B>,
     pub(crate) format: DrmFourcc,
     pub(crate) width: u16,
     pub(crate) height: u16,
-    pub(crate) buffer: Option<Slot<BufferObject<()>>>,
+    pub(crate) buffer: Option<Slot<B>>,
 }
 
-impl X11Surface {
+impl<A, B> X11Surface<A, B>
+where
+    A: Allocator<B>,
+    B: Buffer + AsDmabuf,
+    <A as Allocator<B>>::Error: 'static,
+    <B as AsDmabuf>::Error: 'static,
+{
     /// Returns the window the surface presents to.
     ///
     /// This will return [`None`] if the window has been destroyed.
     pub fn window(&self) -> Option<impl AsRef<Window> + '_> {
         self.window.upgrade().map(Window).map(WindowTemporary)
-    }
-
-    /// Returns a handle to the GBM device used to allocate buffers.
-    pub fn device(&self) -> MutexGuard<'_, gbm::Device<DrmNode>> {
-        self.swapchain.allocator.lock().unwrap()
     }
 
     /// Returns the format of the buffers the surface accepts.
@@ -82,7 +81,7 @@ impl X11Surface {
             self.buffer = Some(
                 self.swapchain
                     .acquire()
-                    .map_err(Into::<AllocateBuffersError>::into)?
+                    .map_err(|x| AllocateBuffersError::AllocatorError(Box::new(x)))?
                     .ok_or(AllocateBuffersError::NoFreeSlots)?,
             );
         }
@@ -92,7 +91,7 @@ impl X11Surface {
         match slot.userdata().get::<Dmabuf>() {
             Some(dmabuf) => Ok((dmabuf.clone(), age)),
             None => {
-                let dmabuf = slot.export().map_err(Into::<AllocateBuffersError>::into)?;
+                let dmabuf = slot.export().map_err(|x| AllocateBuffersError::ExportDmabuf(Box::new(x)))?;
                 slot.userdata().insert_if_missing(|| dmabuf.clone());
                 Ok((dmabuf, age))
             }
@@ -106,7 +105,7 @@ impl X11Surface {
             let mut next = self
                 .swapchain
                 .acquire()
-                .map_err(Into::<AllocateBuffersError>::into)?
+                .map_err(|x| AllocateBuffersError::AllocatorError(Box::new(x)))?
                 .ok_or(AllocateBuffersError::NoFreeSlots)?;
 
             // Swap the buffers
