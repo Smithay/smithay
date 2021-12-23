@@ -309,8 +309,11 @@ where
     /// Fails if the mode is not compatible with the underlying
     /// [`crtc`](drm::control::crtc) or any of the
     /// pending [`connector`](drm::control::connector)s.
-    pub fn use_mode(&self, mode: Mode) -> Result<(), Error> {
-        self.drm.use_mode(mode).map_err(Error::DrmError)
+    pub fn use_mode(&mut self, mode: Mode) -> Result<(), Error> {
+        self.drm.use_mode(mode).map_err(Error::DrmError)?;
+        let (w, h) = mode.size();
+        self.swapchain.resize(w as _, h as _);
+        Ok(())
     }
 }
 
