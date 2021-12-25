@@ -3,14 +3,16 @@
 //! This module provides you with utilities to handle input methods,
 //! it must be used in conjunction with the text input module to work.
 //! See the text input module for more information.
-//! 
+//!
 //! ##How to Initialize
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
 //! # use smithay::wayland::compositor::compositor_init;
 //!
-//! use smithay::wayland::seat::{Seat};
+//! use std::borrow::BorrowMut;
+//!
+//! use smithay::wayland::seat::{Seat, XkbConfig};
 //! use smithay::wayland::input_method::{init_input_method_manager_global, InputMethodHandle, InputMethodSeatTrait};
 //!
 //! # let mut display = wayland_server::Display::new();
@@ -21,52 +23,46 @@
 //!     "seat-0".into(),
 //!     None
 //! );
-//! 
+//!
 //! // Insert the manager into your event loop
 //! init_input_method_manager_global(&mut display.borrow_mut());
-//! 
+//!
 //! // Add the input method handle to the seat, 25 is the keyboard repeat rate, and 200 is the keyboard repeat delay.
 //! // These are just arbitrary numbers and can be set to any real number
 //! // The XkbConfig is the configuration of xkbcommon, sent to every new input method
 //! let input_method = seat.add_input_method(25, 200, XkbConfig::default());
-//! 
+//!
 //! ```
-//! 
+//!
 //! ## Run usage
 //! Once a handle has been added to the seat you need to wrap the keyboard input using
-//! the grab keyboard function.
-//! "self" is the compositor state.
-//! 
-//! ```
-//! if self.input_method.keyboard_grabbed() {
-//!     self.input_method.input(keycode, state, serial, time);
-//!     KeyAction::None
-//! } else {
-//!     self.keyboard.input(...);
-//!     ...
-//! }
-//! 
-//! ```
+//! the keyboard_grabbed function.
+//!
 
-use std::{fmt, cell::RefCell, rc::Rc, io::Write, os::unix::prelude::AsRawFd};
+use std::{cell::RefCell, fmt, io::Write, os::unix::prelude::AsRawFd, rc::Rc};
 
 use tempfile::tempfile;
 
-use wayland_server::{Display, Filter, Global, Main,
-    protocol::{wl_surface::WlSurface, wl_keyboard::{KeyState as WlKeyState, KeymapFormat}}
+use wayland_server::{
+    protocol::{
+        wl_keyboard::{KeyState as WlKeyState, KeymapFormat},
+        wl_surface::WlSurface,
+    },
+    Display, Filter, Global, Main,
 };
 
-use wayland_protocols::misc::zwp_input_method_v2::{server::{
-        zwp_input_method_keyboard_grab_v2::{ZwpInputMethodKeyboardGrabV2, self}, 
-        zwp_input_method_manager_v2::{self, ZwpInputMethodManagerV2}, 
-        zwp_input_method_v2::{self, ZwpInputMethodV2}, 
-        zwp_input_popup_surface_v2::{ZwpInputPopupSurfaceV2, self}}};
+use wayland_protocols::misc::zwp_input_method_v2::server::{
+    zwp_input_method_keyboard_grab_v2::{self, ZwpInputMethodKeyboardGrabV2},
+    zwp_input_method_manager_v2::{self, ZwpInputMethodManagerV2},
+    zwp_input_method_v2::{self, ZwpInputMethodV2},
+    zwp_input_popup_surface_v2::{self, ZwpInputPopupSurfaceV2},
+};
 
 use xkbcommon::xkb;
 
-use crate::{backend::input::{KeyState}, wayland::seat::{Seat}};
+use crate::{backend::input::KeyState, wayland::seat::Seat};
 
-use super::{Serial, seat::XkbConfig, text_input::TextInputHandle};
+use super::{seat::XkbConfig, text_input::TextInputHandle, Serial};
 
 const INPUT_METHOD_VERSION: u32 = 1;
 
@@ -76,7 +72,6 @@ struct InputMethod {
     instance: Option<Main<ZwpInputMethodV2>>,
     popup_surface: Option<Main<ZwpInputPopupSurfaceV2>>,
     surface: Option<WlSurface>,
-    focus: Option<WlSurface>,
     keyboard_state: Option<KeyboardState>,
 }
 
@@ -85,53 +80,46 @@ struct KeyboardState {
     xkbstate: xkb::State,
     rate: i32,
     delay: i32,
-    keymap: String
+    keymap: String,
 }
 
 impl InputMethod {
-    fn new(
-        &mut self, 
-        rate: i32, 
-        delay: i32,
-        xkb_config: XkbConfig<'_>,
-    ){
+    fn config(&mut self, rate: i32, delay: i32, xkb_config: XkbConfig<'_>) {
         let (keymap, xkbstate) = xkb_handler(xkb_config);
-        self.keyboard_state = Some(KeyboardState{
-            xkbstate: xkbstate,
-            rate: rate,
-            delay: delay,
-            keymap: keymap
+        self.keyboard_state = Some(KeyboardState {
+            xkbstate,
+            rate,
+            delay,
+            keymap,
         });
     }
 
-    fn send_keyboard_info(&self){
+    fn send_keyboard_info(&self) {
         let keyboard = self.keyboard.as_ref().unwrap();
-        let keyboard_state= self.keyboard_state.as_ref().unwrap();
-        
+        let keyboard_state = self.keyboard_state.as_ref().unwrap();
+
         keyboard.repeat_info(keyboard_state.rate, keyboard_state.delay);
         // prepare a tempfile with the keymap, to send it to the client
-        tempfile().and_then(|mut f| {
-            f.write_all(keyboard_state.keymap.as_bytes())?;
-            f.flush()?;
-            keyboard.keymap(
-                KeymapFormat::XkbV1,
-                f.as_raw_fd(),
-                keyboard_state.keymap.as_bytes().len() as u32,
-            );
-            Ok(())
-        }).expect("File not working!");
+        tempfile()
+            .and_then(|mut f| {
+                f.write_all(keyboard_state.keymap.as_bytes())?;
+                f.flush()?;
+                keyboard.keymap(
+                    KeymapFormat::XkbV1,
+                    f.as_raw_fd(),
+                    keyboard_state.keymap.as_bytes().len() as u32,
+                );
+                Ok(())
+            })
+            .expect("File not working!");
     }
 
     // return true if modifier state has changed
     fn key_input(&mut self, keycode: u32, keystate: KeyState) -> bool {
         // track pressed keys as xkbcommon does not seem to expose it :(
         let direction = match keystate {
-            KeyState::Pressed => {
-                xkb::KeyDirection::Down
-            }
-            KeyState::Released => {
-                xkb::KeyDirection::Up
-            }
+            KeyState::Pressed => xkb::KeyDirection::Down,
+            KeyState::Released => xkb::KeyDirection::Up,
         };
 
         // update state
@@ -140,11 +128,7 @@ impl InputMethod {
         let state = &mut self.keyboard_state.as_mut().unwrap().xkbstate;
         let state_components = state.update_key(keycode + 8, direction);
 
-        if state_components != 0 {
-            true
-        } else {
-            false
-        }
+        state_components != 0
     }
 
     fn serialize_modifiers(&self) -> (u32, u32, u32, u32) {
@@ -158,15 +142,14 @@ impl InputMethod {
     }
 
     fn input(
-        &self, 
+        &self,
         keycode: u32,
         state: KeyState,
         serial: Serial,
         time: u32,
-        update_modifiers: bool
-        //TODO: Add modifier handling from closure
-        //modifiers:ModifiersState
-    ){
+        update_modifiers: bool, //TODO: Add modifier handling from closure
+                                //modifiers:ModifiersState
+    ) {
         let keyboard = self.keyboard.as_ref().unwrap();
         let wl_state = match state {
             KeyState::Pressed => WlKeyState::Pressed,
@@ -174,7 +157,7 @@ impl InputMethod {
         };
         keyboard.key(serial.into(), time, keycode, wl_state);
 
-        if update_modifiers  {
+        if update_modifiers {
             let (dep, la, lo, gr) = self.serialize_modifiers();
             keyboard.modifiers(serial.into(), dep, la, lo, gr);
         }
@@ -183,15 +166,16 @@ impl InputMethod {
 
 fn xkb_handler(xkb_config: XkbConfig<'_>) -> (String, xkb::State) {
     let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
-        let keymap = xkb::Keymap::new_from_names(
-            &context,
-            &xkb_config.rules,
-            &xkb_config.model,
-            &xkb_config.layout,
-            &xkb_config.variant,
-            xkb_config.options,
-            xkb::KEYMAP_COMPILE_NO_FLAGS,
-        ).unwrap();
+    let keymap = xkb::Keymap::new_from_names(
+        &context,
+        &xkb_config.rules,
+        &xkb_config.model,
+        &xkb_config.layout,
+        &xkb_config.variant,
+        xkb_config.options,
+        xkb::KEYMAP_COMPILE_NO_FLAGS,
+    )
+    .unwrap();
     let state = xkb::State::new(&keymap);
     (keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1), state)
 }
@@ -209,12 +193,12 @@ pub struct InputMethodHandle {
 }
 
 impl InputMethodHandle {
-    fn new_handle(&self, rate: i32, delay: i32, xkb_config: XkbConfig<'_>){
+    fn new_handle(&self, rate: i32, delay: i32, xkb_config: XkbConfig<'_>) {
         let mut inner = self.inner.borrow_mut();
-        inner.new(rate, delay, xkb_config)
+        inner.config(rate, delay, xkb_config)
     }
 
-    fn add_instance(&self, instance: Main<ZwpInputMethodV2>){
+    fn add_instance(&self, instance: Main<ZwpInputMethodV2>) {
         let mut inner = self.inner.borrow_mut();
         inner.instance = Some(instance);
     }
@@ -224,26 +208,20 @@ impl InputMethodHandle {
         inner.instance.is_some()
     }
 
-    fn add_keyboard(&self, keyboard: Main<ZwpInputMethodKeyboardGrabV2>){
+    fn add_keyboard(&self, keyboard: Main<ZwpInputMethodKeyboardGrabV2>) {
         let mut inner = self.inner.borrow_mut();
         inner.keyboard = Some(keyboard);
         inner.send_keyboard_info();
     }
 
-    fn add_popup_surface(&self, popup_surface: Main<ZwpInputPopupSurfaceV2>, surface: WlSurface){
+    fn add_popup_surface(&self, popup_surface: Main<ZwpInputPopupSurfaceV2>, surface: WlSurface) {
         let mut inner = self.inner.borrow_mut();
         inner.popup_surface = Some(popup_surface);
         inner.surface = Some(surface);
     }
 
     /// Takes keyboard input and sends it to the input method
-    pub fn input(
-        &self,
-        keycode: u32,
-        state: KeyState,
-        serial: Serial,
-        time: u32
-    ){
+    pub fn input(&self, keycode: u32, state: KeyState, serial: Serial, time: u32) {
         let mut inner = self.inner.borrow_mut();
         let update_modifiers = inner.key_input(keycode, state);
         inner.input(keycode, state, serial, time, update_modifiers)
@@ -270,13 +248,23 @@ impl InputMethodHandle {
 pub trait InputMethodSeatTrait {
     /// Get input method seat associated with this seat
     /// this is also used to set xkb config parameters that will be sent to the input method
-    fn add_input_method(&self, repeat_rate: i32, repeat_delay: i32, xkb_config: XkbConfig<'_>) -> InputMethodHandle;
+    fn add_input_method(
+        &self,
+        repeat_rate: i32,
+        repeat_delay: i32,
+        xkb_config: XkbConfig<'_>,
+    ) -> InputMethodHandle;
 }
 
 impl InputMethodSeatTrait for Seat {
-    fn add_input_method(&self, repeat_rate: i32, repeat_delay: i32, xkb_config: XkbConfig<'_>) -> InputMethodHandle {
+    fn add_input_method(
+        &self,
+        repeat_rate: i32,
+        repeat_delay: i32,
+        xkb_config: XkbConfig<'_>,
+    ) -> InputMethodHandle {
         let user_data = self.user_data();
-        user_data.insert_if_missing(|| InputMethodHandle::default());
+        user_data.insert_if_missing(InputMethodHandle::default);
         let im = user_data.get::<InputMethodHandle>().unwrap().clone();
         im.new_handle(repeat_rate, repeat_delay, xkb_config);
         im
@@ -293,14 +281,14 @@ pub fn init_input_method_manager_global(display: &mut Display) -> Global<ZwpInpu
                     zwp_input_method_manager_v2::Request::GetInputMethod { seat, input_method } => {
                         let seat = Seat::from_resource(&seat).unwrap();
                         let user_data = seat.user_data();
-                        user_data.insert_if_missing(|| InputMethodHandle::default());
+                        user_data.insert_if_missing(InputMethodHandle::default);
                         let im = user_data.get::<InputMethodHandle>().unwrap().clone();
                         if im.instance_unavailable() {
-                            input_method.quick_assign(|_,_,_| {});
+                            input_method.quick_assign(|_, _, _| {});
                             input_method.unavailable();
                         } else {
                             im.add_instance(input_method.clone());
-                            user_data.insert_if_missing(|| TextInputHandle::default());
+                            user_data.insert_if_missing(TextInputHandle::default);
                             let text_input = user_data.get::<TextInputHandle>().unwrap().clone();
                             let input_method_handle = im.clone();
                             input_method.quick_assign(move |_input_method, req, _| match req {
@@ -309,12 +297,19 @@ pub fn init_input_method_manager_global(display: &mut Display) -> Global<ZwpInpu
                                         text_input.commit_string(Some(text));
                                     }
                                 }
-                                zwp_input_method_v2::Request::SetPreeditString { text, cursor_begin, cursor_end } => {
+                                zwp_input_method_v2::Request::SetPreeditString {
+                                    text,
+                                    cursor_begin,
+                                    cursor_end,
+                                } => {
                                     if let Some(text_input) = text_input.handle() {
                                         text_input.preedit_string(Some(text), cursor_begin, cursor_end);
                                     }
                                 }
-                                zwp_input_method_v2::Request::DeleteSurroundingText { before_length, after_length } => {
+                                zwp_input_method_v2::Request::DeleteSurroundingText {
+                                    before_length,
+                                    after_length,
+                                } => {
                                     if let Some(text_input) = text_input.handle() {
                                         text_input.delete_surrounding_text(before_length, after_length);
                                     }
@@ -326,31 +321,35 @@ pub fn init_input_method_manager_global(display: &mut Display) -> Global<ZwpInpu
                                 }
                                 zwp_input_method_v2::Request::GetInputPopupSurface { id, surface } => {
                                     im.add_popup_surface(id.clone(), surface);
-                                    id.quick_assign(|_popup_surface, req, _| match req {
-                                        zwp_input_popup_surface_v2::Request::Destroy => {}
-                                        _ => {}
+                                    id.quick_assign(|_popup_surface, req, _| {
+                                        if let zwp_input_popup_surface_v2::Request::Destroy = req {}
                                     });
                                     let input_method_handle = im.clone();
-                                    id.assign_destructor(Filter::new(move |_popup_surface: ZwpInputPopupSurfaceV2,_,_| 
-                                        input_method_handle.inner.borrow_mut().popup_surface = None
+                                    id.assign_destructor(Filter::new(
+                                        move |_popup_surface: ZwpInputPopupSurfaceV2, _, _| {
+                                            input_method_handle.inner.borrow_mut().popup_surface = None
+                                        },
                                     ));
                                 }
                                 zwp_input_method_v2::Request::GrabKeyboard { keyboard } => {
                                     im.add_keyboard(keyboard.clone());
-                                    keyboard.quick_assign(|_keyboard, req, _| match req {
-                                        zwp_input_method_keyboard_grab_v2::Request::Release => {}
-                                        _ => {}
+                                    keyboard.quick_assign(|_keyboard, req, _| {
+                                        if let zwp_input_method_keyboard_grab_v2::Request::Release = req {}
                                     });
                                     let input_method_handle = im.clone();
-                                    keyboard.assign_destructor(Filter::new(move |_keyboard: ZwpInputMethodKeyboardGrabV2,_,_| 
-                                        input_method_handle.inner.borrow_mut().keyboard = None
+                                    keyboard.assign_destructor(Filter::new(
+                                        move |_keyboard: ZwpInputMethodKeyboardGrabV2, _, _| {
+                                            input_method_handle.inner.borrow_mut().keyboard = None
+                                        },
                                     ));
                                 }
-                                zwp_input_method_v2::Request::Destroy  => {}
+                                zwp_input_method_v2::Request::Destroy => {}
                                 _ => {}
                             });
-                            input_method.assign_destructor(Filter::new(move |_input_method: ZwpInputMethodV2,_,_| 
-                                input_method_handle.inner.borrow_mut().instance = None
+                            input_method.assign_destructor(Filter::new(
+                                move |_input_method: ZwpInputMethodV2, _, _| {
+                                    input_method_handle.inner.borrow_mut().instance = None
+                                },
                             ))
                         }
                     }
@@ -359,7 +358,7 @@ pub fn init_input_method_manager_global(display: &mut Display) -> Global<ZwpInpu
                     }
                     _ => {}
                 });
-            }
-        )
+            },
+        ),
     )
 }

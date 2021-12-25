@@ -3,13 +3,16 @@
 //! This module provides you with utilities to handle text input from multiple text input clients,
 //! it must be used in conjunction with the input method module to work.
 //! See the input method module for more information.
-//! 
-//! ##How to Initialize
+//!
+//! ## How to use
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
 //! # use smithay::wayland::compositor::compositor_init;
 //!
+//! use std::borrow::BorrowMut;
+//!
+//! use wayland_server::protocol::wl_surface::WlSurface;
 //! use smithay::wayland::seat::{Seat};
 //! use smithay::wayland::text_input::{init_text_input_manager_global, TextInputSeatTrait, TextInputHandle};
 //!
@@ -21,32 +24,25 @@
 //!     "seat-0".into(),
 //!     None
 //! );
-//! 
+//!
 //! // Insert the manager into your event loop
 //! init_text_input_manager_global(&mut display.borrow_mut());
-//! 
+//!
 //! // Add the input method handle to the seat
 //! let text_input = seat.add_text_input();
-//! 
 //! ```
-//! 
 //! ## Run usage
-//! Once a handle has been added to the seat you need to use to use the set_focus function to 
-//! tell the text input handle which surface should receive text input.
-//! "self" is the compositor state.
-//! 
-//! ```
-//! self.text_input
-//!     .set_focus(under.as_ref().map(|&(ref s, _)| s));
-//! 
-//! ```
+//! // Once a handle has been added to the seat you need to use to use the set_focus function to
+//! // tell the text input handle which surface should receive text input.
+//!
 
-use std::{rc::Rc, cell::RefCell, convert::TryInto};
+use std::{cell::RefCell, convert::TryInto, rc::Rc};
 
-use wayland_protocols::{unstable::text_input::v3::server::{
-    zwp_text_input_manager_v3::{ZwpTextInputManagerV3, self}, 
-    zwp_text_input_v3::{ZwpTextInputV3, self}}};
-use wayland_server::{Display, Global, Main, Filter, protocol::wl_surface::WlSurface};
+use wayland_protocols::unstable::text_input::v3::server::{
+    zwp_text_input_manager_v3::{self, ZwpTextInputManagerV3},
+    zwp_text_input_v3::{self, ZwpTextInputV3},
+};
+use wayland_server::{protocol::wl_surface::WlSurface, Display, Filter, Global, Main};
 
 use crate::wayland::seat::Seat;
 
@@ -80,7 +76,7 @@ impl TextInput {
                 }
             }
             self.focus = None;
-            
+
             // set new focus
             self.focus = focus.cloned();
             if let Some(focus) = &self.focus {
@@ -89,23 +85,18 @@ impl TextInput {
                     .iter()
                     .find(|i| i.as_ref().same_client_as(focus.as_ref()))
                 {
-                    instance.enter(&focus);
+                    instance.enter(focus);
                 }
-            }  
+            }
         }
     }
 
     fn focused_text_input(&self) -> Option<Main<ZwpTextInputV3>> {
         if let Some(focus) = &self.focus {
-            if let Some(instance) = self
-                .instances
+            self.instances
                 .iter()
                 .find(|i| i.as_ref().same_client_as(focus.as_ref()))
-            {
-                Some(instance.clone())
-            } else {
-                None
-            }
+                .cloned()
         } else {
             None
         }
@@ -119,12 +110,12 @@ pub struct TextInputHandle {
 }
 
 impl TextInputHandle {
-    fn add_instance(&self, instance: Main<ZwpTextInputV3>){
+    fn add_instance(&self, instance: Main<ZwpTextInputV3>) {
         let mut inner = self.inner.borrow_mut();
         inner.instances.push(instance);
     }
 
-    /// Activates a text input when a surface is focused and deactivates it when 
+    /// Activates a text input when a surface is focused and deactivates it when
     /// the current surface goes out of focus.
     pub fn set_focus(&mut self, focus: Option<&WlSurface>) {
         let mut inner = self.inner.borrow_mut();
@@ -146,7 +137,7 @@ pub trait TextInputSeatTrait {
 impl TextInputSeatTrait for Seat {
     fn add_text_input(&self) -> TextInputHandle {
         let user_data = self.user_data();
-        user_data.insert_if_missing(|| TextInputHandle::default());
+        user_data.insert_if_missing(TextInputHandle::default);
         user_data.get::<TextInputHandle>().unwrap().clone()
     }
 }
@@ -154,14 +145,14 @@ impl TextInputSeatTrait for Seat {
 /// Initialize a text input global
 pub fn init_text_input_manager_global(display: &mut Display) -> Global<ZwpTextInputManagerV3> {
     display.create_global::<ZwpTextInputManagerV3, _>(
-        TEXT_INPUT_VERSION, 
+        TEXT_INPUT_VERSION,
         Filter::new(
             move |(manager, _version): (Main<ZwpTextInputManagerV3>, u32), _, _| {
                 manager.quick_assign(|_manager, req, _| match req {
                     zwp_text_input_manager_v3::Request::GetTextInput { seat, id } => {
                         let seat = Seat::from_resource(&seat).unwrap();
                         let user_data = seat.user_data();
-                        user_data.insert_if_missing(|| TextInputHandle::default());
+                        user_data.insert_if_missing(TextInputHandle::default);
                         let ti = user_data.get::<TextInputHandle>().unwrap().clone();
                         ti.add_instance(id.clone());
                         let input_method = user_data.get::<InputMethodHandle>().unwrap().clone();
@@ -176,12 +167,16 @@ pub fn init_text_input_manager_global(display: &mut Display) -> Global<ZwpTextIn
                                     input_method.deactivate();
                                 }
                             }
-                            zwp_text_input_v3::Request::SetSurroundingText { text, cursor, anchor} => {
+                            zwp_text_input_v3::Request::SetSurroundingText { text, cursor, anchor } => {
                                 if let Some(input_method) = input_method.handle() {
-                                    input_method.surrounding_text(text, cursor.try_into().unwrap(), anchor.try_into().unwrap());
+                                    input_method.surrounding_text(
+                                        text,
+                                        cursor.try_into().unwrap(),
+                                        anchor.try_into().unwrap(),
+                                    );
                                 }
                             }
-                            zwp_text_input_v3::Request::SetContentType { hint, purpose} => {
+                            zwp_text_input_v3::Request::SetContentType { hint, purpose } => {
                                 if let Some(input_method) = input_method.handle() {
                                     input_method.content_type(hint, purpose);
                                 }
@@ -191,7 +186,7 @@ pub fn init_text_input_manager_global(display: &mut Display) -> Global<ZwpTextIn
                                     input_method.text_change_cause(cause);
                                 }
                             }
-                            zwp_text_input_v3::Request::SetCursorRectangle { x, y, width, height} => {
+                            zwp_text_input_v3::Request::SetCursorRectangle { x, y, width, height } => {
                                 if let Some(popup_surface) = input_method.popup_surface() {
                                     popup_surface.text_input_rectangle(x, y, width, height);
                                 }
@@ -204,18 +199,19 @@ pub fn init_text_input_manager_global(display: &mut Display) -> Global<ZwpTextIn
                             zwp_text_input_v3::Request::Destroy => {}
                             _ => {}
                         });
-                        id.assign_destructor(Filter::new(move |text_input: ZwpTextInputV3, _, _|
-                            ti
-                                .inner
+                        id.assign_destructor(Filter::new(move |text_input: ZwpTextInputV3, _, _| {
+                            ti.inner
                                 .borrow_mut()
                                 .instances
-                                .retain(|ti| !ti.as_ref().equals(text_input.as_ref()))));
+                                .retain(|ti| !ti.as_ref().equals(text_input.as_ref()))
+                        }));
                     }
                     zwp_text_input_manager_v3::Request::Destroy => {
                         //Nothing to do
                     }
                     _ => {}
                 })
-            }
-        ))
+            },
+        ),
+    )
 }

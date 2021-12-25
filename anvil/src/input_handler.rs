@@ -75,41 +75,41 @@ impl<Backend> AnvilState<Backend> {
             KeyAction::None
         } else {
             self.keyboard
-            .input(keycode, state, serial, time, |modifiers, handle| {
-                let keysym = handle.modified_sym();
+                .input(keycode, state, serial, time, |modifiers, handle| {
+                    let keysym = handle.modified_sym();
 
-                debug!(log, "keysym";
-                    "state" => format!("{:?}", state),
-                    "mods" => format!("{:?}", modifiers),
-                    "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
-                );
+                    debug!(log, "keysym";
+                        "state" => format!("{:?}", state),
+                        "mods" => format!("{:?}", modifiers),
+                        "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
+                    );
 
-                // If the key is pressed and triggered an action
-                // we will not forward the key to the client.
-                // Additionally add the key to the suppressed keys
-                // so that we can decide on a release if the key
-                // should be forwarded to the client or not.
-                if let KeyState::Pressed = state {
-                    let action = process_keyboard_shortcut(*modifiers, keysym);
+                    // If the key is pressed and triggered an action
+                    // we will not forward the key to the client.
+                    // Additionally add the key to the suppressed keys
+                    // so that we can decide on a release if the key
+                    // should be forwarded to the client or not.
+                    if let KeyState::Pressed = state {
+                        let action = process_keyboard_shortcut(*modifiers, keysym);
 
-                    if action.is_some() {
-                        suppressed_keys.push(keysym);
-                    }
+                        if action.is_some() {
+                            suppressed_keys.push(keysym);
+                        }
 
-                    action
-                        .map(FilterResult::Intercept)
-                        .unwrap_or(FilterResult::Forward)
-                } else {
-                    let suppressed = suppressed_keys.contains(&keysym);
-                    if suppressed {
-                        suppressed_keys.retain(|k| *k != keysym);
-                        FilterResult::Intercept(KeyAction::None)
+                        action
+                            .map(FilterResult::Intercept)
+                            .unwrap_or(FilterResult::Forward)
                     } else {
-                        FilterResult::Forward
+                        let suppressed = suppressed_keys.contains(&keysym);
+                        if suppressed {
+                            suppressed_keys.retain(|k| *k != keysym);
+                            FilterResult::Intercept(KeyAction::None)
+                        } else {
+                            FilterResult::Forward
+                        }
                     }
-                }
-            })
-            .unwrap_or(KeyAction::None)
+                })
+                .unwrap_or(KeyAction::None)
         }
     }
 
@@ -126,8 +126,7 @@ impl<Backend> AnvilState<Backend> {
                         .get_surface_and_bring_to_top(self.pointer_location);
                     self.keyboard
                         .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
-                    self.text_input
-                        .set_focus(under.as_ref().map(|&(ref s, _)| s));
+                    self.text_input.set_focus(under.as_ref().map(|&(ref s, _)| s));
                 }
                 wl_pointer::ButtonState::Pressed
             }
@@ -467,8 +466,7 @@ impl AnvilState<UdevData> {
                         let serial = SCOUNTER.next_serial();
                         self.keyboard
                             .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
-                        self.text_input
-                            .set_focus(under.as_ref().map(|&(ref s, _)| s));
+                        self.text_input.set_focus(under.as_ref().map(|&(ref s, _)| s));
                     }
                 }
                 TabletToolTipState::Up => {
