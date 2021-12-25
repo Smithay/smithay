@@ -45,6 +45,8 @@
 - Add support for the zxdg-foreign-v2 protocol.
 - Support for `xdg_wm_base` protocol version 3
 - Added the option to initialize the dmabuf global with a client filter
+- `zwp_text_input_v3` support
+- `zwp_input_method_v2` support
 
 #### Backends
 
@@ -54,6 +56,10 @@
 - New `DrmNode` type in drm backend. This is primarily for use a backend which needs to run as client inside another session.
 - The button code for a `PointerButtonEvent` may now be obtained using `PointerButtonEvent::button_code`. 
 - `Renderer` now allows texture filtering methods to be set.
+
+### Anvil
+
+- Support for text input and input methods
 
 #### Utils
 
