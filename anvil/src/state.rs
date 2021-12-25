@@ -21,7 +21,9 @@ use smithay::{
         shell::xdg::decoration::{init_xdg_decoration_manager, XdgDecorationRequest},
         shm::init_shm_global,
         tablet_manager::{init_tablet_manager_global, TabletSeatTrait},
+        input_method::{init_input_method_manager_global, InputMethodHandle, InputMethodSeatTrait},
         xdg_activation::{init_xdg_activation_global, XdgActivationEvent},
+        text_input::{init_text_input_manager_global, TextInputSeatTrait, TextInputHandle},
     },
 };
 
@@ -44,6 +46,8 @@ pub struct AnvilState<BackendData> {
     // input-related fields
     pub pointer: PointerHandle,
     pub keyboard: KeyboardHandle,
+    pub input_method: InputMethodHandle,
+    pub text_input: TextInputHandle,
     pub suppressed_keys: Vec<u32>,
     pub pointer_location: Point<f64, Logical>,
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
@@ -202,6 +206,12 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 set_data_device_focus(seat, focus.and_then(|s| s.as_ref().client()))
             })
             .expect("Failed to initialize the keyboard");
+        
+        init_input_method_manager_global(&mut display.borrow_mut());
+        init_text_input_manager_global(&mut display.borrow_mut());
+        
+        let input_method = seat.add_input_method(25, 200, XkbConfig::default());
+        let text_input = seat.add_text_input();
 
         #[cfg(feature = "xwayland")]
         let xwayland = {
@@ -231,6 +241,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             socket_name,
             pointer,
             keyboard,
+            input_method,
+            text_input,
             suppressed_keys: Vec::new(),
             cursor_status,
             pointer_location: (0.0, 0.0).into(),

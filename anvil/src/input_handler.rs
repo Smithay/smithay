@@ -70,7 +70,11 @@ impl<Backend> AnvilState<Backend> {
         let log = &self.log;
         let time = Event::time(&evt);
         let suppressed_keys = &mut self.suppressed_keys;
-        self.keyboard
+        if self.input_method.keyboard_grabbed() {
+            self.input_method.input(keycode, state, serial, time);
+            KeyAction::None
+        } else {
+            self.keyboard
             .input(keycode, state, serial, time, |modifiers, handle| {
                 let keysym = handle.modified_sym();
 
@@ -80,7 +84,7 @@ impl<Backend> AnvilState<Backend> {
                     "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
                 );
 
-                // If the key is pressed and triggered a action
+                // If the key is pressed and triggered an action
                 // we will not forward the key to the client.
                 // Additionally add the key to the suppressed keys
                 // so that we can decide on a release if the key
@@ -106,6 +110,7 @@ impl<Backend> AnvilState<Backend> {
                 }
             })
             .unwrap_or(KeyAction::None)
+        }
     }
 
     fn on_pointer_button<B: InputBackend>(&mut self, evt: B::PointerButtonEvent) {
@@ -121,6 +126,8 @@ impl<Backend> AnvilState<Backend> {
                         .get_surface_and_bring_to_top(self.pointer_location);
                     self.keyboard
                         .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
+                    self.text_input
+                        .set_focus(under.as_ref().map(|&(ref s, _)| s));
                 }
                 wl_pointer::ButtonState::Pressed
             }
@@ -460,6 +467,8 @@ impl AnvilState<UdevData> {
                         let serial = SCOUNTER.next_serial();
                         self.keyboard
                             .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
+                        self.text_input
+                            .set_focus(under.as_ref().map(|&(ref s, _)| s));
                     }
                 }
                 TabletToolTipState::Up => {
