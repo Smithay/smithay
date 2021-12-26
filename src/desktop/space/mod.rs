@@ -1,7 +1,9 @@
-use super::{draw_window, Window};
 use crate::{
-    backend::renderer::{utils::SurfaceState, Frame, ImportAll, Renderer, Texture, Transform},
-    desktop::{layer::*, output::*},
+    backend::renderer::{utils::SurfaceState, Frame, ImportAll, Renderer, Transform},
+    desktop::{
+        layer::{layer_map_for_output, LayerSurface},
+        window::Window,
+    },
     utils::{Logical, Point, Rectangle},
     wayland::{
         compositor::{
@@ -14,15 +16,24 @@ use crate::{
 };
 use indexmap::{IndexMap, IndexSet};
 use std::{
-    any::{Any, TypeId},
-    cell::{RefCell, RefMut},
-    collections::{HashMap, HashSet, VecDeque},
+    cell::RefCell,
+    collections::{HashSet, VecDeque},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Mutex,
     },
 };
 use wayland_server::protocol::wl_surface::WlSurface;
+
+mod element;
+mod layer;
+mod output;
+mod window;
+
+pub use self::element::*;
+use self::layer::*;
+use self::output::*;
+use self::window::*;
 
 static SPACE_ID: AtomicUsize = AtomicUsize::new(0);
 lazy_static::lazy_static! {
@@ -44,35 +55,6 @@ fn next_space_id() -> usize {
 
     ids.insert(id);
     id
-}
-
-#[derive(Default)]
-struct WindowState {
-    location: Point<i32, Logical>,
-    drawn: bool,
-}
-
-type WindowUserdata = RefCell<HashMap<usize, WindowState>>;
-fn window_state(space: usize, w: &Window) -> RefMut<'_, WindowState> {
-    let userdata = w.user_data();
-    userdata.insert_if_missing(WindowUserdata::default);
-    RefMut::map(userdata.get::<WindowUserdata>().unwrap().borrow_mut(), |m| {
-        m.entry(space).or_default()
-    })
-}
-
-#[derive(Default)]
-struct LayerState {
-    drawn: bool,
-}
-
-type LayerUserdata = RefCell<HashMap<usize, LayerState>>;
-fn layer_state(space: usize, l: &LayerSurface) -> RefMut<'_, LayerState> {
-    let userdata = l.user_data();
-    userdata.insert_if_missing(LayerUserdata::default);
-    RefMut::map(userdata.get::<LayerUserdata>().unwrap().borrow_mut(), |m| {
-        m.entry(space).or_default()
-    })
 }
 
 // TODO: Maybe replace UnmanagedResource if nothing else comes up?
@@ -421,12 +403,9 @@ impl Space {
         output: &Output,
         age: usize,
         clear_color: [f32; 4],
-        custom_elements: &[&(dyn RenderElement<
-            R,
-            <R as Renderer>::Frame,
-            <R as Renderer>::Error,
-            <R as Renderer>::TextureId,
-        >)],
+        custom_elements: &[Box<
+            dyn RenderElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>,
+        >],
     ) -> Result<bool, RenderError<R>>
     where
         R: Renderer + ImportAll + 'static,
@@ -434,6 +413,9 @@ impl Space {
         R::Error: 'static,
         R::Frame: 'static,
     {
+        type SpaceElem<R> =
+            dyn SpaceElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>;
+
         let mut state = output_state(self.id, output);
         let output_size = output
             .current_mode()
@@ -451,14 +433,16 @@ impl Space {
         for old_toplevel in state
             .last_state
             .iter()
-            .filter_map(|(id, w)| {
-                if !self.windows.iter().any(|w| ToplevelId::Xdg(w.0.id) == *id)
-                    && !layer_map.layers().any(|l| ToplevelId::Layer(l.0.id) == *id)
-                    && !custom_elements
-                        .iter()
-                        .any(|c| ToplevelId::Custom(c.type_of(), c.id()) == *id)
+            .filter_map(|(id, geo)| {
+                if !self
+                    .windows
+                    .iter()
+                    .map(|w| w as &SpaceElem<R>)
+                    .chain(layer_map.layers().map(|l| l as &SpaceElem<R>))
+                    .chain(custom_elements.iter().map(|c| c as &SpaceElem<R>))
+                    .any(|e| ToplevelId::from(e) == *id)
                 {
-                    Some(*w)
+                    Some(*geo)
                 } else {
                     None
                 }
@@ -470,9 +454,15 @@ impl Space {
         }
 
         // lets iterate front to back and figure out, what new windows or unmoved windows we have
-        for window in self.windows.iter() {
-            let geo = window_rect_with_popups(window, &self.id);
-            let old_geo = state.last_state.get(&ToplevelId::Xdg(window.0.id)).cloned();
+        for element in self
+            .windows
+            .iter()
+            .map(|w| w as &SpaceElem<R>)
+            .chain(layer_map.layers().map(|l| l as &SpaceElem<R>))
+            .chain(custom_elements.iter().map(|c| c as &SpaceElem<R>))
+        {
+            let geo = element.geometry(self.id);
+            let old_geo = state.last_state.get(&ToplevelId::from(element)).cloned();
 
             // window was moved or resized
             if old_geo.map(|old_geo| old_geo != geo).unwrap_or(false) {
@@ -481,62 +471,13 @@ impl Space {
                 damage.push(geo);
             } else {
                 // window stayed at its place
-                let loc = window_loc(window, &self.id);
-                damage.extend(
-                    window
-                        .accumulated_damage(Some((self, output)))
-                        .into_iter()
-                        .map(|mut rect| {
-                            rect.loc += loc;
-                            rect
-                        }),
-                );
-            }
-        }
-        for layer in layer_map.layers() {
-            let geo = layer_map.layer_geometry(layer);
-            let old_geo = state.last_state.get(&ToplevelId::Layer(layer.0.id)).cloned();
-
-            // layer moved or resized
-            if old_geo.map(|old_geo| old_geo != geo).unwrap_or(false) {
-                // Add damage for the old position of the layer
-                damage.push(old_geo.unwrap());
-                damage.push(geo);
-            } else {
-                let location = geo.loc;
-                damage.extend(
-                    layer
-                        .accumulated_damage(Some((self, output)))
-                        .into_iter()
-                        .map(|mut rect| {
-                            rect.loc += location;
-                            rect
-                        }),
-                );
-            }
-        }
-        for elem in custom_elements {
-            let geo = elem.geometry();
-            let old_geo = state
-                .last_state
-                .get(&ToplevelId::Custom(elem.type_of(), elem.id()))
-                .cloned();
-
-            // moved of resized
-            if old_geo.map(|old_geo| old_geo != geo).unwrap_or(false) {
-                // Add damage for the old position of the layer
-                damage.push(old_geo.unwrap());
-                damage.push(geo);
-            } else {
-                let location = geo.loc;
-                damage.extend(
-                    elem.accumulated_damage(Some((self, output)))
-                        .into_iter()
-                        .map(|mut rect| {
-                            rect.loc += location;
-                            rect
-                        }),
-                );
+                let loc = element.location(self.id);
+                damage.extend(element.accumulated_damage(Some((self, output))).into_iter().map(
+                    |mut rect| {
+                        rect.loc += loc;
+                        rect
+                    },
+                ));
             }
         }
 
@@ -598,115 +539,40 @@ impl Space {
 
                 // Then re-draw all windows & layers overlapping with a damage rect.
 
-                for layer in layer_map
+                for element in layer_map
                     .layers_on(WlrLayer::Background)
                     .chain(layer_map.layers_on(WlrLayer::Bottom))
+                    .map(|l| l as &SpaceElem<R>)
+                    .chain(self.windows.iter().map(|w| w as &SpaceElem<R>))
+                    .chain(
+                        layer_map
+                            .layers_on(WlrLayer::Top)
+                            .chain(layer_map.layers_on(WlrLayer::Overlay))
+                            .map(|l| l as &SpaceElem<R>),
+                    )
+                    .chain(custom_elements.iter().map(|c| c as &SpaceElem<R>))
                 {
-                    let lgeo = layer_map.layer_geometry(layer);
-                    if damage.iter().any(|geo| lgeo.overlaps(*geo)) {
-                        let layer_damage = damage
+                    let geo = element.geometry(self.id);
+                    if damage.iter().any(|d| d.overlaps(geo)) {
+                        let loc = element.location(self.id) - output_geo.loc;
+                        let damage = damage
                             .iter()
-                            .flat_map(|geo| geo.intersection(lgeo))
-                            .map(|geo| Rectangle::from_loc_and_size(geo.loc - lgeo.loc, geo.size))
-                            .collect::<Vec<_>>();
-                        slog::trace!(
-                            self.logger,
-                            "Rendering layer at {:?} with damage {:#?}",
-                            lgeo,
-                            layer_damage
-                        );
-                        draw_layer(
-                            renderer,
-                            frame,
-                            layer,
-                            state.render_scale,
-                            lgeo.loc,
-                            &layer_damage,
-                            &self.logger,
-                        )?;
-                        layer_state(self.id, layer).drawn = true;
-                    }
-                }
-
-                for window in self.windows.iter() {
-                    let wgeo = window_rect_with_popups(window, &self.id);
-                    let mut loc = window_loc(window, &self.id);
-                    if damage.iter().any(|geo| wgeo.overlaps(*geo)) {
-                        loc -= output_geo.loc;
-                        let win_damage = damage
-                            .iter()
-                            .flat_map(|geo| geo.intersection(wgeo))
+                            .flat_map(|d| d.intersection(geo))
                             .map(|geo| Rectangle::from_loc_and_size(geo.loc - loc, geo.size))
                             .collect::<Vec<_>>();
                         slog::trace!(
                             self.logger,
-                            "Rendering window at {:?} with damage {:#?}",
-                            wgeo,
-                            win_damage
+                            "Rendering toplevel at {:?} with damage {:#?}",
+                            geo,
+                            damage
                         );
-                        draw_window(
+                        element.draw(
+                            self.id,
                             renderer,
                             frame,
-                            window,
                             state.render_scale,
                             loc,
-                            &win_damage,
-                            &self.logger,
-                        )?;
-                        window_state(self.id, window).drawn = true;
-                    }
-                }
-
-                for layer in layer_map
-                    .layers_on(WlrLayer::Top)
-                    .chain(layer_map.layers_on(WlrLayer::Overlay))
-                {
-                    let lgeo = layer_map.layer_geometry(layer);
-                    if damage.iter().any(|geo| lgeo.overlaps(*geo)) {
-                        let layer_damage = damage
-                            .iter()
-                            .flat_map(|geo| geo.intersection(lgeo))
-                            .map(|geo| Rectangle::from_loc_and_size(geo.loc - lgeo.loc, geo.size))
-                            .collect::<Vec<_>>();
-                        slog::trace!(
-                            self.logger,
-                            "Rendering layer at {:?} with damage {:#?}",
-                            lgeo,
-                            layer_damage
-                        );
-                        draw_layer(
-                            renderer,
-                            frame,
-                            layer,
-                            state.render_scale,
-                            lgeo.loc,
-                            &layer_damage,
-                            &self.logger,
-                        )?;
-                        layer_state(self.id, layer).drawn = true;
-                    }
-                }
-
-                for elem in custom_elements {
-                    let egeo = elem.geometry();
-                    if damage.iter().any(|geo| egeo.overlaps(*geo)) {
-                        let elem_damage = damage
-                            .iter()
-                            .flat_map(|geo| geo.intersection(egeo))
-                            .map(|geo| Rectangle::from_loc_and_size(geo.loc - egeo.loc, geo.size))
-                            .collect::<Vec<_>>();
-                        slog::trace!(
-                            self.logger,
-                            "Rendering custom element at {:?} with damage {:#?}",
-                            egeo,
-                            elem_damage
-                        );
-                        elem.draw(
-                            renderer,
-                            frame,
-                            state.render_scale,
-                            egeo.loc,
-                            &elem_damage,
+                            &damage,
                             &self.logger,
                         )?;
                     }
@@ -726,18 +592,13 @@ impl Space {
         state.last_state = self
             .windows
             .iter()
-            .map(|window| {
-                let wgeo = window_rect_with_popups(window, &self.id);
-                (ToplevelId::Xdg(window.0.id), wgeo)
+            .map(|w| w as &SpaceElem<R>)
+            .chain(layer_map.layers().map(|l| l as &SpaceElem<R>))
+            .chain(custom_elements.iter().map(|c| c as &SpaceElem<R>))
+            .map(|elem| {
+                let geo = elem.geometry(self.id);
+                (ToplevelId::from(elem), geo)
             })
-            .chain(layer_map.layers().map(|layer| {
-                let lgeo = layer_map.layer_geometry(layer);
-                (ToplevelId::Layer(layer.0.id), lgeo)
-            }))
-            .chain(custom_elements.iter().map(|custom| {
-                let egeo = custom.geometry();
-                (ToplevelId::Custom(custom.type_of(), custom.id()), egeo)
-            }))
             .collect();
         state.old_damage.push_front(new_damage);
 
@@ -768,114 +629,10 @@ impl Space {
     }
 }
 
-pub trait RenderElement<R, F, E, T>
-where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
-    Self: Any + 'static,
-{
-    fn id(&self) -> usize;
-    fn type_of(&self) -> TypeId {
-        std::any::Any::type_id(self)
-    }
-    fn geometry(&self) -> Rectangle<i32, Logical>;
-    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>>;
-    fn draw(
-        &self,
-        renderer: &mut R,
-        frame: &mut F,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
-        log: &slog::Logger,
-    ) -> Result<(), R::Error>;
-}
-
-#[derive(Debug)]
-pub struct SurfaceTree {
-    pub surface: WlSurface,
-    pub position: Point<i32, Logical>,
-}
-
-impl<R, F, E, T> RenderElement<R, F, E, T> for SurfaceTree
-where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
-{
-    fn id(&self) -> usize {
-        self.surface.as_ref().id() as usize
-    }
-    fn geometry(&self) -> Rectangle<i32, Logical> {
-        let mut bbox = super::utils::bbox_from_surface_tree(&self.surface, (0, 0));
-        bbox.loc += self.position;
-        bbox
-    }
-
-    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
-        super::utils::damage_from_surface_tree(&self.surface, (0, 0), for_values)
-    }
-
-    fn draw(
-        &self,
-        renderer: &mut R,
-        frame: &mut F,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
-        log: &slog::Logger,
-    ) -> Result<(), R::Error> {
-        crate::backend::renderer::utils::draw_surface_tree(
-            renderer,
-            frame,
-            &self.surface,
-            scale,
-            location,
-            damage,
-            log,
-        )
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError<R: Renderer> {
     #[error(transparent)]
     Rendering(R::Error),
     #[error("Output has no active mode")]
     OutputNoMode,
-}
-
-fn window_geo(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
-    let loc = window_loc(window, space_id);
-    let mut wgeo = window.geometry();
-    wgeo.loc = loc;
-    wgeo
-}
-
-fn window_rect(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
-    let loc = window_loc(window, space_id);
-    let mut wgeo = window.bbox();
-    wgeo.loc += loc;
-    wgeo
-}
-
-fn window_rect_with_popups(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
-    let loc = window_loc(window, space_id);
-    let mut wgeo = window.bbox_with_popups();
-    wgeo.loc += loc;
-    wgeo
-}
-
-fn window_loc(window: &Window, space_id: &usize) -> Point<i32, Logical> {
-    window
-        .user_data()
-        .get::<RefCell<HashMap<usize, WindowState>>>()
-        .unwrap()
-        .borrow()
-        .get(space_id)
-        .unwrap()
-        .location
 }

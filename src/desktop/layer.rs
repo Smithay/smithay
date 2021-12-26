@@ -1,6 +1,6 @@
 use crate::{
     backend::renderer::{utils::draw_surface_tree, Frame, ImportAll, Renderer, Texture},
-    desktop::{utils::*, PopupManager, Space},
+    desktop::{space::RenderElement, utils::*, PopupManager, Space},
     utils::{user_data::UserDataMap, Logical, Point, Rectangle},
     wayland::{
         compositor::with_states,
@@ -267,12 +267,12 @@ impl LayerMap {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct LayerState {
-    location: Point<i32, Logical>,
+pub struct LayerState {
+    pub location: Point<i32, Logical>,
 }
 
 type LayerUserdata = RefCell<Option<LayerState>>;
-fn layer_state(layer: &LayerSurface) -> RefMut<'_, LayerState> {
+pub fn layer_state(layer: &LayerSurface) -> RefMut<'_, LayerState> {
     let userdata = layer.user_data();
     userdata.insert_if_missing(LayerUserdata::default);
     RefMut::map(userdata.get::<LayerUserdata>().unwrap().borrow_mut(), |opt| {
