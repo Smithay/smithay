@@ -196,6 +196,15 @@ where
 
     /// Remove all internally cached buffers to e.g. reset age values
     pub fn reset_buffers(&mut self) {
-        self.slots = Default::default();
+        for slot in &mut self.slots {
+            if let Some(internal_slot) = Arc::get_mut(slot) {
+                *internal_slot = InternalSlot {
+                    buffer: internal_slot.buffer.take(),
+                    ..Default::default()
+                };
+            } else {
+                *slot = Default::default();
+            }
+        }
     }
 }
