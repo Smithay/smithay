@@ -215,11 +215,16 @@ impl Space {
             return None;
         }
 
+        let transform: Transform = o.current_transform().into();
         let state = output_state(self.id, o);
         o.current_mode().map(|mode| {
             Rectangle::from_loc_and_size(
                 state.location,
-                mode.size.to_f64().to_logical(state.render_scale).to_i32_round(),
+                transform
+                    .transform_size(mode.size)
+                    .to_f64()
+                    .to_logical(state.render_scale)
+                    .to_i32_round(),
             )
         })
     }
