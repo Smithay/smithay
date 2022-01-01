@@ -4,11 +4,12 @@ use smithay::reexports::wayland_server::Display;
 use smithay::wayland::seat2::{self as seat, SeatHandler};
 
 use seat::{
-    DelegateDispatch, DelegateGlobalDispatch, KeyboardUserData, PointerUserData, SeatDispatch, SeatState,
-    SeatUserData,
+    delegate::{DelegateDispatch, DelegateGlobalDispatch},
+    KeyboardUserData, PointerUserData, SeatDispatch, SeatState, SeatUserData,
 };
 
 use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
+use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::protocol::{
     wl_keyboard::{self, WlKeyboard},
     wl_pointer::{self, WlPointer},
@@ -26,6 +27,8 @@ struct InnerApp;
 
 impl SeatHandler for InnerApp {
     fn set_cursor(&mut self) {}
+
+    fn keyboard_focus(&mut self, focus: Option<&WlSurface>) {}
 }
 
 impl Dispatch<WlSeat> for App {
