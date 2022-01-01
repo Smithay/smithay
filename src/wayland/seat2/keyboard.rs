@@ -21,7 +21,10 @@ use wayland_server::{
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
 
-use super::{SeatDispatch, SeatHandler, SeatState};
+use super::{
+    delegate::{DelegateDispatch, DelegateDispatchBase},
+    SeatDispatch, SeatHandler, SeatState,
+};
 
 mod modifiers_state;
 pub use modifiers_state::ModifiersState;
@@ -462,17 +465,22 @@ pub struct KeyboardUserData {
     pub(crate) handle: Option<KeyboardHandle>,
 }
 
-impl<D, H: SeatHandler<D>> Dispatch<WlKeyboard> for SeatDispatch<'_, D, H> {
+impl<D: 'static, H: SeatHandler<D>> DelegateDispatchBase<WlKeyboard> for SeatDispatch<'_, D, H> {
     type UserData = KeyboardUserData;
+}
 
+impl<D, H: SeatHandler<D>> DelegateDispatch<WlKeyboard, D> for SeatDispatch<'_, D, H>
+where
+    D: 'static + Dispatch<WlKeyboard, UserData = KeyboardUserData>,
+{
     fn request(
         &mut self,
         _client: &wayland_server::Client,
-        _resource: &WlKeyboard,
-        _request: wl_keyboard::Request,
-        _data: &Self::UserData,
-        _dhandle: &mut DisplayHandle<'_, Self>,
-        _data_init: &mut wayland_server::DataInit<'_, Self>,
+        resource: &WlKeyboard,
+        request: wl_keyboard::Request,
+        data: &Self::UserData,
+        _dhandle: &mut DisplayHandle<'_, D>,
+        _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
     }
 }
