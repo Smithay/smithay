@@ -20,7 +20,7 @@ use crate::{
     wayland::Serial,
 };
 
-use super::Seat;
+use super::{SeatDispatch, SeatState};
 
 static CURSOR_IMAGE_ROLE: &str = "cursor_image";
 
@@ -727,7 +727,7 @@ pub struct PointerUserData<D> {
     pub(crate) handle: Option<PointerHandle<D>>,
 }
 
-impl<D: 'static> Dispatch<WlPointer> for Seat<D> {
+impl<D: 'static, H> Dispatch<WlPointer> for SeatDispatch<'_, D, H> {
     type UserData = PointerUserData<D>;
 
     fn request(
