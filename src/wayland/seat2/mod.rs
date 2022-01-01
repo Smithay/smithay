@@ -53,13 +53,14 @@ pub use self::{
 };
 
 use wayland_server::{
+    backend::{ClientId, ObjectId},
     protocol::{
         wl_keyboard::WlKeyboard,
         wl_pointer::WlPointer,
         wl_seat::{self, WlSeat},
         wl_surface,
     },
-    DataInit, DestructionNotify, Dispatch, Display, DisplayHandle, GlobalDispatch, Resource,
+    DataInit, DestructionNotify, Dispatch, Display, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 ///  Dispatch delegation helper
@@ -104,9 +105,10 @@ pub trait DelegateGlobalDispatch<
         &mut self,
         handle: &mut DisplayHandle<'_, D>,
         client: &wayland_server::Client,
-        resource: &I,
+        resource: New<I>,
         global_data: &Self::GlobalData,
-    ) -> <Self as DelegateDispatchBase<I>>::UserData;
+        data_init: &mut DataInit<'_, D>,
+    );
 
     ///  Dispatch delegation helper
     fn can_view(_client: wayland_server::Client, _global_data: &Self::GlobalData) -> bool {
@@ -115,21 +117,21 @@ pub trait DelegateGlobalDispatch<
 }
 
 #[derive(Debug)]
-struct Inner {
-    pointer: Option<PointerHandle>,
+struct Inner<D> {
+    pointer: Option<PointerHandle<D>>,
     keyboard: Option<KeyboardHandle>,
     known_seats: Vec<wl_seat::WlSeat>,
 }
 
 #[derive(Debug)]
-struct SeatRc {
+struct SeatRc<D> {
     name: String,
-    inner: Mutex<Inner>,
+    inner: Mutex<Inner<D>>,
 
     log: ::slog::Logger,
 }
 
-impl Inner {
+impl<D> Inner<D> {
     fn compute_caps(&self) -> wl_seat::Capability {
         let mut caps = wl_seat::Capability::empty();
         if self.pointer.is_some() {
@@ -141,7 +143,7 @@ impl Inner {
         caps
     }
 
-    fn send_all_caps<D>(&self, cx: &mut DisplayHandle<'_, D>) {
+    fn send_all_caps(&self, cx: &mut DisplayHandle<'_, D>) {
         let capabilities = self.compute_caps();
         for seat in &self.known_seats {
             seat.capabilities(cx, capabilities);
@@ -159,12 +161,20 @@ impl Inner {
 /// This is an handle to the inner logic, it can be cloned.
 ///
 /// See module-level documentation for details of use.
-#[derive(Debug, Clone)]
-pub struct Seat {
-    arc: Arc<SeatRc>,
+#[derive(Debug)]
+pub struct Seat<D> {
+    arc: Arc<SeatRc<D>>,
 }
 
-impl Seat {
+impl<D> Clone for Seat<D> {
+    fn clone(&self) -> Self {
+        Self {
+            arc: self.arc.clone(),
+        }
+    }
+}
+
+impl<D: 'static> Seat<D> {
     /// Create a new seat global
     ///
     /// A new seat global is created with given name and inserted
@@ -173,7 +183,7 @@ impl Seat {
     /// You are provided with the state token to retrieve it (allowing
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
-    pub fn new<L, D>(display: &mut Display<D>, name: String, logger: L) -> Self
+    pub fn new<L>(display: &mut Display<D>, name: String, logger: L) -> Self
     where
         L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<WlSeat, GlobalData = ()> + 'static,
@@ -225,7 +235,7 @@ impl Seat {
     ///     |new_status| { /* a closure handling requests from clients to change the cursor icon */ }
     /// );
     /// ```
-    pub fn add_pointer<F, D>(&mut self, cb: F, cx: &mut DisplayHandle<'_, D>) -> PointerHandle
+    pub fn add_pointer<F>(&mut self, cb: F, cx: &mut DisplayHandle<'_, D>) -> PointerHandle<D>
     where
         F: FnMut(CursorImageStatus) + 'static + Send + Sync,
     {
@@ -243,14 +253,14 @@ impl Seat {
     }
 
     /// Access the pointer of this seat if any
-    pub fn get_pointer(&self) -> Option<PointerHandle> {
+    pub fn get_pointer(&self) -> Option<PointerHandle<D>> {
         self.arc.inner.lock().unwrap().pointer.clone()
     }
 
     /// Remove the pointer capability from this seat
     ///
     /// Clients will be appropriately notified.
-    pub fn remove_pointer<D>(&mut self, cx: &mut DisplayHandle<'_, D>) {
+    pub fn remove_pointer(&mut self, cx: &mut DisplayHandle<'_, D>) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.pointer.is_some() {
             inner.pointer = None;
@@ -293,7 +303,7 @@ impl Seat {
     ///     )
     ///     .expect("Failed to initialize the keyboard");
     /// ```
-    pub fn add_keyboard<F, D>(
+    pub fn add_keyboard<F>(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
         xkb_config: keyboard::XkbConfig<'_>,
@@ -302,7 +312,7 @@ impl Seat {
         mut focus_hook: F,
     ) -> Result<KeyboardHandle, KeyboardError>
     where
-        F: FnMut(&Seat, Option<&wl_surface::WlSurface>) + 'static,
+        F: FnMut(&Seat<D>, Option<&wl_surface::WlSurface>) + 'static,
     {
         let me = self.clone();
         let mut inner = self.arc.inner.lock().unwrap();
@@ -332,7 +342,7 @@ impl Seat {
     /// Remove the keyboard capability from this seat
     ///
     /// Clients will be appropriately notified.
-    pub fn remove_keyboard<D>(&mut self, cx: &mut DisplayHandle<'_, D>) {
+    pub fn remove_keyboard(&mut self, cx: &mut DisplayHandle<'_, D>) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.keyboard.is_some() {
             inner.keyboard = None;
@@ -347,18 +357,18 @@ impl Seat {
     }
 }
 
-impl ::std::cmp::PartialEq for Seat {
-    fn eq(&self, other: &Seat) -> bool {
+impl<D> ::std::cmp::PartialEq for Seat<D> {
+    fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.arc, &other.arc)
     }
 }
 
-pub struct SeatUserData {
-    seat: std::sync::Weak<SeatRc>,
+pub struct SeatUserData<D> {
+    seat: std::sync::Weak<SeatRc<D>>,
 }
 
-impl DestructionNotify for SeatUserData {
-    fn object_destroyed(&self) {
+impl<D> DestructionNotify for SeatUserData<D> {
+    fn object_destroyed(&self, client_id: ClientId, object_id: ObjectId) {
         //         dest_arc
         //             .inner
         //             .borrow_mut()
@@ -367,15 +377,15 @@ impl DestructionNotify for SeatUserData {
     }
 }
 
-impl DelegateDispatchBase<WlSeat> for Seat {
-    type UserData = SeatUserData;
+impl<D: 'static> DelegateDispatchBase<WlSeat> for Seat<D> {
+    type UserData = SeatUserData<D>;
 }
 
-impl<D> DelegateDispatch<WlSeat, D> for Seat
+impl<D: 'static> DelegateDispatch<WlSeat, D> for Seat<D>
 where
-    D: Dispatch<WlSeat, UserData = SeatUserData>
+    D: Dispatch<WlSeat, UserData = SeatUserData<D>>
         + Dispatch<WlKeyboard, UserData = KeyboardUserData>
-        + Dispatch<WlPointer, UserData = PointerUserData>,
+        + Dispatch<WlPointer, UserData = PointerUserData<D>>,
 {
     fn request(
         &mut self,
@@ -390,12 +400,12 @@ where
             wl_seat::Request::GetPointer { id } => {
                 let inner = self.arc.inner.lock().unwrap();
 
-                let pointer = data_init.init(
-                    id,
-                    PointerUserData {
-                        handle: inner.pointer.clone(),
-                    },
-                );
+                // let pointer = data_init.init(
+                //     id,
+                //     PointerUserData {
+                //         handle: inner.pointer.clone(),
+                //     },
+                // );
 
                 // let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref());
                 // if let Some(ref ptr_handle) = inner.pointer {
@@ -432,8 +442,8 @@ where
     }
 }
 
-impl Dispatch<WlSeat> for Seat {
-    type UserData = SeatUserData;
+impl<D: 'static> Dispatch<WlSeat> for Seat<D> {
+    type UserData = SeatUserData<D>;
 
     fn request(
         &mut self,
@@ -448,12 +458,12 @@ impl Dispatch<WlSeat> for Seat {
             wl_seat::Request::GetPointer { id } => {
                 let inner = self.arc.inner.lock().unwrap();
 
-                let pointer = data_init.init(
-                    id,
-                    PointerUserData {
-                        handle: inner.pointer.clone(),
-                    },
-                );
+                // let pointer = data_init.init(
+                //     id,
+                //     PointerUserData {
+                //         handle: inner.pointer.clone(),
+                //     },
+                // );
 
                 // let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref());
                 // if let Some(ref ptr_handle) = inner.pointer {
@@ -466,18 +476,18 @@ impl Dispatch<WlSeat> for Seat {
             wl_seat::Request::GetKeyboard { id } => {
                 let inner = self.arc.inner.lock().unwrap();
 
-                let keyboard = data_init.init(
-                    id,
-                    KeyboardUserData {
-                        handle: inner.keyboard.clone(),
-                    },
-                );
+                // let keyboard = data_init.init(
+                //     id,
+                //     KeyboardUserData {
+                //         handle: inner.keyboard.clone(),
+                //     },
+                // );
 
-                if let Some(ref h) = inner.keyboard {
-                    h.new_kbd(cx, keyboard);
-                } else {
-                    // same as pointer, should error but cannot
-                }
+                // if let Some(ref h) = inner.keyboard {
+                //     h.new_kbd(cx, keyboard);
+                // } else {
+                //     // same as pointer, should error but cannot
+                // }
             }
             wl_seat::Request::GetTouch { .. } => {
                 // TODO
@@ -490,24 +500,31 @@ impl Dispatch<WlSeat> for Seat {
     }
 }
 
-impl DelegateGlobalDispatchBase<WlSeat> for Seat {
+impl<D> DelegateGlobalDispatchBase<WlSeat> for Seat<D> {
     type GlobalData = ();
 }
 
-impl<D> DelegateGlobalDispatch<WlSeat, D> for Seat
+impl<D: 'static> DelegateGlobalDispatch<WlSeat, D> for Seat<D>
 where
     D: GlobalDispatch<WlSeat, GlobalData = ()>
-        + Dispatch<WlSeat, UserData = SeatUserData>
+        + Dispatch<WlSeat, UserData = SeatUserData<D>>
         + Dispatch<WlKeyboard, UserData = KeyboardUserData>
-        + Dispatch<WlPointer, UserData = PointerUserData>,
+        + Dispatch<WlPointer, UserData = PointerUserData<D>>,
 {
     fn bind(
         &mut self,
         handle: &mut wayland_server::DisplayHandle<'_, D>,
         client: &wayland_server::Client,
-        resource: &WlSeat,
+        resource: New<WlSeat>,
         global_data: &Self::GlobalData,
-    ) -> SeatUserData {
+        data_init: &mut DataInit<'_, D>,
+    ) {
+        let data = SeatUserData {
+            seat: Arc::downgrade(&self.arc),
+        };
+
+        let resource = data_init.init(resource, data);
+
         if resource.version() >= 2 {
             resource.name(handle, self.arc.name.clone());
         }
@@ -516,23 +533,25 @@ where
         resource.capabilities(handle, inner.compute_caps());
 
         inner.known_seats.push(resource.clone());
-
-        SeatUserData {
-            seat: Arc::downgrade(&self.arc),
-        }
     }
 }
 
-impl GlobalDispatch<WlSeat> for Seat {
+impl<D: 'static> GlobalDispatch<WlSeat> for Seat<D> {
     type GlobalData = ();
 
     fn bind(
         &mut self,
         handle: &mut wayland_server::DisplayHandle<'_, Self>,
         client: &wayland_server::Client,
-        resource: &WlSeat,
+        resource: New<WlSeat>,
         global_data: &Self::GlobalData,
-    ) -> SeatUserData {
+        data_init: &mut DataInit<'_, Self>,
+    ) {
+        let data = SeatUserData {
+            seat: Arc::downgrade(&self.arc),
+        };
+        let resource = data_init.init(resource, data);
+
         if resource.version() >= 2 {
             resource.name(handle, self.arc.name.clone());
         }
@@ -541,10 +560,6 @@ impl GlobalDispatch<WlSeat> for Seat {
         resource.capabilities(handle, inner.compute_caps());
 
         inner.known_seats.push(resource.clone());
-
-        SeatUserData {
-            seat: Arc::downgrade(&self.arc),
-        }
     }
 }
 
