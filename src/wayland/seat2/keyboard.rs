@@ -2,6 +2,7 @@ use crate::backend::input::KeyState;
 use crate::wayland::Serial;
 use slog::{debug, info, o, trace, warn};
 use std::{
+    borrow::BorrowMut,
     default::Default,
     fmt,
     io::{Error as IoError, Write},
@@ -11,6 +12,7 @@ use std::{
 use tempfile::tempfile;
 use thiserror::Error;
 use wayland_server::{
+    backend::{ClientId, ObjectId},
     protocol::{
         wl_keyboard::{self, KeyState as WlKeyState, KeymapFormat, WlKeyboard},
         wl_surface::WlSurface,
@@ -221,11 +223,9 @@ impl KbdInternal {
     {
         if let Some(ref surface) = self.focus {
             for kbd in &self.known_kbds {
-                kbd.id();
-                // TODO: check same_client_as
-                // if kbd.as_ref().same_client_as(surface) {
-                f(kbd, surface);
-                // }
+                if kbd.id().same_client_as(&surface.id()) {
+                    f(kbd, surface);
+                }
                 break;
             }
         }
@@ -452,7 +452,7 @@ impl KeyboardHandle {
         if !same {
             // unset old focus
             guard.with_focused_kbds(|kbd, s| {
-                kbd.leave(cx, serial.into(), s.clone());
+                kbd.leave(cx, serial.into(), s);
             });
 
             // set new focus
@@ -460,7 +460,7 @@ impl KeyboardHandle {
             let (dep, la, lo, gr) = guard.serialize_modifiers();
             let keys = guard.serialize_pressed_keys();
             guard.with_focused_kbds(|kbd, surface| {
-                kbd.enter(cx, serial.into(), surface.clone(), keys.clone());
+                kbd.enter(cx, serial.into(), surface, keys.clone());
                 // Modifiers must be send after enter event.
                 kbd.modifiers(cx, serial.into(), dep, la, lo, gr);
             });
@@ -548,7 +548,7 @@ pub struct KeyboardUserData {
     pub(crate) handle: Option<KeyboardHandle>,
 }
 
-impl Dispatch<WlKeyboard> for Seat {
+impl<D> Dispatch<WlKeyboard> for Seat<D> {
     type UserData = KeyboardUserData;
 
     fn request(
@@ -564,15 +564,15 @@ impl Dispatch<WlKeyboard> for Seat {
 }
 
 impl DestructionNotify for KeyboardUserData {
-    fn object_destroyed(&self) {
-        // TODO: wait for res to be passed as an arg here
-        // let keyboard = todo!("No idea how to get a resource");
-
-        // self.handle
-        //     .arc
-        //     .internal
-        //     .borrow_mut()
-        //     .known_kbds
-        //     .retain(|k| k != keyboard)
+    fn object_destroyed(&self, client_id: ClientId, object_id: ObjectId) {
+        if let Some(ref handle) = self.handle {
+            handle
+                .arc
+                .internal
+                .lock()
+                .unwrap()
+                .known_kbds
+                .retain(|k| k.id() == object_id)
+        }
     }
 }

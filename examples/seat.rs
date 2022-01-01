@@ -12,13 +12,14 @@ use wayland_server::protocol::{
     wl_seat::{self, WlSeat},
 };
 use wayland_server::{socket::ListeningSocket, Dispatch, DisplayHandle, GlobalDispatch};
+use wayland_server::{DataInit, New};
 
 struct State {
-    seat: Seat,
+    seat: Seat<Self>,
 }
 
 impl Dispatch<WlSeat> for State {
-    type UserData = SeatUserData;
+    type UserData = SeatUserData<Self>;
 
     fn request(
         &mut self,
@@ -29,7 +30,7 @@ impl Dispatch<WlSeat> for State {
         cx: &mut DisplayHandle<'_, Self>,
         data_init: &mut wayland_server::DataInit<'_, Self>,
     ) {
-        let event = <Seat as DelegateDispatch<WlSeat, Self>>::request(
+        let event = <Seat<Self> as DelegateDispatch<WlSeat, Self>>::request(
             &mut self.seat,
             client,
             resource,
@@ -52,16 +53,18 @@ impl GlobalDispatch<WlSeat> for State {
         &mut self,
         handle: &mut wayland_server::DisplayHandle<'_, Self>,
         client: &wayland_server::Client,
-        resource: &WlSeat,
+        resource: New<WlSeat>,
         global_data: &Self::GlobalData,
-    ) -> SeatUserData {
-        <Seat as DelegateGlobalDispatch<WlSeat, Self>>::bind(
+        data_init: &mut DataInit<'_, Self>,
+    ) {
+        <Seat<Self> as DelegateGlobalDispatch<WlSeat, Self>>::bind(
             &mut self.seat,
             handle,
             client,
             resource,
             global_data,
-        )
+            data_init,
+        );
     }
 }
 
@@ -136,7 +139,7 @@ impl Dispatch<WlKeyboard> for State {
 }
 
 impl Dispatch<WlPointer> for State {
-    type UserData = PointerUserData;
+    type UserData = PointerUserData<Self>;
 
     fn request(
         &mut self,
