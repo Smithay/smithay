@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use smithay::reexports::wayland_server::Display;
-use smithay::wayland::seat2::{self as seat, SeatHandler};
+use smithay::wayland::seat::{self as seat, SeatHandler};
 
 use seat::{
     delegate::{DelegateDispatch, DelegateGlobalDispatch},

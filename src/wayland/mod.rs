@@ -59,7 +59,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 // pub mod dmabuf;
 // pub mod explicit_synchronization;
 // pub mod output;
-pub mod seat2;
+pub mod seat;
 // pub mod shell;
 // pub mod shm;
 // pub mod tablet_manager;

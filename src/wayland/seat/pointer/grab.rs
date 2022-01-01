@@ -27,34 +27,42 @@ use super::{AxisFrame, PointerInnerHandle};
 /// When your grab ends (either as you requested it or if it was forcefully cancelled by the server),
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
-pub trait PointerGrab<D>: Send + Sync {
+pub trait PointerGrab {
     /// A motion was reported
+    ///
+    /// This method allows you attach additional behavior to a motion event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::motion()` as part of your processing. If you
+    /// don't, the rest of the compositor will behave as if the motion event never occurred.
+    ///
+    /// Some grabs (such as drag'n'drop, shell resize and motion) unset the focus while they are active,
+    /// this is achieved by just setting the focus to `None` when invoking `PointerInnerHandle::motion()`.
     fn motion(
         &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
+        handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     );
     /// A button press was reported
+    ///
+    /// This method allows you attach additional behavior to a button event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::button()` as part of your processing. If you
+    /// don't, the rest of the compositor will behave as if the button event never occurred.
     fn button(
         &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
+        handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: Serial,
         time: u32,
     );
     /// An axis scroll was reported
-    fn axis(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        details: AxisFrame,
-    );
+    ///
+    /// This method allows you attach additional behavior to an axis event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::axis()` as part of your processing. If you
+    /// don't, the rest of the compositor will behave as if the axis event never occurred.
+    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame);
     /// The data about the event that started the grab.
     fn start_data(&self) -> &GrabStartData;
 }
