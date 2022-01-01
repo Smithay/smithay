@@ -43,10 +43,10 @@ tempfile = { version = "3.0", optional = true }
 thiserror = "1.0.25"
 udev = { version = "0.6", optional = true }
 # wayland-commons = { git = "https://github.com/Smithay/wayland-rs", branch="rework-317", optional = true }
-wayland-egl = { git = "https://github.com/Smithay/wayland-rs", branch="rework-317", optional = true }
+wayland-egl = { version = "0.30.0-alpha1", optional = true }
 # wayland-protocols = { git = "https://github.com/Smithay/wayland-rs", branch="rework-317", features = ["unstable_protocols", "staging_protocols", "server"], optional = true }
-wayland-server = { git = "https://github.com/Smithay/wayland-rs", branch="rework-317", optional = true }
-wayland-sys = { git = "https://github.com/Smithay/wayland-rs", branch="rework-317", optional = true }
+wayland-server = { version = "0.30.0-alpha1", optional = true }
+wayland-sys = { version  = "0.30.0-alpha1", optional = true }
 winit = { version = "0.26.0", optional = true }
 x11rb = { version = "0.9.0", optional = true }
 xkbcommon = "0.4.0"
@@ -60,8 +60,8 @@ gl_generator = { version = "0.14", optional = true }
 pkg-config = { version = "0.3.17", optional = true }
 
 [features]
-default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_logind", "backend_winit", "desktop", "renderer_gl", "xwayland", "wayland_frontend", "slog-stdlog", "backend_x11"]
-backend_winit = ["winit", "wayland-server/dlopen", "backend_egl", "wayland-egl", "renderer_gl"]
+default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_logind", "backend_winit", "renderer_gl", "xwayland", "wayland_frontend", "slog-stdlog", "backend_x11"]
+backend_winit = ["winit", "backend_egl", "wayland-egl", "renderer_gl"]
 backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm", "backend_egl"]
 backend_drm = ["drm", "drm-ffi"]
 backend_gbm = ["gbm"]
