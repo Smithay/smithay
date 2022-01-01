@@ -20,7 +20,7 @@ use crate::{
     wayland::Serial,
 };
 
-use super::{SeatDispatch, SeatState};
+use super::{SeatDispatch, SeatHandler, SeatState};
 
 static CURSOR_IMAGE_ROLE: &str = "cursor_image";
 
@@ -727,13 +727,13 @@ pub struct PointerUserData<D> {
     pub(crate) handle: Option<PointerHandle<D>>,
 }
 
-impl<D: 'static, H> Dispatch<WlPointer> for SeatDispatch<'_, D, H> {
+impl<D: 'static, H: SeatHandler> Dispatch<WlPointer> for SeatDispatch<'_, D, H> {
     type UserData = PointerUserData<D>;
 
     fn request(
         &mut self,
         _client: &wayland_server::Client,
-        _resource: &WlPointer,
+        resource: &WlPointer,
         request: wl_pointer::Request,
         data: &Self::UserData,
         _dhandle: &mut DisplayHandle<'_, Self>,
@@ -756,43 +756,44 @@ impl<D: 'static, H> Dispatch<WlPointer> for SeatDispatch<'_, D, H> {
                         ..
                     } = *guard;
                     if let Some((ref focus, _)) = *focus {
-                        todo!("SetCursor");
-                        // if focus.as_ref().same_client_as(pointer.as_ref()) {
-                        //     match surface {
-                        //         Some(surface) => {
-                        //             // tolerate re-using the same surface
-                        //             if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
-                        //                 && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
-                        //             {
-                        //                 pointer.as_ref().post_error(
-                        //                     wl_pointer::Error::Role as u32,
-                        //                     "Given wl_surface has another role.".into(),
-                        //                 );
-                        //                 return;
-                        //             }
-                        //             compositor::with_states(&surface, |states| {
-                        //                 states.data_map.insert_if_missing_threadsafe(|| {
-                        //                     Mutex::new(CursorImageAttributes {
-                        //                         hotspot: (0, 0).into(),
-                        //                     })
-                        //                 });
-                        //                 states
-                        //                     .data_map
-                        //                     .get::<Mutex<CursorImageAttributes>>()
-                        //                     .unwrap()
-                        //                     .lock()
-                        //                     .unwrap()
-                        //                     .hotspot = (hotspot_x, hotspot_y).into();
-                        //             })
-                        //             .unwrap();
+                        if focus.id().same_client_as(&resource.id()) {
+                            match surface {
+                                Some(surface) => {
+                                    // TODO:
 
-                        //             image_callback(CursorImageStatus::Image(surface));
-                        //         }
-                        //         None => {
-                        //             image_callback(CursorImageStatus::Hidden);
-                        //         }
-                        //     }
-                        // }
+                                    // tolerate re-using the same surface
+                                    // if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
+                                    //     && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
+                                    // {
+                                    //     pointer.as_ref().post_error(
+                                    //         wl_pointer::Error::Role as u32,
+                                    //         "Given wl_surface has another role.".into(),
+                                    //     );
+                                    //     return;
+                                    // }
+                                    // compositor::with_states(&surface, |states| {
+                                    //     states.data_map.insert_if_missing_threadsafe(|| {
+                                    //         Mutex::new(CursorImageAttributes {
+                                    //             hotspot: (0, 0).into(),
+                                    //         })
+                                    //     });
+                                    //     states
+                                    //         .data_map
+                                    //         .get::<Mutex<CursorImageAttributes>>()
+                                    //         .unwrap()
+                                    //         .lock()
+                                    //         .unwrap()
+                                    //         .hotspot = (hotspot_x, hotspot_y).into();
+                                    // })
+                                    // .unwrap();
+
+                                    image_callback(CursorImageStatus::Image(surface));
+                                }
+                                None => {
+                                    image_callback(CursorImageStatus::Hidden);
+                                }
+                            }
+                        }
                     }
                 }
             }
