@@ -3,7 +3,10 @@ use std::sync::Arc;
 use smithay::reexports::wayland_server::Display;
 use smithay::wayland::seat2::{self as seat};
 
-use seat::{DelegateDispatch, DelegateGlobalDispatch, KeyboardUserData, PointerUserData, Seat, SeatUserData};
+use seat::{
+    DelegateDispatch, DelegateGlobalDispatch, KeyboardUserData, PointerUserData, SeatDispatch, SeatState,
+    SeatUserData,
+};
 
 use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use wayland_server::protocol::{
@@ -14,11 +17,14 @@ use wayland_server::protocol::{
 use wayland_server::{socket::ListeningSocket, Dispatch, DisplayHandle, GlobalDispatch};
 use wayland_server::{DataInit, New};
 
-struct State {
-    seat: Seat<Self>,
+struct App {
+    inner: InnerApp,
+    seat_state: SeatState<Self>,
 }
 
-impl Dispatch<WlSeat> for State {
+struct InnerApp;
+
+impl Dispatch<WlSeat> for App {
     type UserData = SeatUserData<Self>;
 
     fn request(
@@ -30,8 +36,8 @@ impl Dispatch<WlSeat> for State {
         cx: &mut DisplayHandle<'_, Self>,
         data_init: &mut wayland_server::DataInit<'_, Self>,
     ) {
-        let event = <Seat<Self> as DelegateDispatch<WlSeat, Self>>::request(
-            &mut self.seat,
+        DelegateDispatch::<WlSeat, _>::request(
+            &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
             client,
             resource,
             request,
@@ -39,14 +45,10 @@ impl Dispatch<WlSeat> for State {
             cx,
             data_init,
         );
-
-        // match event {
-        //     SeatEvent::SetCursor { .. } => {}
-        // }
     }
 }
 
-impl GlobalDispatch<WlSeat> for State {
+impl GlobalDispatch<WlSeat> for App {
     type GlobalData = ();
 
     fn bind(
@@ -57,8 +59,8 @@ impl GlobalDispatch<WlSeat> for State {
         global_data: &Self::GlobalData,
         data_init: &mut DataInit<'_, Self>,
     ) {
-        <Seat<Self> as DelegateGlobalDispatch<WlSeat, Self>>::bind(
-            &mut self.seat,
+        DelegateGlobalDispatch::<WlSeat, _>::bind(
+            &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
             handle,
             client,
             resource,
@@ -69,13 +71,16 @@ impl GlobalDispatch<WlSeat> for State {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut display: Display<State> = Display::new()?;
+    let mut display: Display<App> = Display::new()?;
 
-    let mut seat = Seat::new(&mut display, "Example".into(), None);
+    let mut seat_state = SeatState::new(&mut display, "Example".into(), None);
 
-    let keyboard = seat.add_keyboard(&mut display.handle(), Default::default(), 25, 600, |_, _| {})?;
+    let keyboard = seat_state.add_keyboard(&mut display.handle(), Default::default(), 25, 600, |_, _| {})?;
 
-    let mut state = State { seat };
+    let mut state = App {
+        inner: InnerApp,
+        seat_state,
+    };
 
     let listener = ListeningSocket::bind("wayland-5").unwrap();
 
@@ -113,7 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 struct ClientState;
-impl ClientData<State> for ClientState {
+impl ClientData<App> for ClientState {
     fn initialized(&self, client_id: ClientId) {
         println!("initialized");
     }
@@ -123,7 +128,7 @@ impl ClientData<State> for ClientState {
     }
 }
 
-impl Dispatch<WlKeyboard> for State {
+impl Dispatch<WlKeyboard> for App {
     type UserData = KeyboardUserData;
 
     fn request(
@@ -138,7 +143,7 @@ impl Dispatch<WlKeyboard> for State {
     }
 }
 
-impl Dispatch<WlPointer> for State {
+impl Dispatch<WlPointer> for App {
     type UserData = PointerUserData<Self>;
 
     fn request(

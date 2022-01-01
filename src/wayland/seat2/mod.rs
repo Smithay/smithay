@@ -151,6 +151,8 @@ impl<D> Inner<D> {
     }
 }
 
+pub struct SeatDispatch<'a, D, H>(pub &'a mut SeatState<D>, pub &'a mut H);
+
 /// A Seat handle
 ///
 /// This struct gives you access to the control of the
@@ -162,11 +164,11 @@ impl<D> Inner<D> {
 ///
 /// See module-level documentation for details of use.
 #[derive(Debug)]
-pub struct Seat<D> {
+pub struct SeatState<D> {
     arc: Arc<SeatRc<D>>,
 }
 
-impl<D> Clone for Seat<D> {
+impl<D> Clone for SeatState<D> {
     fn clone(&self) -> Self {
         Self {
             arc: self.arc.clone(),
@@ -174,7 +176,7 @@ impl<D> Clone for Seat<D> {
     }
 }
 
-impl<D: 'static> Seat<D> {
+impl<D: 'static> SeatState<D> {
     /// Create a new seat global
     ///
     /// A new seat global is created with given name and inserted
@@ -312,7 +314,7 @@ impl<D: 'static> Seat<D> {
         mut focus_hook: F,
     ) -> Result<KeyboardHandle, KeyboardError>
     where
-        F: FnMut(&Seat<D>, Option<&wl_surface::WlSurface>) + 'static,
+        F: FnMut(&SeatState<D>, Option<&wl_surface::WlSurface>) + 'static,
     {
         let me = self.clone();
         let mut inner = self.arc.inner.lock().unwrap();
@@ -357,7 +359,7 @@ impl<D: 'static> Seat<D> {
     }
 }
 
-impl<D> ::std::cmp::PartialEq for Seat<D> {
+impl<D> ::std::cmp::PartialEq for SeatState<D> {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.arc, &other.arc)
     }
@@ -379,11 +381,11 @@ impl<D> DestructionNotify for SeatUserData<D> {
     }
 }
 
-impl<D: 'static> DelegateDispatchBase<WlSeat> for Seat<D> {
+impl<D: 'static, H> DelegateDispatchBase<WlSeat> for SeatDispatch<'_, D, H> {
     type UserData = SeatUserData<D>;
 }
 
-impl<D: 'static> DelegateDispatch<WlSeat, D> for Seat<D>
+impl<D: 'static, H> DelegateDispatch<WlSeat, D> for SeatDispatch<'_, D, H>
 where
     D: Dispatch<WlSeat, UserData = SeatUserData<D>>
         + Dispatch<WlKeyboard, UserData = KeyboardUserData>
@@ -400,7 +402,7 @@ where
     ) {
         match request {
             wl_seat::Request::GetPointer { id } => {
-                let inner = self.arc.inner.lock().unwrap();
+                let inner = self.0.arc.inner.lock().unwrap();
 
                 let pointer = data_init.init(
                     id,
@@ -417,7 +419,7 @@ where
                 }
             }
             wl_seat::Request::GetKeyboard { id } => {
-                let inner = self.arc.inner.lock().unwrap();
+                let inner = self.0.arc.inner.lock().unwrap();
 
                 let keyboard = data_init.init(
                     id,
@@ -443,7 +445,7 @@ where
     }
 }
 
-impl<D: 'static> Dispatch<WlSeat> for Seat<D> {
+impl<D: 'static, H> Dispatch<WlSeat> for SeatDispatch<'_, D, H> {
     type UserData = SeatUserData<D>;
 
     fn request(
@@ -457,7 +459,7 @@ impl<D: 'static> Dispatch<WlSeat> for Seat<D> {
     ) {
         match request {
             wl_seat::Request::GetPointer { id } => {
-                let inner = self.arc.inner.lock().unwrap();
+                let inner = self.0.arc.inner.lock().unwrap();
 
                 let pointer = data_init.init(
                     id,
@@ -474,7 +476,7 @@ impl<D: 'static> Dispatch<WlSeat> for Seat<D> {
                 }
             }
             wl_seat::Request::GetKeyboard { id } => {
-                let inner = self.arc.inner.lock().unwrap();
+                let inner = self.0.arc.inner.lock().unwrap();
 
                 let keyboard = data_init.init(
                     id,
@@ -500,11 +502,11 @@ impl<D: 'static> Dispatch<WlSeat> for Seat<D> {
     }
 }
 
-impl<D> DelegateGlobalDispatchBase<WlSeat> for Seat<D> {
+impl<D, H> DelegateGlobalDispatchBase<WlSeat> for SeatDispatch<'_, D, H> {
     type GlobalData = ();
 }
 
-impl<D: 'static> DelegateGlobalDispatch<WlSeat, D> for Seat<D>
+impl<D: 'static, H> DelegateGlobalDispatch<WlSeat, D> for SeatDispatch<'_, D, H>
 where
     D: GlobalDispatch<WlSeat, GlobalData = ()>
         + Dispatch<WlSeat, UserData = SeatUserData<D>>
@@ -520,23 +522,23 @@ where
         data_init: &mut DataInit<'_, D>,
     ) {
         let data = SeatUserData {
-            seat: Arc::downgrade(&self.arc),
+            seat: Arc::downgrade(&self.0.arc),
         };
 
         let resource = data_init.init(resource, data);
 
         if resource.version() >= 2 {
-            resource.name(handle, self.arc.name.clone());
+            resource.name(handle, self.0.arc.name.clone());
         }
 
-        let mut inner = self.arc.inner.lock().unwrap();
+        let mut inner = self.0.arc.inner.lock().unwrap();
         resource.capabilities(handle, inner.compute_caps());
 
         inner.known_seats.push(resource.clone());
     }
 }
 
-impl<D: 'static> GlobalDispatch<WlSeat> for Seat<D> {
+impl<D: 'static, H> GlobalDispatch<WlSeat> for SeatDispatch<'_, D, H> {
     type GlobalData = ();
 
     fn bind(
@@ -548,15 +550,15 @@ impl<D: 'static> GlobalDispatch<WlSeat> for Seat<D> {
         data_init: &mut DataInit<'_, Self>,
     ) {
         let data = SeatUserData {
-            seat: Arc::downgrade(&self.arc),
+            seat: Arc::downgrade(&self.0.arc),
         };
         let resource = data_init.init(resource, data);
 
         if resource.version() >= 2 {
-            resource.name(handle, self.arc.name.clone());
+            resource.name(handle, self.0.arc.name.clone());
         }
 
-        let mut inner = self.arc.inner.lock().unwrap();
+        let mut inner = self.0.arc.inner.lock().unwrap();
         resource.capabilities(handle, inner.compute_caps());
 
         inner.known_seats.push(resource.clone());
