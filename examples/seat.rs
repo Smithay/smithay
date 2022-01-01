@@ -31,52 +31,6 @@ impl SeatHandler<App> for InnerApp {
     fn keyboard_focus(&mut self, state: &mut SeatState<App>, focus: Option<&WlSurface>) {}
 }
 
-impl Dispatch<WlSeat> for App {
-    type UserData = SeatUserData<Self>;
-
-    fn request(
-        &mut self,
-        client: &wayland_server::Client,
-        resource: &WlSeat,
-        request: wl_seat::Request,
-        data: &Self::UserData,
-        cx: &mut DisplayHandle<'_, Self>,
-        data_init: &mut wayland_server::DataInit<'_, Self>,
-    ) {
-        DelegateDispatch::<WlSeat, _>::request(
-            &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
-            client,
-            resource,
-            request,
-            data,
-            cx,
-            data_init,
-        );
-    }
-}
-
-impl GlobalDispatch<WlSeat> for App {
-    type GlobalData = ();
-
-    fn bind(
-        &mut self,
-        handle: &mut wayland_server::DisplayHandle<'_, Self>,
-        client: &wayland_server::Client,
-        resource: New<WlSeat>,
-        global_data: &Self::GlobalData,
-        data_init: &mut DataInit<'_, Self>,
-    ) {
-        DelegateGlobalDispatch::<WlSeat, _>::bind(
-            &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
-            handle,
-            client,
-            resource,
-            global_data,
-            data_init,
-        );
-    }
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;
 
@@ -142,6 +96,52 @@ impl ClientData<App> for ClientState {
 
     fn disconnected(&self, client_id: ClientId, reason: DisconnectReason) {
         println!("disconnected");
+    }
+}
+
+impl GlobalDispatch<WlSeat> for App {
+    type GlobalData = ();
+
+    fn bind(
+        &mut self,
+        handle: &mut wayland_server::DisplayHandle<'_, Self>,
+        client: &wayland_server::Client,
+        resource: New<WlSeat>,
+        global_data: &Self::GlobalData,
+        data_init: &mut DataInit<'_, Self>,
+    ) {
+        DelegateGlobalDispatch::<WlSeat, _>::bind(
+            &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
+            handle,
+            client,
+            resource,
+            global_data,
+            data_init,
+        );
+    }
+}
+
+impl Dispatch<WlSeat> for App {
+    type UserData = SeatUserData<Self>;
+
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &WlSeat,
+        request: wl_seat::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, Self>,
+        data_init: &mut wayland_server::DataInit<'_, Self>,
+    ) {
+        DelegateDispatch::<WlSeat, _>::request(
+            &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
     }
 }
 
