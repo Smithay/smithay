@@ -101,13 +101,13 @@ impl<D> Inner<D> {
     }
 }
 
-pub trait SeatHandler {
-    fn set_cursor(&mut self) {}
+pub trait SeatHandler<D> {
+    fn set_cursor(&mut self, image_status: CursorImageStatus);
 
-    fn keyboard_focus(&mut self, focus: Option<&wl_surface::WlSurface>);
+    fn keyboard_focus(&mut self, state: &mut SeatState<D>, focus: Option<&wl_surface::WlSurface>);
 }
 
-pub struct SeatDispatch<'a, D, H: SeatHandler>(pub &'a mut SeatState<D>, pub &'a mut H);
+pub struct SeatDispatch<'a, D, H: SeatHandler<D>>(pub &'a mut SeatState<D>, pub &'a mut H);
 
 /// A Seat handle
 ///
@@ -193,12 +193,9 @@ impl<D: 'static> SeatState<D> {
     ///     |new_status| { /* a closure handling requests from clients to change the cursor icon */ }
     /// );
     /// ```
-    pub fn add_pointer<F>(&mut self, cb: F, cx: &mut DisplayHandle<'_, D>) -> PointerHandle<D>
-    where
-        F: FnMut(CursorImageStatus) + 'static + Send + Sync,
-    {
+    pub fn add_pointer(&mut self, cx: &mut DisplayHandle<'_, D>) -> PointerHandle<D> {
         let mut inner = self.arc.inner.lock().unwrap();
-        let pointer = self::pointer::PointerHandle::new(cb);
+        let pointer = self::pointer::PointerHandle::new();
         if inner.pointer.is_some() {
             // there is already a pointer, remove it and notify the clients
             // of the change
@@ -261,26 +258,16 @@ impl<D: 'static> SeatState<D> {
     ///     )
     ///     .expect("Failed to initialize the keyboard");
     /// ```
-    pub fn add_keyboard<F>(
+    pub fn add_keyboard(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
         xkb_config: keyboard::XkbConfig<'_>,
         repeat_delay: i32,
         repeat_rate: i32,
-        mut focus_hook: F,
-    ) -> Result<KeyboardHandle, KeyboardError>
-    where
-        F: FnMut(&SeatState<D>, Option<&wl_surface::WlSurface>) + 'static,
-    {
-        let me = self.clone();
+    ) -> Result<KeyboardHandle, KeyboardError> {
         let mut inner = self.arc.inner.lock().unwrap();
-        let keyboard = self::keyboard::KeyboardHandle::new(
-            xkb_config,
-            repeat_delay,
-            repeat_rate,
-            &self.arc.log,
-            move |focus| focus_hook(&me, focus),
-        )?;
+        let keyboard =
+            self::keyboard::KeyboardHandle::new(xkb_config, repeat_delay, repeat_rate, &self.arc.log)?;
         if inner.keyboard.is_some() {
             // there is already a keyboard, remove it and notify the clients
             // of the change
@@ -337,7 +324,7 @@ impl<D> DestructionNotify for SeatUserData<D> {
     }
 }
 
-impl<D: 'static, H: SeatHandler> DelegateDispatchBase<WlSeat> for SeatDispatch<'_, D, H> {
+impl<D: 'static, H: SeatHandler<D>> DelegateDispatchBase<WlSeat> for SeatDispatch<'_, D, H> {
     type UserData = SeatUserData<D>;
 }
 
@@ -346,7 +333,7 @@ where
     D: Dispatch<WlSeat, UserData = SeatUserData<D>>
         + Dispatch<WlKeyboard, UserData = KeyboardUserData>
         + Dispatch<WlPointer, UserData = PointerUserData<D>>,
-    H: SeatHandler,
+    H: SeatHandler<D>,
 {
     fn request(
         &mut self,
@@ -402,64 +389,7 @@ where
     }
 }
 
-impl<D: 'static, H: SeatHandler> Dispatch<WlSeat> for SeatDispatch<'_, D, H> {
-    type UserData = SeatUserData<D>;
-
-    fn request(
-        &mut self,
-        client: &wayland_server::Client,
-        resource: &WlSeat,
-        request: wl_seat::Request,
-        data: &Self::UserData,
-        cx: &mut DisplayHandle<'_, Self>,
-        data_init: &mut wayland_server::DataInit<'_, Self>,
-    ) {
-        match request {
-            wl_seat::Request::GetPointer { id } => {
-                let inner = self.0.arc.inner.lock().unwrap();
-
-                let pointer = data_init.init(
-                    id,
-                    PointerUserData {
-                        handle: inner.pointer.clone(),
-                    },
-                );
-
-                if let Some(ref ptr_handle) = inner.pointer {
-                    ptr_handle.new_pointer(pointer);
-                } else {
-                    // we should send a protocol error... but the protocol does not allow
-                    // us, so this pointer will just remain inactive ¯\_(ツ)_/¯
-                }
-            }
-            wl_seat::Request::GetKeyboard { id } => {
-                let inner = self.0.arc.inner.lock().unwrap();
-
-                let keyboard = data_init.init(
-                    id,
-                    KeyboardUserData {
-                        handle: inner.keyboard.clone(),
-                    },
-                );
-
-                if let Some(ref h) = inner.keyboard {
-                    h.new_kbd(cx, keyboard);
-                } else {
-                    // same as pointer, should error but cannot
-                }
-            }
-            wl_seat::Request::GetTouch { .. } => {
-                // TODO
-            }
-            wl_seat::Request::Release => {
-                // Our destructors already handle it
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl<D, H: SeatHandler> DelegateGlobalDispatchBase<WlSeat> for SeatDispatch<'_, D, H> {
+impl<D, H: SeatHandler<D>> DelegateGlobalDispatchBase<WlSeat> for SeatDispatch<'_, D, H> {
     type GlobalData = ();
 }
 
@@ -469,7 +399,7 @@ where
         + Dispatch<WlSeat, UserData = SeatUserData<D>>
         + Dispatch<WlKeyboard, UserData = KeyboardUserData>
         + Dispatch<WlPointer, UserData = PointerUserData<D>>,
-    H: SeatHandler,
+    H: SeatHandler<D>,
 {
     fn bind(
         &mut self,
@@ -483,33 +413,6 @@ where
             seat: Arc::downgrade(&self.0.arc),
         };
 
-        let resource = data_init.init(resource, data);
-
-        if resource.version() >= 2 {
-            resource.name(handle, self.0.arc.name.clone());
-        }
-
-        let mut inner = self.0.arc.inner.lock().unwrap();
-        resource.capabilities(handle, inner.compute_caps());
-
-        inner.known_seats.push(resource.clone());
-    }
-}
-
-impl<D: 'static, H: SeatHandler> GlobalDispatch<WlSeat> for SeatDispatch<'_, D, H> {
-    type GlobalData = ();
-
-    fn bind(
-        &mut self,
-        handle: &mut wayland_server::DisplayHandle<'_, Self>,
-        client: &wayland_server::Client,
-        resource: New<WlSeat>,
-        global_data: &Self::GlobalData,
-        data_init: &mut DataInit<'_, Self>,
-    ) {
-        let data = SeatUserData {
-            seat: Arc::downgrade(&self.0.arc),
-        };
         let resource = data_init.init(resource, data);
 
         if resource.version() >= 2 {
