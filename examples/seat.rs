@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use smithay::reexports::wayland_server::Display;
-use smithay::wayland::seat2::{self as seat, CursorImageStatus, SeatHandler};
+use smithay::wayland::seat2::{self as seat, SeatHandler};
 
 use seat::{
     delegate::{DelegateDispatch, DelegateGlobalDispatch},
@@ -9,7 +9,6 @@ use seat::{
 };
 
 use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
-use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::protocol::{
     wl_keyboard::{self, WlKeyboard},
     wl_pointer::{self, WlPointer},
@@ -25,25 +24,22 @@ struct App {
 
 struct InnerApp;
 
-impl SeatHandler<App> for InnerApp {
-    fn set_cursor(&mut self, image_status: CursorImageStatus) {}
-
-    fn keyboard_focus(&mut self, state: &mut SeatState<App>, focus: Option<&WlSurface>) {}
-}
+impl SeatHandler<App> for InnerApp {}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;
 
-    let seat_state = SeatState::new(&mut display, "Example".into(), None);
+    let seat_state = SeatState::new(&mut display.handle(), "Example".into(), None);
 
     let mut state = App {
         inner: InnerApp,
         seat_state,
     };
 
-    let keyboard = state
-        .seat_state
-        .add_keyboard(&mut display.handle(), Default::default(), 25, 600)?;
+    let keyboard =
+        state
+            .seat_state
+            .add_keyboard(&mut display.handle(), Default::default(), 25, 600, |_, _| {})?;
 
     let listener = ListeningSocket::bind("wayland-5").unwrap();
 
@@ -75,13 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         );
 
-        // keyboard.set_focus(
-        //     &mut display.handle(),
-        //     &mut state.seat_state,
-        //     &mut state.inner,
-        //     None,
-        //     0.into(),
-        // );
+        keyboard.set_focus(&mut display.handle(), None, 0.into());
 
         display.dispatch_clients(&mut state)?;
         display.flush_clients()?;
