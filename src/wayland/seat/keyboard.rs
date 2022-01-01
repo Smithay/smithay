@@ -2,89 +2,35 @@ use crate::backend::input::KeyState;
 use crate::wayland::Serial;
 use slog::{debug, info, o, trace, warn};
 use std::{
-    cell::RefCell,
     default::Default,
     fmt,
-    io::{Error as IoError, Seek, Write},
-    ops::Deref as _,
+    io::{Error as IoError, Write},
     os::unix::io::AsRawFd,
-    rc::Rc,
+    sync::{Arc, Mutex},
 };
 use tempfile::tempfile;
 use thiserror::Error;
 use wayland_server::{
+    backend::{ClientId, ObjectId},
     protocol::{
-        wl_keyboard::{KeyState as WlKeyState, KeymapFormat, Request, WlKeyboard},
+        wl_keyboard::{self, KeyState as WlKeyState, KeymapFormat, WlKeyboard},
         wl_surface::WlSurface,
     },
-    Client, Filter, Main,
+    Client, DestructionNotify, Dispatch, DisplayHandle, Resource,
 };
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
 
-/// Represents the current state of the keyboard modifiers
-///
-/// Each field of this struct represents a modifier and is `true` if this modifier is active.
-///
-/// For some modifiers, this means that the key is currently pressed, others are toggled
-/// (like caps lock).
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct ModifiersState {
-    /// The "control" key
-    pub ctrl: bool,
-    /// The "alt" key
-    pub alt: bool,
-    /// The "shift" key
-    pub shift: bool,
-    /// The "Caps lock" key
-    pub caps_lock: bool,
-    /// The "logo" key
-    ///
-    /// Also known as the "windows" key on most keyboards
-    pub logo: bool,
-    /// The "Num lock" key
-    pub num_lock: bool,
-}
+use super::{
+    delegate::{DelegateDispatch, DelegateDispatchBase},
+    SeatDispatch, SeatHandler,
+};
 
-impl ModifiersState {
-    fn update_with(&mut self, state: &xkb::State) {
-        self.ctrl = state.mod_name_is_active(&xkb::MOD_NAME_CTRL, xkb::STATE_MODS_EFFECTIVE);
-        self.alt = state.mod_name_is_active(&xkb::MOD_NAME_ALT, xkb::STATE_MODS_EFFECTIVE);
-        self.shift = state.mod_name_is_active(&xkb::MOD_NAME_SHIFT, xkb::STATE_MODS_EFFECTIVE);
-        self.caps_lock = state.mod_name_is_active(&xkb::MOD_NAME_CAPS, xkb::STATE_MODS_EFFECTIVE);
-        self.logo = state.mod_name_is_active(&xkb::MOD_NAME_LOGO, xkb::STATE_MODS_EFFECTIVE);
-        self.num_lock = state.mod_name_is_active(&xkb::MOD_NAME_NUM, xkb::STATE_MODS_EFFECTIVE);
-    }
-}
+mod modifiers_state;
+pub use modifiers_state::ModifiersState;
 
-/// Configuration for xkbcommon.
-///
-/// For the fields that are not set ("" or None, as set in the `Default` impl), xkbcommon will use
-/// the values from the environment variables `XKB_DEFAULT_RULES`, `XKB_DEFAULT_MODEL`,
-/// `XKB_DEFAULT_LAYOUT`, `XKB_DEFAULT_VARIANT` and `XKB_DEFAULT_OPTIONS`.
-///
-/// For details, see the [documentation at xkbcommon.org][docs].
-///
-/// [docs]: https://xkbcommon.org/doc/current/structxkb__rule__names.html
-#[derive(Default, Clone, Debug)]
-pub struct XkbConfig<'a> {
-    /// The rules file to use.
-    ///
-    /// The rules file describes how to interpret the values of the model, layout, variant and
-    /// options fields.
-    pub rules: &'a str,
-    /// The keyboard model by which to interpret keycodes and LEDs.
-    pub model: &'a str,
-    /// A comma separated list of layouts (languages) to include in the keymap.
-    pub layout: &'a str,
-    /// A comma separated list of variants, one per layout, which may modify or augment the
-    /// respective layout in various ways.
-    pub variant: &'a str,
-    /// A comma separated list of options, through which the user specifies non-layout related
-    /// preferences, like which key combinations are used for switching layouts, or which key is the
-    /// Compose key.
-    pub options: Option<String>,
-}
+mod xkb_config;
+pub use xkb_config::XkbConfig;
 
 struct KbdInternal {
     known_kbds: Vec<WlKeyboard>,
@@ -209,9 +155,10 @@ impl KbdInternal {
     {
         if let Some(ref surface) = self.focus {
             for kbd in &self.known_kbds {
-                if kbd.as_ref().same_client_as(surface.as_ref()) {
+                if kbd.id().same_client_as(&surface.id()) {
                     f(kbd, surface);
                 }
+                break;
             }
         }
     }
@@ -228,44 +175,9 @@ pub enum Error {
     IoError(IoError),
 }
 
-/// Create a keyboard handler from a set of RMLVO rules
-pub(crate) fn create_keyboard_handler<F>(
-    xkb_config: XkbConfig<'_>,
-    repeat_delay: i32,
-    repeat_rate: i32,
-    logger: &::slog::Logger,
-    focus_hook: F,
-) -> Result<KeyboardHandle, Error>
-where
-    F: FnMut(Option<&WlSurface>) + 'static,
-{
-    let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
-    info!(log, "Initializing a xkbcommon handler with keymap query";
-        "rules" => xkb_config.rules, "model" => xkb_config.model, "layout" => xkb_config.layout,
-        "variant" => xkb_config.variant, "options" => &xkb_config.options
-    );
-    let internal =
-        KbdInternal::new(xkb_config, repeat_rate, repeat_delay, Box::new(focus_hook)).map_err(|_| {
-            debug!(log, "Loading keymap failed");
-            Error::BadKeymap
-        })?;
-
-    info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
-
-    let keymap = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-
-    Ok(KeyboardHandle {
-        arc: Rc::new(KbdRc {
-            internal: RefCell::new(internal),
-            keymap,
-            logger: log,
-        }),
-    })
-}
-
 #[derive(Debug)]
 struct KbdRc {
-    internal: RefCell<KbdInternal>,
+    internal: Mutex<KbdInternal>,
     keymap: String,
     logger: ::slog::Logger,
 }
@@ -333,10 +245,45 @@ pub enum FilterResult<T> {
 ///   details.
 #[derive(Debug, Clone)]
 pub struct KeyboardHandle {
-    arc: Rc<KbdRc>,
+    arc: Arc<KbdRc>,
 }
 
 impl KeyboardHandle {
+    /// Create a keyboard handler from a set of RMLVO rules
+    pub(crate) fn new<F>(
+        xkb_config: XkbConfig<'_>,
+        repeat_delay: i32,
+        repeat_rate: i32,
+        cb: F,
+        logger: &::slog::Logger,
+    ) -> Result<Self, Error>
+    where
+        F: FnMut(Option<&WlSurface>) + 'static,
+    {
+        let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
+        info!(log, "Initializing a xkbcommon handler with keymap query";
+            "rules" => xkb_config.rules, "model" => xkb_config.model, "layout" => xkb_config.layout,
+            "variant" => xkb_config.variant, "options" => &xkb_config.options
+        );
+        let internal =
+            KbdInternal::new(xkb_config, repeat_rate, repeat_delay, Box::new(cb)).map_err(|_| {
+                debug!(log, "Loading keymap failed");
+                Error::BadKeymap
+            })?;
+
+        info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
+
+        let keymap = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
+
+        Ok(Self {
+            arc: Arc::new(KbdRc {
+                internal: Mutex::new(internal),
+                keymap,
+                logger: log,
+            }),
+        })
+    }
+
     /// Handle a keystroke
     ///
     /// All keystrokes from the input backend should be fed _in order_ to this method of the
@@ -350,8 +297,9 @@ impl KeyboardHandle {
     ///
     /// The module [`crate::wayland::seat::keysyms`] exposes definitions of all possible keysyms
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
-    pub fn input<T, F>(
+    pub fn input<T, F, D>(
         &self,
+        cx: &mut DisplayHandle<'_, D>,
         keycode: u32,
         state: KeyState,
         serial: Serial,
@@ -362,7 +310,7 @@ impl KeyboardHandle {
         F: FnOnce(&ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
     {
         trace!(self.arc.logger, "Handling keystroke"; "keycode" => keycode, "state" => format_args!("{:?}", state));
-        let mut guard = self.arc.internal.borrow_mut();
+        let mut guard = self.arc.internal.lock().unwrap();
         let mods_changed = guard.key_input(keycode, state);
         let handle = KeysymHandle {
             // Offset the keycode by 8, as the evdev XKB rules reflect X's
@@ -395,11 +343,12 @@ impl KeyboardHandle {
         guard.with_focused_kbds(|kbd, _| {
             // key event must be sent before modifers event for libxkbcommon
             // to process them correctly
-            kbd.key(serial.into(), time, keycode, wl_state);
+            kbd.key(cx, serial.into(), time, keycode, wl_state);
             if let Some((dep, la, lo, gr)) = modifiers {
-                kbd.modifiers(serial.into(), dep, la, lo, gr);
+                kbd.modifiers(cx, serial.into(), dep, la, lo, gr);
             }
         });
+
         if guard.focus.is_some() {
             trace!(self.arc.logger, "Input forwarded to client");
         } else {
@@ -415,19 +364,19 @@ impl KeyboardHandle {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus(&self, focus: Option<&WlSurface>, serial: Serial) {
-        let mut guard = self.arc.internal.borrow_mut();
+    pub fn set_focus<D>(&self, cx: &mut DisplayHandle<'_, D>, focus: Option<&WlSurface>, serial: Serial) {
+        let mut guard = self.arc.internal.lock().unwrap();
 
         let same = guard
             .focus
             .as_ref()
-            .and_then(|f| focus.map(|s| s.as_ref().equals(f.as_ref())))
+            .and_then(|f| focus.map(|s| s == f))
             .unwrap_or(false);
 
         if !same {
             // unset old focus
             guard.with_focused_kbds(|kbd, s| {
-                kbd.leave(serial.into(), s);
+                kbd.leave(cx, serial.into(), s);
             });
 
             // set new focus
@@ -435,9 +384,9 @@ impl KeyboardHandle {
             let (dep, la, lo, gr) = guard.serialize_modifiers();
             let keys = guard.serialize_pressed_keys();
             guard.with_focused_kbds(|kbd, surface| {
-                kbd.enter(serial.into(), surface, keys.clone());
+                kbd.enter(cx, serial.into(), surface, keys.clone());
                 // Modifiers must be send after enter event.
-                kbd.modifiers(serial.into(), dep, la, lo, gr);
+                kbd.modifiers(cx, serial.into(), dep, la, lo, gr);
             });
             {
                 let KbdInternal {
@@ -458,15 +407,19 @@ impl KeyboardHandle {
     }
 
     /// Check if given client currently has keyboard focus
-    pub fn has_focus(&self, client: &Client) -> bool {
-        self.arc
-            .internal
-            .borrow_mut()
-            .focus
-            .as_ref()
-            .and_then(|f| f.as_ref().client())
-            .map(|c| c.equals(client))
-            .unwrap_or(false)
+    pub fn has_focus(&self, _client: &Client) -> bool {
+        todo!("has_focus");
+        // let client_id = client.id();
+
+        // self.arc
+        //     .internal
+        //     .lock()
+        //     .unwrap()
+        //     .focus
+        //     .as_ref()
+        //     .and_then(|f| f.id().client())
+        //     .map(|c| c.equals(client))
+        //     .unwrap_or(false)
     }
 
     /// Register a new keyboard to this handler
@@ -474,15 +427,15 @@ impl KeyboardHandle {
     /// The keymap will automatically be sent to it
     ///
     /// This should be done first, before anything else is done with this keyboard.
-    pub(crate) fn new_kbd(&self, kbd: WlKeyboard) {
+    pub(crate) fn new_kbd<D>(&self, cx: &mut DisplayHandle<'_, D>, kbd: WlKeyboard) {
         trace!(self.arc.logger, "Sending keymap to client");
 
         // prepare a tempfile with the keymap, to send it to the client
         let ret = tempfile().and_then(|mut f| {
             f.write_all(self.arc.keymap.as_bytes())?;
             f.flush()?;
-            f.rewind()?;
             kbd.keymap(
+                cx,
                 KeymapFormat::XkbV1,
                 f.as_raw_fd(),
                 self.arc.keymap.as_bytes().len() as u32,
@@ -498,43 +451,60 @@ impl KeyboardHandle {
             return;
         };
 
-        let mut guard = self.arc.internal.borrow_mut();
-        if kbd.as_ref().version() >= 4 {
-            kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
+        let mut guard = self.arc.internal.lock().unwrap();
+        if kbd.version() >= 4 {
+            kbd.repeat_info(cx, guard.repeat_rate, guard.repeat_delay);
         }
         guard.known_kbds.push(kbd);
     }
 
     /// Change the repeat info configured for this keyboard
-    pub fn change_repeat_info(&self, rate: i32, delay: i32) {
-        let mut guard = self.arc.internal.borrow_mut();
+    pub fn change_repeat_info<D>(&self, cx: &mut DisplayHandle<'_, D>, rate: i32, delay: i32) {
+        let mut guard = self.arc.internal.lock().unwrap();
         guard.repeat_delay = delay;
         guard.repeat_rate = rate;
         for kbd in &guard.known_kbds {
-            kbd.repeat_info(rate, delay);
+            kbd.repeat_info(cx, rate, delay);
         }
     }
 }
 
-pub(crate) fn implement_keyboard(keyboard: Main<WlKeyboard>, handle: Option<&KeyboardHandle>) -> WlKeyboard {
-    keyboard.quick_assign(|_keyboard, request, _data| {
-        match request {
-            Request::Release => {
-                // Our destructors already handle it
-            }
-            _ => unreachable!(),
-        }
-    });
+/// User data for keyboard
+#[derive(Debug)]
+pub struct KeyboardUserData {
+    pub(crate) handle: Option<KeyboardHandle>,
+}
 
-    if let Some(h) = handle {
-        let arc = h.arc.clone();
-        keyboard.assign_destructor(Filter::new(move |keyboard: WlKeyboard, _, _| {
-            arc.internal
-                .borrow_mut()
-                .known_kbds
-                .retain(|k| !k.as_ref().equals(keyboard.as_ref()))
-        }));
+impl<D: 'static, H: SeatHandler<D>> DelegateDispatchBase<WlKeyboard> for SeatDispatch<'_, D, H> {
+    type UserData = KeyboardUserData;
+}
+
+impl<D, H: SeatHandler<D>> DelegateDispatch<WlKeyboard, D> for SeatDispatch<'_, D, H>
+where
+    D: 'static + Dispatch<WlKeyboard, UserData = KeyboardUserData>,
+{
+    fn request(
+        &mut self,
+        _client: &wayland_server::Client,
+        _resource: &WlKeyboard,
+        _request: wl_keyboard::Request,
+        _data: &Self::UserData,
+        _dhandle: &mut DisplayHandle<'_, D>,
+        _data_init: &mut wayland_server::DataInit<'_, D>,
+    ) {
     }
+}
 
-    keyboard.deref().clone()
+impl DestructionNotify for KeyboardUserData {
+    fn object_destroyed(&self, _client_id: ClientId, object_id: ObjectId) {
+        if let Some(ref handle) = self.handle {
+            handle
+                .arc
+                .internal
+                .lock()
+                .unwrap()
+                .known_kbds
+                .retain(|k| k.id() != object_id)
+        }
+    }
 }
