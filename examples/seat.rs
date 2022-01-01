@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use smithay::reexports::wayland_server::Display;
-use smithay::wayland::seat2::{self as seat, SeatHandler};
+use smithay::wayland::seat2::{self as seat, CursorImageStatus, SeatHandler};
 
 use seat::{
     delegate::{DelegateDispatch, DelegateGlobalDispatch},
@@ -25,10 +25,10 @@ struct App {
 
 struct InnerApp;
 
-impl SeatHandler for InnerApp {
-    fn set_cursor(&mut self) {}
+impl SeatHandler<App> for InnerApp {
+    fn set_cursor(&mut self, image_status: CursorImageStatus) {}
 
-    fn keyboard_focus(&mut self, focus: Option<&WlSurface>) {}
+    fn keyboard_focus(&mut self, state: &mut SeatState<App>, focus: Option<&WlSurface>) {}
 }
 
 impl Dispatch<WlSeat> for App {
@@ -80,14 +80,16 @@ impl GlobalDispatch<WlSeat> for App {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;
 
-    let mut seat_state = SeatState::new(&mut display, "Example".into(), None);
-
-    let keyboard = seat_state.add_keyboard(&mut display.handle(), Default::default(), 25, 600, |_, _| {})?;
+    let seat_state = SeatState::new(&mut display, "Example".into(), None);
 
     let mut state = App {
         inner: InnerApp,
         seat_state,
     };
+
+    let keyboard = state
+        .seat_state
+        .add_keyboard(&mut display.handle(), Default::default(), 25, 600)?;
 
     let listener = ListeningSocket::bind("wayland-5").unwrap();
 
@@ -118,6 +120,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             },
         );
+
+        // keyboard.set_focus(
+        //     &mut display.handle(),
+        //     &mut state.seat_state,
+        //     &mut state.inner,
+        //     None,
+        //     0.into(),
+        // );
 
         display.dispatch_clients(&mut state)?;
         display.flush_clients()?;
@@ -162,5 +172,14 @@ impl Dispatch<WlPointer> for App {
         cx: &mut DisplayHandle<'_, Self>,
         data_init: &mut wayland_server::DataInit<'_, Self>,
     ) {
+        // DelegateDispatch::<WlPointer, _>::request(
+        //     &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
+        //     client,
+        //     resource,
+        //     request,
+        //     data,
+        //     cx,
+        //     data_init,
+        // );
     }
 }

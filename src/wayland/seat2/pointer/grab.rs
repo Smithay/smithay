@@ -7,7 +7,7 @@ use wayland_server::{
 
 use crate::{
     utils::{Logical, Point},
-    wayland::Serial,
+    wayland::{seat2::SeatHandler, Serial},
 };
 
 use super::{AxisFrame, PointerInnerHandle};
@@ -32,6 +32,7 @@ pub trait PointerGrab<D>: Send + Sync {
     fn motion(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
+        seat_handler: &mut dyn SeatHandler<D>,
         handle: &mut PointerInnerHandle<'_, D>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
@@ -42,6 +43,7 @@ pub trait PointerGrab<D>: Send + Sync {
     fn button(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
+        seat_handler: &mut dyn SeatHandler<D>,
         handle: &mut PointerInnerHandle<'_, D>,
         button: u32,
         state: ButtonState,
@@ -52,6 +54,7 @@ pub trait PointerGrab<D>: Send + Sync {
     fn axis(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
+        seat_handler: &mut dyn SeatHandler<D>,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     );
@@ -96,18 +99,20 @@ impl<D> PointerGrab<D> for DefaultGrab {
     fn motion(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
+        seat_handler: &mut dyn SeatHandler<D>,
         handle: &mut PointerInnerHandle<'_, D>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
-        handle.motion(cx, location, focus, serial, time);
+        handle.motion(cx, seat_handler, location, focus, serial, time);
     }
 
     fn button(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
+        seat_handler: &mut dyn SeatHandler<D>,
         handle: &mut PointerInnerHandle<'_, D>,
         button: u32,
         state: ButtonState,
@@ -130,6 +135,7 @@ impl<D> PointerGrab<D> for DefaultGrab {
     fn axis(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
+        seat_handler: &mut dyn SeatHandler<D>,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     ) {
@@ -154,18 +160,27 @@ impl<D> PointerGrab<D> for ClickGrab {
     fn motion(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
+        seat_handler: &mut dyn SeatHandler<D>,
         handle: &mut PointerInnerHandle<'_, D>,
         location: Point<f64, Logical>,
         _focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
-        handle.motion(cx, location, self.start_data.focus.clone(), serial, time);
+        handle.motion(
+            cx,
+            seat_handler,
+            location,
+            self.start_data.focus.clone(),
+            serial,
+            time,
+        );
     }
 
     fn button(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
+        seat_handler: &mut dyn SeatHandler<D>,
         handle: &mut PointerInnerHandle<'_, D>,
         button: u32,
         state: ButtonState,
@@ -175,13 +190,14 @@ impl<D> PointerGrab<D> for ClickGrab {
         handle.button(cx, button, state, serial, time);
         if handle.current_pressed().is_empty() {
             // no more buttons are pressed, release the grab
-            handle.unset_grab(cx, serial, time);
+            handle.unset_grab(cx, seat_handler, serial, time);
         }
     }
 
     fn axis(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
+        seat_handler: &mut dyn SeatHandler<D>,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     ) {

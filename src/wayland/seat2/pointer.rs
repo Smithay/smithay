@@ -20,15 +20,17 @@ use crate::{
     wayland::Serial,
 };
 
-use super::{SeatDispatch, SeatHandler};
+use super::{
+    delegate::{DelegateDispatch, DelegateDispatchBase},
+    SeatDispatch, SeatHandler,
+};
 
 mod grab;
 use grab::{DefaultGrab, GrabStatus};
 pub use grab::{GrabStartData, PointerGrab};
 
 mod cursor_image;
-use cursor_image::CURSOR_IMAGE_ROLE;
-pub use cursor_image::{CursorImageAttributes, CursorImageStatus};
+pub use cursor_image::{CursorImageAttributes, CursorImageStatus, CURSOR_IMAGE_ROLE};
 
 mod axis_frame;
 pub use axis_frame::AxisFrame;
@@ -40,7 +42,6 @@ struct PointerInternal<D> {
     location: Point<f64, Logical>,
     grab: GrabStatus<D>,
     pressed_buttons: Vec<u32>,
-    image_callback: Box<dyn FnMut(CursorImageStatus) + Send + Sync>,
 }
 
 // image_callback does not implement debug, so we have to impl Debug manually
@@ -59,10 +60,7 @@ impl<D> fmt::Debug for PointerInternal<D> {
 }
 
 impl<D> PointerInternal<D> {
-    fn new<F>(cb: F) -> PointerInternal<D>
-    where
-        F: FnMut(CursorImageStatus) + 'static + Send + Sync,
-    {
+    fn new() -> PointerInternal<D> {
         PointerInternal {
             known_pointers: Vec::new(),
             focus: None,
@@ -70,7 +68,6 @@ impl<D> PointerInternal<D> {
             location: (0.0, 0.0).into(),
             grab: GrabStatus::None,
             pressed_buttons: Vec::new(),
-            image_callback: Box::new(cb) as Box<_>,
         }
     }
 
@@ -146,12 +143,9 @@ impl<D> Clone for PointerHandle<D> {
 }
 
 impl<D> PointerHandle<D> {
-    pub(crate) fn new<F>(cb: F) -> PointerHandle<D>
-    where
-        F: FnMut(CursorImageStatus) + 'static + Send + Sync,
-    {
+    pub(crate) fn new() -> PointerHandle<D> {
         PointerHandle {
-            inner: Arc::new(Mutex::new(PointerInternal::new(cb))),
+            inner: Arc::new(Mutex::new(PointerInternal::new())),
         }
     }
 
@@ -210,6 +204,7 @@ impl<D> PointerHandle<D> {
     pub fn motion(
         &self,
         cx: &mut DisplayHandle<'_, D>,
+        seat_handler: &mut dyn SeatHandler<D>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -218,7 +213,7 @@ impl<D> PointerHandle<D> {
         let mut inner = self.inner.lock().unwrap();
         inner.pending_focus = focus.clone();
         inner.with_grab(cx, move |cx, mut handle, grab| {
-            grab.motion(cx, &mut handle, location, focus, serial, time);
+            grab.motion(cx, seat_handler, &mut handle, location, focus, serial, time);
         });
     }
 
@@ -229,6 +224,7 @@ impl<D> PointerHandle<D> {
     pub fn button(
         &self,
         cx: &mut DisplayHandle<'_, D>,
+        seat_handler: &mut dyn SeatHandler<D>,
         button: u32,
         state: ButtonState,
         serial: Serial,
@@ -245,7 +241,7 @@ impl<D> PointerHandle<D> {
             _ => unreachable!(),
         }
         inner.with_grab(cx, |cx, mut handle, grab| {
-            grab.button(cx, &mut handle, button, state, serial, time);
+            grab.button(cx, seat_handler, &mut handle, button, state, serial, time);
         });
     }
 
@@ -282,12 +278,18 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     /// Remove any current grab on this pointer, resetting it to the default behavior
     ///
     /// This will also restore the focus of the underlying pointer
-    pub fn unset_grab(&mut self, cx: &mut DisplayHandle<'_, D>, serial: Serial, time: u32) {
+    pub fn unset_grab(
+        &mut self,
+        cx: &mut DisplayHandle<'_, D>,
+        handler: &mut dyn SeatHandler<D>,
+        serial: Serial,
+        time: u32,
+    ) {
         self.inner.grab = GrabStatus::None;
         // restore the focus
         let location = self.current_location();
         let focus = self.inner.pending_focus.clone();
-        self.motion(cx, location, focus, serial, time);
+        self.motion(cx, handler, location, focus, serial, time);
     }
 
     /// Access the current focus of this pointer
@@ -319,9 +321,10 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of enter/motion/leave events.
-    pub fn motion(
+    fn motion(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
+        handler: &mut dyn SeatHandler<D>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -345,7 +348,8 @@ impl<'a, D> PointerInnerHandle<'a, D> {
                 }
             });
             self.inner.focus = None;
-            (self.inner.image_callback)(CursorImageStatus::Default);
+
+            handler.set_cursor(CursorImageStatus::Default);
         }
 
         // do we enter one ?
@@ -442,17 +446,22 @@ pub struct PointerUserData<D> {
     pub(crate) handle: Option<PointerHandle<D>>,
 }
 
-impl<D: 'static, H: SeatHandler> Dispatch<WlPointer> for SeatDispatch<'_, D, H> {
+impl<D: 'static, H: SeatHandler<D>> DelegateDispatchBase<WlPointer> for SeatDispatch<'_, D, H> {
     type UserData = PointerUserData<D>;
+}
 
+impl<D, H: SeatHandler<D>> DelegateDispatch<WlPointer, D> for SeatDispatch<'_, D, H>
+where
+    D: 'static + Dispatch<WlPointer, UserData = PointerUserData<D>>,
+{
     fn request(
         &mut self,
         _client: &wayland_server::Client,
         resource: &WlPointer,
         request: wl_pointer::Request,
         data: &Self::UserData,
-        _dhandle: &mut DisplayHandle<'_, Self>,
-        _data_init: &mut wayland_server::DataInit<'_, Self>,
+        _dhandle: &mut DisplayHandle<'_, D>,
+        _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
             Request::SetCursor {
@@ -465,11 +474,7 @@ impl<D: 'static, H: SeatHandler> Dispatch<WlPointer> for SeatDispatch<'_, D, H> 
                     let mut guard = handle.inner.lock().unwrap();
                     // only allow setting the cursor icon if the current pointer focus
                     // is of the same client
-                    let PointerInternal {
-                        ref mut image_callback,
-                        ref focus,
-                        ..
-                    } = *guard;
+                    let PointerInternal { ref focus, .. } = *guard;
                     if let Some((ref focus, _)) = *focus {
                         if focus.id().same_client_as(&resource.id()) {
                             match surface {
@@ -502,10 +507,10 @@ impl<D: 'static, H: SeatHandler> Dispatch<WlPointer> for SeatDispatch<'_, D, H> 
                                     // })
                                     // .unwrap();
 
-                                    image_callback(CursorImageStatus::Image(surface));
+                                    self.1.set_cursor(CursorImageStatus::Image(surface));
                                 }
                                 None => {
-                                    image_callback(CursorImageStatus::Hidden);
+                                    self.1.set_cursor(CursorImageStatus::Hidden);
                                 }
                             }
                         }
