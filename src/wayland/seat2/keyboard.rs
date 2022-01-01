@@ -41,6 +41,7 @@ struct KbdInternal {
     state: xkb::State,
     repeat_rate: i32,
     repeat_delay: i32,
+    focus_hook: Box<dyn FnMut(Option<&WlSurface>)>,
 }
 
 // focus_hook does not implement debug, so we have to impl Debug manually
@@ -65,7 +66,12 @@ impl fmt::Debug for KbdInternal {
 unsafe impl Send for KbdInternal {}
 
 impl KbdInternal {
-    fn new(xkb_config: XkbConfig<'_>, repeat_rate: i32, repeat_delay: i32) -> Result<KbdInternal, ()> {
+    fn new(
+        xkb_config: XkbConfig<'_>,
+        repeat_rate: i32,
+        repeat_delay: i32,
+        focus_hook: Box<dyn FnMut(Option<&WlSurface>)>,
+    ) -> Result<KbdInternal, ()> {
         // we create a new contex for each keyboard because libxkbcommon is actually NOT threadsafe
         // so confining it inside the KbdInternal allows us to use Rusts mutability rules to make
         // sure nothing goes wrong.
@@ -93,6 +99,7 @@ impl KbdInternal {
             state,
             repeat_rate,
             repeat_delay,
+            focus_hook,
         })
     }
 
@@ -243,21 +250,26 @@ pub struct KeyboardHandle {
 
 impl KeyboardHandle {
     /// Create a keyboard handler from a set of RMLVO rules
-    pub(crate) fn new(
+    pub(crate) fn new<F>(
         xkb_config: XkbConfig<'_>,
         repeat_delay: i32,
         repeat_rate: i32,
+        cb: F,
         logger: &::slog::Logger,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, Error>
+    where
+        F: FnMut(Option<&WlSurface>) + 'static,
+    {
         let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
         info!(log, "Initializing a xkbcommon handler with keymap query";
             "rules" => xkb_config.rules, "model" => xkb_config.model, "layout" => xkb_config.layout,
             "variant" => xkb_config.variant, "options" => &xkb_config.options
         );
-        let internal = KbdInternal::new(xkb_config, repeat_rate, repeat_delay).map_err(|_| {
-            debug!(log, "Loading keymap failed");
-            Error::BadKeymap
-        })?;
+        let internal =
+            KbdInternal::new(xkb_config, repeat_rate, repeat_delay, Box::new(cb)).map_err(|_| {
+                debug!(log, "Loading keymap failed");
+                Error::BadKeymap
+            })?;
 
         info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
 
@@ -352,14 +364,7 @@ impl KeyboardHandle {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus<D>(
-        &self,
-        cx: &mut DisplayHandle<'_, D>,
-        state: &mut SeatState<D>,
-        handler: &mut dyn SeatHandler<D>,
-        focus: Option<&WlSurface>,
-        serial: Serial,
-    ) {
+    pub fn set_focus<D>(&self, cx: &mut DisplayHandle<'_, D>, focus: Option<&WlSurface>, serial: Serial) {
         let mut guard = self.arc.internal.lock().unwrap();
 
         let same = guard
@@ -384,8 +389,12 @@ impl KeyboardHandle {
                 kbd.modifiers(cx, serial.into(), dep, la, lo, gr);
             });
             {
-                let KbdInternal { ref focus, .. } = *guard;
-                handler.keyboard_focus(state, focus.as_ref());
+                let KbdInternal {
+                    ref focus,
+                    ref mut focus_hook,
+                    ..
+                } = *guard;
+                focus_hook(focus.as_ref());
             }
             if guard.focus.is_some() {
                 trace!(self.arc.logger, "Focus set to new surface");
