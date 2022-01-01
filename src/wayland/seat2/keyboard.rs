@@ -23,7 +23,7 @@ pub use xkbcommon::xkb::{keysyms, Keysym};
 
 use super::{
     delegate::{DelegateDispatch, DelegateDispatchBase},
-    SeatDispatch, SeatHandler, SeatState,
+    SeatDispatch, SeatHandler,
 };
 
 mod modifiers_state;
@@ -407,7 +407,7 @@ impl KeyboardHandle {
     }
 
     /// Check if given client currently has keyboard focus
-    pub fn has_focus(&self, client: &Client) -> bool {
+    pub fn has_focus(&self, _client: &Client) -> bool {
         todo!("has_focus");
         // let client_id = client.id();
 
@@ -469,6 +469,7 @@ impl KeyboardHandle {
     }
 }
 
+/// User data for keyboard
 #[derive(Debug)]
 pub struct KeyboardUserData {
     pub(crate) handle: Option<KeyboardHandle>,
@@ -485,9 +486,9 @@ where
     fn request(
         &mut self,
         _client: &wayland_server::Client,
-        resource: &WlKeyboard,
-        request: wl_keyboard::Request,
-        data: &Self::UserData,
+        _resource: &WlKeyboard,
+        _request: wl_keyboard::Request,
+        _data: &Self::UserData,
         _dhandle: &mut DisplayHandle<'_, D>,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -495,7 +496,7 @@ where
 }
 
 impl DestructionNotify for KeyboardUserData {
-    fn object_destroyed(&self, client_id: ClientId, object_id: ObjectId) {
+    fn object_destroyed(&self, _client_id: ClientId, object_id: ObjectId) {
         if let Some(ref handle) = self.handle {
             handle
                 .arc

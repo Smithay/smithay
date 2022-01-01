@@ -1,15 +1,12 @@
 use std::{
-    cell::RefCell,
     fmt,
-    ops::Deref as _,
-    rc::Rc,
     sync::{Arc, Mutex},
 };
 
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::{
-        wl_pointer::{self, Axis, AxisSource, ButtonState, Request, WlPointer},
+        wl_pointer::{self, Axis, ButtonState, Request, WlPointer},
         wl_surface::WlSurface,
     },
     DestructionNotify, Dispatch, DisplayHandle, Resource,
@@ -436,6 +433,7 @@ impl<'a, D> PointerInnerHandle<'a, D> {
  * Grabs definition
  */
 
+/// User data for pointer
 #[derive(Debug)]
 pub struct PointerUserData<D> {
     pub(crate) handle: Option<PointerHandle<D>>,
@@ -521,7 +519,7 @@ where
 }
 
 impl<D> DestructionNotify for PointerUserData<D> {
-    fn object_destroyed(&self, client_id: ClientId, object_id: ObjectId) {
+    fn object_destroyed(&self, _client_id: ClientId, object_id: ObjectId) {
         if let Some(ref handle) = self.handle {
             handle
                 .inner
