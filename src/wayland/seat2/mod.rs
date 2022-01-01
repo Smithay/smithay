@@ -101,11 +101,7 @@ impl<D> Inner<D> {
     }
 }
 
-pub trait SeatHandler<D> {
-    fn set_cursor(&mut self, image_status: CursorImageStatus);
-
-    fn keyboard_focus(&mut self, state: &mut SeatState<D>, focus: Option<&wl_surface::WlSurface>);
-}
+pub trait SeatHandler<D> {}
 
 pub struct SeatDispatch<'a, D, H: SeatHandler<D>>(pub &'a mut SeatState<D>, pub &'a mut H);
 
@@ -141,7 +137,7 @@ impl<D: 'static> SeatState<D> {
     /// You are provided with the state token to retrieve it (allowing
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
-    pub fn new<L>(display: &mut Display<D>, name: String, logger: L) -> Self
+    pub fn new<L>(display: &mut DisplayHandle<'_, D>, name: String, logger: L) -> Self
     where
         L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<WlSeat, GlobalData = ()> + 'static,
@@ -149,7 +145,7 @@ impl<D: 'static> SeatState<D> {
         let log = crate::slog_or_fallback(logger);
         let log = log.new(slog::o!("smithay_module" => "seat_handler", "seat_name" => name.clone()));
 
-        display.handle().create_global(5, ());
+        display.create_global(5, ());
 
         Self {
             arc: Arc::new(SeatRc {
@@ -193,9 +189,12 @@ impl<D: 'static> SeatState<D> {
     ///     |new_status| { /* a closure handling requests from clients to change the cursor icon */ }
     /// );
     /// ```
-    pub fn add_pointer(&mut self, cx: &mut DisplayHandle<'_, D>) -> PointerHandle<D> {
+    pub fn add_pointer<F>(&mut self, cx: &mut DisplayHandle<'_, D>, cb: F) -> PointerHandle<D>
+    where
+        F: FnMut(CursorImageStatus) + Send + Sync + 'static,
+    {
         let mut inner = self.arc.inner.lock().unwrap();
-        let pointer = self::pointer::PointerHandle::new();
+        let pointer = self::pointer::PointerHandle::new(cb);
         if inner.pointer.is_some() {
             // there is already a pointer, remove it and notify the clients
             // of the change
@@ -258,16 +257,26 @@ impl<D: 'static> SeatState<D> {
     ///     )
     ///     .expect("Failed to initialize the keyboard");
     /// ```
-    pub fn add_keyboard(
+    pub fn add_keyboard<F>(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
         xkb_config: keyboard::XkbConfig<'_>,
         repeat_delay: i32,
         repeat_rate: i32,
-    ) -> Result<KeyboardHandle, KeyboardError> {
+        mut focus_hook: F,
+    ) -> Result<KeyboardHandle, KeyboardError>
+    where
+        F: FnMut(&SeatState<D>, Option<&wl_surface::WlSurface>) + 'static,
+    {
+        let me = self.clone();
         let mut inner = self.arc.inner.lock().unwrap();
-        let keyboard =
-            self::keyboard::KeyboardHandle::new(xkb_config, repeat_delay, repeat_rate, &self.arc.log)?;
+        let keyboard = self::keyboard::KeyboardHandle::new(
+            xkb_config,
+            repeat_delay,
+            repeat_rate,
+            move |focus| focus_hook(&me, focus),
+            &self.arc.log,
+        )?;
         if inner.keyboard.is_some() {
             // there is already a keyboard, remove it and notify the clients
             // of the change

@@ -42,6 +42,7 @@ struct PointerInternal<D> {
     location: Point<f64, Logical>,
     grab: GrabStatus<D>,
     pressed_buttons: Vec<u32>,
+    image_callback: Box<dyn FnMut(CursorImageStatus) + Send + Sync>,
 }
 
 // image_callback does not implement debug, so we have to impl Debug manually
@@ -60,7 +61,7 @@ impl<D> fmt::Debug for PointerInternal<D> {
 }
 
 impl<D> PointerInternal<D> {
-    fn new() -> PointerInternal<D> {
+    fn new(image_callback: Box<dyn FnMut(CursorImageStatus) + Send + Sync>) -> PointerInternal<D> {
         PointerInternal {
             known_pointers: Vec::new(),
             focus: None,
@@ -68,6 +69,7 @@ impl<D> PointerInternal<D> {
             location: (0.0, 0.0).into(),
             grab: GrabStatus::None,
             pressed_buttons: Vec::new(),
+            image_callback,
         }
     }
 
@@ -143,9 +145,12 @@ impl<D> Clone for PointerHandle<D> {
 }
 
 impl<D> PointerHandle<D> {
-    pub(crate) fn new() -> PointerHandle<D> {
+    pub(crate) fn new<F>(cb: F) -> PointerHandle<D>
+    where
+        F: FnMut(CursorImageStatus) + Send + Sync + 'static,
+    {
         PointerHandle {
-            inner: Arc::new(Mutex::new(PointerInternal::new())),
+            inner: Arc::new(Mutex::new(PointerInternal::new(Box::new(cb)))),
         }
     }
 
@@ -204,7 +209,6 @@ impl<D> PointerHandle<D> {
     pub fn motion(
         &self,
         cx: &mut DisplayHandle<'_, D>,
-        seat_handler: &mut dyn SeatHandler<D>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -213,7 +217,7 @@ impl<D> PointerHandle<D> {
         let mut inner = self.inner.lock().unwrap();
         inner.pending_focus = focus.clone();
         inner.with_grab(cx, move |cx, mut handle, grab| {
-            grab.motion(cx, seat_handler, &mut handle, location, focus, serial, time);
+            grab.motion(cx, &mut handle, location, focus, serial, time);
         });
     }
 
@@ -224,7 +228,6 @@ impl<D> PointerHandle<D> {
     pub fn button(
         &self,
         cx: &mut DisplayHandle<'_, D>,
-        seat_handler: &mut dyn SeatHandler<D>,
         button: u32,
         state: ButtonState,
         serial: Serial,
@@ -241,7 +244,7 @@ impl<D> PointerHandle<D> {
             _ => unreachable!(),
         }
         inner.with_grab(cx, |cx, mut handle, grab| {
-            grab.button(cx, seat_handler, &mut handle, button, state, serial, time);
+            grab.button(cx, &mut handle, button, state, serial, time);
         });
     }
 
@@ -278,18 +281,12 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     /// Remove any current grab on this pointer, resetting it to the default behavior
     ///
     /// This will also restore the focus of the underlying pointer
-    pub fn unset_grab(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handler: &mut dyn SeatHandler<D>,
-        serial: Serial,
-        time: u32,
-    ) {
+    pub fn unset_grab(&mut self, cx: &mut DisplayHandle<'_, D>, serial: Serial, time: u32) {
         self.inner.grab = GrabStatus::None;
         // restore the focus
         let location = self.current_location();
         let focus = self.inner.pending_focus.clone();
-        self.motion(cx, handler, location, focus, serial, time);
+        self.motion(cx, location, focus, serial, time);
     }
 
     /// Access the current focus of this pointer
@@ -324,7 +321,6 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     fn motion(
         &mut self,
         cx: &mut DisplayHandle<'_, D>,
-        handler: &mut dyn SeatHandler<D>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -348,8 +344,7 @@ impl<'a, D> PointerInnerHandle<'a, D> {
                 }
             });
             self.inner.focus = None;
-
-            handler.set_cursor(CursorImageStatus::Default);
+            (self.inner.image_callback)(CursorImageStatus::Default);
         }
 
         // do we enter one ?
@@ -507,10 +502,10 @@ where
                                     // })
                                     // .unwrap();
 
-                                    self.1.set_cursor(CursorImageStatus::Image(surface));
+                                    (guard.image_callback)(CursorImageStatus::Image(surface));
                                 }
                                 None => {
-                                    self.1.set_cursor(CursorImageStatus::Hidden);
+                                    (guard.image_callback)(CursorImageStatus::Hidden);
                                 }
                             }
                         }
