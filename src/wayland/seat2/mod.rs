@@ -60,10 +60,10 @@ use wayland_server::{
         wl_seat::{self, WlSeat},
         wl_surface,
     },
-    DataInit, DestructionNotify, Dispatch, Display, DisplayHandle, GlobalDispatch, New, Resource,
+    DataInit, DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
-pub mod delegate;
+mod delegate;
 use delegate::{DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase};
 
 #[derive(Debug)]
@@ -101,8 +101,11 @@ impl<D> Inner<D> {
     }
 }
 
+/// Handler trait for Seat
 pub trait SeatHandler<D> {}
 
+/// Seat event dispatching struct
+#[derive(Debug)]
 pub struct SeatDispatch<'a, D, H: SeatHandler<D>>(pub &'a mut SeatState<D>, pub &'a mut H);
 
 /// A Seat handle
@@ -317,12 +320,14 @@ impl<D> ::std::cmp::PartialEq for SeatState<D> {
     }
 }
 
+/// User data for seat
+#[derive(Debug)]
 pub struct SeatUserData<D> {
     seat: std::sync::Weak<SeatRc<D>>,
 }
 
 impl<D> DestructionNotify for SeatUserData<D> {
-    fn object_destroyed(&self, client_id: ClientId, object_id: ObjectId) {
+    fn object_destroyed(&self, _client_id: ClientId, object_id: ObjectId) {
         if let Some(seat) = self.seat.upgrade() {
             seat.inner
                 .lock()
@@ -346,10 +351,10 @@ where
 {
     fn request(
         &mut self,
-        client: &wayland_server::Client,
-        resource: &WlSeat,
+        _client: &wayland_server::Client,
+        _resource: &WlSeat,
         request: wl_seat::Request,
-        data: &Self::UserData,
+        _data: &Self::UserData,
         cx: &mut DisplayHandle<'_, D>,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -413,9 +418,9 @@ where
     fn bind(
         &mut self,
         handle: &mut wayland_server::DisplayHandle<'_, D>,
-        client: &wayland_server::Client,
+        _client: &wayland_server::Client,
         resource: New<WlSeat>,
-        global_data: &Self::GlobalData,
+        _global_data: &Self::GlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
         let data = SeatUserData {

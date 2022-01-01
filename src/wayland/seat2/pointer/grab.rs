@@ -7,7 +7,7 @@ use wayland_server::{
 
 use crate::{
     utils::{Logical, Point},
-    wayland::{seat2::SeatHandler, Serial},
+    wayland::Serial,
 };
 
 use super::{AxisFrame, PointerInnerHandle};
