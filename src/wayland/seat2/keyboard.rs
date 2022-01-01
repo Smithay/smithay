@@ -2,7 +2,6 @@ use crate::backend::input::KeyState;
 use crate::wayland::Serial;
 use slog::{debug, info, o, trace, warn};
 use std::{
-    borrow::BorrowMut,
     default::Default,
     fmt,
     io::{Error as IoError, Write},
@@ -417,14 +416,6 @@ impl KeyboardHandle {
             }
         });
 
-        // TODO: Remove this
-        // for kbd in &guard.known_kbds {
-        //     kbd.key(cx, serial.into(), time, keycode, wl_state);
-        //     if let Some((dep, la, lo, gr)) = modifiers {
-        //         kbd.modifiers(cx, serial.into(), dep, la, lo, gr);
-        //     }
-        // }
-
         if guard.focus.is_some() {
             trace!(self.arc.logger, "Input forwarded to client");
         } else {
@@ -485,13 +476,15 @@ impl KeyboardHandle {
     /// Check if given client currently has keyboard focus
     pub fn has_focus(&self, client: &Client) -> bool {
         todo!("has_focus");
+        // let client_id = client.id();
+
         // self.arc
         //     .internal
         //     .lock()
         //     .unwrap()
         //     .focus
         //     .as_ref()
-        //     .and_then(|f| f.client())
+        //     .and_then(|f| f.id().client())
         //     .map(|c| c.equals(client))
         //     .unwrap_or(false)
     }
@@ -572,7 +565,7 @@ impl DestructionNotify for KeyboardUserData {
                 .lock()
                 .unwrap()
                 .known_kbds
-                .retain(|k| k.id() == object_id)
+                .retain(|k| k.id() != object_id)
         }
     }
 }
