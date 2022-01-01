@@ -21,83 +21,13 @@ use wayland_server::{
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
 
-use super::{SeatDispatch, SeatHandler, SeatState};
+use super::{SeatDispatch, SeatHandler};
 
-/// Represents the current state of the keyboard modifiers
-///
-/// Each field of this struct represents a modifier and is `true` if this modifier is active.
-///
-/// For some modifiers, this means that the key is currently pressed, others are toggled
-/// (like caps lock).
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct ModifiersState {
-    /// The "control" key
-    pub ctrl: bool,
-    /// The "alt" key
-    pub alt: bool,
-    /// The "shift" key
-    pub shift: bool,
-    /// The "Caps lock" key
-    pub caps_lock: bool,
-    /// The "logo" key
-    ///
-    /// Also known as the "windows" key on most keyboards
-    pub logo: bool,
-    /// The "Num lock" key
-    pub num_lock: bool,
-}
+mod modifiers_state;
+pub use modifiers_state::ModifiersState;
 
-impl ModifiersState {
-    fn update_with(&mut self, state: &xkb::State) {
-        self.ctrl = state.mod_name_is_active(&xkb::MOD_NAME_CTRL, xkb::STATE_MODS_EFFECTIVE);
-        self.alt = state.mod_name_is_active(&xkb::MOD_NAME_ALT, xkb::STATE_MODS_EFFECTIVE);
-        self.shift = state.mod_name_is_active(&xkb::MOD_NAME_SHIFT, xkb::STATE_MODS_EFFECTIVE);
-        self.caps_lock = state.mod_name_is_active(&xkb::MOD_NAME_CAPS, xkb::STATE_MODS_EFFECTIVE);
-        self.logo = state.mod_name_is_active(&xkb::MOD_NAME_LOGO, xkb::STATE_MODS_EFFECTIVE);
-        self.num_lock = state.mod_name_is_active(&xkb::MOD_NAME_NUM, xkb::STATE_MODS_EFFECTIVE);
-    }
-}
-
-/// Configuration for xkbcommon.
-///
-/// For the fields that are not set ("" or None, as set in the `Default` impl), xkbcommon will use
-/// the values from the environment variables `XKB_DEFAULT_RULES`, `XKB_DEFAULT_MODEL`,
-/// `XKB_DEFAULT_LAYOUT`, `XKB_DEFAULT_VARIANT` and `XKB_DEFAULT_OPTIONS`.
-///
-/// For details, see the [documentation at xkbcommon.org][docs].
-///
-/// [docs]: https://xkbcommon.org/doc/current/structxkb__rule__names.html
-#[derive(Clone, Debug)]
-pub struct XkbConfig<'a> {
-    /// The rules file to use.
-    ///
-    /// The rules file describes how to interpret the values of the model, layout, variant and
-    /// options fields.
-    pub rules: &'a str,
-    /// The keyboard model by which to interpret keycodes and LEDs.
-    pub model: &'a str,
-    /// A comma separated list of layouts (languages) to include in the keymap.
-    pub layout: &'a str,
-    /// A comma separated list of variants, one per layout, which may modify or augment the
-    /// respective layout in various ways.
-    pub variant: &'a str,
-    /// A comma separated list of options, through which the user specifies non-layout related
-    /// preferences, like which key combinations are used for switching layouts, or which key is the
-    /// Compose key.
-    pub options: Option<String>,
-}
-
-impl<'a> Default for XkbConfig<'a> {
-    fn default() -> Self {
-        Self {
-            rules: "",
-            model: "",
-            layout: "",
-            variant: "",
-            options: None,
-        }
-    }
-}
+mod xkb_config;
+pub use xkb_config::XkbConfig;
 
 struct KbdInternal {
     known_kbds: Vec<WlKeyboard>,
@@ -242,41 +172,6 @@ pub enum Error {
     IoError(IoError),
 }
 
-/// Create a keyboard handler from a set of RMLVO rules
-pub(crate) fn create_keyboard_handler<F>(
-    xkb_config: XkbConfig<'_>,
-    repeat_delay: i32,
-    repeat_rate: i32,
-    logger: &::slog::Logger,
-    focus_hook: F,
-) -> Result<KeyboardHandle, Error>
-where
-    F: FnMut(Option<&WlSurface>) + 'static,
-{
-    let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
-    info!(log, "Initializing a xkbcommon handler with keymap query";
-        "rules" => xkb_config.rules, "model" => xkb_config.model, "layout" => xkb_config.layout,
-        "variant" => xkb_config.variant, "options" => &xkb_config.options
-    );
-    let internal =
-        KbdInternal::new(xkb_config, repeat_rate, repeat_delay, Box::new(focus_hook)).map_err(|_| {
-            debug!(log, "Loading keymap failed");
-            Error::BadKeymap
-        })?;
-
-    info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
-
-    let keymap = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-
-    Ok(KeyboardHandle {
-        arc: Arc::new(KbdRc {
-            internal: Mutex::new(internal),
-            keymap,
-            logger: log,
-        }),
-    })
-}
-
 #[derive(Debug)]
 struct KbdRc {
     internal: Mutex<KbdInternal>,
@@ -351,6 +246,41 @@ pub struct KeyboardHandle {
 }
 
 impl KeyboardHandle {
+    /// Create a keyboard handler from a set of RMLVO rules
+    pub(crate) fn new<F>(
+        xkb_config: XkbConfig<'_>,
+        repeat_delay: i32,
+        repeat_rate: i32,
+        logger: &::slog::Logger,
+        focus_hook: F,
+    ) -> Result<Self, Error>
+    where
+        F: FnMut(Option<&WlSurface>) + 'static,
+    {
+        let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
+        info!(log, "Initializing a xkbcommon handler with keymap query";
+            "rules" => xkb_config.rules, "model" => xkb_config.model, "layout" => xkb_config.layout,
+            "variant" => xkb_config.variant, "options" => &xkb_config.options
+        );
+        let internal = KbdInternal::new(xkb_config, repeat_rate, repeat_delay, Box::new(focus_hook))
+            .map_err(|_| {
+                debug!(log, "Loading keymap failed");
+                Error::BadKeymap
+            })?;
+
+        info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
+
+        let keymap = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
+
+        Ok(Self {
+            arc: Arc::new(KbdRc {
+                internal: Mutex::new(internal),
+                keymap,
+                logger: log,
+            }),
+        })
+    }
+
     /// Handle a keystroke
     ///
     /// All keystrokes from the input backend should be fed _in order_ to this method of the

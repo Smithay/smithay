@@ -274,7 +274,7 @@ impl<D: 'static> SeatState<D> {
     {
         let me = self.clone();
         let mut inner = self.arc.inner.lock().unwrap();
-        let keyboard = self::keyboard::create_keyboard_handler(
+        let keyboard = self::keyboard::KeyboardHandle::new(
             xkb_config,
             repeat_delay,
             repeat_rate,
