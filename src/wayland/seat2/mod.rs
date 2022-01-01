@@ -369,11 +369,13 @@ pub struct SeatUserData<D> {
 
 impl<D> DestructionNotify for SeatUserData<D> {
     fn object_destroyed(&self, client_id: ClientId, object_id: ObjectId) {
-        //         dest_arc
-        //             .inner
-        //             .borrow_mut()
-        //             .known_seats
-        //             .retain(|s| !s.as_ref().equals(seat.as_ref()));
+        if let Some(seat) = self.seat.upgrade() {
+            seat.inner
+                .lock()
+                .unwrap()
+                .known_seats
+                .retain(|s| s.id() != object_id);
+        }
     }
 }
 
@@ -400,20 +402,19 @@ where
             wl_seat::Request::GetPointer { id } => {
                 let inner = self.arc.inner.lock().unwrap();
 
-                // let pointer = data_init.init(
-                //     id,
-                //     PointerUserData {
-                //         handle: inner.pointer.clone(),
-                //     },
-                // );
+                let pointer = data_init.init(
+                    id,
+                    PointerUserData {
+                        handle: inner.pointer.clone(),
+                    },
+                );
 
-                // let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref());
-                // if let Some(ref ptr_handle) = inner.pointer {
-                //     ptr_handle.new_pointer(pointer);
-                // } else {
-                //     // we should send a protocol error... but the protocol does not allow
-                //     // us, so this pointer will just remain inactive ¯\_(ツ)_/¯
-                // }
+                if let Some(ref ptr_handle) = inner.pointer {
+                    ptr_handle.new_pointer(pointer);
+                } else {
+                    // we should send a protocol error... but the protocol does not allow
+                    // us, so this pointer will just remain inactive ¯\_(ツ)_/¯
+                }
             }
             wl_seat::Request::GetKeyboard { id } => {
                 let inner = self.arc.inner.lock().unwrap();
@@ -458,36 +459,35 @@ impl<D: 'static> Dispatch<WlSeat> for Seat<D> {
             wl_seat::Request::GetPointer { id } => {
                 let inner = self.arc.inner.lock().unwrap();
 
-                // let pointer = data_init.init(
-                //     id,
-                //     PointerUserData {
-                //         handle: inner.pointer.clone(),
-                //     },
-                // );
+                let pointer = data_init.init(
+                    id,
+                    PointerUserData {
+                        handle: inner.pointer.clone(),
+                    },
+                );
 
-                // let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref());
-                // if let Some(ref ptr_handle) = inner.pointer {
-                //     ptr_handle.new_pointer(pointer);
-                // } else {
-                //     // we should send a protocol error... but the protocol does not allow
-                //     // us, so this pointer will just remain inactive ¯\_(ツ)_/¯
-                // }
+                if let Some(ref ptr_handle) = inner.pointer {
+                    ptr_handle.new_pointer(pointer);
+                } else {
+                    // we should send a protocol error... but the protocol does not allow
+                    // us, so this pointer will just remain inactive ¯\_(ツ)_/¯
+                }
             }
             wl_seat::Request::GetKeyboard { id } => {
                 let inner = self.arc.inner.lock().unwrap();
 
-                // let keyboard = data_init.init(
-                //     id,
-                //     KeyboardUserData {
-                //         handle: inner.keyboard.clone(),
-                //     },
-                // );
+                let keyboard = data_init.init(
+                    id,
+                    KeyboardUserData {
+                        handle: inner.keyboard.clone(),
+                    },
+                );
 
-                // if let Some(ref h) = inner.keyboard {
-                //     h.new_kbd(cx, keyboard);
-                // } else {
-                //     // same as pointer, should error but cannot
-                // }
+                if let Some(ref h) = inner.keyboard {
+                    h.new_kbd(cx, keyboard);
+                } else {
+                    // same as pointer, should error but cannot
+                }
             }
             wl_seat::Request::GetTouch { .. } => {
                 // TODO

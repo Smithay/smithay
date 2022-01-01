@@ -812,7 +812,7 @@ impl<D> DestructionNotify for PointerUserData<D> {
                 .lock()
                 .unwrap()
                 .known_pointers
-                .retain(|p| p.id() == object_id);
+                .retain(|p| p.id() != object_id);
         }
     }
 }
