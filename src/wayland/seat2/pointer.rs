@@ -20,44 +20,18 @@ use crate::{
     wayland::Serial,
 };
 
-use super::{SeatDispatch, SeatHandler, SeatState};
+use super::{SeatDispatch, SeatHandler};
 
-static CURSOR_IMAGE_ROLE: &str = "cursor_image";
+mod grab;
+use grab::{DefaultGrab, GrabStatus};
+pub use grab::{GrabStartData, PointerGrab};
 
-/// The role representing a surface set as the pointer cursor
-#[derive(Debug, Default, Copy, Clone)]
-pub struct CursorImageAttributes {
-    /// Location of the hotspot of the pointer in the surface
-    pub hotspot: Point<i32, Logical>,
-}
+mod cursor_image;
+use cursor_image::CURSOR_IMAGE_ROLE;
+pub use cursor_image::{CursorImageAttributes, CursorImageStatus};
 
-/// Possible status of a cursor as requested by clients
-#[derive(Debug, Clone, PartialEq)]
-pub enum CursorImageStatus {
-    /// The cursor should be hidden
-    Hidden,
-    /// The compositor should draw its cursor
-    Default,
-    /// The cursor should be drawn using this surface as an image
-    Image(WlSurface),
-}
-
-enum GrabStatus<D> {
-    None,
-    Active(Serial, Box<dyn PointerGrab<D>>),
-    Borrowed,
-}
-
-// PointerGrab is a trait, so we have to impl Debug manually
-impl<D> fmt::Debug for GrabStatus<D> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            GrabStatus::None => f.debug_tuple("GrabStatus::None").finish(),
-            GrabStatus::Active(serial, _) => f.debug_tuple("GrabStatus::Active").field(&serial).finish(),
-            GrabStatus::Borrowed => f.debug_tuple("GrabStatus::Borrowed").finish(),
-        }
-    }
-}
+mod axis_frame;
+pub use axis_frame::AxisFrame;
 
 struct PointerInternal<D> {
     known_pointers: Vec<WlPointer>,
@@ -172,6 +146,15 @@ impl<D> Clone for PointerHandle<D> {
 }
 
 impl<D> PointerHandle<D> {
+    pub(crate) fn new<F>(cb: F) -> PointerHandle<D>
+    where
+        F: FnMut(CursorImageStatus) + 'static + Send + Sync,
+    {
+        PointerHandle {
+            inner: Arc::new(Mutex::new(PointerInternal::new(cb))),
+        }
+    }
+
     pub(crate) fn new_pointer(&self, pointer: WlPointer) {
         let mut guard = self.inner.lock().unwrap();
         guard.known_pointers.push(pointer);
@@ -279,66 +262,6 @@ impl<D> PointerHandle<D> {
     pub fn current_location(&self) -> Point<f64, Logical> {
         self.inner.lock().unwrap().location
     }
-}
-
-/// Data about the event that started the grab.
-#[derive(Debug, Clone)]
-pub struct GrabStartData {
-    /// The focused surface and its location, if any, at the start of the grab.
-    ///
-    /// The location coordinates are in the global compositor space.
-    pub focus: Option<(WlSurface, Point<i32, Logical>)>,
-    /// The button that initiated the grab.
-    pub button: u32,
-    /// The location of the click that initiated the grab, in the global compositor space.
-    pub location: Point<f64, Logical>,
-}
-
-/// A trait to implement a pointer grab
-///
-/// In some context, it is necessary to temporarily change the behavior of the pointer. This is
-/// typically known as a pointer grab. A typical example would be, during a drag'n'drop operation,
-/// the underlying surfaces will no longer receive classic pointer event, but rather special events.
-///
-/// This trait is the interface to intercept regular pointer events and change them as needed, its
-/// interface mimics the [`PointerHandle`] interface.
-///
-/// If your logic decides that the grab should end, both [`PointerInnerHandle`] and [`PointerHandle`] have
-/// a method to change it.
-///
-/// When your grab ends (either as you requested it or if it was forcefully cancelled by the server),
-/// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
-/// rather than trying to guess when the grab will end.
-pub trait PointerGrab<D>: Send + Sync {
-    /// A motion was reported
-    fn motion(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        location: Point<f64, Logical>,
-        focus: Option<(WlSurface, Point<i32, Logical>)>,
-        serial: Serial,
-        time: u32,
-    );
-    /// A button press was reported
-    fn button(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        button: u32,
-        state: ButtonState,
-        serial: Serial,
-        time: u32,
-    );
-    /// An axis scroll was reported
-    fn axis(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        details: AxisFrame,
-    );
-    /// The data about the event that started the grab.
-    fn start_data(&self) -> &GrabStartData;
 }
 
 /// This inner handle is accessed from inside a pointer grab logic, and directly
@@ -510,217 +433,9 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     }
 }
 
-/// A frame of pointer axis events.
-///
-/// Can be used with the builder pattern, e.g.:
-///
-/// ```ignore
-/// AxisFrame::new()
-///     .source(AxisSource::Wheel)
-///     .discrete(Axis::Vertical, 6)
-///     .value(Axis::Vertical, 30, time)
-///     .stop(Axis::Vertical);
-/// ```
-#[derive(Copy, Clone, Debug)]
-pub struct AxisFrame {
-    source: Option<AxisSource>,
-    time: u32,
-    axis: (f64, f64),
-    discrete: (i32, i32),
-    stop: (bool, bool),
-}
-
-impl AxisFrame {
-    /// Create a new frame of axis events
-    pub fn new(time: u32) -> Self {
-        AxisFrame {
-            source: None,
-            time,
-            axis: (0.0, 0.0),
-            discrete: (0, 0),
-            stop: (false, false),
-        }
-    }
-
-    /// Specify the source of the axis events
-    ///
-    /// This event is optional, if no source is known, you can ignore this call.
-    /// Only one source event is allowed per frame.
-    ///
-    /// Using the [`AxisSource::Finger`] requires a stop event to be send,
-    /// when the user lifts off the finger (not necessarily in the same frame).
-    pub fn source(mut self, source: AxisSource) -> Self {
-        self.source = Some(source);
-        self
-    }
-
-    /// Specify discrete scrolling steps additionally to the computed value.
-    ///
-    /// This event is optional and gives the client additional information about
-    /// the nature of the axis event. E.g. a scroll wheel might issue separate steps,
-    /// while a touchpad may never issue this event as it has no steps.
-    pub fn discrete(mut self, axis: Axis, steps: i32) -> Self {
-        match axis {
-            Axis::HorizontalScroll => {
-                self.discrete.0 = steps;
-            }
-            Axis::VerticalScroll => {
-                self.discrete.1 = steps;
-            }
-            _ => unreachable!(),
-        };
-        self
-    }
-
-    /// The actual scroll value. This event is the only required one, but can also
-    /// be send multiple times. The values off one frame will be accumulated by the client.
-    pub fn value(mut self, axis: Axis, value: f64) -> Self {
-        match axis {
-            Axis::HorizontalScroll => {
-                self.axis.0 = value;
-            }
-            Axis::VerticalScroll => {
-                self.axis.1 = value;
-            }
-            _ => unreachable!(),
-        };
-        self
-    }
-
-    /// Notification of stop of scrolling on an axis.
-    ///
-    /// This event is required for sources of the [`AxisSource::Finger`] type
-    /// and otherwise optional.
-    pub fn stop(mut self, axis: Axis) -> Self {
-        match axis {
-            Axis::HorizontalScroll => {
-                self.stop.0 = true;
-            }
-            Axis::VerticalScroll => {
-                self.stop.1 = true;
-            }
-            _ => unreachable!(),
-        };
-        self
-    }
-}
-
-pub(crate) fn create_pointer_handler<F, D>(cb: F) -> PointerHandle<D>
-where
-    F: FnMut(CursorImageStatus) + 'static + Send + Sync,
-{
-    PointerHandle {
-        inner: Arc::new(Mutex::new(PointerInternal::new(cb))),
-    }
-}
-
 /*
  * Grabs definition
  */
-
-// The default grab, the behavior when no particular grab is in progress
-struct DefaultGrab;
-
-impl<D> PointerGrab<D> for DefaultGrab {
-    fn motion(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        location: Point<f64, Logical>,
-        focus: Option<(WlSurface, Point<i32, Logical>)>,
-        serial: Serial,
-        time: u32,
-    ) {
-        handle.motion(cx, location, focus, serial, time);
-    }
-
-    fn button(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        button: u32,
-        state: ButtonState,
-        serial: Serial,
-        time: u32,
-    ) {
-        handle.button(cx, button, state, serial, time);
-        handle.set_grab(
-            serial,
-            ClickGrab {
-                start_data: GrabStartData {
-                    focus: handle.current_focus().cloned(),
-                    button,
-                    location: handle.current_location(),
-                },
-            },
-        );
-    }
-
-    fn axis(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        details: AxisFrame,
-    ) {
-        handle.axis(cx, details);
-    }
-
-    fn start_data(&self) -> &GrabStartData {
-        unreachable!()
-    }
-}
-
-// A click grab, basic grab started when an user clicks a surface
-// to maintain it focused until the user releases the click.
-//
-// In case the user maintains several simultaneous clicks, release
-// the grab once all are released.
-struct ClickGrab {
-    start_data: GrabStartData,
-}
-
-impl<D> PointerGrab<D> for ClickGrab {
-    fn motion(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        location: Point<f64, Logical>,
-        _focus: Option<(WlSurface, Point<i32, Logical>)>,
-        serial: Serial,
-        time: u32,
-    ) {
-        handle.motion(cx, location, self.start_data.focus.clone(), serial, time);
-    }
-
-    fn button(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        button: u32,
-        state: ButtonState,
-        serial: Serial,
-        time: u32,
-    ) {
-        handle.button(cx, button, state, serial, time);
-        if handle.current_pressed().is_empty() {
-            // no more buttons are pressed, release the grab
-            handle.unset_grab(cx, serial, time);
-        }
-    }
-
-    fn axis(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        details: AxisFrame,
-    ) {
-        handle.axis(cx, details);
-    }
-
-    fn start_data(&self) -> &GrabStartData {
-        &self.start_data
-    }
-}
 
 #[derive(Debug)]
 pub struct PointerUserData<D> {

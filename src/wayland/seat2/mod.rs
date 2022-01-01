@@ -63,58 +63,8 @@ use wayland_server::{
     DataInit, DestructionNotify, Dispatch, Display, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
-///  Dispatch delegation helper
-pub trait DelegateDispatchBase<I: Resource> {
-    ///  Dispatch delegation helper
-    type UserData: Send + Sync + 'static;
-}
-
-///  Dispatch delegation helper
-pub trait DelegateDispatch<
-    I: Resource,
-    D: Dispatch<I, UserData = <Self as DelegateDispatchBase<I>>::UserData>,
->: Sized + DelegateDispatchBase<I>
-{
-    ///  Dispatch delegation helper
-    fn request(
-        &mut self,
-        client: &wayland_server::Client,
-        resource: &I,
-        request: I::Request,
-        data: &Self::UserData,
-        dhandle: &mut DisplayHandle<'_, D>,
-        init: &mut DataInit<'_, D>,
-    );
-}
-
-///  Dispatch delegation helper
-pub trait DelegateGlobalDispatchBase<I: Resource> {
-    ///  Dispatch delegation helper
-    type GlobalData: Send + Sync + 'static;
-}
-
-///  Dispatch delegation helper
-pub trait DelegateGlobalDispatch<
-    I: Resource,
-    D: GlobalDispatch<I, GlobalData = <Self as DelegateGlobalDispatchBase<I>>::GlobalData>
-        + Dispatch<I, UserData = <Self as DelegateDispatchBase<I>>::UserData>,
->: Sized + DelegateGlobalDispatchBase<I> + DelegateDispatch<I, D>
-{
-    ///  Dispatch delegation helper
-    fn bind(
-        &mut self,
-        handle: &mut DisplayHandle<'_, D>,
-        client: &wayland_server::Client,
-        resource: New<I>,
-        global_data: &Self::GlobalData,
-        data_init: &mut DataInit<'_, D>,
-    );
-
-    ///  Dispatch delegation helper
-    fn can_view(_client: wayland_server::Client, _global_data: &Self::GlobalData) -> bool {
-        true
-    }
-}
+pub mod delegate;
+use delegate::{DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase};
 
 #[derive(Debug)]
 struct Inner<D> {
@@ -153,6 +103,8 @@ impl<D> Inner<D> {
 
 pub trait SeatHandler {
     fn set_cursor(&mut self) {}
+
+    fn keyboard_focus(&mut self, focus: Option<&wl_surface::WlSurface>);
 }
 
 pub struct SeatDispatch<'a, D, H: SeatHandler>(pub &'a mut SeatState<D>, pub &'a mut H);
@@ -246,7 +198,7 @@ impl<D: 'static> SeatState<D> {
         F: FnMut(CursorImageStatus) + 'static + Send + Sync,
     {
         let mut inner = self.arc.inner.lock().unwrap();
-        let pointer = self::pointer::create_pointer_handler(cb);
+        let pointer = self::pointer::PointerHandle::new(cb);
         if inner.pointer.is_some() {
             // there is already a pointer, remove it and notify the clients
             // of the change
