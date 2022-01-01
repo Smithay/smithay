@@ -157,6 +157,15 @@ impl Dispatch<WlKeyboard> for App {
         cx: &mut DisplayHandle<'_, Self>,
         data_init: &mut wayland_server::DataInit<'_, Self>,
     ) {
+        DelegateDispatch::<WlKeyboard, _>::request(
+            &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
     }
 }
 
@@ -172,14 +181,14 @@ impl Dispatch<WlPointer> for App {
         cx: &mut DisplayHandle<'_, Self>,
         data_init: &mut wayland_server::DataInit<'_, Self>,
     ) {
-        // DelegateDispatch::<WlPointer, _>::request(
-        //     &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
-        //     client,
-        //     resource,
-        //     request,
-        //     data,
-        //     cx,
-        //     data_init,
-        // );
+        DelegateDispatch::<WlPointer, _>::request(
+            &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
     }
 }
