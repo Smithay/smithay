@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use smithay::reexports::wayland_server::Display;
-use smithay::wayland::seat2::{self as seat};
+use smithay::wayland::seat2::{self as seat, SeatHandler};
 
 use seat::{
     DelegateDispatch, DelegateGlobalDispatch, KeyboardUserData, PointerUserData, SeatDispatch, SeatState,
@@ -23,6 +23,10 @@ struct App {
 }
 
 struct InnerApp;
+
+impl SeatHandler for InnerApp {
+    fn set_cursor(&mut self) {}
+}
 
 impl Dispatch<WlSeat> for App {
     type UserData = SeatUserData<Self>;

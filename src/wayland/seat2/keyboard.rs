@@ -21,7 +21,7 @@ use wayland_server::{
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
 
-use super::{SeatDispatch, SeatState};
+use super::{SeatDispatch, SeatHandler, SeatState};
 
 /// Represents the current state of the keyboard modifiers
 ///
@@ -541,7 +541,7 @@ pub struct KeyboardUserData {
     pub(crate) handle: Option<KeyboardHandle>,
 }
 
-impl<D, H> Dispatch<WlKeyboard> for SeatDispatch<'_, D, H> {
+impl<D, H: SeatHandler> Dispatch<WlKeyboard> for SeatDispatch<'_, D, H> {
     type UserData = KeyboardUserData;
 
     fn request(
