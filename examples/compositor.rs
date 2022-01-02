@@ -20,7 +20,7 @@ use wayland_server::{DataInit, New};
 
 struct App {
     inner: InnerApp,
-    compositor_state: CompositorState,
+    compositor_state: CompositorState<Self>,
 }
 
 impl CompositorHandler for InnerApp {
@@ -121,7 +121,7 @@ impl Dispatch<WlCompositor> for App {
 }
 
 impl Dispatch<WlSurface> for App {
-    type UserData = SurfaceUserData;
+    type UserData = SurfaceUserData<Self>;
 
     fn request(
         &mut self,
@@ -230,7 +230,7 @@ impl Dispatch<WlSubcompositor> for App {
 }
 
 impl Dispatch<WlSubsurface> for App {
-    type UserData = SubsurfaceUserData;
+    type UserData = SubsurfaceUserData<Self>;
 
     fn request(
         &mut self,
