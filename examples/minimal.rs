@@ -36,7 +36,9 @@ use wayland_server::{
     DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
 };
 
-struct InnerApp;
+struct InnerApp {
+    display: Rc<RefCell<Display<App>>>,
+}
 
 impl CompositorHandler for InnerApp {
     fn commit(&mut self, surface: &WlSurface) {
@@ -55,7 +57,10 @@ impl CompositorHandler for InnerApp {
                         .get::<RefCell<SurfaceData>>()
                         .unwrap()
                         .borrow_mut();
-                    data.update_buffer(&mut *states.cached_state.current::<SurfaceAttributes>());
+                    data.update_buffer(
+                        &mut self.display.borrow().handle(),
+                        &mut *states.cached_state.current::<SurfaceAttributes>(),
+                    );
                 },
                 |_, _, _| true,
             );
@@ -73,10 +78,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
-    let mut display: Display<App> = Display::new()?;
+    let display: Display<App> = Display::new()?;
+    let display = Rc::new(RefCell::new(display));
+
     let mut state = App {
-        inner: InnerApp,
-        compositor_state: CompositorState::new(&mut display.handle(), None),
+        inner: InnerApp {
+            display: display.clone(),
+        },
+        compositor_state: CompositorState::new(&mut display.borrow().handle(), None),
     };
     let listener = ListeningSocket::bind("wayland-5").unwrap();
     let mut clients = Vec::new();
@@ -99,14 +108,17 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
             Some(stream) => {
                 println!("Got a client: {:?}", stream);
 
-                let client = display.insert_client(stream, Arc::new(ClientState)).unwrap();
+                let client = display
+                    .borrow_mut()
+                    .insert_client(stream, Arc::new(ClientState))
+                    .unwrap();
                 clients.push(client);
             }
             None => {}
         }
 
-        display.dispatch_clients(&mut state)?;
-        display.flush_clients()?;
+        display.borrow_mut().dispatch_clients(&mut state)?;
+        display.borrow_mut().flush_clients()?;
     }
 }
 
@@ -120,14 +132,14 @@ pub struct SurfaceData {
 }
 
 impl SurfaceData {
-    fn update_buffer(&mut self, attrs: &mut SurfaceAttributes) {
+    fn update_buffer(&mut self, cx: &mut DisplayHandle<App>, attrs: &mut SurfaceAttributes) {
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
                 self.buffer_dimensions = buffer_dimensions(&buffer);
                 self.buffer_scale = attrs.buffer_scale;
                 if let Some(old_buffer) = std::mem::replace(&mut self.buffer, Some(buffer)) {
-                    // old_buffer.release(cx);
+                    old_buffer.release(cx);
                 }
                 self.texture = None;
             }
