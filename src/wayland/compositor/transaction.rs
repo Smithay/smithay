@@ -45,7 +45,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::{protocol::wl_surface::WlSurface, Resource};
 
 use crate::wayland::Serial;
 
@@ -243,10 +243,11 @@ impl TransactionQueue {
             // if not, does this transaction depend on any previous transaction?
             if !skip {
                 for (s, _) in &self.transactions[i].surfaces {
-                    if !s.as_ref().is_alive() {
-                        continue;
-                    }
-                    if self.seen_surfaces.contains(&s.as_ref().id()) {
+                    // TODO:
+                    // if !s.as_ref().is_alive() {
+                    //     continue;
+                    // }
+                    if self.seen_surfaces.contains(&s.id().protocol_id()) {
                         skip = true;
                         break;
                     }
@@ -257,10 +258,11 @@ impl TransactionQueue {
                 // this transaction is not yet ready and should be skipped, add its surfaces to our
                 // seen list
                 for (s, _) in &self.transactions[i].surfaces {
-                    if !s.as_ref().is_alive() {
-                        continue;
-                    }
-                    self.seen_surfaces.insert(s.as_ref().id());
+                    // TODO:
+                    // if !s.as_ref().is_alive() {
+                    //     continue;.
+                    // }
+                    self.seen_surfaces.insert(s.id().protocol_id());
                 }
                 i += 1;
             } else {

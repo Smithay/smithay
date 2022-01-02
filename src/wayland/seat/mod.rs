@@ -66,8 +66,9 @@ use wayland_server::{
     DataInit, DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
-mod delegate;
-use delegate::{DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase};
+use crate::wayland::delegate::{
+    DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
+};
 
 #[derive(Debug)]
 struct Inner<D> {
