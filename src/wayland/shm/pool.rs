@@ -20,11 +20,16 @@ thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr:
 static SIGBUS_INIT: Once = Once::new();
 static mut OLD_SIGBUS_HANDLER: *mut SigAction = 0 as *mut SigAction;
 
+#[derive(Debug)]
 pub struct Pool {
     map: RwLock<MemMap>,
     fd: RawFd,
     log: ::slog::Logger,
 }
+
+// TODO: is this really safe?
+unsafe impl Send for Pool {}
+unsafe impl Sync for Pool {}
 
 pub enum ResizeError {
     InvalidSize,
@@ -99,6 +104,7 @@ impl Drop for Pool {
     }
 }
 
+#[derive(Debug)]
 struct MemMap {
     ptr: *mut u8,
     fd: RawFd,
