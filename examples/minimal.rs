@@ -40,7 +40,7 @@ struct InnerApp;
 
 impl CompositorHandler<App> for InnerApp {
     fn commit(&mut self, cx: &mut DisplayHandle<App>, surface: &WlSurface) {
-        if !is_sync_subsurface::<App>(surface) {
+        if !is_sync_subsurface(cx, surface) {
             // Update the buffer of all child surfaces
             with_surface_tree_upward::<App, _, _, _, _>(
                 surface,
