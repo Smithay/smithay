@@ -382,7 +382,7 @@ pub fn give_role<D: 'static>(
 
 /// Access the states associated to this surface
 pub fn with_states<D, F, T>(
-    cx: &mut DisplayHandle<'_, D>,
+    // cx: &mut DisplayHandle<'_, D>,
     surface: &WlSurface,
     f: F,
 ) -> Result<T, DeadResource>
@@ -390,9 +390,9 @@ where
     D: 'static,
     F: FnOnce(&SurfaceData<D>) -> T,
 {
-    if cx.object_info(surface.id()).is_err() {
-        return Err(DeadResource);
-    }
+    // if cx.object_info(surface.id()).is_err() {
+    //     return Err(DeadResource);
+    // }
     Ok(PrivateSurfaceData::with_states(surface, f))
 }
 

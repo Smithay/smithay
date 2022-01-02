@@ -481,7 +481,7 @@ where
                                         );
                                         return;
                                     }
-                                    compositor::with_states(cx, &surface, |states| {
+                                    compositor::with_states::<D, _, _>(&surface, |states| {
                                         states.data_map.insert_if_missing_threadsafe(|| {
                                             Mutex::new(CursorImageAttributes {
                                                 hotspot: (0, 0).into(),
