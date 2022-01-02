@@ -60,7 +60,7 @@ pub mod compositor;
 // pub mod explicit_synchronization;
 // pub mod output;
 pub mod seat;
-// pub mod shell;
+pub mod shell;
 pub mod shm;
 // pub mod tablet_manager;
 // pub mod xdg_activation;
