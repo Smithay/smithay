@@ -116,7 +116,7 @@ where
  */
 
 impl<D> Cacheable<D> for SurfaceAttributes {
-    fn commit(&mut self, cx: &mut DisplayHandle<'_, D>) -> Self {
+    fn commit(&mut self, _cx: &mut DisplayHandle<'_, D>) -> Self {
         SurfaceAttributes {
             buffer: self.buffer.take(),
             buffer_scale: self.buffer_scale,
@@ -478,13 +478,13 @@ impl Default for SubsurfaceCachedState {
 }
 
 impl<D> Cacheable<D> for SubsurfaceCachedState {
-    fn commit(&mut self, cx: &mut DisplayHandle<'_, D>) -> Self {
+    fn commit(&mut self, _cx: &mut DisplayHandle<'_, D>) -> Self {
         Self {
             location: self.location,
         }
     }
 
-    fn merge_into(self, into: &mut Self, cx: &mut DisplayHandle<'_, D>) {
+    fn merge_into(self, into: &mut Self, _cx: &mut DisplayHandle<'_, D>) {
         into.location = self.location;
     }
 }
