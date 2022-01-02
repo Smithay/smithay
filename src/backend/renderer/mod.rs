@@ -17,6 +17,7 @@ use crate::wayland::compositor::SurfaceData;
 use cgmath::Matrix3;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
+use wayland_server::Resource;
 
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
@@ -319,9 +320,7 @@ pub trait ImportDma: Renderer {
         buffer: &wl_buffer::WlBuffer,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         let dmabuf = buffer
-            .as_ref()
-            .user_data()
-            .get::<Dmabuf>()
+            .data::<Dmabuf>()
             .expect("import_dma_buffer without checking buffer type?");
         self.import_dmabuf(dmabuf)
     }
@@ -436,7 +435,7 @@ pub enum BufferType {
 /// or otherwise not supported (e.g. not initialized using one of smithays [`crate::wayland`]-handlers).
 #[cfg(feature = "wayland_frontend")]
 pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
-    if buffer.as_ref().user_data().get::<Dmabuf>().is_some() {
+    if buffer.data::<Dmabuf>().is_some() {
         return Some(BufferType::Dma);
     }
 
@@ -466,7 +465,7 @@ pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
 pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Buffer>> {
     use crate::backend::allocator::Buffer;
 
-    if let Some(buf) = buffer.as_ref().user_data().get::<Dmabuf>() {
+    if let Some(buf) = buffer.data::<Dmabuf>() {
         return Some((buf.width() as i32, buf.height() as i32).into());
     }
 
