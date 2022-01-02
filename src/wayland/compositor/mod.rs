@@ -92,6 +92,7 @@ pub use self::handlers::SubsurfaceCachedState;
 use self::tree::PrivateSurfaceData;
 pub use self::tree::{AlreadyHasRole, TraversalAction};
 use crate::utils::{user_data::UserDataMap, Buffer, DeadResource, Logical, Point, Rectangle};
+use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
 use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface::WlSurface};
@@ -424,6 +425,8 @@ pub struct CompositorDispatch<'a, H: CompositorHandler>(pub &'a mut CompositorSt
 #[derive(Debug)]
 pub struct CompositorState {
     log: slog::Logger,
+    compositor: GlobalId,
+    subcompositor: GlobalId,
 }
 
 impl CompositorState {
@@ -444,7 +447,21 @@ impl CompositorState {
         let compositor = display.create_global::<WlCompositor>(4, ());
         let subcompositor = display.create_global::<WlSubcompositor>(1, ());
 
-        CompositorState { log }
+        CompositorState {
+            log,
+            compositor,
+            subcompositor,
+        }
+    }
+
+    /// Get id of WlCompositor globabl
+    pub fn compositor_globabl(&self) -> GlobalId {
+        self.compositor.clone()
+    }
+
+    /// Get id of WlSubcompositor globabl
+    pub fn subcompositor_globabl(&self) -> GlobalId {
+        self.subcompositor.clone()
     }
 }
 
