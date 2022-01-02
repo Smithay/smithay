@@ -765,7 +765,7 @@ impl ImportMemWl for Gles2Renderer {
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&crate::wayland::compositor::SurfaceData>,
+        surface: Option<&crate::wayland::compositor::SurfaceData<D>>,
         damage: &[Rectangle<i32, Buffer>],
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;

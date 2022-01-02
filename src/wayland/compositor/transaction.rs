@@ -45,7 +45,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use wayland_server::{protocol::wl_surface::WlSurface, Resource};
+use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 use crate::wayland::Serial;
 
@@ -195,10 +195,10 @@ impl Transaction {
             })
     }
 
-    pub(crate) fn apply(self) {
+    pub(crate) fn apply<D: 'static>(self, cx: &mut DisplayHandle<'_, D>) {
         for (surface, id) in self.surfaces {
-            PrivateSurfaceData::with_states(&surface, |states| {
-                states.cached_state.apply_state(id);
+            PrivateSurfaceData::<D>::with_states(&surface, |states| {
+                states.cached_state.apply_state(id, cx);
             })
         }
     }
@@ -217,7 +217,7 @@ impl TransactionQueue {
         self.transactions.push(t);
     }
 
-    pub(crate) fn apply_ready(&mut self) {
+    pub(crate) fn apply_ready<D: 'static>(&mut self, cx: &mut DisplayHandle<'_, D>) {
         // this is a very non-optimized implementation
         // we just iterate over the queue of transactions, keeping track of which
         // surface we have seen as they encode transaction dependencies
@@ -267,7 +267,7 @@ impl TransactionQueue {
                 i += 1;
             } else {
                 // this transaction is to be applied, yay!
-                self.transactions.remove(i).apply();
+                self.transactions.remove(i).apply(cx);
             }
         }
     }

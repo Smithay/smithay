@@ -493,8 +493,8 @@ where
                             match surface {
                                 Some(surface) => {
                                     // tolerate re-using the same surface
-                                    if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
-                                        && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
+                                    if compositor::give_role::<D>(&surface, CURSOR_IMAGE_ROLE).is_err()
+                                        && compositor::get_role::<D>(&surface) != Some(CURSOR_IMAGE_ROLE)
                                     {
                                         pointer.post_error(
                                             dhandle,
@@ -503,7 +503,7 @@ where
                                         );
                                         return;
                                     }
-                                    compositor::with_states(&surface, |states| {
+                                    compositor::with_states::<D, _, _>(&surface, |states| {
                                         states.data_map.insert_if_missing_threadsafe(|| {
                                             Mutex::new(CursorImageAttributes {
                                                 hotspot: (0, 0).into(),
