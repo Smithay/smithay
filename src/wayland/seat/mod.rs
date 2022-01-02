@@ -109,12 +109,9 @@ impl<D> Inner<D> {
     }
 }
 
-/// Handler trait for Seat
-pub trait SeatHandler<D> {}
-
 /// Seat event dispatching struct
 #[derive(Debug)]
-pub struct SeatDispatch<'a, D, H: SeatHandler<D>>(pub &'a mut SeatState<D>, pub &'a mut H);
+pub struct SeatDispatch<'a, D>(pub &'a mut SeatState<D>);
 
 /// A Seat handle
 ///
@@ -407,16 +404,15 @@ impl<D> DestructionNotify for SeatUserData<D> {
     }
 }
 
-impl<D: 'static, H: SeatHandler<D>> DelegateDispatchBase<WlSeat> for SeatDispatch<'_, D, H> {
+impl<D: 'static> DelegateDispatchBase<WlSeat> for SeatDispatch<'_, D> {
     type UserData = SeatUserData<D>;
 }
 
-impl<D: 'static, H> DelegateDispatch<WlSeat, D> for SeatDispatch<'_, D, H>
+impl<D: 'static> DelegateDispatch<WlSeat, D> for SeatDispatch<'_, D>
 where
     D: Dispatch<WlSeat, UserData = SeatUserData<D>>
         + Dispatch<WlKeyboard, UserData = KeyboardUserData>
         + Dispatch<WlPointer, UserData = PointerUserData<D>>,
-    H: SeatHandler<D>,
 {
     fn request(
         &mut self,
@@ -477,17 +473,16 @@ where
     }
 }
 
-impl<D, H: SeatHandler<D>> DelegateGlobalDispatchBase<WlSeat> for SeatDispatch<'_, D, H> {
+impl<D> DelegateGlobalDispatchBase<WlSeat> for SeatDispatch<'_, D> {
     type GlobalData = ();
 }
 
-impl<D: 'static, H> DelegateGlobalDispatch<WlSeat, D> for SeatDispatch<'_, D, H>
+impl<D: 'static> DelegateGlobalDispatch<WlSeat, D> for SeatDispatch<'_, D>
 where
     D: GlobalDispatch<WlSeat, GlobalData = ()>
         + Dispatch<WlSeat, UserData = SeatUserData<D>>
         + Dispatch<WlKeyboard, UserData = KeyboardUserData>
         + Dispatch<WlPointer, UserData = PointerUserData<D>>,
-    H: SeatHandler<D>,
 {
     fn bind(
         &mut self,
