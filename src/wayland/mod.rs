@@ -54,7 +54,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-// pub mod compositor;
+pub mod compositor;
 // pub mod data_device;
 // pub mod dmabuf;
 // pub mod explicit_synchronization;
@@ -65,6 +65,8 @@ pub mod seat;
 // pub mod tablet_manager;
 // pub mod xdg_activation;
 // pub mod xdg_foreign;
+
+pub mod delegate;
 
 /// A global [`SerialCounter`] for use in your compositor.
 ///
