@@ -423,7 +423,7 @@ where
                     },
                 );
 
-                super::with_states::<D, _, _>(&surface, |states| {
+                super::with_states(handle, &surface, |states| {
                     states.data_map.insert_if_missing_threadsafe(SubsurfaceState::new)
                 })
                 .unwrap();
