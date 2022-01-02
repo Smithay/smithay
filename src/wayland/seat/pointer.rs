@@ -14,13 +14,11 @@ use wayland_server::{
 
 use crate::{
     utils::{Logical, Point},
+    wayland::delegate::{DelegateDispatch, DelegateDispatchBase},
     wayland::Serial,
 };
 
-use super::{
-    delegate::{DelegateDispatch, DelegateDispatchBase},
-    SeatDispatch, SeatHandler,
-};
+use super::{SeatDispatch, SeatHandler};
 
 mod grab;
 use grab::{DefaultGrab, GrabStatus};
