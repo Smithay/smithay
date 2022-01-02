@@ -73,20 +73,14 @@
 //!
 //! If you are already using an handler for this signal, you probably don't want to use this handler.
 
-use self::pool::{Pool, ResizeError};
-use std::{rc::Rc, sync::Arc};
 use wayland_server::{
     backend::GlobalId,
     protocol::{
-        wl_buffer::{self, WlBuffer},
+        wl_buffer::{self},
         wl_shm::{self, WlShm},
-        wl_shm_pool::{self, WlShmPool},
+        wl_shm_pool::WlShmPool,
     },
-    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
-};
-
-use super::delegate::{
-    DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
+    Dispatch, DisplayHandle, GlobalDispatch, Resource,
 };
 
 mod handlers;
