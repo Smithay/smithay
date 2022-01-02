@@ -15,7 +15,7 @@ use wayland_server::{
 use crate::{
     utils::{Logical, Point},
     wayland::delegate::{DelegateDispatch, DelegateDispatchBase},
-    wayland::Serial,
+    wayland::{compositor, Serial},
 };
 
 use super::{SeatDispatch, SeatHandler};
@@ -448,10 +448,10 @@ where
     fn request(
         &mut self,
         _client: &wayland_server::Client,
-        resource: &WlPointer,
+        pointer: &WlPointer,
         request: wl_pointer::Request,
         data: &Self::UserData,
-        _dhandle: &mut DisplayHandle<'_, D>,
+        dhandle: &mut DisplayHandle<'_, D>,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
@@ -467,36 +467,35 @@ where
                     // is of the same client
                     let PointerInternal { ref focus, .. } = *guard;
                     if let Some((ref focus, _)) = *focus {
-                        if focus.id().same_client_as(&resource.id()) {
+                        if focus.id().same_client_as(&pointer.id()) {
                             match surface {
                                 Some(surface) => {
-                                    // TODO:
-
                                     // tolerate re-using the same surface
-                                    // if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
-                                    //     && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
-                                    // {
-                                    //     pointer.as_ref().post_error(
-                                    //         wl_pointer::Error::Role as u32,
-                                    //         "Given wl_surface has another role.".into(),
-                                    //     );
-                                    //     return;
-                                    // }
-                                    // compositor::with_states(&surface, |states| {
-                                    //     states.data_map.insert_if_missing_threadsafe(|| {
-                                    //         Mutex::new(CursorImageAttributes {
-                                    //             hotspot: (0, 0).into(),
-                                    //         })
-                                    //     });
-                                    //     states
-                                    //         .data_map
-                                    //         .get::<Mutex<CursorImageAttributes>>()
-                                    //         .unwrap()
-                                    //         .lock()
-                                    //         .unwrap()
-                                    //         .hotspot = (hotspot_x, hotspot_y).into();
-                                    // })
-                                    // .unwrap();
+                                    if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
+                                        && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
+                                    {
+                                        pointer.post_error(
+                                            dhandle,
+                                            wl_pointer::Error::Role,
+                                            "Given wl_surface has another role.",
+                                        );
+                                        return;
+                                    }
+                                    compositor::with_states(&surface, |states| {
+                                        states.data_map.insert_if_missing_threadsafe(|| {
+                                            Mutex::new(CursorImageAttributes {
+                                                hotspot: (0, 0).into(),
+                                            })
+                                        });
+                                        states
+                                            .data_map
+                                            .get::<Mutex<CursorImageAttributes>>()
+                                            .unwrap()
+                                            .lock()
+                                            .unwrap()
+                                            .hotspot = (hotspot_x, hotspot_y).into();
+                                    })
+                                    .unwrap();
 
                                     (guard.image_callback)(CursorImageStatus::Image(surface));
                                 }
