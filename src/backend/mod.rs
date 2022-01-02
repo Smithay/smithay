@@ -78,12 +78,12 @@
 
 pub mod allocator;
 pub mod input;
-// pub mod renderer;
+pub mod renderer;
 
 #[cfg(feature = "backend_drm")]
 pub mod drm;
-// #[cfg(feature = "backend_egl")]
-// pub mod egl;
+#[cfg(feature = "backend_egl")]
+pub mod egl;
 #[cfg(feature = "backend_libinput")]
 pub mod libinput;
 #[cfg(feature = "backend_session")]
@@ -91,11 +91,11 @@ pub mod session;
 #[cfg(feature = "backend_udev")]
 pub mod udev;
 
-// #[cfg(feature = "backend_winit")]
-// pub mod winit;
+#[cfg(feature = "backend_winit")]
+pub mod winit;
 
-// #[cfg(feature = "backend_x11")]
-// pub mod x11;
+#[cfg(feature = "backend_x11")]
+pub mod x11;
 
 /// Error that can happen when swapping buffers.
 #[derive(Debug, thiserror::Error)]
