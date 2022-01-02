@@ -155,7 +155,7 @@ impl<D: 'static> PrivateSurfaceData<D> {
 
     pub fn commit(surface: &WlSurface, cx: &mut DisplayHandle<'_, D>) {
         let is_sync = is_effectively_sync::<D>(surface);
-        let children = get_children::<D>(surface);
+        let children = get_children(cx, surface);
         let my_data_mutex = &surface.data::<SurfaceUserData<D>>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         // commit our state
