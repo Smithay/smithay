@@ -23,8 +23,8 @@ struct App {
     compositor_state: CompositorState<Self>,
 }
 
-impl CompositorHandler for InnerApp {
-    fn commit(&mut self, surface: &WlSurface) {
+impl CompositorHandler<App> for InnerApp {
+    fn commit(&mut self, cx: &mut DisplayHandle<App>, surface: &WlSurface) {
         dbg!("Commit", surface);
     }
 }
