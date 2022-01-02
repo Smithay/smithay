@@ -764,7 +764,7 @@ impl<D> Cacheable<D> for SurfaceCachedState {
 // }
 
 pub trait XdgShellHandler<D> {
-    fn request(&mut self, request: XdgRequest);
+    fn request(&mut self, cx: &mut DisplayHandle<'_, D>, request: XdgRequest);
 }
 pub struct XdgShellDispatch<'a, D, H: XdgShellHandler<D>>(pub &'a mut XdgShellState<D>, pub &'a mut H);
 

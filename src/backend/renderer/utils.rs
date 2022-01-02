@@ -15,7 +15,10 @@ use std::{
     cell::RefCell,
     collections::{hash_map::Entry, HashMap},
 };
-use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
+use wayland_server::{
+    protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface},
+    DisplayHandle,
+};
 
 #[derive(Default)]
 pub(crate) struct SurfaceState {
@@ -29,7 +32,7 @@ pub(crate) struct SurfaceState {
 }
 
 impl SurfaceState {
-    pub fn update_buffer(&mut self, attrs: &mut SurfaceAttributes) {
+    pub fn update_buffer<D>(&mut self, cx: &mut DisplayHandle<'_, D>, attrs: &mut SurfaceAttributes) {
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
@@ -38,7 +41,7 @@ impl SurfaceState {
                 self.buffer_transform = attrs.buffer_transform.into();
                 if let Some(old_buffer) = std::mem::replace(&mut self.buffer, Some(buffer)) {
                     if &old_buffer != self.buffer.as_ref().unwrap() {
-                        old_buffer.release();
+                        old_buffer.release(cx);
                     }
                 }
                 self.textures.clear();
@@ -49,7 +52,7 @@ impl SurfaceState {
                 // remove the contents
                 self.buffer_dimensions = None;
                 if let Some(buffer) = self.buffer.take() {
-                    buffer.release();
+                    buffer.release(cx);
                 };
                 self.textures.clear();
                 #[cfg(feature = "desktop")]
@@ -76,9 +79,9 @@ impl SurfaceState {
 /// not be accessible anymore, but [`draw_surface_tree`] and other
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
-pub fn on_commit_buffer_handler(surface: &WlSurface) {
-    if !is_sync_subsurface(surface) {
-        with_surface_tree_upward(
+pub fn on_commit_buffer_handler<D: 'static>(cx: &mut DisplayHandle<'_, D>, surface: &WlSurface) {
+    if !is_sync_subsurface(cx, surface) {
+        with_surface_tree_upward::<D, _, _, _, _>(
             surface,
             (),
             |_, _, _| TraversalAction::DoChildren(()),
@@ -91,7 +94,7 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
                     .get::<RefCell<SurfaceState>>()
                     .unwrap()
                     .borrow_mut();
-                data.update_buffer(&mut *states.cached_state.current::<SurfaceAttributes>());
+                data.update_buffer(cx, &mut *states.cached_state.current::<SurfaceAttributes>());
             },
             |_, _, _| true,
         );
