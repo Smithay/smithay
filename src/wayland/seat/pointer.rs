@@ -18,7 +18,7 @@ use crate::{
     wayland::{compositor, Serial},
 };
 
-use super::{SeatDispatch, SeatHandler};
+use super::SeatDispatch;
 
 mod grab;
 use grab::{DefaultGrab, GrabStatus};
@@ -459,11 +459,11 @@ pub struct PointerUserData<D> {
     pub(crate) handle: Option<PointerHandle<D>>,
 }
 
-impl<D: 'static, H: SeatHandler<D>> DelegateDispatchBase<WlPointer> for SeatDispatch<'_, D, H> {
+impl<D: 'static> DelegateDispatchBase<WlPointer> for SeatDispatch<'_, D> {
     type UserData = PointerUserData<D>;
 }
 
-impl<D, H: SeatHandler<D>> DelegateDispatch<WlPointer, D> for SeatDispatch<'_, D, H>
+impl<D> DelegateDispatch<WlPointer, D> for SeatDispatch<'_, D>
 where
     D: 'static + Dispatch<WlPointer, UserData = PointerUserData<D>>,
 {
