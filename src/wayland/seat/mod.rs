@@ -56,7 +56,7 @@ pub use self::{
 };
 
 use wayland_server::{
-    backend::{ClientId, ObjectId},
+    backend::{ClientId, GlobalId, ObjectId},
     protocol::{
         wl_keyboard::WlKeyboard,
         wl_pointer::WlPointer,
@@ -129,12 +129,14 @@ pub struct SeatDispatch<'a, D, H: SeatHandler<D>>(pub &'a mut SeatState<D>, pub 
 #[derive(Debug)]
 pub struct SeatState<D> {
     arc: Arc<SeatRc<D>>,
+    seat: GlobalId,
 }
 
 impl<D> Clone for SeatState<D> {
     fn clone(&self) -> Self {
         Self {
             arc: self.arc.clone(),
+            seat: self.seat.clone(),
         }
     }
 }
@@ -156,7 +158,7 @@ impl<D: 'static> SeatState<D> {
         let log = crate::slog_or_fallback(logger);
         let log = log.new(slog::o!("smithay_module" => "seat_handler", "seat_name" => name.clone()));
 
-        display.create_global(5, ());
+        let seat = display.create_global(5, ());
 
         Self {
             arc: Arc::new(SeatRc {
@@ -168,7 +170,13 @@ impl<D: 'static> SeatState<D> {
                 }),
                 log,
             }),
+            seat,
         }
+    }
+
+    /// Get id of WlSeat global
+    pub fn seat_global(&self) -> GlobalId {
+        self.seat.clone()
     }
 
     /// Adds the pointer capability to this seat
