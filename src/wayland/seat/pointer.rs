@@ -473,7 +473,7 @@ where
         pointer: &WlPointer,
         request: wl_pointer::Request,
         data: &Self::UserData,
-        dhandle: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_, D>,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
@@ -493,17 +493,17 @@ where
                             match surface {
                                 Some(surface) => {
                                     // tolerate re-using the same surface
-                                    if compositor::give_role::<D>(&surface, CURSOR_IMAGE_ROLE).is_err()
-                                        && compositor::get_role::<D>(&surface) != Some(CURSOR_IMAGE_ROLE)
+                                    if compositor::give_role(cx, &surface, CURSOR_IMAGE_ROLE).is_err()
+                                        && compositor::get_role(cx, &surface) != Some(CURSOR_IMAGE_ROLE)
                                     {
                                         pointer.post_error(
-                                            dhandle,
+                                            cx,
                                             wl_pointer::Error::Role,
                                             "Given wl_surface has another role.",
                                         );
                                         return;
                                     }
-                                    compositor::with_states::<D, _, _>(&surface, |states| {
+                                    compositor::with_states(cx, &surface, |states| {
                                         states.data_map.insert_if_missing_threadsafe(|| {
                                             Mutex::new(CursorImageAttributes {
                                                 hotspot: (0, 0).into(),
