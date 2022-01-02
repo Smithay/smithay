@@ -93,7 +93,9 @@ use super::PingError;
 
 // handlers for the xdg_shell protocol
 pub(super) mod xdg_handlers;
-pub use xdg_handlers::{ShellSurfaceUserData, XdgSurfaceUserData, XdgWmBaseUserData};
+pub use xdg_handlers::{
+    XdgPositionerUserData, XdgShellSurfaceUserData, XdgSurfaceUserData, XdgWmBaseUserData,
+};
 
 /// The role of an XDG toplevel surface.
 ///
@@ -796,12 +798,6 @@ impl<D> XdgShellState<D> {
             _ph: PhantomData::<D>,
         };
 
-        // let shell_data = ShellData {
-        //     log: log.new(slog::o!("smithay_module" => "xdg_shell_handler")),
-        //     // user_impl: Rc::new(RefCell::new(implementation)),
-        //     shell_state: shell_state.clone(),
-        // };
-
         let xdg_shell_global = display.create_global(
             3,
             (),
@@ -950,7 +946,7 @@ impl ToplevelSurface {
         let shell = {
             let data = self
                 .shell_surface
-                .data::<self::xdg_handlers::ShellSurfaceUserData>()
+                .data::<self::xdg_handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.wm_base.clone()
         };
@@ -1021,7 +1017,7 @@ impl ToplevelSurface {
             .unwrap_or(None);
             if let Some((configure, decoration_mode_changed)) = configure {
                 if decoration_mode_changed {
-                    if let Some(data) = self.shell_surface.data::<ShellSurfaceUserData>() {
+                    if let Some(data) = self.shell_surface.data::<XdgShellSurfaceUserData>() {
                         if let Some(decoration) = &*data.decoration.lock().unwrap() {
                             // TODO:
                             // self::decoration::send_decoration_configure(
@@ -1083,7 +1079,7 @@ impl ToplevelSurface {
         if !configured {
             let data = self
                 .shell_surface
-                .data::<self::xdg_handlers::ShellSurfaceUserData>()
+                .data::<self::xdg_handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.xdg_surface.post_error(
                 cx,
@@ -1168,8 +1164,8 @@ impl ToplevelSurface {
     }
 
     /// Returns the parent of this toplevel surface.
-    pub fn parent<D: 'static>(&self, cx: &mut DisplayHandle<'_, D>) -> Option<wl_surface::WlSurface> {
-        xdg_handlers::get_parent(cx, &self.shell_surface)
+    pub fn parent<D: 'static>(&self) -> Option<wl_surface::WlSurface> {
+        xdg_handlers::get_parent::<D>(&self.shell_surface)
     }
 
     /// Sets the parent of this toplevel surface and returns whether the parent was successfully set.
@@ -1189,7 +1185,7 @@ impl ToplevelSurface {
         }
 
         // Unset the parent
-        xdg_handlers::set_parent(cx, &self.shell_surface, None);
+        xdg_handlers::set_parent::<D>(&self.shell_surface, None);
 
         true
     }
@@ -1270,7 +1266,7 @@ impl PopupSurface {
         let shell = {
             let data = self
                 .shell_surface
-                .data::<self::xdg_handlers::ShellSurfaceUserData>()
+                .data::<self::xdg_handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.wm_base.clone()
         };
@@ -1388,7 +1384,7 @@ impl PopupSurface {
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook<D: 'static>(cx: &mut DisplayHandle<'_, D>, surface: &wl_surface::WlSurface) {
+    pub(crate) fn commit_hook<D: 'static>(surface: &wl_surface::WlSurface) {
         let send_error_to = compositor::with_states::<D, _, _>(surface, |states| {
             let attributes = states
                 .data_map
@@ -1404,12 +1400,15 @@ impl PopupSurface {
         })
         .unwrap_or(None);
         if let Some(handle) = send_error_to {
-            let data = handle.data::<self::xdg_handlers::ShellSurfaceUserData>().unwrap();
-            data.xdg_surface.post_error(
-                cx,
-                xdg_surface::Error::NotConstructed,
-                "Surface has not been configured yet.",
-            );
+            let data = handle
+                .data::<self::xdg_handlers::XdgShellSurfaceUserData>()
+                .unwrap();
+            // TODO:
+            // data.xdg_surface.post_error(
+            //     cx,
+            //     xdg_surface::Error::NotConstructed,
+            //     "Surface has not been configured yet.",
+            // );
             return;
         }
 
@@ -1457,7 +1456,7 @@ impl PopupSurface {
         if !configured {
             let data = self
                 .shell_surface
-                .data::<self::xdg_handlers::ShellSurfaceUserData>()
+                .data::<self::xdg_handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.xdg_surface.post_error(
                 cx,
