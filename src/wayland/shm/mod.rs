@@ -76,6 +76,7 @@
 use self::pool::{Pool, ResizeError};
 use std::{rc::Rc, sync::Arc};
 use wayland_server::{
+    backend::GlobalId,
     protocol::{
         wl_buffer::{self, WlBuffer},
         wl_shm::{self, WlShm},
@@ -90,47 +91,57 @@ use super::delegate::{
 
 mod pool;
 
-/// Create a new SHM global advertizing given supported formats.
-///
-/// This global will always advertize `ARGB8888` and `XRGB8888` format
-/// as they are required by the protocol. Formats given as argument
-/// as additionally advertized.
-///
-/// The global is directly created on the provided [`Display`](wayland_server::Display),
-/// and this function returns the global handle, in case you wish to remove this global in
-/// the future.
-pub fn init_shm_global<L, D>(
-    display: &mut DisplayHandle<'_, D>,
-    mut formats: Vec<wl_shm::Format>,
-    logger: L,
-) -> ShmState
-where
-    L: Into<Option<::slog::Logger>>,
-    D: GlobalDispatch<WlShm, GlobalData = ()>
-        + Dispatch<WlShm, UserData = ()>
-        + Dispatch<WlShmPool, UserData = ShmPoolUserData>
-        + 'static,
-{
-    let log = crate::slog_or_fallback(logger);
-
-    // always add the mandatory formats
-    formats.push(wl_shm::Format::Argb8888);
-    formats.push(wl_shm::Format::Xrgb8888);
-    let state = ShmState {
-        formats: formats.into(),
-        log: log.new(slog::o!("smithay_module" => "shm_handler")),
-    };
-
-    display.create_global::<WlShm>(1, ());
-
-    state
-}
-
 /// State of SHM module
 #[derive(Debug)]
 pub struct ShmState {
-    formats: Rc<[wl_shm::Format]>,
+    formats: Vec<wl_shm::Format>,
+    shm: GlobalId,
     log: ::slog::Logger,
+}
+
+impl ShmState {
+    /// Create a new SHM global advertizing given supported formats.
+    ///
+    /// This global will always advertize `ARGB8888` and `XRGB8888` format
+    /// as they are required by the protocol. Formats given as argument
+    /// as additionally advertized.
+    ///
+    /// The global is directly created on the provided [`Display`](wayland_server::Display),
+    /// and this function returns the global handle, in case you wish to remove this global in
+    /// the future.
+    pub fn new<L, D>(
+        display: &mut DisplayHandle<'_, D>,
+        mut formats: Vec<wl_shm::Format>,
+        logger: L,
+    ) -> ShmState
+    where
+        L: Into<Option<::slog::Logger>>,
+        D: GlobalDispatch<WlShm, GlobalData = ()>
+            + Dispatch<WlShm, UserData = ()>
+            + Dispatch<WlShmPool, UserData = ShmPoolUserData>
+            + 'static,
+    {
+        let log = crate::slog_or_fallback(logger);
+
+        // always add the mandatory formats
+        formats.push(wl_shm::Format::Argb8888);
+        formats.push(wl_shm::Format::Xrgb8888);
+
+        let shm = display.create_global::<WlShm>(1, ());
+
+        let state = ShmState {
+            formats,
+            shm,
+            log: log.new(slog::o!("smithay_module" => "shm_handler")),
+        };
+
+        state
+    }
+
+    /// Get id of WlShm globabl
+    pub fn shm_global(&self) -> GlobalId {
+        self.shm.clone()
+    }
 }
 
 /// Dispatching type for shm module
