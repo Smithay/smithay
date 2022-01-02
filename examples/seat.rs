@@ -3,10 +3,8 @@ use std::sync::Arc;
 use smithay::reexports::wayland_server::Display;
 use smithay::wayland::seat::{self as seat, SeatHandler};
 
-use seat::{
-    delegate::{DelegateDispatch, DelegateGlobalDispatch},
-    KeyboardUserData, PointerUserData, SeatDispatch, SeatState, SeatUserData,
-};
+use seat::{KeyboardUserData, PointerUserData, SeatDispatch, SeatState, SeatUserData};
+use smithay::wayland::delegate::{DelegateDispatch, DelegateGlobalDispatch};
 
 use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use wayland_server::protocol::{

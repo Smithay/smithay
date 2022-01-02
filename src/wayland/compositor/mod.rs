@@ -82,8 +82,6 @@
 //! on a surface. See [`give_role`] and [`get_role`] for details. This module manages the
 //! subsurface role, which is identified by the string `"subsurface"`.
 
-use std::{cell::RefCell, rc::Rc, sync::Mutex};
-
 mod cache;
 mod handlers;
 mod transaction;
@@ -93,13 +91,13 @@ pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::SubsurfaceCachedState;
 use self::tree::PrivateSurfaceData;
 pub use self::tree::{AlreadyHasRole, TraversalAction};
-use crate::utils::{Buffer, DeadResource, Logical, Point, Rectangle};
-use wayland_server::{
-    protocol::{
-        wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor, wl_surface::WlSurface,
-    },
-    DispatchData, Display, Filter, Global, UserDataMap,
-};
+use crate::utils::{user_data::UserDataMap, Buffer, DeadResource, Logical, Point, Rectangle};
+use wayland_server::protocol::wl_compositor::WlCompositor;
+use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
+use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface::WlSurface};
+use wayland_server::{DisplayHandle, GlobalDispatch, Resource};
+
+pub use handlers::{RegionUserData, SubsurfaceUserData, SurfaceUserData};
 
 /// Description of a part of a surface that
 /// should be considered damaged and needs to be redrawn
@@ -331,17 +329,19 @@ pub fn with_surface_tree_downward<F1, F2, F3, T>(
 ///
 /// Returns `None` is this surface is a root surface
 pub fn get_parent(surface: &WlSurface) -> Option<WlSurface> {
-    if !surface.as_ref().is_alive() {
-        return None;
-    }
+    // TODO:
+    // if !surface.as_ref().is_alive() {
+    //     return None;
+    // }
     PrivateSurfaceData::get_parent(surface)
 }
 
 /// Retrieve the children of this surface
 pub fn get_children(surface: &WlSurface) -> Vec<WlSurface> {
-    if !surface.as_ref().is_alive() {
-        return Vec::new();
-    }
+    // TODO:
+    // if !surface.as_ref().is_alive() {
+    //     return Vec::new();
+    // }
     PrivateSurfaceData::get_children(surface)
 }
 
@@ -349,17 +349,19 @@ pub fn get_children(surface: &WlSurface) -> Vec<WlSurface> {
 ///
 /// Returns false if the surface is already dead
 pub fn is_sync_subsurface(surface: &WlSurface) -> bool {
-    if !surface.as_ref().is_alive() {
-        return false;
-    }
+    // TODO:
+    // if !surface.as_ref().is_alive() {
+    //     return false;
+    // }
     self::handlers::is_effectively_sync(surface)
 }
 
 /// Get the current role of this surface
 pub fn get_role(surface: &WlSurface) -> Option<&'static str> {
-    if !surface.as_ref().is_alive() {
-        return None;
-    }
+    // TODO:
+    // if !surface.as_ref().is_alive() {
+    //     return None;
+    // }
     PrivateSurfaceData::get_role(surface)
 }
 
@@ -367,9 +369,10 @@ pub fn get_role(surface: &WlSurface) -> Option<&'static str> {
 ///
 /// Fails if the surface already has a role.
 pub fn give_role(surface: &WlSurface, role: &'static str) -> Result<(), AlreadyHasRole> {
-    if !surface.as_ref().is_alive() {
-        return Ok(());
-    }
+    // TODO:
+    // if !surface.as_ref().is_alive() {
+    //     return Ok(());
+    // }
     PrivateSurfaceData::set_role(surface, role)
 }
 
@@ -378,9 +381,10 @@ pub fn with_states<F, T>(surface: &WlSurface, f: F) -> Result<T, DeadResource>
 where
     F: FnOnce(&SurfaceData) -> T,
 {
-    if !surface.as_ref().is_alive() {
-        return Err(DeadResource);
-    }
+    // TODO:
+    // if !surface.as_ref().is_alive() {
+    //     return Err(DeadResource);
+    // }
     Ok(PrivateSurfaceData::with_states(surface, f))
 }
 
@@ -389,8 +393,8 @@ where
 /// If the region is not managed by the `CompositorGlobal` that provided this token, this
 /// will panic (having more than one compositor is not supported).
 pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
-    match region.as_ref().user_data().get::<Mutex<RegionAttributes>>() {
-        Some(mutex) => mutex.lock().unwrap().clone(),
+    match region.data::<RegionUserData>() {
+        Some(data) => data.inner.lock().unwrap().clone(),
         None => panic!("Accessing the data of foreign regions is not supported."),
     }
 }
@@ -399,47 +403,49 @@ pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
 ///
 /// For its precise semantics, see module-level documentation.
 pub fn add_commit_hook(surface: &WlSurface, hook: fn(&WlSurface)) {
-    if !surface.as_ref().is_alive() {
-        return;
-    }
+    // TODO:
+    // if !surface.as_ref().is_alive() {
+    //     return;
+    // }
     PrivateSurfaceData::add_commit_hook(surface, hook)
 }
 
-/// Create new [`wl_compositor`](wayland_server::protocol::wl_compositor)
-/// and [`wl_subcompositor`](wayland_server::protocol::wl_subcompositor) globals.
-///
-/// It returns the two global handles, in case you wish to remove these globals from
-/// the event loop in the future.
-pub fn compositor_init<Impl, L>(
-    display: &mut Display,
-    implem: Impl,
-    logger: L,
-) -> (
-    Global<wl_compositor::WlCompositor>,
-    Global<wl_subcompositor::WlSubcompositor>,
-)
-where
-    L: Into<Option<::slog::Logger>>,
-    Impl: for<'a> FnMut(WlSurface, DispatchData<'a>) + 'static,
-{
-    let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "compositor_handler"));
-    let implem = Rc::new(RefCell::new(implem));
+/// Handler trait for compositor
+pub trait CompositorHandler {
+    /// Surface commit handler
+    fn commit(&mut self, surface: &WlSurface);
+}
 
-    let compositor = display.create_global(
-        4,
-        Filter::new(move |(new_compositor, _version), _, _| {
-            self::handlers::implement_compositor::<Impl>(new_compositor, log.clone(), implem.clone());
-        }),
-    );
+/// Compositor event dispatching struct
+#[derive(Debug)]
+pub struct CompositorDispatch<'a, H: CompositorHandler>(pub &'a mut CompositorState, pub &'a mut H);
 
-    let subcompositor = display.create_global(
-        1,
-        Filter::new(move |(new_subcompositor, _version), _, _| {
-            self::handlers::implement_subcompositor(new_subcompositor);
-        }),
-    );
+/// State of a compositor
+#[derive(Debug)]
+pub struct CompositorState {
+    log: slog::Logger,
+}
 
-    (compositor, subcompositor)
+impl CompositorState {
+    /// Create new [`wl_compositor`](wayland_server::protocol::wl_compositor)
+    /// and [`wl_subcompositor`](wayland_server::protocol::wl_subcompositor) globals.
+    ///
+    /// It returns the two global handles, in case you wish to remove these globals from
+    /// the event loop in the future.
+    pub fn new<L, D>(display: &mut DisplayHandle<'_, D>, logger: L) -> Self
+    where
+        L: Into<Option<::slog::Logger>>,
+        D: GlobalDispatch<WlCompositor, GlobalData = ()>
+            + GlobalDispatch<WlSubcompositor, GlobalData = ()>
+            + 'static,
+    {
+        let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "compositor_handler"));
+
+        let compositor = display.create_global::<WlCompositor>(4, ());
+        let subcompositor = display.create_global::<WlSubcompositor>(1, ());
+
+        CompositorState { log }
+    }
 }
 
 #[cfg(test)]
