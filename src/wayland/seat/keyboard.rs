@@ -21,10 +21,8 @@ use wayland_server::{
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
 
-use super::{
-    delegate::{DelegateDispatch, DelegateDispatchBase},
-    SeatDispatch, SeatHandler,
-};
+use super::{SeatDispatch, SeatHandler};
+use crate::wayland::delegate::{DelegateDispatch, DelegateDispatchBase};
 
 mod modifiers_state;
 pub use modifiers_state::ModifiersState;
