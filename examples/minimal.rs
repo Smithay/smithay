@@ -36,12 +36,10 @@ use wayland_server::{
     DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
 };
 
-struct InnerApp {
-    display: Rc<RefCell<Display<App>>>,
-}
+struct InnerApp;
 
-impl CompositorHandler for InnerApp {
-    fn commit(&mut self, surface: &WlSurface) {
+impl CompositorHandler<App> for InnerApp {
+    fn commit(&mut self, cx: &mut DisplayHandle<App>, surface: &WlSurface) {
         if !is_sync_subsurface::<App>(surface) {
             // Update the buffer of all child surfaces
             with_surface_tree_upward::<App, _, _, _, _>(
@@ -57,10 +55,7 @@ impl CompositorHandler for InnerApp {
                         .get::<RefCell<SurfaceData>>()
                         .unwrap()
                         .borrow_mut();
-                    data.update_buffer(
-                        &mut self.display.borrow().handle(),
-                        &mut *states.cached_state.current::<SurfaceAttributes>(),
-                    );
+                    data.update_buffer(cx, &mut *states.cached_state.current::<SurfaceAttributes>());
                 },
                 |_, _, _| true,
             );
@@ -78,14 +73,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
-    let display: Display<App> = Display::new()?;
-    let display = Rc::new(RefCell::new(display));
+    let mut display: Display<App> = Display::new()?;
 
     let mut state = App {
-        inner: InnerApp {
-            display: display.clone(),
-        },
-        compositor_state: CompositorState::new(&mut display.borrow().handle(), None),
+        inner: InnerApp,
+        compositor_state: CompositorState::new(&mut display.handle(), None),
     };
     let listener = ListeningSocket::bind("wayland-5").unwrap();
     let mut clients = Vec::new();
@@ -108,17 +100,14 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
             Some(stream) => {
                 println!("Got a client: {:?}", stream);
 
-                let client = display
-                    .borrow_mut()
-                    .insert_client(stream, Arc::new(ClientState))
-                    .unwrap();
+                let client = display.insert_client(stream, Arc::new(ClientState)).unwrap();
                 clients.push(client);
             }
             None => {}
         }
 
-        display.borrow_mut().dispatch_clients(&mut state)?;
-        display.borrow_mut().flush_clients()?;
+        display.dispatch_clients(&mut state)?;
+        display.flush_clients()?;
     }
 }
 
