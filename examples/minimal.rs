@@ -42,9 +42,9 @@ struct InnerApp {
 
 impl CompositorHandler for InnerApp {
     fn commit(&mut self, surface: &WlSurface) {
-        if !is_sync_subsurface(surface) {
+        if !is_sync_subsurface::<App>(surface) {
             // Update the buffer of all child surfaces
-            with_surface_tree_upward(
+            with_surface_tree_upward::<App, _, _, _, _>(
                 surface,
                 (),
                 |_, _, _| TraversalAction::DoChildren(()),
@@ -70,7 +70,7 @@ impl CompositorHandler for InnerApp {
 
 struct App {
     inner: InnerApp,
-    compositor_state: CompositorState,
+    compositor_state: CompositorState<Self>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -176,7 +176,7 @@ fn draw_surface_tree(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut result = Ok(());
 
-    compositor::with_surface_tree_upward(
+    compositor::with_surface_tree_upward::<App, _, _, _, _>(
         root,
         location,
         |_surface, states, location| {
@@ -329,7 +329,7 @@ impl Dispatch<WlCompositor> for App {
 }
 
 impl Dispatch<WlSurface> for App {
-    type UserData = SurfaceUserData;
+    type UserData = SurfaceUserData<Self>;
 
     fn request(
         &mut self,
@@ -438,7 +438,7 @@ impl Dispatch<WlSubcompositor> for App {
 }
 
 impl Dispatch<WlSubsurface> for App {
-    type UserData = SubsurfaceUserData;
+    type UserData = SubsurfaceUserData<Self>;
 
     fn request(
         &mut self,

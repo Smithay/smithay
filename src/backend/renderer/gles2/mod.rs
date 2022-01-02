@@ -587,10 +587,10 @@ impl Gles2Renderer {
 
 #[cfg(feature = "wayland_frontend")]
 impl ImportShm for Gles2Renderer {
-    fn import_shm_buffer(
+    fn import_shm_buffer<D>(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&crate::wayland::compositor::SurfaceData>,
+        surface: Option<&crate::wayland::compositor::SurfaceData<D>>,
         damage: &[Rectangle<i32, Buffer>],
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;
