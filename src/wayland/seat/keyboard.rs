@@ -21,7 +21,7 @@ use wayland_server::{
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
 
-use super::{SeatDispatch, SeatHandler};
+use super::SeatDispatch;
 use crate::wayland::delegate::{DelegateDispatch, DelegateDispatchBase};
 
 mod modifiers_state;
@@ -560,11 +560,11 @@ pub struct KeyboardUserData {
     pub(crate) handle: Option<KeyboardHandle>,
 }
 
-impl<D: 'static, H: SeatHandler<D>> DelegateDispatchBase<WlKeyboard> for SeatDispatch<'_, D, H> {
+impl<D: 'static> DelegateDispatchBase<WlKeyboard> for SeatDispatch<'_, D> {
     type UserData = KeyboardUserData;
 }
 
-impl<D, H: SeatHandler<D>> DelegateDispatch<WlKeyboard, D> for SeatDispatch<'_, D, H>
+impl<D> DelegateDispatch<WlKeyboard, D> for SeatDispatch<'_, D>
 where
     D: 'static + Dispatch<WlKeyboard, UserData = KeyboardUserData>,
 {
