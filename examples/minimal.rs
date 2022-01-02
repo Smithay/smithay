@@ -3,32 +3,36 @@ use std::{borrow::BorrowMut, cell::RefCell, rc::Rc, sync::Arc};
 use slog::o;
 use smithay::{
     backend::{
+        input::{InputEvent, KeyboardKeyEvent},
         renderer::{
             buffer_dimensions, buffer_type,
             gles2::{Gles2Frame, Gles2Renderer, Gles2Texture},
             utils::{draw_surface_tree, on_commit_buffer_handler},
             BufferType, Frame, ImportAll, Renderer, Transform,
         },
-        winit::{self, WinitEvent},
+        winit::{self, WinitEvent, WinitKeyboardInputEvent},
         SwapBuffersError,
     },
     reexports::{calloop::EventLoop, wayland_server::Display},
     utils::{Logical, Physical, Point, Rectangle, Size},
     wayland::{
         compositor::{
-            self, is_sync_subsurface, with_surface_tree_upward, BufferAssignment, CompositorDispatch,
-            CompositorHandler, CompositorState, Damage, RegionUserData, SubsurfaceCachedState,
-            SubsurfaceUserData, SurfaceAttributes, SurfaceUserData, TraversalAction,
+            self, is_sync_subsurface, with_surface_tree_downward, with_surface_tree_upward, BufferAssignment,
+            CompositorDispatch, CompositorHandler, CompositorState, Damage, RegionUserData,
+            SubsurfaceCachedState, SubsurfaceUserData, SurfaceAttributes, SurfaceUserData, TraversalAction,
         },
         delegate::{DelegateDispatch, DelegateGlobalDispatch},
+        seat::{FilterResult, KeyboardUserData, PointerUserData, SeatDispatch, SeatState, SeatUserData},
         shell::xdg::{
-            ShellSurfaceUserData, XdgRequest, XdgShellDispatch, XdgShellHandler, XdgShellState,
-            XdgSurfaceUserData, XdgWmBaseUserData,
+            XdgPositionerUserData, XdgRequest, XdgShellDispatch, XdgShellHandler, XdgShellState,
+            XdgShellSurfaceUserData, XdgSurfaceUserData, XdgWmBaseUserData,
         },
         shm::{ShmBufferUserData, ShmDispatch, ShmPoolUserData, ShmState},
     },
 };
 use wayland_protocols::xdg_shell::server::{
+    xdg_popup::{self, XdgPopup},
+    xdg_positioner::{self, XdgPositioner},
     xdg_surface,
     xdg_surface::XdgSurface,
     xdg_toplevel::{self, XdgToplevel},
@@ -40,7 +44,10 @@ use wayland_server::{
         wl_buffer::{self, WlBuffer},
         wl_callback::{self, WlCallback},
         wl_compositor::{self, WlCompositor},
+        wl_keyboard::{self, WlKeyboard},
+        wl_pointer::{self, WlPointer},
         wl_region::{self, WlRegion},
+        wl_seat::{self, WlSeat},
         wl_shm::{self, WlShm},
         wl_shm_pool::{self, WlShmPool},
         wl_subcompositor::{self, WlSubcompositor},
@@ -57,23 +64,23 @@ impl XdgShellHandler<App> for InnerApp {
     fn request(&mut self, cx: &mut DisplayHandle<App>, request: XdgRequest) {
         dbg!(&request);
 
-        match request{
+        match request {
             XdgRequest::NewToplevel { surface } => {
+                surface
+                    .with_pending_state(cx, |state| {
+                        state.states.set(xdg_toplevel::State::Activated);
+                    })
+                    .unwrap();
                 surface.send_configure(cx);
             }
-            _ =>{}
-            // XdgRequest::NewPopup { surface, positioner } => todo!(),
-            // XdgRequest::Move { surface, seat, serial } => todo!(),
-            // XdgRequest::Resize { surface, seat, serial, edges } => todo!(),
-            // XdgRequest::Grab { surface, seat, serial } => todo!(),
-            // XdgRequest::Maximize { surface } => todo!(),
-            // XdgRequest::UnMaximize { surface } => todo!(),
-            // XdgRequest::Fullscreen { surface, output } => todo!(),
-            // XdgRequest::UnFullscreen { surface } => todo!(),
-            // XdgRequest::Minimize { surface } => todo!(),
-            // XdgRequest::ShowWindowMenu { surface, seat, serial, location } => todo!(),
-            // XdgRequest::AckConfigure { surface, configure } => todo!(),
-            // XdgRequest::RePosition { surface, positioner, token } => todo!(),
+            XdgRequest::Move {
+                seat,
+                serial,
+                surface,
+            } => {
+                //
+            }
+            _ => {}
         }
     }
 }
@@ -89,6 +96,7 @@ struct App {
     compositor_state: CompositorState<Self>,
     xdg_shell_state: XdgShellState<Self>,
     shm_state: ShmState,
+    seat_state: SeatState<Self>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -112,6 +120,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
             compositor_state: CompositorState::new(handle, None),
             xdg_shell_state: XdgShellState::new(handle, None).0,
             shm_state: ShmState::new(handle, vec![], None),
+            seat_state: SeatState::new(handle, "winit".into(), None),
         }
     };
     let listener = ListeningSocket::bind("wayland-5").unwrap();
@@ -119,10 +128,35 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
     let (mut backend, mut winit) = winit::init(None)?;
 
+    let start_time = std::time::Instant::now();
+
+    let keyboard = state
+        .seat_state
+        .add_keyboard(&mut display.handle(), Default::default(), 200, 200, |_, _| {})
+        .unwrap();
+
     loop {
         winit.dispatch_new_events(|event| match event {
             WinitEvent::Resized { size, .. } => {}
-            WinitEvent::Input(event) => {}
+            WinitEvent::Input(event) => match event {
+                InputEvent::Keyboard { event } => {
+                    let cx = &mut display.handle();
+                    keyboard.input::<(), _, _>(cx, event.key_code(), event.state(), 0.into(), 0, |_, _| {
+                        //
+                        FilterResult::Forward
+                    });
+                }
+                InputEvent::PointerMotionAbsolute { event } => {
+                    let cx = &mut display.handle();
+                    state.xdg_shell_state.toplevel_surfaces(|surfaces| {
+                        for surface in surfaces {
+                            let surface = surface.get_surface(cx).unwrap();
+                            keyboard.set_focus(cx, Some(&surface), 0.into());
+                        }
+                    });
+                }
+                _ => {}
+            },
             _ => (),
         })?;
 
@@ -133,7 +167,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
         backend
             .renderer()
-            .render(size, Transform::Normal, |renderer, frame| {
+            .render(size, Transform::Flipped180, |renderer, frame| {
                 frame.clear([0.1, 0.0, 0.0, 1.0], &[damage]).unwrap();
 
                 state.xdg_shell_state.toplevel_surfaces(|surfaces| {
@@ -150,6 +184,8 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                             &log,
                         )
                         .unwrap();
+
+                        send_frames_surface_tree(cx, surface, start_time.elapsed().as_millis() as u32);
                     }
                 });
             })?;
@@ -169,6 +205,31 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         display.dispatch_clients(&mut state)?;
         display.flush_clients()?;
     }
+}
+
+pub fn send_frames_surface_tree<D: 'static>(
+    cx: &mut DisplayHandle<'_, D>,
+    surface: &wl_surface::WlSurface,
+    time: u32,
+) {
+    with_surface_tree_downward::<D, _, _, _, _>(
+        surface,
+        (),
+        |_, _, &()| TraversalAction::DoChildren(()),
+        |_surf, states, &()| {
+            // the surface may not have any user_data if it is a subsurface and has not
+            // yet been commited
+            for callback in states
+                .cached_state
+                .current::<SurfaceAttributes>()
+                .frame_callbacks
+                .drain(..)
+            {
+                callback.done(cx, time);
+            }
+        },
+        |_, _, &()| true,
+    );
 }
 
 struct ClientState;
@@ -228,6 +289,54 @@ impl Dispatch<XdgWmBase> for App {
     }
 }
 
+impl Dispatch<XdgPositioner> for App {
+    type UserData = XdgPositionerUserData;
+
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &XdgPositioner,
+        request: xdg_positioner::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, Self>,
+        data_init: &mut wayland_server::DataInit<'_, Self>,
+    ) {
+        DelegateDispatch::<XdgPositioner, _>::request(
+            &mut XdgShellDispatch(&mut self.xdg_shell_state, &mut self.inner),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
+    }
+}
+
+impl Dispatch<XdgPopup> for App {
+    type UserData = XdgShellSurfaceUserData;
+
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &XdgPopup,
+        request: xdg_popup::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, Self>,
+        data_init: &mut wayland_server::DataInit<'_, Self>,
+    ) {
+        DelegateDispatch::<XdgPopup, _>::request(
+            &mut XdgShellDispatch(&mut self.xdg_shell_state, &mut self.inner),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
+    }
+}
+
 impl Dispatch<XdgSurface> for App {
     type UserData = XdgSurfaceUserData;
 
@@ -253,7 +362,7 @@ impl Dispatch<XdgSurface> for App {
 }
 
 impl Dispatch<XdgToplevel> for App {
-    type UserData = ShellSurfaceUserData;
+    type UserData = XdgShellSurfaceUserData;
 
     fn request(
         &mut self,
@@ -548,6 +657,100 @@ impl Dispatch<WlBuffer> for App {
     ) {
         DelegateDispatch::<WlBuffer, _>::request(
             &mut ShmDispatch(&mut self.shm_state),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
+    }
+}
+
+impl GlobalDispatch<WlSeat> for App {
+    type GlobalData = ();
+
+    fn bind(
+        &mut self,
+        handle: &mut wayland_server::DisplayHandle<'_, Self>,
+        client: &wayland_server::Client,
+        resource: New<WlSeat>,
+        global_data: &Self::GlobalData,
+        data_init: &mut DataInit<'_, Self>,
+    ) {
+        DelegateGlobalDispatch::<WlSeat, _>::bind(
+            &mut SeatDispatch(&mut self.seat_state),
+            handle,
+            client,
+            resource,
+            global_data,
+            data_init,
+        );
+    }
+}
+
+impl Dispatch<WlSeat> for App {
+    type UserData = SeatUserData<Self>;
+
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &WlSeat,
+        request: wl_seat::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, Self>,
+        data_init: &mut wayland_server::DataInit<'_, Self>,
+    ) {
+        DelegateDispatch::<WlSeat, _>::request(
+            &mut SeatDispatch(&mut self.seat_state),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
+    }
+}
+
+impl Dispatch<WlKeyboard> for App {
+    type UserData = KeyboardUserData;
+
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &WlKeyboard,
+        request: wl_keyboard::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, Self>,
+        data_init: &mut wayland_server::DataInit<'_, Self>,
+    ) {
+        DelegateDispatch::<WlKeyboard, _>::request(
+            &mut SeatDispatch(&mut self.seat_state),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
+    }
+}
+
+impl Dispatch<WlPointer> for App {
+    type UserData = PointerUserData<Self>;
+
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &WlPointer,
+        request: wl_pointer::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, Self>,
+        data_init: &mut wayland_server::DataInit<'_, Self>,
+    ) {
+        DelegateDispatch::<WlPointer, _>::request(
+            &mut SeatDispatch(&mut self.seat_state),
             client,
             resource,
             request,

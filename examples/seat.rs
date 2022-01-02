@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use smithay::reexports::wayland_server::Display;
-use smithay::wayland::seat::{self as seat, SeatHandler};
+use smithay::wayland::seat::{self as seat};
 
 use seat::{KeyboardUserData, PointerUserData, SeatDispatch, SeatState, SeatUserData};
 use smithay::wayland::delegate::{DelegateDispatch, DelegateGlobalDispatch};
@@ -21,8 +21,6 @@ struct App {
 }
 
 struct InnerApp;
-
-impl SeatHandler<App> for InnerApp {}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;
@@ -99,7 +97,7 @@ impl GlobalDispatch<WlSeat> for App {
         data_init: &mut DataInit<'_, Self>,
     ) {
         DelegateGlobalDispatch::<WlSeat, _>::bind(
-            &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
+            &mut SeatDispatch(&mut self.seat_state),
             handle,
             client,
             resource,
@@ -122,7 +120,7 @@ impl Dispatch<WlSeat> for App {
         data_init: &mut wayland_server::DataInit<'_, Self>,
     ) {
         DelegateDispatch::<WlSeat, _>::request(
-            &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
+            &mut SeatDispatch(&mut self.seat_state),
             client,
             resource,
             request,
@@ -146,7 +144,7 @@ impl Dispatch<WlKeyboard> for App {
         data_init: &mut wayland_server::DataInit<'_, Self>,
     ) {
         DelegateDispatch::<WlKeyboard, _>::request(
-            &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
+            &mut SeatDispatch(&mut self.seat_state),
             client,
             resource,
             request,
@@ -170,7 +168,7 @@ impl Dispatch<WlPointer> for App {
         data_init: &mut wayland_server::DataInit<'_, Self>,
     ) {
         DelegateDispatch::<WlPointer, _>::request(
-            &mut SeatDispatch(&mut self.seat_state, &mut self.inner),
+            &mut SeatDispatch(&mut self.seat_state),
             client,
             resource,
             request,
