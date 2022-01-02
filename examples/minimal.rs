@@ -1,10 +1,12 @@
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{borrow::BorrowMut, cell::RefCell, rc::Rc, sync::Arc};
 
+use slog::o;
 use smithay::{
     backend::{
         renderer::{
             buffer_dimensions, buffer_type,
             gles2::{Gles2Frame, Gles2Renderer, Gles2Texture},
+            utils::{draw_surface_tree, on_commit_buffer_handler},
             BufferType, Frame, ImportAll, Renderer, Transform,
         },
         winit::{self, WinitEvent},
@@ -52,34 +54,33 @@ use wayland_server::{
 struct InnerApp;
 
 impl XdgShellHandler<App> for InnerApp {
-    fn request(&mut self, request: XdgRequest) {
-        dbg!(request);
+    fn request(&mut self, cx: &mut DisplayHandle<App>, request: XdgRequest) {
+        dbg!(&request);
+
+        match request{
+            XdgRequest::NewToplevel { surface } => {
+                surface.send_configure(cx);
+            }
+            _ =>{}
+            // XdgRequest::NewPopup { surface, positioner } => todo!(),
+            // XdgRequest::Move { surface, seat, serial } => todo!(),
+            // XdgRequest::Resize { surface, seat, serial, edges } => todo!(),
+            // XdgRequest::Grab { surface, seat, serial } => todo!(),
+            // XdgRequest::Maximize { surface } => todo!(),
+            // XdgRequest::UnMaximize { surface } => todo!(),
+            // XdgRequest::Fullscreen { surface, output } => todo!(),
+            // XdgRequest::UnFullscreen { surface } => todo!(),
+            // XdgRequest::Minimize { surface } => todo!(),
+            // XdgRequest::ShowWindowMenu { surface, seat, serial, location } => todo!(),
+            // XdgRequest::AckConfigure { surface, configure } => todo!(),
+            // XdgRequest::RePosition { surface, positioner, token } => todo!(),
+        }
     }
 }
 
 impl CompositorHandler<App> for InnerApp {
     fn commit(&mut self, cx: &mut DisplayHandle<App>, surface: &WlSurface) {
-        if !is_sync_subsurface(cx, surface) {
-            // Update the buffer of all child surfaces
-            with_surface_tree_upward::<App, _, _, _, _>(
-                surface,
-                (),
-                |_, _, _| TraversalAction::DoChildren(()),
-                |_, states, _| {
-                    states
-                        .data_map
-                        .insert_if_missing(|| RefCell::new(SurfaceData::default()));
-                    let mut data = states
-                        .data_map
-                        .get::<RefCell<SurfaceData>>()
-                        .unwrap()
-                        .borrow_mut();
-                    data.update_buffer(cx, &mut *states.cached_state.current::<SurfaceAttributes>());
-
-                },
-                |_, _, _| true,
-            );
-        }
+        on_commit_buffer_handler(cx, surface);
     }
 }
 
@@ -94,7 +95,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     run_winit()
 }
 
+fn log() -> ::slog::Logger {
+    use slog::Drain;
+    ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), slog::o!())
+}
+
 pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
+    let log = log();
+
     let mut display: Display<App> = Display::new()?;
 
     let mut state = {
@@ -109,7 +117,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     let listener = ListeningSocket::bind("wayland-5").unwrap();
     let mut clients = Vec::new();
 
-    let (mut renderer, mut winit) = winit::init(None)?;
+    let (mut backend, mut winit) = winit::init(None)?;
 
     loop {
         winit.dispatch_new_events(|event| match event {
@@ -118,17 +126,35 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
             _ => (),
         })?;
 
-        renderer.render(|renderer, frame| {
-            frame.clear([0.0, 0.0, 0.0, 1.0]).unwrap();
+        backend.bind().unwrap();
 
-            state.xdg_shell_state.toplevel_surfaces(|surfaces| {
-                for surface in surfaces {
-                    let cx = &mut display.handle();
-                    let surface = surface.get_surface(cx).unwrap();
-                    draw_surface_tree(cx, renderer, frame, surface, (0, 0).into(), 1.0).unwrap();
-                }
-            });
-        })?;
+        let size = backend.window_size().physical_size;
+        let damage = Rectangle::from_loc_and_size((0, 0), size);
+
+        backend
+            .renderer()
+            .render(size, Transform::Normal, |renderer, frame| {
+                frame.clear([0.1, 0.0, 0.0, 1.0], &[damage]).unwrap();
+
+                state.xdg_shell_state.toplevel_surfaces(|surfaces| {
+                    for surface in surfaces {
+                        let cx = &mut display.handle();
+                        let surface = surface.get_surface(cx).unwrap();
+                        draw_surface_tree::<App, _, _, _, _>(
+                            renderer,
+                            frame,
+                            surface,
+                            1.0,
+                            (0, 0).into(),
+                            &[damage.to_logical(1)],
+                            &log,
+                        )
+                        .unwrap();
+                    }
+                });
+            })?;
+
+        backend.submit(Some(&[damage.to_logical(1)]), 1.0).unwrap();
 
         match listener.accept()? {
             Some(stream) => {
@@ -143,155 +169,6 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         display.dispatch_clients(&mut state)?;
         display.flush_clients()?;
     }
-}
-
-#[derive(Default)]
-pub struct SurfaceData {
-    pub buffer: Option<WlBuffer>,
-    pub texture: Option<Box<dyn std::any::Any + 'static>>,
-    pub geometry: Option<Rectangle<i32, Logical>>,
-    pub buffer_dimensions: Option<Size<i32, Physical>>,
-    pub buffer_scale: i32,
-}
-
-impl SurfaceData {
-    fn update_buffer(&mut self, cx: &mut DisplayHandle<App>, attrs: &mut SurfaceAttributes) {
-        match attrs.buffer.take() {
-            Some(BufferAssignment::NewBuffer { buffer, .. }) => {
-                // new contents
-                self.buffer_dimensions = buffer_dimensions(&buffer);
-                self.buffer_scale = attrs.buffer_scale;
-                if let Some(old_buffer) = std::mem::replace(&mut self.buffer, Some(buffer)) {
-                    old_buffer.release(cx);
-                }
-                self.texture = None;
-            }
-            Some(BufferAssignment::Removed) => {
-                // remove the contents
-                self.buffer = None;
-                self.buffer_dimensions = None;
-                self.texture = None;
-            }
-            None => {}
-        }
-    }
-
-    /// Send the frame callback if it had been requested
-    fn send_frame(cx: &mut DisplayHandle<App>, attrs: &mut SurfaceAttributes, time: u32) {
-        for callback in attrs.frame_callbacks.drain(..) {
-            callback.done(cx, time);
-        }
-    }
-}
-
-struct BufferTextures {
-    buffer: Option<wl_buffer::WlBuffer>,
-    texture: Gles2Texture,
-}
-
-fn draw_surface_tree(
-    cx: &mut DisplayHandle<App>,
-    renderer: &mut Gles2Renderer,
-    frame: &mut Gles2Frame,
-    root: &wl_surface::WlSurface,
-    location: Point<i32, Logical>,
-    output_scale: f32,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut result = Ok(());
-
-    compositor::with_surface_tree_upward::<App, _, _, _, _>(
-        root,
-        location,
-        |_surface, states, location| {
-            let mut location = *location;
-            // Pull a new buffer if available
-            if let Some(data) = states.data_map.get::<RefCell<SurfaceData>>() {
-                let mut data = data.borrow_mut();
-                let attributes = states.cached_state.current::<SurfaceAttributes>();
-                if data.texture.is_none() {
-                    if let Some(buffer) = data.buffer.take() {
-                        let damage = attributes
-                            .damage
-                            .iter()
-                            .map(|dmg| match dmg {
-                                Damage::Buffer(rect) => *rect,
-                                // TODO also apply transformations
-                                Damage::Surface(rect) => rect.to_buffer(attributes.buffer_scale),
-                            })
-                            .collect::<Vec<_>>();
-
-                        match renderer.import_buffer(&buffer, Some(states), &damage) {
-                            Some(Ok(m)) => {
-                                let texture_buffer = if let Some(BufferType::Shm) = buffer_type(&buffer) {
-                                    buffer.release(cx);
-                                    None
-                                } else {
-                                    Some(buffer)
-                                };
-                                data.texture = Some(Box::new(BufferTextures {
-                                    buffer: texture_buffer,
-                                    texture: m,
-                                }))
-                            }
-                            Some(Err(err)) => {
-                                buffer.release(cx);
-                            }
-                            None => {
-                                buffer.release(cx);
-                            }
-                        }
-                    }
-                }
-                // Now, should we be drawn ?
-                if data.texture.is_some() {
-                    // if yes, also process the children
-                    if states.role == Some("subsurface") {
-                        let current = states.cached_state.current::<SubsurfaceCachedState>();
-                        location += current.location;
-                    }
-                    TraversalAction::DoChildren(location)
-                } else {
-                    // we are not displayed, so our children are neither
-                    TraversalAction::SkipChildren
-                }
-            } else {
-                // we are not displayed, so our children are neither
-                TraversalAction::SkipChildren
-            }
-        },
-        |_surface, states, location| {
-            let mut location = *location;
-            if let Some(data) = states.data_map.get::<RefCell<SurfaceData>>() {
-                let mut data = data.borrow_mut();
-                let buffer_scale = data.buffer_scale;
-                if let Some(texture) = data
-                    .texture
-                    .as_mut()
-                    .and_then(|x| x.downcast_mut::<BufferTextures>())
-                {
-                    // we need to re-extract the subsurface offset, as the previous closure
-                    // only passes it to our children
-                    if states.role == Some("subsurface") {
-                        let current = states.cached_state.current::<SubsurfaceCachedState>();
-                        location += current.location;
-                    }
-                    if let Err(err) = frame.render_texture_at(
-                        &texture.texture,
-                        location.to_f64().to_physical(output_scale as f64).to_i32_round(),
-                        buffer_scale,
-                        output_scale as f64,
-                        Transform::Normal, /* TODO */
-                        1.0,
-                    ) {
-                        result = Err(err.into());
-                    }
-                }
-            }
-        },
-        |_, _, _| true,
-    );
-
-    result
 }
 
 struct ClientState;

@@ -42,7 +42,7 @@ where
 {
     fn bind(
         &mut self,
-        _handle: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_, D>,
         _client: &wayland_server::Client,
         resource: New<XdgWmBase>,
         _global_data: &Self::GlobalData,
@@ -50,9 +50,12 @@ where
     ) {
         let shell = data_init.init(resource, XdgWmBaseUserData::default());
 
-        self.1.request(XdgRequest::NewClient {
-            client: ShellClient::new(&shell),
-        });
+        self.1.request(
+            cx,
+            XdgRequest::NewClient {
+                client: ShellClient::new(&shell),
+            },
+        );
     }
 }
 
@@ -73,7 +76,7 @@ where
         shell: &XdgWmBase,
         request: xdg_wm_base::Request,
         data: &Self::UserData,
-        _dhandle: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_, D>,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -109,9 +112,12 @@ where
                     }
                 };
                 if valid {
-                    self.1.request(XdgRequest::ClientPong {
-                        client: ShellClient::new(&shell),
-                    });
+                    self.1.request(
+                        cx,
+                        XdgRequest::ClientPong {
+                            client: ShellClient::new(&shell),
+                        },
+                    );
                 }
             }
             _ => unreachable!(),
@@ -286,7 +292,7 @@ where
                     .push(make_toplevel_handle(&toplevel));
 
                 let handle = make_toplevel_handle(&toplevel);
-                self.1.request(XdgRequest::NewToplevel { surface: handle });
+                self.1.request(cx, XdgRequest::NewToplevel { surface: handle });
             }
             xdg_surface::Request::GetPopup {
                 id,
@@ -472,10 +478,13 @@ where
                     }
                 };
 
-                self.1.request(XdgRequest::AckConfigure {
-                    surface: surface.clone(),
-                    configure,
-                });
+                self.1.request(
+                    cx,
+                    XdgRequest::AckConfigure {
+                        surface: surface.clone(),
+                        configure,
+                    },
+                );
             }
             _ => unreachable!(),
         }
