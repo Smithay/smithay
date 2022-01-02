@@ -360,11 +360,7 @@ pub enum BufferAccessError {
 /// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
 /// and this method will return `Err(BufferAccessError::NotManaged)` (this will be the case for an
 /// EGL buffer for example).
-pub fn with_buffer_contents<F, D, T>(
-    display_handle: &mut DisplayHandle<'_, D>,
-    buffer: &wl_buffer::WlBuffer,
-    f: F,
-) -> Result<T, BufferAccessError>
+pub fn with_buffer_contents<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<T, BufferAccessError>
 where
     F: FnOnce(&[u8], BufferData) -> T,
 {
@@ -377,7 +373,7 @@ where
         Ok(t) => Ok(t),
         Err(()) => {
             // SIGBUS error occurred
-            buffer.post_error(display_handle, wl_shm::Error::InvalidFd, "Bad pool size.");
+            // buffer.post_error(display_handle, wl_shm::Error::InvalidFd, "Bad pool size.");
             Err(BufferAccessError::BadMap)
         }
     }
