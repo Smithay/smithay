@@ -5,7 +5,7 @@ authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victor Brekenfeld
 license = "MIT"
 description = "Smithay is a library for writing wayland compositors."
 repository = "https://github.com/Smithay/smithay"
-edition = "2018"
+edition = "2021"
 readme = "README.md"
 homepage = "https://smithay.github.io/"
 keywords = ["wayland", "compositor", "graphics", "server"]
@@ -16,7 +16,7 @@ features = ["test_all_features"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
-members = [ "anvil", "wlcs_anvil" ]
+# members = [ "anvil", "wlcs_anvil" ]
 
 [dependencies]
 appendlist = "1.4"
