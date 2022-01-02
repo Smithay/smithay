@@ -38,7 +38,7 @@ use slog::trace;
  * wl_compositor
  */
 
-impl<D, H: CompositorHandler> DelegateGlobalDispatchBase<WlCompositor> for CompositorDispatch<'_, D, H> {
+impl<D, H: CompositorHandler<D>> DelegateGlobalDispatchBase<WlCompositor> for CompositorDispatch<'_, D, H> {
     type GlobalData = ();
 }
 
@@ -49,7 +49,7 @@ where
         + Dispatch<WlSurface, UserData = SurfaceUserData<D>>
         + Dispatch<WlRegion, UserData = RegionUserData>
         + 'static,
-    H: CompositorHandler,
+    H: CompositorHandler<D>,
 {
     fn bind(
         &mut self,
@@ -63,7 +63,7 @@ where
     }
 }
 
-impl<D, H: CompositorHandler> DelegateDispatchBase<WlCompositor> for CompositorDispatch<'_, D, H> {
+impl<D, H: CompositorHandler<D>> DelegateDispatchBase<WlCompositor> for CompositorDispatch<'_, D, H> {
     type UserData = ();
 }
 
@@ -73,7 +73,7 @@ where
         + Dispatch<WlSurface, UserData = SurfaceUserData<D>>
         + Dispatch<WlRegion, UserData = RegionUserData>
         + 'static,
-    H: CompositorHandler,
+    H: CompositorHandler<D>,
 {
     fn request(
         &mut self,
@@ -159,14 +159,14 @@ impl<D: 'static> DestructionNotify for SurfaceUserData<D> {
     }
 }
 
-impl<D: 'static, H: CompositorHandler> DelegateDispatchBase<WlSurface> for CompositorDispatch<'_, D, H> {
+impl<D: 'static, H: CompositorHandler<D>> DelegateDispatchBase<WlSurface> for CompositorDispatch<'_, D, H> {
     type UserData = SurfaceUserData<D>;
 }
 
 impl<D, H> DelegateDispatch<WlSurface, D> for CompositorDispatch<'_, D, H>
 where
     D: Dispatch<WlSurface, UserData = SurfaceUserData<D>> + Dispatch<WlCallback, UserData = ()> + 'static,
-    H: CompositorHandler,
+    H: CompositorHandler<D>,
 {
     fn request(
         &mut self,
@@ -242,7 +242,7 @@ where
                 PrivateSurfaceData::commit(&surface, handle);
                 trace!(self.0.log, "Calling user implementation for wl_surface.commit");
 
-                self.1.commit(surface);
+                self.1.commit(handle, surface);
             }
             wl_surface::Request::SetBufferTransform { transform } => {
                 if let WEnum::Value(transform) = transform {
@@ -298,14 +298,14 @@ impl DestructionNotify for RegionUserData {
     }
 }
 
-impl<D, H: CompositorHandler> DelegateDispatchBase<WlRegion> for CompositorDispatch<'_, D, H> {
+impl<D, H: CompositorHandler<D>> DelegateDispatchBase<WlRegion> for CompositorDispatch<'_, D, H> {
     type UserData = RegionUserData;
 }
 
 impl<D, H> DelegateDispatch<WlRegion, D> for CompositorDispatch<'_, D, H>
 where
     D: Dispatch<WlRegion, UserData = RegionUserData>,
-    H: CompositorHandler,
+    H: CompositorHandler<D>,
 {
     fn request(
         &mut self,
@@ -358,7 +358,9 @@ where
 //     subcompositor.deref().clone()
 // }
 
-impl<D, H: CompositorHandler> DelegateGlobalDispatchBase<WlSubcompositor> for CompositorDispatch<'_, D, H> {
+impl<D, H: CompositorHandler<D>> DelegateGlobalDispatchBase<WlSubcompositor>
+    for CompositorDispatch<'_, D, H>
+{
     type GlobalData = ();
 }
 
@@ -368,7 +370,7 @@ where
         + Dispatch<WlSubcompositor, UserData = ()>
         + Dispatch<WlSubsurface, UserData = SubsurfaceUserData<D>>
         + 'static,
-    H: CompositorHandler,
+    H: CompositorHandler<D>,
 {
     fn bind(
         &mut self,
@@ -382,7 +384,7 @@ where
     }
 }
 
-impl<D, H: CompositorHandler> DelegateDispatchBase<WlSubcompositor> for CompositorDispatch<'_, D, H> {
+impl<D, H: CompositorHandler<D>> DelegateDispatchBase<WlSubcompositor> for CompositorDispatch<'_, D, H> {
     type UserData = ();
 }
 
@@ -391,7 +393,7 @@ where
     D: Dispatch<WlSubcompositor, UserData = ()>
         + Dispatch<WlSubsurface, UserData = SubsurfaceUserData<D>>
         + 'static,
-    H: CompositorHandler,
+    H: CompositorHandler<D>,
 {
     fn request(
         &mut self,
@@ -518,14 +520,16 @@ pub fn is_effectively_sync<D: 'static>(surface: &wl_surface::WlSurface) -> bool 
     }
 }
 
-impl<D: 'static, H: CompositorHandler> DelegateDispatchBase<WlSubsurface> for CompositorDispatch<'_, D, H> {
+impl<D: 'static, H: CompositorHandler<D>> DelegateDispatchBase<WlSubsurface>
+    for CompositorDispatch<'_, D, H>
+{
     type UserData = SubsurfaceUserData<D>;
 }
 
 impl<D, H> DelegateDispatch<WlSubsurface, D> for CompositorDispatch<'_, D, H>
 where
     D: Dispatch<WlSubsurface, UserData = SubsurfaceUserData<D>> + 'static,
-    H: CompositorHandler,
+    H: CompositorHandler<D>,
 {
     fn request(
         &mut self,
