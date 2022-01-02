@@ -417,14 +417,14 @@ pub fn add_commit_hook<D: 'static>(surface: &WlSurface, hook: fn(&WlSurface)) {
 }
 
 /// Handler trait for compositor
-pub trait CompositorHandler {
+pub trait CompositorHandler<D> {
     /// Surface commit handler
-    fn commit(&mut self, surface: &WlSurface);
+    fn commit(&mut self, cx: &mut DisplayHandle<'_, D>, surface: &WlSurface);
 }
 
 /// Compositor event dispatching struct
 #[derive(Debug)]
-pub struct CompositorDispatch<'a, D, H: CompositorHandler>(pub &'a mut CompositorState<D>, pub &'a mut H);
+pub struct CompositorDispatch<'a, D, H: CompositorHandler<D>>(pub &'a mut CompositorState<D>, pub &'a mut H);
 
 /// State of a compositor
 #[derive(Debug)]
