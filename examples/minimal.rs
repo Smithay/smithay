@@ -19,7 +19,18 @@ use smithay::{
             SubsurfaceUserData, SurfaceAttributes, SurfaceUserData, TraversalAction,
         },
         delegate::{DelegateDispatch, DelegateGlobalDispatch},
+        shell::xdg::{
+            ShellSurfaceUserData, XdgRequest, XdgShellDispatch, XdgShellHandler, XdgShellState,
+            XdgSurfaceUserData, XdgWmBaseUserData,
+        },
+        shm::{ShmBufferUserData, ShmDispatch, ShmPoolUserData, ShmState},
     },
+};
+use wayland_protocols::xdg_shell::server::{
+    xdg_surface,
+    xdg_surface::XdgSurface,
+    xdg_toplevel::{self, XdgToplevel},
+    xdg_wm_base::{self, XdgWmBase},
 };
 use wayland_server::{
     backend::{ClientData, ClientId, DisconnectReason},
@@ -28,6 +39,8 @@ use wayland_server::{
         wl_callback::{self, WlCallback},
         wl_compositor::{self, WlCompositor},
         wl_region::{self, WlRegion},
+        wl_shm::{self, WlShm},
+        wl_shm_pool::{self, WlShmPool},
         wl_subcompositor::{self, WlSubcompositor},
         wl_subsurface::{self, WlSubsurface},
         wl_surface::{self, WlSurface},
@@ -37,6 +50,12 @@ use wayland_server::{
 };
 
 struct InnerApp;
+
+impl XdgShellHandler<App> for InnerApp {
+    fn request(&mut self, request: XdgRequest) {
+        dbg!(request);
+    }
+}
 
 impl CompositorHandler<App> for InnerApp {
     fn commit(&mut self, cx: &mut DisplayHandle<App>, surface: &WlSurface) {
@@ -56,6 +75,7 @@ impl CompositorHandler<App> for InnerApp {
                         .unwrap()
                         .borrow_mut();
                     data.update_buffer(cx, &mut *states.cached_state.current::<SurfaceAttributes>());
+
                 },
                 |_, _, _| true,
             );
@@ -66,6 +86,8 @@ impl CompositorHandler<App> for InnerApp {
 struct App {
     inner: InnerApp,
     compositor_state: CompositorState<Self>,
+    xdg_shell_state: XdgShellState<Self>,
+    shm_state: ShmState,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -75,9 +97,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;
 
-    let mut state = App {
-        inner: InnerApp,
-        compositor_state: CompositorState::new(&mut display.handle(), None),
+    let mut state = {
+        let handle = &mut display.handle();
+        App {
+            inner: InnerApp,
+            compositor_state: CompositorState::new(handle, None),
+            xdg_shell_state: XdgShellState::new(handle, None).0,
+            shm_state: ShmState::new(handle, vec![], None),
+        }
     };
     let listener = ListeningSocket::bind("wayland-5").unwrap();
     let mut clients = Vec::new();
@@ -93,7 +120,14 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
         renderer.render(|renderer, frame| {
             frame.clear([0.0, 0.0, 0.0, 1.0]).unwrap();
-            //
+
+            state.xdg_shell_state.toplevel_surfaces(|surfaces| {
+                for surface in surfaces {
+                    let cx = &mut display.handle();
+                    let surface = surface.get_surface(cx).unwrap();
+                    draw_surface_tree(cx, renderer, frame, surface, (0, 0).into(), 1.0).unwrap();
+                }
+            });
         })?;
 
         match listener.accept()? {
@@ -271,6 +305,105 @@ impl ClientData<App> for ClientState {
     }
 }
 
+impl GlobalDispatch<XdgWmBase> for App {
+    type GlobalData = ();
+
+    fn bind(
+        &mut self,
+        handle: &mut wayland_server::DisplayHandle<'_, Self>,
+        client: &wayland_server::Client,
+        resource: New<XdgWmBase>,
+        global_data: &Self::GlobalData,
+        data_init: &mut DataInit<'_, Self>,
+    ) {
+        DelegateGlobalDispatch::<XdgWmBase, _>::bind(
+            &mut XdgShellDispatch(&mut self.xdg_shell_state, &mut self.inner),
+            handle,
+            client,
+            resource,
+            global_data,
+            data_init,
+        );
+    }
+}
+
+impl Dispatch<XdgWmBase> for App {
+    type UserData = XdgWmBaseUserData;
+
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &XdgWmBase,
+        request: xdg_wm_base::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, Self>,
+        data_init: &mut wayland_server::DataInit<'_, Self>,
+    ) {
+        DelegateDispatch::<XdgWmBase, _>::request(
+            &mut XdgShellDispatch(&mut self.xdg_shell_state, &mut self.inner),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
+    }
+}
+
+impl Dispatch<XdgSurface> for App {
+    type UserData = XdgSurfaceUserData;
+
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &XdgSurface,
+        request: xdg_surface::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, Self>,
+        data_init: &mut wayland_server::DataInit<'_, Self>,
+    ) {
+        DelegateDispatch::<XdgSurface, _>::request(
+            &mut XdgShellDispatch(&mut self.xdg_shell_state, &mut self.inner),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
+    }
+}
+
+impl Dispatch<XdgToplevel> for App {
+    type UserData = ShellSurfaceUserData;
+
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &XdgToplevel,
+        request: xdg_toplevel::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, Self>,
+        data_init: &mut wayland_server::DataInit<'_, Self>,
+    ) {
+        DelegateDispatch::<XdgToplevel, _>::request(
+            &mut XdgShellDispatch(&mut self.xdg_shell_state, &mut self.inner),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
+    }
+}
+
+/*
+ * Compositor
+ *
+*/
+
 impl GlobalDispatch<WlCompositor> for App {
     type GlobalData = ();
 
@@ -440,6 +573,104 @@ impl Dispatch<WlSubsurface> for App {
     ) {
         DelegateDispatch::<WlSubsurface, _>::request(
             &mut CompositorDispatch(&mut self.compositor_state, &mut self.inner),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
+    }
+}
+
+//
+// SHM
+//
+
+impl GlobalDispatch<WlShm> for App {
+    type GlobalData = ();
+
+    fn bind(
+        &mut self,
+        handle: &mut wayland_server::DisplayHandle<'_, Self>,
+        client: &wayland_server::Client,
+        resource: New<WlShm>,
+        global_data: &Self::GlobalData,
+        data_init: &mut DataInit<'_, Self>,
+    ) {
+        DelegateGlobalDispatch::<WlShm, _>::bind(
+            &mut ShmDispatch(&mut self.shm_state),
+            handle,
+            client,
+            resource,
+            global_data,
+            data_init,
+        );
+    }
+}
+
+impl Dispatch<WlShm> for App {
+    type UserData = ();
+
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &WlShm,
+        request: wl_shm::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, Self>,
+        data_init: &mut wayland_server::DataInit<'_, Self>,
+    ) {
+        DelegateDispatch::<WlShm, _>::request(
+            &mut ShmDispatch(&mut self.shm_state),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
+    }
+}
+
+impl Dispatch<WlShmPool> for App {
+    type UserData = ShmPoolUserData;
+
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &WlShmPool,
+        request: wl_shm_pool::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, Self>,
+        data_init: &mut wayland_server::DataInit<'_, Self>,
+    ) {
+        DelegateDispatch::<WlShmPool, _>::request(
+            &mut ShmDispatch(&mut self.shm_state),
+            client,
+            resource,
+            request,
+            data,
+            cx,
+            data_init,
+        );
+    }
+}
+
+impl Dispatch<WlBuffer> for App {
+    type UserData = ShmBufferUserData;
+
+    fn request(
+        &mut self,
+        client: &wayland_server::Client,
+        resource: &WlBuffer,
+        request: wl_buffer::Request,
+        data: &Self::UserData,
+        cx: &mut DisplayHandle<'_, Self>,
+        data_init: &mut wayland_server::DataInit<'_, Self>,
+    ) {
+        DelegateDispatch::<WlBuffer, _>::request(
+            &mut ShmDispatch(&mut self.shm_state),
             client,
             resource,
             request,
