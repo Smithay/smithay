@@ -69,14 +69,9 @@ use crate::wayland::shell::is_toplevel_equivalent;
 use crate::wayland::{Serial, SERIAL_COUNTER};
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1;
-use wayland_protocols::unstable::{xdg_decoration, xdg_shell};
 use wayland_protocols::xdg_shell::server::xdg_surface;
 use wayland_protocols::xdg_shell::server::xdg_wm_base::XdgWmBase;
 use wayland_protocols::xdg_shell::server::{xdg_popup, xdg_positioner, xdg_toplevel, xdg_wm_base};
@@ -93,9 +88,7 @@ use super::PingError;
 
 // handlers for the xdg_shell protocol
 pub(super) mod handlers;
-pub use handlers::{
-    XdgPositionerUserData, XdgShellSurfaceUserData, XdgSurfaceUserData, XdgWmBaseUserData,
-};
+pub use handlers::{XdgPositionerUserData, XdgShellSurfaceUserData, XdgSurfaceUserData, XdgWmBaseUserData};
 
 /// The role of an XDG toplevel surface.
 ///
@@ -733,33 +726,20 @@ pub struct SurfaceCachedState {
 }
 
 impl<D> Cacheable<D> for SurfaceCachedState {
-    fn commit(&mut self, cx: &mut DisplayHandle<'_, D>) -> Self {
+    fn commit(&mut self, _cx: &mut DisplayHandle<'_, D>) -> Self {
         *self
     }
-    fn merge_into(self, into: &mut Self, cx: &mut DisplayHandle<'_, D>) {
+    fn merge_into(self, into: &mut Self, _cx: &mut DisplayHandle<'_, D>) {
         *into = self;
     }
 }
 
-// pub(crate) struct ShellData {
-//     log: ::slog::Logger,
-//     // user_impl: Rc<RefCell<dyn FnMut(XdgRequest, DispatchData<'_>)>>,
-//     shell_state: Arc<Mutex<XdgShellState>>,
-// }
-
-// impl Clone for ShellData {
-//     fn clone(&self) -> Self {
-//         ShellData {
-//             log: self.log.clone(),
-//             // user_impl: self.user_impl.clone(),
-//             shell_state: self.shell_state.clone(),
-//         }
-//     }
-// }
-
+/// Xdg Shell handler type
 pub trait XdgShellHandler<D> {
     fn request(&mut self, cx: &mut DisplayHandle<'_, D>, request: XdgRequest);
 }
+/// Dispatcher type for Xdg Shell
+#[derive(Debug)]
 pub struct XdgShellDispatch<'a, D, H: XdgShellHandler<D>>(pub &'a mut XdgShellState<D>, pub &'a mut H);
 
 #[derive(Debug)]
@@ -1400,9 +1380,7 @@ impl PopupSurface {
         })
         .unwrap_or(None);
         if let Some(handle) = send_error_to {
-            let data = handle
-                .data::<self::handlers::XdgShellSurfaceUserData>()
-                .unwrap();
+            let data = handle.data::<self::handlers::XdgShellSurfaceUserData>().unwrap();
             // TODO:
             // data.xdg_surface.post_error(
             //     cx,
