@@ -72,7 +72,7 @@ where
     ) {
         match request {
             xdg_wm_base::Request::CreatePositioner { id } => {
-                data_init.init(id, Default::default());
+                data_init.init(id, XdgPositionerUserData::default());
             }
             xdg_wm_base::Request::GetXdgSurface { id, surface } => {
                 // Do not assign a role to the surface here
