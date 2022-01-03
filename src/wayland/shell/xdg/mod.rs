@@ -92,8 +92,8 @@ use super::PingError;
 // pub mod decoration;
 
 // handlers for the xdg_shell protocol
-pub(super) mod xdg_handlers;
-pub use xdg_handlers::{
+pub(super) mod handlers;
+pub use handlers::{
     XdgPositionerUserData, XdgShellSurfaceUserData, XdgSurfaceUserData, XdgWmBaseUserData,
 };
 
@@ -887,7 +887,7 @@ impl ShellClient {
         if !self.alive(cx) {
             return Err(PingError::DeadSurface);
         }
-        let user_data = self.kind.data::<self::xdg_handlers::XdgWmBaseUserData>().unwrap();
+        let user_data = self.kind.data::<self::handlers::XdgWmBaseUserData>().unwrap();
         let mut guard = user_data.client_data.lock().unwrap();
         if let Some(pending_ping) = guard.pending_ping {
             return Err(PingError::PingAlreadyPending(pending_ping));
@@ -910,7 +910,7 @@ impl ShellClient {
         if !self.alive(cx) {
             return Err(crate::utils::DeadResource);
         }
-        let data = self.kind.data::<self::xdg_handlers::XdgWmBaseUserData>().unwrap();
+        let data = self.kind.data::<self::handlers::XdgWmBaseUserData>().unwrap();
         let mut guard = data.client_data.lock().unwrap();
         Ok(f(&mut guard.data))
     }
@@ -954,7 +954,7 @@ impl ToplevelSurface {
         let shell = {
             let data = self
                 .shell_surface
-                .data::<self::xdg_handlers::XdgShellSurfaceUserData>()
+                .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.wm_base.clone()
         };
@@ -1038,7 +1038,7 @@ impl ToplevelSurface {
                     }
                 }
 
-                self::xdg_handlers::send_toplevel_configure(cx, &self.shell_surface, configure)
+                self::handlers::send_toplevel_configure(cx, &self.shell_surface, configure)
             }
         }
     }
@@ -1087,7 +1087,7 @@ impl ToplevelSurface {
         if !configured {
             let data = self
                 .shell_surface
-                .data::<self::xdg_handlers::XdgShellSurfaceUserData>()
+                .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.xdg_surface.post_error(
                 cx,
@@ -1173,7 +1173,7 @@ impl ToplevelSurface {
 
     /// Returns the parent of this toplevel surface.
     pub fn parent<D: 'static>(&self) -> Option<wl_surface::WlSurface> {
-        xdg_handlers::get_parent::<D>(&self.shell_surface)
+        handlers::get_parent::<D>(&self.shell_surface)
     }
 
     /// Sets the parent of this toplevel surface and returns whether the parent was successfully set.
@@ -1193,7 +1193,7 @@ impl ToplevelSurface {
         }
 
         // Unset the parent
-        xdg_handlers::set_parent::<D>(&self.shell_surface, None);
+        handlers::set_parent::<D>(&self.shell_surface, None);
 
         true
     }
@@ -1274,7 +1274,7 @@ impl PopupSurface {
         let shell = {
             let data = self
                 .shell_surface
-                .data::<self::xdg_handlers::XdgShellSurfaceUserData>()
+                .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.wm_base.clone()
         };
@@ -1328,7 +1328,7 @@ impl PopupSurface {
             })
             .unwrap_or(None);
             if let Some(configure) = next_configure {
-                self::xdg_handlers::send_popup_configure(cx, &self.shell_surface, configure);
+                self::handlers::send_popup_configure(cx, &self.shell_surface, configure);
             }
         }
     }
@@ -1409,7 +1409,7 @@ impl PopupSurface {
         .unwrap_or(None);
         if let Some(handle) = send_error_to {
             let data = handle
-                .data::<self::xdg_handlers::XdgShellSurfaceUserData>()
+                .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             // TODO:
             // data.xdg_surface.post_error(
@@ -1465,7 +1465,7 @@ impl PopupSurface {
         if !configured {
             let data = self
                 .shell_surface
-                .data::<self::xdg_handlers::XdgShellSurfaceUserData>()
+                .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.xdg_surface.post_error(
                 cx,
