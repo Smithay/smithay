@@ -70,25 +70,26 @@ impl Space {
     /// Map window and moves it to top of the stack
     ///
     /// This can safely be called on an already mapped window
-    pub fn map_window<P: Into<Point<i32, Logical>>>(&mut self, window: &Window, location: P) {
-        self.insert_window(window);
+    pub fn map_window<P: Into<Point<i32, Logical>>>(&mut self, window: &Window, location: P, activate: bool) {
+        self.insert_window(window, activate);
         window_state(self.id, window).location = location.into();
     }
 
-    pub fn raise_window(&mut self, window: &Window) {
+    pub fn raise_window(&mut self, window: &Window, activate: bool) {
         if self.windows.shift_remove(window) {
-            self.insert_window(window);
+            self.insert_window(window, activate);
         }
     }
 
-    fn insert_window(&mut self, window: &Window) {
+    fn insert_window(&mut self, window: &Window, activate: bool) {
         self.windows.insert(window.clone());
 
-        // TODO: should this be handled by us?
-        window.set_activated(true);
-        for w in self.windows.iter() {
-            if w != window {
-                w.set_activated(false);
+        if activate {
+            window.set_activated(true);
+            for w in self.windows.iter() {
+                if w != window {
+                    w.set_activated(false);
+                }
             }
         }
     }
