@@ -88,7 +88,7 @@ where
     let mut result = Ok(());
     let damage = damage
         .iter()
-        .map(|geo| geo.to_f64().to_physical(scale).to_i32_round())
+        .map(|geo| geo.to_f64().to_physical(scale).to_i32_up())
         .collect::<Vec<_>>();
     with_surface_tree_upward(
         surface,
@@ -160,7 +160,12 @@ where
 
                     let rect = Rectangle::<i32, Physical>::from_loc_and_size(
                         surface_offset.to_f64().to_physical(scale).to_i32_round(),
-                        buffer_dimensions.unwrap(),
+                        buffer_dimensions
+                            .unwrap_or_default()
+                            .to_logical(buffer_scale)
+                            .to_f64()
+                            .to_physical(scale)
+                            .to_i32_round(),
                     );
                     let new_damage = damage
                         .iter()
