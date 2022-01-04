@@ -171,7 +171,8 @@ impl Window {
                 .flatten()
             {
                 if let Some(surface) = popup.get_surface() {
-                    bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, location));
+                    let offset = self.geometry().loc + location - popup.geometry().loc;
+                    bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset));
                 }
             }
         }
@@ -245,9 +246,10 @@ impl Window {
                 .into_iter()
                 .flatten()
             {
+                let offset = self.geometry().loc + location - popup.geometry().loc;
                 if let Some(result) = popup
                     .get_surface()
-                    .and_then(|surface| under_from_surface_tree(surface, point, location))
+                    .and_then(|surface| under_from_surface_tree(surface, point, offset))
                 {
                     return Some(result);
                 }
@@ -274,8 +276,9 @@ impl Window {
                 .flatten()
             {
                 if let Some(surface) = popup.get_surface() {
-                    let bbox = bbox_from_surface_tree(surface, location);
-                    let popup_damage = damage_from_surface_tree(surface, location, for_values);
+                    let offset = self.geometry().loc + location - popup.geometry().loc;
+                    let bbox = bbox_from_surface_tree(surface, offset);
+                    let popup_damage = damage_from_surface_tree(surface, offset, for_values);
                     damage.extend(popup_damage.into_iter().flat_map(|rect| rect.intersection(bbox)));
                 }
             }
@@ -317,23 +320,16 @@ where
             .flatten()
         {
             if let Some(surface) = popup.get_surface() {
+                let offset = window.geometry().loc + p_location - popup.geometry().loc;
                 let damage = damage
                     .iter()
                     .cloned()
                     .map(|mut geo| {
-                        geo.loc -= p_location;
+                        geo.loc -= offset;
                         geo
                     })
                     .collect::<Vec<_>>();
-                draw_surface_tree(
-                    renderer,
-                    frame,
-                    surface,
-                    scale,
-                    location + p_location,
-                    &damage,
-                    log,
-                )?;
+                draw_surface_tree(renderer, frame, surface, scale, location + offset, &damage, log)?;
             }
         }
     }

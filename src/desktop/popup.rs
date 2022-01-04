@@ -1,8 +1,8 @@
 use crate::{
-    utils::{DeadResource, Logical, Point},
+    utils::{DeadResource, Logical, Point, Rectangle},
     wayland::{
         compositor::{get_role, with_states},
-        shell::xdg::{PopupSurface, XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
+        shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
     },
 };
 use std::sync::{Arc, Mutex};
@@ -233,6 +233,22 @@ impl PopupKind {
         match *self {
             PopupKind::Xdg(ref t) => t.get_parent_surface(),
         }
+    }
+
+    pub fn geometry(&self) -> Rectangle<i32, Logical> {
+        let wl_surface = match self.get_surface() {
+            Some(s) => s,
+            None => return Rectangle::from_loc_and_size((0, 0), (0, 0)),
+        };
+
+        with_states(wl_surface, |states| {
+            states
+                .cached_state
+                .current::<SurfaceCachedState>()
+                .geometry
+                .unwrap_or_default()
+        })
+        .unwrap()
     }
 
     fn location(&self) -> Point<i32, Logical> {

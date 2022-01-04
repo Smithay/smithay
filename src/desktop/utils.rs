@@ -49,7 +49,7 @@ impl SurfaceState {
             .input_region
             .as_ref()
             .unwrap()
-            .contains(point.to_i32_floor())
+            .contains(point.to_i32_round())
     }
 }
 
