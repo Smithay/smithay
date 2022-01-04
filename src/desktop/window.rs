@@ -10,40 +10,14 @@ use crate::{
 };
 use std::{
     cell::Cell,
-    collections::HashSet,
     hash::{Hash, Hasher},
     rc::Rc,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Mutex,
-    },
 };
 use wayland_commons::user_data::UserDataMap;
 use wayland_protocols::xdg_shell::server::xdg_toplevel;
 use wayland_server::protocol::wl_surface;
 
-static WINDOW_ID: AtomicUsize = AtomicUsize::new(0);
-lazy_static::lazy_static! {
-    static ref WINDOW_IDS: Mutex<HashSet<usize>> = Mutex::new(HashSet::new());
-}
-
-fn next_window_id() -> usize {
-    let mut ids = WINDOW_IDS.lock().unwrap();
-    if ids.len() == usize::MAX {
-        // Theoretically the code below wraps around correctly,
-        // but that is hard to detect and might deadlock.
-        // Maybe make this a debug_assert instead?
-        panic!("Out of window ids");
-    }
-
-    let mut id = WINDOW_ID.fetch_add(1, Ordering::SeqCst);
-    while ids.iter().any(|k| *k == id) {
-        id = WINDOW_ID.fetch_add(1, Ordering::SeqCst);
-    }
-
-    ids.insert(id);
-    id
-}
+crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kind {

@@ -15,14 +15,7 @@ use crate::{
     },
 };
 use indexmap::{IndexMap, IndexSet};
-use std::{
-    cell::RefCell,
-    collections::{HashSet, VecDeque},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Mutex,
-    },
-};
+use std::{cell::RefCell, collections::VecDeque};
 use wayland_server::protocol::wl_surface::WlSurface;
 
 mod element;
@@ -35,27 +28,7 @@ use self::layer::*;
 use self::output::*;
 use self::window::*;
 
-static SPACE_ID: AtomicUsize = AtomicUsize::new(0);
-lazy_static::lazy_static! {
-    static ref SPACE_IDS: Mutex<HashSet<usize>> = Mutex::new(HashSet::new());
-}
-fn next_space_id() -> usize {
-    let mut ids = SPACE_IDS.lock().unwrap();
-    if ids.len() == usize::MAX {
-        // Theoretically the code below wraps around correctly,
-        // but that is hard to detect and might deadlock.
-        // Maybe make this a debug_assert instead?
-        panic!("Out of space ids");
-    }
-
-    let mut id = SPACE_ID.fetch_add(1, Ordering::SeqCst);
-    while ids.iter().any(|k| *k == id) {
-        id = SPACE_ID.fetch_add(1, Ordering::SeqCst);
-    }
-
-    ids.insert(id);
-    id
-}
+crate::utils::ids::id_gen!(next_space_id, SPACE_ID, SPACE_IDS);
 
 // TODO: Maybe replace UnmanagedResource if nothing else comes up?
 #[derive(Debug, thiserror::Error)]

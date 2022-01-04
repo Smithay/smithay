@@ -16,38 +16,12 @@ use wayland_server::protocol::wl_surface::WlSurface;
 
 use std::{
     cell::{RefCell, RefMut},
-    collections::HashSet,
     hash::{Hash, Hasher},
     rc::Rc,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, Mutex, Weak,
-    },
+    sync::{Arc, Mutex, Weak},
 };
 
-// TODO: Should this be a macro?
-static LAYER_ID: AtomicUsize = AtomicUsize::new(0);
-lazy_static::lazy_static! {
-    static ref LAYER_IDS: Mutex<HashSet<usize>> = Mutex::new(HashSet::new());
-}
-
-fn next_layer_id() -> usize {
-    let mut ids = LAYER_IDS.lock().unwrap();
-    if ids.len() == usize::MAX {
-        // Theoretically the code below wraps around correctly,
-        // but that is hard to detect and might deadlock.
-        // Maybe make this a debug_assert instead?
-        panic!("Out of window ids");
-    }
-
-    let mut id = LAYER_ID.fetch_add(1, Ordering::SeqCst);
-    while ids.iter().any(|k| *k == id) {
-        id = LAYER_ID.fetch_add(1, Ordering::SeqCst);
-    }
-
-    ids.insert(id);
-    id
-}
+crate::utils::ids::id_gen!(next_layer_id, LAYER_ID, LAYER_IDS);
 
 #[derive(Debug)]
 pub struct LayerMap {
