@@ -129,7 +129,7 @@ impl Window {
     /// A bounding box over this window and its children.
     // TODO: Cache and document when to trigger updates. If possible let space do it
     pub fn bbox(&self) -> Rectangle<i32, Logical> {
-        if let Some(surface) = self.0.toplevel.get_surface() {
+        if self.0.toplevel.get_surface().is_some() {
             self.0.bbox.get()
         } else {
             Rectangle::from_loc_and_size((0, 0), (0, 0))
@@ -167,7 +167,7 @@ impl Window {
                 })
                 .unwrap_or(false),
             #[cfg(feature = "xwayland")]
-            Kind::X11(ref t) => unimplemented!(),
+            Kind::X11(ref _t) => unimplemented!(),
         }
     }
 
@@ -176,7 +176,7 @@ impl Window {
         match self.0.toplevel {
             Kind::Xdg(ref t) => t.send_configure(),
             #[cfg(feature = "xwayland")]
-            Kind::X11(ref t) => unimplemented!(),
+            Kind::X11(ref _t) => unimplemented!(),
         }
     }
 

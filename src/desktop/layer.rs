@@ -1,6 +1,6 @@
 use crate::{
     backend::renderer::{utils::draw_surface_tree, Frame, ImportAll, Renderer, Texture},
-    desktop::{space::RenderElement, utils::*, PopupManager, Space},
+    desktop::{utils::*, PopupManager, Space},
     utils::{user_data::UserDataMap, Logical, Point, Rectangle},
     wayland::{
         compositor::with_states,

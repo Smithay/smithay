@@ -1,6 +1,6 @@
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer, Texture},
-    utils::{Buffer, Logical, Physical, Point, Rectangle, Size},
+    utils::{Logical, Physical, Point, Rectangle, Size},
     wayland::compositor::{
         is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
         SurfaceAttributes, TraversalAction,

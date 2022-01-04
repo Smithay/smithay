@@ -42,7 +42,7 @@ where
         TypeId::of::<LayerSurface>()
     }
 
-    fn geometry(&self, space_id: usize) -> Rectangle<i32, Logical> {
+    fn geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
         let mut bbox = self.bbox_with_popups();
         let state = output_layer_state(self);
         bbox.loc += state.location;

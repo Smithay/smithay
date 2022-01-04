@@ -1,6 +1,6 @@
 use crate::{
     backend::renderer::{Frame, ImportAll, Renderer, Texture},
-    desktop::{space::SpaceElement, LayerSurface, Window},
+    desktop::space::SpaceElement,
     utils::{Logical, Point, Rectangle},
     wayland::output::Output,
 };
@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 use wayland_server::protocol::wl_surface::WlSurface;
 
 use std::{
-    any::{Any, TypeId},
+    any::TypeId,
     cell::{RefCell, RefMut},
     collections::{HashMap, VecDeque},
 };
