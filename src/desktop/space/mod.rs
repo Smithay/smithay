@@ -498,7 +498,7 @@ impl Space {
         }
 
         let output_transform: Transform = output.current_transform().into();
-        if let Err(err) = renderer.render(
+        let res = renderer.render(
             output_transform
                 .transform_size(output_size)
                 .to_f64()
@@ -559,7 +559,9 @@ impl Space {
 
                 Result::<(), R::Error>::Ok(())
             },
-        ) {
+        );
+
+        if let Err(err) = res {
             // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.
             // thus clean our old states before returning
             state.old_damage = VecDeque::new();
