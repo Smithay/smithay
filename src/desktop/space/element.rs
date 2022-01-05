@@ -47,6 +47,7 @@ where
     }
     fn geometry(&self, space_id: usize) -> Rectangle<i32, Logical>;
     fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>>;
+    #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
         space_id: usize,

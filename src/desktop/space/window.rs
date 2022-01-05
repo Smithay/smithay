@@ -97,7 +97,7 @@ where
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
-        let res = draw_window(renderer, frame, &self, scale, location, damage, log);
+        let res = draw_window(renderer, frame, self, scale, location, damage, log);
         if res.is_ok() {
             window_state(space_id, self).drawn = true;
         }

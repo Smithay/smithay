@@ -1,5 +1,5 @@
 // TODO: Remove - but for now, this makes sure these files are not completely highlighted with warnings
-#![allow(missing_docs, clippy::all)]
+#![allow(missing_docs)]
 pub(crate) mod layer;
 mod popup;
 pub mod space;

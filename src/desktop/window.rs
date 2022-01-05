@@ -105,9 +105,6 @@ impl Window {
     pub fn new(toplevel: Kind) -> Window {
         let id = next_window_id();
 
-        // TODO: Do we want this? For new lets add Window::commit
-        //add_commit_hook(toplevel.get_surface().unwrap(), surface_commit);
-
         Window(Rc::new(WindowInner {
             id,
             toplevel,
@@ -127,7 +124,6 @@ impl Window {
     }
 
     /// A bounding box over this window and its children.
-    // TODO: Cache and document when to trigger updates. If possible let space do it
     pub fn bbox(&self) -> Rectangle<i32, Logical> {
         if self.0.toplevel.get_surface().is_some() {
             self.0.bbox.get()
@@ -154,7 +150,6 @@ impl Window {
     }
 
     /// Activate/Deactivate this window
-    // TODO: Add more helpers for Maximize? Minimize? Fullscreen? I dunno
     pub fn set_activated(&self, active: bool) -> bool {
         match self.0.toplevel {
             Kind::Xdg(ref t) => t

@@ -109,11 +109,10 @@ where
                     .as_ref()
                     .map(|key| !data.damage_seen.contains(key))
                     .unwrap_or(true)
+                    && states.role == Some("subsurface")
                 {
-                    if states.role == Some("subsurface") {
-                        let current = states.cached_state.current::<SubsurfaceCachedState>();
-                        location += current.location;
-                    }
+                    let current = states.cached_state.current::<SubsurfaceCachedState>();
+                    location += current.location;
                 }
             }
             TraversalAction::DoChildren(location)

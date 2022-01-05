@@ -313,29 +313,32 @@ impl WinitGraphicsBackend {
         damage: Option<&[Rectangle<i32, Logical>]>,
         scale: f64,
     ) -> Result<(), crate::backend::SwapBuffersError> {
-        let mut damage = if self.damage_tracking && damage.is_some() && !damage.unwrap().is_empty() {
-            let size = self
-                .size
-                .borrow()
-                .physical_size
-                .to_f64()
-                .to_logical(scale)
-                .to_i32_round::<i32>();
-            let damage = damage
-                .unwrap()
-                .iter()
-                .map(|rect| {
-                    Rectangle::from_loc_and_size((rect.loc.x, size.h - rect.loc.y - rect.size.h), rect.size)
+        let mut damage = match damage {
+            Some(damage) if self.damage_tracking && !damage.is_empty() => {
+                let size = self
+                    .size
+                    .borrow()
+                    .physical_size
+                    .to_f64()
+                    .to_logical(scale)
+                    .to_i32_round::<i32>();
+                let damage = damage
+                    .iter()
+                    .map(|rect| {
+                        Rectangle::from_loc_and_size(
+                            (rect.loc.x, size.h - rect.loc.y - rect.size.h),
+                            rect.size,
+                        )
                         .to_f64()
                         .to_physical(scale)
                         .to_i32_round::<i32>()
-                })
-                .collect::<Vec<_>>();
-            Some(damage)
-        } else {
-            None
+                    })
+                    .collect::<Vec<_>>();
+                Some(damage)
+            }
+            _ => None,
         };
-        self.egl.swap_buffers(damage.as_mut().map(|x| &mut **x))?;
+        self.egl.swap_buffers(damage.as_deref_mut())?;
         Ok(())
     }
 }

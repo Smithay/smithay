@@ -141,7 +141,7 @@ where
                 TraversalAction::SkipChildren
             }
         },
-        |surface, states, location| {
+        |_surface, states, location| {
             let mut location = *location;
             if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
                 let mut data = data.borrow_mut();

@@ -178,6 +178,7 @@ pub trait Frame {
     /// Render a texture to the current target as a flat 2d-plane at a given
     /// position and applying the given transformation with the given alpha value.
     /// (Meaning `src_transform` should match the orientation of surface being rendered).
+    #[allow(clippy::too_many_arguments)]
     fn render_texture_at(
         &mut self,
         texture: &Self::TextureId,

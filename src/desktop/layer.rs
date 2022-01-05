@@ -41,7 +41,7 @@ pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
                 (0, 0),
                 o.current_mode()
                     .map(|mode| mode.size.to_logical(o.current_scale()))
-                    .unwrap_or((0, 0).into()),
+                    .unwrap_or_else(|| (0, 0).into()),
             ),
         })
     });
@@ -130,9 +130,9 @@ impl LayerMap {
                 output
                     .current_mode()
                     .map(|mode| mode.size.to_logical(output.current_scale()))
-                    .unwrap_or((0, 0).into()),
+                    .unwrap_or_else(|| (0, 0).into()),
             );
-            let mut zone = output_rect.clone();
+            let mut zone = output_rect;
             slog::debug!(
                 crate::slog_or_fallback(None),
                 "Arranging layers into {:?}",
@@ -212,18 +212,18 @@ impl LayerMap {
                     location,
                     size
                 );
-                if layer
+                let size_changed = layer
                     .0
                     .surface
                     .with_pending_state(|state| {
                         state.size.replace(size).map(|old| old != size).unwrap_or(true)
                     })
-                    .unwrap()
-                {
+                    .unwrap();
+                if size_changed {
                     layer.0.surface.send_configure();
                 }
 
-                layer_state(&layer).location = location;
+                layer_state(layer).location = location;
             }
 
             slog::debug!(crate::slog_or_fallback(None), "Remaining zone {:?}", zone);

@@ -30,7 +30,6 @@ use self::window::*;
 
 crate::utils::ids::id_gen!(next_space_id, SPACE_ID, SPACE_IDS);
 
-// TODO: Maybe replace UnmanagedResource if nothing else comes up?
 #[derive(Debug, thiserror::Error)]
 pub enum SpaceError {
     #[error("Window is not mapped to this space")]
@@ -43,10 +42,11 @@ pub struct Space {
     // in z-order, back to front
     windows: IndexSet<Window>,
     outputs: Vec<Output>,
-    // TODO:
-    //layers: Vec<Layer>,
     logger: ::slog::Logger,
 }
+
+pub type DynamicRenderElements<R> =
+    Box<dyn RenderElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>>;
 
 impl Drop for Space {
     fn drop(&mut self) {
@@ -382,9 +382,7 @@ impl Space {
         output: &Output,
         age: usize,
         clear_color: [f32; 4],
-        custom_elements: &[Box<
-            dyn RenderElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>,
-        >],
+        custom_elements: &[DynamicRenderElements<R>],
     ) -> Result<Option<Vec<Rectangle<i32, Logical>>>, RenderError<R>>
     where
         R: Renderer + ImportAll + 'static,

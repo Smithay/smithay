@@ -5,10 +5,7 @@ use std::ffi::CStr;
 use std::fmt;
 use std::ptr;
 use std::rc::Rc;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    mpsc::{channel, Receiver, Sender},
-};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::{collections::HashSet, os::raw::c_char};
 
 use cgmath::{prelude::*, Matrix3, Vector2, Vector3};
