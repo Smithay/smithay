@@ -34,6 +34,10 @@
 - `Renderer::clear` now expects a second argument to optionally only clear parts of the buffer/surface
 - `Transform::transform_size` now takes a `Size` instead of two `u32`
 - `Gles2Renderer` now automatically flips the `render` result to account for OpenGLs coordinate system
+- `Frame::clear`, `Frame::render_texture_at` and `Frame::render_texture_from_to` now have an additional damage argument
+- `EGLNativeSurface` implementations overriding `swap_buffers` now receive and additional `damage` attribute to be used with `eglSwapBuffersWithDamageEXT` if desired
+- `EGLSurface::swap_buffers` now accepts and optional `damage` parameter
+- `WinitGraphicsBackend` does no longer provide a `render`-method and exposes its `Renderer` directly instead including new functions `bind` and `submit` to handle swapping buffers.
 
 ### Additions
 
@@ -49,6 +53,8 @@
 - Support for `xdg_wm_base` protocol version 3
 - Added the option to initialize the dmabuf global with a client filter
 - `wayland::output::Output` now has user data attached to it and more functions to query its properties
+- `wayland::output::Output` now has a `current_scale` method to quickly retrieve its set scale.
+- `wayland::shell::wlr_layer::KeyboardInteractivity` now implements `PartialEq` and `Eq`.
 
 #### Backends
 
@@ -58,6 +64,13 @@
 - New `DrmNode` type in drm backend. This is primarily for use a backend which needs to run as client inside another session.
 - The button code for a `PointerButtonEvent` may now be obtained using `PointerButtonEvent::button_code`. 
 - `Renderer` now allows texture filtering methods to be set.
+- `backend::renderer` has a new `utils`-module that can take care of client buffer management for you.
+- `EGLSurface::buffer_age` can be used to query the surface buffer age.
+- `GbmBufferedSurface::reset_buffers` can now be used to reset underlying buffers.
+
+#### Desktop
+
+- New `desktop` module to handle window placement, tracks popups, layer surface and various rendering helpers including automatic damage-tracking! (+so much more)
 
 #### Utils
 
