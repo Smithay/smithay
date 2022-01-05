@@ -8,6 +8,7 @@ use crate::{
 use std::sync::{Arc, Mutex};
 use wayland_server::protocol::wl_surface::WlSurface;
 
+/// Helper to track popups.
 #[derive(Debug)]
 pub struct PopupManager {
     unmapped_popups: Vec<PopupKind>,
@@ -16,6 +17,7 @@ pub struct PopupManager {
 }
 
 impl PopupManager {
+    /// Create a new [`PopupManager`].
     pub fn new<L: Into<Option<::slog::Logger>>>(logger: L) -> Self {
         PopupManager {
             unmapped_popups: Vec::new(),
@@ -24,6 +26,7 @@ impl PopupManager {
         }
     }
 
+    /// Start tracking a new popup.
     pub fn track_popup(&mut self, kind: PopupKind) -> Result<(), DeadResource> {
         if kind.parent().is_some() {
             self.add_popup(kind)
@@ -34,6 +37,7 @@ impl PopupManager {
         }
     }
 
+    /// Needs to be called for [`PopupManager`] to correctly update its internal state.
     pub fn commit(&mut self, surface: &WlSurface) {
         if get_role(surface) == Some(XDG_POPUP_ROLE) {
             if let Some(i) = self
@@ -84,6 +88,7 @@ impl PopupManager {
         })
     }
 
+    /// Finds the popup belonging to a given [`WlSurface`], if any.
     pub fn find_popup(&self, surface: &WlSurface) -> Option<PopupKind> {
         self.unmapped_popups
             .iter()
@@ -99,6 +104,7 @@ impl PopupManager {
             })
     }
 
+    /// Returns the popups and their relative positions for a given toplevel surface, if any.
     pub fn popups_for_surface(
         surface: &WlSurface,
     ) -> Result<impl Iterator<Item = (PopupKind, Point<i32, Logical>)>, DeadResource> {
@@ -112,6 +118,8 @@ impl PopupManager {
         })
     }
 
+    /// Needs to be called periodically (but not necessarily frequently)
+    /// to cleanup internal resources.
     pub fn cleanup(&mut self) {
         // retain_mut is sadly still unstable
         self.popup_trees.iter_mut().for_each(|tree| tree.cleanup());
@@ -211,8 +219,10 @@ impl PopupNode {
     }
 }
 
+/// Represents a popup surface
 #[derive(Debug, Clone)]
 pub enum PopupKind {
+    /// xdg-shell [`PopupSurface`]
     Xdg(PopupSurface),
 }
 
@@ -223,6 +233,7 @@ impl PopupKind {
         }
     }
 
+    /// Retrieves the underlying [`WlSurface`]
     pub fn get_surface(&self) -> Option<&WlSurface> {
         match *self {
             PopupKind::Xdg(ref t) => t.get_surface(),
@@ -235,6 +246,7 @@ impl PopupKind {
         }
     }
 
+    /// Returns the surface geometry as set by the client using `xdg_surface::set_window_geometry`
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
         let wl_surface = match self.get_surface() {
             Some(s) => s,

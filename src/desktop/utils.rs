@@ -1,3 +1,5 @@
+//! Helper functions to ease dealing with surface trees
+
 use crate::{
     backend::renderer::utils::SurfaceState,
     desktop::Space,
@@ -53,6 +55,9 @@ impl SurfaceState {
     }
 }
 
+/// Returns the bounding box of a given surface and all its subsurfaces.
+///
+/// - `location` can be set to offset the returned bounding box.
 pub fn bbox_from_surface_tree<P>(surface: &wl_surface::WlSurface, location: P) -> Rectangle<i32, Logical>
 where
     P: Into<Point<i32, Logical>>,
@@ -88,6 +93,12 @@ where
     bounding_box
 }
 
+/// Returns the damage rectangles of the current buffer for a given surface and its subsurfaces.
+///
+/// - `location` can be set to offset the returned bounding box.
+/// - if a `key` is set the damage is only returned on the first call with the given key values.
+///   Subsequent calls will return an empty vector until the buffer is updated again and new
+///   damage values may be retrieved.
 pub fn damage_from_surface_tree<P>(
     surface: &wl_surface::WlSurface,
     location: P,
@@ -155,6 +166,10 @@ where
     damage
 }
 
+/// Returns the (sub-)surface under a given position given a surface, if any.
+///
+/// - `point` has to be the position to query, relative to (0, 0) of the given surface + `location`.
+/// - `location` can be used to offset the returned point.
 pub fn under_from_surface_tree<P>(
     surface: &wl_surface::WlSurface,
     point: Point<f64, Logical>,
@@ -197,6 +212,7 @@ where
     found.into_inner()
 }
 
+/// Sends frame callbacks for a surface and its subsurfaces with the given `time`.
 pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
     with_surface_tree_downward(
         surface,

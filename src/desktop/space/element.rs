@@ -10,6 +10,7 @@ use std::{
 };
 use wayland_server::protocol::wl_surface::WlSurface;
 
+/// Trait for custom elements to be rendered during [`Space::render_output`].
 pub trait RenderElement<R, F, E, T>
 where
     R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
@@ -18,16 +19,33 @@ where
     T: Texture + 'static,
     Self: Any + 'static,
 {
+    /// Returns an id unique to this element for the type of Self.
     fn id(&self) -> usize;
     #[doc(hidden)]
     fn type_of(&self) -> TypeId {
         std::any::Any::type_id(self)
     }
+    /// Returns the bounding box of this element including its position in the space.
     fn geometry(&self) -> Rectangle<i32, Logical>;
+    /// Returns the damage of the element since it's last update.
+    ///
+    /// If you receive `Some(_)` for `for_values` you may cache that you
+    /// send the damage for this `Space` and `Output` combination once
+    /// and return an empty vector for subsequent calls until the contents
+    /// of this element actually change again for optimization reasons.
+    ///
+    /// Returning `vec![Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX))]` is always
+    /// correct, but very inefficient.
     fn accumulated_damage(
         &self,
         for_values: Option<SpaceOutputTuple<'_, '_>>,
     ) -> Vec<Rectangle<i32, Logical>>;
+    /// Draws the element using the provided `Frame` and `Renderer`.
+    ///
+    /// - `scale` provides the current fractional scale value to render as
+    /// - `damage` provides the regions you need to re-draw and *may* not
+    ///   be equivalent to the damage returned by `accumulated_damage`.
+    ///   Redrawing other parts of the element is not valid and may cause rendering artifacts.
     fn draw(
         &self,
         renderer: &mut R,
@@ -98,9 +116,19 @@ where
     }
 }
 
+/// Generic helper for drawing [`WlSurface`]s and their subsurfaces
+/// as custom elements via [`RenderElement`].
+///
+/// For example useful for cursor or drag-and-drop surfaces.
+///
+/// Note: This element will render nothing, if you are not using
+/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
+/// to let smithay handle buffer management.
 #[derive(Debug)]
 pub struct SurfaceTree {
+    /// Surface to be drawn
     pub surface: WlSurface,
+    /// Position to draw add
     pub position: Point<i32, Logical>,
 }
 

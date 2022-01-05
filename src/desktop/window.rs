@@ -19,14 +19,17 @@ use wayland_server::protocol::wl_surface;
 
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
 
+/// Abstraction around different toplevel kinds
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kind {
+    /// xdg-shell [`ToplevelSurface`]
     Xdg(ToplevelSurface),
+    /// XWayland surface (TODO)
     #[cfg(feature = "xwayland")]
     X11(X11Surface),
 }
 
-// Big TODO
+/// TODO
 #[derive(Debug, Clone)]
 pub struct X11Surface {
     surface: wl_surface::WlSurface,
@@ -39,10 +42,12 @@ impl std::cmp::PartialEq for X11Surface {
 }
 
 impl X11Surface {
+    /// Checks if the surface is still alive.
     pub fn alive(&self) -> bool {
         self.surface.as_ref().is_alive()
     }
 
+    /// Returns the underlying [`WlSurface`](wl_surface::WlSurface), if still any.
     pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
         if self.alive() {
             Some(&self.surface)
@@ -53,6 +58,7 @@ impl X11Surface {
 }
 
 impl Kind {
+    /// Checks if the surface is still alive.
     pub fn alive(&self) -> bool {
         match *self {
             Kind::Xdg(ref t) => t.alive(),
@@ -61,6 +67,7 @@ impl Kind {
         }
     }
 
+    /// Returns the underlying [`WlSurface`](wl_surface::WlSurface), if still any.
     pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
         match *self {
             Kind::Xdg(ref t) => t.get_surface(),
@@ -84,6 +91,7 @@ impl Drop for WindowInner {
     }
 }
 
+/// Represents a single application window
 #[derive(Debug, Clone)]
 pub struct Window(pub(super) Rc<WindowInner>);
 
@@ -102,6 +110,7 @@ impl Hash for Window {
 }
 
 impl Window {
+    /// Construct a new [`Window`] from a given compatible toplevel surface
     pub fn new(toplevel: Kind) -> Window {
         let id = next_window_id();
 
@@ -123,7 +132,7 @@ impl Window {
         .unwrap_or_else(|| self.bbox())
     }
 
-    /// A bounding box over this window and its children.
+    /// Returns a bounding box over this window and its children.
     pub fn bbox(&self) -> Rectangle<i32, Logical> {
         if self.0.toplevel.get_surface().is_some() {
             self.0.bbox.get()
@@ -132,6 +141,10 @@ impl Window {
         }
     }
 
+    /// Returns a bounding box over this window and children including popups.
+    ///
+    /// Note: You need to use a [`PopupManager`] to track popups, otherwise the bounding box
+    /// will not include the popups.
     pub fn bbox_with_popups(&self) -> Rectangle<i32, Logical> {
         let mut bounding_box = self.bbox();
         if let Some(surface) = self.0.toplevel.get_surface() {
@@ -204,6 +217,8 @@ impl Window {
 
     /// Finds the topmost surface under this point if any and returns it together with the location of this
     /// surface.
+    ///
+    /// - `point` should be relative to (0,0) of the window.
     pub fn surface_under<P: Into<Point<f64, Logical>>>(
         &self,
         point: P,
@@ -230,7 +245,11 @@ impl Window {
         }
     }
 
-    /// Damage of all the surfaces of this window
+    /// Damage of all the surfaces of this window.
+    ///
+    /// If `for_values` is `Some(_)` it will only return the damage on the
+    /// first call for a given [`Space`] and [`Output`], if the buffer hasn't changed.
+    /// Subsequent calls will return an empty vector until the buffer is updated again.
     pub fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
         let mut damage = Vec::new();
         if let Some(surface) = self.0.toplevel.get_surface() {
@@ -255,15 +274,26 @@ impl Window {
         damage
     }
 
+    /// Returns the underlying toplevel
     pub fn toplevel(&self) -> &Kind {
         &self.0.toplevel
     }
 
+    /// Returns a [`UserDataMap`] to allow associating arbitrary data with this window.
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.user_data
     }
 }
 
+/// Renders a given [`Window`] using a provided renderer and frame.
+///
+/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
+/// - `location` is the position the window should be drawn at.
+/// - `damage` is the set of regions of the window that should be drawn.
+///
+/// Note: This function will render nothing, if you are not using
+/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
+/// to let smithay handle buffer management.
 pub fn draw_window<R, E, F, T, P>(
     renderer: &mut R,
     frame: &mut F,

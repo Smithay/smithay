@@ -1,3 +1,5 @@
+//! Utility module for helpers around drawing [`WlSurface`]s with [`Renderer`]s.
+
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer, Texture},
     utils::{Logical, Physical, Point, Rectangle, Size},
@@ -47,6 +49,15 @@ impl SurfaceState {
     }
 }
 
+/// Handler to let smithay take over buffer management.
+///
+/// Needs to be called first on the commit-callback of
+/// [`crate::wayland::compositor::compositor_init`].
+///
+/// Consumes the buffer of [`SurfaceAttributes`], the buffer will
+/// not be accessible anymore, but [`draw_surface_tree`] and other
+/// `draw_*` helpers of the [desktop module](`crate::desktop`) will
+/// become usable for surfaces handled this way.
 pub fn on_commit_buffer_handler(surface: &WlSurface) {
     if !is_sync_subsurface(surface) {
         with_surface_tree_upward(
@@ -69,6 +80,15 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
     }
 }
 
+/// Draws a surface and its subsurfaces using a given [`Renderer`] and [`Frame`].
+///
+/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
+/// - `location` is the position the surface should be drawn at.
+/// - `damage` is the set of regions of the surface that should be drawn.
+///
+/// Note: This element will render nothing, if you are not using
+/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
+/// to let smithay handle buffer management.
 pub fn draw_surface_tree<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,

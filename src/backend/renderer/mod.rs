@@ -257,7 +257,7 @@ pub trait Renderer {
 pub trait ImportShm: Renderer {
     /// Import a given shm-based buffer into the renderer (see [`buffer_type`]).
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
@@ -324,7 +324,7 @@ pub trait ImportEgl: Renderer {
 
     /// Import a given wl_drm-based buffer into the renderer (see [`buffer_type`]).
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
@@ -372,7 +372,7 @@ pub trait ImportDma: Renderer {
 
     /// Import a given raw dmabuf into the renderer.
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
@@ -395,7 +395,7 @@ pub trait ImportDma: Renderer {
 pub trait ImportAll: Renderer {
     /// Import a given buffer into the renderer.
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.

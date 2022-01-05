@@ -10,7 +10,8 @@
 //! you want on the initialization of the backend. These functions will provide you
 //! with two objects:
 //!
-//! - a [`WinitGraphicsBackend`], which can give you an implementation of a [`Renderer`]
+//! - a [`WinitGraphicsBackend`], which can give you an implementation of a
+//!   [`Renderer`](crate::backend::renderer::Renderer)
 //!   (or even [`Gles2Renderer`]) through its `renderer` method in addition to further
 //!   functionality to access and manage the created winit-window.
 //! - a [`WinitEventLoop`], which dispatches some [`WinitEvent`] from the host graphics server.
@@ -81,7 +82,7 @@ impl WindowSize {
     }
 }
 
-/// Window with an active EGL Context created by `winit`. Implements the [`Renderer`] trait
+/// Window with an active EGL Context created by `winit`.
 #[derive(Debug)]
 pub struct WinitGraphicsBackend {
     renderer: Gles2Renderer,
@@ -112,7 +113,8 @@ pub struct WinitEventLoop {
     is_x11: bool,
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait and a corresponding
+/// Create a new [`WinitGraphicsBackend`], which implements the
+/// [`Renderer`](crate::backend::renderer::Renderer) trait and a corresponding
 /// [`WinitEventLoop`].
 pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitEventLoop), Error>
 where
@@ -127,7 +129,8 @@ where
     )
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait, from a given [`WindowBuilder`]
+/// Create a new [`WinitGraphicsBackend`], which implements the
+/// [`Renderer`](crate::backend::renderer::Renderer) trait, from a given [`WindowBuilder`]
 /// struct and a corresponding [`WinitEventLoop`].
 pub fn init_from_builder<L>(
     builder: WindowBuilder,
@@ -148,7 +151,8 @@ where
     )
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait, from a given [`WindowBuilder`]
+/// Create a new [`WinitGraphicsBackend`], which implements the
+/// [`Renderer`](crate::backend::renderer::Renderer) trait, from a given [`WindowBuilder`]
 /// struct, as well as given [`GlAttributes`] for further customization of the rendering pipeline and a
 /// corresponding [`WinitEventLoop`].
 pub fn init_from_builder_with_gl_attr<L>(

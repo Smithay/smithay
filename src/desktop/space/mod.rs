@@ -1,3 +1,6 @@
+//! This module contains the [`Space`] helper class as well has related
+//! rendering helpers to add custom elements or different clients to a space.
+
 use crate::{
     backend::renderer::{utils::SurfaceState, Frame, ImportAll, Renderer, Transform},
     desktop::{
@@ -40,6 +43,7 @@ pub struct Space {
     logger: ::slog::Logger,
 }
 
+/// Elements rendered by [`Space::render_output`] in addition to windows, layers and popups.
 pub type DynamicRenderElements<R> =
     Box<dyn RenderElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>>;
 
@@ -56,6 +60,7 @@ impl Drop for Space {
 }
 
 impl Space {
+    /// Create a new [`Space`]
     pub fn new<L>(log: L) -> Space
     where
         L: Into<Option<slog::Logger>>,
@@ -68,14 +73,26 @@ impl Space {
         }
     }
 
-    /// Map window and moves it to top of the stack
+    /// Map a [`Window`] and move it to top of the stack
     ///
     /// This can safely be called on an already mapped window
+    /// to update its location inside the space.
+    ///
+    /// If activate is true it will set the new windows state
+    /// to be activate and removes that state from every
+    /// other mapped window.
     pub fn map_window<P: Into<Point<i32, Logical>>>(&mut self, window: &Window, location: P, activate: bool) {
         self.insert_window(window, activate);
         window_state(self.id, window).location = location.into();
     }
 
+    /// Moves an already mapped [`Window`] to top of the stack
+    ///
+    /// This function does nothing for unmapped windows.
+    ///
+    /// If activate is true it will set the new windows state
+    /// to be activate and removes that state from every
+    /// other mapped window.
     pub fn raise_window(&mut self, window: &Window, activate: bool) {
         if self.windows.shift_remove(window) {
             self.insert_window(window, activate);
@@ -95,7 +112,9 @@ impl Space {
         }
     }
 
-    /// Unmap a window from this space by its id
+    /// Unmap a [`Window`] from this space by.
+    ///
+    /// This function does nothing for already unmapped windows
     pub fn unmap_window(&mut self, window: &Window) {
         if let Some(map) = window.user_data().get::<WindowUserdata>() {
             map.borrow_mut().remove(&self.id);
@@ -126,6 +145,7 @@ impl Space {
         })
     }
 
+    /// Returns the window matching a given surface, if any
     pub fn window_for_surface(&self, surface: &WlSurface) -> Option<&Window> {
         if !surface.as_ref().is_alive() {
             return None;
@@ -136,6 +156,7 @@ impl Space {
             .find(|w| w.toplevel().get_surface().map(|x| x == surface).unwrap_or(false))
     }
 
+    /// Returns the layer matching a given surface, if any
     pub fn layer_for_surface(&self, surface: &WlSurface) -> Option<LayerSurface> {
         if !surface.as_ref().is_alive() {
             return None;
@@ -146,6 +167,7 @@ impl Space {
         })
     }
 
+    /// Returns the geometry of a [`Window`] including its relative position inside the Space.
     pub fn window_geometry(&self, w: &Window) -> Option<Rectangle<i32, Logical>> {
         if !self.windows.contains(w) {
             return None;
@@ -154,6 +176,7 @@ impl Space {
         Some(window_geo(w, &self.id))
     }
 
+    /// Returns the bounding box of a [`Window`] including its relative position inside the Space.
     pub fn window_bbox(&self, w: &Window) -> Option<Rectangle<i32, Logical>> {
         if !self.windows.contains(w) {
             return None;
@@ -162,6 +185,14 @@ impl Space {
         Some(window_rect(w, &self.id))
     }
 
+    /// Maps an [`Output`] inside the space.
+    ///
+    /// Can be safely called on an already mapped
+    /// [`Output`] to update its scale or location.
+    ///
+    /// The scale is the what is rendered for the given output
+    /// and may be fractional. It is independent from the integer scale
+    /// reported to clients by the output.
     pub fn map_output<P: Into<Point<i32, Logical>>>(&mut self, output: &Output, scale: f64, location: P) {
         let mut state = output_state(self.id, output);
         *state = OutputState {
@@ -174,17 +205,28 @@ impl Space {
         }
     }
 
+    /// Iterate over all mapped [`Output`]s of this space.
     pub fn outputs(&self) -> impl Iterator<Item = &Output> {
         self.outputs.iter()
     }
 
+    /// Unmap an [`Output`] from this space.
+    ///
+    /// Does nothing if the output was not previously mapped.
     pub fn unmap_output(&mut self, output: &Output) {
+        if !self.outputs.contains(output) {
+            return;
+        }
         if let Some(map) = output.user_data().get::<OutputUserdata>() {
             map.borrow_mut().remove(&self.id);
         }
         self.outputs.retain(|o| o != output);
     }
 
+    /// Returns the geometry of the output including it's relative position inside the space.
+    ///
+    /// The size is matching the amount of logical pixels of the space visible on the output
+    /// given is current mode and render scale.
     pub fn output_geometry(&self, o: &Output) -> Option<Rectangle<i32, Logical>> {
         if !self.outputs.contains(o) {
             return None;
@@ -204,6 +246,10 @@ impl Space {
         })
     }
 
+    /// Returns the reder scale of a mapped output.
+    ///
+    /// If the output was not previously mapped to the `Space`
+    /// this function returns `None`.
     pub fn output_scale(&self, o: &Output) -> Option<f64> {
         if !self.outputs.contains(o) {
             return None;
@@ -213,6 +259,7 @@ impl Space {
         Some(state.render_scale)
     }
 
+    /// Returns all [`Output`]s a [`Window`] overlaps with.
     pub fn outputs_for_window(&self, w: &Window) -> Vec<Output> {
         if !self.windows.contains(w) {
             return Vec::new();
@@ -242,6 +289,11 @@ impl Space {
         outputs
     }
 
+    /// Refresh some internal values and update client state
+    /// based on the position of windows and outputs.
+    ///
+    /// Needs to be called periodically, at best before every
+    /// wayland socket flush.
     pub fn refresh(&mut self) {
         self.windows.retain(|w| w.toplevel().alive());
 
@@ -362,8 +414,8 @@ impl Space {
         }
     }
 
-    /// Automatically calls `Window::refresh` for the window that belongs to the given surface,
-    /// if managed by this space.
+    /// Should be called on commit to let the space automatically call [`Window::refresh`]
+    /// for the window that belongs to the given surface, if managed by this space.
     pub fn commit(&self, surface: &WlSurface) {
         if is_sync_subsurface(surface) {
             return;
@@ -377,6 +429,24 @@ impl Space {
         }
     }
 
+    /// Render a given [`Output`] using a given [`Renderer`].
+    ///
+    /// [`Space`] will render all mapped [`Window`]s, mapped [`LayerSurface`](super::LayerSurface)s
+    /// of the given [`Output`] and their popups (if tracked by a [`PopupManager`](super::PopupManager)).
+    /// `clear_color` will be used to fill all unoccupied regions.
+    ///
+    /// Rendering using this function will automatically apply damage-tracking.
+    /// To facilitate this you need to provide age values of the buffers bound to
+    /// the given `renderer`. If you stop using `Space` temporarily for rendering
+    /// or apply additional rendering operations, you need to reset the age values
+    /// accordingly as `Space` will be unable to track your custom rendering operations
+    /// to avoid rendering artifacts.
+    ///
+    /// To add aditional elements without breaking damage-tracking implement the `RenderElement`
+    /// trait and use `custom_elements` to provide them to this function. `custom_elements are rendered
+    /// after every other element.
+    ///
+    /// Returns a list of updated regions (or `None` if that list would be empty) in case of success.
     pub fn render_output<R>(
         &mut self,
         renderer: &mut R,
@@ -467,7 +537,7 @@ impl Space {
         let new_damage = damage.clone();
         // We now add old damage states, if we have an age value
         if age > 0 && state.old_damage.len() >= age {
-            // We do not need older states anymore
+            // We do not need even older states anymore
             state.old_damage.truncate(age);
             damage.extend(state.old_damage.iter().flatten().copied());
         } else {
@@ -582,6 +652,11 @@ impl Space {
         Ok(Some(new_damage))
     }
 
+    /// Sends the frame callback to mapped [`Window`]s and [`LayerSurface`]s.
+    ///
+    /// If `all` is set this will be send to `all` mapped surfaces.
+    /// Otherwise only windows and layers previously drawn during the
+    /// previous frame will be send frame events.
     pub fn send_frames(&self, all: bool, time: u32) {
         for window in self.windows.iter().filter(|w| {
             all || {
@@ -606,12 +681,16 @@ impl Space {
     }
 }
 
+/// Errors thrown by [`Space::render_output`]
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError<R: Renderer> {
+    /// The provided [`Renderer`] did return an error during an operation
     #[error(transparent)]
     Rendering(R::Error),
+    /// The given [`Output`] has no set mode
     #[error("Output has no active mode")]
     OutputNoMode,
+    /// The given [`Output`] is not mapped to this [`Space`].
     #[error("Output was not mapped to this space")]
     UnmappedOutput,
 }
