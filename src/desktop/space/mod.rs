@@ -18,7 +18,7 @@ use crate::{
     },
 };
 use indexmap::{IndexMap, IndexSet};
-use std::{cell::RefCell, collections::VecDeque};
+use std::{cell::RefCell, collections::VecDeque, fmt};
 use wayland_server::protocol::wl_surface::WlSurface;
 
 mod element;
@@ -682,7 +682,7 @@ impl Space {
 }
 
 /// Errors thrown by [`Space::render_output`]
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 pub enum RenderError<R: Renderer> {
     /// The provided [`Renderer`] did return an error during an operation
     #[error(transparent)]
@@ -693,4 +693,14 @@ pub enum RenderError<R: Renderer> {
     /// The given [`Output`] is not mapped to this [`Space`].
     #[error("Output was not mapped to this space")]
     UnmappedOutput,
+}
+
+impl<R: Renderer> fmt::Debug for RenderError<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RenderError::Rendering(err) => fmt::Debug::fmt(err, f),
+            RenderError::OutputNoMode => f.write_str("Output has no active move"),
+            RenderError::UnmappedOutput => f.write_str("Output was not mapped to this space"),
+        }
+    }
 }
