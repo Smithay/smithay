@@ -84,11 +84,14 @@ impl LayerMap {
         self.zone
     }
 
-    pub fn layer_geometry(&self, layer: &LayerSurface) -> Rectangle<i32, Logical> {
+    pub fn layer_geometry(&self, layer: &LayerSurface) -> Option<Rectangle<i32, Logical>> {
+        if !self.layers.contains(layer) {
+            return None;
+        }
         let mut bbox = layer.bbox_with_popups();
         let state = layer_state(layer);
         bbox.loc += state.location;
-        bbox
+        Some(bbox)
     }
 
     pub fn layer_under<P: Into<Point<f64, Logical>>>(
@@ -98,7 +101,7 @@ impl LayerMap {
     ) -> Option<&LayerSurface> {
         let point = point.into();
         self.layers_on(layer).rev().find(|l| {
-            let bbox = self.layer_geometry(l);
+            let bbox = self.layer_geometry(l).unwrap();
             bbox.to_f64().contains(point)
         })
     }

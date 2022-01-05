@@ -30,12 +30,7 @@ use self::window::*;
 
 crate::utils::ids::id_gen!(next_space_id, SPACE_ID, SPACE_IDS);
 
-#[derive(Debug, thiserror::Error)]
-pub enum SpaceError {
-    #[error("Window is not mapped to this space")]
-    UnknownWindow,
-}
-
+/// Represents two dimensional plane to map windows and outputs upon.
 #[derive(Debug)]
 pub struct Space {
     pub(super) id: usize,
@@ -47,6 +42,12 @@ pub struct Space {
 
 pub type DynamicRenderElements<R> =
     Box<dyn RenderElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>>;
+
+impl PartialEq for Space {
+    fn eq(&self, other: &Space) -> bool {
+        self.id == other.id
+    }
+}
 
 impl Drop for Space {
     fn drop(&mut self) {
@@ -390,6 +391,10 @@ impl Space {
         R::Error: 'static,
         R::Frame: 'static,
     {
+        if !self.outputs.contains(output) {
+            return Err(RenderError::UnmappedOutput);
+        }
+
         type SpaceElem<R> =
             dyn SpaceElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>;
 
@@ -474,14 +479,7 @@ impl Space {
         damage.dedup();
         damage.retain(|rect| rect.overlaps(output_geo));
         damage.retain(|rect| rect.size.h > 0 && rect.size.w > 0);
-        for rect in damage.clone().iter() {
-            // if this rect was already removed, because it was smaller as another one,
-            // there is no reason to evaluate this.
-            if damage.contains(rect) {
-                // remove every rectangle that is contained in this rectangle
-                damage.retain(|other| !rect.contains_rect(*other));
-            }
-        }
+        // merge overlapping rectangles
         damage = damage.into_iter().fold(Vec::new(), |mut new_damage, rect| {
             if let Some(existing) = new_damage.iter_mut().find(|other| rect.overlaps(**other)) {
                 *existing = existing.merge(rect);
@@ -614,4 +612,6 @@ pub enum RenderError<R: Renderer> {
     Rendering(R::Error),
     #[error("Output has no active mode")]
     OutputNoMode,
+    #[error("Output was not mapped to this space")]
+    UnmappedOutput,
 }

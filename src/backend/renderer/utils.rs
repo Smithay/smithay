@@ -15,7 +15,7 @@ pub(crate) struct SurfaceState {
     pub(crate) buffer_scale: i32,
     pub(crate) buffer: Option<WlBuffer>,
     pub(crate) texture: Option<Box<dyn std::any::Any + 'static>>,
-    pub(crate) damage_seen: HashSet<(usize, *const ())>,
+    pub(crate) damage_seen: HashSet<crate::desktop::space::SpaceOutputHash>,
 }
 
 impl SurfaceState {
@@ -69,7 +69,6 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
     }
 }
 
-/// TODO
 pub fn draw_surface_tree<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,

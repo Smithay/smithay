@@ -32,6 +32,7 @@ use crate::backend::egl::{
     Error as EglError,
 };
 
+#[cfg(feature = "wayland_frontend")]
 pub mod utils;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]

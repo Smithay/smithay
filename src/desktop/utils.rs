@@ -12,7 +12,7 @@ use crate::{
 };
 use wayland_server::protocol::wl_surface;
 
-use std::{cell::RefCell, sync::Arc};
+use std::cell::RefCell;
 
 impl SurfaceState {
     /// Returns the size of the surface.
@@ -96,8 +96,10 @@ pub fn damage_from_surface_tree<P>(
 where
     P: Into<Point<i32, Logical>>,
 {
+    use super::space::SpaceOutputTuple;
+
     let mut damage = Vec::new();
-    let key = key.map(|(space, output)| (space.id, Arc::as_ptr(&output.inner) as *const ()));
+    let key = key.map(|x| SpaceOutputTuple::from(x).owned_hash());
     with_surface_tree_upward(
         surface,
         location.into(),
