@@ -112,7 +112,7 @@ impl Space {
         }
     }
 
-    /// Unmap a [`Window`] from this space by.
+    /// Unmap a [`Window`] from this space.
     ///
     /// This function does nothing for already unmapped windows
     pub fn unmap_window(&mut self, window: &Window) {

@@ -307,7 +307,7 @@ impl Hash for LayerSurface {
 }
 
 #[derive(Debug)]
-pub struct LayerSurfaceInner {
+pub(crate) struct LayerSurfaceInner {
     pub(crate) id: usize,
     surface: WlrLayerSurface,
     namespace: String,

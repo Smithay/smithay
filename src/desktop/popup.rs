@@ -43,9 +43,7 @@ impl PopupManager {
             if let Some(i) = self
                 .unmapped_popups
                 .iter()
-                .enumerate()
-                .find(|(_, p)| p.get_surface() == Some(surface))
-                .map(|(i, _)| i)
+                .position(|p| p.get_surface() == Some(surface))
             {
                 slog::trace!(self.logger, "Popup got mapped");
                 let popup = self.unmapped_popups.swap_remove(i);

@@ -2,7 +2,7 @@
 //!
 //! This module contains helpers to organize and interact with desktop-style shells.
 //!
-//! It is therefor a lot more opinionate then for example the [xdg-shell handler](crate::wayland::shell::xdg::xdg_shell_init)
+//! It is therefore a lot more opinionated than for example the [xdg-shell handler](crate::wayland::shell::xdg::xdg_shell_init)
 //! and tightly integrates with some protocols (e.g. xdg-shell).
 //!
 //! The usage of this module is therefor entirely optional and depending on your use-case you might also only want
@@ -12,7 +12,7 @@
 //!
 //! ### [`Window`]
 //!
-//! A window represents what is by the user typically understood as a single application window.
+//! A window represents what is typically understood by the end-user as a single application window.
 //!
 //! Currently it abstracts over xdg-shell toplevels and Xwayland surfaces (TODO).
 //! It provides a bunch of methods to calculate and retrieve its size, manage itself, attach additional user_data
@@ -45,9 +45,9 @@
 //!
 //! ## Remarks
 //!
-//! Note that the desktop abstractions are concerned with easing rendering different clients and therefor need to be able
+//! Note that the desktop abstractions are concerned with easing rendering different clients and therefore need to be able
 //! to manage client buffers to do so. If you plan to use the provided drawing functions, you need to use
-//! [`crate::backend::renderer::utils::on_commit_buffer_handler`].
+//! [`on_commit_buffer_handler`](crate::backend::renderer::utils::on_commit_buffer_handler).
 
 pub(crate) mod layer;
 mod popup;
