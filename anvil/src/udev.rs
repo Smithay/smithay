@@ -50,7 +50,7 @@ use smithay::{
     },
     utils::{
         signaling::{Linkable, SignalToken, Signaler},
-        Logical, Point,
+        Logical, Point, Rectangle,
     },
     wayland::{
         output::{Mode, PhysicalProperties},
@@ -797,6 +797,7 @@ fn render_surface(
                             1,
                             output_scale as f64,
                             Transform::Normal,
+                            &[Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX))],
                             1.0,
                         )?;
                     }
@@ -862,7 +863,10 @@ fn initial_render(surface: &mut RenderSurface, renderer: &mut Gles2Renderer) -> 
     renderer
         .render((1, 1).into(), Transform::Normal, |_, frame| {
             frame
-                .clear([0.8, 0.8, 0.9, 1.0], None)
+                .clear(
+                    [0.8, 0.8, 0.9, 1.0],
+                    &[Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX))],
+                )
                 .map_err(Into::<SwapBuffersError>::into)
         })
         .map_err(Into::<SwapBuffersError>::into)
