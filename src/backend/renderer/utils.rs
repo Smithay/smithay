@@ -8,7 +8,9 @@ use crate::{
         SurfaceAttributes, TraversalAction,
     },
 };
-use std::{cell::RefCell, collections::HashSet};
+use std::cell::RefCell;
+#[cfg(feature = "desktop")]
+use std::collections::HashSet;
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
 #[derive(Default)]
@@ -17,6 +19,7 @@ pub(crate) struct SurfaceState {
     pub(crate) buffer_scale: i32,
     pub(crate) buffer: Option<WlBuffer>,
     pub(crate) texture: Option<Box<dyn std::any::Any + 'static>>,
+    #[cfg(feature = "desktop")]
     pub(crate) damage_seen: HashSet<crate::desktop::space::SpaceOutputHash>,
 }
 
@@ -33,6 +36,7 @@ impl SurfaceState {
                     }
                 }
                 self.texture = None;
+                #[cfg(feature = "desktop")]
                 self.damage_seen.clear();
             }
             Some(BufferAssignment::Removed) => {
@@ -42,6 +46,7 @@ impl SurfaceState {
                     buffer.release();
                 };
                 self.texture = None;
+                #[cfg(feature = "desktop")]
                 self.damage_seen.clear();
             }
             None => {}
