@@ -136,10 +136,10 @@ impl Space {
         })
     }
 
-    /// Get a reference to the output under a given point, if any
-    pub fn output_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<&Output> {
+    /// Get a reference to the outputs under a given point
+    pub fn output_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> impl Iterator<Item = &Output> {
         let point = point.into();
-        self.outputs.iter().rev().find(|o| {
+        self.outputs.iter().rev().filter(move |o| {
             let bbox = self.output_geometry(o);
             bbox.map(|bbox| bbox.to_f64().contains(point)).unwrap_or(false)
         })
