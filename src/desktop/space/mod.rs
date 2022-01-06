@@ -193,11 +193,17 @@ impl Space {
     /// The scale is the what is rendered for the given output
     /// and may be fractional. It is independent from the integer scale
     /// reported to clients by the output.
+    ///
+    /// *Note:* Remapping an output does reset it's damage memory.
     pub fn map_output<P: Into<Point<i32, Logical>>>(&mut self, output: &Output, scale: f64, location: P) {
         let mut state = output_state(self.id, output);
         *state = OutputState {
             location: location.into(),
             render_scale: scale,
+            // keep surfaces, we still need to inform them of leaving,
+            // if they don't overlap anymore during refresh.
+            surfaces: state.surfaces.drain(..).collect::<Vec<_>>(),
+            // resets last_seen and old_damage, if remapped
             ..Default::default()
         };
         if !self.outputs.contains(output) {
@@ -289,8 +295,9 @@ impl Space {
         outputs
     }
 
-    /// Refresh some internal values and update client state
-    /// based on the position of windows and outputs.
+    /// Refresh some internal values and update client state,
+    /// meaning this will handle output enter and leave events
+    /// for mapped outputs and windows based on their position.
     ///
     /// Needs to be called periodically, at best before every
     /// wayland socket flush.
