@@ -297,6 +297,23 @@ impl<N: Coordinate, Kind> Point<N, Kind> {
 }
 
 impl<N: Coordinate, Kind> Point<N, Kind> {
+    /// Constrain this [`Point`] within a [`Rectangle`] with the same coordinates
+    ///
+    /// The [`Point`] returned is guaranteed to be not smaller than the [`Rectangle`]
+    /// location and not greater than the [`Rectangle`] location + size.
+    #[inline]
+    pub fn constrain(self, rect: impl Into<Rectangle<N, Kind>>) -> Point<N, Kind> {
+        let rect = rect.into();
+
+        Point {
+            x: self.x.max(rect.loc.x).min(rect.loc.x.saturating_add(rect.size.w)),
+            y: self.y.max(rect.loc.y).min(rect.loc.y.saturating_add(rect.size.h)),
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: Coordinate, Kind> Point<N, Kind> {
     /// Convert the underlying numerical type to f64 for floating point manipulations
     #[inline]
     pub fn to_f64(self) -> Point<f64, Kind> {
@@ -538,6 +555,20 @@ impl<N: Coordinate, Kind> Size<N, Kind> {
         Point {
             x: self.w,
             y: self.h,
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: Coordinate, Kind> Size<N, Kind> {
+    /// Restrict this [`Size`] to min and max [`Size`] with the same coordinates
+    pub fn clamp(self, min: impl Into<Size<N, Kind>>, max: impl Into<Size<N, Kind>>) -> Size<N, Kind> {
+        let min = min.into();
+        let max = max.into();
+
+        Size {
+            w: self.w.max(min.w).min(max.w),
+            h: self.h.max(min.h).min(max.h),
             _kind: std::marker::PhantomData,
         }
     }
@@ -895,11 +926,8 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
             return None;
         }
         Some(Rectangle::from_extemities(
-            (self.loc.x.max(other.loc.x), self.loc.y.max(other.loc.y)),
-            (
-                (self.loc.x.saturating_add(self.size.w)).min(other.loc.x.saturating_add(other.size.w)),
-                (self.loc.y.saturating_add(self.size.h)).min(other.loc.y.saturating_add(other.size.h)),
-            ),
+            self.loc.constrain(other),
+            self.loc.add(self.size).constrain(other),
         ))
     }
 
@@ -1038,5 +1066,184 @@ impl<N: Default, Kind> Default for Rectangle<N, Kind> {
             loc: Default::default(),
             size: Default::default(),
         }
+    }
+}
+
+mod tests {
+    #[test]
+    fn test_point_constrain_stays() {
+        use super::{Physical, Point, Rectangle};
+
+        let point: Point<_, Physical> = Point::from((100f64, 100f64));
+        let rect: Rectangle<_, Physical> = Rectangle::from_loc_and_size((50f64, 50f64), (100f64, 100f64));
+
+        let constrained = point.constrain(rect);
+        assert_eq!(constrained, point);
+    }
+
+    #[test]
+    fn test_point_constrain_right() {
+        use super::{Physical, Point, Rectangle};
+
+        let point: Point<_, Physical> = Point::from((200f64, 100f64));
+        let rect: Rectangle<_, Physical> = Rectangle::from_loc_and_size((50f64, 50f64), (100f64, 100f64));
+
+        let constrained = point.constrain(rect);
+        assert_eq!(constrained, Point::from((150f64, 100f64)));
+    }
+
+    #[test]
+    fn test_point_constrain_left() {
+        use super::{Physical, Point, Rectangle};
+
+        let point: Point<_, Physical> = Point::from((50f64, 100f64));
+        let rect: Rectangle<_, Physical> = Rectangle::from_loc_and_size((50f64, 50f64), (100f64, 100f64));
+
+        let constrained = point.constrain(rect);
+        assert_eq!(constrained, Point::from((50f64, 100f64)));
+    }
+
+    #[test]
+    fn test_point_constrain_top() {
+        use super::{Physical, Point, Rectangle};
+
+        let point: Point<_, Physical> = Point::from((100f64, 20f64));
+        let rect: Rectangle<_, Physical> = Rectangle::from_loc_and_size((50f64, 50f64), (100f64, 100f64));
+
+        let constrained = point.constrain(rect);
+        assert_eq!(constrained, Point::from((100f64, 50f64)));
+    }
+
+    #[test]
+    fn test_point_constrain_bottom() {
+        use super::{Physical, Point, Rectangle};
+
+        let point: Point<_, Physical> = Point::from((100f64, 200f64));
+        let rect: Rectangle<_, Physical> = Rectangle::from_loc_and_size((50f64, 50f64), (100f64, 100f64));
+
+        let constrained = point.constrain(rect);
+        assert_eq!(constrained, Point::from((100f64, 150f64)));
+    }
+
+    #[test]
+    fn test_size_clamp_stays() {
+        use super::{Physical, Size};
+
+        let size: Size<_, Physical> = Size::from((100f64, 50f64));
+        let min: Size<_, Physical> = Size::from((20f64, 10f64));
+        let max: Size<_, Physical> = Size::from((1000f64, 500f64));
+
+        let clamped = size.clamp(min, max);
+        assert_eq!(clamped, size);
+    }
+
+    #[test]
+    fn test_size_clamp_wider() {
+        use super::{Physical, Size};
+
+        let size: Size<_, Physical> = Size::from((1100f64, 50f64));
+        let min: Size<_, Physical> = Size::from((20f64, 10f64));
+        let max: Size<_, Physical> = Size::from((1000f64, 500f64));
+
+        let clamped = size.clamp(min, max);
+        assert_eq!(clamped, Size::from((1000f64, 50f64)));
+    }
+
+    #[test]
+    fn test_size_clamp_taler() {
+        use super::{Physical, Size};
+
+        let size: Size<_, Physical> = Size::from((100f64, 550f64));
+        let min: Size<_, Physical> = Size::from((20f64, 10f64));
+        let max: Size<_, Physical> = Size::from((1000f64, 500f64));
+
+        let clamped = size.clamp(min, max);
+        assert_eq!(clamped, Size::from((100f64, 500f64)));
+    }
+
+    #[test]
+    fn test_size_clamp_smaller_width() {
+        use super::{Physical, Size};
+
+        let size: Size<_, Physical> = Size::from((10f64, 50f64));
+        let min: Size<_, Physical> = Size::from((20f64, 10f64));
+        let max: Size<_, Physical> = Size::from((1000f64, 500f64));
+
+        let clamped = size.clamp(min, max);
+        assert_eq!(clamped, Size::from((20f64, 50f64)));
+    }
+
+    #[test]
+    fn test_size_clamp_smaller_height() {
+        use super::{Physical, Size};
+
+        let size: Size<_, Physical> = Size::from((100f64, 5f64));
+        let min: Size<_, Physical> = Size::from((20f64, 10f64));
+        let max: Size<_, Physical> = Size::from((1000f64, 500f64));
+
+        let clamped = size.clamp(min, max);
+        assert_eq!(clamped, Size::from((100f64, 10f64)));
+    }
+
+    #[test]
+    fn test_intersection_self_inner_overlaps() {
+        use super::{Physical, Rectangle};
+
+        let rect_self: Rectangle<_, Physical> = Rectangle::from_extemities((20f64, 10f64), (100f64, 60f64));
+        let rect_other: Rectangle<_, Physical> = Rectangle::from_extemities((0f64, 0f64), (150f64, 150f64));
+
+        let intersection = rect_self.intersection(rect_other);
+        assert_eq!(intersection, Some(rect_self),);
+    }
+
+    #[test]
+    fn test_intersection_self_outer_overlaps() {
+        use super::{Physical, Rectangle};
+
+        let rect_self: Rectangle<_, Physical> = Rectangle::from_extemities((0f64, 0f64), (150f64, 150f64));
+        let rect_other: Rectangle<_, Physical> = Rectangle::from_extemities((20f64, 10f64), (100f64, 60f64));
+
+        let intersection = rect_self.intersection(rect_other);
+        assert_eq!(intersection, Some(rect_other),);
+    }
+
+    #[test]
+    fn test_intersection_self_left_overlaps() {
+        use super::{Physical, Rectangle};
+
+        let rect_self: Rectangle<_, Physical> = Rectangle::from_extemities((20f64, 10f64), (100f64, 60f64));
+        let rect_other: Rectangle<_, Physical> = Rectangle::from_extemities((70f64, 40f64), (150f64, 90f64));
+
+        let intersection = rect_self.intersection(rect_other);
+        assert_eq!(
+            intersection,
+            Some(Rectangle::from_extemities((70f64, 40f64), (100f64, 60f64)))
+        );
+    }
+
+    #[test]
+    fn test_intersection_self_right_overlaps() {
+        use super::{Physical, Rectangle};
+
+        let rect_other: Rectangle<_, Physical> = Rectangle::from_extemities((20f64, 10f64), (100f64, 60f64));
+        let rect_self: Rectangle<_, Physical> = Rectangle::from_extemities((70f64, 40f64), (150f64, 90f64));
+
+        let intersection = rect_self.intersection(rect_other);
+        assert_eq!(
+            intersection,
+            Some(Rectangle::from_extemities((70f64, 40f64), (100f64, 60f64)))
+        );
+    }
+
+    #[test]
+    fn test_intersection_non_overlap() {
+        use super::{Physical, Rectangle};
+
+        let rect_self: Rectangle<_, Physical> = Rectangle::from_extemities((20f64, 10f64), (100f64, 60f64));
+        let rect_other: Rectangle<_, Physical> =
+            Rectangle::from_extemities((170f64, 140f64), (250f64, 190f64));
+
+        let intersection = rect_self.intersection(rect_other);
+        assert_eq!(intersection, None,);
     }
 }

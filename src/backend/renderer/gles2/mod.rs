@@ -1283,15 +1283,24 @@ impl Frame for Gles2Frame {
             (texture_mat * Vector3::new(src.loc.x as f32, (src.loc.y + src.size.h) as f32, 0.0)).truncate(), // bottom-left
         ];
 
+        let damage_viewport = Rectangle::from_extemities((0f64, 0f64), dest.size.to_point());
+
         let damage = damage
             .iter()
-            .map(|rect| {
-                [
-                    rect.loc.x as f32 / dest.size.w as f32,
-                    rect.loc.y as f32 / dest.size.h as f32,
-                    rect.size.w as f32 / dest.size.w as f32,
-                    rect.size.h as f32 / dest.size.h as f32,
-                ]
+            .flat_map(|rect| {
+                let damage = rect
+                    .to_f64()
+                    .intersection(damage_viewport)
+                    .map(|rect_constrained| {
+                        [
+                            (rect_constrained.loc.x / dest.size.w) as f32,
+                            (rect_constrained.loc.y / dest.size.h) as f32,
+                            (rect_constrained.size.w / dest.size.w) as f32,
+                            (rect_constrained.size.h / dest.size.h) as f32,
+                        ]
+                    });
+                debug_assert!(damage.is_some());
+                damage
             })
             .flatten()
             .collect::<Vec<_>>();
