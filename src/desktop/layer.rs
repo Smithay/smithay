@@ -504,7 +504,7 @@ impl LayerSurface {
 /// Note: This function will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn draw_layer<R, E, F, T, P>(
+pub fn draw_layer_surface<R, E, F, T, P>(
     renderer: &mut R,
     frame: &mut F,
     layer: &LayerSurface,

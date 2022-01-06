@@ -63,7 +63,7 @@ where
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
-        let res = draw_layer(renderer, frame, self, scale, location, damage, log);
+        let res = draw_layer_surface(renderer, frame, self, scale, location, damage, log);
         if res.is_ok() {
             layer_state(space_id, self).drawn = true;
         }

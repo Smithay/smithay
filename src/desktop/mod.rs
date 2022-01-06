@@ -35,13 +35,13 @@
 //!
 //! Each [`Output`](crate::wayland::output::Output) can be associated a [`LayerMap`] by calling [`layer_map_for_output`],
 //! which [`LayerSurface`]s can be mapped upon. Associated layer maps are automatically rendered by [`Space::render_output`],
-//! but a [draw function](`draw_layer`) is also provided for manual layer-surface management.
+//! but a [draw function](`draw_layer_surface`) is also provided for manual layer-surface management.
 //!
 //! ### Popups
 //!
 //! Provides a [`PopupManager`], which can be used to automatically keep track of popups and their
 //! relations to one-another. Popups are then automatically rendered with their matching toplevel surfaces,
-//! when either [`draw_window`], [`draw_layer`] or [`Space::render_output`] is called.
+//! when either [`draw_window`], [`draw_layer_surface`] or [`Space::render_output`] is called.
 //!
 //! ## Remarks
 //!
@@ -55,7 +55,7 @@ pub mod space;
 pub mod utils;
 mod window;
 
-pub use self::layer::{draw_layer, layer_map_for_output, LayerMap, LayerSurface};
+pub use self::layer::{draw_layer_surface, layer_map_for_output, LayerMap, LayerSurface};
 pub use self::popup::*;
 pub use self::space::Space;
 pub use self::window::*;
