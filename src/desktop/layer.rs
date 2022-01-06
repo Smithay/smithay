@@ -97,9 +97,9 @@ impl LayerMap {
         self.zone
     }
 
-    /// Returns the geometry of a given mapped layer.
+    /// Returns the geometry of a given mapped [`LayerSurface.
     ///
-    /// If the layer was not previously mapped onto this layer map,
+    /// If the surface was not previously mapped onto this layer map,
     /// this function return `None`.
     pub fn layer_geometry(&self, layer: &LayerSurface) -> Option<Rectangle<i32, Logical>> {
         if !self.layers.contains(layer) {
@@ -111,7 +111,7 @@ impl LayerMap {
         Some(bbox)
     }
 
-    /// Returns a `LayerSurface` under a given point and on a given layer, if any.
+    /// Returns a [`LayerSurface`] under a given point and on a given layer, if any.
     pub fn layer_under<P: Into<Point<f64, Logical>>>(
         &self,
         layer: WlrLayer,
@@ -147,9 +147,9 @@ impl LayerMap {
             .find(|w| w.get_surface().map(|x| x == surface).unwrap_or(false))
     }
 
-    /// Force re-arranging the layers, e.g. when the output size changes.
+    /// Force re-arranging the layer surfaces, e.g. when the output size changes.
     ///
-    /// Note: Mapping or unmapping a layer will automatically cause a re-arrangement.
+    /// Note: Mapping or unmapping a layer surface will automatically cause a re-arrangement.
     pub fn arrange(&mut self) {
         if let Some(output) = self.output() {
             let output_rect = Rectangle::from_loc_and_size(
@@ -401,7 +401,7 @@ impl LayerSurface {
         }
     }
 
-    /// Returns the bounding box over this layer, it subsurfaces as well as any popups.
+    /// Returns the bounding box over this layer surface, it subsurfaces as well as any popups.
     ///
     /// Note: You need to use a [`PopupManager`] to track popups, otherwise the bounding box
     /// will not include the popups.
@@ -450,7 +450,7 @@ impl LayerSurface {
         }
     }
 
-    /// Returns the damage of all the surfaces of this layer.
+    /// Returns the damage of all the surfaces of this layer surface.
     ///
     /// If `for_values` is `Some(_)` it will only return the damage on the
     /// first call for a given [`Space`] and [`Output`], if the buffer hasn't changed.
