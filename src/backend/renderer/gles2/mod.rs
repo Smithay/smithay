@@ -1286,11 +1286,18 @@ impl Frame for Gles2Frame {
         let damage = damage
             .iter()
             .map(|rect| {
+                let rect = rect.to_f64();
+
+                let rect_constrained_loc = rect
+                    .loc
+                    .constrain(Rectangle::from_extemities((0f64, 0f64), dest.size.to_point()));
+                let rect_clamped_size = rect.size.clamp((0f64, 0f64), dest.size);
+
                 [
-                    rect.loc.x as f32 / dest.size.w as f32,
-                    rect.loc.y as f32 / dest.size.h as f32,
-                    rect.size.w as f32 / dest.size.w as f32,
-                    rect.size.h as f32 / dest.size.h as f32,
+                    (rect_constrained_loc.x / dest.size.w) as f32,
+                    (rect_constrained_loc.y / dest.size.h) as f32,
+                    (rect_clamped_size.w / dest.size.w) as f32,
+                    (rect_clamped_size.h / dest.size.h) as f32,
                 ]
             })
             .flatten()
