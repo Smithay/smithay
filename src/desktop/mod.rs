@@ -28,7 +28,7 @@
 //! Windows get a position and stacking order through mapping. Outputs become views of a part of the [`Space`]
 //! and can be rendered via [`Space::render_output`]. Rendering results of spaces are automatically damage-tracked.
 //!
-//! ### Layer
+//! ### Layer Shell
 //!
 //! A [`LayerSurface`] represents a surface as provided by e.g. the layer-shell protocol.
 //! It provides similar helper methods as a [`Window`] does to toplevel surfaces.
