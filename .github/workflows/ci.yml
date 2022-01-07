@@ -104,7 +104,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: update
-          args: -p libdbus-sys -p calloop:0.6.1
+          args: -p libdbus-sys
       - name: Check
         uses: actions-rs/cargo@v1
         with:
