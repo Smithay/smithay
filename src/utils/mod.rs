@@ -6,6 +6,8 @@ pub mod signaling;
 #[cfg(feature = "x11rb_event_source")]
 pub mod x11rb;
 
+#[cfg(feature = "desktop")]
+pub(crate) mod ids;
 pub mod user_data;
 
 pub use self::geometry::{Buffer, Coordinate, Logical, Physical, Point, Raw, Rectangle, Size};

@@ -40,7 +40,7 @@ extern "system" fn egl_debug_log(
             }
             egl::DEBUG_MSG_WARN_KHR => slog::warn!(logger, "[EGL] {}: {}", command_utf8, message_utf8),
             egl::DEBUG_MSG_INFO_KHR => slog::info!(logger, "[EGL] {}: {}", command_utf8, message_utf8),
-            _ => slog::debug!(logger, "[EGL] {}: {}", command_utf8, message_utf8),
+            _ => {}
         };
     });
 }

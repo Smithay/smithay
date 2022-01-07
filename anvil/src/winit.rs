@@ -9,6 +9,7 @@ use smithay::{
 };
 use smithay::{
     backend::{
+        renderer::{Renderer, Transform},
         winit::{self, WinitEvent},
         SwapBuffersError,
     },
@@ -46,39 +47,39 @@ pub fn run_winit(log: Logger) {
     let mut event_loop = EventLoop::try_new().unwrap();
     let display = Rc::new(RefCell::new(Display::new()));
 
-    let (renderer, mut winit) = match winit::init(log.clone()) {
+    let (backend, mut winit) = match winit::init(log.clone()) {
         Ok(ret) => ret,
         Err(err) => {
             slog::crit!(log, "Failed to initialize Winit backend: {}", err);
             return;
         }
     };
-    let renderer = Rc::new(RefCell::new(renderer));
+    let backend = Rc::new(RefCell::new(backend));
 
     #[cfg(feature = "egl")]
-    if renderer
+    if backend
         .borrow_mut()
         .renderer()
         .bind_wl_display(&display.borrow())
         .is_ok()
     {
         info!(log, "EGL hardware-acceleration enabled");
-        let dmabuf_formats = renderer
+        let dmabuf_formats = backend
             .borrow_mut()
             .renderer()
             .dmabuf_formats()
             .cloned()
             .collect::<Vec<_>>();
-        let renderer = renderer.clone();
+        let backend = backend.clone();
         init_dmabuf_global(
             &mut *display.borrow_mut(),
             dmabuf_formats,
-            move |buffer, _| renderer.borrow_mut().renderer().import_dmabuf(buffer).is_ok(),
+            move |buffer, _| backend.borrow_mut().renderer().import_dmabuf(buffer).is_ok(),
             log.clone(),
         );
     };
 
-    let size = renderer.borrow().window_size().physical_size;
+    let size = backend.borrow().window_size().physical_size;
 
     /*
      * Initialize the globals
@@ -87,7 +88,7 @@ pub fn run_winit(log: Logger) {
     let data = WinitData {
         #[cfg(feature = "debug")]
         fps_texture: import_bitmap(
-            renderer.borrow_mut().renderer(),
+            backend.borrow_mut().renderer(),
             &image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
                 .decode()
                 .unwrap()
@@ -153,7 +154,7 @@ pub fn run_winit(log: Logger) {
 
         // drawing logic
         {
-            let mut renderer = renderer.borrow_mut();
+            let mut backend = backend.borrow_mut();
             // This is safe to do as with winit we are guaranteed to have exactly one output
             let (output_geometry, output_scale) = state
                 .output_map
@@ -162,82 +163,88 @@ pub fn run_winit(log: Logger) {
                 .map(|output| (output.geometry(), output.scale()))
                 .unwrap();
 
-            let result = renderer
-                .render(|renderer, frame| {
-                    render_layers_and_windows(
-                        renderer,
-                        frame,
-                        &*state.window_map.borrow(),
-                        output_geometry,
-                        output_scale,
-                        &log,
-                    )?;
-
-                    let (x, y) = state.pointer_location.into();
-
-                    // draw the dnd icon if any
-                    {
-                        let guard = state.dnd_icon.lock().unwrap();
-                        if let Some(ref surface) = *guard {
-                            if surface.as_ref().is_alive() {
-                                draw_dnd_icon(
-                                    renderer,
-                                    frame,
-                                    surface,
-                                    (x as i32, y as i32).into(),
-                                    output_scale,
-                                    &log,
-                                )?;
-                            }
-                        }
-                    }
-                    // draw the cursor as relevant
-                    {
-                        let mut guard = state.cursor_status.lock().unwrap();
-                        // reset the cursor if the surface is no longer alive
-                        let mut reset = false;
-                        if let CursorImageStatus::Image(ref surface) = *guard {
-                            reset = !surface.as_ref().is_alive();
-                        }
-                        if reset {
-                            *guard = CursorImageStatus::Default;
-                        }
-
-                        // draw as relevant
-                        if let CursorImageStatus::Image(ref surface) = *guard {
-                            cursor_visible = false;
-                            draw_cursor(
+            let result = backend
+                .bind()
+                .and_then(|_| {
+                    backend
+                        .renderer()
+                        .render(size, Transform::Flipped180, |renderer, frame| {
+                            render_layers_and_windows(
                                 renderer,
                                 frame,
-                                surface,
-                                (x as i32, y as i32).into(),
+                                &*state.window_map.borrow(),
+                                output_geometry,
                                 output_scale,
                                 &log,
                             )?;
-                        } else {
-                            cursor_visible = true;
-                        }
-                    }
 
-                    #[cfg(feature = "debug")]
-                    {
-                        let fps = state.backend_data.fps.avg().round() as u32;
+                            let (x, y) = state.pointer_location.into();
 
-                        draw_fps(
-                            renderer,
-                            frame,
-                            &state.backend_data.fps_texture,
-                            output_scale as f64,
-                            fps,
-                        )?;
-                    }
+                            // draw the dnd icon if any
+                            {
+                                let guard = state.dnd_icon.lock().unwrap();
+                                if let Some(ref surface) = *guard {
+                                    if surface.as_ref().is_alive() {
+                                        draw_dnd_icon(
+                                            renderer,
+                                            frame,
+                                            surface,
+                                            (x as i32, y as i32).into(),
+                                            output_scale,
+                                            &log,
+                                        )?;
+                                    }
+                                }
+                            }
+                            // draw the cursor as relevant
+                            {
+                                let mut guard = state.cursor_status.lock().unwrap();
+                                // reset the cursor if the surface is no longer alive
+                                let mut reset = false;
+                                if let CursorImageStatus::Image(ref surface) = *guard {
+                                    reset = !surface.as_ref().is_alive();
+                                }
+                                if reset {
+                                    *guard = CursorImageStatus::Default;
+                                }
 
-                    Ok(())
+                                // draw as relevant
+                                if let CursorImageStatus::Image(ref surface) = *guard {
+                                    cursor_visible = false;
+                                    draw_cursor(
+                                        renderer,
+                                        frame,
+                                        surface,
+                                        (x as i32, y as i32).into(),
+                                        output_scale,
+                                        &log,
+                                    )?;
+                                } else {
+                                    cursor_visible = true;
+                                }
+                            }
+
+                            #[cfg(feature = "debug")]
+                            {
+                                let fps = state.backend_data.fps.avg().round() as u32;
+
+                                draw_fps(
+                                    renderer,
+                                    frame,
+                                    &state.backend_data.fps_texture,
+                                    output_scale as f64,
+                                    fps,
+                                )?;
+                            }
+
+                            Ok(())
+                        })
+                        .map_err(Into::<SwapBuffersError>::into)
+                        .and_then(|x| x)
                 })
-                .map_err(Into::<SwapBuffersError>::into)
-                .and_then(|x| x);
+                .and_then(|_| backend.submit(None, 1.0));
 
-            renderer.window().set_cursor_visible(cursor_visible);
+            backend.window().set_cursor_visible(cursor_visible);
 
             if let Err(SwapBuffersError::ContextLost(err)) = result {
                 error!(log, "Critical Rendering Error: {}", err);

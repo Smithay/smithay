@@ -12,6 +12,7 @@ use crate::backend::egl::{
     native::EGLNativeSurface,
     EGLError, SwapBuffersError,
 };
+use crate::utils::{Physical, Rectangle};
 
 use slog::{debug, o};
 
@@ -79,12 +80,30 @@ impl EGLSurface {
         })
     }
 
+    /// Returns the buffer age of the underlying back buffer
+    pub fn buffer_age(&self) -> i32 {
+        let surface = self.surface.load(Ordering::SeqCst);
+        let mut age = 0;
+        unsafe {
+            ffi::egl::QuerySurface(
+                **self.display,
+                surface as *const _,
+                ffi::egl::BUFFER_AGE_EXT as i32,
+                &mut age as *mut _,
+            );
+        }
+        age
+    }
+
     /// Swaps buffers at the end of a frame.
-    pub fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
+    pub fn swap_buffers(
+        &self,
+        damage: Option<&mut [Rectangle<i32, Physical>]>,
+    ) -> ::std::result::Result<(), SwapBuffersError> {
         let surface = self.surface.load(Ordering::SeqCst);
 
         let result = if !surface.is_null() {
-            self.native.swap_buffers(&self.display, surface)
+            self.native.swap_buffers(&self.display, surface, damage)
         } else {
             Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface))
         };

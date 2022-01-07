@@ -18,6 +18,7 @@ use smithay::{
             Client, Display,
         },
     },
+    utils::Rectangle,
     wayland::{
         output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,
@@ -103,7 +104,10 @@ pub fn run(channel: Channel<WlcsEvent>) {
 
             renderer
                 .render((800, 600).into(), Transform::Normal, |renderer, frame| {
-                    frame.clear([0.8, 0.8, 0.9, 1.0])?;
+                    frame.clear(
+                        [0.8, 0.8, 0.9, 1.0],
+                        &[Rectangle::from_loc_and_size((0, 0), (800, 600))],
+                    )?;
 
                     // draw the windows
                     draw_windows(

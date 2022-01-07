@@ -31,6 +31,9 @@
 - `X11Surface::buffer` now additionally returns the age of the buffer
 - `X11Surface` now has an explicit `submit` function
 - `X11Surface` is now multi-window capable.
+- `Renderer::clear` now expects a second argument to optionally only clear parts of the buffer/surface
+- `Transform::transform_size` now takes a `Size` instead of two `u32`
+- `Gles2Renderer` now automatically flips the `render` result to account for OpenGLs coordinate system
 
 ### Additions
 
@@ -45,6 +48,7 @@
 - Add support for the zxdg-foreign-v2 protocol.
 - Support for `xdg_wm_base` protocol version 3
 - Added the option to initialize the dmabuf global with a client filter
+- `wayland::output::Output` now has user data attached to it and more functions to query its properties
 
 #### Backends
 

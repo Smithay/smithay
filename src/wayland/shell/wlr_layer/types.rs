@@ -50,7 +50,7 @@ impl Default for Layer {
 /// - some applications are not interested in keyboard events
 ///   and not allowing them to be focused can improve the desktop experience
 /// - some applications will want to take exclusive keyboard focus.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyboardInteractivity {
     /// This value indicates that this surface is not interested in keyboard events
     /// and the compositor should never assign it the keyboard focus.

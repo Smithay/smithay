@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 use std::error::Error;
 
-use crate::utils::{Buffer, Physical, Point, Rectangle, Size};
+use crate::utils::{Buffer, Coordinate, Physical, Point, Rectangle, Size};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::compositor::SurfaceData;
@@ -31,6 +31,9 @@ use crate::backend::egl::{
     display::{EGLBufferReader, BUFFER_READER},
     Error as EglError,
 };
+
+#[cfg(feature = "wayland_frontend")]
+pub mod utils;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Possible transformations to two-dimensional planes
@@ -94,15 +97,15 @@ impl Transform {
     }
 
     /// Transformed size after applying this transformation.
-    pub fn transform_size(&self, width: u32, height: u32) -> (u32, u32) {
+    pub fn transform_size<N: Coordinate, Kind>(&self, size: Size<N, Kind>) -> Size<N, Kind> {
         if *self == Transform::_90
             || *self == Transform::_270
             || *self == Transform::Flipped90
             || *self == Transform::Flipped270
         {
-            (height, width)
+            (size.h, size.w).into()
         } else {
-            (width, height)
+            size
         }
     }
 }
@@ -171,11 +174,12 @@ pub trait Frame {
     ///
     /// This operation is only valid in between a `begin` and `finish`-call.
     /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
-    fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error>;
+    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error>;
 
     /// Render a texture to the current target as a flat 2d-plane at a given
     /// position and applying the given transformation with the given alpha value.
     /// (Meaning `src_transform` should match the orientation of surface being rendered).
+    #[allow(clippy::too_many_arguments)]
     fn render_texture_at(
         &mut self,
         texture: &Self::TextureId,
@@ -183,6 +187,7 @@ pub trait Frame {
         texture_scale: i32,
         output_scale: f64,
         src_transform: Transform,
+        damage: &[Rectangle<i32, Physical>],
         alpha: f32,
     ) -> Result<(), Self::Error> {
         self.render_texture_from_to(
@@ -196,6 +201,7 @@ pub trait Frame {
                     .to_f64()
                     .to_physical(output_scale),
             ),
+            damage,
             src_transform,
             alpha,
         )
@@ -209,6 +215,7 @@ pub trait Frame {
         texture: &Self::TextureId,
         src: Rectangle<i32, Buffer>,
         dst: Rectangle<f64, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error>;
@@ -250,7 +257,7 @@ pub trait Renderer {
 pub trait ImportShm: Renderer {
     /// Import a given shm-based buffer into the renderer (see [`buffer_type`]).
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
@@ -317,7 +324,7 @@ pub trait ImportEgl: Renderer {
 
     /// Import a given wl_drm-based buffer into the renderer (see [`buffer_type`]).
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
@@ -365,7 +372,7 @@ pub trait ImportDma: Renderer {
 
     /// Import a given raw dmabuf into the renderer.
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
@@ -388,7 +395,7 @@ pub trait ImportDma: Renderer {
 pub trait ImportAll: Renderer {
     /// Import a given buffer into the renderer.
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.

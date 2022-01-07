@@ -35,6 +35,8 @@ fn gl_generate() {
                 "EGL_KHR_image_base",
                 "EGL_EXT_image_dma_buf_import",
                 "EGL_EXT_image_dma_buf_import_modifiers",
+                "EGL_EXT_buffer_age",
+                "EGL_EXT_swap_buffers_with_damage",
             ],
         )
         .write_bindings(gl_generator::GlobalGenerator, &mut file)

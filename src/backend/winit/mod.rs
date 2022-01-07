@@ -10,7 +10,8 @@
 //! you want on the initialization of the backend. These functions will provide you
 //! with two objects:
 //!
-//! - a [`WinitGraphicsBackend`], which can give you an implementation of a [`Renderer`]
+//! - a [`WinitGraphicsBackend`], which can give you an implementation of a
+//!   [`Renderer`](crate::backend::renderer::Renderer)
 //!   (or even [`Gles2Renderer`]) through its `renderer` method in addition to further
 //!   functionality to access and manage the created winit-window.
 //! - a [`WinitEventLoop`], which dispatches some [`WinitEvent`] from the host graphics server.
@@ -27,11 +28,11 @@ use crate::{
         },
         input::InputEvent,
         renderer::{
-            gles2::{Gles2Error, Gles2Frame, Gles2Renderer},
-            Bind, Renderer, Transform, Unbind,
+            gles2::{Gles2Error, Gles2Renderer},
+            Bind,
         },
     },
-    utils::{Logical, Physical, Size},
+    utils::{Logical, Physical, Rectangle, Size},
 };
 use std::{cell::RefCell, rc::Rc, time::Instant};
 use wayland_egl as wegl;
@@ -81,7 +82,7 @@ impl WindowSize {
     }
 }
 
-/// Window with an active EGL Context created by `winit`. Implements the [`Renderer`] trait
+/// Window with an active EGL Context created by `winit`.
 #[derive(Debug)]
 pub struct WinitGraphicsBackend {
     renderer: Gles2Renderer,
@@ -90,6 +91,7 @@ pub struct WinitGraphicsBackend {
     egl: Rc<EGLSurface>,
     window: Rc<WinitWindow>,
     size: Rc<RefCell<WindowSize>>,
+    damage_tracking: bool,
     resize_notification: Rc<Cell<Option<Size<i32, Physical>>>>,
 }
 
@@ -111,7 +113,8 @@ pub struct WinitEventLoop {
     is_x11: bool,
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait and a corresponding
+/// Create a new [`WinitGraphicsBackend`], which implements the
+/// [`Renderer`](crate::backend::renderer::Renderer) trait and a corresponding
 /// [`WinitEventLoop`].
 pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitEventLoop), Error>
 where
@@ -126,7 +129,8 @@ where
     )
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait, from a given [`WindowBuilder`]
+/// Create a new [`WinitGraphicsBackend`], which implements the
+/// [`Renderer`](crate::backend::renderer::Renderer) trait, from a given [`WindowBuilder`]
 /// struct and a corresponding [`WinitEventLoop`].
 pub fn init_from_builder<L>(
     builder: WindowBuilder,
@@ -147,7 +151,8 @@ where
     )
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`] trait, from a given [`WindowBuilder`]
+/// Create a new [`WinitGraphicsBackend`], which implements the
+/// [`Renderer`](crate::backend::renderer::Renderer) trait, from a given [`WindowBuilder`]
 /// struct, as well as given [`GlAttributes`] for further customization of the rendering pipeline and a
 /// corresponding [`WinitEventLoop`].
 pub fn init_from_builder_with_gl_attr<L>(
@@ -220,6 +225,10 @@ where
     let egl = Rc::new(surface);
     let renderer = unsafe { Gles2Renderer::new(context, log.clone())? };
     let resize_notification = Rc::new(Cell::new(None));
+    let damage_tracking = display.extensions.iter().any(|ext| ext == "EGL_EXT_buffer_age")
+        && display.extensions.iter().any(|ext| {
+            ext == "EGL_KHR_swap_buffers_with_damage" || ext == "EGL_EXT_swap_buffers_with_damage"
+        });
 
     Ok((
         WinitGraphicsBackend {
@@ -227,6 +236,7 @@ where
             _display: display,
             egl,
             renderer,
+            damage_tracking,
             size: size.clone(),
             resize_notification: resize_notification.clone(),
         },
@@ -281,27 +291,59 @@ impl WinitGraphicsBackend {
         &mut self.renderer
     }
 
-    /// Shortcut to `Renderer::render` with the current window dimensions
-    /// and this window set as the rendering target.
-    pub fn render<F, R>(&mut self, rendering: F) -> Result<R, crate::backend::SwapBuffersError>
-    where
-        F: FnOnce(&mut Gles2Renderer, &mut Gles2Frame) -> R,
-    {
+    /// Bind the underlying window to the underlying renderer
+    pub fn bind(&mut self) -> Result<(), crate::backend::SwapBuffersError> {
         // Were we told to resize?
         if let Some(size) = self.resize_notification.take() {
             self.egl.resize(size.w, size.h, 0, 0);
         }
 
-        let size = {
-            let size = self.size.borrow();
-            size.physical_size
-        };
-
         self.renderer.bind(self.egl.clone())?;
-        let result = self.renderer.render(size, Transform::Normal, rendering)?;
-        self.egl.swap_buffers()?;
-        self.renderer.unbind()?;
-        Ok(result)
+        Ok(())
+    }
+
+    /// Retrieve the buffer age of the current backbuffer of the window
+    pub fn buffer_age(&self) -> usize {
+        if self.damage_tracking {
+            self.egl.buffer_age() as usize
+        } else {
+            0
+        }
+    }
+
+    /// Submits the back buffer to the window by swapping, requires the window to be previously bound (see [`WinitGraphicsBackend::bind`]).
+    pub fn submit(
+        &mut self,
+        damage: Option<&[Rectangle<i32, Logical>]>,
+        scale: f64,
+    ) -> Result<(), crate::backend::SwapBuffersError> {
+        let mut damage = match damage {
+            Some(damage) if self.damage_tracking && !damage.is_empty() => {
+                let size = self
+                    .size
+                    .borrow()
+                    .physical_size
+                    .to_f64()
+                    .to_logical(scale)
+                    .to_i32_round::<i32>();
+                let damage = damage
+                    .iter()
+                    .map(|rect| {
+                        Rectangle::from_loc_and_size(
+                            (rect.loc.x, size.h - rect.loc.y - rect.size.h),
+                            rect.size,
+                        )
+                        .to_f64()
+                        .to_physical(scale)
+                        .to_i32_round::<i32>()
+                    })
+                    .collect::<Vec<_>>();
+                Some(damage)
+            }
+            _ => None,
+        };
+        self.egl.swap_buffers(damage.as_deref_mut())?;
+        Ok(())
     }
 }
 

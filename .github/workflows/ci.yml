@@ -130,6 +130,7 @@ jobs:
         - backend_session_logind
         - backend_session_libseat
         - backend_x11
+        - desktop
         - renderer_gl
         - wayland_frontend
         - xwayland

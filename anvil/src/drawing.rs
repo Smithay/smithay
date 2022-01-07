@@ -178,6 +178,7 @@ where
                         buffer_scale,
                         output_scale as f64,
                         Transform::Normal, /* TODO */
+                        &[Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX))],
                         1.0,
                     ) {
                         result = Err(err.into());
@@ -355,6 +356,7 @@ where
                     _ => unreachable!(),
                 },
                 Rectangle::from_loc_and_size((offset_x, 0.0), (22.0 * output_scale, 35.0 * output_scale)),
+                &[Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX))],
                 Transform::Normal,
                 1.0,
             )

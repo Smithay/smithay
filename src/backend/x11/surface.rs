@@ -72,7 +72,7 @@ impl X11Surface {
     ///
     /// You may bind this buffer to a renderer to render.
     /// This function will return the same buffer until [`submit`](Self::submit) is called
-    /// or [`reset_buffers`](Self::reset_buffer) is used to reset the buffers.
+    /// or [`reset_buffers`](Self::reset_buffers) is used to reset the buffers.
     pub fn buffer(&mut self) -> Result<(Dmabuf, u8), AllocateBuffersError> {
         if let Some(new_size) = self.resize.try_iter().last() {
             self.resize(new_size);

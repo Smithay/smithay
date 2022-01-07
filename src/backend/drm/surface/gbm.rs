@@ -238,6 +238,11 @@ where
         flip.map_err(Error::DrmError)
     }
 
+    /// Reset the underlying buffers
+    pub fn reset_buffers(&mut self) {
+        self.swapchain.reset_buffers()
+    }
+
     /// Returns the underlying [`crtc`](drm::control::crtc) of this surface
     pub fn crtc(&self) -> crtc::Handle {
         self.drm.crtc()

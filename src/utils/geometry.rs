@@ -297,6 +297,23 @@ impl<N: Coordinate, Kind> Point<N, Kind> {
 }
 
 impl<N: Coordinate, Kind> Point<N, Kind> {
+    /// Constrain this [`Point`] within a [`Rectangle`] with the same coordinates
+    ///
+    /// The [`Point`] returned is guaranteed to be not smaller than the [`Rectangle`]
+    /// location and not greater than the [`Rectangle`] size.
+    #[inline]
+    pub fn constrain(self, rect: impl Into<Rectangle<N, Kind>>) -> Point<N, Kind> {
+        let rect = rect.into();
+
+        Point {
+            x: self.x.max(rect.loc.x).min(rect.size.w),
+            y: self.y.max(rect.loc.y).min(rect.size.h),
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: Coordinate, Kind> Point<N, Kind> {
     /// Convert the underlying numerical type to f64 for floating point manipulations
     #[inline]
     pub fn to_f64(self) -> Point<f64, Kind> {
@@ -538,6 +555,20 @@ impl<N: Coordinate, Kind> Size<N, Kind> {
         Point {
             x: self.w,
             y: self.h,
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: Coordinate, Kind> Size<N, Kind> {
+    /// Restrict this [`Size`] to min and max [`Size`] with the same coordinates
+    pub fn clamp(self, min: impl Into<Size<N, Kind>>, max: impl Into<Size<N, Kind>>) -> Size<N, Kind> {
+        let min = min.into();
+        let max = max.into();
+
+        Size {
+            w: self.w.max(min.w).min(max.w),
+            h: self.h.max(min.h).min(max.h),
             _kind: std::marker::PhantomData,
         }
     }

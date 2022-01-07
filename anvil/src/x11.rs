@@ -239,56 +239,23 @@ pub fn run_x11(log: Logger) {
 
             // drawing logic
             match renderer
-                // X11 scanout for a Dmabuf is upside down
                 // TODO: Address this issue in renderer.
-                .render(
-                    backend_data.mode.size,
-                    Transform::Flipped180,
-                    |renderer, frame| {
-                        render_layers_and_windows(
-                            renderer,
-                            frame,
-                            &*window_map,
-                            output_geometry,
-                            output_scale,
-                            &log,
-                        )?;
+                .render(backend_data.mode.size, Transform::Normal, |renderer, frame| {
+                    render_layers_and_windows(
+                        renderer,
+                        frame,
+                        &*window_map,
+                        output_geometry,
+                        output_scale,
+                        &log,
+                    )?;
 
-                        // draw the dnd icon if any
-                        {
-                            let guard = dnd_icon.lock().unwrap();
-                            if let Some(ref surface) = *guard {
-                                if surface.as_ref().is_alive() {
-                                    draw_dnd_icon(
-                                        renderer,
-                                        frame,
-                                        surface,
-                                        (x as i32, y as i32).into(),
-                                        output_scale,
-                                        &log,
-                                    )?;
-                                }
-                            }
-                        }
-
-                        // draw the cursor as relevant
-                        {
-                            let mut guard = cursor_status.lock().unwrap();
-                            // reset the cursor if the surface is no longer alive
-                            let mut reset = false;
-
-                            if let CursorImageStatus::Image(ref surface) = *guard {
-                                reset = !surface.as_ref().is_alive();
-                            }
-
-                            if reset {
-                                *guard = CursorImageStatus::Default;
-                            }
-
-                            // draw as relevant
-                            if let CursorImageStatus::Image(ref surface) = *guard {
-                                cursor_visible = false;
-                                draw_cursor(
+                    // draw the dnd icon if any
+                    {
+                        let guard = dnd_icon.lock().unwrap();
+                        if let Some(ref surface) = *guard {
+                            if surface.as_ref().is_alive() {
+                                draw_dnd_icon(
                                     renderer,
                                     frame,
                                     surface,
@@ -296,21 +263,49 @@ pub fn run_x11(log: Logger) {
                                     output_scale,
                                     &log,
                                 )?;
-                            } else {
-                                cursor_visible = true;
                             }
                         }
+                    }
 
-                        #[cfg(feature = "debug")]
-                        {
-                            use crate::drawing::draw_fps;
+                    // draw the cursor as relevant
+                    {
+                        let mut guard = cursor_status.lock().unwrap();
+                        // reset the cursor if the surface is no longer alive
+                        let mut reset = false;
 
-                            draw_fps(renderer, frame, fps_texture, output_scale as f64, fps)?;
+                        if let CursorImageStatus::Image(ref surface) = *guard {
+                            reset = !surface.as_ref().is_alive();
                         }
 
-                        Ok(())
-                    },
-                )
+                        if reset {
+                            *guard = CursorImageStatus::Default;
+                        }
+
+                        // draw as relevant
+                        if let CursorImageStatus::Image(ref surface) = *guard {
+                            cursor_visible = false;
+                            draw_cursor(
+                                renderer,
+                                frame,
+                                surface,
+                                (x as i32, y as i32).into(),
+                                output_scale,
+                                &log,
+                            )?;
+                        } else {
+                            cursor_visible = true;
+                        }
+                    }
+
+                    #[cfg(feature = "debug")]
+                    {
+                        use crate::drawing::draw_fps;
+
+                        draw_fps(renderer, frame, fps_texture, output_scale as f64, fps)?;
+                    }
+
+                    Ok(())
+                })
                 .map_err(Into::<SwapBuffersError>::into)
                 .and_then(|x| x)
                 .map_err(Into::<SwapBuffersError>::into)
