@@ -27,12 +27,12 @@ use super::{AxisFrame, PointerInnerHandle};
 /// When your grab ends (either as you requested it or if it was forcefully cancelled by the server),
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
-pub trait PointerGrab<D>: Send + Sync {
+pub trait PointerGrab: Send + Sync {
     /// A motion was reported
     fn motion(
         &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
+        handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -41,20 +41,15 @@ pub trait PointerGrab<D>: Send + Sync {
     /// A button press was reported
     fn button(
         &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
+        handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: Serial,
         time: u32,
     );
     /// An axis scroll was reported
-    fn axis(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        details: AxisFrame,
-    );
+    fn axis(&mut self, cx: &mut DisplayHandle<'_>, handle: &mut PointerInnerHandle<'_>, details: AxisFrame);
     /// The data about the event that started the grab.
     fn start_data(&self) -> &GrabStartData;
 }
@@ -72,14 +67,14 @@ pub struct GrabStartData {
     pub location: Point<f64, Logical>,
 }
 
-pub(super) enum GrabStatus<D> {
+pub(super) enum GrabStatus {
     None,
-    Active(Serial, Box<dyn PointerGrab<D>>),
+    Active(Serial, Box<dyn PointerGrab>),
     Borrowed,
 }
 
 // PointerGrab is a trait, so we have to impl Debug manually
-impl<D> fmt::Debug for GrabStatus<D> {
+impl fmt::Debug for GrabStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             GrabStatus::None => f.debug_tuple("GrabStatus::None").finish(),
@@ -92,11 +87,11 @@ impl<D> fmt::Debug for GrabStatus<D> {
 // The default grab, the behavior when no particular grab is in progress
 pub(super) struct DefaultGrab;
 
-impl<D> PointerGrab<D> for DefaultGrab {
+impl PointerGrab for DefaultGrab {
     fn motion(
         &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
+        handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -107,8 +102,8 @@ impl<D> PointerGrab<D> for DefaultGrab {
 
     fn button(
         &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
+        handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: Serial,
@@ -127,12 +122,7 @@ impl<D> PointerGrab<D> for DefaultGrab {
         );
     }
 
-    fn axis(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        details: AxisFrame,
-    ) {
+    fn axis(&mut self, cx: &mut DisplayHandle<'_>, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
         handle.axis(cx, details);
     }
 
@@ -150,11 +140,11 @@ struct ClickGrab {
     start_data: GrabStartData,
 }
 
-impl<D> PointerGrab<D> for ClickGrab {
+impl PointerGrab for ClickGrab {
     fn motion(
         &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
+        handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
         _focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -165,8 +155,8 @@ impl<D> PointerGrab<D> for ClickGrab {
 
     fn button(
         &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
+        handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: Serial,
@@ -179,12 +169,7 @@ impl<D> PointerGrab<D> for ClickGrab {
         }
     }
 
-    fn axis(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
-        handle: &mut PointerInnerHandle<'_, D>,
-        details: AxisFrame,
-    ) {
+    fn axis(&mut self, cx: &mut DisplayHandle<'_>, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
         handle.axis(cx, details);
     }
 

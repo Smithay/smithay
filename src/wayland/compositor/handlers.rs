@@ -1,35 +1,28 @@
-use std::{
-    marker::PhantomData,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Mutex,
-    },
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
 };
 
 use wayland_server::{
     protocol::{
-        wl_callback::WlCallback,
+        wl_callback::{self, WlCallback},
         wl_compositor::{self, WlCompositor},
         wl_region::{self, WlRegion},
         wl_subcompositor::{self, WlSubcompositor},
         wl_subsurface::{self, WlSubsurface},
         wl_surface::{self, WlSurface},
     },
-    DataInit, DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
+    DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
+    DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
-use crate::{
-    utils::{Logical, Point},
-    wayland::delegate::{
-        DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
-    },
-};
+use crate::utils::{Logical, Point};
 
 use super::{
     cache::Cacheable,
     tree::{Location, PrivateSurfaceData},
-    AlreadyHasRole, BufferAssignment, CompositorDispatch, CompositorHandler, Damage, Rectangle,
-    RectangleKind, RegionAttributes, SurfaceAttributes,
+    AlreadyHasRole, BufferAssignment, CompositorHandler, CompositorState, Damage, Rectangle, RectangleKind,
+    RegionAttributes, SurfaceAttributes,
 };
 
 use slog::trace;
@@ -38,22 +31,22 @@ use slog::trace;
  * wl_compositor
  */
 
-impl<D, H: CompositorHandler<D>> DelegateGlobalDispatchBase<WlCompositor> for CompositorDispatch<'_, D, H> {
+impl DelegateGlobalDispatchBase<WlCompositor> for CompositorState {
     type GlobalData = ();
 }
 
-impl<D, H> DelegateGlobalDispatch<WlCompositor, D> for CompositorDispatch<'_, D, H>
+impl<D> DelegateGlobalDispatch<WlCompositor, D> for CompositorState
 where
-    D: GlobalDispatch<WlCompositor, GlobalData = ()>
-        + Dispatch<WlCompositor, UserData = ()>
-        + Dispatch<WlSurface, UserData = SurfaceUserData<D>>
-        + Dispatch<WlRegion, UserData = RegionUserData>
-        + 'static,
-    H: CompositorHandler<D>,
+    D: GlobalDispatch<WlCompositor, GlobalData = ()>,
+    D: Dispatch<WlCompositor, UserData = ()>,
+    D: Dispatch<WlSurface, UserData = SurfaceUserData>,
+    D: Dispatch<WlRegion, UserData = RegionUserData>,
+    D: CompositorHandler,
+    D: 'static,
 {
     fn bind(
-        &mut self,
-        _handle: &mut DisplayHandle<'_, D>,
+        _state: &mut D,
+        _handle: &mut DisplayHandle<'_>,
         _client: &wayland_server::Client,
         resource: New<WlCompositor>,
         _global_data: &Self::GlobalData,
@@ -63,30 +56,31 @@ where
     }
 }
 
-impl<D, H: CompositorHandler<D>> DelegateDispatchBase<WlCompositor> for CompositorDispatch<'_, D, H> {
+impl DelegateDispatchBase<WlCompositor> for CompositorState {
     type UserData = ();
 }
 
-impl<D, H> DelegateDispatch<WlCompositor, D> for CompositorDispatch<'_, D, H>
+impl<D> DelegateDispatch<WlCompositor, D> for CompositorState
 where
-    D: Dispatch<WlCompositor, UserData = ()>
-        + Dispatch<WlSurface, UserData = SurfaceUserData<D>>
-        + Dispatch<WlRegion, UserData = RegionUserData>
-        + 'static,
-    H: CompositorHandler<D>,
+    D: Dispatch<WlCompositor, UserData = ()>,
+    D: Dispatch<WlSurface, UserData = SurfaceUserData>,
+    D: Dispatch<WlRegion, UserData = RegionUserData>,
+    D: CompositorHandler,
+    D: 'static,
 {
     fn request(
-        &mut self,
+        state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlCompositor,
         request: wl_compositor::Request,
         _data: &Self::UserData,
-        _dhandle: &mut DisplayHandle<'_, D>,
+        _dhandle: &mut DisplayHandle<'_>,
         data_init: &mut DataInit<'_, D>,
     ) {
+        let log = &state.compositor_state().log;
         match request {
             wl_compositor::Request::CreateSurface { id } => {
-                trace!(self.0.log, "Creating a new wl_surface.");
+                trace!(log, "Creating a new wl_surface.");
 
                 let surface = data_init.init(
                     id,
@@ -94,10 +88,10 @@ where
                         inner: PrivateSurfaceData::new(),
                     },
                 );
-                PrivateSurfaceData::<D>::init(&surface);
+                PrivateSurfaceData::init(&surface);
             }
             wl_compositor::Request::CreateRegion { id } => {
-                trace!(self.0.log, "Creating a new wl_region.");
+                trace!(log, "Creating a new wl_region.");
 
                 data_init.init(
                     id,
@@ -115,8 +109,8 @@ where
  * wl_surface
  */
 
-impl<D> Cacheable<D> for SurfaceAttributes {
-    fn commit(&mut self, _cx: &mut DisplayHandle<'_, D>) -> Self {
+impl Cacheable for SurfaceAttributes {
+    fn commit(&mut self, _cx: &mut DisplayHandle<'_>) -> Self {
         SurfaceAttributes {
             buffer: self.buffer.take(),
             buffer_scale: self.buffer_scale,
@@ -127,7 +121,7 @@ impl<D> Cacheable<D> for SurfaceAttributes {
             frame_callbacks: std::mem::take(&mut self.frame_callbacks),
         }
     }
-    fn merge_into(self, into: &mut Self, cx: &mut DisplayHandle<'_, D>) {
+    fn merge_into(self, into: &mut Self, cx: &mut DisplayHandle<'_>) {
         if self.buffer.is_some() {
             if let Some(BufferAssignment::NewBuffer { buffer, .. }) =
                 std::mem::replace(&mut into.buffer, self.buffer)
@@ -145,41 +139,44 @@ impl<D> Cacheable<D> for SurfaceAttributes {
 }
 
 /// User data for WlSurface
-pub struct SurfaceUserData<D> {
-    pub(crate) inner: Mutex<PrivateSurfaceData<D>>,
+#[derive(Debug)]
+pub struct SurfaceUserData {
+    pub(crate) inner: Mutex<PrivateSurfaceData>,
 }
 
-impl<D: 'static> DestructionNotify for SurfaceUserData<D> {
+impl DestructionNotify for SurfaceUserData {
     fn object_destroyed(
         &self,
         _client_id: wayland_server::backend::ClientId,
         object_id: wayland_server::backend::ObjectId,
     ) {
-        PrivateSurfaceData::<D>::cleanup(self, object_id);
+        PrivateSurfaceData::cleanup(self, object_id);
     }
 }
 
-impl<D: 'static, H: CompositorHandler<D>> DelegateDispatchBase<WlSurface> for CompositorDispatch<'_, D, H> {
-    type UserData = SurfaceUserData<D>;
+impl DelegateDispatchBase<WlSurface> for CompositorState {
+    type UserData = SurfaceUserData;
 }
 
-impl<D, H> DelegateDispatch<WlSurface, D> for CompositorDispatch<'_, D, H>
+impl<D> DelegateDispatch<WlSurface, D> for CompositorState
 where
-    D: Dispatch<WlSurface, UserData = SurfaceUserData<D>> + Dispatch<WlCallback, UserData = ()> + 'static,
-    H: CompositorHandler<D>,
+    D: Dispatch<WlSurface, UserData = SurfaceUserData>,
+    D: Dispatch<WlCallback, UserData = ()>,
+    D: CompositorHandler,
+    D: 'static,
 {
     fn request(
-        &mut self,
+        state: &mut D,
         _client: &wayland_server::Client,
         surface: &WlSurface,
         request: wl_surface::Request,
         _data: &Self::UserData,
-        handle: &mut DisplayHandle<'_, D>,
+        handle: &mut DisplayHandle<'_>,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
             wl_surface::Request::Attach { buffer, x, y } => {
-                PrivateSurfaceData::<D>::with_states(surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states.cached_state.pending::<SurfaceAttributes>().buffer = Some(match buffer {
                         Some(buffer) => BufferAssignment::NewBuffer {
                             buffer,
@@ -190,7 +187,7 @@ where
                 });
             }
             wl_surface::Request::Damage { x, y, width, height } => {
-                PrivateSurfaceData::<D>::with_states(surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
                         .pending::<SurfaceAttributes>()
@@ -204,7 +201,7 @@ where
             wl_surface::Request::Frame { callback } => {
                 let callback = data_init.init(callback, ());
 
-                PrivateSurfaceData::<D>::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(&surface, |states| {
                     states
                         .cached_state
                         .pending::<SurfaceAttributes>()
@@ -217,7 +214,7 @@ where
                     let attributes_mutex = &r.data::<RegionUserData>().unwrap().inner;
                     attributes_mutex.lock().unwrap().clone()
                 });
-                PrivateSurfaceData::<D>::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(&surface, |states| {
                     states.cached_state.pending::<SurfaceAttributes>().opaque_region = attributes;
                 });
             }
@@ -226,12 +223,12 @@ where
                     let attributes_mutex = &r.data::<RegionUserData>().unwrap().inner;
                     attributes_mutex.lock().unwrap().clone()
                 });
-                PrivateSurfaceData::<D>::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(&surface, |states| {
                     states.cached_state.pending::<SurfaceAttributes>().input_region = attributes;
                 });
             }
             wl_surface::Request::Commit => {
-                PrivateSurfaceData::<D>::invoke_commit_hooks(&surface);
+                PrivateSurfaceData::invoke_commit_hooks(&surface);
 
                 // is_alive check
                 if handle.object_info(surface.id()).is_err() {
@@ -240,13 +237,16 @@ where
                 }
 
                 PrivateSurfaceData::commit(&surface, handle);
-                trace!(self.0.log, "Calling user implementation for wl_surface.commit");
+                trace!(
+                    state.compositor_state().log,
+                    "Calling user implementation for wl_surface.commit"
+                );
 
-                self.1.commit(handle, surface);
+                state.commit(handle, surface);
             }
             wl_surface::Request::SetBufferTransform { transform } => {
                 if let WEnum::Value(transform) = transform {
-                    PrivateSurfaceData::<D>::with_states(&surface, |states| {
+                    PrivateSurfaceData::with_states(&surface, |states| {
                         states
                             .cached_state
                             .pending::<SurfaceAttributes>()
@@ -255,12 +255,12 @@ where
                 }
             }
             wl_surface::Request::SetBufferScale { scale } => {
-                PrivateSurfaceData::<D>::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(&surface, |states| {
                     states.cached_state.pending::<SurfaceAttributes>().buffer_scale = scale;
                 });
             }
             wl_surface::Request::DamageBuffer { x, y, width, height } => {
-                PrivateSurfaceData::<D>::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(&surface, |states| {
                     states
                         .cached_state
                         .pending::<SurfaceAttributes>()
@@ -298,22 +298,22 @@ impl DestructionNotify for RegionUserData {
     }
 }
 
-impl<D, H: CompositorHandler<D>> DelegateDispatchBase<WlRegion> for CompositorDispatch<'_, D, H> {
+impl DelegateDispatchBase<WlRegion> for CompositorState {
     type UserData = RegionUserData;
 }
 
-impl<D, H> DelegateDispatch<WlRegion, D> for CompositorDispatch<'_, D, H>
+impl<D> DelegateDispatch<WlRegion, D> for CompositorState
 where
     D: Dispatch<WlRegion, UserData = RegionUserData>,
-    H: CompositorHandler<D>,
+    D: CompositorHandler,
 {
     fn request(
-        &mut self,
+        _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlRegion,
         request: wl_region::Request,
         data: &Self::UserData,
-        _dhandle: &mut DisplayHandle<'_, D>,
+        _dhandle: &mut DisplayHandle<'_>,
         _init: &mut wayland_server::DataInit<'_, D>,
     ) {
         let mut guard = data.inner.lock().unwrap();
@@ -338,43 +338,21 @@ where
  * wl_subcompositor
  */
 
-// pub(crate) fn implement_subcompositor(
-//     subcompositor: Main<wl_subcompositor::WlSubcompositor>,
-// ) -> wl_subcompositor::WlSubcompositor {
-//     subcompositor.quick_assign(move |subcompositor, request, _| match request {
-//         wl_subcompositor::Request::GetSubsurface { id, surface, parent } => {
-//             if let Err(AlreadyHasRole) = PrivateSurfaceData::set_parent(&surface, &parent) {
-//                 subcompositor.as_ref().post_error(
-//                     wl_subcompositor::Error::BadSurface as u32,
-//                     "Surface already has a role.".into(),
-//                 );
-//                 return;
-//             }
-//             implement_subsurface(id, surface);
-//         }
-//         wl_subcompositor::Request::Destroy => {}
-//         _ => unreachable!(),
-//     });
-//     subcompositor.deref().clone()
-// }
-
-impl<D, H: CompositorHandler<D>> DelegateGlobalDispatchBase<WlSubcompositor>
-    for CompositorDispatch<'_, D, H>
-{
+impl DelegateGlobalDispatchBase<WlSubcompositor> for CompositorState {
     type GlobalData = ();
 }
 
-impl<D, H> DelegateGlobalDispatch<WlSubcompositor, D> for CompositorDispatch<'_, D, H>
+impl<D> DelegateGlobalDispatch<WlSubcompositor, D> for CompositorState
 where
-    D: GlobalDispatch<WlSubcompositor, GlobalData = ()>
-        + Dispatch<WlSubcompositor, UserData = ()>
-        + Dispatch<WlSubsurface, UserData = SubsurfaceUserData<D>>
-        + 'static,
-    H: CompositorHandler<D>,
+    D: GlobalDispatch<WlSubcompositor, GlobalData = ()>,
+    D: Dispatch<WlSubcompositor, UserData = ()>,
+    D: Dispatch<WlSubsurface, UserData = SubsurfaceUserData>,
+    D: CompositorHandler,
+    D: 'static,
 {
     fn bind(
-        &mut self,
-        _handle: &mut DisplayHandle<'_, D>,
+        _state: &mut D,
+        _handle: &mut DisplayHandle<'_>,
         _client: &wayland_server::Client,
         resource: New<WlSubcompositor>,
         _global_data: &Self::GlobalData,
@@ -384,29 +362,29 @@ where
     }
 }
 
-impl<D, H: CompositorHandler<D>> DelegateDispatchBase<WlSubcompositor> for CompositorDispatch<'_, D, H> {
+impl DelegateDispatchBase<WlSubcompositor> for CompositorState {
     type UserData = ();
 }
 
-impl<D, H> DelegateDispatch<WlSubcompositor, D> for CompositorDispatch<'_, D, H>
+impl<D> DelegateDispatch<WlSubcompositor, D> for CompositorState
 where
-    D: Dispatch<WlSubcompositor, UserData = ()>
-        + Dispatch<WlSubsurface, UserData = SubsurfaceUserData<D>>
-        + 'static,
-    H: CompositorHandler<D>,
+    D: Dispatch<WlSubcompositor, UserData = ()>,
+    D: Dispatch<WlSubsurface, UserData = SubsurfaceUserData>,
+    D: CompositorHandler,
+    D: 'static,
 {
     fn request(
-        &mut self,
+        _state: &mut D,
         _client: &wayland_server::Client,
         subcompositor: &WlSubcompositor,
         request: wl_subcompositor::Request,
         _data: &Self::UserData,
-        handle: &mut DisplayHandle<'_, D>,
+        handle: &mut DisplayHandle<'_>,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             wl_subcompositor::Request::GetSubsurface { id, surface, parent } => {
-                if let Err(AlreadyHasRole) = PrivateSurfaceData::<D>::set_parent(&surface, &parent) {
+                if let Err(AlreadyHasRole) = PrivateSurfaceData::set_parent(&surface, &parent) {
                     subcompositor.post_error(
                         handle,
                         wl_subcompositor::Error::BadSurface,
@@ -419,11 +397,10 @@ where
                     id,
                     SubsurfaceUserData {
                         surface: surface.clone(),
-                        _ph: PhantomData::<D>,
                     },
                 );
 
-                super::with_states::<D, _, _>(&surface, |states| {
+                super::with_states(&surface, |states| {
                     states.data_map.insert_if_missing_threadsafe(SubsurfaceState::new)
                 })
                 .unwrap();
@@ -440,15 +417,11 @@ where
 
 /// User data of WlSubsurface
 #[derive(Debug)]
-pub struct SubsurfaceUserData<D> {
+pub struct SubsurfaceUserData {
     surface: WlSurface,
-    _ph: PhantomData<D>,
 }
 
-unsafe impl<D> Send for SubsurfaceUserData<D> {}
-unsafe impl<D> Sync for SubsurfaceUserData<D> {}
-
-impl<D: 'static> DestructionNotify for SubsurfaceUserData<D> {
+impl DestructionNotify for SubsurfaceUserData {
     fn object_destroyed(
         &self,
         _client_id: wayland_server::backend::ClientId,
@@ -456,7 +429,7 @@ impl<D: 'static> DestructionNotify for SubsurfaceUserData<D> {
     ) {
         // TODO
         // if surface.as_ref().is_alive() {
-        PrivateSurfaceData::<D>::unset_parent(&self.surface);
+        PrivateSurfaceData::unset_parent(&self.surface);
         // }
     }
 }
@@ -477,14 +450,14 @@ impl Default for SubsurfaceCachedState {
     }
 }
 
-impl<D> Cacheable<D> for SubsurfaceCachedState {
-    fn commit(&mut self, _cx: &mut DisplayHandle<'_, D>) -> Self {
+impl Cacheable for SubsurfaceCachedState {
+    fn commit(&mut self, _cx: &mut DisplayHandle<'_>) -> Self {
         Self {
             location: self.location,
         }
     }
 
-    fn merge_into(self, into: &mut Self, _cx: &mut DisplayHandle<'_, D>) {
+    fn merge_into(self, into: &mut Self, _cx: &mut DisplayHandle<'_>) {
         into.location = self.location;
     }
 }
@@ -502,8 +475,8 @@ impl SubsurfaceState {
 }
 
 /// Check if a (sub)surface is effectively sync
-pub fn is_effectively_sync<D: 'static>(surface: &wl_surface::WlSurface) -> bool {
-    let is_direct_sync = PrivateSurfaceData::<D>::with_states(surface, |state| {
+pub fn is_effectively_sync(surface: &wl_surface::WlSurface) -> bool {
+    let is_direct_sync = PrivateSurfaceData::with_states(surface, |state| {
         state
             .data_map
             .get::<SubsurfaceState>()
@@ -513,41 +486,40 @@ pub fn is_effectively_sync<D: 'static>(surface: &wl_surface::WlSurface) -> bool 
     if is_direct_sync {
         return true;
     }
-    if let Some(parent) = PrivateSurfaceData::<D>::get_parent(surface) {
-        is_effectively_sync::<D>(&parent)
+    if let Some(parent) = PrivateSurfaceData::get_parent(surface) {
+        is_effectively_sync(&parent)
     } else {
         false
     }
 }
 
-impl<D: 'static, H: CompositorHandler<D>> DelegateDispatchBase<WlSubsurface>
-    for CompositorDispatch<'_, D, H>
-{
-    type UserData = SubsurfaceUserData<D>;
+impl DelegateDispatchBase<WlSubsurface> for CompositorState {
+    type UserData = SubsurfaceUserData;
 }
 
-impl<D, H> DelegateDispatch<WlSubsurface, D> for CompositorDispatch<'_, D, H>
+impl<D> DelegateDispatch<WlSubsurface, D> for CompositorState
 where
-    D: Dispatch<WlSubsurface, UserData = SubsurfaceUserData<D>> + 'static,
-    H: CompositorHandler<D>,
+    D: Dispatch<WlSubsurface, UserData = SubsurfaceUserData>,
+    D: CompositorHandler,
+    D: 'static,
 {
     fn request(
-        &mut self,
+        _state: &mut D,
         _client: &wayland_server::Client,
         subsurface: &WlSubsurface,
         request: wl_subsurface::Request,
         data: &Self::UserData,
-        handle: &mut DisplayHandle<'_, D>,
+        handle: &mut DisplayHandle<'_>,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             wl_subsurface::Request::SetPosition { x, y } => {
-                PrivateSurfaceData::<D>::with_states(&data.surface, |state| {
+                PrivateSurfaceData::with_states(&data.surface, |state| {
                     state.cached_state.pending::<SubsurfaceCachedState>().location = (x, y).into();
                 })
             }
             wl_subsurface::Request::PlaceAbove { sibling } => {
-                if let Err(()) = PrivateSurfaceData::<D>::reorder(&data.surface, Location::After, &sibling) {
+                if let Err(()) = PrivateSurfaceData::reorder(&data.surface, Location::After, &sibling) {
                     subsurface.post_error(
                         handle,
                         wl_subsurface::Error::BadSurface,
@@ -556,7 +528,7 @@ where
                 }
             }
             wl_subsurface::Request::PlaceBelow { sibling } => {
-                if let Err(()) = PrivateSurfaceData::<D>::reorder(&data.surface, Location::Before, &sibling) {
+                if let Err(()) = PrivateSurfaceData::reorder(&data.surface, Location::Before, &sibling) {
                     subsurface.post_error(
                         handle,
                         wl_subsurface::Error::BadSurface,
@@ -564,7 +536,7 @@ where
                     )
                 }
             }
-            wl_subsurface::Request::SetSync => PrivateSurfaceData::<D>::with_states(&data.surface, |state| {
+            wl_subsurface::Request::SetSync => PrivateSurfaceData::with_states(&data.surface, |state| {
                 state
                     .data_map
                     .get::<SubsurfaceState>()
@@ -572,20 +544,40 @@ where
                     .sync
                     .store(true, Ordering::Release);
             }),
-            wl_subsurface::Request::SetDesync => {
-                PrivateSurfaceData::<D>::with_states(&data.surface, |state| {
-                    state
-                        .data_map
-                        .get::<SubsurfaceState>()
-                        .unwrap()
-                        .sync
-                        .store(false, Ordering::Release);
-                })
-            }
+            wl_subsurface::Request::SetDesync => PrivateSurfaceData::with_states(&data.surface, |state| {
+                state
+                    .data_map
+                    .get::<SubsurfaceState>()
+                    .unwrap()
+                    .sync
+                    .store(false, Ordering::Release);
+            }),
             wl_subsurface::Request::Destroy => {
                 // Our destructor already handles it
             }
             _ => unreachable!(),
         }
+    }
+}
+
+impl DelegateDispatchBase<WlCallback> for CompositorState {
+    type UserData = ();
+}
+
+impl<D> DelegateDispatch<WlCallback, D> for CompositorState
+where
+    D: Dispatch<WlCallback, UserData = ()>,
+    D: CompositorHandler,
+    D: 'static,
+{
+    fn request(
+        _state: &mut D,
+        _client: &wayland_server::Client,
+        _subsurface: &WlCallback,
+        _request: wl_callback::Request,
+        _data: &Self::UserData,
+        _handle: &mut DisplayHandle<'_>,
+        _data_init: &mut DataInit<'_, D>,
+    ) {
     }
 }
