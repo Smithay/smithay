@@ -16,13 +16,12 @@ use wayland_server::{
         wl_keyboard::{self, KeyState as WlKeyState, KeymapFormat, WlKeyboard},
         wl_surface::WlSurface,
     },
-    Client, DestructionNotify, Dispatch, DisplayHandle, Resource,
+    Client, DelegateDispatch, DelegateDispatchBase, DestructionNotify, Dispatch, DisplayHandle, Resource,
 };
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
 
-use super::SeatDispatch;
-use crate::wayland::delegate::{DelegateDispatch, DelegateDispatchBase};
+use super::{SeatHandler, SeatState};
 
 mod modifiers_state;
 pub use modifiers_state::ModifiersState;
@@ -411,9 +410,9 @@ impl KeyboardHandle {
     ///
     /// The module [`crate::wayland::seat::keysyms`] exposes definitions of all possible keysyms
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
-    pub fn input<T, F, D>(
+    pub fn input<T, F>(
         &self,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         keycode: u32,
         state: KeyState,
         serial: Serial,
@@ -475,7 +474,7 @@ impl KeyboardHandle {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus<D>(&self, cx: &mut DisplayHandle<'_, D>, focus: Option<&WlSurface>, serial: Serial) {
+    pub fn set_focus<D>(&self, cx: &mut DisplayHandle<'_>, focus: Option<&WlSurface>, serial: Serial) {
         let mut guard = self.arc.internal.borrow_mut();
         guard.pending_focus = focus.cloned();
         guard.with_grab(
@@ -512,7 +511,7 @@ impl KeyboardHandle {
     /// The keymap will automatically be sent to it
     ///
     /// This should be done first, before anything else is done with this keyboard.
-    pub(crate) fn new_kbd<D>(&self, cx: &mut DisplayHandle<'_, D>, kbd: WlKeyboard) {
+    pub(crate) fn new_kbd(&self, cx: &mut DisplayHandle<'_>, kbd: WlKeyboard) {
         trace!(self.arc.logger, "Sending keymap to client");
 
         // prepare a tempfile with the keymap, to send it to the client
@@ -544,7 +543,7 @@ impl KeyboardHandle {
     }
 
     /// Change the repeat info configured for this keyboard
-    pub fn change_repeat_info<D>(&self, cx: &mut DisplayHandle<'_, D>, rate: i32, delay: i32) {
+    pub fn change_repeat_info(&self, cx: &mut DisplayHandle<'_>, rate: i32, delay: i32) {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.repeat_delay = delay;
         guard.repeat_rate = rate;
@@ -560,21 +559,22 @@ pub struct KeyboardUserData {
     pub(crate) handle: Option<KeyboardHandle>,
 }
 
-impl<D: 'static> DelegateDispatchBase<WlKeyboard> for SeatDispatch<'_, D> {
+impl DelegateDispatchBase<WlKeyboard> for SeatState {
     type UserData = KeyboardUserData;
 }
 
-impl<D> DelegateDispatch<WlKeyboard, D> for SeatDispatch<'_, D>
+impl<D> DelegateDispatch<WlKeyboard, D> for SeatState
 where
     D: 'static + Dispatch<WlKeyboard, UserData = KeyboardUserData>,
+    D: SeatHandler,
 {
     fn request(
-        &mut self,
+        _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlKeyboard,
         _request: wl_keyboard::Request,
         _data: &Self::UserData,
-        _dhandle: &mut DisplayHandle<'_, D>,
+        _dhandle: &mut DisplayHandle<'_>,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
     }

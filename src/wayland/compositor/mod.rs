@@ -87,8 +87,6 @@ mod handlers;
 mod transaction;
 mod tree;
 
-use std::marker::PhantomData;
-
 pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::SubsurfaceCachedState;
 use self::tree::PrivateSurfaceData;
@@ -98,7 +96,7 @@ use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
 use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface::WlSurface};
-use wayland_server::{DisplayHandle, GlobalDispatch, Resource};
+use wayland_server::{Display, DisplayHandle, GlobalDispatch, Resource};
 
 pub use handlers::{RegionUserData, SubsurfaceUserData, SurfaceUserData};
 
@@ -135,7 +133,7 @@ struct Marker<R> {
 /// By default, all surfaces have a [`SurfaceAttributes`] cached state,
 /// and subsurface also have a [`SubsurfaceCachedState`] state as well.
 #[derive(Debug)]
-pub struct SurfaceData<D> {
+pub struct SurfaceData {
     /// The current role of the surface.
     ///
     /// If `None` if the surface has not yet been assigned a role
@@ -143,7 +141,7 @@ pub struct SurfaceData<D> {
     /// The non-buffered typemap storage of this surface
     pub data_map: UserDataMap,
     /// The double-buffered typemap storage of this surface
-    pub cached_state: MultiCache<D>,
+    pub cached_state: MultiCache,
 }
 
 /// New buffer assignation for a surface
@@ -294,17 +292,16 @@ impl RegionAttributes {
 ///
 /// If the surface not managed by the `CompositorGlobal` that provided this token, this
 /// will panic (having more than one compositor is not supported).
-pub fn with_surface_tree_upward<D, F1, F2, F3, T>(
+pub fn with_surface_tree_upward<F1, F2, F3, T>(
     surface: &WlSurface,
     initial: T,
     filter: F1,
     processor: F2,
     post_filter: F3,
 ) where
-    D: 'static,
-    F1: FnMut(&WlSurface, &SurfaceData<D>, &T) -> TraversalAction<T>,
-    F2: FnMut(&WlSurface, &SurfaceData<D>, &T),
-    F3: FnMut(&WlSurface, &SurfaceData<D>, &T) -> bool,
+    F1: FnMut(&WlSurface, &SurfaceData, &T) -> TraversalAction<T>,
+    F2: FnMut(&WlSurface, &SurfaceData, &T),
+    F3: FnMut(&WlSurface, &SurfaceData, &T) -> bool,
 {
     PrivateSurfaceData::map_tree(surface, &initial, filter, processor, post_filter, false);
 }
@@ -315,17 +312,16 @@ pub fn with_surface_tree_upward<D, F1, F2, F3, T>(
 /// from the nearest of the screen to the deepest.
 ///
 /// This would typically be used to find out which surface of a subsurface tree has been clicked for example.
-pub fn with_surface_tree_downward<D, F1, F2, F3, T>(
+pub fn with_surface_tree_downward<F1, F2, F3, T>(
     surface: &WlSurface,
     initial: T,
     filter: F1,
     processor: F2,
     post_filter: F3,
 ) where
-    D: 'static,
-    F1: FnMut(&WlSurface, &SurfaceData<D>, &T) -> TraversalAction<T>,
-    F2: FnMut(&WlSurface, &SurfaceData<D>, &T),
-    F3: FnMut(&WlSurface, &SurfaceData<D>, &T) -> bool,
+    F1: FnMut(&WlSurface, &SurfaceData, &T) -> TraversalAction<T>,
+    F2: FnMut(&WlSurface, &SurfaceData, &T),
+    F3: FnMut(&WlSurface, &SurfaceData, &T) -> bool,
 {
     PrivateSurfaceData::map_tree(surface, &initial, filter, processor, post_filter, true);
 }
@@ -333,62 +329,61 @@ pub fn with_surface_tree_downward<D, F1, F2, F3, T>(
 /// Retrieve the parent of this surface
 ///
 /// Returns `None` is this surface is a root surface
-pub fn get_parent<D: 'static>(cx: &mut DisplayHandle<'_, D>, surface: &WlSurface) -> Option<WlSurface> {
+pub fn get_parent(cx: &mut DisplayHandle<'_>, surface: &WlSurface) -> Option<WlSurface> {
     if cx.object_info(surface.id()).is_err() {
         return None;
     }
-    PrivateSurfaceData::<D>::get_parent(surface)
+    PrivateSurfaceData::get_parent(surface)
 }
 
 /// Retrieve the children of this surface
-pub fn get_children<D: 'static>(cx: &mut DisplayHandle<'_, D>, surface: &WlSurface) -> Vec<WlSurface> {
+pub fn get_children(cx: &mut DisplayHandle<'_>, surface: &WlSurface) -> Vec<WlSurface> {
     if cx.object_info(surface.id()).is_err() {
         return Vec::new();
     }
-    PrivateSurfaceData::<D>::get_children(surface)
+    PrivateSurfaceData::get_children(surface)
 }
 
 /// Check if this subsurface is a synchronized subsurface
 ///
 /// Returns false if the surface is already dead
-pub fn is_sync_subsurface<D: 'static>(cx: &mut DisplayHandle<'_, D>, surface: &WlSurface) -> bool {
+pub fn is_sync_subsurface(cx: &mut DisplayHandle<'_>, surface: &WlSurface) -> bool {
     if cx.object_info(surface.id()).is_err() {
         return false;
     }
-    self::handlers::is_effectively_sync::<D>(surface)
+    self::handlers::is_effectively_sync(surface)
 }
 
 /// Get the current role of this surface
-pub fn get_role<D: 'static>(cx: &mut DisplayHandle<'_, D>, surface: &WlSurface) -> Option<&'static str> {
+pub fn get_role(cx: &mut DisplayHandle<'_>, surface: &WlSurface) -> Option<&'static str> {
     if cx.object_info(surface.id()).is_err() {
         return None;
     }
-    PrivateSurfaceData::<D>::get_role(surface)
+    PrivateSurfaceData::get_role(surface)
 }
 
 /// Register that this surface has given role
 ///
 /// Fails if the surface already has a role.
-pub fn give_role<D: 'static>(
-    cx: &mut DisplayHandle<'_, D>,
+pub fn give_role(
+    cx: &mut DisplayHandle<'_>,
     surface: &WlSurface,
     role: &'static str,
 ) -> Result<(), AlreadyHasRole> {
     if cx.object_info(surface.id()).is_err() {
         return Ok(());
     }
-    PrivateSurfaceData::<D>::set_role(surface, role)
+    PrivateSurfaceData::set_role(surface, role)
 }
 
 /// Access the states associated to this surface
-pub fn with_states<D, F, T>(
+pub fn with_states<F, T>(
     // cx: &mut DisplayHandle<'_, D>,
     surface: &WlSurface,
     f: F,
 ) -> Result<T, DeadResource>
 where
-    D: 'static,
-    F: FnOnce(&SurfaceData<D>) -> T,
+    F: FnOnce(&SurfaceData) -> T,
 {
     // if cx.object_info(surface.id()).is_err() {
     //     return Err(DeadResource);
@@ -410,39 +405,37 @@ pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
 /// Register a commit hook to be invoked on surface commit
 ///
 /// For its precise semantics, see module-level documentation.
-pub fn add_commit_hook<D: 'static>(cx: &mut DisplayHandle<'_, D>, surface: &WlSurface, hook: fn(&WlSurface)) {
+pub fn add_commit_hook(cx: &mut DisplayHandle<'_>, surface: &WlSurface, hook: fn(&WlSurface)) {
     if cx.object_info(surface.id()).is_err() {
         return;
     }
-    PrivateSurfaceData::<D>::add_commit_hook(surface, hook)
+    PrivateSurfaceData::add_commit_hook(surface, hook)
 }
 
 /// Handler trait for compositor
-pub trait CompositorHandler<D> {
-    /// Surface commit handler
-    fn commit(&mut self, cx: &mut DisplayHandle<'_, D>, surface: &WlSurface);
-}
+pub trait CompositorHandler {
+    /// [CompositorState] getter
+    fn compositor_state(&mut self) -> &mut CompositorState;
 
-/// Compositor event dispatching struct
-#[derive(Debug)]
-pub struct CompositorDispatch<'a, D, H: CompositorHandler<D>>(pub &'a mut CompositorState<D>, pub &'a mut H);
+    /// Surface commit handler
+    fn commit(&mut self, cx: &mut DisplayHandle<'_>, surface: &WlSurface);
+}
 
 /// State of a compositor
 #[derive(Debug)]
-pub struct CompositorState<D> {
+pub struct CompositorState {
     log: slog::Logger,
     compositor: GlobalId,
     subcompositor: GlobalId,
-    _pd: PhantomData<D>,
 }
 
-impl<D> CompositorState<D> {
+impl CompositorState {
     /// Create new [`wl_compositor`](wayland_server::protocol::wl_compositor)
     /// and [`wl_subcompositor`](wayland_server::protocol::wl_subcompositor) globals.
     ///
     /// It returns the two global handles, in case you wish to remove these globals from
     /// the event loop in the future.
-    pub fn new<L>(display: &mut DisplayHandle<'_, D>, logger: L) -> Self
+    pub fn new<D, L>(display: &mut Display<D>, logger: L) -> Self
     where
         L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<WlCompositor, GlobalData = ()>
@@ -458,7 +451,6 @@ impl<D> CompositorState<D> {
             log,
             compositor,
             subcompositor,
-            _pd: PhantomData::<D>,
         }
     }
 
@@ -480,7 +472,7 @@ mod tests {
     #[test]
     fn region_attributes_empty() {
         let region = RegionAttributes { rects: vec![] };
-        assert!(!region.contains((0, 0)));
+        assert_eq!(region.contains((0, 0)), false);
     }
 
     #[test]
@@ -489,7 +481,7 @@ mod tests {
             rects: vec![(RectangleKind::Add, Rectangle::from_loc_and_size((0, 0), (10, 10)))],
         };
 
-        assert!(region.contains((0, 0)));
+        assert_eq!(region.contains((0, 0)), true);
     }
 
     #[test]
@@ -504,8 +496,8 @@ mod tests {
             ],
         };
 
-        assert!(!region.contains((0, 0)));
-        assert!(region.contains((5, 5)));
+        assert_eq!(region.contains((0, 0)), false);
+        assert_eq!(region.contains((5, 5)), true);
     }
 
     #[test]
@@ -521,8 +513,8 @@ mod tests {
             ],
         };
 
-        assert!(!region.contains((0, 0)));
-        assert!(region.contains((5, 5)));
-        assert!(region.contains((2, 2)));
+        assert_eq!(region.contains((0, 0)), false);
+        assert_eq!(region.contains((5, 5)), true);
+        assert_eq!(region.contains((2, 2)), true);
     }
 }
