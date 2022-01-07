@@ -32,7 +32,7 @@ pub(crate) struct SurfaceState {
 }
 
 impl SurfaceState {
-    pub fn update_buffer<D>(&mut self, cx: &mut DisplayHandle<'_, D>, attrs: &mut SurfaceAttributes) {
+    pub fn update_buffer(&mut self, cx: &mut DisplayHandle<'_>, attrs: &mut SurfaceAttributes) {
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
@@ -79,9 +79,9 @@ impl SurfaceState {
 /// not be accessible anymore, but [`draw_surface_tree`] and other
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
-pub fn on_commit_buffer_handler<D: 'static>(cx: &mut DisplayHandle<'_, D>, surface: &WlSurface) {
+pub fn on_commit_buffer_handler(cx: &mut DisplayHandle<'_>, surface: &WlSurface) {
     if !is_sync_subsurface(cx, surface) {
-        with_surface_tree_upward::<D, _, _, _, _>(
+        with_surface_tree_upward(
             surface,
             (),
             |_, _, _| TraversalAction::DoChildren(()),
