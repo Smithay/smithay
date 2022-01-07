@@ -1,38 +1,37 @@
-use std::sync::atomic::AtomicBool;
-use std::{ops::Deref as _, sync::Mutex};
+use std::sync::{atomic::AtomicBool, Mutex};
 
-use crate::wayland::delegate::{
-    DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
+use crate::wayland::{shell::xdg::XdgShellState, Serial};
+
+use wayland_protocols::xdg_shell::server::{
+    xdg_positioner::XdgPositioner, xdg_surface::XdgSurface, xdg_wm_base, xdg_wm_base::XdgWmBase,
 };
-use crate::wayland::Serial;
-use wayland_protocols::xdg_shell::server::xdg_positioner::XdgPositioner;
-use wayland_protocols::xdg_shell::server::xdg_surface::XdgSurface;
-use wayland_protocols::xdg_shell::server::xdg_wm_base;
-use wayland_protocols::xdg_shell::server::xdg_wm_base::XdgWmBase;
-use wayland_server::backend::{ClientId, ObjectId};
-use wayland_server::{DataInit, DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New};
+
+use wayland_server::{
+    backend::{ClientId, ObjectId},
+    DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
+    DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New,
+};
 
 use super::{
-    ShellClient, ShellClientData, XdgPositionerUserData, XdgRequest, XdgShellDispatch, XdgShellHandler,
-    XdgSurfaceUserData,
+    ShellClient, ShellClientData, XdgPositionerUserData, XdgRequest, XdgShellHandler, XdgSurfaceUserData,
 };
 
-impl<D, H: XdgShellHandler<D>> DelegateGlobalDispatchBase<XdgWmBase> for XdgShellDispatch<'_, D, H> {
+impl DelegateGlobalDispatchBase<XdgWmBase> for XdgShellState {
     type GlobalData = ();
 }
 
-impl<D, H> DelegateGlobalDispatch<XdgWmBase, D> for XdgShellDispatch<'_, D, H>
+impl<D> DelegateGlobalDispatch<XdgWmBase, D> for XdgShellState
 where
-    D: GlobalDispatch<XdgWmBase, GlobalData = ()>
-        + Dispatch<XdgWmBase, UserData = XdgWmBaseUserData>
-        + Dispatch<XdgSurface, UserData = XdgSurfaceUserData>
-        + Dispatch<XdgPositioner, UserData = XdgPositionerUserData>
-        + 'static,
-    H: XdgShellHandler<D>,
+    D: GlobalDispatch<XdgWmBase, GlobalData = ()>,
+    D: Dispatch<XdgWmBase, UserData = XdgWmBaseUserData>,
+    D: Dispatch<XdgSurface, UserData = XdgSurfaceUserData>,
+    D: Dispatch<XdgPositioner, UserData = XdgPositionerUserData>,
+    D: XdgShellHandler,
+    D: 'static,
 {
     fn bind(
-        &mut self,
-        cx: &mut DisplayHandle<'_, D>,
+        state: &mut D,
+        cx: &mut DisplayHandle<'_>,
         _client: &wayland_server::Client,
         resource: New<XdgWmBase>,
         _global_data: &Self::GlobalData,
@@ -40,7 +39,8 @@ where
     ) {
         let shell = data_init.init(resource, XdgWmBaseUserData::default());
 
-        self.1.request(
+        XdgShellHandler::request(
+            state,
             cx,
             XdgRequest::NewClient {
                 client: ShellClient::new(&shell),
@@ -49,25 +49,25 @@ where
     }
 }
 
-impl<D, H: XdgShellHandler<D>> DelegateDispatchBase<XdgWmBase> for XdgShellDispatch<'_, D, H> {
+impl DelegateDispatchBase<XdgWmBase> for XdgShellState {
     type UserData = XdgWmBaseUserData;
 }
 
-impl<D, H> DelegateDispatch<XdgWmBase, D> for XdgShellDispatch<'_, D, H>
+impl<D> DelegateDispatch<XdgWmBase, D> for XdgShellState
 where
-    D: Dispatch<XdgWmBase, UserData = XdgWmBaseUserData>
-        + Dispatch<XdgSurface, UserData = XdgSurfaceUserData>
-        + Dispatch<XdgPositioner, UserData = XdgPositionerUserData>
-        + 'static,
-    H: XdgShellHandler<D>,
+    D: Dispatch<XdgWmBase, UserData = XdgWmBaseUserData>,
+    D: Dispatch<XdgSurface, UserData = XdgSurfaceUserData>,
+    D: Dispatch<XdgPositioner, UserData = XdgPositionerUserData>,
+    D: XdgShellHandler,
+    D: 'static,
 {
     fn request(
-        &mut self,
+        state: &mut D,
         _client: &wayland_server::Client,
-        shell: &XdgWmBase,
+        wm_base: &XdgWmBase,
         request: xdg_wm_base::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -83,7 +83,7 @@ where
                     id,
                     XdgSurfaceUserData {
                         wl_surface: surface,
-                        wm_base: shell.deref().clone(),
+                        wm_base: wm_base.clone(),
                         has_active_role: AtomicBool::new(false),
                     },
                 );
@@ -100,10 +100,11 @@ where
                     }
                 };
                 if valid {
-                    self.1.request(
+                    XdgShellHandler::request(
+                        state,
                         cx,
                         XdgRequest::ClientPong {
-                            client: ShellClient::new(&shell),
+                            client: ShellClient::new(&wm_base),
                         },
                     );
                 }

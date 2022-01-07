@@ -556,8 +556,6 @@ fn get_dmabuf_formats(
     extensions: &[String],
     log: &::slog::Logger,
 ) -> Result<(HashSet<DrmFormat>, HashSet<DrmFormat>), EGLError> {
-    use std::convert::TryFrom;
-
     if !extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import") {
         warn!(log, "Dmabuf import extension not available");
         return Ok((HashSet::new(), HashSet::new()));

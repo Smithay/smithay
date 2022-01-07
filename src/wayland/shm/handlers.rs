@@ -1,6 +1,6 @@
 use super::{
     pool::{Pool, ResizeError},
-    ShmDispatch,
+    BufferData, ShmHandler, ShmState,
 };
 
 use std::sync::Arc;
@@ -10,31 +10,29 @@ use wayland_server::{
         wl_shm::{self, WlShm},
         wl_shm_pool::{self, WlShmPool},
     },
-    DataInit, DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
-};
-
-use crate::wayland::{
-    delegate::{DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase},
-    shm::BufferData,
+    DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
+    DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
 /*
  * wl_shm
  */
 
-impl DelegateGlobalDispatchBase<WlShm> for ShmDispatch<'_> {
+impl DelegateGlobalDispatchBase<WlShm> for ShmState {
     type GlobalData = ();
 }
 
-impl<D: 'static> DelegateGlobalDispatch<WlShm, D> for ShmDispatch<'_>
+impl<D> DelegateGlobalDispatch<WlShm, D> for ShmState
 where
-    D: GlobalDispatch<WlShm, GlobalData = ()>
-        + Dispatch<WlShm, UserData = ()>
-        + Dispatch<WlShmPool, UserData = ShmPoolUserData>,
+    D: GlobalDispatch<WlShm, GlobalData = ()>,
+    D: Dispatch<WlShm, UserData = ()>,
+    D: Dispatch<WlShmPool, UserData = ShmPoolUserData>,
+    D: ShmHandler,
+    D: 'static,
 {
     fn bind(
-        &mut self,
-        handle: &mut wayland_server::DisplayHandle<'_, D>,
+        state: &mut D,
+        handle: &mut wayland_server::DisplayHandle<'_>,
         _client: &wayland_server::Client,
         resource: New<WlShm>,
         _global_data: &Self::GlobalData,
@@ -43,27 +41,30 @@ where
         let shm = data_init.init(resource, ());
 
         // send the formats
-        for &f in &self.0.formats[..] {
+        for &f in &state.shm_state().formats[..] {
             shm.format(handle, f);
         }
     }
 }
 
-impl DelegateDispatchBase<WlShm> for ShmDispatch<'_> {
+impl DelegateDispatchBase<WlShm> for ShmState {
     type UserData = ();
 }
 
-impl<D: 'static> DelegateDispatch<WlShm, D> for ShmDispatch<'_>
+impl<D> DelegateDispatch<WlShm, D> for ShmState
 where
-    D: Dispatch<WlShm, UserData = ()> + Dispatch<WlShmPool, UserData = ShmPoolUserData>,
+    D: Dispatch<WlShm, UserData = ()>,
+    D: Dispatch<WlShmPool, UserData = ShmPoolUserData>,
+    D: ShmHandler,
+    D: 'static,
 {
     fn request(
-        &mut self,
+        state: &mut D,
         _client: &wayland_server::Client,
         shm: &WlShm,
         request: wl_shm::Request,
         _data: &Self::UserData,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         data_init: &mut DataInit<'_, D>,
     ) {
         use wl_shm::{Error, Request};
@@ -76,7 +77,7 @@ where
             shm.post_error(cx, Error::InvalidFd, "Invalid size for a new wl_shm_pool.");
             return;
         }
-        let mmap_pool = match Pool::new(fd, size as usize, self.0.log.clone()) {
+        let mmap_pool = match Pool::new(fd, size as usize, state.shm_state().log.clone()) {
             Ok(p) => p,
             Err(()) => {
                 shm.post_error(cx, wl_shm::Error::InvalidFd, format!("Failed mmap of fd {}.", fd));
@@ -112,21 +113,24 @@ impl DestructionNotify for ShmPoolUserData {
     }
 }
 
-impl DelegateDispatchBase<WlShmPool> for ShmDispatch<'_> {
+impl DelegateDispatchBase<WlShmPool> for ShmState {
     type UserData = ShmPoolUserData;
 }
 
-impl<D: 'static> DelegateDispatch<WlShmPool, D> for ShmDispatch<'_>
+impl<D> DelegateDispatch<WlShmPool, D> for ShmState
 where
-    D: Dispatch<WlShmPool, UserData = ShmPoolUserData> + Dispatch<WlBuffer, UserData = ShmBufferUserData>,
+    D: Dispatch<WlShmPool, UserData = ShmPoolUserData>,
+    D: Dispatch<WlBuffer, UserData = ShmBufferUserData>,
+    D: ShmHandler,
+    D: 'static,
 {
     fn request(
-        &mut self,
+        state: &mut D,
         _client: &wayland_server::Client,
         pool: &WlShmPool,
         request: wl_shm_pool::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         data_init: &mut DataInit<'_, D>,
     ) {
         use self::wl_shm_pool::Request;
@@ -143,7 +147,7 @@ where
                 format,
             } => {
                 if let WEnum::Value(format) = format {
-                    if !self.0.formats.contains(&format) {
+                    if !state.shm_state().formats.contains(&format) {
                         pool.post_error(
                             cx,
                             wl_shm::Error::InvalidFormat,
@@ -204,21 +208,22 @@ impl DestructionNotify for ShmBufferUserData {
     }
 }
 
-impl DelegateDispatchBase<WlBuffer> for ShmDispatch<'_> {
+impl DelegateDispatchBase<WlBuffer> for ShmState {
     type UserData = ShmBufferUserData;
 }
 
-impl<D: 'static> DelegateDispatch<WlBuffer, D> for ShmDispatch<'_>
+impl<D> DelegateDispatch<WlBuffer, D> for ShmState
 where
     D: Dispatch<WlBuffer, UserData = ShmBufferUserData>,
+    D: 'static,
 {
     fn request(
-        &mut self,
+        _state: &mut D,
         _client: &wayland_server::Client,
         _pool: &WlBuffer,
         _request: wl_buffer::Request,
         _data: &Self::UserData,
-        _cx: &mut DisplayHandle<'_, D>,
+        _cx: &mut DisplayHandle<'_>,
         _data_init: &mut DataInit<'_, D>,
     ) {
     }

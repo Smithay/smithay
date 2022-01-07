@@ -1,28 +1,28 @@
-use crate::wayland::delegate::{DelegateDispatch, DelegateDispatchBase};
-use crate::wayland::shell::xdg::XdgPositionerUserData;
-use crate::wayland::Serial;
-use wayland_protocols::xdg_shell::server::xdg_popup;
-use wayland_protocols::xdg_shell::server::xdg_popup::XdgPopup;
-use wayland_server::{DataInit, Dispatch, DisplayHandle, Resource};
+use crate::wayland::{shell::xdg::XdgPositionerUserData, Serial};
 
-use super::{PopupConfigure, XdgRequest, XdgShellDispatch, XdgShellHandler, XdgShellSurfaceUserData};
+use wayland_protocols::xdg_shell::server::xdg_popup::{self, XdgPopup};
 
-impl<D, H: XdgShellHandler<D>> DelegateDispatchBase<XdgPopup> for XdgShellDispatch<'_, D, H> {
+use wayland_server::{DataInit, DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource};
+
+use super::{PopupConfigure, XdgRequest, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData};
+
+impl DelegateDispatchBase<XdgPopup> for XdgShellState {
     type UserData = XdgShellSurfaceUserData;
 }
 
-impl<D, H> DelegateDispatch<XdgPopup, D> for XdgShellDispatch<'_, D, H>
+impl<D> DelegateDispatch<XdgPopup, D> for XdgShellState
 where
-    D: Dispatch<XdgPopup, UserData = XdgShellSurfaceUserData> + 'static,
-    H: XdgShellHandler<D>,
+    D: Dispatch<XdgPopup, UserData = XdgShellSurfaceUserData>,
+    D: XdgShellHandler,
+    D: 'static,
 {
     fn request(
-        &mut self,
+        state: &mut D,
         _client: &wayland_server::Client,
         popup: &XdgPopup,
         request: xdg_popup::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -37,7 +37,8 @@ where
 
                 let serial = Serial::from(serial);
 
-                self.1.request(
+                XdgShellHandler::request(
+                    state,
                     cx,
                     XdgRequest::Grab {
                         surface: handle,
@@ -59,7 +60,8 @@ where
                     .lock()
                     .unwrap();
 
-                self.1.request(
+                XdgShellHandler::request(
+                    state,
                     cx,
                     XdgRequest::RePosition {
                         surface: handle,
@@ -73,11 +75,7 @@ where
     }
 }
 
-pub fn send_popup_configure<D>(
-    cx: &mut DisplayHandle<'_, D>,
-    resource: &xdg_popup::XdgPopup,
-    configure: PopupConfigure,
-) {
+pub fn send_popup_configure(cx: &mut DisplayHandle<'_>, resource: &XdgPopup, configure: PopupConfigure) {
     let data = resource.data::<XdgShellSurfaceUserData>().unwrap();
 
     let serial = configure.serial;

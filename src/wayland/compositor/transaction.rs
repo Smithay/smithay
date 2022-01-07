@@ -195,9 +195,9 @@ impl Transaction {
             })
     }
 
-    pub(crate) fn apply<D: 'static>(self, cx: &mut DisplayHandle<'_, D>) {
+    pub(crate) fn apply(self, cx: &mut DisplayHandle<'_>) {
         for (surface, id) in self.surfaces {
-            PrivateSurfaceData::<D>::with_states(&surface, |states| {
+            PrivateSurfaceData::with_states(&surface, |states| {
                 states.cached_state.apply_state(id, cx);
             })
         }
@@ -217,7 +217,7 @@ impl TransactionQueue {
         self.transactions.push(t);
     }
 
-    pub(crate) fn apply_ready<D: 'static>(&mut self, cx: &mut DisplayHandle<'_, D>) {
+    pub(crate) fn apply_ready<D: 'static>(&mut self, cx: &mut DisplayHandle<'_>) {
         // this is a very non-optimized implementation
         // we just iterate over the queue of transactions, keeping track of which
         // surface we have seen as they encode transaction dependencies
