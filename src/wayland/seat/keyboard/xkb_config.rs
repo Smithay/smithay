@@ -7,7 +7,7 @@
 /// For details, see the [documentation at xkbcommon.org][docs].
 ///
 /// [docs]: https://xkbcommon.org/doc/current/structxkb__rule__names.html
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct XkbConfig<'a> {
     /// The rules file to use.
     ///
@@ -25,16 +25,4 @@ pub struct XkbConfig<'a> {
     /// preferences, like which key combinations are used for switching layouts, or which key is the
     /// Compose key.
     pub options: Option<String>,
-}
-
-impl<'a> Default for XkbConfig<'a> {
-    fn default() -> Self {
-        Self {
-            rules: "",
-            model: "",
-            layout: "",
-            variant: "",
-            options: None,
-        }
-    }
 }
