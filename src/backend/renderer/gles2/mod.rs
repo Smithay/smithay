@@ -1017,12 +1017,25 @@ impl Drop for Gles2Renderer {
 }
 
 impl Gles2Renderer {
+    /// Get access to the underlying [`EGLContext`].
+    ///
+    /// *Note*: Modifying the context state, might result in rendering issues.
+    /// The context state is considerd an implementation detail
+    /// and no guarantee is made about what can or cannot be changed.
+    /// To make sure a certain modification does not interfere with
+    /// the renderer's behaviour, check the source.
+    pub fn egl_context(&self) -> &EGLContext {
+        &self.egl
+    }
+
     /// Run custom code in the GL context owned by this renderer.
     ///
-    /// *Note*: Any changes to the GL state should be restored at the end of this function.
-    /// Otherwise this can lead to rendering errors while using functions of this renderer.
-    /// Relying on any state set by the renderer may break on any smithay update as the
-    /// details about how this renderer works are considered an implementation detail.
+    /// The OpenGL state of the renderer is considered an implementation detail
+    /// and no guarantee is made about what can or cannot be changed,
+    /// as such you should reset everything you change back to its previous value
+    /// or check the source code of the version of Smithay you are using to ensure
+    /// your changes don't interfere with the renderer's behavior.
+    /// Doing otherwise can lead to rendering errors while using other functions of this renderer.
     pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
     where
         F: FnOnce(&mut Self, &ffi::Gles2) -> R,
