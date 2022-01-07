@@ -129,13 +129,11 @@ impl ShmState {
 
         let shm = display.create_global::<WlShm>(1, ());
 
-        let state = ShmState {
+        ShmState {
             formats,
             shm,
             log: log.new(slog::o!("smithay_module" => "shm_handler")),
-        };
-
-        state
+        }
     }
 
     /// Get id of WlShm globabl
