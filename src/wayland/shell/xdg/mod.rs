@@ -68,7 +68,6 @@ use crate::wayland::compositor::Cacheable;
 use crate::wayland::shell::is_toplevel_equivalent;
 use crate::wayland::{Serial, SERIAL_COUNTER};
 use std::fmt::Debug;
-use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
 use wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1;
@@ -78,9 +77,8 @@ use wayland_protocols::xdg_shell::server::{xdg_popup, xdg_positioner, xdg_toplev
 use wayland_server::backend::GlobalId;
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_surface},
-    DisplayHandle,
+    Display, DisplayHandle, GlobalDispatch, Resource,
 };
-use wayland_server::{GlobalDispatch, Resource};
 
 use super::PingError;
 
@@ -733,22 +731,23 @@ pub struct SurfaceCachedState {
     pub max_size: Size<i32, Logical>,
 }
 
-impl<D> Cacheable<D> for SurfaceCachedState {
-    fn commit(&mut self, _cx: &mut DisplayHandle<'_, D>) -> Self {
+impl Cacheable for SurfaceCachedState {
+    fn commit(&mut self, _cx: &mut DisplayHandle<'_>) -> Self {
         *self
     }
-    fn merge_into(self, into: &mut Self, _cx: &mut DisplayHandle<'_, D>) {
+    fn merge_into(self, into: &mut Self, _cx: &mut DisplayHandle<'_>) {
         *into = self;
     }
 }
 
 /// Xdg Shell handler type
-pub trait XdgShellHandler<D> {
-    fn request(&mut self, cx: &mut DisplayHandle<'_, D>, request: XdgRequest);
+pub trait XdgShellHandler {
+    /// [XdgShellState] getter
+    fn xdg_shell_state(&mut self) -> &mut XdgShellState;
+
+    /// Xdg requests
+    fn request(&mut self, cx: &mut DisplayHandle<'_>, request: XdgRequest);
 }
-/// Dispatcher type for Xdg Shell
-#[derive(Debug)]
-pub struct XdgShellDispatch<'a, D, H: XdgShellHandler<D>>(pub &'a mut XdgShellState<D>, pub &'a mut H);
 
 #[derive(Debug)]
 pub(crate) struct InnerState {
@@ -761,16 +760,15 @@ pub(crate) struct InnerState {
 /// This state allows you to retrieve a list of surfaces
 /// currently known to the shell global.
 #[derive(Debug)]
-pub struct XdgShellState<D> {
+pub struct XdgShellState {
     inner: Arc<Mutex<InnerState>>,
 
-    log: slog::Logger,
-    _ph: PhantomData<D>,
+    _log: slog::Logger,
 }
 
-impl<D> XdgShellState<D> {
+impl XdgShellState {
     /// Create a new `xdg_shell` global
-    pub fn new<L>(display: &mut DisplayHandle<'_, D>, logger: L) -> (XdgShellState<D>, GlobalId)
+    pub fn new<D, L>(display: &mut Display<D>, logger: L) -> (XdgShellState, GlobalId)
     where
         L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<XdgWmBase, GlobalData = ()> + 'static,
@@ -782,8 +780,7 @@ impl<D> XdgShellState<D> {
                 known_popups: Vec::new(),
             })),
 
-            log: log.new(slog::o!("smithay_module" => "xdg_shell_handler")),
-            _ph: PhantomData::<D>,
+            _log: log.new(slog::o!("smithay_module" => "xdg_shell_handler")),
         };
 
         let xdg_shell_global = display.create_global(
@@ -850,7 +847,7 @@ impl ShellClient {
     }
 
     /// Is the shell client represented by this handle still connected?
-    pub fn alive<D>(&self, cx: &mut DisplayHandle<'_, D>) -> bool {
+    pub fn alive(&self, cx: &mut DisplayHandle<'_>) -> bool {
         cx.object_info(self.kind.id()).is_ok()
     }
 
@@ -863,7 +860,7 @@ impl ShellClient {
     /// down to 0 before a pong is received, mark the client as unresponsive.
     ///
     /// Fails if this shell client already has a pending ping or is already dead.
-    pub fn send_ping<D>(&self, cx: &mut DisplayHandle<'_, D>, serial: Serial) -> Result<(), PingError> {
+    pub fn send_ping(&self, cx: &mut DisplayHandle<'_>, serial: Serial) -> Result<(), PingError> {
         if !self.alive(cx) {
             return Err(PingError::DeadSurface);
         }
@@ -879,11 +876,7 @@ impl ShellClient {
     }
 
     /// Access the user data associated with this shell client
-    pub fn with_data<D, F, T>(
-        &self,
-        cx: &mut DisplayHandle<'_, D>,
-        f: F,
-    ) -> Result<T, crate::utils::DeadResource>
+    pub fn with_data<F, T>(&self, cx: &mut DisplayHandle<'_>, f: F) -> Result<T, crate::utils::DeadResource>
     where
         F: FnOnce(&mut UserDataMap) -> T,
     {
@@ -912,7 +905,7 @@ impl std::cmp::PartialEq for ToplevelSurface {
 
 impl ToplevelSurface {
     /// Is the toplevel surface referred by this handle still alive?
-    pub fn alive<D>(&self, cx: &mut DisplayHandle<'_, D>) -> bool {
+    pub fn alive(&self, cx: &mut DisplayHandle<'_>) -> bool {
         let a = cx.object_info(self.shell_surface.id()).is_ok();
         let b = cx.object_info(self.wl_surface.id()).is_ok();
         a && b
@@ -926,7 +919,7 @@ impl ToplevelSurface {
     /// Retrieve the shell client owning this toplevel surface
     ///
     /// Returns `None` if the surface does actually no longer exist.
-    pub fn client<D>(&self, cx: &mut DisplayHandle<'_, D>) -> Option<ShellClient> {
+    pub fn client(&self, cx: &mut DisplayHandle<'_>) -> Option<ShellClient> {
         if !self.alive(cx) {
             return None;
         }
@@ -972,9 +965,9 @@ impl ToplevelSurface {
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure<D: 'static>(&self, cx: &mut DisplayHandle<'_, D>) {
+    pub fn send_configure(&self, cx: &mut DisplayHandle<'_>) {
         if let Some(surface) = self.get_surface(cx) {
-            let configure = compositor::with_states::<D, _, _>(surface, |states| {
+            let configure = compositor::with_states(surface, |states| {
                 let mut attributes = states
                     .data_map
                     .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
@@ -1006,7 +999,7 @@ impl ToplevelSurface {
             if let Some((configure, decoration_mode_changed)) = configure {
                 if decoration_mode_changed {
                     if let Some(data) = self.shell_surface.data::<XdgShellSurfaceUserData>() {
-                        if let Some(decoration) = &*data.decoration.lock().unwrap() {
+                        if let Some(_decoration) = &*data.decoration.lock().unwrap() {
                             // TODO:
                             // self::decoration::send_decoration_configure(
                             //     decoration,
@@ -1027,8 +1020,8 @@ impl ToplevelSurface {
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook<D: 'static>(surface: &wl_surface::WlSurface) {
-        compositor::with_states::<D, _, _>(surface, |states| {
+    pub(crate) fn commit_hook(surface: &wl_surface::WlSurface) {
+        compositor::with_states(surface, |states| {
             let mut guard = states
                 .data_map
                 .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
@@ -1050,11 +1043,11 @@ impl ToplevelSurface {
     ///
     /// `xdg_shell` mandates that a client acks a configure before committing
     /// anything.
-    pub fn ensure_configured<D: 'static>(&self, cx: &mut DisplayHandle<'_, D>) -> bool {
+    pub fn ensure_configured(&self, cx: &mut DisplayHandle<'_>) -> bool {
         if !self.alive(cx) {
             return false;
         }
-        let configured = compositor::with_states::<D, _, _>(&self.wl_surface, |states| {
+        let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
                 .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
@@ -1079,14 +1072,14 @@ impl ToplevelSurface {
     }
 
     /// Send a "close" event to the client
-    pub fn send_close<D>(&self, cx: &mut DisplayHandle<'_, D>) {
+    pub fn send_close(&self, cx: &mut DisplayHandle<'_>) {
         self.shell_surface.close(cx)
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface
     ///
     /// Returns `None` if the toplevel surface actually no longer exists.
-    pub fn get_surface<D>(&self, cx: &mut DisplayHandle<'_, D>) -> Option<&wl_surface::WlSurface> {
+    pub fn get_surface(&self, cx: &mut DisplayHandle<'_>) -> Option<&wl_surface::WlSurface> {
         if self.alive(cx) {
             Some(&self.wl_surface)
         } else {
@@ -1101,16 +1094,15 @@ impl ToplevelSurface {
     /// for example after a resize request from the client.
     ///
     /// The state will be sent to the client when calling [`send_configure`](#method.send_configure).
-    pub fn with_pending_state<D, F, T>(&self, cx: &mut DisplayHandle<'_, D>, f: F) -> Result<T, DeadResource>
+    pub fn with_pending_state<F, T>(&self, cx: &mut DisplayHandle<'_>, f: F) -> Result<T, DeadResource>
     where
         F: FnOnce(&mut ToplevelState) -> T,
-        D: 'static,
     {
         if !self.alive(cx) {
             return Err(DeadResource);
         }
 
-        Ok(compositor::with_states::<D, _, _>(&self.wl_surface, |states| {
+        Ok(compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
                 .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
@@ -1131,13 +1123,13 @@ impl ToplevelSurface {
     ///
     /// Returns `None` if the underlying surface has been
     /// destroyed
-    pub fn current_state<D: 'static>(&self, cx: &mut DisplayHandle<'_, D>) -> Option<ToplevelState> {
+    pub fn current_state(&self, cx: &mut DisplayHandle<'_>) -> Option<ToplevelState> {
         if !self.alive(cx) {
             return None;
         }
 
         Some(
-            compositor::with_states::<D, _, _>(&self.wl_surface, |states| {
+            compositor::with_states(&self.wl_surface, |states| {
                 let attributes = states
                     .data_map
                     .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
@@ -1152,8 +1144,8 @@ impl ToplevelSurface {
     }
 
     /// Returns the parent of this toplevel surface.
-    pub fn parent<D: 'static>(&self) -> Option<wl_surface::WlSurface> {
-        handlers::get_parent::<D>(&self.shell_surface)
+    pub fn parent(&self) -> Option<wl_surface::WlSurface> {
+        handlers::get_parent(&self.shell_surface)
     }
 
     /// Sets the parent of this toplevel surface and returns whether the parent was successfully set.
@@ -1161,9 +1153,9 @@ impl ToplevelSurface {
     /// The parent must be another toplevel equivalent surface.
     ///
     /// If the parent is `None`, the parent-child relationship is removed.
-    pub fn set_parent<D: 'static>(
+    pub fn set_parent(
         &self,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         parent: Option<&wl_surface::WlSurface>,
     ) -> bool {
         if let Some(parent) = parent {
@@ -1173,7 +1165,7 @@ impl ToplevelSurface {
         }
 
         // Unset the parent
-        handlers::set_parent::<D>(&self.shell_surface, None);
+        handlers::set_parent(&self.shell_surface, None);
 
         true
     }
@@ -1213,7 +1205,7 @@ impl std::cmp::PartialEq for PopupSurface {
 
 impl PopupSurface {
     /// Is the popup surface referred by this handle still alive?
-    pub fn alive<D>(&self, cx: &mut DisplayHandle<'_, D>) -> bool {
+    pub fn alive(&self, cx: &mut DisplayHandle<'_>) -> bool {
         let a = cx.object_info(self.shell_surface.id()).is_ok();
         let b = cx.object_info(self.wl_surface.id()).is_ok();
 
@@ -1222,14 +1214,11 @@ impl PopupSurface {
 
     /// Gets a reference of the parent WlSurface of
     /// this popup.
-    pub fn get_parent_surface<D: 'static>(
-        &self,
-        cx: &mut DisplayHandle<'_, D>,
-    ) -> Option<wl_surface::WlSurface> {
+    pub fn get_parent_surface(&self, cx: &mut DisplayHandle<'_>) -> Option<wl_surface::WlSurface> {
         if !self.alive(cx) {
             None
         } else {
-            compositor::with_states::<D, _, _>(&self.wl_surface, |states| {
+            compositor::with_states(&self.wl_surface, |states| {
                 states
                     .data_map
                     .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
@@ -1246,7 +1235,7 @@ impl PopupSurface {
     /// Retrieve the shell client owning this popup surface
     ///
     /// Returns `None` if the surface does actually no longer exist.
-    pub fn client<D>(&self, cx: &mut DisplayHandle<'_, D>) -> Option<ShellClient> {
+    pub fn client(&self, cx: &mut DisplayHandle<'_>) -> Option<ShellClient> {
         if !self.alive(cx) {
             return None;
         }
@@ -1269,13 +1258,9 @@ impl PopupSurface {
 
     /// Internal configure function to re-use the configure
     /// logic for both [`XdgRequest::send_configure`] and [`XdgRequest::send_repositioned`]
-    fn send_configure_internal<D: 'static>(
-        &self,
-        cx: &mut DisplayHandle<'_, D>,
-        reposition_token: Option<u32>,
-    ) {
+    fn send_configure_internal(&self, cx: &mut DisplayHandle<'_>, reposition_token: Option<u32>) {
         if let Some(surface) = self.get_surface(cx) {
-            let next_configure = compositor::with_states::<D, _, _>(surface, |states| {
+            let next_configure = compositor::with_states(surface, |states| {
                 let mut attributes = states
                     .data_map
                     .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
@@ -1323,13 +1308,10 @@ impl PopupSurface {
     /// Returns [`Err(PopupConfigureError)`] if the initial configure has already been sent and
     /// the client protocol version disallows a re-configure or the current [`PositionerState`]
     /// is not reactive
-    pub fn send_configure<D: 'static>(
-        &self,
-        cx: &mut DisplayHandle<'_, D>,
-    ) -> Result<(), PopupConfigureError> {
+    pub fn send_configure(&self, cx: &mut DisplayHandle<'_>) -> Result<(), PopupConfigureError> {
         if let Some(surface) = self.get_surface(cx) {
             // Check if we are allowed to send a configure
-            compositor::with_states::<D, _, _>(surface, |states| {
+            compositor::with_states(surface, |states| {
                 let attributes = states
                     .data_map
                     .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
@@ -1364,7 +1346,7 @@ impl PopupSurface {
     /// in response to a `reposition` request.
     ///
     /// For further information see [`send_configure`](#method.send_configure)
-    pub fn send_repositioned<D: 'static>(&self, cx: &mut DisplayHandle<'_, D>, token: u32) {
+    pub fn send_repositioned(&self, cx: &mut DisplayHandle<'_>, token: u32) {
         self.send_configure_internal(cx, Some(token))
     }
 
@@ -1372,8 +1354,8 @@ impl PopupSurface {
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook<D: 'static>(surface: &wl_surface::WlSurface) {
-        let send_error_to = compositor::with_states::<D, _, _>(surface, |states| {
+    pub(crate) fn commit_hook(surface: &wl_surface::WlSurface) {
+        let send_error_to = compositor::with_states(surface, |states| {
             let attributes = states
                 .data_map
                 .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
@@ -1388,7 +1370,7 @@ impl PopupSurface {
         })
         .unwrap_or(None);
         if let Some(handle) = send_error_to {
-            let data = handle.data::<self::handlers::XdgShellSurfaceUserData>().unwrap();
+            let _data = handle.data::<self::handlers::XdgShellSurfaceUserData>().unwrap();
             // TODO:
             // data.xdg_surface.post_error(
             //     cx,
@@ -1398,7 +1380,7 @@ impl PopupSurface {
             return;
         }
 
-        compositor::with_states::<D, _, _>(surface, |states| {
+        compositor::with_states(surface, |states| {
             let mut attributes = states
                 .data_map
                 .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
@@ -1426,11 +1408,11 @@ impl PopupSurface {
     ///
     /// xdg_shell mandates that a client acks a configure before committing
     /// anything.
-    pub fn ensure_configured<D: 'static>(&self, cx: &mut DisplayHandle<'_, D>) -> bool {
+    pub fn ensure_configured(&self, cx: &mut DisplayHandle<'_>) -> bool {
         if !self.alive(cx) {
             return false;
         }
-        let configured = compositor::with_states::<D, _, _>(&self.wl_surface, |states| {
+        let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
                 .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
@@ -1458,7 +1440,7 @@ impl PopupSurface {
     ///
     /// It means that the use has dismissed the popup surface, or that
     /// the pointer has left the area of popup grab if there was a grab.
-    pub fn send_popup_done<D>(&self, cx: &mut DisplayHandle<'_, D>) {
+    pub fn send_popup_done(&self, cx: &mut DisplayHandle<'_>) {
         if !self.alive(cx) {
             return;
         }
@@ -1469,7 +1451,7 @@ impl PopupSurface {
     /// Access the underlying `wl_surface` of this toplevel surface
     ///
     /// Returns `None` if the popup surface actually no longer exists.
-    pub fn get_surface<D>(&self, cx: &mut DisplayHandle<'_, D>) -> Option<&wl_surface::WlSurface> {
+    pub fn get_surface(&self, cx: &mut DisplayHandle<'_>) -> Option<&wl_surface::WlSurface> {
         if self.alive(cx) {
             Some(&self.wl_surface)
         } else {
@@ -1484,16 +1466,15 @@ impl PopupSurface {
     /// for example after a move of the parent toplevel.
     ///
     /// The state will be sent to the client when calling [`send_configure`](#method.send_configure).
-    pub fn with_pending_state<D, F, T>(&self, cx: &mut DisplayHandle<'_, D>, f: F) -> Result<T, DeadResource>
+    pub fn with_pending_state<F, T>(&self, cx: &mut DisplayHandle<'_>, f: F) -> Result<T, DeadResource>
     where
         F: FnOnce(&mut PopupState) -> T,
-        D: 'static,
     {
         if !self.alive(cx) {
             return Err(DeadResource);
         }
 
-        Ok(compositor::with_states::<D, _, _>(&self.wl_surface, |states| {
+        Ok(compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
                 .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()

@@ -2,24 +2,31 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use crate::wayland::compositor;
-use crate::wayland::delegate::{DelegateDispatch, DelegateDispatchBase};
-use crate::wayland::shell::xdg::{PopupState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE};
-use crate::wayland::Serial;
-use wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1;
-use wayland_protocols::xdg_shell::server::xdg_popup::XdgPopup;
-use wayland_protocols::xdg_shell::server::xdg_surface::XdgSurface;
-use wayland_protocols::xdg_shell::server::xdg_toplevel::XdgToplevel;
-use wayland_protocols::xdg_shell::server::{xdg_surface, xdg_wm_base};
-use wayland_server::backend::{ClientId, ObjectId};
-use wayland_server::protocol::wl_surface;
-use wayland_server::{DataInit, DestructionNotify, Dispatch, DisplayHandle, Resource};
+use crate::{
+    utils::Rectangle,
+    wayland::{
+        compositor,
+        shell::xdg::{PopupState, XdgShellState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE},
+        Serial,
+    },
+};
 
-use crate::utils::Rectangle;
+use wayland_protocols::{
+    unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1,
+    xdg_shell::server::{
+        xdg_popup::XdgPopup, xdg_surface, xdg_surface::XdgSurface, xdg_toplevel::XdgToplevel, xdg_wm_base,
+    },
+};
+
+use wayland_server::{
+    backend::{ClientId, ObjectId},
+    protocol::wl_surface,
+    DataInit, DelegateDispatch, DelegateDispatchBase, DestructionNotify, Dispatch, DisplayHandle, Resource,
+};
 
 use super::{
     InnerState, PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes,
-    XdgPositionerUserData, XdgRequest, XdgShellDispatch, XdgShellHandler, XdgToplevelSurfaceRoleAttributes,
+    XdgPositionerUserData, XdgRequest, XdgShellHandler, XdgToplevelSurfaceRoleAttributes,
 };
 
 mod toplevel;
@@ -38,25 +45,25 @@ pub struct XdgSurfaceUserData {
     pub(crate) has_active_role: AtomicBool,
 }
 
-impl<D, H: XdgShellHandler<D>> DelegateDispatchBase<XdgSurface> for XdgShellDispatch<'_, D, H> {
+impl DelegateDispatchBase<XdgSurface> for XdgShellState {
     type UserData = XdgSurfaceUserData;
 }
 
-impl<D, H> DelegateDispatch<XdgSurface, D> for XdgShellDispatch<'_, D, H>
+impl<D> DelegateDispatch<XdgSurface, D> for XdgShellState
 where
-    D: Dispatch<XdgSurface, UserData = XdgSurfaceUserData>
-        + Dispatch<XdgToplevel, UserData = XdgShellSurfaceUserData>
-        + Dispatch<XdgPopup, UserData = XdgShellSurfaceUserData>
-        + 'static,
-    H: XdgShellHandler<D>,
+    D: Dispatch<XdgSurface, UserData = XdgSurfaceUserData>,
+    D: Dispatch<XdgToplevel, UserData = XdgShellSurfaceUserData>,
+    D: Dispatch<XdgPopup, UserData = XdgShellSurfaceUserData>,
+    D: XdgShellHandler,
+    D: 'static,
 {
     fn request(
-        &mut self,
+        state: &mut D,
         _client: &wayland_server::Client,
         xdg_surface: &XdgSurface,
         request: xdg_surface::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -75,20 +82,20 @@ where
 
                 data.has_active_role.store(true, Ordering::Release);
 
-                compositor::with_states::<D, _, _>(surface, |states| {
+                compositor::with_states(surface, |states| {
                     states.data_map.insert_if_missing_threadsafe(|| {
                         Mutex::new(XdgToplevelSurfaceRoleAttributes::default())
                     })
                 })
                 .unwrap();
 
-                compositor::add_commit_hook(cx, surface, super::super::ToplevelSurface::commit_hook::<D>);
+                compositor::add_commit_hook(cx, surface, super::super::ToplevelSurface::commit_hook);
 
                 let toplevel = data_init.init(
                     id,
                     XdgShellSurfaceUserData {
                         kind: SurfaceKind::Toplevel,
-                        shell_data: self.0.inner.clone(),
+                        shell_data: state.xdg_shell_state().inner.clone(),
                         wl_surface: data.wl_surface.clone(),
                         xdg_surface: xdg_surface.clone(),
                         wm_base: data.wm_base.clone(),
@@ -96,7 +103,8 @@ where
                     },
                 );
 
-                self.0
+                state
+                    .xdg_shell_state()
                     .inner
                     .lock()
                     .unwrap()
@@ -104,7 +112,8 @@ where
                     .push(make_toplevel_handle(&toplevel));
 
                 let handle = make_toplevel_handle(&toplevel);
-                self.1.request(cx, XdgRequest::NewToplevel { surface: handle });
+
+                XdgShellHandler::request(state, cx, XdgRequest::NewToplevel { surface: handle });
             }
             xdg_surface::Request::GetPopup {
                 id,
@@ -143,7 +152,7 @@ where
 
                 data.has_active_role.store(true, Ordering::Release);
 
-                compositor::with_states::<D, _, _>(surface, |states| {
+                compositor::with_states(surface, |states| {
                     states.data_map.insert_if_missing_threadsafe(|| {
                         Mutex::new(XdgPopupSurfaceRoleAttributes::default())
                     });
@@ -156,13 +165,13 @@ where
                 })
                 .unwrap();
 
-                compositor::add_commit_hook(cx, surface, super::super::PopupSurface::commit_hook::<D>);
+                compositor::add_commit_hook(cx, surface, super::super::PopupSurface::commit_hook);
 
                 let popup = data_init.init(
                     id,
                     XdgShellSurfaceUserData {
                         kind: SurfaceKind::Popup,
-                        shell_data: self.0.inner.clone(),
+                        shell_data: state.xdg_shell_state().inner.clone(),
                         wl_surface: data.wl_surface.clone(),
                         xdg_surface: xdg_surface.clone(),
                         wm_base: data.wm_base.clone(),
@@ -170,7 +179,8 @@ where
                     },
                 );
 
-                self.0
+                state
+                    .xdg_shell_state()
                     .inner
                     .lock()
                     .unwrap()
@@ -178,7 +188,9 @@ where
                     .push(make_popup_handle(&popup));
 
                 let handle = make_popup_handle(&popup);
-                self.1.request(
+
+                XdgShellHandler::request(
+                    state,
                     cx,
                     XdgRequest::NewPopup {
                         surface: handle,
@@ -211,7 +223,7 @@ where
                     );
                 }
 
-                compositor::with_states::<D, _, _>(surface, |states| {
+                compositor::with_states(surface, |states| {
                     states.cached_state.pending::<SurfaceCachedState>().geometry =
                         Some(Rectangle::from_loc_and_size((x, y), (width, height)));
                 })
@@ -245,7 +257,7 @@ where
                 //   width, height, min/max size, maximized, fullscreen, resizing, activated
                 //
                 // This can be used to integrate custom protocol extensions
-                let found_configure = compositor::with_states::<D, _, _>(surface, |states| {
+                let found_configure = compositor::with_states(surface, |states| {
                     if states.role == Some(XDG_TOPLEVEL_ROLE) {
                         Ok(states
                             .data_map
@@ -288,7 +300,8 @@ where
                     }
                 };
 
-                self.1.request(
+                XdgShellHandler::request(
+                    state,
                     cx,
                     XdgRequest::AckConfigure {
                         surface: surface.clone(),

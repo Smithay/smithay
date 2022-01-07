@@ -63,30 +63,27 @@ use wayland_server::{
         wl_seat::{self, WlSeat},
         wl_surface,
     },
-    DataInit, DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
-};
-
-use crate::wayland::delegate::{
-    DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
+    DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
+    DestructionNotify, Dispatch, Display, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 #[derive(Debug)]
-struct Inner<D> {
-    pointer: Option<PointerHandle<D>>,
+struct Inner {
+    pointer: Option<PointerHandle>,
     keyboard: Option<KeyboardHandle>,
     touch: Option<TouchHandle>,
     known_seats: Vec<wl_seat::WlSeat>,
 }
 
 #[derive(Debug)]
-struct SeatRc<D> {
+struct SeatRc {
     name: String,
-    inner: Mutex<Inner<D>>,
+    inner: Mutex<Inner>,
 
     log: ::slog::Logger,
 }
 
-impl<D> Inner<D> {
+impl Inner {
     fn compute_caps(&self) -> wl_seat::Capability {
         let mut caps = wl_seat::Capability::empty();
         if self.pointer.is_some() {
@@ -101,7 +98,7 @@ impl<D> Inner<D> {
         caps
     }
 
-    fn send_all_caps(&self, cx: &mut DisplayHandle<'_, D>) {
+    fn send_all_caps(&self, cx: &mut DisplayHandle<'_>) {
         let capabilities = self.compute_caps();
         for seat in &self.known_seats {
             seat.capabilities(cx, capabilities);
@@ -109,9 +106,11 @@ impl<D> Inner<D> {
     }
 }
 
-/// Seat event dispatching struct
-#[derive(Debug)]
-pub struct SeatDispatch<'a, D>(pub &'a mut SeatState<D>);
+/// Handler trait for WlSeat
+pub trait SeatHandler {
+    /// [SeatState] getter
+    fn seat_state(&mut self) -> &mut SeatState;
+}
 
 /// A Seat handle
 ///
@@ -124,12 +123,12 @@ pub struct SeatDispatch<'a, D>(pub &'a mut SeatState<D>);
 ///
 /// See module-level documentation for details of use.
 #[derive(Debug)]
-pub struct SeatState<D> {
-    arc: Arc<SeatRc<D>>,
+pub struct SeatState {
+    arc: Arc<SeatRc>,
     seat: GlobalId,
 }
 
-impl<D> Clone for SeatState<D> {
+impl Clone for SeatState {
     fn clone(&self) -> Self {
         Self {
             arc: self.arc.clone(),
@@ -138,7 +137,7 @@ impl<D> Clone for SeatState<D> {
     }
 }
 
-impl<D: 'static> SeatState<D> {
+impl SeatState {
     /// Create a new seat global
     ///
     /// A new seat global is created with given name and inserted
@@ -147,7 +146,7 @@ impl<D: 'static> SeatState<D> {
     /// You are provided with the state token to retrieve it (allowing
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
-    pub fn new<L>(display: &mut DisplayHandle<'_, D>, name: String, logger: L) -> Self
+    pub fn new<L, D>(display: &mut Display<D>, name: String, logger: L) -> Self
     where
         L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<WlSeat, GlobalData = ()> + 'static,
@@ -205,7 +204,7 @@ impl<D: 'static> SeatState<D> {
     ///     |new_status| { /* a closure handling requests from clients to change the cursor icon */ }
     /// );
     /// ```
-    pub fn add_pointer<F>(&mut self, cx: &mut DisplayHandle<'_, D>, cb: F) -> PointerHandle<D>
+    pub fn add_pointer<F>(&mut self, cx: &mut DisplayHandle<'_>, cb: F) -> PointerHandle
     where
         F: FnMut(CursorImageStatus) + Send + Sync + 'static,
     {
@@ -223,14 +222,14 @@ impl<D: 'static> SeatState<D> {
     }
 
     /// Access the pointer of this seat if any
-    pub fn get_pointer(&self) -> Option<PointerHandle<D>> {
+    pub fn get_pointer(&self) -> Option<PointerHandle> {
         self.arc.inner.lock().unwrap().pointer.clone()
     }
 
     /// Remove the pointer capability from this seat
     ///
     /// Clients will be appropriately notified.
-    pub fn remove_pointer(&mut self, cx: &mut DisplayHandle<'_, D>) {
+    pub fn remove_pointer(&mut self, cx: &mut DisplayHandle<'_>) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.pointer.is_some() {
             inner.pointer = None;
@@ -275,14 +274,14 @@ impl<D: 'static> SeatState<D> {
     /// ```
     pub fn add_keyboard<F>(
         &mut self,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         xkb_config: keyboard::XkbConfig<'_>,
         repeat_delay: i32,
         repeat_rate: i32,
         mut focus_hook: F,
     ) -> Result<KeyboardHandle, KeyboardError>
     where
-        F: FnMut(&SeatState<D>, Option<&wl_surface::WlSurface>) + 'static,
+        F: FnMut(&SeatState, Option<&wl_surface::WlSurface>) + 'static,
     {
         let me = self.clone();
         let mut inner = self.arc.inner.lock().unwrap();
@@ -312,7 +311,7 @@ impl<D: 'static> SeatState<D> {
     /// Remove the keyboard capability from this seat
     ///
     /// Clients will be appropriately notified.
-    pub fn remove_keyboard(&mut self, cx: &mut DisplayHandle<'_, D>) {
+    pub fn remove_keyboard(&mut self, cx: &mut DisplayHandle<'_>) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.keyboard.is_some() {
             inner.keyboard = None;
@@ -380,7 +379,7 @@ impl<D: 'static> SeatState<D> {
     }
 }
 
-impl<D> ::std::cmp::PartialEq for SeatState<D> {
+impl ::std::cmp::PartialEq for SeatState {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.arc, &other.arc)
     }
@@ -388,11 +387,11 @@ impl<D> ::std::cmp::PartialEq for SeatState<D> {
 
 /// User data for seat
 #[derive(Debug)]
-pub struct SeatUserData<D> {
-    seat: std::sync::Weak<SeatRc<D>>,
+pub struct SeatUserData {
+    seat: std::sync::Weak<SeatRc>,
 }
 
-impl<D> DestructionNotify for SeatUserData<D> {
+impl DestructionNotify for SeatUserData {
     fn object_destroyed(&self, _client_id: ClientId, object_id: ObjectId) {
         if let Some(seat) = self.seat.upgrade() {
             seat.inner
@@ -404,28 +403,29 @@ impl<D> DestructionNotify for SeatUserData<D> {
     }
 }
 
-impl<D: 'static> DelegateDispatchBase<WlSeat> for SeatDispatch<'_, D> {
-    type UserData = SeatUserData<D>;
+impl DelegateDispatchBase<WlSeat> for SeatState {
+    type UserData = SeatUserData;
 }
 
-impl<D: 'static> DelegateDispatch<WlSeat, D> for SeatDispatch<'_, D>
+impl<D: 'static> DelegateDispatch<WlSeat, D> for SeatState
 where
-    D: Dispatch<WlSeat, UserData = SeatUserData<D>>
-        + Dispatch<WlKeyboard, UserData = KeyboardUserData>
-        + Dispatch<WlPointer, UserData = PointerUserData<D>>,
+    D: Dispatch<WlSeat, UserData = SeatUserData>,
+    D: Dispatch<WlKeyboard, UserData = KeyboardUserData>,
+    D: Dispatch<WlPointer, UserData = PointerUserData>,
+    D: SeatHandler,
 {
     fn request(
-        &mut self,
+        state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlSeat,
         request: wl_seat::Request,
         _data: &Self::UserData,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
             wl_seat::Request::GetPointer { id } => {
-                let inner = self.0.arc.inner.lock().unwrap();
+                let inner = state.seat_state().arc.inner.lock().unwrap();
 
                 let pointer = data_init.init(
                     id,
@@ -442,7 +442,7 @@ where
                 }
             }
             wl_seat::Request::GetKeyboard { id } => {
-                let inner = self.0.arc.inner.lock().unwrap();
+                let inner = state.seat_state().arc.inner.lock().unwrap();
 
                 let keyboard = data_init.init(
                     id,
@@ -473,36 +473,39 @@ where
     }
 }
 
-impl<D> DelegateGlobalDispatchBase<WlSeat> for SeatDispatch<'_, D> {
+impl DelegateGlobalDispatchBase<WlSeat> for SeatState {
     type GlobalData = ();
 }
 
-impl<D: 'static> DelegateGlobalDispatch<WlSeat, D> for SeatDispatch<'_, D>
+impl<D: 'static> DelegateGlobalDispatch<WlSeat, D> for SeatState
 where
-    D: GlobalDispatch<WlSeat, GlobalData = ()>
-        + Dispatch<WlSeat, UserData = SeatUserData<D>>
-        + Dispatch<WlKeyboard, UserData = KeyboardUserData>
-        + Dispatch<WlPointer, UserData = PointerUserData<D>>,
+    D: GlobalDispatch<WlSeat, GlobalData = ()>,
+    D: Dispatch<WlSeat, UserData = SeatUserData>,
+    D: Dispatch<WlKeyboard, UserData = KeyboardUserData>,
+    D: Dispatch<WlPointer, UserData = PointerUserData>,
+    D: SeatHandler,
 {
     fn bind(
-        &mut self,
-        handle: &mut wayland_server::DisplayHandle<'_, D>,
+        state: &mut D,
+        handle: &mut wayland_server::DisplayHandle<'_>,
         _client: &wayland_server::Client,
         resource: New<WlSeat>,
         _global_data: &Self::GlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
+        let state = state.seat_state();
+
         let data = SeatUserData {
-            seat: Arc::downgrade(&self.0.arc),
+            seat: Arc::downgrade(&state.arc),
         };
 
         let resource = data_init.init(resource, data);
 
         if resource.version() >= 2 {
-            resource.name(handle, self.0.arc.name.clone());
+            resource.name(handle, state.arc.name.clone());
         }
 
-        let mut inner = self.0.arc.inner.lock().unwrap();
+        let mut inner = state.arc.inner.lock().unwrap();
         resource.capabilities(handle, inner.compute_caps());
 
         inner.known_seats.push(resource.clone());

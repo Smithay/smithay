@@ -55,11 +55,11 @@ use crate::wayland::Serial;
 /// the current state provided as argument. In simple cases, the action would just
 /// be to copy `self` into the current state, but more complex cases require
 /// additional logic.
-pub trait Cacheable<D>: Default {
+pub trait Cacheable: Default {
     /// Produce a new state to be cached from the pending state
-    fn commit(&mut self, cx: &mut DisplayHandle<'_, D>) -> Self;
+    fn commit(&mut self, cx: &mut DisplayHandle<'_>) -> Self;
     /// Merge a state update into the current state
-    fn merge_into(self, into: &mut Self, cx: &mut DisplayHandle<'_, D>);
+    fn merge_into(self, into: &mut Self, cx: &mut DisplayHandle<'_>);
 }
 
 struct CachedState<T> {
@@ -78,15 +78,15 @@ impl<T: Default> Default for CachedState<T> {
     }
 }
 
-trait Cache<D>: Downcast {
-    fn commit(&self, commit_id: Option<Serial>, cx: &mut DisplayHandle<'_, D>);
-    fn apply_state(&self, commit_id: Serial, cx: &mut DisplayHandle<'_, D>);
+trait Cache: Downcast {
+    fn commit(&self, commit_id: Option<Serial>, cx: &mut DisplayHandle<'_>);
+    fn apply_state(&self, commit_id: Serial, cx: &mut DisplayHandle<'_>);
 }
 
-impl_downcast!(Cache<D>);
+impl_downcast!(Cache);
 
-impl<D, T: Cacheable<D> + 'static> Cache<D> for RefCell<CachedState<T>> {
-    fn commit(&self, commit_id: Option<Serial>, cx: &mut DisplayHandle<'_, D>) {
+impl<T: Cacheable + 'static> Cache for RefCell<CachedState<T>> {
+    fn commit(&self, commit_id: Option<Serial>, cx: &mut DisplayHandle<'_>) {
         let mut guard = self.borrow_mut();
         let me = &mut *guard;
         let new_state = me.pending.commit(cx);
@@ -103,7 +103,7 @@ impl<D, T: Cacheable<D> + 'static> Cache<D> for RefCell<CachedState<T>> {
         }
     }
 
-    fn apply_state(&self, commit_id: Serial, cx: &mut DisplayHandle<'_, D>) {
+    fn apply_state(&self, commit_id: Serial, cx: &mut DisplayHandle<'_>) {
         let mut me = self.borrow_mut();
         loop {
             if me.cache.front().map(|&(s, _)| s > commit_id).unwrap_or(true) {
@@ -133,24 +133,24 @@ impl<D, T: Cacheable<D> + 'static> Cache<D> for RefCell<CachedState<T>> {
 /// This contained has [`RefCell`]-like semantics: values of multiple stored types can be accessed at the
 /// same time. The stored values are initialized lazily the first time `current()` or `pending()` are
 /// invoked with this type as argument.
-pub struct MultiCache<D> {
-    caches: appendlist::AppendList<Box<dyn Cache<D> + Send>>,
+pub struct MultiCache {
+    caches: appendlist::AppendList<Box<dyn Cache + Send>>,
 }
 
-impl<D> std::fmt::Debug for MultiCache<D> {
+impl std::fmt::Debug for MultiCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MultiCache").finish_non_exhaustive()
     }
 }
 
-impl<D> MultiCache<D> {
+impl MultiCache {
     pub(crate) fn new() -> Self {
         Self {
             caches: appendlist::AppendList::new(),
         }
     }
 
-    fn find_or_insert<T: Cacheable<D> + Send + 'static>(&self) -> &RefCell<CachedState<T>> {
+    fn find_or_insert<T: Cacheable + Send + 'static>(&self) -> &RefCell<CachedState<T>> {
         for cache in &self.caches {
             if let Some(v) = (**cache).as_any().downcast_ref() {
                 return v;
@@ -166,17 +166,17 @@ impl<D> MultiCache<D> {
     }
 
     /// Access the pending state associated with type `T`
-    pub fn pending<T: Cacheable<D> + Send + 'static>(&self) -> RefMut<'_, T> {
+    pub fn pending<T: Cacheable + Send + 'static>(&self) -> RefMut<'_, T> {
         RefMut::map(self.find_or_insert::<T>().borrow_mut(), |cs| &mut cs.pending)
     }
 
     /// Access the current state associated with type `T`
-    pub fn current<T: Cacheable<D> + Send + 'static>(&self) -> RefMut<'_, T> {
+    pub fn current<T: Cacheable + Send + 'static>(&self) -> RefMut<'_, T> {
         RefMut::map(self.find_or_insert::<T>().borrow_mut(), |cs| &mut cs.current)
     }
 
     /// Check if the container currently contains values for type `T`
-    pub fn has<T: Cacheable<D> + Send + 'static>(&self) -> bool {
+    pub fn has<T: Cacheable + Send + 'static>(&self) -> bool {
         self.caches
             .iter()
             .any(|c| (**c).as_any().is::<RefCell<CachedState<T>>>())
@@ -192,7 +192,7 @@ impl<D> MultiCache<D> {
     ///
     /// If a None commit is given but there are some cached states, they'll
     /// all be merged into the current state before merging the pending one.
-    pub(crate) fn commit(&mut self, commit_id: Option<Serial>, cx: &mut DisplayHandle<'_, D>) {
+    pub(crate) fn commit(&mut self, commit_id: Option<Serial>, cx: &mut DisplayHandle<'_>) {
         // none of the underlying borrow_mut() can panic, as we hold
         // a &mut reference to the container, non are borrowed.
         for cache in &self.caches {
@@ -203,7 +203,7 @@ impl<D> MultiCache<D> {
     /// Apply given identified cached state to the current one
     ///
     /// All other preceding states are applied as well, to preserve commit ordering
-    pub(crate) fn apply_state(&self, commit_id: Serial, cx: &mut DisplayHandle<'_, D>) {
+    pub(crate) fn apply_state(&self, commit_id: Serial, cx: &mut DisplayHandle<'_>) {
         // none of the underlying borrow_mut() can panic, as we hold
         // a &mut reference to the container, non are borrowed.
         for cache in &self.caches {
