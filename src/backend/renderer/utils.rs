@@ -29,8 +29,8 @@ pub(crate) struct SurfaceState {
     pub(crate) damage: VecDeque<Vec<Rectangle<i32, Buffer>>>,
     pub(crate) renderer_seen: HashMap<(TypeId, usize), usize>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
-    #[cfg(feature = "desktop")]
-    pub(crate) space_seen: HashMap<crate::desktop::space::SpaceOutputHash, usize>,
+    // #[cfg(feature = "desktop")]
+    // pub(crate) space_seen: HashMap<crate::desktop::space::SpaceOutputHash, usize>,
 }
 
 const MAX_DAMAGE: usize = 4;
