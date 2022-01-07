@@ -208,7 +208,7 @@ where
             wl_surface::Request::Frame { callback } => {
                 let callback = data_init.init(callback, ());
 
-                PrivateSurfaceData::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
                         .pending::<SurfaceAttributes>()
@@ -221,7 +221,7 @@ where
                     let attributes_mutex = &r.data::<RegionUserData>().unwrap().inner;
                     attributes_mutex.lock().unwrap().clone()
                 });
-                PrivateSurfaceData::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states.cached_state.pending::<SurfaceAttributes>().opaque_region = attributes;
                 });
             }
@@ -230,12 +230,12 @@ where
                     let attributes_mutex = &r.data::<RegionUserData>().unwrap().inner;
                     attributes_mutex.lock().unwrap().clone()
                 });
-                PrivateSurfaceData::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states.cached_state.pending::<SurfaceAttributes>().input_region = attributes;
                 });
             }
             wl_surface::Request::Commit => {
-                PrivateSurfaceData::invoke_commit_hooks(&surface);
+                PrivateSurfaceData::invoke_commit_hooks(surface);
 
                 // is_alive check
                 if handle.object_info(surface.id()).is_err() {
@@ -243,7 +243,7 @@ where
                     return;
                 }
 
-                PrivateSurfaceData::commit(&surface, handle);
+                PrivateSurfaceData::commit(surface, handle);
                 trace!(
                     state.compositor_state().log,
                     "Calling user implementation for wl_surface.commit"
@@ -253,7 +253,7 @@ where
             }
             wl_surface::Request::SetBufferTransform { transform } => {
                 if let WEnum::Value(transform) = transform {
-                    PrivateSurfaceData::with_states(&surface, |states| {
+                    PrivateSurfaceData::with_states(surface, |states| {
                         states
                             .cached_state
                             .pending::<SurfaceAttributes>()
@@ -262,12 +262,12 @@ where
                 }
             }
             wl_surface::Request::SetBufferScale { scale } => {
-                PrivateSurfaceData::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states.cached_state.pending::<SurfaceAttributes>().buffer_scale = scale;
                 });
             }
             wl_surface::Request::DamageBuffer { x, y, width, height } => {
-                PrivateSurfaceData::with_states(&surface, |states| {
+                PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
                         .pending::<SurfaceAttributes>()

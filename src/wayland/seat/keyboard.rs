@@ -161,11 +161,10 @@ impl KbdInternal {
         F: FnMut(&WlKeyboard, &WlSurface),
     {
         if let Some(ref surface) = self.focus {
-            for kbd in &self.known_kbds {
+            for kbd in self.known_kbds.iter() {
                 if kbd.id().same_client_as(&surface.id()) {
                     f(kbd, surface);
                 }
-                break;
             }
         }
     }
