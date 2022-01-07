@@ -104,7 +104,7 @@ where
                         state,
                         cx,
                         XdgRequest::ClientPong {
-                            client: ShellClient::new(&wm_base),
+                            client: ShellClient::new(wm_base),
                         },
                     );
                 }

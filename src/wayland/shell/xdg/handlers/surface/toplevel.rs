@@ -47,23 +47,23 @@ where
                 });
 
                 // Parent is not double buffered, we can set it directly
-                set_parent(&toplevel, parent_surface);
+                set_parent(toplevel, parent_surface);
             }
             xdg_toplevel::Request::SetTitle { title } => {
                 // Title is not double buffered, we can set it directly
-                with_surface_toplevel_role_data(&toplevel, |data| {
+                with_surface_toplevel_role_data(toplevel, |data| {
                     data.title = Some(title);
                 });
             }
             xdg_toplevel::Request::SetAppId { app_id } => {
                 // AppId is not double buffered, we can set it directly
-                with_surface_toplevel_role_data(&toplevel, |role| {
+                with_surface_toplevel_role_data(toplevel, |role| {
                     role.app_id = Some(app_id);
                 });
             }
             xdg_toplevel::Request::ShowWindowMenu { seat, serial, x, y } => {
                 // This has to be handled by the compositor
-                let handle = make_toplevel_handle(&toplevel);
+                let handle = make_toplevel_handle(toplevel);
                 let serial = Serial::from(serial);
 
                 XdgShellHandler::request(
@@ -79,7 +79,7 @@ where
             }
             xdg_toplevel::Request::Move { seat, serial } => {
                 // This has to be handled by the compositor
-                let handle = make_toplevel_handle(&toplevel);
+                let handle = make_toplevel_handle(toplevel);
                 let serial = Serial::from(serial);
 
                 XdgShellHandler::request(
@@ -95,7 +95,7 @@ where
             xdg_toplevel::Request::Resize { seat, serial, edges } => {
                 if let WEnum::Value(edges) = edges {
                     // This has to be handled by the compositor
-                    let handle = make_toplevel_handle(&toplevel);
+                    let handle = make_toplevel_handle(toplevel);
                     let serial = Serial::from(serial);
 
                     XdgShellHandler::request(
@@ -121,15 +121,15 @@ where
                 });
             }
             xdg_toplevel::Request::SetMaximized => {
-                let handle = make_toplevel_handle(&toplevel);
+                let handle = make_toplevel_handle(toplevel);
                 XdgShellHandler::request(state, cx, XdgRequest::Maximize { surface: handle });
             }
             xdg_toplevel::Request::UnsetMaximized => {
-                let handle = make_toplevel_handle(&toplevel);
+                let handle = make_toplevel_handle(toplevel);
                 XdgShellHandler::request(state, cx, XdgRequest::UnMaximize { surface: handle });
             }
             xdg_toplevel::Request::SetFullscreen { output } => {
-                let handle = make_toplevel_handle(&toplevel);
+                let handle = make_toplevel_handle(toplevel);
                 XdgShellHandler::request(
                     state,
                     cx,
@@ -140,13 +140,13 @@ where
                 );
             }
             xdg_toplevel::Request::UnsetFullscreen => {
-                let handle = make_toplevel_handle(&toplevel);
+                let handle = make_toplevel_handle(toplevel);
                 XdgShellHandler::request(state, cx, XdgRequest::UnFullscreen { surface: handle });
             }
             xdg_toplevel::Request::SetMinimized => {
                 // This has to be handled by the compositor, may not be
                 // supported and just ignored
-                let handle = make_toplevel_handle(&toplevel);
+                let handle = make_toplevel_handle(toplevel);
                 XdgShellHandler::request(state, cx, XdgRequest::Minimize { surface: handle });
             }
             _ => unreachable!(),
