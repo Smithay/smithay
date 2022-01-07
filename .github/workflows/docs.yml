@@ -4,6 +4,7 @@ on:
   push:
     branches:
     - master
+  pull_request:
 
 jobs:
   doc:
@@ -33,12 +34,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: doc
-          args: --no-deps --features "test_all_features" -p smithay -p calloop:0.9.1 -p dbus -p drm -p gbm -p input -p nix:0.22.0 -p udev -p slog -p wayland-server -p wayland-commons:0.29.1 -p wayland-protocols:0.29.1 -p winit -p x11rb
+          args: --no-deps --features "test_all_features" -p smithay -p calloop -p dbus -p drm -p gbm -p input -p nix -p udev -p slog -p wayland-server -p wayland-commons -p wayland-protocols -p winit -p x11rb
 
       - name: Setup index
         run: cp ./doc_index.html ./target/doc/index.html
 
       - name: Deploy
+        if: ${{ github.event_name == 'push' }}
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
