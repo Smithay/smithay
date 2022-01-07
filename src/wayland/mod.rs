@@ -66,8 +66,6 @@ pub mod shm;
 // pub mod xdg_activation;
 // pub mod xdg_foreign;
 
-pub mod delegate;
-
 /// A global [`SerialCounter`] for use in your compositor.
 ///
 /// Is is also used internally by some parts of Smithay.
