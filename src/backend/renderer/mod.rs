@@ -252,10 +252,10 @@ pub trait ImportMemWl: ImportMem {
     ///
     /// The `damage` argument provides a list of rectangle locating parts of the buffer that need to be updated. When provided
     /// with an empty list `&[]`, the renderer is allowed to not update the texture at all.
-    fn import_shm_buffer<D>(
+    fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&crate::wayland::compositor::SurfaceData<D>>,
+        surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 
@@ -445,10 +445,10 @@ pub trait ImportAll: Renderer {
     /// with an empty list `&[]`, the renderer is allowed to not update the texture at all.
     ///
     /// Returns `None`, if the buffer type cannot be determined.
-    fn import_buffer<D>(
+    fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&crate::wayland::compositor::SurfaceData<D>>,
+        surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, Buffer>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>>;
 }
@@ -483,7 +483,7 @@ impl<R: Renderer + ImportMemWl + ImportDmaWl> ImportAll for R {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&SurfaceData<D>>,
+        surface: Option<&SurfaceData>,
         damage: &[Rectangle<i32, Buffer>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
         match buffer_type(buffer) {

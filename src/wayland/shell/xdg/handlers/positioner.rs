@@ -1,15 +1,16 @@
 use std::sync::Mutex;
 
-use crate::wayland::delegate::{DelegateDispatch, DelegateDispatchBase};
-use crate::wayland::Serial;
-use wayland_protocols::xdg_shell::server::xdg_positioner;
-use wayland_protocols::xdg_shell::server::xdg_positioner::XdgPositioner;
-use wayland_server::backend::{ClientId, ObjectId};
-use wayland_server::{DataInit, DestructionNotify, Dispatch, DisplayHandle, Resource, WEnum};
+use crate::{utils::Rectangle, wayland::Serial};
 
-use crate::utils::Rectangle;
+use wayland_protocols::xdg_shell::server::{xdg_positioner, xdg_positioner::XdgPositioner};
 
-use super::{PositionerState, XdgShellDispatch, XdgShellHandler};
+use wayland_server::{
+    backend::{ClientId, ObjectId},
+    DataInit, DelegateDispatch, DelegateDispatchBase, DestructionNotify, Dispatch, DisplayHandle, Resource,
+    WEnum,
+};
+
+use super::{PositionerState, XdgShellHandler, XdgShellState};
 
 /*
  * xdg_positioner
@@ -25,22 +26,23 @@ impl DestructionNotify for XdgPositionerUserData {
     fn object_destroyed(&self, _client_id: ClientId, _object_id: ObjectId) {}
 }
 
-impl<D, H: XdgShellHandler<D>> DelegateDispatchBase<XdgPositioner> for XdgShellDispatch<'_, D, H> {
+impl DelegateDispatchBase<XdgPositioner> for XdgShellState {
     type UserData = XdgPositionerUserData;
 }
 
-impl<D, H> DelegateDispatch<XdgPositioner, D> for XdgShellDispatch<'_, D, H>
+impl<D> DelegateDispatch<XdgPositioner, D> for XdgShellState
 where
-    D: Dispatch<XdgPositioner, UserData = XdgPositionerUserData> + 'static,
-    H: XdgShellHandler<D>,
+    D: Dispatch<XdgPositioner, UserData = XdgPositionerUserData>,
+    D: XdgShellHandler,
+    D: 'static,
 {
     fn request(
-        &mut self,
+        _state: &mut D,
         _client: &wayland_server::Client,
         positioner: &XdgPositioner,
         request: xdg_positioner::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         _data_init: &mut DataInit<'_, D>,
     ) {
         let mut state = data.inner.lock().unwrap();

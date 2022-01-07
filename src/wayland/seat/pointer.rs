@@ -9,16 +9,15 @@ use wayland_server::{
         wl_pointer::{self, Axis, ButtonState, Request, WlPointer},
         wl_surface::WlSurface,
     },
-    DestructionNotify, Dispatch, DisplayHandle, Resource,
+    DelegateDispatch, DelegateDispatchBase, DestructionNotify, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::{
     utils::{Logical, Point},
-    wayland::delegate::{DelegateDispatch, DelegateDispatchBase},
     wayland::{compositor, Serial},
 };
 
-use super::SeatDispatch;
+use super::{SeatHandler, SeatState};
 
 mod grab;
 use grab::{DefaultGrab, GrabStatus};
@@ -30,18 +29,18 @@ pub use cursor_image::{CursorImageAttributes, CursorImageStatus, CURSOR_IMAGE_RO
 mod axis_frame;
 pub use axis_frame::AxisFrame;
 
-struct PointerInternal<D> {
+struct PointerInternal {
     known_pointers: Vec<WlPointer>,
     focus: Option<(WlSurface, Point<i32, Logical>)>,
     pending_focus: Option<(WlSurface, Point<i32, Logical>)>,
     location: Point<f64, Logical>,
-    grab: GrabStatus<D>,
+    grab: GrabStatus,
     pressed_buttons: Vec<u32>,
     image_callback: Box<dyn FnMut(CursorImageStatus) + Send + Sync>,
 }
 
 // image_callback does not implement debug, so we have to impl Debug manually
-impl<D> fmt::Debug for PointerInternal<D> {
+impl fmt::Debug for PointerInternal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PointerInternal")
             .field("known_pointers", &self.known_pointers)
@@ -55,9 +54,9 @@ impl<D> fmt::Debug for PointerInternal<D> {
     }
 }
 
-impl<D> PointerInternal<D> {
-    fn new(image_callback: Box<dyn FnMut(CursorImageStatus) + Send + Sync>) -> PointerInternal<D> {
-        PointerInternal {
+impl PointerInternal {
+    fn new(image_callback: Box<dyn FnMut(CursorImageStatus) + Send + Sync>) -> Self {
+        Self {
             known_pointers: Vec::new(),
             focus: None,
             pending_focus: None,
@@ -138,9 +137,9 @@ impl<D> PointerInternal<D> {
         }
     }
 
-    fn with_focused_pointers<F>(&self, cx: &mut DisplayHandle<'_, D>, mut f: F)
+    fn with_focused_pointers<F>(&self, cx: &mut DisplayHandle<'_>, mut f: F)
     where
-        F: FnMut(&mut DisplayHandle<'_, D>, &WlPointer, &WlSurface),
+        F: FnMut(&mut DisplayHandle<'_>, &WlPointer, &WlSurface),
     {
         if let Some((ref focus, _)) = self.focus {
             focus.id();
@@ -156,9 +155,9 @@ impl<D> PointerInternal<D> {
         }
     }
 
-    fn with_grab<F>(&mut self, cx: &mut DisplayHandle<'_, D>, f: F)
+    fn with_grab<F>(&mut self, cx: &mut DisplayHandle<'_>, f: F)
     where
-        F: FnOnce(&mut DisplayHandle<'_, D>, PointerInnerHandle<'_, D>, &mut dyn PointerGrab<D>),
+        F: FnOnce(&mut DisplayHandle<'_>, PointerInnerHandle<'_>, &mut dyn PointerGrab),
     {
         let mut grab = ::std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
         match grab {
@@ -197,11 +196,11 @@ impl<D> PointerInternal<D> {
 /// When sending events using this handle, they will be intercepted by a pointer
 /// grab if any is active. See the [`PointerGrab`] trait for details.
 #[derive(Debug)]
-pub struct PointerHandle<D> {
-    inner: Arc<Mutex<PointerInternal<D>>>,
+pub struct PointerHandle {
+    inner: Arc<Mutex<PointerInternal>>,
 }
 
-impl<D> Clone for PointerHandle<D> {
+impl Clone for PointerHandle {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -209,8 +208,8 @@ impl<D> Clone for PointerHandle<D> {
     }
 }
 
-impl<D> PointerHandle<D> {
-    pub(crate) fn new<F>(cb: F) -> PointerHandle<D>
+impl PointerHandle {
+    pub(crate) fn new<F>(cb: F) -> PointerHandle
     where
         F: FnMut(CursorImageStatus) + Send + Sync + 'static,
     {
@@ -227,7 +226,7 @@ impl<D> PointerHandle<D> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab<D> + 'static>(&self, grab: G, serial: Serial, time: u32) {
+    pub fn set_grab<G: PointerGrab + 'static>(&self, grab: G, serial: Serial, time: u32) {
         self.inner.lock().unwrap().set_grab(serial, grab, time);
     }
 
@@ -273,7 +272,7 @@ impl<D> PointerHandle<D> {
     /// of enter/motion/leave events.
     pub fn motion(
         &self,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -292,7 +291,7 @@ impl<D> PointerHandle<D> {
     /// objects matching with the currently focused surface.
     pub fn button(
         &self,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: Serial,
@@ -331,22 +330,22 @@ impl<D> PointerHandle<D> {
 /// This inner handle is accessed from inside a pointer grab logic, and directly
 /// sends event to the client
 #[derive(Debug)]
-pub struct PointerInnerHandle<'a, D> {
-    inner: &'a mut PointerInternal<D>,
+pub struct PointerInnerHandle<'a> {
+    inner: &'a mut PointerInternal,
 }
 
-impl<'a, D> PointerInnerHandle<'a, D> {
+impl<'a> PointerInnerHandle<'a> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab<D> + 'static>(&mut self, serial: Serial, time: u32, grab: G) {
+    pub fn set_grab<G: PointerGrab + 'static>(&mut self, serial: Serial, time: u32, grab: G) {
         self.inner.set_grab(serial, grab, time);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
     ///
     /// This will also restore the focus of the underlying pointer
-    pub fn unset_grab(&mut self, cx: &mut DisplayHandle<'_, D>, serial: Serial, time: u32) {
+    pub fn unset_grab(&mut self, cx: &mut DisplayHandle<'_>, serial: Serial, time: u32) {
         self.inner.unset_grab(serial, time);
     }
 
@@ -381,7 +380,7 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     /// of enter/motion/leave events.
     fn motion(
         &mut self,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -396,7 +395,7 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     /// objects matching with the currently focused surface.
     pub fn button(
         &self,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: Serial,
@@ -414,7 +413,7 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     ///
     /// This will internally send the appropriate axis events to the client
     /// objects matching with the currently focused surface.
-    pub fn axis(&mut self, cx: &mut DisplayHandle<'_, D>, details: AxisFrame) {
+    pub fn axis(&mut self, cx: &mut DisplayHandle<'_>, details: AxisFrame) {
         self.inner.with_focused_pointers(cx, |cx, pointer, _| {
             // axis
             if details.axis.0 != 0.0 {
@@ -455,25 +454,27 @@ impl<'a, D> PointerInnerHandle<'a, D> {
 
 /// User data for pointer
 #[derive(Debug)]
-pub struct PointerUserData<D> {
-    pub(crate) handle: Option<PointerHandle<D>>,
+pub struct PointerUserData {
+    pub(crate) handle: Option<PointerHandle>,
 }
 
-impl<D: 'static> DelegateDispatchBase<WlPointer> for SeatDispatch<'_, D> {
-    type UserData = PointerUserData<D>;
+impl DelegateDispatchBase<WlPointer> for SeatState {
+    type UserData = PointerUserData;
 }
 
-impl<D> DelegateDispatch<WlPointer, D> for SeatDispatch<'_, D>
+impl<D> DelegateDispatch<WlPointer, D> for SeatState
 where
-    D: 'static + Dispatch<WlPointer, UserData = PointerUserData<D>>,
+    D: Dispatch<WlPointer, UserData = PointerUserData>,
+    D: SeatHandler,
+    D: 'static,
 {
     fn request(
-        &mut self,
+        _state: &mut D,
         _client: &wayland_server::Client,
         pointer: &WlPointer,
         request: wl_pointer::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_, D>,
+        cx: &mut DisplayHandle<'_>,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
@@ -503,7 +504,7 @@ where
                                         );
                                         return;
                                     }
-                                    compositor::with_states::<D, _, _>(&surface, |states| {
+                                    compositor::with_states(&surface, |states| {
                                         states.data_map.insert_if_missing_threadsafe(|| {
                                             Mutex::new(CursorImageAttributes {
                                                 hotspot: (0, 0).into(),
@@ -537,7 +538,7 @@ where
     }
 }
 
-impl<D> DestructionNotify for PointerUserData<D> {
+impl DestructionNotify for PointerUserData {
     fn object_destroyed(&self, _client_id: ClientId, object_id: ObjectId) {
         if let Some(ref handle) = self.handle {
             handle

@@ -80,13 +80,19 @@ use wayland_server::{
         wl_shm::{self, WlShm},
         wl_shm_pool::WlShmPool,
     },
-    Dispatch, DisplayHandle, GlobalDispatch, Resource,
+    Dispatch, Display, GlobalDispatch, Resource,
 };
 
 mod handlers;
 mod pool;
 
 pub use handlers::{ShmBufferUserData, ShmPoolUserData};
+
+/// Handler for Wl Shm module
+pub trait ShmHandler {
+    /// [ShmState] getter
+    fn shm_state(&mut self) -> &mut ShmState;
+}
 
 /// State of SHM module
 #[derive(Debug)]
@@ -106,17 +112,14 @@ impl ShmState {
     /// The global is directly created on the provided [`Display`](wayland_server::Display),
     /// and this function returns the global handle, in case you wish to remove this global in
     /// the future.
-    pub fn new<L, D>(
-        display: &mut DisplayHandle<'_, D>,
-        mut formats: Vec<wl_shm::Format>,
-        logger: L,
-    ) -> ShmState
+    pub fn new<L, D>(display: &mut Display<D>, mut formats: Vec<wl_shm::Format>, logger: L) -> ShmState
     where
+        D: GlobalDispatch<WlShm, GlobalData = ()>,
+        D: Dispatch<WlShm, UserData = ()>,
+        D: Dispatch<WlShmPool, UserData = ShmPoolUserData>,
+        D: ShmHandler,
+        D: 'static,
         L: Into<Option<::slog::Logger>>,
-        D: GlobalDispatch<WlShm, GlobalData = ()>
-            + Dispatch<WlShm, UserData = ()>
-            + Dispatch<WlShmPool, UserData = ShmPoolUserData>
-            + 'static,
     {
         let log = crate::slog_or_fallback(logger);
 
