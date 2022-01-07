@@ -8,8 +8,8 @@ use crate::{
         SurfaceAttributes, TraversalAction,
     },
 };
-#[cfg(feature = "desktop")]
-use std::collections::HashSet;
+// #[cfg(feature = "desktop")]
+// use std::collections::HashSet;
 use std::{
     any::TypeId,
     cell::RefCell,
@@ -27,8 +27,8 @@ pub(crate) struct SurfaceState {
     pub(crate) buffer_transform: Transform,
     pub(crate) buffer: Option<WlBuffer>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
-    #[cfg(feature = "desktop")]
-    pub(crate) damage_seen: HashSet<crate::desktop::space::SpaceOutputHash>,
+    // #[cfg(feature = "desktop")]
+    // pub(crate) damage_seen: HashSet<crate::desktop::space::SpaceOutputHash>,
 }
 
 impl SurfaceState {
@@ -45,8 +45,8 @@ impl SurfaceState {
                     }
                 }
                 self.textures.clear();
-                #[cfg(feature = "desktop")]
-                self.damage_seen.clear();
+                // #[cfg(feature = "desktop")]
+                // self.damage_seen.clear();
             }
             Some(BufferAssignment::Removed) => {
                 // remove the contents
@@ -55,8 +55,8 @@ impl SurfaceState {
                     buffer.release(cx);
                 };
                 self.textures.clear();
-                #[cfg(feature = "desktop")]
-                self.damage_seen.clear();
+                // #[cfg(feature = "desktop")]
+                // self.damage_seen.clear();
             }
             None => {}
         }
