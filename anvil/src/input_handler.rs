@@ -10,7 +10,7 @@ use smithay::{
         self, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent,
         PointerButtonEvent,
     },
-    desktop::layer_map_for_output,
+    desktop::{layer_map_for_output, WindowSurfaceType},
     reexports::wayland_server::protocol::{wl_pointer, wl_surface::WlSurface},
     wayland::{
         compositor::with_states,
@@ -166,7 +166,10 @@ impl<Backend> AnvilState<Backend> {
                     .and_then(|f| f.get())
                 {
                     let surface = window
-                        .surface_under(self.pointer_location - output_geo.loc.to_f64())
+                        .surface_under(
+                            self.pointer_location - output_geo.loc.to_f64(),
+                            WindowSurfaceType::TOPLEVEL | WindowSurfaceType::SUBSURFACE,
+                        )
                         .map(|(s, _)| s);
                     self.keyboard.set_focus(surface.as_ref(), serial);
                     return;
@@ -183,6 +186,7 @@ impl<Backend> AnvilState<Backend> {
                                 self.pointer_location
                                     - output_geo.loc.to_f64()
                                     - layers.layer_geometry(layer).unwrap().loc.to_f64(),
+                                WindowSurfaceType::ALL,
                             )
                             .map(|(s, _)| s);
                         self.keyboard.set_focus(surface.as_ref(), serial);
@@ -195,7 +199,10 @@ impl<Backend> AnvilState<Backend> {
                 space.raise_window(&window, true);
                 let window_loc = space.window_geometry(&window).unwrap().loc;
                 let surface = window
-                    .surface_under(self.pointer_location - window_loc.to_f64())
+                    .surface_under(
+                        self.pointer_location - window_loc.to_f64(),
+                        WindowSurfaceType::TOPLEVEL | WindowSurfaceType::SUBSURFACE,
+                    )
                     .map(|(s, _)| s);
                 self.keyboard.set_focus(surface.as_ref(), serial);
                 return;
@@ -214,6 +221,7 @@ impl<Backend> AnvilState<Backend> {
                                 self.pointer_location
                                     - output_geo.loc.to_f64()
                                     - layers.layer_geometry(layer).unwrap().loc.to_f64(),
+                                WindowSurfaceType::ALL,
                             )
                             .map(|(s, _)| s);
                         self.keyboard.set_focus(surface.as_ref(), serial);
@@ -239,19 +247,22 @@ impl<Backend> AnvilState<Backend> {
             .get::<FullscreenSurface>()
             .and_then(|f| f.get())
         {
-            under = window.surface_under(pos - output_geo.loc.to_f64());
+            under = window.surface_under(pos - output_geo.loc.to_f64(), WindowSurfaceType::ALL);
         } else if let Some(layer) = layers
             .layer_under(WlrLayer::Overlay, pos)
             .or_else(|| layers.layer_under(WlrLayer::Top, pos))
         {
             let layer_loc = layers.layer_geometry(layer).unwrap().loc;
             under = layer
-                .surface_under(pos - output_geo.loc.to_f64() - layer_loc.to_f64())
+                .surface_under(
+                    pos - output_geo.loc.to_f64() - layer_loc.to_f64(),
+                    WindowSurfaceType::ALL,
+                )
                 .map(|(s, loc)| (s, loc + layer_loc));
         } else if let Some(window) = space.window_under(pos) {
             let window_loc = space.window_geometry(window).unwrap().loc;
             under = window
-                .surface_under(pos - window_loc.to_f64())
+                .surface_under(pos - window_loc.to_f64(), WindowSurfaceType::ALL)
                 .map(|(s, loc)| (s, loc + window_loc));
         } else if let Some(layer) = layers
             .layer_under(WlrLayer::Bottom, pos)
@@ -259,7 +270,10 @@ impl<Backend> AnvilState<Backend> {
         {
             let layer_loc = layers.layer_geometry(layer).unwrap().loc;
             under = layer
-                .surface_under(pos - output_geo.loc.to_f64() - layer_loc.to_f64())
+                .surface_under(
+                    pos - output_geo.loc.to_f64() - layer_loc.to_f64(),
+                    WindowSurfaceType::ALL,
+                )
                 .map(|(s, loc)| (s, loc + layer_loc));
         };
         under

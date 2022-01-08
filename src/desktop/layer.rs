@@ -21,6 +21,8 @@ use std::{
     sync::{Arc, Mutex, Weak},
 };
 
+use super::WindowSurfaceType;
+
 crate::utils::ids::id_gen!(next_layer_id, LAYER_ID, LAYER_IDS);
 
 /// Map of [`LayerSurface`]s on an [`Output`]
@@ -428,6 +430,7 @@ impl LayerSurface {
     pub fn surface_under<P: Into<Point<f64, Logical>>>(
         &self,
         point: P,
+        surface_type: WindowSurfaceType,
     ) -> Option<(WlSurface, Point<i32, Logical>)> {
         let point = point.into();
         if let Some(surface) = self.get_surface() {
@@ -438,13 +441,13 @@ impl LayerSurface {
             {
                 if let Some(result) = popup
                     .get_surface()
-                    .and_then(|surface| under_from_surface_tree(surface, point, location))
+                    .and_then(|surface| under_from_surface_tree(surface, point, location, surface_type))
                 {
                     return Some(result);
                 }
             }
 
-            under_from_surface_tree(surface, point, (0, 0))
+            under_from_surface_tree(surface, point, (0, 0), surface_type)
         } else {
             None
         }

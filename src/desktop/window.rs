@@ -109,6 +109,21 @@ impl Hash for Window {
     }
 }
 
+bitflags::bitflags! {
+    /// Defines the surface types that can be
+    /// queried with [`Window::surface_under`]
+    pub struct WindowSurfaceType: u32 {
+        /// Include the toplevel surface
+        const TOPLEVEL = 1;
+        /// Include all subsurfaces
+        const SUBSURFACE = 2;
+        /// Include all popup surfaces
+        const POPUP = 4;
+        /// Query all surfaces
+        const ALL = Self::TOPLEVEL.bits | Self::SUBSURFACE.bits | Self::POPUP.bits;
+    }
+}
+
 impl Window {
     /// Construct a new [`Window`] from a given compatible toplevel surface
     pub fn new(toplevel: Kind) -> Window {
@@ -222,24 +237,27 @@ impl Window {
     pub fn surface_under<P: Into<Point<f64, Logical>>>(
         &self,
         point: P,
+        surface_type: WindowSurfaceType,
     ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
         let point = point.into();
         if let Some(surface) = self.0.toplevel.get_surface() {
-            for (popup, location) in PopupManager::popups_for_surface(surface)
-                .ok()
-                .into_iter()
-                .flatten()
-            {
-                let offset = self.geometry().loc + location - popup.geometry().loc;
-                if let Some(result) = popup
-                    .get_surface()
-                    .and_then(|surface| under_from_surface_tree(surface, point, offset))
+            if surface_type.contains(WindowSurfaceType::POPUP) {
+                for (popup, location) in PopupManager::popups_for_surface(surface)
+                    .ok()
+                    .into_iter()
+                    .flatten()
                 {
-                    return Some(result);
+                    let offset = self.geometry().loc + location - popup.geometry().loc;
+                    if let Some(result) = popup
+                        .get_surface()
+                        .and_then(|surface| under_from_surface_tree(surface, point, offset, surface_type))
+                    {
+                        return Some(result);
+                    }
                 }
             }
 
-            under_from_surface_tree(surface, point, (0, 0))
+            under_from_surface_tree(surface, point, (0, 0), surface_type)
         } else {
             None
         }
