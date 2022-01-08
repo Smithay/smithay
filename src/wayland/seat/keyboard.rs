@@ -469,6 +469,11 @@ impl KeyboardHandle {
             .unwrap_or(false)
     }
 
+    /// Check if keyboard has focus
+    pub fn is_focused(&self) -> bool {
+        self.arc.internal.borrow_mut().focus.is_some()
+    }
+
     /// Register a new keyboard to this handler
     ///
     /// The keymap will automatically be sent to it
