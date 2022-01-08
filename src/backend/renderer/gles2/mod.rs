@@ -1428,4 +1428,9 @@ impl Gles2Frame {
 
         Ok(())
     }
+
+    /// Projection matrix for this frame
+    pub fn projection(&self) -> &[f32; 9] {
+        self.current_projection.as_ref()
+    }
 }
