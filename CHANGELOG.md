@@ -13,6 +13,7 @@
 - `PointerButtonEvent::button` now returns an `Option<MouseButton>`.
 - `MouseButton` is now non-exhaustive.
 - Remove `Other` and add `Forward` and `Back` variants to `MouseButton`. Use the new `PointerButtonEvent::button_code` in place of `Other`.
+- `GrabStartData` has been renamed to `PointerGrabStartData`
 
 #### Backends
 
@@ -49,6 +50,7 @@
 - Support for `xdg_wm_base` protocol version 3
 - Added the option to initialize the dmabuf global with a client filter
 - `wayland::output::Output` now has user data attached to it and more functions to query its properties
+- Added a `KeyboardGrab` similar to the existing `PointerGrab`
 
 #### Backends
 
