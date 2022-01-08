@@ -60,7 +60,7 @@ use slog::{debug, error, o};
 
 use crate::wayland::{
     compositor,
-    seat::{GrabStartData, Seat},
+    seat::{PointerGrabStartData, Seat},
     Serial,
 };
 
@@ -335,7 +335,7 @@ pub fn set_data_device_selection(seat: &Seat, mime_types: Vec<String>) {
 pub fn start_dnd<C>(
     seat: &Seat,
     serial: Serial,
-    start_data: GrabStartData,
+    start_data: PointerGrabStartData,
     metadata: SourceMetadata,
     callback: C,
 ) where

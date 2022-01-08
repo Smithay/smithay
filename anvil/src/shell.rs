@@ -20,7 +20,7 @@ use smithay::{
     wayland::{
         compositor::{compositor_init, with_states, with_surface_tree_upward, TraversalAction},
         output::Output,
-        seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
+        seat::{AxisFrame, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat},
         shell::{
             wlr_layer::{LayerShellRequest, LayerShellState, LayerSurfaceAttributes},
             xdg::{
@@ -35,7 +35,7 @@ use smithay::{
 use crate::state::{AnvilState, Backend};
 
 struct MoveSurfaceGrab {
-    start_data: GrabStartData,
+    start_data: PointerGrabStartData,
     space: Rc<RefCell<Space>>,
     window: Window,
     initial_window_location: Point<i32, Logical>,
@@ -77,7 +77,7 @@ impl PointerGrab for MoveSurfaceGrab {
         handle.axis(details)
     }
 
-    fn start_data(&self) -> &GrabStartData {
+    fn start_data(&self) -> &PointerGrabStartData {
         &self.start_data
     }
 }
@@ -125,7 +125,7 @@ impl From<ResizeEdge> for xdg_toplevel::ResizeEdge {
 }
 
 struct ResizeSurfaceGrab {
-    start_data: GrabStartData,
+    start_data: PointerGrabStartData,
     window: Window,
     edges: ResizeEdge,
     initial_window_size: Size<i32, Logical>,
@@ -274,7 +274,7 @@ impl PointerGrab for ResizeSurfaceGrab {
         handle.axis(details)
     }
 
-    fn start_data(&self) -> &GrabStartData {
+    fn start_data(&self) -> &PointerGrabStartData {
         &self.start_data
     }
 }

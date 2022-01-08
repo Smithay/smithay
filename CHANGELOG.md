@@ -13,6 +13,7 @@
 - `PointerButtonEvent::button` now returns an `Option<MouseButton>`.
 - `MouseButton` is now non-exhaustive.
 - Remove `Other` and add `Forward` and `Back` variants to `MouseButton`. Use the new `PointerButtonEvent::button_code` in place of `Other`.
+- `GrabStartData` has been renamed to `PointerGrabStartData`
 
 #### Backends
 
@@ -55,6 +56,7 @@
 - `wayland::output::Output` now has user data attached to it and more functions to query its properties
 - `wayland::output::Output` now has a `current_scale` method to quickly retrieve its set scale.
 - `wayland::shell::wlr_layer::KeyboardInteractivity` now implements `PartialEq` and `Eq`.
+- Added a `KeyboardGrab` similar to the existing `PointerGrab`
 
 #### Backends
 
