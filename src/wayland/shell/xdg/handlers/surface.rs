@@ -75,7 +75,7 @@ where
                 let surface = &data.wl_surface;
                 let shell = &data.wm_base;
 
-                if compositor::give_role(dh, surface, XDG_TOPLEVEL_ROLE).is_err() {
+                if compositor::give_role(surface, XDG_TOPLEVEL_ROLE).is_err() {
                     shell.post_error(dh, xdg_wm_base::Error::Role, "Surface already has a role.");
                     return;
                 }
@@ -89,7 +89,7 @@ where
                 })
                 .unwrap();
 
-                compositor::add_commit_hook(dh, surface, super::super::ToplevelSurface::commit_hook);
+                compositor::add_commit_hook(surface, super::super::ToplevelSurface::commit_hook);
 
                 let toplevel = data_init.init(
                     id,
@@ -145,7 +145,7 @@ where
                     }),
                     ..Default::default()
                 };
-                if compositor::give_role(dh, surface, XDG_POPUP_ROLE).is_err() {
+                if compositor::give_role(surface, XDG_POPUP_ROLE).is_err() {
                     shell.post_error(dh, xdg_wm_base::Error::Role, "Surface already has a role.");
                     return;
                 }
@@ -165,7 +165,7 @@ where
                 })
                 .unwrap();
 
-                compositor::add_commit_hook(dh, surface, super::super::PopupSurface::commit_hook);
+                compositor::add_commit_hook(surface, super::super::PopupSurface::commit_hook);
 
                 let popup = data_init.init(
                     id,
@@ -204,7 +204,7 @@ where
                 // which is a protocol error.
                 let surface = &data.wl_surface;
 
-                let role = compositor::get_role(dh, surface);
+                let role = compositor::get_role(surface);
 
                 if role.is_none() {
                     xdg_surface.post_error(
@@ -236,7 +236,7 @@ where
                 // Check the role of the surface, this can be either xdg_toplevel
                 // or xdg_popup. If none of the role matches the xdg_surface has no role set
                 // which is a protocol error.
-                if compositor::get_role(dh, surface).is_none() {
+                if compositor::get_role(surface).is_none() {
                     xdg_surface.post_error(
                         dh,
                         xdg_surface::Error::NotConstructed,
