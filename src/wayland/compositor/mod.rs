@@ -329,50 +329,29 @@ pub fn with_surface_tree_downward<F1, F2, F3, T>(
 /// Retrieve the parent of this surface
 ///
 /// Returns `None` is this surface is a root surface
-pub fn get_parent(dh: &mut DisplayHandle<'_>, surface: &WlSurface) -> Option<WlSurface> {
-    if dh.object_info(surface.id()).is_err() {
-        return None;
-    }
+pub fn get_parent(surface: &WlSurface) -> Option<WlSurface> {
     PrivateSurfaceData::get_parent(surface)
 }
 
 /// Retrieve the children of this surface
-pub fn get_children(dh: &mut DisplayHandle<'_>, surface: &WlSurface) -> Vec<WlSurface> {
-    if dh.object_info(surface.id()).is_err() {
-        return Vec::new();
-    }
+pub fn get_children(surface: &WlSurface) -> Vec<WlSurface> {
     PrivateSurfaceData::get_children(surface)
 }
 
 /// Check if this subsurface is a synchronized subsurface
-///
-/// Returns false if the surface is already dead
-pub fn is_sync_subsurface(dh: &mut DisplayHandle<'_>, surface: &WlSurface) -> bool {
-    if dh.object_info(surface.id()).is_err() {
-        return false;
-    }
+pub fn is_sync_subsurface(surface: &WlSurface) -> bool {
     self::handlers::is_effectively_sync(surface)
 }
 
 /// Get the current role of this surface
-pub fn get_role(dh: &mut DisplayHandle<'_>, surface: &WlSurface) -> Option<&'static str> {
-    if dh.object_info(surface.id()).is_err() {
-        return None;
-    }
+pub fn get_role(surface: &WlSurface) -> Option<&'static str> {
     PrivateSurfaceData::get_role(surface)
 }
 
 /// Register that this surface has given role
 ///
 /// Fails if the surface already has a role.
-pub fn give_role(
-    dh: &mut DisplayHandle<'_>,
-    surface: &WlSurface,
-    role: &'static str,
-) -> Result<(), AlreadyHasRole> {
-    if dh.object_info(surface.id()).is_err() {
-        return Ok(());
-    }
+pub fn give_role(surface: &WlSurface, role: &'static str) -> Result<(), AlreadyHasRole> {
     PrivateSurfaceData::set_role(surface, role)
 }
 
@@ -405,14 +384,7 @@ pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
 /// Register a commit hook to be invoked on surface commit
 ///
 /// For its precise semantics, see module-level documentation.
-pub fn add_commit_hook(
-    dh: &mut DisplayHandle<'_>,
-    surface: &WlSurface,
-    hook: fn(&mut DisplayHandle<'_>, &WlSurface),
-) {
-    if dh.object_info(surface.id()).is_err() {
-        return;
-    }
+pub fn add_commit_hook(surface: &WlSurface, hook: fn(&mut DisplayHandle<'_>, &WlSurface)) {
     PrivateSurfaceData::add_commit_hook(surface, hook)
 }
 
