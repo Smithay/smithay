@@ -381,11 +381,26 @@ pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
     }
 }
 
-/// Register a commit hook to be invoked on surface commit
+/// Register a pre-commit hook to be invoked on surface commit
 ///
-/// For its precise semantics, see module-level documentation.
-pub fn add_commit_hook(surface: &WlSurface, hook: fn(&mut DisplayHandle<'_>, &WlSurface)) {
-    PrivateSurfaceData::add_commit_hook(surface, hook)
+/// It'll be invoked on surface commit, *before* the new state is merged into the current state.
+pub fn add_pre_commit_hook(surface: &WlSurface, hook: fn(&mut DisplayHandle<'_>, &WlSurface)) {
+    PrivateSurfaceData::add_pre_commit_hook(surface, hook)
+}
+
+/// Register a post-commit hook to be invoked on surface commit
+///
+/// It'll be invoked on surface commit, *after* the new state is merged into the current state.
+pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&mut DisplayHandle<'_>, &WlSurface)) {
+    PrivateSurfaceData::add_post_commit_hook(surface, hook)
+}
+
+/// Register a destruction hook to be invoked on surface destruction
+///
+/// It'll be invoked when the surface is destroyed (either explicitly by the client or on
+/// client disconnect).
+pub fn add_destruction_hook(surface: &WlSurface, hook: fn(&SurfaceData)) {
+    PrivateSurfaceData::add_destruction_hook(surface, hook)
 }
 
 /// Handler trait for compositor
