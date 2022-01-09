@@ -58,7 +58,7 @@ pub mod compositor;
 // pub mod data_device;
 // pub mod dmabuf;
 // pub mod explicit_synchronization;
-// pub mod output;
+pub mod output;
 pub mod seat;
 pub mod shell;
 pub mod shm;
