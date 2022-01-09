@@ -2,7 +2,6 @@ use crate::wayland::Serial;
 
 use super::{
     cache::MultiCache,
-    get_children,
     handlers::{is_effectively_sync, SurfaceUserData},
     transaction::PendingTransaction,
     SurfaceData,
@@ -172,7 +171,7 @@ impl PrivateSurfaceData {
 
     pub fn commit(surface: &WlSurface, dh: &mut DisplayHandle<'_>) {
         let is_sync = is_effectively_sync(surface);
-        let children = get_children(dh, surface);
+        let children = PrivateSurfaceData::get_children(surface);
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         // commit our state

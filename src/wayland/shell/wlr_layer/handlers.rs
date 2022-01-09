@@ -84,7 +84,7 @@ where
                     }
                 };
 
-                if compositor::give_role(dh, &wl_surface, LAYER_SURFACE_ROLE).is_err() {
+                if compositor::give_role(&wl_surface, LAYER_SURFACE_ROLE).is_err() {
                     shell.post_error(
                         dh,
                         zwlr_layer_shell_v1::Error::Role,
@@ -110,7 +110,7 @@ where
                 })
                 .unwrap();
 
-                compositor::add_commit_hook(dh, &wl_surface, |dh, surface| {
+                compositor::add_commit_hook(&wl_surface, |dh, surface| {
                     compositor::with_states(surface, |states| {
                         let mut guard = states
                             .data_map
