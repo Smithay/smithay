@@ -40,9 +40,9 @@ pub enum PingError {
 ///
 /// This is method checks if the surface roles is one of `wl_shell_surface`, `xdg_toplevel`
 /// or `zxdg_toplevel`.
-pub fn is_toplevel_equivalent(cx: &mut DisplayHandle<'_>, surface: &WlSurface) -> bool {
+pub fn is_toplevel_equivalent(dh: &mut DisplayHandle<'_>, surface: &WlSurface) -> bool {
     // (z)xdg_toplevel and wl_shell_surface are toplevel like, so verify if the roles match.
-    let role = compositor::get_role(cx, surface);
+    let role = compositor::get_role(dh, surface);
 
     matches!(
         role,
