@@ -42,7 +42,7 @@ where
         positioner: &XdgPositioner,
         request: xdg_positioner::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         _data_init: &mut DataInit<'_, D>,
     ) {
         let mut state = data.inner.lock().unwrap();
@@ -50,7 +50,7 @@ where
             xdg_positioner::Request::SetSize { width, height } => {
                 if width < 1 || height < 1 {
                     positioner.post_error(
-                        cx,
+                        dh,
                         xdg_positioner::Error::InvalidInput,
                         "Invalid size for positioner.",
                     );
@@ -61,7 +61,7 @@ where
             xdg_positioner::Request::SetAnchorRect { x, y, width, height } => {
                 if width < 1 || height < 1 {
                     positioner.post_error(
-                        cx,
+                        dh,
                         xdg_positioner::Error::InvalidInput,
                         "Invalid size for positioner's anchor rectangle.",
                     );

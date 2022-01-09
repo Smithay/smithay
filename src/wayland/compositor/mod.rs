@@ -329,16 +329,16 @@ pub fn with_surface_tree_downward<F1, F2, F3, T>(
 /// Retrieve the parent of this surface
 ///
 /// Returns `None` is this surface is a root surface
-pub fn get_parent(cx: &mut DisplayHandle<'_>, surface: &WlSurface) -> Option<WlSurface> {
-    if cx.object_info(surface.id()).is_err() {
+pub fn get_parent(dh: &mut DisplayHandle<'_>, surface: &WlSurface) -> Option<WlSurface> {
+    if dh.object_info(surface.id()).is_err() {
         return None;
     }
     PrivateSurfaceData::get_parent(surface)
 }
 
 /// Retrieve the children of this surface
-pub fn get_children(cx: &mut DisplayHandle<'_>, surface: &WlSurface) -> Vec<WlSurface> {
-    if cx.object_info(surface.id()).is_err() {
+pub fn get_children(dh: &mut DisplayHandle<'_>, surface: &WlSurface) -> Vec<WlSurface> {
+    if dh.object_info(surface.id()).is_err() {
         return Vec::new();
     }
     PrivateSurfaceData::get_children(surface)
@@ -347,16 +347,16 @@ pub fn get_children(cx: &mut DisplayHandle<'_>, surface: &WlSurface) -> Vec<WlSu
 /// Check if this subsurface is a synchronized subsurface
 ///
 /// Returns false if the surface is already dead
-pub fn is_sync_subsurface(cx: &mut DisplayHandle<'_>, surface: &WlSurface) -> bool {
-    if cx.object_info(surface.id()).is_err() {
+pub fn is_sync_subsurface(dh: &mut DisplayHandle<'_>, surface: &WlSurface) -> bool {
+    if dh.object_info(surface.id()).is_err() {
         return false;
     }
     self::handlers::is_effectively_sync(surface)
 }
 
 /// Get the current role of this surface
-pub fn get_role(cx: &mut DisplayHandle<'_>, surface: &WlSurface) -> Option<&'static str> {
-    if cx.object_info(surface.id()).is_err() {
+pub fn get_role(dh: &mut DisplayHandle<'_>, surface: &WlSurface) -> Option<&'static str> {
+    if dh.object_info(surface.id()).is_err() {
         return None;
     }
     PrivateSurfaceData::get_role(surface)
@@ -366,11 +366,11 @@ pub fn get_role(cx: &mut DisplayHandle<'_>, surface: &WlSurface) -> Option<&'sta
 ///
 /// Fails if the surface already has a role.
 pub fn give_role(
-    cx: &mut DisplayHandle<'_>,
+    dh: &mut DisplayHandle<'_>,
     surface: &WlSurface,
     role: &'static str,
 ) -> Result<(), AlreadyHasRole> {
-    if cx.object_info(surface.id()).is_err() {
+    if dh.object_info(surface.id()).is_err() {
         return Ok(());
     }
     PrivateSurfaceData::set_role(surface, role)
@@ -378,14 +378,14 @@ pub fn give_role(
 
 /// Access the states associated to this surface
 pub fn with_states<F, T>(
-    // cx: &mut DisplayHandle<'_, D>,
+    // dh: &mut DisplayHandle<'_, D>,
     surface: &WlSurface,
     f: F,
 ) -> Result<T, DeadResource>
 where
     F: FnOnce(&SurfaceData) -> T,
 {
-    // if cx.object_info(surface.id()).is_err() {
+    // if dh.object_info(surface.id()).is_err() {
     //     return Err(DeadResource);
     // }
     Ok(PrivateSurfaceData::with_states(surface, f))
@@ -405,8 +405,8 @@ pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
 /// Register a commit hook to be invoked on surface commit
 ///
 /// For its precise semantics, see module-level documentation.
-pub fn add_commit_hook(cx: &mut DisplayHandle<'_>, surface: &WlSurface, hook: fn(&WlSurface)) {
-    if cx.object_info(surface.id()).is_err() {
+pub fn add_commit_hook(dh: &mut DisplayHandle<'_>, surface: &WlSurface, hook: fn(&WlSurface)) {
+    if dh.object_info(surface.id()).is_err() {
         return;
     }
     PrivateSurfaceData::add_commit_hook(surface, hook)
@@ -418,7 +418,7 @@ pub trait CompositorHandler {
     fn compositor_state(&mut self) -> &mut CompositorState;
 
     /// Surface commit handler
-    fn commit(&mut self, cx: &mut DisplayHandle<'_>, surface: &WlSurface);
+    fn commit(&mut self, dh: &mut DisplayHandle<'_>, surface: &WlSurface);
 }
 
 /// State of a compositor

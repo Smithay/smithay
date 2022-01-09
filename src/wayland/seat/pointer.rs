@@ -137,25 +137,25 @@ impl PointerInternal {
         }
     }
 
-    fn with_focused_pointers<F>(&self, cx: &mut DisplayHandle<'_>, mut f: F)
+    fn with_focused_pointers<F>(&self, dh: &mut DisplayHandle<'_>, mut f: F)
     where
         F: FnMut(&mut DisplayHandle<'_>, &WlPointer, &WlSurface),
     {
         if let Some((ref focus, _)) = self.focus {
             focus.id();
             // This is is_alive check
-            if cx.object_info(focus.id()).is_err() {
+            if dh.object_info(focus.id()).is_err() {
                 return;
             }
             for ptr in &self.known_pointers {
                 if ptr.id().same_client_as(&focus.id()) {
-                    f(cx, ptr, focus)
+                    f(dh, ptr, focus)
                 }
             }
         }
     }
 
-    fn with_grab<F>(&mut self, cx: &mut DisplayHandle<'_>, f: F)
+    fn with_grab<F>(&mut self, dh: &mut DisplayHandle<'_>, f: F)
     where
         F: FnOnce(&mut DisplayHandle<'_>, PointerInnerHandle<'_>, &mut dyn PointerGrab),
     {
@@ -166,16 +166,16 @@ impl PointerInternal {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some((ref surface, _)) = handler.start_data().focus {
                     // This is is_alive check
-                    if cx.object_info(surface.id()).is_err() {
+                    if dh.object_info(surface.id()).is_err() {
                         self.grab = GrabStatus::None;
-                        f(cx, PointerInnerHandle { inner: self }, &mut DefaultGrab);
+                        f(dh, PointerInnerHandle { inner: self }, &mut DefaultGrab);
                         return;
                     }
                 }
-                f(cx, PointerInnerHandle { inner: self }, &mut **handler);
+                f(dh, PointerInnerHandle { inner: self }, &mut **handler);
             }
             GrabStatus::None => {
-                f(cx, PointerInnerHandle { inner: self }, &mut DefaultGrab);
+                f(dh, PointerInnerHandle { inner: self }, &mut DefaultGrab);
             }
         }
 
@@ -272,7 +272,7 @@ impl PointerHandle {
     /// of enter/motion/leave events.
     pub fn motion(
         &self,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -280,8 +280,8 @@ impl PointerHandle {
     ) {
         let mut inner = self.inner.lock().unwrap();
         inner.pending_focus = focus.clone();
-        inner.with_grab(cx, move |cx, mut handle, grab| {
-            grab.motion(cx, &mut handle, location, focus, serial, time);
+        inner.with_grab(dh, move |dh, mut handle, grab| {
+            grab.motion(dh, &mut handle, location, focus, serial, time);
         });
     }
 
@@ -291,7 +291,7 @@ impl PointerHandle {
     /// objects matching with the currently focused surface.
     pub fn button(
         &self,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: Serial,
@@ -307,8 +307,8 @@ impl PointerHandle {
             }
             _ => unreachable!(),
         }
-        inner.with_grab(cx, |cx, mut handle, grab| {
-            grab.button(cx, &mut handle, button, state, serial, time);
+        inner.with_grab(dh, |dh, mut handle, grab| {
+            grab.button(dh, &mut handle, button, state, serial, time);
         });
     }
 
@@ -345,7 +345,7 @@ impl<'a> PointerInnerHandle<'a> {
     /// Remove any current grab on this pointer, resetting it to the default behavior
     ///
     /// This will also restore the focus of the underlying pointer
-    pub fn unset_grab(&mut self, cx: &mut DisplayHandle<'_>, serial: Serial, time: u32) {
+    pub fn unset_grab(&mut self, dh: &mut DisplayHandle<'_>, serial: Serial, time: u32) {
         self.inner.unset_grab(serial, time);
     }
 
@@ -380,7 +380,7 @@ impl<'a> PointerInnerHandle<'a> {
     /// of enter/motion/leave events.
     fn motion(
         &mut self,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -395,16 +395,16 @@ impl<'a> PointerInnerHandle<'a> {
     /// objects matching with the currently focused surface.
     pub fn button(
         &self,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: Serial,
         time: u32,
     ) {
-        self.inner.with_focused_pointers(cx, |cx, pointer, _| {
-            pointer.button(cx, serial.into(), time, button, state);
+        self.inner.with_focused_pointers(dh, |dh, pointer, _| {
+            pointer.button(dh, serial.into(), time, button, state);
             if pointer.version() >= 5 {
-                pointer.frame(cx);
+                pointer.frame(dh);
             }
         })
     }
@@ -413,36 +413,36 @@ impl<'a> PointerInnerHandle<'a> {
     ///
     /// This will internally send the appropriate axis events to the client
     /// objects matching with the currently focused surface.
-    pub fn axis(&mut self, cx: &mut DisplayHandle<'_>, details: AxisFrame) {
-        self.inner.with_focused_pointers(cx, |cx, pointer, _| {
+    pub fn axis(&mut self, dh: &mut DisplayHandle<'_>, details: AxisFrame) {
+        self.inner.with_focused_pointers(dh, |dh, pointer, _| {
             // axis
             if details.axis.0 != 0.0 {
-                pointer.axis(cx, details.time, Axis::HorizontalScroll, details.axis.0);
+                pointer.axis(dh, details.time, Axis::HorizontalScroll, details.axis.0);
             }
             if details.axis.1 != 0.0 {
-                pointer.axis(cx, details.time, Axis::VerticalScroll, details.axis.1);
+                pointer.axis(dh, details.time, Axis::VerticalScroll, details.axis.1);
             }
             if pointer.version() >= 5 {
                 // axis source
                 if let Some(source) = details.source {
-                    pointer.axis_source(cx, source);
+                    pointer.axis_source(dh, source);
                 }
                 // axis discrete
                 if details.discrete.0 != 0 {
-                    pointer.axis_discrete(cx, Axis::HorizontalScroll, details.discrete.0);
+                    pointer.axis_discrete(dh, Axis::HorizontalScroll, details.discrete.0);
                 }
                 if details.discrete.1 != 0 {
-                    pointer.axis_discrete(cx, Axis::VerticalScroll, details.discrete.1);
+                    pointer.axis_discrete(dh, Axis::VerticalScroll, details.discrete.1);
                 }
                 // stop
                 if details.stop.0 {
-                    pointer.axis_stop(cx, details.time, Axis::HorizontalScroll);
+                    pointer.axis_stop(dh, details.time, Axis::HorizontalScroll);
                 }
                 if details.stop.1 {
-                    pointer.axis_stop(cx, details.time, Axis::VerticalScroll);
+                    pointer.axis_stop(dh, details.time, Axis::VerticalScroll);
                 }
                 // frame
-                pointer.frame(cx);
+                pointer.frame(dh);
             }
         });
     }
@@ -474,7 +474,7 @@ where
         pointer: &WlPointer,
         request: wl_pointer::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
@@ -494,11 +494,11 @@ where
                             match surface {
                                 Some(surface) => {
                                     // tolerate re-using the same surface
-                                    if compositor::give_role(cx, &surface, CURSOR_IMAGE_ROLE).is_err()
-                                        && compositor::get_role(cx, &surface) != Some(CURSOR_IMAGE_ROLE)
+                                    if compositor::give_role(dh, &surface, CURSOR_IMAGE_ROLE).is_err()
+                                        && compositor::get_role(dh, &surface) != Some(CURSOR_IMAGE_ROLE)
                                     {
                                         pointer.post_error(
-                                            cx,
+                                            dh,
                                             wl_pointer::Error::Role,
                                             "Given wl_surface has another role.",
                                         );

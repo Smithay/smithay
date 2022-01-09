@@ -92,10 +92,10 @@ impl Inner {
         caps
     }
 
-    fn send_all_caps(&self, cx: &mut DisplayHandle<'_>) {
+    fn send_all_caps(&self, dh: &mut DisplayHandle<'_>) {
         let capabilities = self.compute_caps();
         for seat in &self.known_seats {
-            seat.capabilities(cx, capabilities);
+            seat.capabilities(dh, capabilities);
         }
     }
 }
@@ -198,7 +198,7 @@ impl SeatState {
     ///     |new_status| { /* a closure handling requests from clients to change the cursor icon */ }
     /// );
     /// ```
-    pub fn add_pointer<F>(&mut self, cx: &mut DisplayHandle<'_>, cb: F) -> PointerHandle
+    pub fn add_pointer<F>(&mut self, dh: &mut DisplayHandle<'_>, cb: F) -> PointerHandle
     where
         F: FnMut(CursorImageStatus) + Send + Sync + 'static,
     {
@@ -208,10 +208,10 @@ impl SeatState {
             // there is already a pointer, remove it and notify the clients
             // of the change
             inner.pointer = None;
-            inner.send_all_caps(cx);
+            inner.send_all_caps(dh);
         }
         inner.pointer = Some(pointer.clone());
-        inner.send_all_caps(cx);
+        inner.send_all_caps(dh);
         pointer
     }
 
@@ -223,11 +223,11 @@ impl SeatState {
     /// Remove the pointer capability from this seat
     ///
     /// Clients will be appropriately notified.
-    pub fn remove_pointer(&mut self, cx: &mut DisplayHandle<'_>) {
+    pub fn remove_pointer(&mut self, dh: &mut DisplayHandle<'_>) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.pointer.is_some() {
             inner.pointer = None;
-            inner.send_all_caps(cx);
+            inner.send_all_caps(dh);
         }
     }
 
@@ -268,7 +268,7 @@ impl SeatState {
     /// ```
     pub fn add_keyboard<F>(
         &mut self,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         xkb_config: keyboard::XkbConfig<'_>,
         repeat_delay: i32,
         repeat_rate: i32,
@@ -290,10 +290,10 @@ impl SeatState {
             // there is already a keyboard, remove it and notify the clients
             // of the change
             inner.keyboard = None;
-            inner.send_all_caps(cx);
+            inner.send_all_caps(dh);
         }
         inner.keyboard = Some(keyboard.clone());
-        inner.send_all_caps(cx);
+        inner.send_all_caps(dh);
         Ok(keyboard)
     }
 
@@ -305,11 +305,11 @@ impl SeatState {
     /// Remove the keyboard capability from this seat
     ///
     /// Clients will be appropriately notified.
-    pub fn remove_keyboard(&mut self, cx: &mut DisplayHandle<'_>) {
+    pub fn remove_keyboard(&mut self, dh: &mut DisplayHandle<'_>) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.keyboard.is_some() {
             inner.keyboard = None;
-            inner.send_all_caps(cx);
+            inner.send_all_caps(dh);
         }
     }
 
@@ -361,7 +361,7 @@ where
         _resource: &WlSeat,
         request: wl_seat::Request,
         _data: &Self::UserData,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
@@ -393,7 +393,7 @@ where
                 );
 
                 if let Some(ref h) = inner.keyboard {
-                    h.new_kbd(cx, keyboard);
+                    h.new_kbd(dh, keyboard);
                 } else {
                     // same as pointer, should error but cannot
                 }

@@ -54,17 +54,17 @@ impl XdgShellHandler for App {
         &mut self.xdg_shell_state
     }
 
-    fn request(&mut self, cx: &mut DisplayHandle, request: XdgRequest) {
+    fn request(&mut self, dh: &mut DisplayHandle, request: XdgRequest) {
         dbg!(&request);
 
         match request {
             XdgRequest::NewToplevel { surface } => {
                 surface
-                    .with_pending_state(cx, |state| {
+                    .with_pending_state(dh, |state| {
                         state.states.set(xdg_toplevel::State::Activated);
                     })
                     .unwrap();
-                surface.send_configure(cx);
+                surface.send_configure(dh);
             }
             XdgRequest::Move { .. } => {
                 //
@@ -79,8 +79,8 @@ impl CompositorHandler for App {
         &mut self.compositor_state
     }
 
-    fn commit(&mut self, cx: &mut DisplayHandle, surface: &WlSurface) {
-        on_commit_buffer_handler(cx, surface);
+    fn commit(&mut self, dh: &mut DisplayHandle, surface: &WlSurface) {
+        on_commit_buffer_handler(dh, surface);
     }
 }
 
@@ -145,18 +145,18 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
             WinitEvent::Resized { .. } => {}
             WinitEvent::Input(event) => match event {
                 InputEvent::Keyboard { event } => {
-                    let cx = &mut display.handle();
-                    keyboard.input::<(), _>(cx, event.key_code(), event.state(), 0.into(), 0, |_, _| {
+                    let dh = &mut display.handle();
+                    keyboard.input::<(), _>(dh, event.key_code(), event.state(), 0.into(), 0, |_, _| {
                         //
                         FilterResult::Forward
                     });
                 }
                 InputEvent::PointerMotionAbsolute { .. } => {
-                    let cx = &mut display.handle();
+                    let dh = &mut display.handle();
                     state.xdg_shell_state.toplevel_surfaces(|surfaces| {
                         for surface in surfaces {
-                            let surface = surface.get_surface(cx).unwrap();
-                            keyboard.set_focus(cx, Some(&surface), 0.into());
+                            let surface = surface.get_surface(dh).unwrap();
+                            keyboard.set_focus(dh, Some(&surface), 0.into());
                         }
                     });
                 }
@@ -177,8 +177,8 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
                 state.xdg_shell_state.toplevel_surfaces(|surfaces| {
                     for surface in surfaces {
-                        let cx = &mut display.handle();
-                        let surface = surface.get_surface(cx).unwrap();
+                        let dh = &mut display.handle();
+                        let surface = surface.get_surface(dh).unwrap();
                         draw_surface_tree(
                             renderer,
                             frame,
@@ -190,7 +190,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                         )
                         .unwrap();
 
-                        send_frames_surface_tree(cx, surface, start_time.elapsed().as_millis() as u32);
+                        send_frames_surface_tree(dh, surface, start_time.elapsed().as_millis() as u32);
                     }
                 });
             })?;
@@ -212,7 +212,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-pub fn send_frames_surface_tree(cx: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface, time: u32) {
+pub fn send_frames_surface_tree(dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface, time: u32) {
     with_surface_tree_downward(
         surface,
         (),
@@ -226,7 +226,7 @@ pub fn send_frames_surface_tree(cx: &mut DisplayHandle<'_>, surface: &wl_surface
                 .frame_callbacks
                 .drain(..)
             {
-                callback.done(cx, time);
+                callback.done(dh, time);
             }
         },
         |_, _, &()| true,

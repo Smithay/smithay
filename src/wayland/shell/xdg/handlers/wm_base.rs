@@ -31,7 +31,7 @@ where
 {
     fn bind(
         state: &mut D,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         _client: &wayland_server::Client,
         resource: New<XdgWmBase>,
         _global_data: &Self::GlobalData,
@@ -41,7 +41,7 @@ where
 
         XdgShellHandler::request(
             state,
-            cx,
+            dh,
             XdgRequest::NewClient {
                 client: ShellClient::new(&shell),
             },
@@ -67,7 +67,7 @@ where
         wm_base: &XdgWmBase,
         request: xdg_wm_base::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -102,7 +102,7 @@ where
                 if valid {
                     XdgShellHandler::request(
                         state,
-                        cx,
+                        dh,
                         XdgRequest::ClientPong {
                             client: ShellClient::new(wm_base),
                         },
