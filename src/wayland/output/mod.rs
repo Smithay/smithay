@@ -48,27 +48,64 @@
 //! output.add_mode(Mode { size: (1024, 768).into(), refresh: 60000 });
 //! ```
 
+mod handlers;
 pub mod xdg;
 
-use std::{
-    ops::Deref as _,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
-use wayland_server::protocol::{
-    wl_output::{Subpixel, Transform},
-    wl_surface,
+use wayland_protocols::unstable::xdg_output::v1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
+use wayland_server::{
+    backend::GlobalId,
+    protocol::{
+        wl_output::{Subpixel, Transform},
+        wl_surface,
+    },
+    DestructionNotify, DisplayHandle, GlobalDispatch, Resource,
 };
 use wayland_server::{
     protocol::wl_output::{Mode as WMode, WlOutput},
-    Client, Display, Filter, Global, Main, UserDataMap,
+    Client, Display,
 };
 
-use slog::{info, o, trace, warn};
+use slog::{info, o};
 
-use crate::utils::{Logical, Physical, Point, Raw, Size};
+use crate::utils::{user_data::UserDataMap, Logical, Physical, Point, Raw, Size};
 
 use self::xdg::XdgOutput;
+
+/// State of Smithay output manager
+#[derive(Debug, Default)]
+pub struct OutputManagerState {
+    xdg_output_manager: Option<GlobalId>,
+}
+
+impl OutputManagerState {
+    /// Create new output manager
+    pub fn new() -> Self {
+        Self {
+            xdg_output_manager: None,
+        }
+    }
+
+    /// Create new output manager with xdg output support
+    pub fn new_with_xdg_output<D>(display: &mut Display<D>) -> Self
+    where
+        D: GlobalDispatch<WlOutput, GlobalData = OutputGlobalData>,
+        D: GlobalDispatch<ZxdgOutputManagerV1, GlobalData = ()>,
+        D: 'static,
+    {
+        let xdg_output_manager = display.create_global::<ZxdgOutputManagerV1>(3, ());
+
+        Self {
+            xdg_output_manager: Some(xdg_output_manager),
+        }
+    }
+
+    /// Get global id of xdg output manager
+    pub fn xdg_output_manager_global(&self) -> Option<GlobalId> {
+        self.xdg_output_manager.clone()
+    }
+}
 
 /// An output mode
 ///
@@ -102,7 +139,6 @@ pub struct PhysicalProperties {
 #[derive(Debug)]
 pub(crate) struct Inner {
     name: String,
-    pub(crate) log: ::slog::Logger,
     instances: Vec<WlOutput>,
     physical: PhysicalProperties,
     location: Point<i32, Logical>,
@@ -111,47 +147,42 @@ pub(crate) struct Inner {
     modes: Vec<Mode>,
     current_mode: Option<Mode>,
     preferred_mode: Option<Mode>,
-
     xdg_output: Option<XdgOutput>,
+    pub(crate) log: ::slog::Logger,
 }
 
-type InnerType = Arc<(Mutex<Inner>, UserDataMap)>;
+/// Data for WlOutput global
+#[derive(Debug, Clone)]
+pub struct OutputGlobalData {
+    inner: Arc<(Mutex<Inner>, UserDataMap)>,
+}
+
+/// User data for WlOutput
+#[derive(Debug, Clone)]
+pub struct OutputUserData {
+    pub(crate) global_data: OutputGlobalData,
+}
+
+impl DestructionNotify for OutputUserData {
+    fn object_destroyed(
+        &self,
+        _client_id: wayland_server::backend::ClientId,
+        object_id: wayland_server::backend::ObjectId,
+    ) {
+        self.global_data
+            .inner
+            .0
+            .lock()
+            .unwrap()
+            .instances
+            .retain(|o| o.id() != object_id);
+    }
+}
 
 impl Inner {
-    fn new_global(&mut self, output: WlOutput) {
-        trace!(self.log, "New global instantiated.");
-
-        if self.modes.is_empty() {
-            warn!(self.log, "Output is used with no modes set"; "name" => &self.name);
-        }
-        if self.current_mode.is_none() {
-            warn!(self.log, "Output is used with no current mod set"; "name" => &self.name);
-        }
-        if self.preferred_mode.is_none() {
-            warn!(self.log, "Output is used with not preferred mode set"; "name" => &self.name);
-        }
-
-        self.send_geometry(&output);
-        for &mode in &self.modes {
-            let mut flags = WMode::empty();
-            if Some(mode) == self.current_mode {
-                flags |= WMode::Current;
-            }
-            if Some(mode) == self.preferred_mode {
-                flags |= WMode::Preferred;
-            }
-            output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
-        }
-        if output.as_ref().version() >= 2 {
-            output.scale(self.scale);
-            output.done();
-        }
-
-        self.instances.push(output);
-    }
-
-    fn send_geometry(&self, output: &WlOutput) {
+    fn send_geometry_to(&self, dh: &mut DisplayHandle<'_>, output: &WlOutput) {
         output.geometry(
+            dh,
             self.location.x,
             self.location.y,
             self.physical.size.w,
@@ -170,7 +201,7 @@ impl Inner {
 /// about any change in the properties of this output.
 #[derive(Debug, Clone)]
 pub struct Output {
-    pub(crate) inner: InnerType,
+    pub(crate) data: OutputGlobalData,
 }
 
 impl Output {
@@ -179,69 +210,52 @@ impl Output {
     /// The global is directly registered into the event loop, and this function
     /// returns the state token allowing you to access it, as well as the global handle,
     /// in case you wish to remove this global in the future.
-    pub fn new<L>(
-        display: &mut Display,
+    pub fn new<L, D>(
+        display: &mut Display<D>,
         name: String,
         physical: PhysicalProperties,
         logger: L,
-    ) -> (Output, Global<WlOutput>)
+    ) -> (Output, GlobalId)
     where
         L: Into<Option<::slog::Logger>>,
+        D: GlobalDispatch<WlOutput, GlobalData = OutputGlobalData>,
+        D: 'static,
     {
         let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "output_handler"));
 
         info!(log, "Creating new wl_output"; "name" => &name);
 
-        let inner = Arc::new((
-            Mutex::new(Inner {
-                name,
-                log,
-                instances: Vec::new(),
-                physical,
-                location: (0, 0).into(),
-                transform: Transform::Normal,
-                scale: 1,
-                modes: Vec::new(),
-                current_mode: None,
-                preferred_mode: None,
-                xdg_output: None,
-            }),
-            UserDataMap::default(),
-        ));
+        let data = OutputGlobalData {
+            inner: Arc::new((
+                Mutex::new(Inner {
+                    name,
+                    instances: Vec::new(),
+                    physical,
+                    location: (0, 0).into(),
+                    transform: Transform::Normal,
+                    scale: 1,
+                    modes: Vec::new(),
+                    current_mode: None,
+                    preferred_mode: None,
+                    xdg_output: None,
+                    log,
+                }),
+                UserDataMap::default(),
+            )),
+        };
 
-        let output = Output { inner: inner.clone() };
+        let output = Output { data: data.clone() };
 
-        let global = display.create_global(
-            3,
-            Filter::new(move |(output, _version): (Main<WlOutput>, _), _, _| {
-                output.assign_destructor(Filter::new(|output: WlOutput, _, _| {
-                    let inner = output.as_ref().user_data().get::<InnerType>().unwrap();
-                    inner
-                        .0
-                        .lock()
-                        .unwrap()
-                        .instances
-                        .retain(|o| !o.as_ref().equals(output.as_ref()));
-                }));
-                output.as_ref().user_data().set_threadsafe({
-                    let inner = inner.clone();
-                    move || inner
-                });
-                inner.0.lock().unwrap().new_global(output.deref().clone());
-            }),
-        );
+        let global = display.create_global::<WlOutput>(3, data);
 
         (output, global)
     }
 
     /// Attempt to retrieve a [`Output`] from an existing resource
     pub fn from_resource(output: &WlOutput) -> Option<Output> {
-        output
-            .as_ref()
-            .user_data()
-            .get::<InnerType>()
-            .cloned()
-            .map(|inner| Output { inner })
+        output.data::<OutputUserData>().map(|ud| Output {
+            data: ud.global_data.clone(),
+        })
     }
 
     /// Sets the preferred mode of this output
@@ -249,7 +263,7 @@ impl Output {
     /// If the provided mode was not previously known to this output, it is added to its
     /// internal list.
     pub fn set_preferred(&self, mode: Mode) {
-        let mut inner = self.inner.0.lock().unwrap();
+        let mut inner = self.data.inner.0.lock().unwrap();
         inner.preferred_mode = Some(mode);
         if inner.modes.iter().all(|&m| m != mode) {
             inner.modes.push(mode);
@@ -258,7 +272,7 @@ impl Output {
 
     /// Adds a mode to the list of known modes to this output
     pub fn add_mode(&self, mode: Mode) {
-        let mut inner = self.inner.0.lock().unwrap();
+        let mut inner = self.data.inner.0.lock().unwrap();
         if inner.modes.iter().all(|&m| m != mode) {
             inner.modes.push(mode);
         }
@@ -266,22 +280,22 @@ impl Output {
 
     /// Returns the currently advertised mode of the output
     pub fn current_mode(&self) -> Option<Mode> {
-        self.inner.0.lock().unwrap().current_mode
+        self.data.inner.0.lock().unwrap().current_mode
     }
 
     /// Returns the currently advertised transformation of the output
     pub fn current_transform(&self) -> Transform {
-        self.inner.0.lock().unwrap().transform
+        self.data.inner.0.lock().unwrap().transform
     }
 
     /// Returns the currenly advertised scale of the output
     pub fn current_scale(&self) -> i32 {
-        self.inner.0.lock().unwrap().scale
+        self.data.inner.0.lock().unwrap().scale
     }
 
     /// Returns the name of the output
     pub fn name(&self) -> String {
-        self.inner.0.lock().unwrap().name.clone()
+        self.data.inner.0.lock().unwrap().name.clone()
     }
 
     /// Removes a mode from the list of known modes
@@ -289,7 +303,7 @@ impl Output {
     /// It will not de-advertise it from existing clients (the protocol does not
     /// allow it), but it won't be advertised to now clients from now on.
     pub fn delete_mode(&self, mode: Mode) {
-        let mut inner = self.inner.0.lock().unwrap();
+        let mut inner = self.data.inner.0.lock().unwrap();
         inner.modes.retain(|&m| m != mode);
         if inner.current_mode == Some(mode) {
             inner.current_mode = None;
@@ -310,12 +324,13 @@ impl Output {
     /// By default, transform status is `Normal`, and scale is `1`.
     pub fn change_current_state(
         &self,
+        dh: &mut DisplayHandle<'_>,
         new_mode: Option<Mode>,
         new_transform: Option<Transform>,
         new_scale: Option<i32>,
         new_location: Option<Point<i32, Logical>>,
     ) {
-        let mut inner = self.inner.0.lock().unwrap();
+        let mut inner = self.data.inner.0.lock().unwrap();
         if let Some(mode) = new_mode {
             if inner.modes.iter().all(|&m| m != mode) {
                 inner.modes.push(mode);
@@ -339,82 +354,91 @@ impl Output {
         // XdgOutput has to be updated before WlOutput
         // Because WlOutput::done() has to allways be called last
         if let Some(xdg_output) = inner.xdg_output.as_ref() {
-            xdg_output.change_current_state(new_mode, new_scale, new_location);
+            xdg_output.change_current_state(dh, new_mode, new_scale, new_location);
         }
 
         for output in &inner.instances {
             if let Some(mode) = new_mode {
-                output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
+                output.mode(dh, flags, mode.size.w, mode.size.h, mode.refresh);
             }
             if new_transform.is_some() || new_location.is_some() {
-                inner.send_geometry(output);
+                inner.send_geometry_to(dh, output);
             }
             if let Some(scale) = new_scale {
-                if output.as_ref().version() >= 2 {
-                    output.scale(scale);
+                if output.version() >= 2 {
+                    output.scale(dh, scale);
                 }
             }
-            if output.as_ref().version() >= 2 {
-                output.done();
+            if output.version() >= 2 {
+                output.done(dh);
             }
         }
     }
 
     /// Check is given [`wl_output`](WlOutput) instance is managed by this [`Output`].
     pub fn owns(&self, output: &WlOutput) -> bool {
-        self.inner
+        self.data
+            .inner
             .0
             .lock()
             .unwrap()
             .instances
             .iter()
-            .any(|o| o.as_ref().equals(output.as_ref()))
+            .any(|o| o.id() == output.id())
     }
 
     /// This function allows to run a [FnMut] on every
     /// [WlOutput] matching the same [Client] as provided
-    pub fn with_client_outputs<F>(&self, client: Client, f: F)
+    pub fn with_client_outputs<F>(&self, dh: &mut DisplayHandle<'_>, client: &Client, mut f: F)
     where
-        F: FnMut(&WlOutput),
+        F: FnMut(&mut DisplayHandle<'_>, &WlOutput),
     {
-        self.inner
+        let list: Vec<_> = self
+            .data
+            .inner
             .0
             .lock()
             .unwrap()
             .instances
             .iter()
-            .filter(|output| match output.as_ref().client() {
-                Some(output_client) => output_client.equals(&client),
-                None => false,
+            .filter(|output| {
+                dh.get_client(output.id())
+                    .map(|output_client| &output_client == client)
+                    .unwrap_or(false)
             })
-            .for_each(f)
+            .cloned()
+            .collect();
+
+        for o in list {
+            f(dh, &o);
+        }
     }
 
     /// Sends `wl_surface.enter` for the provided surface
     /// with the matching client output
-    pub fn enter(&self, surface: &wl_surface::WlSurface) {
-        if let Some(client) = surface.as_ref().client() {
-            self.with_client_outputs(client, |output| surface.enter(output))
+    pub fn enter(&self, dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface) {
+        if let Ok(client) = dh.get_client(surface.id()) {
+            self.with_client_outputs(dh, &client, |dh, output| surface.enter(dh, output))
         }
     }
 
     /// Sends `wl_surface.leave` for the provided surface
     /// with the matching client output
-    pub fn leave(&self, surface: &wl_surface::WlSurface) {
-        if let Some(client) = surface.as_ref().client() {
-            self.with_client_outputs(client, |output| surface.leave(output))
+    pub fn leave(&self, dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface) {
+        if let Ok(client) = dh.get_client(surface.id()) {
+            self.with_client_outputs(dh, &client, |dh, output| surface.leave(dh, output))
         }
     }
 
     /// Returns the user data of this output
     pub fn user_data(&self) -> &UserDataMap {
-        &self.inner.1
+        &self.data.inner.1
     }
 }
 
 impl PartialEq for Output {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.inner, &other.inner)
+        Arc::ptr_eq(&self.data.inner, &other.data.inner)
     }
 }
 
