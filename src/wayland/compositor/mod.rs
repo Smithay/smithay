@@ -405,7 +405,11 @@ pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
 /// Register a commit hook to be invoked on surface commit
 ///
 /// For its precise semantics, see module-level documentation.
-pub fn add_commit_hook(dh: &mut DisplayHandle<'_>, surface: &WlSurface, hook: fn(&WlSurface)) {
+pub fn add_commit_hook(
+    dh: &mut DisplayHandle<'_>,
+    surface: &WlSurface,
+    hook: fn(&mut DisplayHandle<'_>, &WlSurface),
+) {
     if dh.object_info(surface.id()).is_err() {
         return;
     }
