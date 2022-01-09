@@ -30,7 +30,7 @@ where
         toplevel: &XdgToplevel,
         request: xdg_toplevel::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -68,7 +68,7 @@ where
 
                 XdgShellHandler::request(
                     state,
-                    cx,
+                    dh,
                     XdgRequest::ShowWindowMenu {
                         surface: handle,
                         seat,
@@ -84,7 +84,7 @@ where
 
                 XdgShellHandler::request(
                     state,
-                    cx,
+                    dh,
                     XdgRequest::Move {
                         surface: handle,
                         seat,
@@ -100,7 +100,7 @@ where
 
                     XdgShellHandler::request(
                         state,
-                        cx,
+                        dh,
                         XdgRequest::Resize {
                             surface: handle,
                             seat,
@@ -122,17 +122,17 @@ where
             }
             xdg_toplevel::Request::SetMaximized => {
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::request(state, cx, XdgRequest::Maximize { surface: handle });
+                XdgShellHandler::request(state, dh, XdgRequest::Maximize { surface: handle });
             }
             xdg_toplevel::Request::UnsetMaximized => {
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::request(state, cx, XdgRequest::UnMaximize { surface: handle });
+                XdgShellHandler::request(state, dh, XdgRequest::UnMaximize { surface: handle });
             }
             xdg_toplevel::Request::SetFullscreen { output } => {
                 let handle = make_toplevel_handle(toplevel);
                 XdgShellHandler::request(
                     state,
-                    cx,
+                    dh,
                     XdgRequest::Fullscreen {
                         surface: handle,
                         output,
@@ -141,13 +141,13 @@ where
             }
             xdg_toplevel::Request::UnsetFullscreen => {
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::request(state, cx, XdgRequest::UnFullscreen { surface: handle });
+                XdgShellHandler::request(state, dh, XdgRequest::UnFullscreen { surface: handle });
             }
             xdg_toplevel::Request::SetMinimized => {
                 // This has to be handled by the compositor, may not be
                 // supported and just ignored
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::request(state, cx, XdgRequest::Minimize { surface: handle });
+                XdgShellHandler::request(state, dh, XdgRequest::Minimize { surface: handle });
             }
             _ => unreachable!(),
         }
@@ -209,7 +209,7 @@ where
 }
 
 pub fn send_toplevel_configure(
-    cx: &mut DisplayHandle<'_>,
+    dh: &mut DisplayHandle<'_>,
     resource: &xdg_toplevel::XdgToplevel,
     configure: ToplevelConfigure,
 ) {
@@ -228,9 +228,9 @@ pub fn send_toplevel_configure(
     let serial = configure.serial;
 
     // Send the toplevel configure
-    resource.configure(cx, width, height, states);
+    resource.configure(dh, width, height, states);
 
     // Send the base xdg_surface configure event to mark
     // The configure as finished
-    data.xdg_surface.configure(cx, serial.into());
+    data.xdg_surface.configure(dh, serial.into());
 }

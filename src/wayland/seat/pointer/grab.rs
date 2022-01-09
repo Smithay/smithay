@@ -38,7 +38,7 @@ pub trait PointerGrab: Send + Sync {
     /// this is achieved by just setting the focus to `None` when invoking `PointerInnerHandle::motion()`.
     fn motion(
         &mut self,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
@@ -52,7 +52,7 @@ pub trait PointerGrab: Send + Sync {
     /// don't, the rest of the compositor will behave as if the button event never occurred.
     fn button(
         &mut self,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
@@ -64,7 +64,7 @@ pub trait PointerGrab: Send + Sync {
     /// This method allows you attach additional behavior to an axis event, possibly altering it.
     /// You generally will want to invoke `PointerInnerHandle::axis()` as part of your processing. If you
     /// don't, the rest of the compositor will behave as if the axis event never occurred.
-    fn axis(&mut self, cx: &mut DisplayHandle<'_>, handle: &mut PointerInnerHandle<'_>, details: AxisFrame);
+    fn axis(&mut self, dh: &mut DisplayHandle<'_>, handle: &mut PointerInnerHandle<'_>, details: AxisFrame);
     /// The data about the event that started the grab.
     fn start_data(&self) -> &GrabStartData;
 }
@@ -105,26 +105,26 @@ pub(super) struct DefaultGrab;
 impl PointerGrab for DefaultGrab {
     fn motion(
         &mut self,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
-        handle.motion(cx, location, focus, serial, time);
+        handle.motion(dh, location, focus, serial, time);
     }
 
     fn button(
         &mut self,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: Serial,
         time: u32,
     ) {
-        handle.button(cx, button, state, serial, time);
+        handle.button(dh, button, state, serial, time);
         handle.set_grab(
             serial,
             ClickGrab {
@@ -137,8 +137,8 @@ impl PointerGrab for DefaultGrab {
         );
     }
 
-    fn axis(&mut self, cx: &mut DisplayHandle<'_>, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
-        handle.axis(cx, details);
+    fn axis(&mut self, dh: &mut DisplayHandle<'_>, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
+        handle.axis(dh, details);
     }
 
     fn start_data(&self) -> &GrabStartData {
@@ -158,34 +158,34 @@ struct ClickGrab {
 impl PointerGrab for ClickGrab {
     fn motion(
         &mut self,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
         _focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
-        handle.motion(cx, location, self.start_data.focus.clone(), serial, time);
+        handle.motion(dh, location, self.start_data.focus.clone(), serial, time);
     }
 
     fn button(
         &mut self,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         handle: &mut PointerInnerHandle<'_>,
         button: u32,
         state: ButtonState,
         serial: Serial,
         time: u32,
     ) {
-        handle.button(cx, button, state, serial, time);
+        handle.button(dh, button, state, serial, time);
         if handle.current_pressed().is_empty() {
             // no more buttons are pressed, release the grab
-            handle.unset_grab(cx, serial, time);
+            handle.unset_grab(dh, serial, time);
         }
     }
 
-    fn axis(&mut self, cx: &mut DisplayHandle<'_>, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
-        handle.axis(cx, details);
+    fn axis(&mut self, dh: &mut DisplayHandle<'_>, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
+        handle.axis(dh, details);
     }
 
     fn start_data(&self) -> &GrabStartData {

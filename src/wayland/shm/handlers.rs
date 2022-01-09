@@ -64,7 +64,7 @@ where
         shm: &WlShm,
         request: wl_shm::Request,
         _data: &Self::UserData,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         data_init: &mut DataInit<'_, D>,
     ) {
         use wl_shm::{Error, Request};
@@ -74,13 +74,13 @@ where
             _ => unreachable!(),
         };
         if size <= 0 {
-            shm.post_error(cx, Error::InvalidFd, "Invalid size for a new wl_shm_pool.");
+            shm.post_error(dh, Error::InvalidFd, "Invalid size for a new wl_shm_pool.");
             return;
         }
         let mmap_pool = match Pool::new(fd, size as usize, state.shm_state().log.clone()) {
             Ok(p) => p,
             Err(()) => {
-                shm.post_error(cx, wl_shm::Error::InvalidFd, format!("Failed mmap of fd {}.", fd));
+                shm.post_error(dh, wl_shm::Error::InvalidFd, format!("Failed mmap of fd {}.", fd));
                 return;
             }
         };
@@ -130,7 +130,7 @@ where
         pool: &WlShmPool,
         request: wl_shm_pool::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         data_init: &mut DataInit<'_, D>,
     ) {
         use self::wl_shm_pool::Request;
@@ -149,7 +149,7 @@ where
                 if let WEnum::Value(format) = format {
                     if !state.shm_state().formats.contains(&format) {
                         pool.post_error(
-                            cx,
+                            dh,
                             wl_shm::Error::InvalidFormat,
                             format!("SHM format {:?} is not supported.", format),
                         );
@@ -173,13 +173,13 @@ where
                 Ok(()) => {}
                 Err(ResizeError::InvalidSize) => {
                     pool.post_error(
-                        cx,
+                        dh,
                         wl_shm::Error::InvalidFd,
                         "Invalid new size for a wl_shm_pool.",
                     );
                 }
                 Err(ResizeError::MremapFailed) => {
-                    pool.post_error(cx, wl_shm::Error::InvalidFd, "mremap failed.");
+                    pool.post_error(dh, wl_shm::Error::InvalidFd, "mremap failed.");
                 }
             },
             Request::Destroy => {}
@@ -223,7 +223,7 @@ where
         _pool: &WlBuffer,
         _request: wl_buffer::Request,
         _data: &Self::UserData,
-        _cx: &mut DisplayHandle<'_>,
+        _dh: &mut DisplayHandle<'_>,
         _data_init: &mut DataInit<'_, D>,
     ) {
     }
