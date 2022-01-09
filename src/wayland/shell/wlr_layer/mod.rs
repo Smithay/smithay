@@ -25,16 +25,16 @@
 //! // You're now ready to go!
 //! ```
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
-use wayland_protocols::wlr::unstable::layer_shell::v1::server::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
+use wayland_protocols::wlr::unstable::layer_shell::v1::server::{
+    zwlr_layer_shell_v1::{self, ZwlrLayerShellV1},
+    zwlr_layer_surface_v1,
+};
 use wayland_server::{
+    backend::GlobalId,
     protocol::{wl_output::WlOutput, wl_surface},
-    DispatchData, Display, Filter, Global, Main,
+    Display, DisplayHandle, GlobalDispatch, Resource,
 };
 
 use crate::{
@@ -139,10 +139,10 @@ pub struct LayerSurfaceCachedState {
 }
 
 impl Cacheable for LayerSurfaceCachedState {
-    fn commit(&mut self) -> Self {
+    fn commit(&mut self, _dh: &mut DisplayHandle<'_>) -> Self {
         *self
     }
-    fn merge_into(self, into: &mut Self) {
+    fn merge_into(self, into: &mut Self, _dh: &mut DisplayHandle<'_>) {
         *into = self;
     }
 }
@@ -151,63 +151,50 @@ impl Cacheable for LayerSurfaceCachedState {
 ///
 /// This state allows you to retrieve a list of surfaces
 /// currently known to the shell global.
-#[derive(Debug)]
-pub struct LayerShellState {
-    known_layers: Vec<LayerSurface>,
+#[derive(Debug, Clone)]
+pub struct WlrLayerShellState {
+    known_layers: Arc<Mutex<Vec<LayerSurface>>>,
+    shell_global: GlobalId,
+    _log: slog::Logger,
 }
 
-impl LayerShellState {
+impl WlrLayerShellState {
+    /// Create a new `wlr_layer_shell` globals
+    pub fn new<L, D>(display: &mut Display<D>, logger: L) -> WlrLayerShellState
+    where
+        L: Into<Option<::slog::Logger>>,
+        D: GlobalDispatch<ZwlrLayerShellV1, GlobalData = ()>,
+        D: 'static,
+    {
+        let log = crate::slog_or_fallback(logger);
+
+        let shell_global = display.create_global::<ZwlrLayerShellV1>(4, ());
+
+        WlrLayerShellState {
+            known_layers: Default::default(),
+            shell_global,
+            _log: log.new(slog::o!("smithay_module" => "layer_shell_handler")),
+        }
+    }
+
+    /// Get shell global id
+    pub fn shell_global(&self) -> GlobalId {
+        self.shell_global.clone()
+    }
+
     /// Access all the shell surfaces known by this handler
     pub fn layer_surfaces(&self) -> &[LayerSurface] {
-        &self.known_layers[..]
+        // &self.known_layers[..]
+        todo!()
     }
 }
 
-#[derive(Clone)]
-struct ShellUserData {
-    _log: ::slog::Logger,
-    user_impl: Rc<RefCell<dyn FnMut(LayerShellRequest, DispatchData<'_>)>>,
-    shell_state: Arc<Mutex<LayerShellState>>,
-}
-
-/// Create a new `wlr_layer_shell` globals
-pub fn wlr_layer_shell_init<L, Impl>(
-    display: &mut Display,
-    implementation: Impl,
-    logger: L,
-) -> (
-    Arc<Mutex<LayerShellState>>,
-    Global<zwlr_layer_shell_v1::ZwlrLayerShellV1>,
-)
-where
-    L: Into<Option<::slog::Logger>>,
-    Impl: FnMut(LayerShellRequest, DispatchData<'_>) + 'static,
-{
-    let log = crate::slog_or_fallback(logger);
-    let shell_state = Arc::new(Mutex::new(LayerShellState {
-        known_layers: Vec::new(),
-    }));
-
-    let shell_data = ShellUserData {
-        _log: log.new(slog::o!("smithay_module" => "layer_shell_handler")),
-        user_impl: Rc::new(RefCell::new(implementation)),
-        shell_state: shell_state.clone(),
-    };
-
-    let layer_shell_global = display.create_global(
-        4,
-        Filter::new(
-            move |(shell, _version): (Main<zwlr_layer_shell_v1::ZwlrLayerShellV1>, _), _, _ddata| {
-                shell.quick_assign(self::handlers::layer_shell_implementation);
-                shell.as_ref().user_data().set({
-                    let shell_data = shell_data.clone();
-                    move || shell_data
-                });
-            },
-        ),
-    );
-
-    (shell_state, layer_shell_global)
+/// Handler for wlr layer shell
+pub trait WlrLayerShellHandler {
+    /// [WlrLayerShellState] getter
+    fn shell_state(&mut self) -> &mut WlrLayerShellState;
+    /// Layer shell request
+    fn request(&mut self, request: LayerShellRequest);
 }
 
 /// A handle to a layer surface
@@ -219,14 +206,18 @@ pub struct LayerSurface {
 
 impl std::cmp::PartialEq for LayerSurface {
     fn eq(&self, other: &Self) -> bool {
-        self.alive() && other.alive() && self.wl_surface == other.wl_surface
+        self.wl_surface == other.wl_surface
     }
 }
 
 impl LayerSurface {
     /// Is the layer surface referred by this handle still alive?
-    pub fn alive(&self) -> bool {
-        self.shell_surface.as_ref().is_alive() && self.wl_surface.as_ref().is_alive()
+    pub fn alive(&self, dh: &mut DisplayHandle<'_>) -> bool {
+        // TODO: perhaps is_alive should be stored in both userdata of wlsurface and layersurface
+        // so DisplayHandle would no longer be needed
+        let a = dh.object_info(self.shell_surface.id()).is_ok();
+        let b = dh.object_info(self.wl_surface.id()).is_ok();
+        a && b
     }
 
     /// Gets the current pending state for a configure
@@ -271,38 +262,36 @@ impl LayerSurface {
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure(&self) {
-        if let Some(surface) = self.get_surface() {
-            let configure = compositor::with_states(surface, |states| {
-                let mut attributes = states
-                    .data_map
-                    .get::<Mutex<LayerSurfaceAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
-                if let Some(pending) = self.get_pending_state(&mut *attributes) {
-                    let configure = LayerSurfaceConfigure {
-                        serial: SERIAL_COUNTER.next_serial(),
-                        state: pending,
-                    };
+    pub fn send_configure(&self, dh: &mut DisplayHandle<'_>) {
+        let configure = compositor::with_states(&self.wl_surface, |states| {
+            let mut attributes = states
+                .data_map
+                .get::<Mutex<LayerSurfaceAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
+            if let Some(pending) = self.get_pending_state(&mut *attributes) {
+                let configure = LayerSurfaceConfigure {
+                    serial: SERIAL_COUNTER.next_serial(),
+                    state: pending,
+                };
 
-                    attributes.pending_configures.push(configure.clone());
-                    attributes.initial_configure_sent = true;
+                attributes.pending_configures.push(configure.clone());
+                attributes.initial_configure_sent = true;
 
-                    Some(configure)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(None);
-
-            // send surface configure
-            if let Some(configure) = configure {
-                let (width, height) = configure.state.size.unwrap_or_default().into();
-                let serial = configure.serial;
-                self.shell_surface
-                    .configure(serial.into(), width as u32, height as u32);
+                Some(configure)
+            } else {
+                None
             }
+        })
+        .unwrap_or(None);
+
+        // send surface configure
+        if let Some(configure) = configure {
+            let (width, height) = configure.state.size.unwrap_or_default().into();
+            let serial = configure.serial;
+            self.shell_surface
+                .configure(dh, serial.into(), width as u32, height as u32);
         }
     }
 
@@ -311,10 +300,7 @@ impl LayerSurface {
     /// Returns `true` if it was, if not, returns `false` and raise
     /// a protocol error to the associated layer surface. Also returns `false`
     /// if the surface is already destroyed.
-    pub fn ensure_configured(&self) -> bool {
-        if !self.alive() {
-            return false;
-        }
+    pub fn ensure_configured(&self, dh: &mut DisplayHandle<'_>) -> bool {
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
@@ -326,28 +312,25 @@ impl LayerSurface {
         })
         .unwrap();
         if !configured {
-            self.shell_surface.as_ref().post_error(
-                zwlr_layer_shell_v1::Error::AlreadyConstructed as u32,
-                "layer_surface has never been configured".into(),
+            self.shell_surface.post_error(
+                dh,
+                zwlr_layer_shell_v1::Error::AlreadyConstructed,
+                "layer_surface has never been configured",
             );
         }
         configured
     }
 
     /// Send a "close" event to the client
-    pub fn send_close(&self) {
-        self.shell_surface.closed()
+    pub fn send_close(&self, dh: &mut DisplayHandle<'_>) {
+        self.shell_surface.closed(dh)
     }
 
     /// Access the underlying `wl_surface` of this layer surface
     ///
     /// Returns `None` if the layer surface actually no longer exists.
-    pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
-        if self.alive() {
-            Some(&self.wl_surface)
-        } else {
-            None
-        }
+    pub fn get_surface(&self) -> &wl_surface::WlSurface {
+        &self.wl_surface
     }
 
     /// Allows the pending state of this layer to
@@ -361,10 +344,6 @@ impl LayerSurface {
     where
         F: FnOnce(&mut LayerSurfaceState) -> T,
     {
-        if !self.alive() {
-            return Err(DeadResource);
-        }
-
         Ok(compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -387,10 +366,6 @@ impl LayerSurface {
     /// Returns `None` if the underlying surface has been
     /// destroyed
     pub fn current_state(&self) -> Option<LayerSurfaceState> {
-        if !self.alive() {
-            return None;
-        }
-
         Some(
             compositor::with_states(&self.wl_surface, |states| {
                 let attributes = states
