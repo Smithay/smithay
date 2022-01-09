@@ -22,7 +22,7 @@ use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 // pub mod legacy;
 pub mod xdg;
 
-// pub mod wlr_layer;
+pub mod wlr_layer;
 
 /// Represents the possible errors returned from
 /// a surface ping
