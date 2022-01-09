@@ -110,7 +110,7 @@ where
                 })
                 .unwrap();
 
-                compositor::add_commit_hook(&wl_surface, |dh, surface| {
+                compositor::add_pre_commit_hook(&wl_surface, |dh, surface| {
                     compositor::with_states(surface, |states| {
                         let mut guard = states
                             .data_map

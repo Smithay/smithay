@@ -16,7 +16,7 @@ features = ["test_all_features"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
-# members = [ "anvil", "wlcs_anvil" ]
+ members = [ "anvil", "wlcs_anvil" ]
 
 [dependencies]
 appendlist = "1.4"
