@@ -4,8 +4,8 @@ use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
     utils::{Buffer, Logical, Point, Rectangle, Size, Transform},
     wayland::compositor::{
-        is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
-        SurfaceAttributes, SurfaceData, TraversalAction,
+        add_destruction_hook, is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage,
+        SubsurfaceCachedState, SurfaceAttributes, SurfaceData, TraversalAction,
     },
 };
 use std::collections::VecDeque;
@@ -148,10 +148,21 @@ pub fn on_commit_buffer_handler(dh: &mut DisplayHandle<'_>, surface: &WlSurface)
             surface,
             (),
             |_, _, _| TraversalAction::DoChildren(()),
-            |_surf, states, _| {
-                states
+            |surf, states, _| {
+                if states
                     .data_map
-                    .insert_if_missing(|| RefCell::new(SurfaceState::default()));
+                    .insert_if_missing(|| RefCell::new(SurfaceState::default()))
+                {
+                    add_destruction_hook(surf, |data| {
+                        if let Some(buffer) = data
+                            .data_map
+                            .get::<RefCell<SurfaceState>>()
+                            .and_then(|s| s.borrow_mut().buffer.take())
+                        {
+                            buffer.release();
+                        }
+                    });
+                }
                 let mut data = states
                     .data_map
                     .get::<RefCell<SurfaceState>>()
