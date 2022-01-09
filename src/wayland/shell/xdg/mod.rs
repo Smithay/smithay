@@ -1020,7 +1020,7 @@ impl ToplevelSurface {
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook(surface: &wl_surface::WlSurface) {
+    pub(crate) fn commit_hook(_dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface) {
         compositor::with_states(surface, |states| {
             let mut guard = states
                 .data_map
@@ -1350,7 +1350,7 @@ impl PopupSurface {
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook(surface: &wl_surface::WlSurface) {
+    pub(crate) fn commit_hook(dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface) {
         let send_error_to = compositor::with_states(surface, |states| {
             let attributes = states
                 .data_map
@@ -1366,13 +1366,12 @@ impl PopupSurface {
         })
         .unwrap_or(None);
         if let Some(handle) = send_error_to {
-            let _data = handle.data::<self::handlers::XdgShellSurfaceUserData>().unwrap();
-            // TODO:
-            // data.xdg_surface.post_error(
-            //     dh,
-            //     xdg_surface::Error::NotConstructed,
-            //     "Surface has not been configured yet.",
-            // );
+            let data = handle.data::<self::handlers::XdgShellSurfaceUserData>().unwrap();
+            data.xdg_surface.post_error(
+                dh,
+                xdg_surface::Error::NotConstructed,
+                "Surface has not been configured yet.",
+            );
             return;
         }
 
