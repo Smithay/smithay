@@ -513,8 +513,7 @@ impl KeyboardHandle {
 
     /// Check if keyboard has focus
     pub fn is_focused(&self) -> bool {
-        todo!("is_focused");
-        // self.arc.internal.borrow_mut().focus.is_some()
+        self.arc.internal.lock().unwrap().focus.is_some()
     }
 
     /// Register a new keyboard to this handler
