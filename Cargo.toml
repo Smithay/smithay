@@ -15,7 +15,7 @@ categories = ["gui"]
 features = ["test_all_features"]
 
 [workspace]
-# members = [ "anvil", "wlcs_anvil" ]
+ members = [ "anvil", "wlcs_anvil" ]
 
 [dependencies]
 appendlist = "1.4"
