@@ -77,7 +77,7 @@ impl SurfaceState {
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
 pub fn on_commit_buffer_handler(dh: &mut DisplayHandle<'_>, surface: &WlSurface) {
-    if !is_sync_subsurface(dh, surface) {
+    if !is_sync_subsurface(surface) {
         with_surface_tree_upward(
             surface,
             (),
