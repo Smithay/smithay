@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, convert::TryFrom};
 
 use wayland_protocols::wlr::unstable::layer_shell::v1::server::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
+use wayland_server::WEnum;
 
 /// Available layers for surfaces
 ///
@@ -21,16 +22,18 @@ pub enum Layer {
     Overlay,
 }
 
-impl TryFrom<zwlr_layer_shell_v1::Layer> for Layer {
+impl TryFrom<WEnum<zwlr_layer_shell_v1::Layer>> for Layer {
     type Error = (zwlr_layer_shell_v1::Error, String);
 
-    fn try_from(layer: zwlr_layer_shell_v1::Layer) -> Result<Self, Self::Error> {
+    fn try_from(layer: WEnum<zwlr_layer_shell_v1::Layer>) -> Result<Self, Self::Error> {
+        use zwlr_layer_shell_v1::Layer;
+
         match layer {
-            zwlr_layer_shell_v1::Layer::Background => Ok(Self::Background),
-            zwlr_layer_shell_v1::Layer::Bottom => Ok(Self::Bottom),
-            zwlr_layer_shell_v1::Layer::Top => Ok(Self::Top),
-            zwlr_layer_shell_v1::Layer::Overlay => Ok(Self::Overlay),
-            _ => Err((
+            WEnum::Value(Layer::Background) => Ok(Self::Background),
+            WEnum::Value(Layer::Bottom) => Ok(Self::Bottom),
+            WEnum::Value(Layer::Top) => Ok(Self::Top),
+            WEnum::Value(Layer::Overlay) => Ok(Self::Overlay),
+            layer => Err((
                 zwlr_layer_shell_v1::Error::InvalidLayer,
                 format!("invalid layer: {:?}", layer),
             )),
@@ -94,15 +97,17 @@ impl Default for KeyboardInteractivity {
     }
 }
 
-impl TryFrom<zwlr_layer_surface_v1::KeyboardInteractivity> for KeyboardInteractivity {
+impl TryFrom<WEnum<zwlr_layer_surface_v1::KeyboardInteractivity>> for KeyboardInteractivity {
     type Error = (zwlr_layer_surface_v1::Error, String);
 
-    fn try_from(ki: zwlr_layer_surface_v1::KeyboardInteractivity) -> Result<Self, Self::Error> {
+    fn try_from(ki: WEnum<zwlr_layer_surface_v1::KeyboardInteractivity>) -> Result<Self, Self::Error> {
+        use zwlr_layer_surface_v1::KeyboardInteractivity;
+
         match ki {
-            zwlr_layer_surface_v1::KeyboardInteractivity::None => Ok(Self::None),
-            zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive => Ok(Self::Exclusive),
-            zwlr_layer_surface_v1::KeyboardInteractivity::OnDemand => Ok(Self::OnDemand),
-            _ => Err((
+            WEnum::Value(KeyboardInteractivity::None) => Ok(Self::None),
+            WEnum::Value(KeyboardInteractivity::Exclusive) => Ok(Self::Exclusive),
+            WEnum::Value(KeyboardInteractivity::OnDemand) => Ok(Self::OnDemand),
+            ki => Err((
                 zwlr_layer_surface_v1::Error::InvalidKeyboardInteractivity,
                 format!("wrong keyboard interactivity value: {:?}", ki),
             )),
@@ -147,17 +152,20 @@ impl Default for Anchor {
     }
 }
 
-impl TryFrom<zwlr_layer_surface_v1::Anchor> for Anchor {
+impl TryFrom<WEnum<zwlr_layer_surface_v1::Anchor>> for Anchor {
     type Error = (zwlr_layer_surface_v1::Error, String);
 
-    fn try_from(anchor: zwlr_layer_surface_v1::Anchor) -> Result<Self, Self::Error> {
-        match Anchor::from_bits(anchor.bits()) {
-            Some(a) => Ok(a),
-            _ => Err((
-                zwlr_layer_surface_v1::Error::InvalidAnchor,
-                format!("invalid anchor {:?}", anchor),
-            )),
-        }
+    fn try_from(anchor: WEnum<zwlr_layer_surface_v1::Anchor>) -> Result<Self, Self::Error> {
+        let a = if let WEnum::Value(anchor) = anchor {
+            Anchor::from_bits(anchor.bits())
+        } else {
+            None
+        };
+
+        a.ok_or((
+            zwlr_layer_surface_v1::Error::InvalidAnchor,
+            format!("invalid anchor {:?}", anchor),
+        ))
     }
 }
 
