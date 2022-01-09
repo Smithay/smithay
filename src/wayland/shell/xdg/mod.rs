@@ -1155,7 +1155,7 @@ impl ToplevelSurface {
     /// If the parent is `None`, the parent-child relationship is removed.
     pub fn set_parent(&self, dh: &mut DisplayHandle<'_>, parent: Option<&wl_surface::WlSurface>) -> bool {
         if let Some(parent) = parent {
-            if !is_toplevel_equivalent(cx, parent) {
+            if !is_toplevel_equivalent(dh, parent) {
                 return false;
             }
         }
