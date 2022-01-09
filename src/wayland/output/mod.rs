@@ -418,9 +418,7 @@ impl Output {
     /// Sends `wl_surface.enter` for the provided surface
     /// with the matching client output
     pub fn enter(&self, dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface) {
-        let client = dh.get_client(surface.id()).ok();
-
-        if let Some(client) = client {
+        if let Ok(client) = dh.get_client(surface.id()) {
             self.with_client_outputs(dh, &client, |dh, output| surface.enter(dh, output))
         }
     }
@@ -428,9 +426,7 @@ impl Output {
     /// Sends `wl_surface.leave` for the provided surface
     /// with the matching client output
     pub fn leave(&self, dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface) {
-        let client = dh.get_client(surface.id()).ok();
-
-        if let Some(client) = client {
+        if let Ok(client) = dh.get_client(surface.id()) {
             self.with_client_outputs(dh, &client, |dh, output| surface.leave(dh, output))
         }
     }

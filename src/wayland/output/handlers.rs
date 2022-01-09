@@ -42,7 +42,7 @@ where
 
         let mut inner = global_data.inner.0.lock().unwrap();
 
-        trace!(inner.log, "New global instantiated.");
+        trace!(inner.log, "New WlOutput global instantiated."; "name" => &inner.name);
 
         if inner.modes.is_empty() {
             warn!(inner.log, "Output is used with no modes set"; "name" => &inner.name);
