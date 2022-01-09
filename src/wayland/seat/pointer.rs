@@ -494,8 +494,8 @@ where
                             match surface {
                                 Some(surface) => {
                                     // tolerate re-using the same surface
-                                    if compositor::give_role(dh, &surface, CURSOR_IMAGE_ROLE).is_err()
-                                        && compositor::get_role(dh, &surface) != Some(CURSOR_IMAGE_ROLE)
+                                    if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
+                                        && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
                                     {
                                         pointer.post_error(
                                             dh,
