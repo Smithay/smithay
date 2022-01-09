@@ -33,7 +33,9 @@ pub struct PrivateSurfaceData {
     public_data: SurfaceData,
     pending_transaction: PendingTransaction,
     current_txid: Serial,
-    commit_hooks: Vec<fn(&mut DisplayHandle<'_>, &WlSurface)>,
+    pre_commit_hooks: Vec<fn(&mut DisplayHandle<'_>, &WlSurface)>,
+    post_commit_hooks: Vec<fn(&mut DisplayHandle<'_>, &WlSurface)>,
+    destruction_hooks: Vec<fn(&SurfaceData)>,
 }
 
 impl fmt::Debug for PrivateSurfaceData {
@@ -45,7 +47,9 @@ impl fmt::Debug for PrivateSurfaceData {
             .field("pending_transaction", &"...")
             .field("current_txid", &self.current_txid)
             .field("commit_hooks", &"...")
-            .field("commit_hooks.len", &self.commit_hooks.len())
+            .field("pre_commit_hooks.len", &self.pre_commit_hooks.len())
+            .field("post_commit_hooks.len", &self.post_commit_hooks.len())
+            .field("destruction_hooks.len", &self.destruction_hooks.len())
             .finish()
     }
 }
@@ -94,7 +98,9 @@ impl PrivateSurfaceData {
             },
             pending_transaction: Default::default(),
             current_txid: Serial(0),
-            commit_hooks: Vec::new(),
+            pre_commit_hooks: Vec::new(),
+            post_commit_hooks: Vec::new(),
+            destruction_hooks: Vec::new(),
         })
     }
 
@@ -127,6 +133,10 @@ impl PrivateSurfaceData {
             let mut child_guard = child_mutex.lock().unwrap();
             child_guard.parent = None;
         }
+
+        for hook in &my_data.destruction_hooks {
+            hook(&my_data.public_data)
+        }
     }
 
     pub fn set_role(surface: &WlSurface, role: &'static str) -> Result<(), AlreadyHasRole> {
@@ -151,18 +161,42 @@ impl PrivateSurfaceData {
         f(&my_data.public_data)
     }
 
-    pub fn add_commit_hook(surface: &WlSurface, hook: fn(&mut DisplayHandle<'_>, &WlSurface)) {
+    pub fn add_pre_commit_hook(surface: &WlSurface, hook: fn(&mut DisplayHandle<'_>, &WlSurface)) {
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
-        my_data.commit_hooks.push(hook);
+        my_data.pre_commit_hooks.push(hook);
     }
 
-    pub fn invoke_commit_hooks(dh: &mut DisplayHandle<'_>, surface: &WlSurface) {
+    pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&mut DisplayHandle<'_>, &WlSurface)) {
+        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
+        let mut my_data = my_data_mutex.lock().unwrap();
+        my_data.post_commit_hooks.push(hook);
+    }
+
+    pub fn add_destruction_hook(surface: &WlSurface, hook: fn(&SurfaceData)) {
+        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
+        let mut my_data = my_data_mutex.lock().unwrap();
+        my_data.destruction_hooks.push(hook);
+    }
+
+    pub fn invoke_pre_commit_hooks(dh: &mut DisplayHandle<'_>, surface: &WlSurface) {
         // don't hold the mutex while the hooks are invoked
         let hooks = {
             let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
             let my_data = my_data_mutex.lock().unwrap();
-            my_data.commit_hooks.clone()
+            my_data.pre_commit_hooks.clone()
+        };
+        for hook in hooks {
+            hook(dh, surface);
+        }
+    }
+
+    pub fn invoke_post_commit_hooks(dh: &mut DisplayHandle<'_>, surface: &WlSurface) {
+        // don't hold the mutex while the hooks are invoked
+        let hooks = {
+            let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
+            let my_data = my_data_mutex.lock().unwrap();
+            my_data.post_commit_hooks.clone()
         };
         for hook in hooks {
             hook(dh, surface);

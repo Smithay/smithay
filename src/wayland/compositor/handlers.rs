@@ -228,15 +228,12 @@ where
                 });
             }
             wl_surface::Request::Commit => {
-                PrivateSurfaceData::invoke_commit_hooks(handle, surface);
-
-                // is_alive check
-                if handle.object_info(surface.id()).is_err() {
-                    // the client was killed by a hook, abort
-                    return;
-                }
+                PrivateSurfaceData::invoke_pre_commit_hooks(handle, surface);
 
                 PrivateSurfaceData::commit(surface, handle);
+
+                PrivateSurfaceData::invoke_post_commit_hooks(handle, surface);
+
                 trace!(
                     state.compositor_state().log,
                     "Calling user implementation for wl_surface.commit"
