@@ -63,7 +63,7 @@ where
         xdg_surface: &XdgSurface,
         request: xdg_surface::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -75,8 +75,8 @@ where
                 let surface = &data.wl_surface;
                 let shell = &data.wm_base;
 
-                if compositor::give_role(cx, surface, XDG_TOPLEVEL_ROLE).is_err() {
-                    shell.post_error(cx, xdg_wm_base::Error::Role, "Surface already has a role.");
+                if compositor::give_role(dh, surface, XDG_TOPLEVEL_ROLE).is_err() {
+                    shell.post_error(dh, xdg_wm_base::Error::Role, "Surface already has a role.");
                     return;
                 }
 
@@ -89,7 +89,7 @@ where
                 })
                 .unwrap();
 
-                compositor::add_commit_hook(cx, surface, super::super::ToplevelSurface::commit_hook);
+                compositor::add_commit_hook(dh, surface, super::super::ToplevelSurface::commit_hook);
 
                 let toplevel = data_init.init(
                     id,
@@ -113,7 +113,7 @@ where
 
                 let handle = make_toplevel_handle(&toplevel);
 
-                XdgShellHandler::request(state, cx, XdgRequest::NewToplevel { surface: handle });
+                XdgShellHandler::request(state, dh, XdgRequest::NewToplevel { surface: handle });
             }
             xdg_surface::Request::GetPopup {
                 id,
@@ -145,8 +145,8 @@ where
                     }),
                     ..Default::default()
                 };
-                if compositor::give_role(cx, surface, XDG_POPUP_ROLE).is_err() {
-                    shell.post_error(cx, xdg_wm_base::Error::Role, "Surface already has a role.");
+                if compositor::give_role(dh, surface, XDG_POPUP_ROLE).is_err() {
+                    shell.post_error(dh, xdg_wm_base::Error::Role, "Surface already has a role.");
                     return;
                 }
 
@@ -165,7 +165,7 @@ where
                 })
                 .unwrap();
 
-                compositor::add_commit_hook(cx, surface, super::super::PopupSurface::commit_hook);
+                compositor::add_commit_hook(dh, surface, super::super::PopupSurface::commit_hook);
 
                 let popup = data_init.init(
                     id,
@@ -191,7 +191,7 @@ where
 
                 XdgShellHandler::request(
                     state,
-                    cx,
+                    dh,
                     XdgRequest::NewPopup {
                         surface: handle,
                         positioner: positioner_data,
@@ -204,11 +204,11 @@ where
                 // which is a protocol error.
                 let surface = &data.wl_surface;
 
-                let role = compositor::get_role(cx, surface);
+                let role = compositor::get_role(dh, surface);
 
                 if role.is_none() {
                     xdg_surface.post_error(
-                        cx,
+                        dh,
                         xdg_surface::Error::NotConstructed,
                         "xdg_surface must have a role.",
                     );
@@ -217,7 +217,7 @@ where
 
                 if role != Some(XDG_TOPLEVEL_ROLE) && role != Some(XDG_POPUP_ROLE) {
                     data.wm_base.post_error(
-                        cx,
+                        dh,
                         xdg_wm_base::Error::Role,
                         "xdg_surface must have a role of xdg_toplevel or xdg_popup.",
                     );
@@ -236,9 +236,9 @@ where
                 // Check the role of the surface, this can be either xdg_toplevel
                 // or xdg_popup. If none of the role matches the xdg_surface has no role set
                 // which is a protocol error.
-                if compositor::get_role(cx, surface).is_none() {
+                if compositor::get_role(dh, surface).is_none() {
                     xdg_surface.post_error(
-                        cx,
+                        dh,
                         xdg_surface::Error::NotConstructed,
                         "xdg_surface must have a role.",
                     );
@@ -284,7 +284,7 @@ where
                     Ok(Some(configure)) => configure,
                     Ok(None) => {
                         data.wm_base.post_error(
-                            cx,
+                            dh,
                             xdg_wm_base::Error::InvalidSurfaceState,
                             format!("wrong configure serial: {}", <u32>::from(serial)),
                         );
@@ -292,7 +292,7 @@ where
                     }
                     Err(()) => {
                         data.wm_base.post_error(
-                            cx,
+                            dh,
                             xdg_wm_base::Error::Role as u32,
                             "xdg_surface must have a role of xdg_toplevel or xdg_popup.",
                         );
@@ -302,7 +302,7 @@ where
 
                 XdgShellHandler::request(
                     state,
-                    cx,
+                    dh,
                     XdgRequest::AckConfigure {
                         surface: surface.clone(),
                         configure,

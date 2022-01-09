@@ -23,7 +23,7 @@ impl CompositorHandler for App {
         &mut self.compositor_state
     }
 
-    fn commit(&mut self, _cx: &mut DisplayHandle, surface: &WlSurface) {
+    fn commit(&mut self, _dh: &mut DisplayHandle, surface: &WlSurface) {
         dbg!("Commit", surface);
     }
 }
