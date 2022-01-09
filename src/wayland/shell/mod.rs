@@ -17,7 +17,7 @@
 use super::Serial;
 use crate::wayland::compositor;
 use thiserror::Error;
-use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
+use wayland_server::protocol::wl_surface::WlSurface;
 
 // pub mod legacy;
 pub mod xdg;
@@ -38,11 +38,10 @@ pub enum PingError {
 
 /// Returns true if the surface is toplevel equivalent.
 ///
-/// This is method checks if the surface roles is one of `wl_shell_surface`, `xdg_toplevel`
-/// or `zxdg_toplevel`.
-pub fn is_toplevel_equivalent(dh: &mut DisplayHandle<'_>, surface: &WlSurface) -> bool {
+/// This is method checks if the surface roles is `wl_shell_surface` or `xdg_toplevel`
+pub fn is_toplevel_equivalent(surface: &WlSurface) -> bool {
     // (z)xdg_toplevel and wl_shell_surface are toplevel like, so verify if the roles match.
-    let role = compositor::get_role(dh, surface);
+    let role = compositor::get_role(surface);
 
     matches!(
         role,
