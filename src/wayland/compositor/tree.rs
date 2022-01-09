@@ -34,7 +34,7 @@ pub struct PrivateSurfaceData {
     public_data: SurfaceData,
     pending_transaction: PendingTransaction,
     current_txid: Serial,
-    commit_hooks: Vec<fn(&WlSurface)>,
+    commit_hooks: Vec<fn(&mut DisplayHandle<'_>, &WlSurface)>,
 }
 
 impl fmt::Debug for PrivateSurfaceData {
@@ -152,13 +152,13 @@ impl PrivateSurfaceData {
         f(&my_data.public_data)
     }
 
-    pub fn add_commit_hook(surface: &WlSurface, hook: fn(&WlSurface)) {
+    pub fn add_commit_hook(surface: &WlSurface, hook: fn(&mut DisplayHandle<'_>, &WlSurface)) {
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         my_data.commit_hooks.push(hook);
     }
 
-    pub fn invoke_commit_hooks(surface: &WlSurface) {
+    pub fn invoke_commit_hooks(dh: &mut DisplayHandle<'_>, surface: &WlSurface) {
         // don't hold the mutex while the hooks are invoked
         let hooks = {
             let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
@@ -166,7 +166,7 @@ impl PrivateSurfaceData {
             my_data.commit_hooks.clone()
         };
         for hook in hooks {
-            hook(surface);
+            hook(dh, surface);
         }
     }
 
