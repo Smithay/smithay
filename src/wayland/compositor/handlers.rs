@@ -228,7 +228,7 @@ where
                 });
             }
             wl_surface::Request::Commit => {
-                PrivateSurfaceData::invoke_commit_hooks(surface);
+                PrivateSurfaceData::invoke_commit_hooks(handle, surface);
 
                 // is_alive check
                 if handle.object_info(surface.id()).is_err() {
