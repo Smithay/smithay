@@ -295,7 +295,7 @@ impl KeyboardHandle {
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
     pub fn input<T, F>(
         &self,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         keycode: u32,
         state: KeyState,
         serial: Serial,
@@ -339,9 +339,9 @@ impl KeyboardHandle {
         guard.with_focused_kbds(|kbd, _| {
             // key event must be sent before modifers event for libxkbcommon
             // to process them correctly
-            kbd.key(cx, serial.into(), time, keycode, wl_state);
+            kbd.key(dh, serial.into(), time, keycode, wl_state);
             if let Some((dep, la, lo, gr)) = modifiers {
-                kbd.modifiers(cx, serial.into(), dep, la, lo, gr);
+                kbd.modifiers(dh, serial.into(), dep, la, lo, gr);
             }
         });
 
@@ -360,7 +360,7 @@ impl KeyboardHandle {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus(&self, cx: &mut DisplayHandle<'_>, focus: Option<&WlSurface>, serial: Serial) {
+    pub fn set_focus(&self, dh: &mut DisplayHandle<'_>, focus: Option<&WlSurface>, serial: Serial) {
         let mut guard = self.arc.internal.lock().unwrap();
 
         let same = guard
@@ -372,7 +372,7 @@ impl KeyboardHandle {
         if !same {
             // unset old focus
             guard.with_focused_kbds(|kbd, s| {
-                kbd.leave(cx, serial.into(), s);
+                kbd.leave(dh, serial.into(), s);
             });
 
             // set new focus
@@ -380,9 +380,9 @@ impl KeyboardHandle {
             let (dep, la, lo, gr) = guard.serialize_modifiers();
             let keys = guard.serialize_pressed_keys();
             guard.with_focused_kbds(|kbd, surface| {
-                kbd.enter(cx, serial.into(), surface, keys.clone());
+                kbd.enter(dh, serial.into(), surface, keys.clone());
                 // Modifiers must be send after enter event.
-                kbd.modifiers(cx, serial.into(), dep, la, lo, gr);
+                kbd.modifiers(dh, serial.into(), dep, la, lo, gr);
             });
             {
                 let KbdInternal {
@@ -429,7 +429,7 @@ impl KeyboardHandle {
     /// The keymap will automatically be sent to it
     ///
     /// This should be done first, before anything else is done with this keyboard.
-    pub(crate) fn new_kbd(&self, cx: &mut DisplayHandle<'_>, kbd: WlKeyboard) {
+    pub(crate) fn new_kbd(&self, dh: &mut DisplayHandle<'_>, kbd: WlKeyboard) {
         trace!(self.arc.logger, "Sending keymap to client");
 
         // prepare a tempfile with the keymap, to send it to the client
@@ -437,7 +437,7 @@ impl KeyboardHandle {
             f.write_all(self.arc.keymap.as_bytes())?;
             f.flush()?;
             kbd.keymap(
-                cx,
+                dh,
                 KeymapFormat::XkbV1,
                 f.as_raw_fd(),
                 self.arc.keymap.as_bytes().len() as u32,
@@ -455,18 +455,18 @@ impl KeyboardHandle {
 
         let mut guard = self.arc.internal.lock().unwrap();
         if kbd.version() >= 4 {
-            kbd.repeat_info(cx, guard.repeat_rate, guard.repeat_delay);
+            kbd.repeat_info(dh, guard.repeat_rate, guard.repeat_delay);
         }
         guard.known_kbds.push(kbd);
     }
 
     /// Change the repeat info configured for this keyboard
-    pub fn change_repeat_info(&self, cx: &mut DisplayHandle<'_>, rate: i32, delay: i32) {
+    pub fn change_repeat_info(&self, dh: &mut DisplayHandle<'_>, rate: i32, delay: i32) {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.repeat_delay = delay;
         guard.repeat_rate = rate;
         for kbd in &guard.known_kbds {
-            kbd.repeat_info(cx, rate, delay);
+            kbd.repeat_info(dh, rate, delay);
         }
     }
 }

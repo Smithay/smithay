@@ -170,14 +170,14 @@ impl PrivateSurfaceData {
         }
     }
 
-    pub fn commit(surface: &WlSurface, cx: &mut DisplayHandle<'_>) {
+    pub fn commit(surface: &WlSurface, dh: &mut DisplayHandle<'_>) {
         let is_sync = is_effectively_sync(surface);
-        let children = get_children(cx, surface);
+        let children = get_children(dh, surface);
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         // commit our state
         let current_txid = my_data.current_txid;
-        my_data.public_data.cached_state.commit(Some(current_txid), cx);
+        my_data.public_data.cached_state.commit(Some(current_txid), dh);
         // take all our children state into our pending transaction
         for child in children {
             let child_data_mutex = &child.data::<SurfaceUserData>().unwrap().inner;
@@ -207,7 +207,7 @@ impl PrivateSurfaceData {
             // release the mutex, as applying the transaction will try to lock it
             std::mem::drop(my_data);
             // apply the transaction
-            tx.finalize().apply(cx);
+            tx.finalize().apply(dh);
         }
     }
 

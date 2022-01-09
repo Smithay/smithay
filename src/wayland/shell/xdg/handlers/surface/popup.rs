@@ -22,7 +22,7 @@ where
         popup: &XdgPopup,
         request: xdg_popup::Request,
         data: &Self::UserData,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -39,7 +39,7 @@ where
 
                 XdgShellHandler::request(
                     state,
-                    cx,
+                    dh,
                     XdgRequest::Grab {
                         surface: handle,
                         seat,
@@ -62,7 +62,7 @@ where
 
                 XdgShellHandler::request(
                     state,
-                    cx,
+                    dh,
                     XdgRequest::RePosition {
                         surface: handle,
                         positioner: positioner_data,
@@ -75,7 +75,7 @@ where
     }
 }
 
-pub fn send_popup_configure(cx: &mut DisplayHandle<'_>, resource: &XdgPopup, configure: PopupConfigure) {
+pub fn send_popup_configure(dh: &mut DisplayHandle<'_>, resource: &XdgPopup, configure: PopupConfigure) {
     let data = resource.data::<XdgShellSurfaceUserData>().unwrap();
 
     let serial = configure.serial;
@@ -83,12 +83,12 @@ pub fn send_popup_configure(cx: &mut DisplayHandle<'_>, resource: &XdgPopup, con
 
     // Send repositioned if token is set
     if let Some(token) = configure.reposition_token {
-        resource.repositioned(cx, token);
+        resource.repositioned(dh, token);
     }
 
     // Send the popup configure
     resource.configure(
-        cx,
+        dh,
         geometry.loc.x,
         geometry.loc.y,
         geometry.size.w,
@@ -97,7 +97,7 @@ pub fn send_popup_configure(cx: &mut DisplayHandle<'_>, resource: &XdgPopup, con
 
     // Send the base xdg_surface configure event to mark
     // the configure as finished
-    data.xdg_surface.configure(cx, serial.into());
+    data.xdg_surface.configure(dh, serial.into());
 }
 
 pub fn make_popup_handle(resource: &XdgPopup) -> crate::wayland::shell::xdg::PopupSurface {

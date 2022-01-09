@@ -195,10 +195,10 @@ impl Transaction {
             })
     }
 
-    pub(crate) fn apply(self, cx: &mut DisplayHandle<'_>) {
+    pub(crate) fn apply(self, dh: &mut DisplayHandle<'_>) {
         for (surface, id) in self.surfaces {
             PrivateSurfaceData::with_states(&surface, |states| {
-                states.cached_state.apply_state(id, cx);
+                states.cached_state.apply_state(id, dh);
             })
         }
     }
@@ -217,7 +217,7 @@ impl TransactionQueue {
         self.transactions.push(t);
     }
 
-    pub(crate) fn apply_ready<D: 'static>(&mut self, cx: &mut DisplayHandle<'_>) {
+    pub(crate) fn apply_ready<D: 'static>(&mut self, dh: &mut DisplayHandle<'_>) {
         // this is a very non-optimized implementation
         // we just iterate over the queue of transactions, keeping track of which
         // surface we have seen as they encode transaction dependencies
@@ -243,7 +243,7 @@ impl TransactionQueue {
             // if not, does this transaction depend on any previous transaction?
             if !skip {
                 for (s, _) in &self.transactions[i].surfaces {
-                    if cx.object_info(s.id()).is_err() {
+                    if dh.object_info(s.id()).is_err() {
                         continue;
                     }
                     if self.seen_surfaces.contains(&s.id().protocol_id()) {
@@ -257,7 +257,7 @@ impl TransactionQueue {
                 // this transaction is not yet ready and should be skipped, add its surfaces to our
                 // seen list
                 for (s, _) in &self.transactions[i].surfaces {
-                    if cx.object_info(s.id()).is_err() {
+                    if dh.object_info(s.id()).is_err() {
                         continue;
                     }
                     self.seen_surfaces.insert(s.id().protocol_id());
@@ -265,7 +265,7 @@ impl TransactionQueue {
                 i += 1;
             } else {
                 // this transaction is to be applied, yay!
-                self.transactions.remove(i).apply(cx);
+                self.transactions.remove(i).apply(dh);
             }
         }
     }

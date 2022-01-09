@@ -27,7 +27,7 @@ pub(crate) struct SurfaceState {
 }
 
 impl SurfaceState {
-    pub fn update_buffer(&mut self, cx: &mut DisplayHandle<'_>, attrs: &mut SurfaceAttributes) {
+    pub fn update_buffer(&mut self, dh: &mut DisplayHandle<'_>, attrs: &mut SurfaceAttributes) {
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
@@ -35,7 +35,7 @@ impl SurfaceState {
                 self.buffer_scale = attrs.buffer_scale;
                 if let Some(old_buffer) = std::mem::replace(&mut self.buffer, Some(buffer)) {
                     if &old_buffer != self.buffer.as_ref().unwrap() {
-                        old_buffer.release(cx);
+                        old_buffer.release(dh);
                     }
                 }
                 self.texture = None;
@@ -47,7 +47,7 @@ impl SurfaceState {
                 // remove the contents
                 self.buffer_dimensions = None;
                 if let Some(buffer) = self.buffer.take() {
-                    buffer.release(cx);
+                    buffer.release(dh);
                 };
                 self.texture = None;
                 // #[cfg(feature = "desktop")]
@@ -67,8 +67,8 @@ impl SurfaceState {
 /// not be accessible anymore, but [`draw_surface_tree`] and other
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
-pub fn on_commit_buffer_handler(cx: &mut DisplayHandle<'_>, surface: &WlSurface) {
-    if !is_sync_subsurface(cx, surface) {
+pub fn on_commit_buffer_handler(dh: &mut DisplayHandle<'_>, surface: &WlSurface) {
+    if !is_sync_subsurface(dh, surface) {
         with_surface_tree_upward(
             surface,
             (),
@@ -82,7 +82,7 @@ pub fn on_commit_buffer_handler(cx: &mut DisplayHandle<'_>, surface: &WlSurface)
                     .get::<RefCell<SurfaceState>>()
                     .unwrap()
                     .borrow_mut();
-                data.update_buffer(cx, &mut *states.cached_state.current::<SurfaceAttributes>());
+                data.update_buffer(dh, &mut *states.cached_state.current::<SurfaceAttributes>());
             },
             |_, _, _| true,
         );

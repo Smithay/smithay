@@ -724,10 +724,10 @@ pub struct SurfaceCachedState {
 }
 
 impl Cacheable for SurfaceCachedState {
-    fn commit(&mut self, _cx: &mut DisplayHandle<'_>) -> Self {
+    fn commit(&mut self, _dh: &mut DisplayHandle<'_>) -> Self {
         *self
     }
-    fn merge_into(self, into: &mut Self, _cx: &mut DisplayHandle<'_>) {
+    fn merge_into(self, into: &mut Self, _dh: &mut DisplayHandle<'_>) {
         *into = self;
     }
 }
@@ -738,7 +738,7 @@ pub trait XdgShellHandler {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState;
 
     /// Xdg requests
-    fn request(&mut self, cx: &mut DisplayHandle<'_>, request: XdgRequest);
+    fn request(&mut self, dh: &mut DisplayHandle<'_>, request: XdgRequest);
 }
 
 #[derive(Debug)]
@@ -839,8 +839,8 @@ impl ShellClient {
     }
 
     /// Is the shell client represented by this handle still connected?
-    pub fn alive(&self, cx: &mut DisplayHandle<'_>) -> bool {
-        cx.object_info(self.kind.id()).is_ok()
+    pub fn alive(&self, dh: &mut DisplayHandle<'_>) -> bool {
+        dh.object_info(self.kind.id()).is_ok()
     }
 
     /// Send a ping request to this shell client
@@ -852,8 +852,8 @@ impl ShellClient {
     /// down to 0 before a pong is received, mark the client as unresponsive.
     ///
     /// Fails if this shell client already has a pending ping or is already dead.
-    pub fn send_ping(&self, cx: &mut DisplayHandle<'_>, serial: Serial) -> Result<(), PingError> {
-        if !self.alive(cx) {
+    pub fn send_ping(&self, dh: &mut DisplayHandle<'_>, serial: Serial) -> Result<(), PingError> {
+        if !self.alive(dh) {
             return Err(PingError::DeadSurface);
         }
         let user_data = self.kind.data::<self::handlers::XdgWmBaseUserData>().unwrap();
@@ -862,17 +862,17 @@ impl ShellClient {
             return Err(PingError::PingAlreadyPending(pending_ping));
         }
         guard.pending_ping = Some(serial);
-        self.kind.ping(cx, serial.into());
+        self.kind.ping(dh, serial.into());
 
         Ok(())
     }
 
     /// Access the user data associated with this shell client
-    pub fn with_data<F, T>(&self, cx: &mut DisplayHandle<'_>, f: F) -> Result<T, crate::utils::DeadResource>
+    pub fn with_data<F, T>(&self, dh: &mut DisplayHandle<'_>, f: F) -> Result<T, crate::utils::DeadResource>
     where
         F: FnOnce(&mut UserDataMap) -> T,
     {
-        if !self.alive(cx) {
+        if !self.alive(dh) {
             return Err(crate::utils::DeadResource);
         }
         let data = self.kind.data::<self::handlers::XdgWmBaseUserData>().unwrap();
@@ -897,9 +897,9 @@ impl std::cmp::PartialEq for ToplevelSurface {
 
 impl ToplevelSurface {
     /// Is the toplevel surface referred by this handle still alive?
-    pub fn alive(&self, cx: &mut DisplayHandle<'_>) -> bool {
-        let a = cx.object_info(self.shell_surface.id()).is_ok();
-        let b = cx.object_info(self.wl_surface.id()).is_ok();
+    pub fn alive(&self, dh: &mut DisplayHandle<'_>) -> bool {
+        let a = dh.object_info(self.shell_surface.id()).is_ok();
+        let b = dh.object_info(self.wl_surface.id()).is_ok();
         a && b
     }
 
@@ -911,8 +911,8 @@ impl ToplevelSurface {
     /// Retrieve the shell client owning this toplevel surface
     ///
     /// Returns `None` if the surface does actually no longer exist.
-    pub fn client(&self, cx: &mut DisplayHandle<'_>) -> Option<ShellClient> {
-        if !self.alive(cx) {
+    pub fn client(&self, dh: &mut DisplayHandle<'_>) -> Option<ShellClient> {
+        if !self.alive(dh) {
             return None;
         }
 
@@ -957,8 +957,8 @@ impl ToplevelSurface {
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure(&self, cx: &mut DisplayHandle<'_>) {
-        if let Some(surface) = self.get_surface(cx) {
+    pub fn send_configure(&self, dh: &mut DisplayHandle<'_>) {
+        if let Some(surface) = self.get_surface(dh) {
             let configure = compositor::with_states(surface, |states| {
                 let mut attributes = states
                     .data_map
@@ -1003,7 +1003,7 @@ impl ToplevelSurface {
                     }
                 }
 
-                self::handlers::send_toplevel_configure(cx, &self.shell_surface, configure)
+                self::handlers::send_toplevel_configure(dh, &self.shell_surface, configure)
             }
         }
     }
@@ -1035,8 +1035,8 @@ impl ToplevelSurface {
     ///
     /// `xdg_shell` mandates that a client acks a configure before committing
     /// anything.
-    pub fn ensure_configured(&self, cx: &mut DisplayHandle<'_>) -> bool {
-        if !self.alive(cx) {
+    pub fn ensure_configured(&self, dh: &mut DisplayHandle<'_>) -> bool {
+        if !self.alive(dh) {
             return false;
         }
         let configured = compositor::with_states(&self.wl_surface, |states| {
@@ -1055,7 +1055,7 @@ impl ToplevelSurface {
                 .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.xdg_surface.post_error(
-                cx,
+                dh,
                 xdg_surface::Error::NotConstructed,
                 "Surface has not been configured yet.",
             );
@@ -1064,15 +1064,15 @@ impl ToplevelSurface {
     }
 
     /// Send a "close" event to the client
-    pub fn send_close(&self, cx: &mut DisplayHandle<'_>) {
-        self.shell_surface.close(cx)
+    pub fn send_close(&self, dh: &mut DisplayHandle<'_>) {
+        self.shell_surface.close(dh)
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface
     ///
     /// Returns `None` if the toplevel surface actually no longer exists.
-    pub fn get_surface(&self, cx: &mut DisplayHandle<'_>) -> Option<&wl_surface::WlSurface> {
-        if self.alive(cx) {
+    pub fn get_surface(&self, dh: &mut DisplayHandle<'_>) -> Option<&wl_surface::WlSurface> {
+        if self.alive(dh) {
             Some(&self.wl_surface)
         } else {
             None
@@ -1086,11 +1086,11 @@ impl ToplevelSurface {
     /// for example after a resize request from the client.
     ///
     /// The state will be sent to the client when calling [`send_configure`](#method.send_configure).
-    pub fn with_pending_state<F, T>(&self, cx: &mut DisplayHandle<'_>, f: F) -> Result<T, DeadResource>
+    pub fn with_pending_state<F, T>(&self, dh: &mut DisplayHandle<'_>, f: F) -> Result<T, DeadResource>
     where
         F: FnOnce(&mut ToplevelState) -> T,
     {
-        if !self.alive(cx) {
+        if !self.alive(dh) {
             return Err(DeadResource);
         }
 
@@ -1115,8 +1115,8 @@ impl ToplevelSurface {
     ///
     /// Returns `None` if the underlying surface has been
     /// destroyed
-    pub fn current_state(&self, cx: &mut DisplayHandle<'_>) -> Option<ToplevelState> {
-        if !self.alive(cx) {
+    pub fn current_state(&self, dh: &mut DisplayHandle<'_>) -> Option<ToplevelState> {
+        if !self.alive(dh) {
             return None;
         }
 
@@ -1145,9 +1145,9 @@ impl ToplevelSurface {
     /// The parent must be another toplevel equivalent surface.
     ///
     /// If the parent is `None`, the parent-child relationship is removed.
-    pub fn set_parent(&self, cx: &mut DisplayHandle<'_>, parent: Option<wl_surface::WlSurface>) -> bool {
+    pub fn set_parent(&self, dh: &mut DisplayHandle<'_>, parent: Option<wl_surface::WlSurface>) -> bool {
         if let Some(parent) = parent {
-            if !is_toplevel_equivalent(cx, &parent) {
+            if !is_toplevel_equivalent(dh, &parent) {
                 return false;
             }
         }
@@ -1193,17 +1193,17 @@ impl std::cmp::PartialEq for PopupSurface {
 
 impl PopupSurface {
     /// Is the popup surface referred by this handle still alive?
-    pub fn alive(&self, cx: &mut DisplayHandle<'_>) -> bool {
-        let a = cx.object_info(self.shell_surface.id()).is_ok();
-        let b = cx.object_info(self.wl_surface.id()).is_ok();
+    pub fn alive(&self, dh: &mut DisplayHandle<'_>) -> bool {
+        let a = dh.object_info(self.shell_surface.id()).is_ok();
+        let b = dh.object_info(self.wl_surface.id()).is_ok();
 
         a && b
     }
 
     /// Gets a reference of the parent WlSurface of
     /// this popup.
-    pub fn get_parent_surface(&self, cx: &mut DisplayHandle<'_>) -> Option<wl_surface::WlSurface> {
-        if !self.alive(cx) {
+    pub fn get_parent_surface(&self, dh: &mut DisplayHandle<'_>) -> Option<wl_surface::WlSurface> {
+        if !self.alive(dh) {
             None
         } else {
             compositor::with_states(&self.wl_surface, |states| {
@@ -1223,8 +1223,8 @@ impl PopupSurface {
     /// Retrieve the shell client owning this popup surface
     ///
     /// Returns `None` if the surface does actually no longer exist.
-    pub fn client(&self, cx: &mut DisplayHandle<'_>) -> Option<ShellClient> {
-        if !self.alive(cx) {
+    pub fn client(&self, dh: &mut DisplayHandle<'_>) -> Option<ShellClient> {
+        if !self.alive(dh) {
             return None;
         }
 
@@ -1246,8 +1246,8 @@ impl PopupSurface {
 
     /// Internal configure function to re-use the configure
     /// logic for both [`XdgRequest::send_configure`] and [`XdgRequest::send_repositioned`]
-    fn send_configure_internal(&self, cx: &mut DisplayHandle<'_>, reposition_token: Option<u32>) {
-        if let Some(surface) = self.get_surface(cx) {
+    fn send_configure_internal(&self, dh: &mut DisplayHandle<'_>, reposition_token: Option<u32>) {
+        if let Some(surface) = self.get_surface(dh) {
             let next_configure = compositor::with_states(surface, |states| {
                 let mut attributes = states
                     .data_map
@@ -1281,7 +1281,7 @@ impl PopupSurface {
             })
             .unwrap_or(None);
             if let Some(configure) = next_configure {
-                self::handlers::send_popup_configure(cx, &self.shell_surface, configure);
+                self::handlers::send_popup_configure(dh, &self.shell_surface, configure);
             }
         }
     }
@@ -1296,8 +1296,8 @@ impl PopupSurface {
     /// Returns [`Err(PopupConfigureError)`] if the initial configure has already been sent and
     /// the client protocol version disallows a re-configure or the current [`PositionerState`]
     /// is not reactive
-    pub fn send_configure(&self, cx: &mut DisplayHandle<'_>) -> Result<(), PopupConfigureError> {
-        if let Some(surface) = self.get_surface(cx) {
+    pub fn send_configure(&self, dh: &mut DisplayHandle<'_>) -> Result<(), PopupConfigureError> {
+        if let Some(surface) = self.get_surface(dh) {
             // Check if we are allowed to send a configure
             compositor::with_states(surface, |states| {
                 let attributes = states
@@ -1324,7 +1324,7 @@ impl PopupSurface {
             })
             .unwrap_or(Ok(()))?;
 
-            self.send_configure_internal(cx, None);
+            self.send_configure_internal(dh, None);
         }
 
         Ok(())
@@ -1334,8 +1334,8 @@ impl PopupSurface {
     /// in response to a `reposition` request.
     ///
     /// For further information see [`send_configure`](#method.send_configure)
-    pub fn send_repositioned(&self, cx: &mut DisplayHandle<'_>, token: u32) {
-        self.send_configure_internal(cx, Some(token))
+    pub fn send_repositioned(&self, dh: &mut DisplayHandle<'_>, token: u32) {
+        self.send_configure_internal(dh, Some(token))
     }
 
     /// Handles the role specific commit logic
@@ -1361,7 +1361,7 @@ impl PopupSurface {
             let _data = handle.data::<self::handlers::XdgShellSurfaceUserData>().unwrap();
             // TODO:
             // data.xdg_surface.post_error(
-            //     cx,
+            //     dh,
             //     xdg_surface::Error::NotConstructed,
             //     "Surface has not been configured yet.",
             // );
@@ -1395,8 +1395,8 @@ impl PopupSurface {
     ///
     /// xdg_shell mandates that a client acks a configure before committing
     /// anything.
-    pub fn ensure_configured(&self, cx: &mut DisplayHandle<'_>) -> bool {
-        if !self.alive(cx) {
+    pub fn ensure_configured(&self, dh: &mut DisplayHandle<'_>) -> bool {
+        if !self.alive(dh) {
             return false;
         }
         let configured = compositor::with_states(&self.wl_surface, |states| {
@@ -1415,7 +1415,7 @@ impl PopupSurface {
                 .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.xdg_surface.post_error(
-                cx,
+                dh,
                 xdg_surface::Error::NotConstructed,
                 "Surface has not been configured yet.",
             );
@@ -1427,19 +1427,19 @@ impl PopupSurface {
     ///
     /// It means that the use has dismissed the popup surface, or that
     /// the pointer has left the area of popup grab if there was a grab.
-    pub fn send_popup_done(&self, cx: &mut DisplayHandle<'_>) {
-        if !self.alive(cx) {
+    pub fn send_popup_done(&self, dh: &mut DisplayHandle<'_>) {
+        if !self.alive(dh) {
             return;
         }
 
-        self.shell_surface.popup_done(cx);
+        self.shell_surface.popup_done(dh);
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface
     ///
     /// Returns `None` if the popup surface actually no longer exists.
-    pub fn get_surface(&self, cx: &mut DisplayHandle<'_>) -> Option<&wl_surface::WlSurface> {
-        if self.alive(cx) {
+    pub fn get_surface(&self, dh: &mut DisplayHandle<'_>) -> Option<&wl_surface::WlSurface> {
+        if self.alive(dh) {
             Some(&self.wl_surface)
         } else {
             None
@@ -1453,11 +1453,11 @@ impl PopupSurface {
     /// for example after a move of the parent toplevel.
     ///
     /// The state will be sent to the client when calling [`send_configure`](#method.send_configure).
-    pub fn with_pending_state<F, T>(&self, cx: &mut DisplayHandle<'_>, f: F) -> Result<T, DeadResource>
+    pub fn with_pending_state<F, T>(&self, dh: &mut DisplayHandle<'_>, f: F) -> Result<T, DeadResource>
     where
         F: FnOnce(&mut PopupState) -> T,
     {
-        if !self.alive(cx) {
+        if !self.alive(dh) {
             return Err(DeadResource);
         }
 

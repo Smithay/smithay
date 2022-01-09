@@ -110,7 +110,7 @@ where
  */
 
 impl Cacheable for SurfaceAttributes {
-    fn commit(&mut self, _cx: &mut DisplayHandle<'_>) -> Self {
+    fn commit(&mut self, _dh: &mut DisplayHandle<'_>) -> Self {
         SurfaceAttributes {
             buffer: self.buffer.take(),
             buffer_scale: self.buffer_scale,
@@ -121,12 +121,12 @@ impl Cacheable for SurfaceAttributes {
             frame_callbacks: std::mem::take(&mut self.frame_callbacks),
         }
     }
-    fn merge_into(self, into: &mut Self, cx: &mut DisplayHandle<'_>) {
+    fn merge_into(self, into: &mut Self, dh: &mut DisplayHandle<'_>) {
         if self.buffer.is_some() {
             if let Some(BufferAssignment::NewBuffer { buffer, .. }) =
                 std::mem::replace(&mut into.buffer, self.buffer)
             {
-                buffer.release(cx);
+                buffer.release(dh);
             }
         }
         into.buffer_scale = self.buffer_scale;
@@ -451,13 +451,13 @@ impl Default for SubsurfaceCachedState {
 }
 
 impl Cacheable for SubsurfaceCachedState {
-    fn commit(&mut self, _cx: &mut DisplayHandle<'_>) -> Self {
+    fn commit(&mut self, _dh: &mut DisplayHandle<'_>) -> Self {
         Self {
             location: self.location,
         }
     }
 
-    fn merge_into(self, into: &mut Self, _cx: &mut DisplayHandle<'_>) {
+    fn merge_into(self, into: &mut Self, _dh: &mut DisplayHandle<'_>) {
         into.location = self.location;
     }
 }
