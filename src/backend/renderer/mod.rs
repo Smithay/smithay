@@ -219,6 +219,9 @@ pub trait Frame {
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error>;
+
+    /// Output transformation that is applied to this frame
+    fn transformation(&self) -> Transform;
 }
 
 /// Abstraction of commonly used rendering operations for compositors.

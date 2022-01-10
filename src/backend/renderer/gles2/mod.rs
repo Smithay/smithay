@@ -186,6 +186,7 @@ pub struct Gles2Renderer {
 /// Handle to the currently rendered frame during [`Gles2Renderer::render`](Renderer::render)
 pub struct Gles2Frame {
     current_projection: Matrix3<f32>,
+    transform: Transform,
     gl: ffi::Gles2,
     tex_programs: [Gles2TexProgram; shaders::FRAGMENT_COUNT],
     solid_program: Gles2SolidProgram,
@@ -1129,6 +1130,7 @@ impl Renderer for Gles2Renderer {
             solid_program: self.solid_program.clone(),
             // output transformation passed in by the user
             current_projection: flip180 * transform.matrix() * renderer,
+            transform,
             vbos: self.vbos,
             size,
         };
@@ -1317,6 +1319,10 @@ impl Frame for Gles2Frame {
             .collect::<Vec<_>>();
 
         self.render_texture(texture, mat, Some(&damage), tex_verts, alpha)
+    }
+
+    fn transformation(&self) -> Transform {
+        self.transform
     }
 }
 

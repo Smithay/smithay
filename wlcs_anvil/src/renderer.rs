@@ -112,6 +112,10 @@ impl Frame for DummyFrame {
     ) -> Result<(), Self::Error> {
         Ok(())
     }
+
+    fn transformation(&self) -> Transform {
+        Transform::Normal
+    }
 }
 
 pub struct DummyTexture {
