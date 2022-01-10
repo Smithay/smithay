@@ -108,6 +108,36 @@ impl Transform {
             size
         }
     }
+
+    /// Transforms a rectangle inside an area of a given size by applying this transformation
+    pub fn transform_rect_in<N: Coordinate, Kind>(
+        &self,
+        rect: Rectangle<N, Kind>,
+        area: &Size<N, Kind>,
+    ) -> Rectangle<N, Kind> {
+        let size = self.transform_size(rect.size);
+
+        let loc = match *self {
+            Transform::Normal => rect.loc,
+            Transform::_90 => (area.h - rect.loc.y - rect.size.h, rect.loc.x).into(),
+            Transform::_180 => (
+                area.w - rect.loc.x - rect.size.w,
+                area.h - rect.loc.y - rect.size.h,
+            )
+                .into(),
+            Transform::_270 => (rect.loc.y, area.w - rect.loc.x - rect.size.w).into(),
+            Transform::Flipped => (area.w - rect.loc.x - rect.size.w, rect.loc.y).into(),
+            Transform::Flipped90 => (rect.loc.y, rect.loc.x).into(),
+            Transform::Flipped180 => (rect.loc.x, area.h - rect.loc.y - rect.size.h).into(),
+            Transform::Flipped270 => (
+                area.h - rect.loc.y - rect.size.h,
+                area.w - rect.loc.x - rect.size.w,
+            )
+                .into(),
+        };
+
+        Rectangle::from_loc_and_size(loc, size)
+    }
 }
 
 #[cfg(feature = "wayland_frontend")]
@@ -529,4 +559,103 @@ pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Physi
     }
 
     crate::wayland::shm::with_buffer_contents(buffer, |_, data| (data.width, data.height).into()).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Transform;
+    use crate::utils::{Logical, Rectangle, Size};
+
+    #[test]
+    fn transform_rect_ident() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::Normal;
+
+        assert_eq!(rect, transform.transform_rect_in(rect, &size))
+    }
+
+    #[test]
+    fn transform_rect_90() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::_90;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((30, 10), (40, 30)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
+
+    #[test]
+    fn transform_rect_180() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::_180;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((30, 30), (30, 40)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
+
+    #[test]
+    fn transform_rect_270() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::_270;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((20, 30), (40, 30)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
+
+    #[test]
+    fn transform_rect_f() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::Flipped;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((30, 20), (30, 40)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
+
+    #[test]
+    fn transform_rect_f90() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 80));
+        let transform = Transform::Flipped90;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((20, 10), (40, 30)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
+
+    #[test]
+    fn transform_rect_f180() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::Flipped180;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((10, 30), (30, 40)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
+
+    #[test]
+    fn transform_rect_f270() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::Flipped270;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((30, 30), (40, 30)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
 }
