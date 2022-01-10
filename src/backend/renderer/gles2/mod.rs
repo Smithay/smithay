@@ -178,6 +178,8 @@ pub struct Gles2Renderer {
     // This field is only accessed if the image or wayland_frontend features are active
     #[allow(dead_code)]
     destruction_callback_sender: Sender<CleanupResource>,
+    min_filter: TextureFilter,
+    max_filter: TextureFilter,
     logger_ptr: Option<*mut ::slog::Logger>,
     logger: ::slog::Logger,
     _not_send: *mut (),
@@ -192,6 +194,8 @@ pub struct Gles2Frame {
     solid_program: Gles2SolidProgram,
     vbos: [ffi::types::GLuint; 2],
     size: Size<i32, Physical>,
+    min_filter: TextureFilter,
+    max_filter: TextureFilter,
 }
 
 impl fmt::Debug for Gles2Frame {
@@ -201,6 +205,8 @@ impl fmt::Debug for Gles2Frame {
             .field("tex_programs", &self.tex_programs)
             .field("solid_program", &self.solid_program)
             .field("size", &self.size)
+            .field("min_filter", &self.min_filter)
+            .field("max_filter", &self.max_filter)
             .finish_non_exhaustive()
     }
 }
@@ -216,6 +222,8 @@ impl fmt::Debug for Gles2Renderer {
             .field("solid_program", &self.solid_program)
             // ffi::Gles2 does not implement Debug
             .field("egl", &self.egl)
+            .field("min_filter", &self.min_filter)
+            .field("max_filter", &self.max_filter)
             .field("logger", &self.logger)
             .finish()
     }
@@ -522,7 +530,7 @@ impl Gles2Renderer {
         gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
 
         let (tx, rx) = channel();
-        let mut renderer = Gles2Renderer {
+        let renderer = Gles2Renderer {
             gl,
             egl: context,
             #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
@@ -538,12 +546,12 @@ impl Gles2Renderer {
             destruction_callback: rx,
             destruction_callback_sender: tx,
             vbos,
+            min_filter: TextureFilter::Nearest,
+            max_filter: TextureFilter::Linear,
             logger_ptr,
             logger: log,
             _not_send: std::ptr::null_mut(),
         };
-        renderer.downscale_filter(TextureFilter::Nearest)?;
-        renderer.upscale_filter(TextureFilter::Linear)?;
         renderer.egl.unbind()?;
         Ok(renderer)
     }
@@ -636,7 +644,6 @@ impl ImportShm for Gles2Renderer {
 
             unsafe {
                 self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
-
                 self.gl
                     .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
                 self.gl
@@ -1053,31 +1060,11 @@ impl Renderer for Gles2Renderer {
     type Frame = Gles2Frame;
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
-        self.make_current()?;
-        unsafe {
-            self.gl.TexParameteri(
-                ffi::TEXTURE_2D,
-                ffi::TEXTURE_MIN_FILTER,
-                match filter {
-                    TextureFilter::Nearest => ffi::NEAREST as i32,
-                    TextureFilter::Linear => ffi::LINEAR as i32,
-                },
-            );
-        }
+        self.min_filter = filter;
         Ok(())
     }
     fn upscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
-        self.make_current()?;
-        unsafe {
-            self.gl.TexParameteri(
-                ffi::TEXTURE_2D,
-                ffi::TEXTURE_MAG_FILTER,
-                match filter {
-                    TextureFilter::Nearest => ffi::NEAREST as i32,
-                    TextureFilter::Linear => ffi::LINEAR as i32,
-                },
-            );
-        }
+        self.max_filter = filter;
         Ok(())
     }
 
@@ -1133,6 +1120,8 @@ impl Renderer for Gles2Renderer {
             transform,
             vbos: self.vbos,
             size,
+            min_filter: self.min_filter,
+            max_filter: self.max_filter,
         };
 
         let result = rendering(self, &mut frame);
@@ -1350,8 +1339,22 @@ impl Gles2Frame {
         unsafe {
             self.gl.ActiveTexture(ffi::TEXTURE0);
             self.gl.BindTexture(target, tex.0.texture);
-            self.gl
-                .TexParameteri(target, ffi::TEXTURE_MIN_FILTER, ffi::LINEAR as i32);
+            self.gl.TexParameteri(
+                ffi::TEXTURE_2D,
+                ffi::TEXTURE_MIN_FILTER,
+                match self.min_filter {
+                    TextureFilter::Nearest => ffi::NEAREST as i32,
+                    TextureFilter::Linear => ffi::LINEAR as i32,
+                },
+            );
+            self.gl.TexParameteri(
+                ffi::TEXTURE_2D,
+                ffi::TEXTURE_MAG_FILTER,
+                match self.max_filter {
+                    TextureFilter::Nearest => ffi::NEAREST as i32,
+                    TextureFilter::Linear => ffi::LINEAR as i32,
+                },
+            );
             self.gl.UseProgram(self.tex_programs[tex.0.texture_kind].program);
 
             self.gl
