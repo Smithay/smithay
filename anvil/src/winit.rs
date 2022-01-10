@@ -168,24 +168,57 @@ pub fn run_winit(log: Logger) {
                 .and_then(|_| {
                     backend
                         .renderer()
-                        .render(size, Transform::Flipped180, |renderer, frame| {
-                            render_layers_and_windows(
-                                renderer,
-                                frame,
-                                &*state.window_map.borrow(),
-                                output_geometry,
-                                output_scale,
-                                &log,
-                            )?;
+                        .render(
+                            output_geometry
+                                .size
+                                .to_f64()
+                                .to_physical(output_scale as f64)
+                                .to_i32_round(),
+                            Transform::Flipped180,
+                            |renderer, frame| {
+                                render_layers_and_windows(
+                                    renderer,
+                                    frame,
+                                    &*state.window_map.borrow(),
+                                    output_geometry,
+                                    output_scale,
+                                    &log,
+                                )?;
 
-                            let (x, y) = state.pointer_location.into();
+                                let (x, y) = state.pointer_location.into();
 
-                            // draw the dnd icon if any
-                            {
-                                let guard = state.dnd_icon.lock().unwrap();
-                                if let Some(ref surface) = *guard {
-                                    if surface.as_ref().is_alive() {
-                                        draw_dnd_icon(
+                                // draw the dnd icon if any
+                                {
+                                    let guard = state.dnd_icon.lock().unwrap();
+                                    if let Some(ref surface) = *guard {
+                                        if surface.as_ref().is_alive() {
+                                            draw_dnd_icon(
+                                                renderer,
+                                                frame,
+                                                surface,
+                                                (x as i32, y as i32).into(),
+                                                output_scale,
+                                                &log,
+                                            )?;
+                                        }
+                                    }
+                                }
+                                // draw the cursor as relevant
+                                {
+                                    let mut guard = state.cursor_status.lock().unwrap();
+                                    // reset the cursor if the surface is no longer alive
+                                    let mut reset = false;
+                                    if let CursorImageStatus::Image(ref surface) = *guard {
+                                        reset = !surface.as_ref().is_alive();
+                                    }
+                                    if reset {
+                                        *guard = CursorImageStatus::Default;
+                                    }
+
+                                    // draw as relevant
+                                    if let CursorImageStatus::Image(ref surface) = *guard {
+                                        cursor_visible = false;
+                                        draw_cursor(
                                             renderer,
                                             frame,
                                             surface,
@@ -193,52 +226,27 @@ pub fn run_winit(log: Logger) {
                                             output_scale,
                                             &log,
                                         )?;
+                                    } else {
+                                        cursor_visible = true;
                                     }
                                 }
-                            }
-                            // draw the cursor as relevant
-                            {
-                                let mut guard = state.cursor_status.lock().unwrap();
-                                // reset the cursor if the surface is no longer alive
-                                let mut reset = false;
-                                if let CursorImageStatus::Image(ref surface) = *guard {
-                                    reset = !surface.as_ref().is_alive();
-                                }
-                                if reset {
-                                    *guard = CursorImageStatus::Default;
-                                }
 
-                                // draw as relevant
-                                if let CursorImageStatus::Image(ref surface) = *guard {
-                                    cursor_visible = false;
-                                    draw_cursor(
+                                #[cfg(feature = "debug")]
+                                {
+                                    let fps = state.backend_data.fps.avg().round() as u32;
+
+                                    draw_fps(
                                         renderer,
                                         frame,
-                                        surface,
-                                        (x as i32, y as i32).into(),
-                                        output_scale,
-                                        &log,
+                                        &state.backend_data.fps_texture,
+                                        output_scale as f64,
+                                        fps,
                                     )?;
-                                } else {
-                                    cursor_visible = true;
                                 }
-                            }
 
-                            #[cfg(feature = "debug")]
-                            {
-                                let fps = state.backend_data.fps.avg().round() as u32;
-
-                                draw_fps(
-                                    renderer,
-                                    frame,
-                                    &state.backend_data.fps_texture,
-                                    output_scale as f64,
-                                    fps,
-                                )?;
-                            }
-
-                            Ok(())
-                        })
+                                Ok(())
+                            },
+                        )
                         .map_err(Into::<SwapBuffersError>::into)
                         .and_then(|x| x)
                 })
