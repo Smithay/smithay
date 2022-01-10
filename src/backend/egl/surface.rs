@@ -172,6 +172,16 @@ impl EGLSurface {
     pub fn resize(&self, width: i32, height: i32, dx: i32, dy: i32) -> bool {
         self.native.resize(width, height, dx, dy)
     }
+
+    /// Get a raw handle to the underlying surface
+    ///
+    /// *Note*: The surface might get dynamically recreated during swap-buffers
+    /// causing the pointer to become invalid.
+    ///
+    /// The pointer will become invalid, when this struct is destroyed.
+    pub fn get_surface_handle(&self) -> ffi::egl::types::EGLSurface {
+        self.surface.load(Ordering::SeqCst)
+    }
 }
 
 impl Drop for EGLSurface {

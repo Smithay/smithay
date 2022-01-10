@@ -264,6 +264,13 @@ impl EGLContext {
     pub fn user_data(&self) -> &UserDataMap {
         &*self.user_data
     }
+
+    /// Get a raw handle to the underlying context.
+    ///
+    /// The pointer will become invalid, when this struct is destroyed.
+    pub fn get_context_handle(&self) -> ffi::egl::types::EGLContext {
+        self.context
+    }
 }
 
 impl Drop for EGLContext {
