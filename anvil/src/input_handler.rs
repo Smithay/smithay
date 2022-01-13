@@ -158,7 +158,7 @@ impl<Backend> AnvilState<Backend> {
         if !self.pointer.is_grabbed() {
             let mut space = self.space.borrow_mut();
 
-            if let Some(output) = space.output_under(self.pointer_location) {
+            if let Some(output) = space.output_under(self.pointer_location).next() {
                 let output_geo = space.output_geometry(output).unwrap();
                 if let Some(window) = output
                     .user_data()
@@ -201,7 +201,7 @@ impl<Backend> AnvilState<Backend> {
                 return;
             }
 
-            if let Some(output) = space.output_under(self.pointer_location) {
+            if let Some(output) = space.output_under(self.pointer_location).next() {
                 let output_geo = space.output_geometry(output).unwrap();
                 let layers = layer_map_for_output(output);
                 if let Some(layer) = layers
@@ -219,7 +219,7 @@ impl<Backend> AnvilState<Backend> {
                         self.keyboard.set_focus(surface.as_ref(), serial);
                     }
                 }
-            }
+            };
         }
     }
 

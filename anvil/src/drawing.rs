@@ -125,7 +125,7 @@ where
     }
 
     fn accumulated_damage(&self, _: Option<SpaceOutputTuple<'_, '_>>) -> Vec<Rectangle<i32, Logical>> {
-        vec![] //Rectangle::from_loc_and_size((0, 0), self.size)]
+        vec![Rectangle::from_loc_and_size((0, 0), self.size)]
     }
 
     fn draw(
@@ -185,7 +185,7 @@ where
     }
 
     fn accumulated_damage(&self, _: Option<SpaceOutputTuple<'_, '_>>) -> Vec<Rectangle<i32, Logical>> {
-        vec![RenderElement::<R, F, E, T>::geometry(self)]
+        vec![Rectangle::from_loc_and_size((0, 0), (24 * 3, 35))]
     }
 
     fn draw(

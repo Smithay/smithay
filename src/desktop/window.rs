@@ -32,7 +32,7 @@ pub enum Kind {
 /// TODO
 #[derive(Debug, Clone)]
 pub struct X11Surface {
-    surface: wl_surface::WlSurface,
+    pub surface: wl_surface::WlSurface,
 }
 
 impl std::cmp::PartialEq for X11Surface {

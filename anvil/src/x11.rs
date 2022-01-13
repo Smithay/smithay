@@ -304,13 +304,10 @@ pub fn run_x11(log: Logger) {
                     .map(|x| x.is_some())
             };
             match render_res {
-                Ok(true) => {
+                Ok(_) => {
                     slog::trace!(log, "Finished rendering");
                     backend_data.surface.submit();
                     state.backend_data.render = false;
-                }
-                Ok(false) => {
-                    let _ = renderer.unbind();
                 }
                 Err(err) => {
                     backend_data.surface.reset_buffers();
