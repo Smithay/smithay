@@ -20,6 +20,7 @@ macro_rules! id_gen {
                         while ids.iter().any(|k| *k == id) {
                             id += 1;
                         }
+                        id += 1;
                         Some(id)
                     },
                 );
