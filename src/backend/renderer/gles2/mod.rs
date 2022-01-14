@@ -1295,13 +1295,19 @@ impl Frame for Gles2Frame {
                 let rect_constrained_loc = rect
                     .loc
                     .constrain(Rectangle::from_extemities((0f64, 0f64), dest.size.to_point()));
-                let rect_clamped_size = rect.size.clamp((0f64, 0f64), dest.size);
+                let rect_clamped_size = rect.size.clamp(
+                    (0f64, 0f64),
+                    (dest.size.to_point() - rect_constrained_loc).to_size(),
+                );
+
+                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                let rect_transformed = self.transformation().transform_rect_in(rect, &dest.size);
 
                 [
-                    (rect_constrained_loc.x / dest.size.w) as f32,
-                    (rect_constrained_loc.y / dest.size.h) as f32,
-                    (rect_clamped_size.w / dest.size.w) as f32,
-                    (rect_clamped_size.h / dest.size.h) as f32,
+                    (rect_transformed.loc.x / dest.size.w) as f32,
+                    (rect_transformed.loc.y / dest.size.h) as f32,
+                    (rect_transformed.size.w / dest.size.w) as f32,
+                    (rect_transformed.size.h / dest.size.h) as f32,
                 ]
             })
             .flatten()
