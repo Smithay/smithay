@@ -447,7 +447,7 @@ fn imported_implementation(
                 .map(|export| export.surface.clone())
                 .unwrap();
 
-            toplevel_surface.set_parent(Some(imported_parent));
+            toplevel_surface.set_parent(Some(&imported_parent));
         }
 
         _ => unreachable!(),
