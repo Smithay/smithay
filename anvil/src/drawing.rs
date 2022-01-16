@@ -7,9 +7,11 @@ use image::{ImageBuffer, Rgba};
 use slog::Logger;
 #[cfg(feature = "image")]
 use smithay::backend::renderer::gles2::{Gles2Error, Gles2Renderer, Gles2Texture};
+#[cfg(feature = "debug")]
+use smithay::utils::Transform;
 use smithay::{
     backend::{
-        renderer::{buffer_type, BufferType, Frame, ImportAll, Renderer, Texture, Transform},
+        renderer::{buffer_type, BufferType, Frame, ImportAll, Renderer, Texture},
         SwapBuffersError,
     },
     reexports::wayland_server::protocol::{wl_buffer, wl_surface},
@@ -111,7 +113,11 @@ where
                             .map(|dmg| match dmg {
                                 Damage::Buffer(rect) => *rect,
                                 // TODO also apply transformations
-                                Damage::Surface(rect) => rect.to_buffer(attributes.buffer_scale),
+                                Damage::Surface(rect) => rect.to_buffer(
+                                    attributes.buffer_scale,
+                                    attributes.buffer_transform.into(),
+                                    &data.size().unwrap(),
+                                ),
                             })
                             .collect::<Vec<_>>();
 
@@ -161,6 +167,7 @@ where
             if let Some(data) = states.data_map.get::<RefCell<SurfaceData>>() {
                 let mut data = data.borrow_mut();
                 let buffer_scale = data.buffer_scale;
+                let buffer_transform = data.buffer_transform;
                 if let Some(texture) = data
                     .texture
                     .as_mut()
@@ -177,7 +184,7 @@ where
                         location.to_f64().to_physical(output_scale as f64).to_i32_round(),
                         buffer_scale,
                         output_scale as f64,
-                        Transform::Normal, /* TODO */
+                        buffer_transform,
                         &[Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX))],
                         1.0,
                     ) {

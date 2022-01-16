@@ -11,7 +11,7 @@ use smithay::{backend::renderer::ImportDma, wayland::dmabuf::init_dmabuf_global}
 use smithay::{
     backend::{
         egl::{EGLContext, EGLDisplay},
-        renderer::{gles2::Gles2Renderer, Bind, ImportEgl, Renderer, Transform, Unbind},
+        renderer::{gles2::Gles2Renderer, Bind, ImportEgl, Renderer, Unbind},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
         SwapBuffersError,
     },
@@ -20,6 +20,7 @@ use smithay::{
         gbm,
         wayland_server::{protocol::wl_output, Display},
     },
+    utils::Transform,
     wayland::{
         output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,
