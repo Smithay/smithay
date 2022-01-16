@@ -3,7 +3,7 @@
 use crate::{
     backend::renderer::utils::SurfaceState,
     desktop::Space,
-    utils::{Logical, Point, Rectangle, Size},
+    utils::{Logical, Point, Rectangle},
     wayland::{
         compositor::{
             with_surface_tree_downward, with_surface_tree_upward, Damage, SubsurfaceCachedState,
@@ -17,15 +17,9 @@ use wayland_server::protocol::wl_surface;
 use std::cell::RefCell;
 
 impl SurfaceState {
-    /// Returns the size of the surface.
-    pub fn size(&self) -> Option<Size<i32, Logical>> {
-        self.buffer_dimensions
-            .map(|dims| dims.to_logical(self.buffer_scale))
-    }
-
     fn contains_point<P: Into<Point<f64, Logical>>>(&self, attrs: &SurfaceAttributes, point: P) -> bool {
         let point = point.into();
-        let size = match self.size() {
+        let size = match self.surface_size() {
             None => return false, // If the surface has no size, it can't have an input region.
             Some(size) => size,
         };
@@ -71,7 +65,7 @@ where
             let mut loc = *loc;
             let data = states.data_map.get::<RefCell<SurfaceState>>();
 
-            if let Some(size) = data.and_then(|d| d.borrow().size()) {
+            if let Some(size) = data.and_then(|d| d.borrow().surface_size()) {
                 if states.role == Some("subsurface") {
                     let current = states.cached_state.current::<SubsurfaceCachedState>();
                     loc += current.location;
@@ -148,7 +142,11 @@ where
 
                     damage.extend(attributes.damage.iter().map(|dmg| {
                         let mut rect = match dmg {
-                            Damage::Buffer(rect) => rect.to_logical(attributes.buffer_scale),
+                            Damage::Buffer(rect) => rect.to_logical(
+                                attributes.buffer_scale,
+                                attributes.buffer_transform.into(),
+                                &data.buffer_dimensions.unwrap(),
+                            ),
                             Damage::Surface(rect) => *rect,
                         };
                         rect.loc += location;

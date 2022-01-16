@@ -2,7 +2,7 @@
 
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer, Texture},
-    utils::{Logical, Physical, Point, Rectangle, Size},
+    utils::{Buffer, Logical, Point, Rectangle, Size, Transform},
     wayland::compositor::{
         is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
         SurfaceAttributes, TraversalAction,
@@ -15,8 +15,9 @@ use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
 #[derive(Default)]
 pub(crate) struct SurfaceState {
-    pub(crate) buffer_dimensions: Option<Size<i32, Physical>>,
+    pub(crate) buffer_dimensions: Option<Size<i32, Buffer>>,
     pub(crate) buffer_scale: i32,
+    pub(crate) buffer_transform: Transform,
     pub(crate) buffer: Option<WlBuffer>,
     pub(crate) texture: Option<Box<dyn std::any::Any + 'static>>,
     #[cfg(feature = "desktop")]
@@ -30,6 +31,7 @@ impl SurfaceState {
                 // new contents
                 self.buffer_dimensions = buffer_dimensions(&buffer);
                 self.buffer_scale = attrs.buffer_scale;
+                self.buffer_transform = attrs.buffer_transform.into();
                 if let Some(old_buffer) = std::mem::replace(&mut self.buffer, Some(buffer)) {
                     if &old_buffer != self.buffer.as_ref().unwrap() {
                         old_buffer.release();
@@ -51,6 +53,13 @@ impl SurfaceState {
             }
             None => {}
         }
+    }
+
+    /// Returns the size of the surface.
+    pub fn surface_size(&self) -> Option<Size<i32, Logical>> {
+        self.buffer_dimensions
+            .as_ref()
+            .map(|dim| dim.to_logical(self.buffer_scale, self.buffer_transform))
     }
 }
 
@@ -110,10 +119,6 @@ where
     T: Texture + 'static,
 {
     let mut result = Ok(());
-    let damage = damage
-        .iter()
-        .map(|geo| geo.to_f64().to_physical(scale).to_i32_up())
-        .collect::<Vec<_>>();
     with_surface_tree_upward(
         surface,
         location,
@@ -125,17 +130,20 @@ where
                 // Import a new buffer if necessary
                 if data.texture.is_none() {
                     if let Some(buffer) = data.buffer.as_ref() {
-                        let damage = attributes
+                        let buffer_damage = attributes
                             .damage
                             .iter()
                             .map(|dmg| match dmg {
                                 Damage::Buffer(rect) => *rect,
-                                // TODO also apply transformations
-                                Damage::Surface(rect) => rect.to_buffer(attributes.buffer_scale),
+                                Damage::Surface(rect) => rect.to_buffer(
+                                    attributes.buffer_scale,
+                                    attributes.buffer_transform.into(),
+                                    &data.surface_size().unwrap(),
+                                ),
                             })
                             .collect::<Vec<_>>();
 
-                        match renderer.import_buffer(buffer, Some(states), &damage) {
+                        match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
                                 data.texture = Some(Box::new(m));
                             }
@@ -169,10 +177,12 @@ where
             let mut location = *location;
             if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
                 let mut data = data.borrow_mut();
+                let dimensions = data.surface_size();
                 let buffer_scale = data.buffer_scale;
-                let buffer_dimensions = data.buffer_dimensions;
+                let buffer_transform = data.buffer_transform;
                 let attributes = states.cached_state.current::<SurfaceAttributes>();
                 if let Some(texture) = data.texture.as_mut().and_then(|x| x.downcast_mut::<T>()) {
+                    let dimensions = dimensions.unwrap();
                     // we need to re-extract the subsurface offset, as the previous closure
                     // only passes it to our children
                     let mut surface_offset = (0, 0).into();
@@ -182,23 +192,19 @@ where
                         location += current.location;
                     }
 
-                    let rect = Rectangle::<i32, Physical>::from_loc_and_size(
-                        surface_offset.to_f64().to_physical(scale).to_i32_round(),
-                        buffer_dimensions
-                            .unwrap_or_default()
-                            .to_logical(buffer_scale)
-                            .to_f64()
-                            .to_physical(scale)
-                            .to_i32_round(),
-                    );
-                    let new_damage = damage
+                    let damage = damage
                         .iter()
                         .cloned()
-                        .flat_map(|geo| geo.intersection(rect))
+                        // first move the damage by the surface offset in logical space
                         .map(|mut geo| {
-                            geo.loc -= rect.loc;
+                            // make the damage relative to the surfaec
+                            geo.loc -= surface_offset;
                             geo
                         })
+                        // then clamp to surface size again in logical space
+                        .flat_map(|geo| geo.intersection(Rectangle::from_loc_and_size((0, 0), dimensions)))
+                        // lastly transform it into buffer space
+                        .map(|geo| geo.to_buffer(buffer_scale, buffer_transform, &dimensions))
                         .collect::<Vec<_>>();
 
                     // TODO: Take wp_viewporter into account
@@ -208,7 +214,7 @@ where
                         buffer_scale,
                         scale,
                         attributes.buffer_transform.into(),
-                        &new_damage,
+                        &damage,
                         1.0,
                     ) {
                         result = Err(err);
