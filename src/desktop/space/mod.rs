@@ -24,6 +24,7 @@ use wayland_server::protocol::wl_surface::WlSurface;
 mod element;
 mod layer;
 mod output;
+mod popup;
 mod window;
 
 pub use self::element::*;
@@ -486,6 +487,16 @@ impl Space {
         let output_geo = Rectangle::from_loc_and_size(state.location, output_size);
         let layer_map = layer_map_for_output(output);
 
+        let window_popups = self
+            .windows
+            .iter()
+            .flat_map(|w| w.popup_elements::<R>(self.id))
+            .collect::<Vec<_>>();
+        let layer_popups = layer_map
+            .layers()
+            .flat_map(|l| l.popup_elements::<R>(self.id))
+            .collect::<Vec<_>>();
+
         // This will hold all the damage we need for this rendering step
         let mut damage = Vec::<Rectangle<i32, Logical>>::new();
         // First add damage for windows gone
@@ -497,7 +508,9 @@ impl Space {
                     .windows
                     .iter()
                     .map(|w| w as &SpaceElem<R>)
+                    .chain(window_popups.iter().map(|p| p as &SpaceElem<R>))
                     .chain(layer_map.layers().map(|l| l as &SpaceElem<R>))
+                    .chain(layer_popups.iter().map(|p| p as &SpaceElem<R>))
                     .chain(custom_elements.iter().map(|c| c as &SpaceElem<R>))
                     .any(|e| ToplevelId::from(e) == *id)
                 {
@@ -517,7 +530,9 @@ impl Space {
             .windows
             .iter()
             .map(|w| w as &SpaceElem<R>)
+            .chain(window_popups.iter().map(|p| p as &SpaceElem<R>))
             .chain(layer_map.layers().map(|l| l as &SpaceElem<R>))
+            .chain(layer_popups.iter().map(|p| p as &SpaceElem<R>))
             .chain(custom_elements.iter().map(|c| c as &SpaceElem<R>))
         {
             let geo = element.geometry(self.id);
@@ -647,7 +662,9 @@ impl Space {
             .windows
             .iter()
             .map(|w| w as &SpaceElem<R>)
+            .chain(window_popups.iter().map(|p| p as &SpaceElem<R>))
             .chain(layer_map.layers().map(|l| l as &SpaceElem<R>))
+            .chain(layer_popups.iter().map(|p| p as &SpaceElem<R>))
             .chain(custom_elements.iter().map(|c| c as &SpaceElem<R>))
             .map(|elem| {
                 let geo = elem.geometry(self.id);

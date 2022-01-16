@@ -258,18 +258,6 @@ impl Window {
                     .into_iter()
                     .flat_map(|rect| rect.intersection(self.bbox())),
             );
-            for (popup, location) in PopupManager::popups_for_surface(surface)
-                .ok()
-                .into_iter()
-                .flatten()
-            {
-                if let Some(surface) = popup.get_surface() {
-                    let offset = self.geometry().loc + location - popup.geometry().loc;
-                    let bbox = bbox_from_surface_tree(surface, offset);
-                    let popup_damage = damage_from_surface_tree(surface, offset, for_values);
-                    damage.extend(popup_damage.into_iter().flat_map(|rect| rect.intersection(bbox)));
-                }
-            }
         }
         damage
     }
