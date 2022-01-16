@@ -64,12 +64,12 @@ jobs:
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --features "test_all_features" -- -D warnings
+          args: --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
       - name: Clippy Anvil
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" -- -D warnings
+          args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
   
   check-minimal:
     env:
