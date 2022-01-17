@@ -20,7 +20,7 @@ use smithay::{
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             gles2::{Gles2Renderer, Gles2Texture},
-            Bind, Frame, Renderer, Transform,
+            Bind, Frame, Renderer,
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
         udev::{UdevBackend, UdevEvent},
@@ -50,7 +50,7 @@ use smithay::{
     },
     utils::{
         signaling::{Linkable, SignalToken, Signaler},
-        Logical, Point, Rectangle,
+        Logical, Point, Rectangle, Transform,
     },
     wayland::{
         output::{Mode, PhysicalProperties},

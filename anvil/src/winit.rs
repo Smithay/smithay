@@ -9,7 +9,7 @@ use smithay::{
 };
 use smithay::{
     backend::{
-        renderer::{Renderer, Transform},
+        renderer::Renderer,
         winit::{self, WinitEvent},
         SwapBuffersError,
     },
@@ -17,6 +17,7 @@ use smithay::{
         calloop::EventLoop,
         wayland_server::{protocol::wl_output, Display},
     },
+    utils::Transform,
     wayland::{
         output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,

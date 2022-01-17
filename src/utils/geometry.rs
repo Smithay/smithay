@@ -406,10 +406,11 @@ impl<N: Coordinate> Point<N, Logical> {
 
     #[inline]
     /// Convert this logical point to buffer coordinate space according to given scale factor
-    pub fn to_buffer(self, scale: N) -> Point<N, Buffer> {
+    pub fn to_buffer(self, scale: N, transformation: Transform, area: &Size<N, Logical>) -> Point<N, Buffer> {
+        let point = transformation.transform_point_in(self, area);
         Point {
-            x: self.x.upscale(scale),
-            y: self.y.upscale(scale),
+            x: point.x.upscale(scale),
+            y: point.y.upscale(scale),
             _kind: std::marker::PhantomData,
         }
     }
@@ -430,10 +431,11 @@ impl<N: Coordinate> Point<N, Physical> {
 impl<N: Coordinate> Point<N, Buffer> {
     #[inline]
     /// Convert this physical point to logical coordinate space according to given scale factor
-    pub fn to_logical(self, scale: N) -> Point<N, Logical> {
+    pub fn to_logical(self, scale: N, transform: Transform, area: &Size<N, Buffer>) -> Point<N, Logical> {
+        let point = transform.invert().transform_point_in(self, area);
         Point {
-            x: self.x.downscale(scale),
-            y: self.y.downscale(scale),
+            x: point.x.downscale(scale),
+            y: point.y.downscale(scale),
             _kind: std::marker::PhantomData,
         }
     }
@@ -667,12 +669,12 @@ impl<N: Coordinate> Size<N, Logical> {
 
     #[inline]
     /// Convert this logical size to buffer coordinate space according to given scale factor
-    pub fn to_buffer(self, scale: N) -> Size<N, Buffer> {
-        Size {
+    pub fn to_buffer(self, scale: N, transformation: Transform) -> Size<N, Buffer> {
+        transformation.transform_size(Size {
             w: self.w.upscale(scale),
             h: self.h.upscale(scale),
             _kind: std::marker::PhantomData,
-        }
+        })
     }
 }
 
@@ -691,12 +693,12 @@ impl<N: Coordinate> Size<N, Physical> {
 impl<N: Coordinate> Size<N, Buffer> {
     #[inline]
     /// Convert this physical point to logical coordinate space according to given scale factor
-    pub fn to_logical(self, scale: N) -> Size<N, Logical> {
-        Size {
+    pub fn to_logical(self, scale: N, transformation: Transform) -> Size<N, Logical> {
+        transformation.invert().transform_size(Size {
             w: self.w.downscale(scale),
             h: self.h.downscale(scale),
             _kind: std::marker::PhantomData,
-        }
+        })
     }
 }
 
@@ -969,10 +971,24 @@ impl<N: Coordinate> Rectangle<N, Logical> {
 
     /// Convert this logical rectangle to buffer coordinate space according to given scale factor
     #[inline]
-    pub fn to_buffer(self, scale: N) -> Rectangle<N, Buffer> {
+    pub fn to_buffer(
+        self,
+        scale: N,
+        transformation: Transform,
+        area: &Size<N, Logical>,
+    ) -> Rectangle<N, Buffer> {
+        let rect = transformation.transform_rect_in(self, area);
         Rectangle {
-            loc: self.loc.to_buffer(scale),
-            size: self.size.to_buffer(scale),
+            loc: Point {
+                x: rect.loc.x.upscale(scale),
+                y: rect.loc.y.upscale(scale),
+                _kind: std::marker::PhantomData,
+            },
+            size: Size {
+                w: rect.size.w.upscale(scale),
+                h: rect.size.h.upscale(scale),
+                _kind: std::marker::PhantomData,
+            },
         }
     }
 }
@@ -991,10 +1007,24 @@ impl<N: Coordinate> Rectangle<N, Physical> {
 impl<N: Coordinate> Rectangle<N, Buffer> {
     /// Convert this physical rectangle to logical coordinate space according to given scale factor
     #[inline]
-    pub fn to_logical(self, scale: N) -> Rectangle<N, Logical> {
+    pub fn to_logical(
+        self,
+        scale: N,
+        transformation: Transform,
+        area: &Size<N, Buffer>,
+    ) -> Rectangle<N, Logical> {
+        let rect = transformation.invert().transform_rect_in(self, area);
         Rectangle {
-            loc: self.loc.to_logical(scale),
-            size: self.size.to_logical(scale),
+            loc: Point {
+                x: rect.loc.x.downscale(scale),
+                y: rect.loc.y.downscale(scale),
+                _kind: std::marker::PhantomData,
+            },
+            size: Size {
+                w: rect.size.w.downscale(scale),
+                h: rect.size.h.downscale(scale),
+                _kind: std::marker::PhantomData,
+            },
         }
     }
 }
@@ -1069,5 +1099,209 @@ impl<N: Default, Kind> Default for Rectangle<N, Kind> {
             loc: Default::default(),
             size: Default::default(),
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+/// Possible transformations to two-dimensional planes
+pub enum Transform {
+    /// Identity transformation (plane is unaltered when applied)
+    Normal,
+    /// Plane is rotated by 90 degrees
+    _90,
+    /// Plane is rotated by 180 degrees
+    _180,
+    /// Plane is rotated by 270 degrees
+    _270,
+    /// Plane is flipped vertically
+    Flipped,
+    /// Plane is flipped vertically and rotated by 90 degrees
+    Flipped90,
+    /// Plane is flipped vertically and rotated by 180 degrees
+    Flipped180,
+    /// Plane is flipped vertically and rotated by 270 degrees
+    Flipped270,
+}
+
+impl Default for Transform {
+    fn default() -> Transform {
+        Transform::Normal
+    }
+}
+
+impl Transform {
+    /// Inverts any 90-degree transformation into 270-degree transformations and vise versa.
+    ///
+    /// Flipping is preserved and 180/Normal transformation are uneffected.
+    pub fn invert(&self) -> Transform {
+        match self {
+            Transform::Normal => Transform::Normal,
+            Transform::Flipped => Transform::Flipped,
+            Transform::_90 => Transform::_270,
+            Transform::_180 => Transform::_180,
+            Transform::_270 => Transform::_90,
+            Transform::Flipped90 => Transform::Flipped270,
+            Transform::Flipped180 => Transform::Flipped180,
+            Transform::Flipped270 => Transform::Flipped90,
+        }
+    }
+
+    /// Transforms a point inside an area of a given size by applying this transformation.
+    pub fn transform_point_in<N: Coordinate, Kind>(
+        &self,
+        point: Point<N, Kind>,
+        area: &Size<N, Kind>,
+    ) -> Point<N, Kind> {
+        match *self {
+            Transform::Normal => point,
+            Transform::_90 => (area.h - point.y, point.x).into(),
+            Transform::_180 => (area.w - point.x, area.h - point.y).into(),
+            Transform::_270 => (point.y, area.w - point.x).into(),
+            Transform::Flipped => (area.w - point.x, point.y).into(),
+            Transform::Flipped90 => (point.y, point.x).into(),
+            Transform::Flipped180 => (point.x, area.h - point.y).into(),
+            Transform::Flipped270 => (area.h - point.y, area.w - point.x).into(),
+        }
+    }
+
+    /// Transformed size after applying this transformation.
+    pub fn transform_size<N: Coordinate, Kind>(&self, size: Size<N, Kind>) -> Size<N, Kind> {
+        if *self == Transform::_90
+            || *self == Transform::_270
+            || *self == Transform::Flipped90
+            || *self == Transform::Flipped270
+        {
+            (size.h, size.w).into()
+        } else {
+            size
+        }
+    }
+
+    /// Transforms a rectangle inside an area of a given size by applying this transformation.
+    pub fn transform_rect_in<N: Coordinate, Kind>(
+        &self,
+        rect: Rectangle<N, Kind>,
+        area: &Size<N, Kind>,
+    ) -> Rectangle<N, Kind> {
+        let size = self.transform_size(rect.size);
+
+        let loc = match *self {
+            Transform::Normal => rect.loc,
+            Transform::_90 => (area.h - rect.loc.y - rect.size.h, rect.loc.x).into(),
+            Transform::_180 => (
+                area.w - rect.loc.x - rect.size.w,
+                area.h - rect.loc.y - rect.size.h,
+            )
+                .into(),
+            Transform::_270 => (rect.loc.y, area.w - rect.loc.x - rect.size.w).into(),
+            Transform::Flipped => (area.w - rect.loc.x - rect.size.w, rect.loc.y).into(),
+            Transform::Flipped90 => (rect.loc.y, rect.loc.x).into(),
+            Transform::Flipped180 => (rect.loc.x, area.h - rect.loc.y - rect.size.h).into(),
+            Transform::Flipped270 => (
+                area.h - rect.loc.y - rect.size.h,
+                area.w - rect.loc.x - rect.size.w,
+            )
+                .into(),
+        };
+
+        Rectangle::from_loc_and_size(loc, size)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Logical, Rectangle, Size, Transform};
+
+    #[test]
+    fn transform_rect_ident() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::Normal;
+
+        assert_eq!(rect, transform.transform_rect_in(rect, &size))
+    }
+
+    #[test]
+    fn transform_rect_90() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::_90;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((30, 10), (40, 30)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
+
+    #[test]
+    fn transform_rect_180() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::_180;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((30, 30), (30, 40)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
+
+    #[test]
+    fn transform_rect_270() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::_270;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((20, 30), (40, 30)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
+
+    #[test]
+    fn transform_rect_f() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::Flipped;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((30, 20), (30, 40)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
+
+    #[test]
+    fn transform_rect_f90() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 80));
+        let transform = Transform::Flipped90;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((20, 10), (40, 30)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
+
+    #[test]
+    fn transform_rect_f180() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::Flipped180;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((10, 30), (30, 40)),
+            transform.transform_rect_in(rect, &size)
+        )
+    }
+
+    #[test]
+    fn transform_rect_f270() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let size = Size::from((70, 90));
+        let transform = Transform::Flipped270;
+
+        assert_eq!(
+            Rectangle::from_loc_and_size((30, 30), (40, 30)),
+            transform.transform_rect_in(rect, &size)
+        )
     }
 }

@@ -2,12 +2,12 @@
 //! rendering helpers to add custom elements or different clients to a space.
 
 use crate::{
-    backend::renderer::{utils::SurfaceState, Frame, ImportAll, Renderer, Transform},
+    backend::renderer::{utils::SurfaceState, Frame, ImportAll, Renderer},
     desktop::{
         layer::{layer_map_for_output, LayerSurface},
         window::Window,
     },
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Point, Rectangle, Transform},
     wayland::{
         compositor::{
             get_parent, is_sync_subsurface, with_surface_tree_downward, SubsurfaceCachedState,
@@ -372,7 +372,7 @@ impl Space {
                         |wl_surface, states, &loc| {
                             let data = states.data_map.get::<RefCell<SurfaceState>>();
 
-                            if let Some(size) = data.and_then(|d| d.borrow().size()) {
+                            if let Some(size) = data.and_then(|d| d.borrow().surface_size()) {
                                 let surface_rectangle = Rectangle { loc, size };
 
                                 if output_geometry.overlaps(surface_rectangle) {

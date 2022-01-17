@@ -13,7 +13,7 @@ use cgmath::{prelude::*, Matrix3, Vector2, Vector3};
 mod shaders;
 mod version;
 
-use super::{Bind, Frame, Renderer, Texture, TextureFilter, Transform, Unbind};
+use super::{Bind, Frame, Renderer, Texture, TextureFilter, Unbind};
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
     Format,
@@ -23,7 +23,7 @@ use crate::backend::egl::{
     EGLContext, EGLSurface, MakeCurrentError,
 };
 use crate::backend::SwapBuffersError;
-use crate::utils::{Buffer, Physical, Rectangle, Size};
+use crate::utils::{Buffer, Physical, Rectangle, Size, Transform};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use super::ImportEgl;
@@ -1250,7 +1250,7 @@ impl Frame for Gles2Frame {
         texture: &Self::TextureId,
         src: Rectangle<i32, Buffer>,
         dest: Rectangle<f64, Physical>,
-        damage: &[Rectangle<i32, Physical>],
+        damage: &[Rectangle<i32, Buffer>],
         transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
@@ -1266,7 +1266,7 @@ impl Frame for Gles2Frame {
             assert_eq!(mat, mat * transform.invert().matrix());
             assert_eq!(transform.matrix(), Matrix3::<f32>::identity());
         }
-        mat = mat * transform.invert().matrix();
+        mat = mat * transform.matrix();
         mat = mat * Matrix3::from_translation(Vector2::new(-0.5, -0.5));
 
         // this matrix should be regular, we can expect invert to succeed
@@ -1290,18 +1290,24 @@ impl Frame for Gles2Frame {
         let damage = damage
             .iter()
             .map(|rect| {
+                let src = src.size.to_f64();
                 let rect = rect.to_f64();
 
                 let rect_constrained_loc = rect
                     .loc
-                    .constrain(Rectangle::from_extemities((0f64, 0f64), dest.size.to_point()));
-                let rect_clamped_size = rect.size.clamp((0f64, 0f64), dest.size);
+                    .constrain(Rectangle::from_extemities((0f64, 0f64), src.to_point()));
+                let rect_clamped_size = rect
+                    .size
+                    .clamp((0f64, 0f64), (src.to_point() - rect_constrained_loc).to_size());
+
+                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                let rect_transformed = self.transformation().transform_rect_in(rect, &src);
 
                 [
-                    (rect_constrained_loc.x / dest.size.w) as f32,
-                    (rect_constrained_loc.y / dest.size.h) as f32,
-                    (rect_clamped_size.w / dest.size.w) as f32,
-                    (rect_clamped_size.h / dest.size.h) as f32,
+                    (rect_transformed.loc.x / src.w) as f32,
+                    (rect_transformed.loc.y / src.h) as f32,
+                    (rect_transformed.size.w / src.w) as f32,
+                    (rect_transformed.size.h / src.h) as f32,
                 ]
             })
             .flatten()

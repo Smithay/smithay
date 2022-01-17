@@ -3,11 +3,11 @@ use std::cell::Cell;
 use smithay::{
     backend::{
         allocator::dmabuf::Dmabuf,
-        renderer::{Frame, ImportDma, ImportShm, Renderer, Texture, TextureFilter, Transform},
+        renderer::{Frame, ImportDma, ImportShm, Renderer, Texture, TextureFilter},
         SwapBuffersError,
     },
     reexports::wayland_server::protocol::wl_buffer,
-    utils::{Buffer, Physical, Rectangle, Size},
+    utils::{Buffer, Physical, Rectangle, Size, Transform},
     wayland::compositor::SurfaceData,
 };
 
@@ -106,7 +106,7 @@ impl Frame for DummyFrame {
         _texture: &Self::TextureId,
         _src: Rectangle<i32, Buffer>,
         _dst: Rectangle<f64, Physical>,
-        _damage: &[Rectangle<i32, Physical>],
+        _damage: &[Rectangle<i32, Buffer>],
         _src_transform: Transform,
         _alpha: f32,
     ) -> Result<(), Self::Error> {
