@@ -1301,13 +1301,11 @@ impl Frame for Gles2Frame {
                     .clamp((0f64, 0f64), (src.to_point() - rect_constrained_loc).to_size());
 
                 let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
-                let rect_transformed = self.transformation().transform_rect_in(rect, &src);
-
                 [
-                    (rect_transformed.loc.x / src.w) as f32,
-                    (rect_transformed.loc.y / src.h) as f32,
-                    (rect_transformed.size.w / src.w) as f32,
-                    (rect_transformed.size.h / src.h) as f32,
+                    (rect.loc.x / src.w) as f32,
+                    (rect.loc.y / src.h) as f32,
+                    (rect.size.w / src.w) as f32,
+                    (rect.size.h / src.h) as f32,
                 ]
             })
             .flatten()
