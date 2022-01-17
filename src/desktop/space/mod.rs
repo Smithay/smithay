@@ -454,7 +454,8 @@ impl Space {
     /// trait and use `custom_elements` to provide them to this function. `custom_elements are rendered
     /// after every other element.
     ///
-    /// Returns a list of updated regions (or `None` if that list would be empty) in case of success.
+    /// Returns a list of updated regions relative to the rendered output
+    /// (or `None` if that list would be empty) in case of success.
     pub fn render_output<R>(
         &mut self,
         renderer: &mut R,
@@ -603,6 +604,9 @@ impl Space {
                     clear_color,
                     &damage
                         .iter()
+                        // Map from global space to output space
+                        .map(|geo| Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size))
+                        // Map from logical to physical
                         .map(|geo| geo.to_f64().to_physical(state.render_scale).to_i32_round())
                         .collect::<Vec<_>>(),
                 )?;
@@ -624,16 +628,17 @@ impl Space {
                 {
                     let geo = element.geometry(self.id);
                     if damage.iter().any(|d| d.overlaps(geo)) {
-                        let loc = element.location(self.id) - output_geo.loc;
+                        let loc = element.location(self.id);
                         let damage = damage
                             .iter()
                             .flat_map(|d| d.intersection(geo))
+                            // Map from output space to surface-relative coordinates
                             .map(|geo| Rectangle::from_loc_and_size(geo.loc - loc, geo.size))
                             .collect::<Vec<_>>();
                         slog::trace!(
                             self.logger,
                             "Rendering toplevel at {:?} with damage {:#?}",
-                            geo,
+                            Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size),
                             damage
                         );
                         element.draw(
@@ -641,7 +646,7 @@ impl Space {
                             renderer,
                             frame,
                             state.render_scale,
-                            loc,
+                            loc - output_geo.loc,
                             &damage,
                             &self.logger,
                         )?;
@@ -676,7 +681,15 @@ impl Space {
             .collect();
         state.old_damage.push_front(new_damage.clone());
 
-        Ok(Some(new_damage))
+        Ok(Some(
+            new_damage
+                .into_iter()
+                .map(|mut geo| {
+                    geo.loc -= output_geo.loc;
+                    geo
+                })
+                .collect(),
+        ))
     }
 
     /// Sends the frame callback to mapped [`Window`]s and [`LayerSurface`]s.

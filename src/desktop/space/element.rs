@@ -28,6 +28,7 @@ where
     /// Returns the bounding box of this element including its position in the space.
     fn geometry(&self) -> Rectangle<i32, Logical>;
     /// Returns the damage of the element since it's last update.
+    /// It should be relative to the elements coordinates.
     ///
     /// If you receive `Some(_)` for `for_values` you may cache that you
     /// send the damage for this `Space` and `Output` combination once
