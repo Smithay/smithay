@@ -29,18 +29,22 @@ pub enum Kind {
     X11(X11Surface),
 }
 
-/// TODO
+/// Xwayland surface
 #[derive(Debug, Clone)]
+#[cfg(feature = "xwayland")]
 pub struct X11Surface {
-    surface: wl_surface::WlSurface,
+    /// underlying wl_surface
+    pub surface: wl_surface::WlSurface,
 }
 
+#[cfg(feature = "xwayland")]
 impl std::cmp::PartialEq for X11Surface {
     fn eq(&self, other: &Self) -> bool {
         self.alive() && other.alive() && self.surface == other.surface
     }
 }
 
+#[cfg(feature = "xwayland")]
 impl X11Surface {
     /// Checks if the surface is still alive.
     pub fn alive(&self) -> bool {
@@ -190,7 +194,7 @@ impl Window {
                 })
                 .unwrap_or(false),
             #[cfg(feature = "xwayland")]
-            Kind::X11(ref _t) => unimplemented!(),
+            Kind::X11(ref _t) => false,
         }
     }
 
