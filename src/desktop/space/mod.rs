@@ -572,12 +572,15 @@ impl Space {
         damage.retain(|rect| rect.overlaps(output_geo));
         damage.retain(|rect| rect.size.h > 0 && rect.size.w > 0);
         // merge overlapping rectangles
-        damage = damage.into_iter().fold(Vec::new(), |mut new_damage, rect| {
-            if let Some(existing) = new_damage.iter_mut().find(|other| rect.overlaps(**other)) {
-                *existing = existing.merge(rect);
-            } else {
-                new_damage.push(rect);
+        damage = damage.into_iter().fold(Vec::new(), |new_damage, mut rect| {
+            // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
+            let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
+                new_damage.into_iter().partition(|other| other.overlaps(rect));
+
+            for overlap in overlapping {
+                rect = rect.merge(overlap);
             }
+            new_damage.push(rect);
             new_damage
         });
 
