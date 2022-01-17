@@ -5,7 +5,7 @@ use std::{
 
 use smithay::{
     backend::{
-        renderer::{Frame, Renderer, Transform},
+        renderer::{Frame, Renderer},
         SwapBuffersError,
     },
     reexports::{
@@ -18,7 +18,7 @@ use smithay::{
             Client, Display,
         },
     },
-    utils::Rectangle,
+    utils::{Rectangle, Transform},
     wayland::{
         output::{Mode, PhysicalProperties},
         seat::CursorImageStatus,
