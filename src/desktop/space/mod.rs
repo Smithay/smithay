@@ -501,6 +501,7 @@ impl Space {
         // This will hold all the damage we need for this rendering step
         let mut damage = Vec::<Rectangle<i32, Logical>>::new();
         // First add damage for windows gone
+
         for old_toplevel in state
             .last_state
             .iter()
@@ -613,18 +614,53 @@ impl Space {
 
                 // Then re-draw all windows & layers overlapping with a damage rect.
 
-                for element in layer_map
-                    .layers_on(WlrLayer::Background)
-                    .chain(layer_map.layers_on(WlrLayer::Bottom))
-                    .map(|l| l as &SpaceElem<R>)
+                for element in custom_elements
+                    .iter()
+                    .filter(|c| c.layer() == RenderLayer::Bottom)
+                    .map(|p| p as &SpaceElem<R>)
+                    .chain(
+                        layer_map
+                            .layers_on(WlrLayer::Background)
+                            .map(|l| l as &SpaceElem<R>)
+                            .chain(
+                                custom_elements
+                                    .iter()
+                                    .filter(|c| c.layer() == RenderLayer::AboveBackground)
+                                    .map(|c| c as &SpaceElem<R>),
+                            )
+                            .chain(layer_map.layers_on(WlrLayer::Bottom).map(|l| l as &SpaceElem<R>)),
+                    )
+                    .chain(
+                        custom_elements
+                            .iter()
+                            .filter(|c| c.layer() == RenderLayer::BeforeWindows)
+                            .map(|c| c as &SpaceElem<R>),
+                    )
                     .chain(self.windows.iter().map(|w| w as &SpaceElem<R>))
+                    .chain(
+                        custom_elements
+                            .iter()
+                            .filter(|c| c.layer() == RenderLayer::AfterWindows)
+                            .map(|c| c as &SpaceElem<R>),
+                    )
                     .chain(
                         layer_map
                             .layers_on(WlrLayer::Top)
-                            .chain(layer_map.layers_on(WlrLayer::Overlay))
-                            .map(|l| l as &SpaceElem<R>),
+                            .map(|l| l as &SpaceElem<R>)
+                            .chain(
+                                custom_elements
+                                    .iter()
+                                    .filter(|c| c.layer() == RenderLayer::BeforeOverlay)
+                                    .map(|c| c as &SpaceElem<R>),
+                            )
+                            .chain(layer_map.layers_on(WlrLayer::Overlay).map(|l| l as &SpaceElem<R>)),
                     )
-                    .chain(custom_elements.iter().map(|c| c as &SpaceElem<R>))
+                    .chain(
+                        custom_elements
+                            .iter()
+                            .filter(|c| c.layer() == RenderLayer::Top)
+                            .map(|c| c as &SpaceElem<R>),
+                    )
                 {
                     let geo = element.geometry(self.id);
                     if damage.iter().any(|d| d.overlaps(geo)) {

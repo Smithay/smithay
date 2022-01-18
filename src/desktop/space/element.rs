@@ -10,6 +10,23 @@ use std::{
 };
 use wayland_server::protocol::wl_surface::WlSurface;
 
+/// Enum for indicating on with layer a render element schould be draw
+#[derive(Debug, PartialEq, Eq)]
+pub enum RenderLayer {
+    /// Bellow every other elements
+    Bottom,
+    /// Above WlrLayer::Background but bellow WlrLayer::Bottom
+    AboveBackground,
+    /// Right before programs windows are draw
+    BeforeWindows,
+    /// Right after programs windows are draw
+    AfterWindows,
+    /// Above WlrLayer::Top but bellow WlrLayer::Overlay
+    BeforeOverlay,
+    /// Above anything else
+    Top,
+}
+
 /// Trait for custom elements to be rendered during [`Space::render_output`].
 pub trait RenderElement<R, F, E, T>
 where
@@ -55,6 +72,11 @@ where
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error>;
+
+    /// Returns they layer the elements schould be draw on, defaults to Top
+    fn layer(&self) -> RenderLayer {
+        RenderLayer::Top
+    }
 }
 
 pub(crate) trait SpaceElement<R, F, E, T>
