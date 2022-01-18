@@ -18,6 +18,8 @@ pub mod shell;
 pub mod state;
 #[cfg(feature = "udev")]
 pub mod udev;
+#[cfg(feature = "wayland")]
+pub mod wayland;
 #[cfg(feature = "winit")]
 pub mod winit;
 #[cfg(feature = "x11")]

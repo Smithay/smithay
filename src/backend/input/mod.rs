@@ -32,7 +32,7 @@ pub trait Device: PartialEq + Eq + std::hash::Hash {
 }
 
 /// Set of input types a device may provide
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(missing_docs)] // self explainatory
 pub enum DeviceCapability {
     Keyboard,

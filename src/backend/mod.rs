@@ -94,6 +94,9 @@ pub mod udev;
 #[cfg(feature = "backend_vulkan")]
 pub mod vulkan;
 
+#[cfg(feature = "backend_wayland")]
+pub mod wayland;
+
 #[cfg(feature = "backend_winit")]
 pub mod winit;
 
