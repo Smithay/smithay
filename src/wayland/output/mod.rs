@@ -102,7 +102,7 @@ pub struct PhysicalProperties {
 #[derive(Debug)]
 pub(crate) struct Inner {
     name: String,
-    log: ::slog::Logger,
+    pub(crate) log: ::slog::Logger,
     instances: Vec<WlOutput>,
     physical: PhysicalProperties,
     location: Point<i32, Logical>,

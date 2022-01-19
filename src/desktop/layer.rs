@@ -29,6 +29,7 @@ pub struct LayerMap {
     layers: IndexSet<LayerSurface>,
     output: Weak<(Mutex<OutputInner>, wayland_server::UserDataMap)>,
     zone: Rectangle<i32, Logical>,
+    logger: ::slog::Logger,
 }
 
 /// Retrieve a [`LayerMap`] for a given [`Output`].
@@ -53,6 +54,9 @@ pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
                     .map(|mode| mode.size.to_logical(o.current_scale()))
                     .unwrap_or_else(|| (0, 0).into()),
             ),
+            logger: (*o.inner.0.lock().unwrap())
+                .log
+                .new(slog::o!("smithay_module" => "layer_map")),
         })
     });
     userdata.get::<RefCell<LayerMap>>().unwrap().borrow_mut()
@@ -160,11 +164,7 @@ impl LayerMap {
                     .unwrap_or_else(|| (0, 0).into()),
             );
             let mut zone = output_rect;
-            slog::debug!(
-                crate::slog_or_fallback(None),
-                "Arranging layers into {:?}",
-                output_rect.size
-            );
+            slog::trace!(self.logger, "Arranging layers into {:?}", output_rect.size);
 
             for layer in self.layers.iter() {
                 let surface = if let Some(surface) = layer.get_surface() {
@@ -233,8 +233,8 @@ impl LayerMap {
                     }
                 }
 
-                slog::debug!(
-                    crate::slog_or_fallback(None),
+                slog::trace!(
+                    self.logger,
                     "Setting layer to pos {:?} and size {:?}",
                     location,
                     size
@@ -253,7 +253,7 @@ impl LayerMap {
                 layer_state(layer).location = location;
             }
 
-            slog::debug!(crate::slog_or_fallback(None), "Remaining zone {:?}", zone);
+            slog::trace!(self.logger, "Remaining zone {:?}", zone);
             self.zone = zone;
         }
     }
