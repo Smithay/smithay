@@ -647,14 +647,14 @@ impl Space {
                         layer_map
                             .layers_on(WlrLayer::Top)
                             .map(|l| l as &SpaceElem<R>)
-                            .chain(
-                                custom_elements
-                                    .iter()
-                                    .filter(|c| c.layer() == RenderLayer::BeforeOverlay)
-                                    .map(|c| c as &SpaceElem<R>),
-                            )
-                            .chain(layer_map.layers_on(WlrLayer::Overlay).map(|l| l as &SpaceElem<R>)),
                     )
+                    .chain(
+                        custom_elements
+                            .iter()
+                            .filter(|c| c.layer() == RenderLayer::BeforeOverlay)
+                            .map(|c| c as &SpaceElem<R>),
+                    )
+                    .chain(layer_map.layers_on(WlrLayer::Overlay).map(|l| l as &SpaceElem<R>))
                     .chain(
                         custom_elements
                             .iter()
