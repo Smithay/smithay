@@ -2,23 +2,22 @@
 //! rendering helpers to add custom elements or different clients to a space.
 
 use crate::{
-    backend::renderer::{utils::SurfaceState, Frame, ImportAll, Renderer},
+    backend::renderer::{Frame, ImportAll, Renderer},
     desktop::{
         layer::{layer_map_for_output, LayerSurface},
+        popup::PopupManager,
+        utils::{output_leave, output_update},
         window::Window,
     },
     utils::{Logical, Point, Rectangle, Transform},
     wayland::{
-        compositor::{
-            get_parent, is_sync_subsurface, with_surface_tree_downward, SubsurfaceCachedState,
-            TraversalAction,
-        },
+        compositor::{get_parent, is_sync_subsurface},
         output::Output,
         shell::wlr_layer::Layer as WlrLayer,
     },
 };
 use indexmap::{IndexMap, IndexSet};
-use std::{cell::RefCell, collections::VecDeque, fmt};
+use std::{collections::VecDeque, fmt};
 use wayland_server::protocol::wl_surface::WlSurface;
 
 mod element;
@@ -326,97 +325,39 @@ impl Space {
                 // the output.
                 if !output_geometry.overlaps(bbox) {
                     if let Some(surface) = kind.get_surface() {
-                        with_surface_tree_downward(
-                            surface,
-                            (),
-                            |_, _, _| TraversalAction::DoChildren(()),
-                            |wl_surface, _, _| {
-                                if output_state.surfaces.contains(wl_surface) {
-                                    slog::trace!(
-                                        self.logger,
-                                        "surface ({:?}) leaving output {:?}",
-                                        wl_surface,
-                                        output.name()
-                                    );
-                                    output.leave(wl_surface);
-                                    output_state.surfaces.retain(|s| s != wl_surface);
-                                }
-                            },
-                            |_, _, _| true,
-                        )
+                        output_leave(output, &mut output_state.surfaces, surface, &self.logger);
                     }
                     continue;
                 }
 
                 if let Some(surface) = kind.get_surface() {
-                    with_surface_tree_downward(
+                    output_update(
+                        output,
+                        output_geometry,
+                        &mut output_state.surfaces,
                         surface,
                         window_loc(window, &self.id),
-                        |_, states, location| {
-                            let mut location = *location;
-                            let data = states.data_map.get::<RefCell<SurfaceState>>();
+                        &self.logger,
+                    );
 
-                            if data.is_some() {
-                                if states.role == Some("subsurface") {
-                                    let current = states.cached_state.current::<SubsurfaceCachedState>();
-                                    location += current.location;
-                                }
-
-                                TraversalAction::DoChildren(location)
-                            } else {
-                                // If the parent surface is unmapped, then the child surfaces are hidden as
-                                // well, no need to consider them here.
-                                TraversalAction::SkipChildren
-                            }
-                        },
-                        |wl_surface, states, &loc| {
-                            let data = states.data_map.get::<RefCell<SurfaceState>>();
-
-                            if let Some(size) = data.and_then(|d| d.borrow().surface_size()) {
-                                let surface_rectangle = Rectangle { loc, size };
-
-                                if output_geometry.overlaps(surface_rectangle) {
-                                    // We found a matching output, check if we already sent enter
-                                    if !output_state.surfaces.contains(wl_surface) {
-                                        slog::trace!(
-                                            self.logger,
-                                            "surface ({:?}) entering output {:?}",
-                                            wl_surface,
-                                            output.name()
-                                        );
-                                        output.enter(wl_surface);
-                                        output_state.surfaces.push(wl_surface.clone());
-                                    }
-                                } else {
-                                    // Surface does not match output, if we sent enter earlier
-                                    // we should now send leave
-                                    if output_state.surfaces.contains(wl_surface) {
-                                        slog::trace!(
-                                            self.logger,
-                                            "surface ({:?}) leaving output {:?}",
-                                            wl_surface,
-                                            output.name()
-                                        );
-                                        output.leave(wl_surface);
-                                        output_state.surfaces.retain(|s| s != wl_surface);
-                                    }
-                                }
-                            } else {
-                                // Maybe the the surface got unmapped, send leave on output
-                                if output_state.surfaces.contains(wl_surface) {
-                                    slog::trace!(
-                                        self.logger,
-                                        "surface ({:?}) leaving output {:?}",
-                                        wl_surface,
-                                        output.name()
-                                    );
-                                    output.leave(wl_surface);
-                                    output_state.surfaces.retain(|s| s != wl_surface);
-                                }
-                            }
-                        },
-                        |_, _, _| true,
-                    )
+                    for (popup, location) in PopupManager::popups_for_surface(surface)
+                        .ok()
+                        .into_iter()
+                        .flatten()
+                    {
+                        if let Some(surface) = popup.get_surface() {
+                            let location = window_loc(window, &self.id) + window.geometry().loc + location
+                                - popup.geometry().loc;
+                            output_update(
+                                output,
+                                output_geometry,
+                                &mut output_state.surfaces,
+                                surface,
+                                location,
+                                &self.logger,
+                            );
+                        }
+                    }
                 }
             }
         }

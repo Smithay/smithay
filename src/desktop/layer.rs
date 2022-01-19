@@ -103,16 +103,7 @@ impl LayerMap {
                 (),
                 |_, _, _| TraversalAction::DoChildren(()),
                 |wl_surface, _, _| {
-                    if self.surfaces.contains(wl_surface) {
-                        slog::trace!(
-                            self.logger,
-                            "surface ({:?}) leaving output {:?}",
-                            wl_surface,
-                            output.name()
-                        );
-                        output.leave(wl_surface);
-                        self.surfaces.retain(|s| s != wl_surface);
-                    }
+                    output_leave(&output, &mut self.surfaces, wl_surface, &self.logger);
                 },
                 |_, _, _| true,
             );
@@ -203,16 +194,7 @@ impl LayerMap {
                     (),
                     |_, _, _| TraversalAction::DoChildren(()),
                     |wl_surface, _, _| {
-                        if !surfaces_ref.contains(wl_surface) {
-                            slog::trace!(
-                                logger_ref,
-                                "surface ({:?}) entering output {:?}",
-                                wl_surface,
-                                output.name()
-                            );
-                            output.enter(wl_surface);
-                            surfaces_ref.push(wl_surface.clone());
-                        }
+                        output_enter(&output, surfaces_ref, wl_surface, logger_ref);
                     },
                     |_, _, _| true,
                 );
