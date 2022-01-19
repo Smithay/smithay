@@ -162,7 +162,7 @@ impl TryFrom<zwlr_layer_surface_v1::Anchor> for Anchor {
 }
 
 /// Exclusive zone descriptor
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExclusiveZone {
     /// Requests that the compositor avoids occluding an area with other surfaces.
     ///
