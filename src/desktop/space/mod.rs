@@ -48,6 +48,52 @@ pub struct Space {
 pub type DynamicRenderElements<R> =
     Box<dyn RenderElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>>;
 
+type SpaceElem<R> =
+    dyn SpaceElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>;
+
+struct DynamicRenderElementMap<'a, R: Renderer>(&'a [DynamicRenderElements<R>]);
+
+impl<'a, R> DynamicRenderElementMap<'a, R>
+where
+    R: Renderer + ImportAll + 'static,
+    R::TextureId: 'static,
+    R::Error: 'static,
+    R::Frame: 'static,
+{
+    pub fn iter_bottom(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        self.iter_layer(RenderLayer::Bottom)
+    }
+
+    pub fn iter_above_background(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        self.iter_layer(RenderLayer::AboveBackground)
+    }
+
+    pub fn iter_before_windows(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        self.iter_layer(RenderLayer::BeforeWindows)
+    }
+
+    pub fn iter_after_windows(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        self.iter_layer(RenderLayer::AfterWindows)
+    }
+
+    pub fn iter_before_overlay(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        self.iter_layer(RenderLayer::BeforeOverlay)
+    }
+
+    pub fn iter_top(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        self.iter_layer(RenderLayer::Top)
+    }
+
+    pub fn iter_layer(&'a self, layer: RenderLayer) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        Box::new(
+            self.0
+                .iter()
+                .filter(move |c| c.layer() == layer)
+                .map(|c| c as &SpaceElem<R>),
+        )
+    }
+}
+
 impl PartialEq for Space {
     fn eq(&self, other: &Space) -> bool {
         self.id == other.id
@@ -474,9 +520,6 @@ impl Space {
             return Err(RenderError::UnmappedOutput);
         }
 
-        type SpaceElem<R> =
-            dyn SpaceElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>;
-
         let mut state = output_state(self.id, output);
         let output_size = output
             .current_mode()
@@ -612,55 +655,26 @@ impl Space {
                         .collect::<Vec<_>>(),
                 )?;
 
+                let custom_elements = DynamicRenderElementMap(custom_elements);
+
                 // Then re-draw all windows & layers overlapping with a damage rect.
 
                 for element in custom_elements
-                    .iter()
-                    .filter(|c| c.layer() == RenderLayer::Bottom)
-                    .map(|p| p as &SpaceElem<R>)
+                    .iter_bottom()
                     .chain(
                         layer_map
                             .layers_on(WlrLayer::Background)
-                            .map(|l| l as &SpaceElem<R>)
+                            .map(|l| l as &SpaceElem<R>),
                     )
-                    .chain(
-                        custom_elements
-                            .iter()
-                            .filter(|c| c.layer() == RenderLayer::AboveBackground)
-                            .map(|c| c as &SpaceElem<R>),
-                    )
+                    .chain(custom_elements.iter_above_background())
                     .chain(layer_map.layers_on(WlrLayer::Bottom).map(|l| l as &SpaceElem<R>))
-                    .chain(
-                        custom_elements
-                            .iter()
-                            .filter(|c| c.layer() == RenderLayer::BeforeWindows)
-                            .map(|c| c as &SpaceElem<R>),
-                    )
+                    .chain(custom_elements.iter_before_windows())
                     .chain(self.windows.iter().map(|w| w as &SpaceElem<R>))
-                    .chain(
-                        custom_elements
-                            .iter()
-                            .filter(|c| c.layer() == RenderLayer::AfterWindows)
-                            .map(|c| c as &SpaceElem<R>),
-                    )
-                    .chain(
-                        layer_map
-                            .layers_on(WlrLayer::Top)
-                            .map(|l| l as &SpaceElem<R>)
-                    )
-                    .chain(
-                        custom_elements
-                            .iter()
-                            .filter(|c| c.layer() == RenderLayer::BeforeOverlay)
-                            .map(|c| c as &SpaceElem<R>),
-                    )
+                    .chain(custom_elements.iter_after_windows())
+                    .chain(layer_map.layers_on(WlrLayer::Top).map(|l| l as &SpaceElem<R>))
+                    .chain(custom_elements.iter_before_overlay())
                     .chain(layer_map.layers_on(WlrLayer::Overlay).map(|l| l as &SpaceElem<R>))
-                    .chain(
-                        custom_elements
-                            .iter()
-                            .filter(|c| c.layer() == RenderLayer::Top)
-                            .map(|c| c as &SpaceElem<R>),
-                    )
+                    .chain(custom_elements.iter_top())
                 {
                     let geo = element.geometry(self.id);
                     if damage.iter().any(|d| d.overlaps(geo)) {
