@@ -107,6 +107,23 @@ impl LayerMap {
                 },
                 |_, _, _| true,
             );
+            for (popup, _) in PopupManager::popups_for_surface(surface)
+                .ok()
+                .into_iter()
+                .flatten()
+            {
+                if let Some(surface) = popup.get_surface() {
+                    with_surface_tree_downward(
+                        surface,
+                        (),
+                        |_, _, _| TraversalAction::DoChildren(()),
+                        |wl_surface, _, _| {
+                            output_leave(&output, &mut self.surfaces, wl_surface, &self.logger);
+                        },
+                        |_, _, _| true,
+                    )
+                }
+            }
         }
     }
 
@@ -198,6 +215,23 @@ impl LayerMap {
                     },
                     |_, _, _| true,
                 );
+                for (popup, _) in PopupManager::popups_for_surface(surface)
+                    .ok()
+                    .into_iter()
+                    .flatten()
+                {
+                    if let Some(surface) = popup.get_surface() {
+                        with_surface_tree_downward(
+                            surface,
+                            (),
+                            |_, _, _| TraversalAction::DoChildren(()),
+                            |wl_surface, _, _| {
+                                output_enter(&output, surfaces_ref, wl_surface, logger_ref);
+                            },
+                            |_, _, _| true,
+                        )
+                    }
+                }
 
                 let data = with_states(surface, |states| {
                     *states.cached_state.current::<LayerSurfaceCachedState>()
