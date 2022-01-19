@@ -622,14 +622,14 @@ impl Space {
                         layer_map
                             .layers_on(WlrLayer::Background)
                             .map(|l| l as &SpaceElem<R>)
-                            .chain(
-                                custom_elements
-                                    .iter()
-                                    .filter(|c| c.layer() == RenderLayer::AboveBackground)
-                                    .map(|c| c as &SpaceElem<R>),
-                            )
-                            .chain(layer_map.layers_on(WlrLayer::Bottom).map(|l| l as &SpaceElem<R>)),
                     )
+                    .chain(
+                        custom_elements
+                            .iter()
+                            .filter(|c| c.layer() == RenderLayer::AboveBackground)
+                            .map(|c| c as &SpaceElem<R>),
+                    )
+                    .chain(layer_map.layers_on(WlrLayer::Bottom).map(|l| l as &SpaceElem<R>))
                     .chain(
                         custom_elements
                             .iter()
