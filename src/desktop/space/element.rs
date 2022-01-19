@@ -12,6 +12,7 @@ use wayland_server::protocol::wl_surface::WlSurface;
 
 /// Enum for indicating on with layer a render element schould be draw
 #[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RenderLayer {
     /// Bellow every other elements
     Bottom,
@@ -25,6 +26,56 @@ pub enum RenderLayer {
     BeforeOverlay,
     /// Above anything else
     Top,
+}
+
+/// Elements rendered by [`Space::render_output`] in addition to windows, layers and popups.
+pub type DynamicRenderElements<R> =
+    Box<dyn RenderElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>>;
+
+pub(super) type SpaceElem<R> =
+    dyn SpaceElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>;
+
+pub(super) struct DynamicRenderElementMap<'a, R: Renderer>(pub(super) &'a [DynamicRenderElements<R>]);
+
+impl<'a, R> DynamicRenderElementMap<'a, R>
+where
+    R: Renderer + ImportAll + 'static,
+    R::TextureId: 'static,
+    R::Error: 'static,
+    R::Frame: 'static,
+{
+    pub fn iter_bottom(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        self.iter_layer(RenderLayer::Bottom)
+    }
+
+    pub fn iter_above_background(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        self.iter_layer(RenderLayer::AboveBackground)
+    }
+
+    pub fn iter_before_windows(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        self.iter_layer(RenderLayer::BeforeWindows)
+    }
+
+    pub fn iter_after_windows(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        self.iter_layer(RenderLayer::AfterWindows)
+    }
+
+    pub fn iter_before_overlay(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        self.iter_layer(RenderLayer::BeforeOverlay)
+    }
+
+    pub fn iter_top(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        self.iter_layer(RenderLayer::Top)
+    }
+
+    pub fn iter_layer(&'a self, layer: RenderLayer) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
+        Box::new(
+            self.0
+                .iter()
+                .filter(move |c| c.layer() == layer)
+                .map(|c| c as &SpaceElem<R>),
+        )
+    }
 }
 
 /// Trait for custom elements to be rendered during [`Space::render_output`].
