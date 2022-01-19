@@ -35,6 +35,7 @@ pub type DynamicRenderElements<R> =
 pub(super) type SpaceElem<R> =
     dyn SpaceElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>;
 
+/// Helper struct for iterating over diffrent layers of `DynamicRenderElements`
 pub(super) struct DynamicRenderElementMap<'a, R: Renderer>(pub(super) &'a [DynamicRenderElements<R>]);
 
 impl<'a, R> DynamicRenderElementMap<'a, R>
@@ -44,30 +45,37 @@ where
     R::Error: 'static,
     R::Frame: 'static,
 {
+    /// Iterate over `DynamicRenderElements` with layer `RenderLayer::Bottom`
     pub fn iter_bottom(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
         self.iter_layer(RenderLayer::Bottom)
     }
 
+    /// Iterate over `DynamicRenderElements with layer `RenderLayer::AboveBackground`
     pub fn iter_above_background(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
         self.iter_layer(RenderLayer::AboveBackground)
     }
 
+    /// Iterate over `DynamicRenderElements` with layer `RenderLayer::BeforeWindows`
     pub fn iter_before_windows(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
         self.iter_layer(RenderLayer::BeforeWindows)
     }
 
+    /// Iterate over `DynamicRenderElements` with layer `RenderLayer::AfterWindows`
     pub fn iter_after_windows(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
         self.iter_layer(RenderLayer::AfterWindows)
     }
 
+    /// Iterate over `DynamicRenderElements` with layer `RenderLayer::BeforeOverlay`
     pub fn iter_before_overlay(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
         self.iter_layer(RenderLayer::BeforeOverlay)
     }
 
+    /// Iterate over `DynamicRenderElements` with layer `RenderLayer::Top`
     pub fn iter_top(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
         self.iter_layer(RenderLayer::Top)
     }
 
+    /// Iterate over `DynamicRenderElements` with provided `layer`
     pub fn iter_layer(&'a self, layer: RenderLayer) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
         Box::new(
             self.0
