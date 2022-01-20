@@ -490,6 +490,22 @@ impl Space {
             .flat_map(|l| l.popup_elements::<R>(self.id))
             .collect::<Vec<_>>();
 
+        let mut render_elements: Vec<&SpaceElem<R>> = Vec::with_capacity(
+            custom_elements.len()
+                + layer_map.len()
+                + self.windows.len()
+                + window_popups.len()
+                + layer_popups.len(),
+        );
+
+        render_elements.extend(&mut custom_elements.iter().map(|l| l as &SpaceElem<R>));
+        render_elements.extend(&mut self.windows.iter().map(|l| l as &SpaceElem<R>));
+        render_elements.extend(&mut window_popups.iter().map(|l| l as &SpaceElem<R>));
+        render_elements.extend(&mut layer_map.layers().map(|l| l as &SpaceElem<R>));
+        render_elements.extend(&mut layer_popups.iter().map(|l| l as &SpaceElem<R>));
+
+        render_elements.sort_by_key(|e| e.z_index());
+
         // This will hold all the damage we need for this rendering step
         let mut damage = Vec::<Rectangle<i32, Logical>>::new();
         // First add damage for windows gone
@@ -498,16 +514,7 @@ impl Space {
             .last_state
             .iter()
             .filter_map(|(id, geo)| {
-                if !self
-                    .windows
-                    .iter()
-                    .map(|w| w as &SpaceElem<R>)
-                    .chain(window_popups.iter().map(|p| p as &SpaceElem<R>))
-                    .chain(layer_map.layers().map(|l| l as &SpaceElem<R>))
-                    .chain(layer_popups.iter().map(|p| p as &SpaceElem<R>))
-                    .chain(custom_elements.iter().map(|c| c as &SpaceElem<R>))
-                    .any(|e| ToplevelId::from(e) == *id)
-                {
+                if !render_elements.iter().any(|e| ToplevelId::from(*e) == *id) {
                     Some(*geo)
                 } else {
                     None
@@ -520,17 +527,9 @@ impl Space {
         }
 
         // lets iterate front to back and figure out, what new windows or unmoved windows we have
-        for element in self
-            .windows
-            .iter()
-            .map(|w| w as &SpaceElem<R>)
-            .chain(window_popups.iter().map(|p| p as &SpaceElem<R>))
-            .chain(layer_map.layers().map(|l| l as &SpaceElem<R>))
-            .chain(layer_popups.iter().map(|p| p as &SpaceElem<R>))
-            .chain(custom_elements.iter().map(|c| c as &SpaceElem<R>))
-        {
+        for element in &render_elements {
             let geo = element.geometry(self.id);
-            let old_geo = state.last_state.get(&ToplevelId::from(element)).cloned();
+            let old_geo = state.last_state.get(&ToplevelId::from(*element)).cloned();
 
             // window was moved or resized
             if old_geo.map(|old_geo| old_geo != geo).unwrap_or(false) {
@@ -603,19 +602,9 @@ impl Space {
                         .map(|geo| geo.to_f64().to_physical(state.render_scale).to_i32_round())
                         .collect::<Vec<_>>(),
                 )?;
-
-                let mut render_elements: Vec<&SpaceElem<R>> =
-                    Vec::with_capacity(custom_elements.len() + layer_map.len() + self.windows.len());
-
-                render_elements.append(&mut custom_elements.iter().map(|l| l as &SpaceElem<R>).collect());
-                render_elements.append(&mut self.windows.iter().map(|l| l as &SpaceElem<R>).collect());
-                render_elements.append(&mut layer_map.layers().map(|l| l as &SpaceElem<R>).collect());
-
-                render_elements.sort_by_key(|e| e.z_index());
-
                 // Then re-draw all windows & layers overlapping with a damage rect.
 
-                for element in render_elements {
+                for element in &render_elements {
                     let geo = element.geometry(self.id);
                     if damage.iter().any(|d| d.overlaps(geo)) {
                         let loc = element.location(self.id);
@@ -656,17 +645,11 @@ impl Space {
         }
 
         // If rendering was successful capture the state and add the damage
-        state.last_state = self
-            .windows
+        state.last_state = render_elements
             .iter()
-            .map(|w| w as &SpaceElem<R>)
-            .chain(window_popups.iter().map(|p| p as &SpaceElem<R>))
-            .chain(layer_map.layers().map(|l| l as &SpaceElem<R>))
-            .chain(layer_popups.iter().map(|p| p as &SpaceElem<R>))
-            .chain(custom_elements.iter().map(|c| c as &SpaceElem<R>))
             .map(|elem| {
                 let geo = elem.geometry(self.id);
-                (ToplevelId::from(elem), geo)
+                (ToplevelId::from(*elem), geo)
             })
             .collect();
         state.old_damage.push_front(new_damage.clone());
