@@ -82,7 +82,6 @@ where
             };
             z_index as u8
         } else {
-            //TODO: what to do when layersurface doesn't have a layer?
             0
         }
     }
