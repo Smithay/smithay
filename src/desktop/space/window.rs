@@ -107,6 +107,6 @@ where
     }
 
     fn z_index(&self) -> u8 {
-        RenderZindex::Top as u8
+        RenderZindex::Shell as u8
     }
 }
