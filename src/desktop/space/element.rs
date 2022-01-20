@@ -114,9 +114,7 @@ where
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error>;
-    fn z_index(&self) -> u8; //{
-                             //    0
-                             //}
+    fn z_index(&self) -> u8;
 }
 
 impl<R, F, E, T> SpaceElement<R, F, E, T> for Box<dyn RenderElement<R, F, E, T>>
