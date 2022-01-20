@@ -18,6 +18,7 @@ use super::RenderZindex;
 pub struct RenderPopup {
     location: Point<i32, Logical>,
     popup: PopupKind,
+    parent_layer: RenderZindex,
 }
 
 impl Window {
@@ -41,6 +42,7 @@ impl Window {
                         RenderPopup {
                             location: offset,
                             popup,
+                            parent_layer: RenderZindex::Shell,
                         }
                     })
             })
@@ -72,6 +74,7 @@ impl LayerSurface {
                         RenderPopup {
                             location: offset,
                             popup,
+                            parent_layer: RenderZindex::Overlay,
                         }
                     })
             })
@@ -130,6 +133,10 @@ where
     }
 
     fn z_index(&self) -> u8 {
-        RenderZindex::PopUp as u8
+        match self.parent_layer {
+            RenderZindex::Shell => RenderZindex::PopUpsShell as u8,
+            RenderZindex::Overlay => RenderZindex::PopUpsOverlay as u8,
+            _ => 0, //Maybe better panic here? Or return u8::MAX?
+        }
     }
 }
