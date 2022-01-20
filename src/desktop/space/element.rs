@@ -20,14 +20,14 @@ pub enum RenderZindex {
     Bottom = 20,
     /// Default zindex for Windows
     Shell = 30,
-    /// Default zindex for Windows PopUps
-    PopUpsShell = 40,
     /// WlrLayer::Top default zindex
-    Top = 50,
+    Top = 40,
+    /// Default zindex for Windows PopUps
+    Popups = 50,
     /// Default Layer for RenderElements
-    Overlay = 80,
+    Overlay = 60,
     /// Default Layer for Overlay PopUp
-    PopUpsOverlay = 100,
+    PopupsOverlay = 70,
 }
 
 /// Elements rendered by [`Space::render_output`] in addition to windows, layers and popups.

@@ -8,7 +8,7 @@ use crate::{
         window::Window,
     },
     utils::{Logical, Point, Rectangle},
-    wayland::output::Output,
+    wayland::{output::Output, shell::wlr_layer::Layer},
 };
 use std::any::TypeId;
 
@@ -18,7 +18,7 @@ use super::RenderZindex;
 pub struct RenderPopup {
     location: Point<i32, Logical>,
     popup: PopupKind,
-    parent_layer: RenderZindex,
+    z_index: u8,
 }
 
 impl Window {
@@ -42,7 +42,7 @@ impl Window {
                         RenderPopup {
                             location: offset,
                             popup,
-                            parent_layer: RenderZindex::Shell,
+                            z_index: RenderZindex::Popups as u8,
                         }
                     })
             })
@@ -52,7 +52,7 @@ impl Window {
 }
 
 impl LayerSurface {
-    pub(super) fn popup_elements<R>(&self, space_id: usize) -> impl Iterator<Item = RenderPopup>
+    pub(super) fn popup_elements<R>(&self, space_id: usize) -> impl Iterator<Item = RenderPopup> + '_
     where
         R: Renderer + ImportAll + 'static,
         R::TextureId: 'static,
@@ -71,10 +71,20 @@ impl LayerSurface {
                     .flatten()
                     .map(move |(popup, location)| {
                         let offset = loc + location - popup.geometry().loc;
+                        let z_index = if let Some(layer) = self.layer() {
+                            if layer == Layer::Overlay {
+                                RenderZindex::PopupsOverlay as u8
+                            } else {
+                                RenderZindex::Popups as u8
+                            }
+                        } else {
+                            0
+                        };
+
                         RenderPopup {
                             location: offset,
                             popup,
-                            parent_layer: RenderZindex::Overlay,
+                            z_index,
                         }
                     })
             })
@@ -133,10 +143,6 @@ where
     }
 
     fn z_index(&self) -> u8 {
-        match self.parent_layer {
-            RenderZindex::Shell => RenderZindex::PopUpsShell as u8,
-            RenderZindex::Overlay => RenderZindex::PopUpsOverlay as u8,
-            _ => 0, //Maybe better panic here? Or return u8::MAX?
-        }
+        self.z_index
     }
 }
