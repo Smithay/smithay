@@ -12,6 +12,8 @@ use crate::{
 };
 use std::any::TypeId;
 
+use super::RenderZindex;
+
 #[derive(Debug)]
 pub struct RenderPopup {
     location: Point<i32, Logical>,
@@ -125,5 +127,9 @@ where
     ) -> Result<(), R::Error> {
         // popups are special, we track them, but they render with their parents
         Ok(())
+    }
+
+    fn z_index(&self) -> u8 {
+        RenderZindex::PopUp as u8
     }
 }

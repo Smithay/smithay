@@ -14,7 +14,6 @@ use crate::{
             TraversalAction,
         },
         output::Output,
-        shell::wlr_layer::Layer as WlrLayer,
     },
 };
 use indexmap::{IndexMap, IndexSet};
@@ -605,27 +604,18 @@ impl Space {
                         .collect::<Vec<_>>(),
                 )?;
 
-                let custom_elements = DynamicRenderElementMap(custom_elements);
+                let mut render_elements: Vec<&SpaceElem<R>> =
+                    Vec::with_capacity(custom_elements.len() + layer_map.len() + self.windows.len());
+
+                render_elements.append(&mut custom_elements.iter().map(|l| l as &SpaceElem<R>).collect());
+                render_elements.append(&mut self.windows.iter().map(|l| l as &SpaceElem<R>).collect());
+                render_elements.append(&mut layer_map.layers().map(|l| l as &SpaceElem<R>).collect());
+
+                render_elements.sort_by_key(|e| e.z_index());
 
                 // Then re-draw all windows & layers overlapping with a damage rect.
 
-                for element in custom_elements
-                    .iter_bottom()
-                    .chain(
-                        layer_map
-                            .layers_on(WlrLayer::Background)
-                            .map(|l| l as &SpaceElem<R>),
-                    )
-                    .chain(custom_elements.iter_above_background())
-                    .chain(layer_map.layers_on(WlrLayer::Bottom).map(|l| l as &SpaceElem<R>))
-                    .chain(custom_elements.iter_before_windows())
-                    .chain(self.windows.iter().map(|w| w as &SpaceElem<R>))
-                    .chain(custom_elements.iter_after_windows())
-                    .chain(layer_map.layers_on(WlrLayer::Top).map(|l| l as &SpaceElem<R>))
-                    .chain(custom_elements.iter_before_overlay())
-                    .chain(layer_map.layers_on(WlrLayer::Overlay).map(|l| l as &SpaceElem<R>))
-                    .chain(custom_elements.iter_top())
-                {
+                for element in render_elements {
                     let geo = element.geometry(self.id);
                     if damage.iter().any(|d| d.overlaps(geo)) {
                         let loc = element.location(self.id);

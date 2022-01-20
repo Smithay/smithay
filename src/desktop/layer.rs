@@ -269,6 +269,11 @@ impl LayerMap {
     pub fn cleanup(&mut self) {
         self.layers.retain(|layer| layer.alive())
     }
+
+    /// Returns layers count
+    pub fn len(&self) -> usize {
+        self.layers.len()
+    }
 }
 
 #[derive(Debug, Default)]

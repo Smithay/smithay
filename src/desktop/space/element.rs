@@ -10,22 +10,22 @@ use std::{
 };
 use wayland_server::protocol::wl_surface::WlSurface;
 
-/// Enum for indicating on with layer a render element schould be draw
-#[derive(Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum RenderLayer {
-    /// Bellow every other elements
-    Bottom,
-    /// Above WlrLayer::Background but bellow WlrLayer::Bottom
-    AboveBackground,
-    /// Right before programs windows are draw
-    BeforeWindows,
-    /// Right after programs windows are draw
-    AfterWindows,
-    /// Above WlrLayer::Top but bellow WlrLayer::Overlay
-    BeforeOverlay,
-    /// Above anything else
-    Top,
+/// Indicates default values for some zindexs inside smithay
+#[derive(Debug)]
+#[repr(u8)]
+pub enum RenderZindex {
+    /// WlrLayer::Background default zindex
+    Background = 10,
+    /// WlrLayer::Bottom default zindex
+    Bottom = 20,
+    /// Not used yet?
+    Shell = 30,
+    /// Default zindex for Windows
+    Top = 40,
+    /// Default Layer for RenderElements
+    Overlay = 50,
+    /// Default Layer for PopUps?
+    PopUp = 60,
 }
 
 /// Elements rendered by [`Space::render_output`] in addition to windows, layers and popups.
@@ -34,57 +34,6 @@ pub type DynamicRenderElements<R> =
 
 pub(super) type SpaceElem<R> =
     dyn SpaceElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>;
-
-/// Helper struct for iterating over diffrent layers of `DynamicRenderElements`
-pub(super) struct DynamicRenderElementMap<'a, R: Renderer>(pub(super) &'a [DynamicRenderElements<R>]);
-
-impl<'a, R> DynamicRenderElementMap<'a, R>
-where
-    R: Renderer + ImportAll + 'static,
-    R::TextureId: 'static,
-    R::Error: 'static,
-    R::Frame: 'static,
-{
-    /// Iterate over `DynamicRenderElements` with layer `RenderLayer::Bottom`
-    pub fn iter_bottom(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
-        self.iter_layer(RenderLayer::Bottom)
-    }
-
-    /// Iterate over `DynamicRenderElements with layer `RenderLayer::AboveBackground`
-    pub fn iter_above_background(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
-        self.iter_layer(RenderLayer::AboveBackground)
-    }
-
-    /// Iterate over `DynamicRenderElements` with layer `RenderLayer::BeforeWindows`
-    pub fn iter_before_windows(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
-        self.iter_layer(RenderLayer::BeforeWindows)
-    }
-
-    /// Iterate over `DynamicRenderElements` with layer `RenderLayer::AfterWindows`
-    pub fn iter_after_windows(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
-        self.iter_layer(RenderLayer::AfterWindows)
-    }
-
-    /// Iterate over `DynamicRenderElements` with layer `RenderLayer::BeforeOverlay`
-    pub fn iter_before_overlay(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
-        self.iter_layer(RenderLayer::BeforeOverlay)
-    }
-
-    /// Iterate over `DynamicRenderElements` with layer `RenderLayer::Top`
-    pub fn iter_top(&'a self) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
-        self.iter_layer(RenderLayer::Top)
-    }
-
-    /// Iterate over `DynamicRenderElements` with provided `layer`
-    pub fn iter_layer(&'a self, layer: RenderLayer) -> Box<dyn Iterator<Item = &SpaceElem<R>> + 'a> {
-        Box::new(
-            self.0
-                .iter()
-                .filter(move |c| c.layer() == layer)
-                .map(|c| c as &SpaceElem<R>),
-        )
-    }
-}
 
 /// Trait for custom elements to be rendered during [`Space::render_output`].
 pub trait RenderElement<R, F, E, T>
@@ -132,9 +81,9 @@ where
         log: &slog::Logger,
     ) -> Result<(), R::Error>;
 
-    /// Returns they layer the elements schould be draw on, defaults to Top
-    fn layer(&self) -> RenderLayer {
-        RenderLayer::Top
+    /// Returns z_index of RenderElement, reverf too [`RenderZindex`] for default values
+    fn z_index(&self) -> u8 {
+        RenderZindex::Overlay as u8
     }
 }
 
@@ -163,6 +112,9 @@ where
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error>;
+    fn z_index(&self) -> u8; //{
+                             //    0
+                             //}
 }
 
 impl<R, F, E, T> SpaceElement<R, F, E, T> for Box<dyn RenderElement<R, F, E, T>>
@@ -195,6 +147,10 @@ where
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
         (&**self as &dyn RenderElement<R, F, E, T>).draw(renderer, frame, scale, damage, log)
+    }
+
+    fn z_index(&self) -> u8 {
+        RenderElement::z_index(self.as_ref())
     }
 }
 
