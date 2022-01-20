@@ -11,21 +11,23 @@ use std::{
 use wayland_server::protocol::wl_surface::WlSurface;
 
 /// Indicates default values for some zindexs inside smithay
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum RenderZindex {
     /// WlrLayer::Background default zindex
     Background = 10,
     /// WlrLayer::Bottom default zindex
     Bottom = 20,
-    /// Not used yet?
-    Shell = 30,
     /// Default zindex for Windows
-    Top = 40,
+    Shell = 30,
+    /// Default zindex for Windows PopUps
+    PopUpsShell = 40,
+    /// WlrLayer::Top default zindex
+    Top = 50,
     /// Default Layer for RenderElements
-    Overlay = 50,
-    /// Default Layer for PopUps?
-    PopUp = 60,
+    Overlay = 80,
+    /// Default Layer for Overlay PopUp
+    PopUpsOverlay = 100,
 }
 
 /// Elements rendered by [`Space::render_output`] in addition to windows, layers and popups.
