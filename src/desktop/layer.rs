@@ -271,6 +271,7 @@ impl LayerMap {
     }
 
     /// Returns layers count
+    #[allow(clippy::len_without_is_empty)] //we don't need is_empty on that struct for now, mark as allow
     pub fn len(&self) -> usize {
         self.layers.len()
     }
