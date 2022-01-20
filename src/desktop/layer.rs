@@ -485,7 +485,16 @@ impl LayerSurface {
     /// window that requested it
     pub fn send_frame(&self, time: u32) {
         if let Some(wl_surface) = self.0.surface.get_surface() {
-            send_frames_surface_tree(wl_surface, time)
+            send_frames_surface_tree(wl_surface, time);
+            for (popup, _) in PopupManager::popups_for_surface(wl_surface)
+                .ok()
+                .into_iter()
+                .flatten()
+            {
+                if let Some(surface) = popup.get_surface() {
+                    send_frames_surface_tree(surface, time);
+                }
+            }
         }
     }
 
