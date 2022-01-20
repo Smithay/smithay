@@ -231,3 +231,89 @@ pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
         |_, _, &()| true,
     );
 }
+
+pub(crate) fn output_update(
+    output: &Output,
+    output_geometry: Rectangle<i32, Logical>,
+    surface_list: &mut Vec<wl_surface::WlSurface>,
+    surface: &wl_surface::WlSurface,
+    location: Point<i32, Logical>,
+    logger: &slog::Logger,
+) {
+    with_surface_tree_downward(
+        surface,
+        location,
+        |_, states, location| {
+            let mut location = *location;
+            let data = states.data_map.get::<RefCell<SurfaceState>>();
+
+            if data.is_some() {
+                if states.role == Some("subsurface") {
+                    let current = states.cached_state.current::<SubsurfaceCachedState>();
+                    location += current.location;
+                }
+
+                TraversalAction::DoChildren(location)
+            } else {
+                // If the parent surface is unmapped, then the child surfaces are hidden as
+                // well, no need to consider them here.
+                TraversalAction::SkipChildren
+            }
+        },
+        |wl_surface, states, &loc| {
+            let data = states.data_map.get::<RefCell<SurfaceState>>();
+
+            if let Some(size) = data.and_then(|d| d.borrow().surface_size()) {
+                let surface_rectangle = Rectangle { loc, size };
+                if output_geometry.overlaps(surface_rectangle) {
+                    // We found a matching output, check if we already sent enter
+                    output_enter(output, surface_list, wl_surface, logger);
+                } else {
+                    // Surface does not match output, if we sent enter earlier
+                    // we should now send leave
+                    output_leave(output, surface_list, wl_surface, logger);
+                }
+            } else {
+                // Maybe the the surface got unmapped, send leave on output
+                output_leave(output, surface_list, wl_surface, logger);
+            }
+        },
+        |_, _, _| true,
+    );
+}
+
+pub(crate) fn output_enter(
+    output: &Output,
+    surface_list: &mut Vec<wl_surface::WlSurface>,
+    surface: &wl_surface::WlSurface,
+    logger: &slog::Logger,
+) {
+    if !surface_list.contains(surface) {
+        slog::debug!(
+            logger,
+            "surface ({:?}) entering output {:?}",
+            surface,
+            output.name()
+        );
+        output.enter(surface);
+        surface_list.push(surface.clone());
+    }
+}
+
+pub(crate) fn output_leave(
+    output: &Output,
+    surface_list: &mut Vec<wl_surface::WlSurface>,
+    surface: &wl_surface::WlSurface,
+    logger: &slog::Logger,
+) {
+    if surface_list.contains(surface) {
+        slog::debug!(
+            logger,
+            "surface ({:?}) leaving output {:?}",
+            surface,
+            output.name()
+        );
+        output.leave(surface);
+        surface_list.retain(|s| s != surface);
+    }
+}
