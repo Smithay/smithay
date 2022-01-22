@@ -122,6 +122,9 @@ pub trait Frame {
 
     /// Clear the complete current target with a single given color.
     ///
+    /// The `at` parameter specifies a set of rectangles to clear in the current target. This allows partially
+    /// clearing the target which may be useful for damaged rendering.
+    ///
     /// This operation is only valid in between a `begin` and `finish`-call.
     /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
     fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error>;
