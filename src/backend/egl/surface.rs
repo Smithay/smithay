@@ -81,18 +81,28 @@ impl EGLSurface {
     }
 
     /// Returns the buffer age of the underlying back buffer
-    pub fn buffer_age(&self) -> i32 {
+    pub fn buffer_age(&self) -> Option<i32> {
         let surface = self.surface.load(Ordering::SeqCst);
         let mut age = 0;
-        unsafe {
+        let ret = unsafe {
             ffi::egl::QuerySurface(
                 **self.display,
                 surface as *const _,
                 ffi::egl::BUFFER_AGE_EXT as i32,
                 &mut age as *mut _,
+            )
+        };
+        if ret == ffi::egl::FALSE {
+            slog::debug!(
+                self.logger,
+                "Failed to query buffer age value for surface {:?}: {}",
+                self,
+                EGLError::from_last_call().unwrap_err()
             );
+            None
+        } else {
+            Some(age)
         }
-        age
     }
 
     /// Swaps buffers at the end of a frame.

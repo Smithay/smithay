@@ -306,12 +306,15 @@ impl WinitGraphicsBackend {
     ///
     /// This will only return a meaningful value, if this `WinitGraphicsBackend`
     /// is currently bound (by previously calling [`WinitGraphicsBackend::bind`]).
-    /// Otherwise the contents of the return value are undefined.
-    pub fn buffer_age(&self) -> usize {
+    ///
+    /// Otherwise and on error this function returns `None`.
+    /// If you are using this value actively e.g. for damage-tracking you should
+    /// likely interpret an error just as if "0" was returned.
+    pub fn buffer_age(&self) -> Option<usize> {
         if self.damage_tracking {
-            self.egl.buffer_age() as usize
+            self.egl.buffer_age().map(|x| x as usize)
         } else {
-            0
+            Some(0)
         }
     }
 
