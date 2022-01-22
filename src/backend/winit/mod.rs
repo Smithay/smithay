@@ -302,7 +302,11 @@ impl WinitGraphicsBackend {
         Ok(())
     }
 
-    /// Retrieve the buffer age of the current backbuffer of the window
+    /// Retrieve the buffer age of the current backbuffer of the window.
+    ///
+    /// This will only return a meaningful value, if this `WinitGraphicsBackend`
+    /// is currently bound (by previously calling [`WinitGraphicsBackend::bind`]).
+    /// Otherwise the contents of the return value are undefined.
     pub fn buffer_age(&self) -> usize {
         if self.damage_tracking {
             self.egl.buffer_age() as usize
