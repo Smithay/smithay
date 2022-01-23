@@ -8,7 +8,7 @@ use wayland_server::{
 use crate::{
     utils::{Logical, Point},
     wayland::{
-        seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
+        seat::{AxisFrame, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat},
         Serial,
     },
 };
@@ -16,7 +16,7 @@ use crate::{
 use super::{with_source_metadata, DataDeviceData, SeatData};
 
 pub(crate) struct DnDGrab {
-    start_data: GrabStartData,
+    start_data: PointerGrabStartData,
     data_source: Option<wl_data_source::WlDataSource>,
     current_focus: Option<wl_surface::WlSurface>,
     pending_offers: Vec<wl_data_offer::WlDataOffer>,
@@ -29,7 +29,7 @@ pub(crate) struct DnDGrab {
 
 impl DnDGrab {
     pub(crate) fn new(
-        start_data: GrabStartData,
+        start_data: PointerGrabStartData,
         source: Option<wl_data_source::WlDataSource>,
         origin: wl_surface::WlSurface,
         seat: Seat,
@@ -222,7 +222,7 @@ impl PointerGrab for DnDGrab {
         handle.axis(details);
     }
 
-    fn start_data(&self) -> &GrabStartData {
+    fn start_data(&self) -> &PointerGrabStartData {
         &self.start_data
     }
 }

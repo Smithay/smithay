@@ -1,18 +1,23 @@
 use crate::{
-    utils::{DeadResource, Logical, Point, Rectangle},
+    utils::{DeadResource, Logical, Point},
     wayland::{
         compositor::{get_role, with_states},
-        shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
+        seat::Seat,
+        shell::xdg::{XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
+        Serial,
     },
 };
 use std::sync::{Arc, Mutex};
 use wayland_server::protocol::wl_surface::WlSurface;
+
+use super::{PopupGrab, PopupGrabError, PopupGrabInner, PopupKind};
 
 /// Helper to track popups.
 #[derive(Debug)]
 pub struct PopupManager {
     unmapped_popups: Vec<PopupKind>,
     popup_trees: Vec<PopupTree>,
+    popup_grabs: Vec<PopupGrabInner>,
     logger: ::slog::Logger,
 }
 
@@ -22,6 +27,7 @@ impl PopupManager {
         PopupManager {
             unmapped_popups: Vec::new(),
             popup_trees: Vec::new(),
+            popup_grabs: Vec::new(),
             logger: crate::slog_or_fallback(logger),
         }
     }
@@ -54,24 +60,89 @@ impl PopupManager {
         }
     }
 
-    fn add_popup(&mut self, popup: PopupKind) -> Result<(), DeadResource> {
-        let mut parent = popup.parent().unwrap();
-        while get_role(&parent) == Some(XDG_POPUP_ROLE) {
-            parent = with_states(&parent, |states| {
-                states
-                    .data_map
-                    .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .parent
-                    .as_ref()
-                    .cloned()
-                    .unwrap()
-            })?;
+    /// Take an explicit grab for the provided [`PopupKind`]
+    ///
+    /// Returns a [`PopupGrab`] on success or an [`PopupGrabError`]
+    /// if the grab has been denied.
+    pub fn grab_popup(
+        &mut self,
+        popup: PopupKind,
+        seat: &Seat,
+        serial: Serial,
+    ) -> Result<PopupGrab, PopupGrabError> {
+        let surface = popup.get_surface().ok_or(DeadResource)?;
+        let root = find_popup_root_surface(&popup)?;
+
+        match popup {
+            PopupKind::Xdg(ref xdg) => {
+                let surface = xdg.get_surface().ok_or(DeadResource)?;
+                let committed = with_states(surface, |states| {
+                    states
+                        .data_map
+                        .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .committed
+                })?;
+
+                if committed {
+                    surface.as_ref().post_error(
+                        wayland_protocols::xdg_shell::server::xdg_popup::Error::InvalidGrab as u32,
+                        "xdg_popup already is mapped".to_string(),
+                    );
+                    return Err(PopupGrabError::InvalidGrab);
+                }
+            }
         }
 
-        with_states(&parent, |states| {
+        // The primary store for the grab is the seat, additional we store it
+        // in the popupmanager for active cleanup
+        seat.user_data().insert_if_missing(PopupGrabInner::default);
+        let toplevel_popups = seat.user_data().get::<PopupGrabInner>().unwrap().clone();
+
+        // It the popup grab is not alive it is likely
+        // that it either is new and have never been
+        // added to the popupmanager or that it has been
+        // cleaned up.
+        if !toplevel_popups.alive() {
+            self.popup_grabs.push(toplevel_popups.clone());
+        }
+
+        let previous_serial = match toplevel_popups.grab(&popup, serial) {
+            Ok(serial) => serial,
+            Err(err) => {
+                match err {
+                    PopupGrabError::ParentDismissed => {
+                        let _ = PopupManager::dismiss_popup(&root, &popup);
+                    }
+                    PopupGrabError::NotTheTopmostPopup => {
+                        surface.as_ref().post_error(
+                            wayland_protocols::xdg_shell::server::xdg_wm_base::Error::NotTheTopmostPopup
+                                as u32,
+                            "xdg_popup was not created on the topmost popup".to_string(),
+                        );
+                    }
+                    _ => {}
+                }
+
+                return Err(err);
+            }
+        };
+
+        Ok(PopupGrab::new(
+            toplevel_popups,
+            root,
+            serial,
+            previous_serial,
+            seat.get_keyboard(),
+        ))
+    }
+
+    fn add_popup(&mut self, popup: PopupKind) -> Result<(), DeadResource> {
+        let root = find_popup_root_surface(&popup)?;
+
+        with_states(&root, |states| {
             let tree = PopupTree::default();
             if states.data_map.insert_if_missing(|| tree.clone()) {
                 self.popup_trees.push(tree);
@@ -81,7 +152,7 @@ impl PopupManager {
                 // if it previously had no popups, we likely removed it from our list already
                 self.popup_trees.push(tree.clone());
             }
-            slog::trace!(self.logger, "Adding popup {:?} to parent {:?}", popup, parent);
+            slog::trace!(self.logger, "Adding popup {:?} to root {:?}", popup, root);
             tree.insert(popup);
         })
     }
@@ -116,14 +187,45 @@ impl PopupManager {
         })
     }
 
+    pub(crate) fn dismiss_popup(surface: &WlSurface, popup: &PopupKind) -> Result<(), DeadResource> {
+        with_states(surface, |states| {
+            let tree = states.data_map.get::<PopupTree>();
+
+            if let Some(tree) = tree {
+                tree.dismiss_popup(popup);
+            }
+        })
+    }
+
     /// Needs to be called periodically (but not necessarily frequently)
     /// to cleanup internal resources.
     pub fn cleanup(&mut self) {
         // retain_mut is sadly still unstable
+        self.popup_grabs.iter_mut().for_each(|grabs| grabs.cleanup());
+        self.popup_grabs.retain(|grabs| grabs.alive());
         self.popup_trees.iter_mut().for_each(|tree| tree.cleanup());
         self.popup_trees.retain(|tree| tree.alive());
         self.unmapped_popups.retain(|surf| surf.alive());
     }
+}
+
+fn find_popup_root_surface(popup: &PopupKind) -> Result<WlSurface, DeadResource> {
+    let mut parent = popup.parent().ok_or(DeadResource)?;
+    while get_role(&parent) == Some(XDG_POPUP_ROLE) {
+        parent = with_states(&parent, |states| {
+            states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .parent
+                .as_ref()
+                .cloned()
+                .unwrap()
+        })?;
+    }
+    Ok(parent)
 }
 
 #[derive(Debug, Default, Clone)]
@@ -155,6 +257,22 @@ impl PopupTree {
             }
         }
         children.push(PopupNode::new(popup));
+    }
+
+    fn dismiss_popup(&self, popup: &PopupKind) {
+        let mut children = self.0.lock().unwrap();
+
+        let mut i = 0;
+        while i < children.len() {
+            let child = &mut children[i];
+
+            if child.dismiss_popup(popup) {
+                let _ = children.remove(i);
+                break;
+            } else {
+                i += 1;
+            }
+        }
     }
 
     fn cleanup(&mut self) {
@@ -209,80 +327,48 @@ impl PopupNode {
         }
     }
 
+    fn send_done(&self) {
+        for child in self.children.iter().rev() {
+            child.send_done();
+        }
+
+        self.surface.send_done();
+    }
+
+    fn dismiss_popup(&mut self, popup: &PopupKind) -> bool {
+        if self.surface.get_surface() == popup.get_surface() {
+            self.send_done();
+            return true;
+        }
+
+        let mut i = 0;
+        while i < self.children.len() {
+            let child = &mut self.children[i];
+
+            if child.dismiss_popup(popup) {
+                let _ = self.children.remove(i);
+                return false;
+            } else {
+                i += 1;
+            }
+        }
+
+        false
+    }
+
     fn cleanup(&mut self) {
         for child in &mut self.children {
             child.cleanup();
         }
+
+        if !self.surface.alive() && !self.children.is_empty() {
+            // TODO: The client destroyed a popup before
+            // destroying all children, this is a protocol
+            // error. As the surface is no longer alive we
+            // can not retrieve the client here to send
+            // the error.
+        }
+
         self.children.retain(|n| n.surface.alive());
-    }
-}
-
-/// Represents a popup surface
-#[derive(Debug, Clone)]
-pub enum PopupKind {
-    /// xdg-shell [`PopupSurface`]
-    Xdg(PopupSurface),
-}
-
-impl PopupKind {
-    fn alive(&self) -> bool {
-        match *self {
-            PopupKind::Xdg(ref t) => t.alive(),
-        }
-    }
-
-    /// Retrieves the underlying [`WlSurface`]
-    pub fn get_surface(&self) -> Option<&WlSurface> {
-        match *self {
-            PopupKind::Xdg(ref t) => t.get_surface(),
-        }
-    }
-
-    fn parent(&self) -> Option<WlSurface> {
-        match *self {
-            PopupKind::Xdg(ref t) => t.get_parent_surface(),
-        }
-    }
-
-    /// Returns the surface geometry as set by the client using `xdg_surface::set_window_geometry`
-    pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        let wl_surface = match self.get_surface() {
-            Some(s) => s,
-            None => return Rectangle::from_loc_and_size((0, 0), (0, 0)),
-        };
-
-        with_states(wl_surface, |states| {
-            states
-                .cached_state
-                .current::<SurfaceCachedState>()
-                .geometry
-                .unwrap_or_default()
-        })
-        .unwrap()
-    }
-
-    fn location(&self) -> Point<i32, Logical> {
-        let wl_surface = match self.get_surface() {
-            Some(s) => s,
-            None => return (0, 0).into(),
-        };
-        with_states(wl_surface, |states| {
-            states
-                .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .current
-                .geometry
-        })
-        .unwrap_or_default()
-        .loc
-    }
-}
-
-impl From<PopupSurface> for PopupKind {
-    fn from(p: PopupSurface) -> PopupKind {
-        PopupKind::Xdg(p)
     }
 }

@@ -19,7 +19,7 @@ use smithay::{
             compositor_init, is_sync_subsurface, with_states, with_surface_tree_upward, BufferAssignment,
             SurfaceAttributes, TraversalAction,
         },
-        seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
+        seat::{AxisFrame, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat},
         shell::{
             legacy::{wl_shell_init, ShellRequest, ShellState as WlShellState, ShellSurfaceKind},
             wlr_layer::{LayerShellRequest, LayerSurfaceAttributes},
@@ -39,7 +39,7 @@ use crate::{
 };
 
 struct MoveSurfaceGrab {
-    start_data: GrabStartData,
+    start_data: PointerGrabStartData,
     window_map: Rc<RefCell<WindowMap>>,
     toplevel: SurfaceKind,
     initial_window_location: Point<i32, Logical>,
@@ -82,7 +82,7 @@ impl PointerGrab for MoveSurfaceGrab {
         handle.axis(details)
     }
 
-    fn start_data(&self) -> &GrabStartData {
+    fn start_data(&self) -> &PointerGrabStartData {
         &self.start_data
     }
 }
@@ -130,7 +130,7 @@ impl From<ResizeEdge> for xdg_toplevel::ResizeEdge {
 }
 
 struct ResizeSurfaceGrab {
-    start_data: GrabStartData,
+    start_data: PointerGrabStartData,
     toplevel: SurfaceKind,
     edges: ResizeEdge,
     initial_window_size: Size<i32, Logical>,
@@ -280,7 +280,7 @@ impl PointerGrab for ResizeSurfaceGrab {
         handle.axis(details)
     }
 
-    fn start_data(&self) -> &GrabStartData {
+    fn start_data(&self) -> &PointerGrabStartData {
         &self.start_data
     }
 }

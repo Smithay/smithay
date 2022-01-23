@@ -16,6 +16,8 @@ use wayland_server::protocol::wl_surface;
 
 use std::cell::RefCell;
 
+use super::WindowSurfaceType;
+
 impl SurfaceState {
     fn contains_point<P: Into<Point<f64, Logical>>>(&self, attrs: &SurfaceAttributes, point: P) -> bool {
         let point = point.into();
@@ -172,6 +174,7 @@ pub fn under_from_surface_tree<P>(
     surface: &wl_surface::WlSurface,
     point: Point<f64, Logical>,
     location: P,
+    surface_type: WindowSurfaceType,
 ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)>
 where
     P: Into<Point<i32, Logical>>,
@@ -189,17 +192,23 @@ where
                 location += current.location;
             }
 
-            let contains_the_point = data
-                .map(|data| {
-                    data.borrow()
-                        .contains_point(&*states.cached_state.current(), point - location.to_f64())
-                })
-                .unwrap_or(false);
-            if contains_the_point {
-                *found.borrow_mut() = Some((wl_surface.clone(), location));
+            if states.role == Some("subsurface") || surface_type.contains(WindowSurfaceType::TOPLEVEL) {
+                let contains_the_point = data
+                    .map(|data| {
+                        data.borrow()
+                            .contains_point(&*states.cached_state.current(), point - location.to_f64())
+                    })
+                    .unwrap_or(false);
+                if contains_the_point {
+                    *found.borrow_mut() = Some((wl_surface.clone(), location));
+                }
             }
 
-            TraversalAction::DoChildren(location)
+            if surface_type.contains(WindowSurfaceType::SUBSURFACE) {
+                TraversalAction::DoChildren(location)
+            } else {
+                TraversalAction::SkipChildren
+            }
         },
         |_, _, _| {},
         |_, _, _| {

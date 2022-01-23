@@ -677,16 +677,18 @@ impl PointerGrab for DefaultGrab {
         time: u32,
     ) {
         handle.button(button, state, serial, time);
-        handle.set_grab(
-            serial,
-            ClickGrab {
-                start_data: GrabStartData {
-                    focus: handle.current_focus().cloned(),
-                    button,
-                    location: handle.current_location(),
+        if state == ButtonState::Pressed {
+            handle.set_grab(
+                serial,
+                ClickGrab {
+                    start_data: GrabStartData {
+                        focus: handle.current_focus().cloned(),
+                        button,
+                        location: handle.current_location(),
+                    },
                 },
-            },
-        );
+            );
+        }
     }
     fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
         handle.axis(details);
