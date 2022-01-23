@@ -498,11 +498,11 @@ impl Space {
                 + layer_popups.len(),
         );
 
-        render_elements.extend(&mut custom_elements.iter().map(|l| l as &SpaceElem<R>));
-        render_elements.extend(&mut self.windows.iter().map(|l| l as &SpaceElem<R>));
-        render_elements.extend(&mut window_popups.iter().map(|l| l as &SpaceElem<R>));
-        render_elements.extend(&mut layer_map.layers().map(|l| l as &SpaceElem<R>));
-        render_elements.extend(&mut layer_popups.iter().map(|l| l as &SpaceElem<R>));
+        render_elements.extend(custom_elements.iter().map(|l| l as &SpaceElem<R>));
+        render_elements.extend(self.windows.iter().map(|l| l as &SpaceElem<R>));
+        render_elements.extend(window_popups.iter().map(|l| l as &SpaceElem<R>));
+        render_elements.extend(layer_map.layers().map(|l| l as &SpaceElem<R>));
+        render_elements.extend(layer_popups.iter().map(|l| l as &SpaceElem<R>));
 
         render_elements.sort_by_key(|e| e.z_index());
 
