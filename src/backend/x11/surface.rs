@@ -123,7 +123,7 @@ impl X11Surface {
 
             // Now present the current buffer
             let _ = pixmap.present(&*connection, window.as_ref())?;
-            self.swapchain.submitted(next);
+            self.swapchain.submitted(&next);
 
             // Flush the connection after presenting to the window to ensure we don't run out of buffer space in the X11 connection.
             let _ = connection.flush();

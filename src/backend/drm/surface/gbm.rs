@@ -213,7 +213,6 @@ where
     pub fn frame_submitted(&mut self) -> Result<(), Error> {
         if let Some(mut pending) = self.pending_fb.take() {
             std::mem::swap(&mut pending, &mut self.current_fb);
-            self.swapchain.submitted(pending);
             if self.queued_fb.is_some() {
                 self.submit()?;
             }
@@ -233,6 +232,7 @@ where
             self.drm.page_flip([(fb, self.drm.plane())].iter(), true)
         };
         if flip.is_ok() {
+            self.swapchain.submitted(&slot);
             self.pending_fb = Some(slot);
         }
         flip.map_err(Error::DrmError)

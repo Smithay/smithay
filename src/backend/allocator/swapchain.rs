@@ -154,11 +154,13 @@ where
     /// Mark a given buffer as submitted.
     ///
     /// This might effect internal data (e.g. buffer age) and may only be called,
-    /// if the buffer was actually used for display.
+    /// the buffer may not be used for rendering anymore.
+    /// You may hold on to it, if you require keeping it alive.
+    ///
     /// Buffers can always just be safely discarded by dropping them, but not
-    /// calling this function may affect performance characteristics
+    /// calling this function before may affect performance characteristics
     /// (e.g. by not tracking the buffer age).
-    pub fn submitted(&self, slot: Slot<B>) {
+    pub fn submitted(&self, slot: &Slot<B>) {
         // don't mess up the state, if the user submitted and old buffer, after e.g. a resize
         if !self.slots.iter().any(|other| Arc::ptr_eq(&slot.0, other)) {
             return;
@@ -167,7 +169,7 @@ where
         slot.0.age.store(1, Ordering::SeqCst);
         for other_slot in &self.slots {
             if !Arc::ptr_eq(other_slot, &slot.0) && other_slot.buffer.is_some() {
-                assert!(other_slot
+                let res = other_slot
                     .age
                     .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |age| {
                         if age > 0 {
@@ -175,8 +177,8 @@ where
                         } else {
                             Some(0)
                         }
-                    })
-                    .is_ok());
+                    });
+                assert!(res.is_ok());
             }
         }
     }
