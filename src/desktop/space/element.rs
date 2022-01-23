@@ -44,6 +44,8 @@ where
     /// Draws the element using the provided `Frame` and `Renderer`.
     ///
     /// - `scale` provides the current fractional scale value to render as
+    /// - `location` refers to the relative position in the bound buffer the element should be drawn at,
+    ///    so that it matches with the space-relative coordinates returned by [`RenderElement::geometry`].
     /// - `damage` provides the regions you need to re-draw and *may* not
     ///   be equivalent to the damage returned by `accumulated_damage`.
     ///   Redrawing other parts of the element is not valid and may cause rendering artifacts.
@@ -52,6 +54,7 @@ where
         renderer: &mut R,
         frame: &mut F,
         scale: f64,
+        location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error>;
@@ -109,11 +112,11 @@ where
         renderer: &mut R,
         frame: &mut F,
         scale: f64,
-        _location: Point<i32, Logical>,
+        location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
-        (&**self as &dyn RenderElement<R, F, E, T>).draw(renderer, frame, scale, damage, log)
+        (&**self as &dyn RenderElement<R, F, E, T>).draw(renderer, frame, scale, location, damage, log)
     }
 }
 
@@ -162,6 +165,7 @@ where
         renderer: &mut R,
         frame: &mut F,
         scale: f64,
+        location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
@@ -170,7 +174,7 @@ where
             frame,
             &self.surface,
             scale,
-            self.position,
+            location,
             damage,
             log,
         )
