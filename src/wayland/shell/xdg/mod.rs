@@ -1177,15 +1177,14 @@ impl ToplevelSurface {
     /// The parent must be another toplevel equivalent surface.
     ///
     /// If the parent is `None`, the parent-child relationship is removed.
-    pub fn set_parent(&self, parent: Option<wl_surface::WlSurface>) -> bool {
+    pub fn set_parent(&self, parent: Option<&wl_surface::WlSurface>) -> bool {
         if let Some(parent) = parent {
-            if !is_toplevel_equivalent(&parent) {
+            if !is_toplevel_equivalent(parent) {
                 return false;
             }
         }
 
-        // Unset the parent
-        xdg_handlers::set_parent(&self.shell_surface, None);
+        xdg_handlers::set_parent(&self.shell_surface, parent.cloned());
 
         true
     }
