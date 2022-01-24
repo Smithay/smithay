@@ -8,14 +8,17 @@ use crate::{
         window::Window,
     },
     utils::{Logical, Point, Rectangle},
-    wayland::output::Output,
+    wayland::{output::Output, shell::wlr_layer::Layer},
 };
 use std::any::TypeId;
+
+use super::RenderZindex;
 
 #[derive(Debug)]
 pub struct RenderPopup {
     location: Point<i32, Logical>,
     popup: PopupKind,
+    z_index: u8,
 }
 
 impl Window {
@@ -39,6 +42,7 @@ impl Window {
                         RenderPopup {
                             location: offset,
                             popup,
+                            z_index: RenderZindex::Popups as u8,
                         }
                     })
             })
@@ -48,7 +52,7 @@ impl Window {
 }
 
 impl LayerSurface {
-    pub(super) fn popup_elements<R>(&self, space_id: usize) -> impl Iterator<Item = RenderPopup>
+    pub(super) fn popup_elements<R>(&self, space_id: usize) -> impl Iterator<Item = RenderPopup> + '_
     where
         R: Renderer + ImportAll + 'static,
         R::TextureId: 'static,
@@ -67,9 +71,20 @@ impl LayerSurface {
                     .flatten()
                     .map(move |(popup, location)| {
                         let offset = loc + location - popup.geometry().loc;
+                        let z_index = if let Some(layer) = self.layer() {
+                            if layer == Layer::Overlay {
+                                RenderZindex::PopupsOverlay as u8
+                            } else {
+                                RenderZindex::Popups as u8
+                            }
+                        } else {
+                            0
+                        };
+
                         RenderPopup {
                             location: offset,
                             popup,
+                            z_index,
                         }
                     })
             })
@@ -125,5 +140,9 @@ where
     ) -> Result<(), R::Error> {
         // popups are special, we track them, but they render with their parents
         Ok(())
+    }
+
+    fn z_index(&self) -> u8 {
+        self.z_index
     }
 }

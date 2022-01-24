@@ -5,13 +5,15 @@ use crate::{
         space::{Space, SpaceElement},
     },
     utils::{Logical, Point, Rectangle},
-    wayland::output::Output,
+    wayland::{output::Output, shell::wlr_layer::Layer},
 };
 use std::{
     any::TypeId,
     cell::{RefCell, RefMut},
     collections::HashMap,
 };
+
+use super::RenderZindex;
 
 #[derive(Default)]
 pub struct LayerState {
@@ -68,5 +70,19 @@ where
             layer_state(space_id, self).drawn = true;
         }
         res
+    }
+
+    fn z_index(&self) -> u8 {
+        if let Some(layer) = self.layer() {
+            let z_index = match layer {
+                Layer::Background => RenderZindex::Background,
+                Layer::Bottom => RenderZindex::Bottom,
+                Layer::Top => RenderZindex::Top,
+                Layer::Overlay => RenderZindex::Overlay,
+            };
+            z_index as u8
+        } else {
+            0
+        }
     }
 }

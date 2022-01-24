@@ -10,6 +10,33 @@ use std::{
 };
 use wayland_server::protocol::wl_surface::WlSurface;
 
+/// Indicates default values for some zindexs inside smithay
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
+pub enum RenderZindex {
+    /// WlrLayer::Background default zindex
+    Background = 10,
+    /// WlrLayer::Bottom default zindex
+    Bottom = 20,
+    /// Default zindex for Windows
+    Shell = 30,
+    /// WlrLayer::Top default zindex
+    Top = 40,
+    /// Default zindex for Windows PopUps
+    Popups = 50,
+    /// Default Layer for RenderElements
+    Overlay = 60,
+    /// Default Layer for Overlay PopUp
+    PopupsOverlay = 70,
+}
+
+/// Elements rendered by [`Space::render_output`] in addition to windows, layers and popups.
+pub type DynamicRenderElements<R> =
+    Box<dyn RenderElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>>;
+
+pub(super) type SpaceElem<R> =
+    dyn SpaceElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>;
+
 /// Trait for custom elements to be rendered during [`Space::render_output`].
 pub trait RenderElement<R, F, E, T>
 where
@@ -58,6 +85,11 @@ where
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error>;
+
+    /// Returns z_index of RenderElement, reverf too [`RenderZindex`] for default values
+    fn z_index(&self) -> u8 {
+        RenderZindex::Overlay as u8
+    }
 }
 
 pub(crate) trait SpaceElement<R, F, E, T>
@@ -85,6 +117,7 @@ where
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error>;
+    fn z_index(&self) -> u8;
 }
 
 impl<R, F, E, T> SpaceElement<R, F, E, T> for Box<dyn RenderElement<R, F, E, T>>
@@ -117,6 +150,10 @@ where
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
         (&**self as &dyn RenderElement<R, F, E, T>).draw(renderer, frame, scale, location, damage, log)
+    }
+
+    fn z_index(&self) -> u8 {
+        RenderElement::z_index(self.as_ref())
     }
 }
 

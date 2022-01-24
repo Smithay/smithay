@@ -332,6 +332,12 @@ impl LayerMap {
         self.layers.retain(|layer| layer.alive());
         self.surfaces.retain(|s| s.as_ref().is_alive());
     }
+
+    /// Returns layers count
+    #[allow(clippy::len_without_is_empty)] //we don't need is_empty on that struct for now, mark as allow
+    pub fn len(&self) -> usize {
+        self.layers.len()
+    }
 }
 
 #[derive(Debug, Default)]

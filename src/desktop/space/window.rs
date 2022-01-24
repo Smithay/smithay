@@ -13,6 +13,8 @@ use std::{
     collections::HashMap,
 };
 
+use super::RenderZindex;
+
 #[derive(Default)]
 pub struct WindowState {
     pub location: Point<i32, Logical>,
@@ -102,5 +104,9 @@ where
             window_state(space_id, self).drawn = true;
         }
         res
+    }
+
+    fn z_index(&self) -> u8 {
+        RenderZindex::Shell as u8
     }
 }
