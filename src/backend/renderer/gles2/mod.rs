@@ -874,6 +874,7 @@ impl Bind<Rc<EGLSurface>> for Gles2Renderer {
     fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), Gles2Error> {
         self.unbind()?;
         self.target_surface = Some(surface);
+        self.make_current()?;
         Ok(())
     }
 }
@@ -881,9 +882,7 @@ impl Bind<Rc<EGLSurface>> for Gles2Renderer {
 impl Bind<Dmabuf> for Gles2Renderer {
     fn bind(&mut self, dmabuf: Dmabuf) -> Result<(), Gles2Error> {
         self.unbind()?;
-        unsafe {
-            self.egl.make_current()?;
-        }
+        self.make_current()?;
 
         // Free outdated buffer resources
         // TODO: Replace with `drain_filter` once it lands
