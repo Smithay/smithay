@@ -264,7 +264,7 @@ pub fn run_udev(log: Logger) {
     event_loop.handle().remove(udev_event_source);
 }
 
-pub type RenderSurface = GbmBufferedSurface<SessionFd>;
+pub type RenderSurface = GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, SessionFd>;
 
 struct SurfaceData {
     surface: RenderSurface,
@@ -279,7 +279,7 @@ struct BackendData {
     #[cfg(feature = "debug")]
     fps_texture: Gles2Texture,
     renderer: Rc<RefCell<Gles2Renderer>>,
-    gbm: GbmDevice<SessionFd>,
+    gbm: Rc<RefCell<GbmDevice<SessionFd>>>,
     registration_token: RegistrationToken,
     event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, AnvilState<UdevData>>,
     dev_id: u64,
@@ -287,7 +287,7 @@ struct BackendData {
 
 fn scan_connectors(
     device: &mut DrmDevice<SessionFd>,
-    gbm: &GbmDevice<SessionFd>,
+    gbm: &Rc<RefCell<GbmDevice<SessionFd>>>,
     renderer: &mut Gles2Renderer,
     output_map: &mut crate::output_map::OutputMap,
     signaler: &Signaler<SessionSignal>,
@@ -483,6 +483,7 @@ impl AnvilState<UdevData> {
                 }
             }
 
+            let gbm = Rc::new(RefCell::new(gbm));
             let backends = Rc::new(RefCell::new(scan_connectors(
                 &mut device,
                 &gbm,
