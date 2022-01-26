@@ -249,7 +249,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             )?;
             self.fd
                 .atomic_commit(
-                    &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                    AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
                     req,
                 )
                 .map_err(|_| Error::TestFailed(self.crtc))?;
@@ -287,7 +287,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         )?;
         self.fd
             .atomic_commit(
-                &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
                 req,
             )
             .map_err(|_| Error::TestFailed(self.crtc))?;
@@ -327,7 +327,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
 
         self.fd
             .atomic_commit(
-                &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
                 req,
             )
             .map_err(|_| Error::TestFailed(self.crtc))?;
@@ -367,7 +367,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         if let Err(err) = self
             .fd
             .atomic_commit(
-                &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
                 req,
             )
             .map_err(|_| Error::TestFailed(self.crtc))
@@ -428,7 +428,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         )?;
         self.fd
             .atomic_commit(
-                &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
                 req,
             )
             .map_err(|_| Error::TestFailed(self.crtc))?;
@@ -502,7 +502,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             if let Err(err) = self
                 .fd
                 .atomic_commit(
-                    &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                    AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
                     req.clone(),
                 )
                 .map_err(|_| Error::TestFailed(self.crtc))
@@ -530,21 +530,18 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             .fd
             .atomic_commit(
                 if event {
-                    &[
-                        // on the atomic api we can modeset and trigger a page_flip event on the same call!
-                        AtomicCommitFlags::PageFlipEvent,
-                        AtomicCommitFlags::AllowModeset,
-                        // we also *should* not need to wait for completion, like with `set_crtc`,
-                        // because we have tested this exact commit already, so we do not expect any errors later down the line.
-                        //
-                        // but there is always an exception and `amdgpu` can fail in interesting ways with this flag set...
-                        // https://gitlab.freedesktop.org/drm/amd/-/issues?scope=all&utf8=%E2%9C%93&state=opened&search=drm_atomic_helper_wait_for_flip_done
-                        //
-                        // so we skip this flag:
-                        // AtomicCommitFlags::Nonblock,
-                    ]
+                    // on the atomic api we can modeset and trigger a page_flip event on the same call!
+                    AtomicCommitFlags::PAGE_FLIP_EVENT | AtomicCommitFlags::ALLOW_MODESET
+                    // we also *should* not need to wait for completion, like with `set_crtc`,
+                    // because we have tested this exact commit already, so we do not expect any errors later down the line.
+                    //
+                    // but there is always an exception and `amdgpu` can fail in interesting ways with this flag set...
+                    // https://gitlab.freedesktop.org/drm/amd/-/issues?scope=all&utf8=%E2%9C%93&state=opened&search=drm_atomic_helper_wait_for_flip_done
+                    //
+                    // so we skip this flag:
+                    // AtomicCommitFlags::Nonblock,
                 } else {
-                    &[AtomicCommitFlags::AllowModeset]
+                    AtomicCommitFlags::ALLOW_MODESET
                 },
                 req,
             )
@@ -588,9 +585,9 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         self.fd
             .atomic_commit(
                 if event {
-                    &[AtomicCommitFlags::PageFlipEvent, AtomicCommitFlags::Nonblock]
+                    AtomicCommitFlags::PAGE_FLIP_EVENT | AtomicCommitFlags::NONBLOCK
                 } else {
-                    &[AtomicCommitFlags::Nonblock]
+                    AtomicCommitFlags::NONBLOCK
                 },
                 req,
             )
@@ -638,7 +635,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         let result = self
             .fd
             .atomic_commit(
-                &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
                 req,
             )
             .is_ok();
@@ -676,7 +673,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         let result = self
             .fd
             .atomic_commit(
-                &[AtomicCommitFlags::AllowModeset, AtomicCommitFlags::TestOnly],
+                AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
                 req,
             )
             .is_ok();
@@ -937,7 +934,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
 
         let result = self
             .fd
-            .atomic_commit(&[AtomicCommitFlags::Nonblock], req)
+            .atomic_commit(AtomicCommitFlags::NONBLOCK, req)
             .map_err(|source| Error::Access {
                 errmsg: "Failed to commit on clear_plane",
                 dev: self.fd.dev_path(),
@@ -1029,7 +1026,7 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmSurface<A> {
 
         req.add_property(self.crtc, *active_prop, property::Value::Boolean(false));
         req.add_property(self.crtc, *mode_prop, property::Value::Unknown(0));
-        if let Err(err) = self.fd.atomic_commit(&[AtomicCommitFlags::AllowModeset], req) {
+        if let Err(err) = self.fd.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req) {
             warn!(self.logger, "Unable to disable connectors: {}", err);
         }
     }
