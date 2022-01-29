@@ -107,14 +107,6 @@ pub fn run_udev(log: Logger) {
     let mut event_loop = EventLoop::try_new().unwrap();
     let display = Rc::new(RefCell::new(Display::new()));
 
-    let name = display
-        .borrow_mut()
-        .add_socket_auto()
-        .unwrap()
-        .into_string()
-        .unwrap();
-    info!(log, "Listening on wayland socket"; "name" => name.clone());
-    ::std::env::set_var("WAYLAND_DISPLAY", name);
     /*
      * Initialize session
      */
