@@ -3,10 +3,11 @@ use std::cell::RefCell;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::PathBuf;
 use std::sync::{atomic::AtomicBool, Arc};
+use std::time::{Instant, SystemTime};
 
 use calloop::{EventSource, Interest, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm::control::{connector, crtc, Device as ControlDevice, Event, Mode, ResourceHandles};
-use drm::{ClientCapability, Device as BasicDevice};
+use drm::{ClientCapability, Device as BasicDevice, DriverCapability};
 use nix::libc::dev_t;
 use nix::sys::stat::fstat;
 
@@ -27,6 +28,7 @@ pub struct DrmDevice<A: AsRawFd + 'static> {
     #[cfg(feature = "backend_session")]
     pub(super) links: RefCell<Vec<crate::utils::signaling::SignalToken>>,
     has_universal_planes: bool,
+    has_monotonic_timestamps: bool,
     resources: ResourceHandles,
     pub(super) logger: ::slog::Logger,
     token: Token,
@@ -136,6 +138,10 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
         let has_universal_planes = dev
             .set_client_capability(ClientCapability::UniversalPlanes, true)
             .is_ok();
+        let has_monotonic_timestamps = dev
+            .get_driver_capability(DriverCapability::MonotonicTimestamp)
+            .unwrap_or(0)
+            == 1;
         let resources = dev.resource_handles().map_err(|source| Error::Access {
             errmsg: "Error loading resource handles",
             dev: dev.dev_path(),
@@ -154,6 +160,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             #[cfg(feature = "backend_session")]
             links: RefCell::new(Vec::new()),
             has_universal_planes,
+            has_monotonic_timestamps,
             resources,
             logger: log,
             token: Token::invalid(),
@@ -311,12 +318,30 @@ pub enum DrmEvent {
     Error(Error),
 }
 
+/// Timing metadata for page-flip events
+#[derive(Debug)]
+pub struct EventMetadata {
+    /// The time the frame flip happend
+    pub time: Time,
+    /// The sequence number of the frame
+    pub sequence: u32,
+}
+
+/// Either a realtime or monotonic timestamp
+#[derive(Debug)]
+pub enum Time {
+    /// Monotonic time stamp
+    Monotonic(Instant),
+    /// Realtime time stamp
+    Realtime(SystemTime),
+}
+
 impl<A> EventSource for DrmDevice<A>
 where
     A: AsRawFd + 'static,
 {
     type Event = DrmEvent;
-    type Metadata = ();
+    type Metadata = Option<EventMetadata>;
     type Ret = ();
 
     fn process_events<F>(
@@ -336,7 +361,22 @@ where
                 for event in events {
                     if let Event::PageFlip(event) = event {
                         trace!(self.logger, "Got a page-flip event for crtc ({:?})", event.crtc);
-                        callback(DrmEvent::VBlank(event.crtc), &mut ());
+                        let metadata = EventMetadata {
+                            time: if self.has_monotonic_timestamps {
+                                // There is no way to create an Instant, although the underlying type on unix systems
+                                // is just libc::timespec, which is literally what drm-rs is getting from the kernel and just converting
+                                // into a Duration. So we cheat and initialize a Zero-Instant (because although Instant::ZERO
+                                // exists, its private, so you cannot create abitrary Instants). What we really need is a unix-Ext
+                                // trait for both SystemTime and Instant to convert from a libc::timespec.
+                                //
+                                // But this works for now, although it is quite the hack.
+                                Time::Monotonic(unsafe { std::mem::zeroed::<Instant>() } + event.duration)
+                            } else {
+                                Time::Realtime(SystemTime::UNIX_EPOCH + event.duration)
+                            },
+                            sequence: event.frame,
+                        };
+                        callback(DrmEvent::VBlank(event.crtc), &mut Some(metadata));
                     } else {
                         trace!(
                             self.logger,
@@ -353,7 +393,7 @@ where
                         dev: self.dev_path(),
                         source,
                     }),
-                    &mut (),
+                    &mut None,
                 );
             }
         }
