@@ -209,7 +209,9 @@ impl PointerGrab for DnDGrab {
                     source.cancelled();
                 }
             }
-            (&mut *self.callback.borrow_mut())(super::DataDeviceEvent::DnDDropped);
+            (&mut *self.callback.borrow_mut())(super::DataDeviceEvent::DnDDropped {
+                seat: self.seat.clone(),
+            });
             self.icon = None;
             // in all cases abandon the drop
             // no more buttons are pressed, release the grab

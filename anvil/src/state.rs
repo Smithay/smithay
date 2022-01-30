@@ -167,7 +167,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 DataDeviceEvent::DnDStarted { icon, .. } => {
                     *dnd_icon2.lock().unwrap() = icon;
                 }
-                DataDeviceEvent::DnDDropped => {
+                DataDeviceEvent::DnDDropped { .. } => {
                     *dnd_icon2.lock().unwrap() = None;
                 }
                 _ => {}
