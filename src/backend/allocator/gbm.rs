@@ -96,14 +96,19 @@ impl<T> AsDmabuf for GbmBuffer<T> {
             return Err(GbmConvertError::UnsupportedBuffer); //TODO
         }
 
-        if self.fd()? == 0 {
+        // Make sure to only call fd once as each call will create
+        // a new file descriptor which has to be closed
+        let fd = self.fd()?;
+
+        // gbm_bo_get_fd returns -1 if an error occurs
+        if fd == -1 {
             return Err(GbmConvertError::InvalidFD);
         }
 
         let mut builder = Dmabuf::builder_from_buffer(self, DmabufFlags::empty());
         for idx in 0..planes {
             builder.add_plane(
-                self.fd()?,
+                fd,
                 idx as u32,
                 self.offset(idx)?,
                 self.stride_for_plane(idx)?,
