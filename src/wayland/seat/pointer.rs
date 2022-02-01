@@ -213,6 +213,7 @@ impl PointerHandle {
     ) {
         let mut inner = self.inner.borrow_mut();
         inner.pending_focus = focus.clone();
+        inner.location = location;
         inner.with_grab(move |mut handle, grab| {
             grab.motion(&mut handle, location, focus, serial, time);
         });
@@ -370,7 +371,6 @@ impl<'a> PointerInnerHandle<'a> {
     ) {
         // do we leave a surface ?
         let mut leave = true;
-        self.inner.location = location;
         if let Some((ref current_focus, _)) = self.inner.focus {
             if let Some((ref surface, _)) = focus {
                 if current_focus.as_ref().equals(surface.as_ref()) {
