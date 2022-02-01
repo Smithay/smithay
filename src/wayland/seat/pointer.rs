@@ -91,6 +91,76 @@ impl PointerInternal {
         }
     }
 
+    fn set_grab<G: PointerGrab + 'static>(&mut self, serial: Serial, grab: G, time: u32) {
+        self.grab = GrabStatus::Active(serial, Box::new(grab));
+        // generate a move to let the grab change the focus or move the pointer as result of its initialization
+        let location = self.location;
+        let focus = self.focus.clone();
+        self.motion(location, focus, serial, time);
+    }
+
+    fn unset_grab(&mut self, serial: Serial, time: u32) {
+        self.grab = GrabStatus::None;
+        // restore the focus
+        let location = self.location;
+        let focus = self.pending_focus.clone();
+        self.motion(location, focus, serial, time);
+    }
+
+    fn motion(
+        &mut self,
+        location: Point<f64, Logical>,
+        focus: Option<(WlSurface, Point<i32, Logical>)>,
+        serial: Serial,
+        time: u32,
+    ) {
+        // do we leave a surface ?
+        let mut leave = true;
+        self.location = location;
+        if let Some((ref current_focus, _)) = self.focus {
+            if let Some((ref surface, _)) = focus {
+                if current_focus.as_ref().equals(surface.as_ref()) {
+                    leave = false;
+                }
+            }
+        }
+        if leave {
+            self.with_focused_pointers(|pointer, surface| {
+                pointer.leave(serial.into(), surface);
+                if pointer.as_ref().version() >= 5 {
+                    pointer.frame();
+                }
+            });
+            self.focus = None;
+            (self.image_callback)(CursorImageStatus::Default);
+        }
+
+        // do we enter one ?
+        if let Some((surface, surface_location)) = focus {
+            let entered = self.focus.is_none();
+            // in all cases, update the focus, the coordinates of the surface
+            // might have changed
+            self.focus = Some((surface, surface_location));
+            let (x, y) = (location - surface_location.to_f64()).into();
+            if entered {
+                self.with_focused_pointers(|pointer, surface| {
+                    pointer.enter(serial.into(), surface, x, y);
+                    if pointer.as_ref().version() >= 5 {
+                        pointer.frame();
+                    }
+                })
+            } else {
+                // we were on top of a surface and remained on it
+                self.with_focused_pointers(|pointer, _| {
+                    pointer.motion(time, x, y);
+                    if pointer.as_ref().version() >= 5 {
+                        pointer.frame();
+                    }
+                })
+            }
+        }
+    }
+
     fn with_focused_pointers<F>(&self, mut f: F)
     where
         F: FnMut(&WlPointer, &WlSurface),
@@ -160,13 +230,13 @@ impl PointerHandle {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab + 'static>(&self, grab: G, serial: Serial) {
-        self.inner.borrow_mut().grab = GrabStatus::Active(serial, Box::new(grab));
+    pub fn set_grab<G: PointerGrab + 'static>(&self, grab: G, serial: Serial, time: u32) {
+        self.inner.borrow_mut().set_grab(serial, grab, time);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
-    pub fn unset_grab(&self) {
-        self.inner.borrow_mut().grab = GrabStatus::None;
+    pub fn unset_grab(&self, serial: Serial, time: u32) {
+        self.inner.borrow_mut().unset_grab(serial, time);
     }
 
     /// Check if this pointer is currently grabbed with this serial
@@ -283,6 +353,13 @@ pub struct GrabStartData {
 /// rather than trying to guess when the grab will end.
 pub trait PointerGrab {
     /// A motion was reported
+    ///
+    /// This method allows you attach additional behavior to a motion event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::motion()` as part of your processing. If you
+    /// don't, the rest of the compositor will behave as if the motion event never occurred.
+    ///
+    /// Some grabs (such as drag'n'drop, shell resize and motion) unset the focus while they are active,
+    /// this is achieved by just setting the focus to `None` when invoking `PointerInnerHandle::motion()`.
     fn motion(
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
@@ -292,6 +369,10 @@ pub trait PointerGrab {
         time: u32,
     );
     /// A button press was reported
+    ///
+    /// This method allows you attach additional behavior to a button event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::button()` as part of your processing. If you
+    /// don't, the rest of the compositor will behave as if the button event never occurred.
     fn button(
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
@@ -301,6 +382,10 @@ pub trait PointerGrab {
         time: u32,
     );
     /// An axis scroll was reported
+    ///
+    /// This method allows you attach additional behavior to an axis event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::axis()` as part of your processing. If you
+    /// don't, the rest of the compositor will behave as if the axis event never occurred.
     fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame);
     /// The data about the event that started the grab.
     fn start_data(&self) -> &GrabStartData;
@@ -317,19 +402,15 @@ impl<'a> PointerInnerHandle<'a> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab + 'static>(&mut self, serial: Serial, grab: G) {
-        self.inner.grab = GrabStatus::Active(serial, Box::new(grab));
+    pub fn set_grab<G: PointerGrab + 'static>(&mut self, serial: Serial, grab: G, time: u32) {
+        self.inner.set_grab(serial, grab, time);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
     ///
     /// This will also restore the focus of the underlying pointer
     pub fn unset_grab(&mut self, serial: Serial, time: u32) {
-        self.inner.grab = GrabStatus::None;
-        // restore the focus
-        let location = self.current_location();
-        let focus = self.inner.pending_focus.clone();
-        self.motion(location, focus, serial, time);
+        self.inner.unset_grab(serial, time);
     }
 
     /// Access the current focus of this pointer
@@ -368,51 +449,7 @@ impl<'a> PointerInnerHandle<'a> {
         serial: Serial,
         time: u32,
     ) {
-        // do we leave a surface ?
-        let mut leave = true;
-        self.inner.location = location;
-        if let Some((ref current_focus, _)) = self.inner.focus {
-            if let Some((ref surface, _)) = focus {
-                if current_focus.as_ref().equals(surface.as_ref()) {
-                    leave = false;
-                }
-            }
-        }
-        if leave {
-            self.inner.with_focused_pointers(|pointer, surface| {
-                pointer.leave(serial.into(), surface);
-                if pointer.as_ref().version() >= 5 {
-                    pointer.frame();
-                }
-            });
-            self.inner.focus = None;
-            (self.inner.image_callback)(CursorImageStatus::Default);
-        }
-
-        // do we enter one ?
-        if let Some((surface, surface_location)) = focus {
-            let entered = self.inner.focus.is_none();
-            // in all cases, update the focus, the coordinates of the surface
-            // might have changed
-            self.inner.focus = Some((surface, surface_location));
-            let (x, y) = (location - surface_location.to_f64()).into();
-            if entered {
-                self.inner.with_focused_pointers(|pointer, surface| {
-                    pointer.enter(serial.into(), surface, x, y);
-                    if pointer.as_ref().version() >= 5 {
-                        pointer.frame();
-                    }
-                })
-            } else {
-                // we were on top of a surface and remained on it
-                self.inner.with_focused_pointers(|pointer, _| {
-                    pointer.motion(time, x, y);
-                    if pointer.as_ref().version() >= 5 {
-                        pointer.frame();
-                    }
-                })
-            }
-        }
+        self.inner.motion(location, focus, serial, time);
     }
 
     /// Notify that a button was pressed
@@ -687,6 +724,7 @@ impl PointerGrab for DefaultGrab {
                         location: handle.current_location(),
                     },
                 },
+                time,
             );
         }
     }
