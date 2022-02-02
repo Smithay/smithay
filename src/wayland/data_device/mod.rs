@@ -361,6 +361,7 @@ pub fn start_dnd<C>(
                 Rc::new(RefCell::new(callback)),
             ),
             serial,
+            0,
         );
     }
 }
@@ -463,6 +464,7 @@ where
                             callback.clone(),
                         ),
                         serial,
+                        0,
                     );
                     return;
                 }

@@ -48,12 +48,15 @@ struct MoveSurfaceGrab {
 impl PointerGrab for MoveSurfaceGrab {
     fn motion(
         &mut self,
-        _handle: &mut PointerInnerHandle<'_>,
+        handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
         _focus: Option<(wl_surface::WlSurface, Point<i32, Logical>)>,
-        _serial: Serial,
-        _time: u32,
+        serial: Serial,
+        time: u32,
     ) {
+        // While the grab is active, no client has pointer focus
+        handle.motion(location, None, serial, time);
+
         let delta = location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
 
@@ -151,6 +154,9 @@ impl PointerGrab for ResizeSurfaceGrab {
             handle.unset_grab(serial, time);
             return;
         }
+
+        // While the grab is active, no client has pointer focus
+        handle.motion(location, None, serial, time);
 
         let (mut dx, mut dy) = (location - self.start_data.location).into();
 
@@ -479,7 +485,7 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                         initial_window_location,
                     };
 
-                    pointer.set_grab(grab, serial);
+                    pointer.set_grab(grab, serial, 0);
                 }
 
                 XdgRequest::Resize {
@@ -539,7 +545,7 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                         last_window_size: initial_window_size,
                     };
 
-                    pointer.set_grab(grab, serial);
+                    pointer.set_grab(grab, serial, 0);
                 }
 
                 XdgRequest::AckConfigure {
@@ -806,7 +812,7 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                         initial_window_location,
                     };
 
-                    pointer.set_grab(grab, serial);
+                    pointer.set_grab(grab, serial, 0);
                 }
 
                 ShellRequest::Resize {
@@ -866,7 +872,7 @@ pub fn init_shell<BackendData: 'static>(display: Rc<RefCell<Display>>, log: ::sl
                         last_window_size: initial_window_size,
                     };
 
-                    pointer.set_grab(grab, serial);
+                    pointer.set_grab(grab, serial, 0);
                 }
                 _ => (),
             }
