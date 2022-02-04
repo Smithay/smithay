@@ -60,7 +60,7 @@ use wayland_server::{
         wl_output::{Subpixel, Transform},
         wl_surface,
     },
-    DestructionNotify, DisplayHandle, GlobalDispatch, Resource,
+    DisplayHandle, GlobalDispatch, Resource,
 };
 use wayland_server::{
     protocol::wl_output::{Mode as WMode, WlOutput},
@@ -161,22 +161,6 @@ pub struct OutputGlobalData {
 #[derive(Debug, Clone)]
 pub struct OutputUserData {
     pub(crate) global_data: OutputGlobalData,
-}
-
-impl DestructionNotify for OutputUserData {
-    fn object_destroyed(
-        &self,
-        _client_id: wayland_server::backend::ClientId,
-        object_id: wayland_server::backend::ObjectId,
-    ) {
-        self.global_data
-            .inner
-            .0
-            .lock()
-            .unwrap()
-            .instances
-            .retain(|o| o.id() != object_id);
-    }
 }
 
 impl Inner {
