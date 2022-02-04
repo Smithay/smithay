@@ -7,9 +7,8 @@ use wayland_protocols::xdg_shell::server::{
 };
 
 use wayland_server::{
-    backend::{ClientId, ObjectId},
     DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
-    DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New,
+    Dispatch, DisplayHandle, GlobalDispatch, New,
 };
 
 use super::{
@@ -125,8 +124,4 @@ where
 #[derive(Default, Debug)]
 pub struct XdgWmBaseUserData {
     pub(crate) client_data: Mutex<ShellClientData>,
-}
-
-impl DestructionNotify for XdgWmBaseUserData {
-    fn object_destroyed(&self, _client_id: ClientId, _object_id: ObjectId) {}
 }

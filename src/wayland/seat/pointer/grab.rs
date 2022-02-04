@@ -126,7 +126,9 @@ impl PointerGrab for DefaultGrab {
     ) {
         handle.button(dh, button, state, serial, time);
         handle.set_grab(
+            dh,
             serial,
+            time,
             ClickGrab {
                 start_data: GrabStartData {
                     focus: handle.current_focus().cloned(),

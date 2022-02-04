@@ -13,7 +13,7 @@ use wayland_server::{
         wl_surface::{self, WlSurface},
     },
     DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
-    DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
+    Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
 use crate::utils::{Logical, Point};
@@ -144,16 +144,6 @@ pub struct SurfaceUserData {
     pub(crate) inner: Mutex<PrivateSurfaceData>,
 }
 
-impl DestructionNotify for SurfaceUserData {
-    fn object_destroyed(
-        &self,
-        _client_id: wayland_server::backend::ClientId,
-        object_id: wayland_server::backend::ObjectId,
-    ) {
-        PrivateSurfaceData::cleanup(self, object_id);
-    }
-}
-
 impl DelegateDispatchBase<WlSurface> for CompositorState {
     type UserData = SurfaceUserData;
 }
@@ -274,6 +264,15 @@ where
             _ => unreachable!(),
         }
     }
+
+    fn destroyed(
+        _state: &mut D,
+        _client_id: wayland_server::backend::ClientId,
+        object_id: wayland_server::backend::ObjectId,
+        data: &Self::UserData,
+    ) {
+        PrivateSurfaceData::cleanup(data, object_id);
+    }
 }
 
 /*
@@ -284,15 +283,6 @@ where
 #[derive(Debug)]
 pub struct RegionUserData {
     pub(crate) inner: Mutex<RegionAttributes>,
-}
-
-impl DestructionNotify for RegionUserData {
-    fn object_destroyed(
-        &self,
-        _client_id: wayland_server::backend::ClientId,
-        _object_id: wayland_server::backend::ObjectId,
-    ) {
-    }
 }
 
 impl DelegateDispatchBase<WlRegion> for CompositorState {
@@ -417,20 +407,6 @@ where
 pub struct SubsurfaceUserData {
     surface: WlSurface,
 }
-
-impl DestructionNotify for SubsurfaceUserData {
-    fn object_destroyed(
-        &self,
-        _client_id: wayland_server::backend::ClientId,
-        _object_id: wayland_server::backend::ObjectId,
-    ) {
-        // TODO
-        // if surface.as_ref().is_alive() {
-        PrivateSurfaceData::unset_parent(&self.surface);
-        // }
-    }
-}
-
 /// The cached state associated with a subsurface
 #[derive(Debug)]
 pub struct SubsurfaceCachedState {
@@ -554,6 +530,18 @@ where
             }
             _ => unreachable!(),
         }
+    }
+
+    fn destroyed(
+        _state: &mut D,
+        _client_id: wayland_server::backend::ClientId,
+        _object_id: wayland_server::backend::ObjectId,
+        data: &Self::UserData,
+    ) {
+        // TODO
+        // if surface.as_ref().is_alive() {
+        PrivateSurfaceData::unset_parent(&data.surface);
+        // }
     }
 }
 
