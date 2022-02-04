@@ -16,7 +16,7 @@ use wayland_server::{
         wl_keyboard::{self, KeyState as WlKeyState, KeymapFormat, WlKeyboard},
         wl_surface::WlSurface,
     },
-    Client, DelegateDispatch, DelegateDispatchBase, DestructionNotify, Dispatch, DisplayHandle, Resource,
+    Client, DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource,
 };
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
@@ -179,11 +179,14 @@ impl KbdInternal {
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some(ref surface) = handler.start_data().focus {
+                    // TODO
+                    /*
                     if !surface.as_ref().is_alive() {
                         self.grab = GrabStatus::None;
                         f(KeyboardInnerHandle { inner: self, logger }, &mut DefaultGrab);
                         return;
                     }
+                    */
                 }
                 f(KeyboardInnerHandle { inner: self, logger }, &mut **handler);
             }
@@ -293,6 +296,7 @@ pub trait KeyboardGrab {
     /// An input was reported
     fn input(
         &mut self,
+        dh: &mut DisplayHandle<'_>,
         handle: &mut KeyboardInnerHandle<'_>,
         keycode: u32,
         key_state: WlKeyState,
@@ -302,7 +306,13 @@ pub trait KeyboardGrab {
     );
 
     /// A focus change was requested
-    fn set_focus(&mut self, handle: &mut KeyboardInnerHandle<'_>, focus: Option<&WlSurface>, serial: Serial);
+    fn set_focus(
+        &mut self,
+        dh: &mut DisplayHandle<'_>,
+        handle: &mut KeyboardInnerHandle<'_>,
+        focus: Option<&WlSurface>,
+        serial: Serial,
+    );
 
     /// The data about the event that started the grab.
     fn start_data(&self) -> &GrabStartData;
@@ -364,17 +374,17 @@ impl KeyboardHandle {
     ///
     /// Overwrites any current grab.
     pub fn set_grab<G: KeyboardGrab + 'static>(&self, grab: G, serial: Serial) {
-        self.arc.internal.borrow_mut().grab = GrabStatus::Active(serial, Box::new(grab));
+        self.arc.internal.lock().unwrap().grab = GrabStatus::Active(serial, Box::new(grab));
     }
 
     /// Remove any current grab on this keyboard, resetting it to the default behavior
     pub fn unset_grab(&self) {
-        self.arc.internal.borrow_mut().grab = GrabStatus::None;
+        self.arc.internal.lock().unwrap().grab = GrabStatus::None;
     }
 
     /// Check if this keyboard is currently grabbed with this serial
     pub fn has_grab(&self, serial: Serial) -> bool {
-        let guard = self.arc.internal.borrow_mut();
+        let guard = self.arc.internal.lock().unwrap();
         match guard.grab {
             GrabStatus::Active(s, _) => s == serial,
             _ => false,
@@ -383,13 +393,13 @@ impl KeyboardHandle {
 
     /// Check if this keyboard is currently being grabbed
     pub fn is_grabbed(&self) -> bool {
-        let guard = self.arc.internal.borrow_mut();
+        let guard = self.arc.internal.lock().unwrap();
         !matches!(guard.grab, GrabStatus::None)
     }
 
     /// Returns the start data for the grab, if any.
     pub fn grab_start_data(&self) -> Option<GrabStartData> {
-        let guard = self.arc.internal.borrow();
+        let guard = self.arc.internal.lock().unwrap();
         match &guard.grab {
             GrabStatus::Active(_, g) => Some(g.start_data().clone()),
             _ => None,
@@ -454,7 +464,7 @@ impl KeyboardHandle {
         };
         guard.with_grab(
             move |mut handle, grab| {
-                grab.input(&mut handle, keycode, wl_state, modifiers, serial, time);
+                grab.input(dh, &mut handle, keycode, wl_state, modifiers, serial, time);
             },
             self.arc.logger.clone(),
         );
@@ -473,12 +483,12 @@ impl KeyboardHandle {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus(&self, cx: &mut DisplayHandle<'_>, focus: Option<&WlSurface>, serial: Serial) {
-        let mut guard = self.arc.internal.borrow_mut();
+    pub fn set_focus(&self, dh: &mut DisplayHandle<'_>, focus: Option<&WlSurface>, serial: Serial) {
+        let mut guard = self.arc.internal.lock().unwrap();
         guard.pending_focus = focus.cloned();
         guard.with_grab(
             move |mut handle, grab| {
-                grab.set_focus(&mut handle, focus, serial);
+                grab.set_focus(dh, &mut handle, focus, serial);
             },
             self.arc.logger.clone(),
         );
@@ -578,11 +588,9 @@ where
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
     }
-}
 
-impl DestructionNotify for KeyboardUserData {
-    fn object_destroyed(&self, _client_id: ClientId, object_id: ObjectId) {
-        if let Some(ref handle) = self.handle {
+    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &Self::UserData) {
+        if let Some(ref handle) = data.handle {
             handle
                 .arc
                 .internal
@@ -614,12 +622,12 @@ impl<'a> KeyboardInnerHandle<'a> {
     ///
     /// This will also restore the focus of the underlying keyboard if restore_focus
     /// is [`true`]
-    pub fn unset_grab(&mut self, serial: Serial, restore_focus: bool) {
+    pub fn unset_grab(&mut self, dh: &mut DisplayHandle<'_>, serial: Serial, restore_focus: bool) {
         self.inner.grab = GrabStatus::None;
         // restore the focus
         if restore_focus {
             let focus = self.inner.pending_focus.clone();
-            self.set_focus(focus.as_ref(), serial);
+            self.set_focus(dh, focus.as_ref(), serial);
         }
     }
 
@@ -631,6 +639,7 @@ impl<'a> KeyboardInnerHandle<'a> {
     /// Send the input to the focused keyboards
     pub fn input(
         &mut self,
+        dh: &mut DisplayHandle<'_>,
         keycode: u32,
         key_state: WlKeyState,
         modifiers: Option<(u32, u32, u32, u32)>,
@@ -640,9 +649,9 @@ impl<'a> KeyboardInnerHandle<'a> {
         self.inner.with_focused_kbds(|kbd, _| {
             // key event must be sent before modifers event for libxkbcommon
             // to process them correctly
-            kbd.key(serial.into(), time, keycode, key_state);
+            kbd.key(dh, serial.into(), time, keycode, key_state);
             if let Some((dep, la, lo, gr)) = modifiers {
-                kbd.modifiers(serial.into(), dep, la, lo, gr);
+                kbd.modifiers(dh, serial.into(), dep, la, lo, gr);
             }
         });
     }
@@ -653,18 +662,18 @@ impl<'a> KeyboardInnerHandle<'a> {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus(&mut self, focus: Option<&WlSurface>, serial: Serial) {
+    pub fn set_focus(&mut self, dh: &mut DisplayHandle<'_>, focus: Option<&WlSurface>, serial: Serial) {
         let same = self
             .inner
             .focus
             .as_ref()
-            .and_then(|f| focus.map(|s| s.as_ref().equals(f.as_ref())))
+            .and_then(|f| focus.map(|s| s == f))
             .unwrap_or(false);
 
         if !same {
             // unset old focus
             self.inner.with_focused_kbds(|kbd, s| {
-                kbd.leave(serial.into(), s);
+                kbd.leave(dh, serial.into(), s);
             });
 
             // set new focus
@@ -672,9 +681,9 @@ impl<'a> KeyboardInnerHandle<'a> {
             let (dep, la, lo, gr) = self.inner.serialize_modifiers();
             let keys = self.inner.serialize_pressed_keys();
             self.inner.with_focused_kbds(|kbd, surface| {
-                kbd.enter(serial.into(), surface, keys.clone());
+                kbd.enter(dh, serial.into(), surface, keys.clone());
                 // Modifiers must be send after enter event.
-                kbd.modifiers(serial.into(), dep, la, lo, gr);
+                kbd.modifiers(dh, serial.into(), dep, la, lo, gr);
             });
             {
                 let KbdInternal {
@@ -701,6 +710,7 @@ struct DefaultGrab;
 impl KeyboardGrab for DefaultGrab {
     fn input(
         &mut self,
+        dh: &mut DisplayHandle<'_>,
         handle: &mut KeyboardInnerHandle<'_>,
         keycode: u32,
         key_state: WlKeyState,
@@ -708,11 +718,17 @@ impl KeyboardGrab for DefaultGrab {
         serial: Serial,
         time: u32,
     ) {
-        handle.input(keycode, key_state, modifiers, serial, time)
+        handle.input(dh, keycode, key_state, modifiers, serial, time)
     }
 
-    fn set_focus(&mut self, handle: &mut KeyboardInnerHandle<'_>, focus: Option<&WlSurface>, serial: Serial) {
-        handle.set_focus(focus, serial)
+    fn set_focus(
+        &mut self,
+        dh: &mut DisplayHandle<'_>,
+        handle: &mut KeyboardInnerHandle<'_>,
+        focus: Option<&WlSurface>,
+        serial: Serial,
+    ) {
+        handle.set_focus(dh, focus, serial)
     }
 
     fn start_data(&self) -> &GrabStartData {

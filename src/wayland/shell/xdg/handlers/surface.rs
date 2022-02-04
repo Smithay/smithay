@@ -21,7 +21,7 @@ use wayland_protocols::{
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::wl_surface,
-    DataInit, DelegateDispatch, DelegateDispatchBase, DestructionNotify, Dispatch, DisplayHandle, Resource,
+    DataInit, DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource,
 };
 
 use super::{
@@ -312,10 +312,8 @@ where
             _ => unreachable!(),
         }
     }
-}
 
-impl DestructionNotify for XdgSurfaceUserData {
-    fn object_destroyed(&self, _client_id: ClientId, _object_id: ObjectId) {
+    fn destroyed(_state: &mut D, _client_id: ClientId, _object_id: ObjectId, data: &Self::UserData) {
         // if !self.wl_surface.as_ref().is_alive() {
         //     // the wl_surface is destroyed, this means the client is not
         //     // trying to change the role but it's a cleanup (possibly a
@@ -352,31 +350,4 @@ pub struct XdgShellSurfaceUserData {
     pub(crate) wm_base: xdg_wm_base::XdgWmBase,
     pub(crate) xdg_surface: xdg_surface::XdgSurface,
     pub(crate) decoration: Mutex<Option<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1>>,
-}
-
-impl DestructionNotify for XdgShellSurfaceUserData {
-    fn object_destroyed(&self, _client_id: ClientId, object_id: ObjectId) {
-        if let Some(data) = self.xdg_surface.data::<XdgSurfaceUserData>() {
-            data.has_active_role.store(false, Ordering::Release);
-        }
-
-        match &self.kind {
-            SurfaceKind::Toplevel => {
-                // remove this surface from the known ones (as well as any leftover dead surface)
-                self.shell_data
-                    .lock()
-                    .unwrap()
-                    .known_toplevels
-                    .retain(|other| other.shell_surface.id() != object_id);
-            }
-            SurfaceKind::Popup => {
-                // remove this surface from the known ones (as well as any leftover dead surface)
-                self.shell_data
-                    .lock()
-                    .unwrap()
-                    .known_popups
-                    .retain(|other| other.shell_surface.id() != object_id);
-            }
-        }
-    }
 }

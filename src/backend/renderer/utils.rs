@@ -36,7 +36,7 @@ impl SurfaceState {
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
-                self.buffer_dimensions = buffer_dimensions(&buffer);
+                self.buffer_dimensions = buffer_dimensions(dh, &buffer);
                 self.buffer_scale = attrs.buffer_scale;
                 self.buffer_transform = attrs.buffer_transform.into();
                 if let Some(old_buffer) = std::mem::replace(&mut self.buffer, Some(buffer)) {
@@ -197,6 +197,7 @@ pub fn draw_surface_tree<R>(
     scale: f64,
     location: Point<i32, Logical>,
     damage: &[Rectangle<i32, Logical>],
+    dh: &mut DisplayHandle<'_>,
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
 where
@@ -232,7 +233,7 @@ where
                             })
                             .collect::<Vec<_>>();
 
-                        match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
+                        match renderer.import_buffer(dh, buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
                                 e.insert(Box::new(m));
                             }
