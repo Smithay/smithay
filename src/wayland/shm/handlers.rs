@@ -11,7 +11,7 @@ use wayland_server::{
         wl_shm_pool::{self, WlShmPool},
     },
     DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
-    DestructionNotify, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
+    Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
 /*
@@ -102,15 +102,6 @@ where
 #[derive(Debug)]
 pub struct ShmPoolUserData {
     inner: Arc<Pool>,
-}
-
-impl DestructionNotify for ShmPoolUserData {
-    fn object_destroyed(
-        &self,
-        _client_id: wayland_server::backend::ClientId,
-        _object_id: wayland_server::backend::ObjectId,
-    ) {
-    }
 }
 
 impl DelegateDispatchBase<WlShmPool> for ShmState {
@@ -223,15 +214,6 @@ where
 pub struct ShmBufferUserData {
     pub(crate) pool: Arc<Pool>,
     pub(crate) data: BufferData,
-}
-
-impl DestructionNotify for ShmBufferUserData {
-    fn object_destroyed(
-        &self,
-        _client_id: wayland_server::backend::ClientId,
-        _object_id: wayland_server::backend::ObjectId,
-    ) {
-    }
 }
 
 impl DelegateDispatchBase<WlBuffer> for ShmState {

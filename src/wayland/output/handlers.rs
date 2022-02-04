@@ -5,8 +5,8 @@ use wayland_protocols::unstable::xdg_output::v1::server::{
 };
 use wayland_server::{
     protocol::wl_output::{self, Mode as WMode, WlOutput},
-    DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
-    DestructionNotify, Dispatch, GlobalDispatch, Resource,
+    DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase, Dispatch,
+    GlobalDispatch, Resource,
 };
 
 use super::{xdg::XdgOutput, Output, OutputGlobalData, OutputManagerState, OutputUserData};
@@ -93,6 +93,21 @@ where
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
     }
+
+    fn destroyed(
+        _state: &mut D,
+        _client_id: wayland_server::backend::ClientId,
+        object_id: wayland_server::backend::ObjectId,
+        data: &Self::UserData,
+    ) {
+        data.global_data
+            .inner
+            .0
+            .lock()
+            .unwrap()
+            .instances
+            .retain(|o| o.id() != object_id);
+    }
 }
 
 /*
@@ -175,21 +190,6 @@ pub struct XdgOutputUserData {
     xdg_output: XdgOutput,
 }
 
-impl DestructionNotify for XdgOutputUserData {
-    fn object_destroyed(
-        &self,
-        _client_id: wayland_server::backend::ClientId,
-        object_id: wayland_server::backend::ObjectId,
-    ) {
-        self.xdg_output
-            .inner
-            .lock()
-            .unwrap()
-            .instances
-            .retain(|o| o.id() != object_id);
-    }
-}
-
 impl DelegateDispatchBase<ZxdgOutputV1> for OutputManagerState {
     type UserData = XdgOutputUserData;
 }
@@ -207,5 +207,19 @@ where
         _dhandle: &mut wayland_server::DisplayHandle<'_>,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
+    }
+
+    fn destroyed(
+        _state: &mut D,
+        _client_id: wayland_server::backend::ClientId,
+        object_id: wayland_server::backend::ObjectId,
+        data: &Self::UserData,
+    ) {
+        data.xdg_output
+            .inner
+            .lock()
+            .unwrap()
+            .instances
+            .retain(|o| o.id() != object_id);
     }
 }

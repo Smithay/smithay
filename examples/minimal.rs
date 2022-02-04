@@ -5,12 +5,12 @@ use smithay::{
         input::{InputEvent, KeyboardKeyEvent},
         renderer::{
             utils::{draw_surface_tree, on_commit_buffer_handler},
-            Frame, Renderer, Transform,
+            Frame, Renderer,
         },
         winit::{self, WinitEvent},
     },
     reexports::wayland_server::Display,
-    utils::Rectangle,
+    utils::{Rectangle, Transform},
     wayland::{
         compositor::{
             with_surface_tree_downward, CompositorHandler, CompositorState, SurfaceAttributes,
@@ -186,6 +186,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                             1.0,
                             (0, 0).into(),
                             &[damage.to_logical(1)],
+                            &mut display.handle(),
                             &log,
                         )
                         .unwrap();
@@ -197,14 +198,11 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
         backend.submit(Some(&[damage.to_logical(1)]), 1.0).unwrap();
 
-        match listener.accept()? {
-            Some(stream) => {
-                println!("Got a client: {:?}", stream);
+        if let Some(stream) = listener.accept()? {
+            println!("Got a client: {:?}", stream);
 
-                let client = display.insert_client(stream, Arc::new(ClientState)).unwrap();
-                clients.push(client);
-            }
-            None => {}
+            let client = display.insert_client(stream, Arc::new(ClientState)).unwrap();
+            clients.push(client);
         }
 
         display.dispatch_clients(&mut state)?;
