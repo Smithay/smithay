@@ -263,7 +263,7 @@ pub trait ImportEgl: Renderer {
     /// This might return [`OtherEGLDisplayAlreadyBound`](super::egl::Error::OtherEGLDisplayAlreadyBound)
     /// if called for the same [`Display`](wayland_server::Display) multiple times, as only one egl
     /// display may be bound at any given time.
-    fn bind_wl_display(&mut self, display: &wayland_server::Display) -> Result<(), EglError>;
+    fn bind_wl_display<D: 'static>(&mut self, display: &wayland_server::Display<D>) -> Result<(), EglError>;
 
     /// Unbinds a previously bound egl display, if existing.
     ///
@@ -292,6 +292,7 @@ pub trait ImportEgl: Renderer {
     /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
     fn import_egl_buffer(
         &mut self,
+        dh: &mut wayland_server::DisplayHandle<'_>,
         buffer: &wl_buffer::WlBuffer,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 }
@@ -368,6 +369,7 @@ pub trait ImportAll: Renderer {
     /// Returns `None`, if the buffer type cannot be determined.
     fn import_buffer(
         &mut self,
+        dh: &mut wayland_server::DisplayHandle<'_>,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, Buffer>],
@@ -383,13 +385,14 @@ pub trait ImportAll: Renderer {
 impl<R: Renderer + ImportShm + ImportEgl + ImportDma> ImportAll for R {
     fn import_buffer(
         &mut self,
+        dh: &mut wayland_server::DisplayHandle<'_>,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&SurfaceData>,
         damage: &[Rectangle<i32, Buffer>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
-        match buffer_type(buffer) {
+        match buffer_type(dh, buffer) {
             Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
-            Some(BufferType::Egl) => Some(self.import_egl_buffer(buffer)),
+            Some(BufferType::Egl) => Some(self.import_egl_buffer(dh, buffer)),
             Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer)),
             _ => None,
         }
@@ -403,11 +406,12 @@ impl<R: Renderer + ImportShm + ImportEgl + ImportDma> ImportAll for R {
 impl<R: Renderer + ImportShm + ImportDma> ImportAll for R {
     fn import_buffer(
         &mut self,
+        dh: &mut wayland_server::DisplayHandle<'_>,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&SurfaceData>,
         damage: &[Rectangle<i32, Buffer>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
-        match buffer_type(buffer) {
+        match buffer_type(dh, buffer) {
             Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
             Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer)),
             _ => None,
@@ -434,7 +438,10 @@ pub enum BufferType {
 /// Returns `None` if the type is not known to smithay
 /// or otherwise not supported (e.g. not initialized using one of smithays [`crate::wayland`]-handlers).
 #[cfg(feature = "wayland_frontend")]
-pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
+pub fn buffer_type(
+    dh: &mut wayland_server::DisplayHandle<'_>,
+    buffer: &wl_buffer::WlBuffer,
+) -> Option<BufferType> {
     if buffer.data::<Dmabuf>().is_some() {
         return Some(BufferType::Dma);
     }
@@ -445,7 +452,7 @@ pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
         .unwrap()
         .as_ref()
         .and_then(|x| x.upgrade())
-        .and_then(|x| x.egl_buffer_dimensions(buffer))
+        .and_then(|x| x.egl_buffer_dimensions(dh, buffer))
         .is_some()
     {
         return Some(BufferType::Egl);
@@ -462,7 +469,10 @@ pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
 ///
 /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`])
 #[cfg(feature = "wayland_frontend")]
-pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Buffer>> {
+pub fn buffer_dimensions(
+    dh: &mut wayland_server::DisplayHandle<'_>,
+    buffer: &wl_buffer::WlBuffer,
+) -> Option<Size<i32, Buffer>> {
     use crate::backend::allocator::Buffer;
 
     if let Some(buf) = buffer.data::<Dmabuf>() {
@@ -475,7 +485,7 @@ pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Buffe
         .unwrap()
         .as_ref()
         .and_then(|x| x.upgrade())
-        .and_then(|x| x.egl_buffer_dimensions(buffer))
+        .and_then(|x| x.egl_buffer_dimensions(dh, buffer))
     {
         return Some(dim);
     }

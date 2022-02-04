@@ -43,11 +43,11 @@ slog-stdlog = { version = "4", optional = true }
 tempfile = { version = "3.0", optional = true }
 thiserror = "1.0.25"
 udev = { version = "0.6", optional = true }
-# wayland-commons = { git = "https://github.com/Smithay/wayland-rs", branch="rework-317", optional = true }
-wayland-egl = { git = "https://github.com/Smithay/wayland-rs.git", optional = true }
-wayland-protocols = { git  = "https://github.com/Smithay/wayland-rs.git", features = ["unstable_protocols", "server"], optional = true }
-wayland-server = { git = "https://github.com/Smithay/wayland-rs.git", optional = true }
-wayland-sys = { git  = "https://github.com/Smithay/wayland-rs.git", optional = true }
+wayland-egl = { version = "0.30.0-alpha5", optional = true }
+wayland-protocols = { version = "0.30.0-alpha5", features = ["unstable_protocols", "server"], optional = true }
+wayland-server = { version = "0.30.0-alpha5", optional = true }
+wayland-sys = { version = "0.30.0-alpha5", optional = true }
+wayland-backend = { version = "0.1.0-alpha5", optional = true }
 winit = { version = "0.26", optional = true }
 x11rb = { version = "0.9.0", optional = true }
 xkbcommon = "0.4.0"
@@ -75,7 +75,7 @@ backend_session_elogind = ["backend_session_logind"]
 backend_session_libseat = ["backend_session", "libseat"]
 desktop = ["indexmap", "wayland_frontend"]
 renderer_gl = ["gl_generator", "backend_egl"]
-use_system_lib = ["wayland_frontend", "wayland-sys"]
+use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-sys"]
 wayland_frontend = ["wayland-server", "wayland-protocols", "tempfile"]
 x11rb_event_source = ["x11rb"]
 xwayland = ["wayland_frontend"]

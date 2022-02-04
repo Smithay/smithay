@@ -715,9 +715,9 @@ impl ImportShm for Gles2Renderer {
     feature = "use_system_lib"
 ))]
 impl ImportEgl for Gles2Renderer {
-    fn bind_wl_display(
+    fn bind_wl_display<D: 'static>(
         &mut self,
-        display: &wayland_server::Display,
+        display: &wayland_server::Display<D>,
     ) -> Result<(), crate::backend::egl::Error> {
         self.egl_reader = Some(self.egl.display.bind_wl_display(display)?);
         Ok(())
@@ -731,7 +731,11 @@ impl ImportEgl for Gles2Renderer {
         self.egl_reader.as_ref()
     }
 
-    fn import_egl_buffer(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Gles2Texture, Gles2Error> {
+    fn import_egl_buffer(
+        &mut self,
+        dh: &mut wayland_server::DisplayHandle<'_>,
+        buffer: &wl_buffer::WlBuffer,
+    ) -> Result<Gles2Texture, Gles2Error> {
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
@@ -753,7 +757,7 @@ impl ImportEgl for Gles2Renderer {
             .egl_reader
             .as_ref()
             .unwrap()
-            .egl_buffer_contents(buffer)
+            .egl_buffer_contents(dh, buffer)
             .map_err(Gles2Error::EGLBufferAccessError)?;
 
         let tex = self.import_egl_image(egl.image(0).unwrap(), egl.format == EGLFormat::External, None)?;

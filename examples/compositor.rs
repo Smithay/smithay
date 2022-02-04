@@ -66,6 +66,12 @@ impl ClientData<App> for ClientState {
     }
 }
 
+impl AsMut<CompositorState> for App {
+    fn as_mut(&mut self) -> &mut CompositorState {
+        &mut self.compositor_state
+    }
+}
+
 delegate_global_dispatch!(App: [WlCompositor] => CompositorState);
 delegate_dispatch!(App: [WlCompositor, WlSurface, WlRegion, WlCallback] => CompositorState);
 
