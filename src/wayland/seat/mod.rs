@@ -64,7 +64,7 @@ use wayland_server::{
         wl_surface,
     },
     DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
-    DestructionNotify, Dispatch, Display, DisplayHandle, GlobalDispatch, New, Resource,
+    Dispatch, Display, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 #[derive(Debug)]
@@ -390,19 +390,6 @@ impl ::std::cmp::PartialEq for SeatState {
 pub struct SeatUserData {
     seat: std::sync::Weak<SeatRc>,
 }
-
-impl DestructionNotify for SeatUserData {
-    fn object_destroyed(&self, _client_id: ClientId, object_id: ObjectId) {
-        if let Some(seat) = self.seat.upgrade() {
-            seat.inner
-                .lock()
-                .unwrap()
-                .known_seats
-                .retain(|s| s.id() != object_id);
-        }
-    }
-}
-
 impl DelegateDispatchBase<WlSeat> for SeatState {
     type UserData = SeatUserData;
 }
@@ -469,6 +456,16 @@ where
                 // Our destructors already handle it
             }
             _ => unreachable!(),
+        }
+    }
+
+    fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &Self::UserData) {
+        if let Some(seat) = data.seat.upgrade() {
+            seat.inner
+                .lock()
+                .unwrap()
+                .known_seats
+                .retain(|s| s.id() != object_id);
         }
     }
 }

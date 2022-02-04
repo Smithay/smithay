@@ -980,9 +980,9 @@ impl ImportMem for Gles2Renderer {
     feature = "use_system_lib"
 ))]
 impl ImportEgl for Gles2Renderer {
-    fn bind_wl_display(
+    fn bind_wl_display<D: 'static>(
         &mut self,
-        display: &wayland_server::Display,
+        display: &wayland_server::Display<D>,
     ) -> Result<(), crate::backend::egl::Error> {
         self.egl_reader = Some(self.egl.display.bind_wl_display(display)?);
         Ok(())
@@ -998,6 +998,7 @@ impl ImportEgl for Gles2Renderer {
 
     fn import_egl_buffer(
         &mut self,
+        dh: &mut wayland_server::DisplayHandle<'_>,
         buffer: &wl_buffer::WlBuffer,
         _surface: Option<&crate::wayland::compositor::SurfaceData>,
         _damage: &[Rectangle<i32, Buffer>],
@@ -1023,7 +1024,7 @@ impl ImportEgl for Gles2Renderer {
             .egl_reader
             .as_ref()
             .unwrap()
-            .egl_buffer_contents(buffer)
+            .egl_buffer_contents(dh, buffer)
             .map_err(Gles2Error::EGLBufferAccessError)?;
 
         let tex = self.import_egl_image(egl.image(0).unwrap(), egl.format == EGLFormat::External, None)?;

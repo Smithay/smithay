@@ -5,9 +5,7 @@ use crate::{utils::Rectangle, wayland::Serial};
 use wayland_protocols::xdg_shell::server::{xdg_positioner, xdg_positioner::XdgPositioner};
 
 use wayland_server::{
-    backend::{ClientId, ObjectId},
-    DataInit, DelegateDispatch, DelegateDispatchBase, DestructionNotify, Dispatch, DisplayHandle, Resource,
-    WEnum,
+    DataInit, DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource, WEnum,
 };
 
 use super::{PositionerState, XdgShellHandler, XdgShellState};
@@ -20,10 +18,6 @@ use super::{PositionerState, XdgShellHandler, XdgShellState};
 #[derive(Default, Debug)]
 pub struct XdgPositionerUserData {
     pub(crate) inner: Mutex<PositionerState>,
-}
-
-impl DestructionNotify for XdgPositionerUserData {
-    fn object_destroyed(&self, _client_id: ClientId, _object_id: ObjectId) {}
 }
 
 impl DelegateDispatchBase<XdgPositioner> for XdgShellState {

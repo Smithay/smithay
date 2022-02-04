@@ -7,8 +7,8 @@ use wayland_protocols::wlr::unstable::layer_shell::v1::server::zwlr_layer_surfac
 use wayland_protocols::wlr::unstable::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1;
 use wayland_server::protocol::wl_surface;
 use wayland_server::{
-    DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
-    DestructionNotify, Dispatch, GlobalDispatch, Resource,
+    DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase, Dispatch,
+    GlobalDispatch, Resource,
 };
 
 use crate::wayland::{compositor, shell::wlr_layer::Layer, Serial};
@@ -314,6 +314,20 @@ where
             _ => {}
         }
     }
+
+    fn destroyed(
+        _state: &mut D,
+        _client_id: wayland_server::backend::ClientId,
+        object_id: wayland_server::backend::ObjectId,
+        data: &Self::UserData,
+    ) {
+        // remove this surface from the known ones (as well as any leftover dead surface)
+        data.shell_data
+            .known_layers
+            .lock()
+            .unwrap()
+            .retain(|other| other.shell_surface.id() != object_id);
+    }
 }
 
 /// User data for wlr layer surface
@@ -321,21 +335,6 @@ where
 pub struct WlrLayerSurfaceUserData {
     shell_data: WlrLayerShellState,
     wl_surface: wl_surface::WlSurface,
-}
-
-impl DestructionNotify for WlrLayerSurfaceUserData {
-    fn object_destroyed(
-        &self,
-        _client_id: wayland_server::backend::ClientId,
-        object_id: wayland_server::backend::ObjectId,
-    ) {
-        // remove this surface from the known ones (as well as any leftover dead surface)
-        self.shell_data
-            .known_layers
-            .lock()
-            .unwrap()
-            .retain(|other| other.shell_surface.id() != object_id);
-    }
 }
 
 fn with_surface_pending_state<F, T>(layer_surface: &zwlr_layer_surface_v1::ZwlrLayerSurfaceV1, f: F) -> T
