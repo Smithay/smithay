@@ -231,6 +231,7 @@ impl SurfaceView {
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 pub fn import_surface_tree<R>(
+    dh: &mut DisplayHandle<'_>,
     renderer: &mut R,
     surface: &WlSurface,
     log: &slog::Logger,
@@ -239,10 +240,11 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
 {
-    import_surface_tree_and(renderer, surface, 1.0, log, (0.0, 0.0).into(), |_, _, _| {})
+    import_surface_tree_and(dh, renderer, surface, 1.0, log, (0.0, 0.0).into(), |_, _, _| {})
 }
 
 fn import_surface_tree_and<F, R, S>(
+    dh: &mut DisplayHandle<'_>,
     renderer: &mut R,
     surface: &WlSurface,
     scale: S,
@@ -272,7 +274,7 @@ where
                 let buffer_damage = data.damage_since(last_commit.copied());
                 if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
-                        match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
+                        match renderer.import_buffer(dh, buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
                                 e.insert(Box::new(m));
                                 data.renderer_seen.insert(texture_id, data.commit_count);
@@ -324,6 +326,7 @@ pub fn draw_surface_tree<R, S>(
     scale: S,
     location: Point<f64, Physical>,
     damage: &[Rectangle<i32, Physical>],
+    dh: &mut DisplayHandle<'_>,
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
 where
@@ -335,6 +338,7 @@ where
     let mut result = Ok(());
     let scale = scale.into();
     let _ = import_surface_tree_and(
+        dh,
         renderer,
         surface,
         scale,

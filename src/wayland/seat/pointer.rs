@@ -9,7 +9,7 @@ use wayland_server::{
         wl_pointer::{self, Axis, ButtonState, Request, WlPointer},
         wl_surface::WlSurface,
     },
-    DelegateDispatch, DelegateDispatchBase, DestructionNotify, Dispatch, DisplayHandle, Resource,
+    DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::{
@@ -67,24 +67,31 @@ impl PointerInternal {
         }
     }
 
-    fn set_grab<G: PointerGrab + 'static>(&mut self, serial: Serial, grab: G, time: u32) {
+    fn set_grab<G: PointerGrab + 'static>(
+        &mut self,
+        dh: &mut DisplayHandle<'_>,
+        serial: Serial,
+        grab: G,
+        time: u32,
+    ) {
         self.grab = GrabStatus::Active(serial, Box::new(grab));
         // generate a move to let the grab change the focus or move the pointer as result of its initialization
         let location = self.location;
         let focus = self.focus.clone();
-        self.motion(location, focus, serial, time);
+        self.motion(dh, location, focus, serial, time);
     }
 
-    fn unset_grab(&mut self, serial: Serial, time: u32) {
+    fn unset_grab(&mut self, dh: &mut DisplayHandle<'_>, serial: Serial, time: u32) {
         self.grab = GrabStatus::None;
         // restore the focus
         let location = self.location;
         let focus = self.pending_focus.clone();
-        self.motion(location, focus, serial, time);
+        self.motion(dh, location, focus, serial, time);
     }
 
     fn motion(
         &mut self,
+        dh: &mut DisplayHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -95,16 +102,16 @@ impl PointerInternal {
         self.location = location;
         if let Some((ref current_focus, _)) = self.focus {
             if let Some((ref surface, _)) = focus {
-                if current_focus.as_ref().equals(surface.as_ref()) {
+                if current_focus == surface {
                     leave = false;
                 }
             }
         }
         if leave {
-            self.with_focused_pointers(|pointer, surface| {
-                pointer.leave(serial.into(), surface);
-                if pointer.as_ref().version() >= 5 {
-                    pointer.frame();
+            self.with_focused_pointers(dh, |dh, pointer, surface| {
+                pointer.leave(dh, serial.into(), surface);
+                if pointer.version() >= 5 {
+                    pointer.frame(dh);
                 }
             });
             self.focus = None;
@@ -119,18 +126,18 @@ impl PointerInternal {
             self.focus = Some((surface, surface_location));
             let (x, y) = (location - surface_location.to_f64()).into();
             if entered {
-                self.with_focused_pointers(|pointer, surface| {
-                    pointer.enter(serial.into(), surface, x, y);
-                    if pointer.as_ref().version() >= 5 {
-                        pointer.frame();
+                self.with_focused_pointers(dh, |dh, pointer, surface| {
+                    pointer.enter(dh, serial.into(), surface, x, y);
+                    if pointer.version() >= 5 {
+                        pointer.frame(dh);
                     }
                 })
             } else {
                 // we were on top of a surface and remained on it
-                self.with_focused_pointers(|pointer, _| {
-                    pointer.motion(time, x, y);
-                    if pointer.as_ref().version() >= 5 {
-                        pointer.frame();
+                self.with_focused_pointers(dh, |dh, pointer, _| {
+                    pointer.motion(dh, time, x, y);
+                    if pointer.version() >= 5 {
+                        pointer.frame(dh);
                     }
                 })
             }
@@ -226,13 +233,19 @@ impl PointerHandle {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab + 'static>(&self, grab: G, serial: Serial, time: u32) {
-        self.inner.lock().unwrap().set_grab(serial, grab, time);
+    pub fn set_grab<G: PointerGrab + 'static>(
+        &self,
+        dh: &mut DisplayHandle<'_>,
+        grab: G,
+        serial: Serial,
+        time: u32,
+    ) {
+        self.inner.lock().unwrap().set_grab(dh, serial, grab, time);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
-    pub fn unset_grab(&self, serial: Serial, time: u32) {
-        self.inner.lock().unwrap().unset_grab(serial, time);
+    pub fn unset_grab(&self, dh: &mut DisplayHandle<'_>, serial: Serial, time: u32) {
+        self.inner.lock().unwrap().unset_grab(dh, serial, time);
     }
 
     /// Check if this pointer is currently grabbed with this serial
@@ -338,15 +351,21 @@ impl<'a> PointerInnerHandle<'a> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab + 'static>(&mut self, serial: Serial, time: u32, grab: G) {
-        self.inner.set_grab(serial, grab, time);
+    pub fn set_grab<G: PointerGrab + 'static>(
+        &mut self,
+        dh: &mut DisplayHandle<'_>,
+        serial: Serial,
+        time: u32,
+        grab: G,
+    ) {
+        self.inner.set_grab(dh, serial, grab, time);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
     ///
     /// This will also restore the focus of the underlying pointer
     pub fn unset_grab(&mut self, dh: &mut DisplayHandle<'_>, serial: Serial, time: u32) {
-        self.inner.unset_grab(serial, time);
+        self.inner.unset_grab(dh, serial, time);
     }
 
     /// Access the current focus of this pointer
@@ -386,7 +405,7 @@ impl<'a> PointerInnerHandle<'a> {
         serial: Serial,
         time: u32,
     ) {
-        self.inner.motion(location, focus, serial, time);
+        self.inner.motion(dh, location, focus, serial, time);
     }
 
     /// Notify that a button was pressed
@@ -536,11 +555,9 @@ where
             _ => unreachable!(),
         }
     }
-}
 
-impl DestructionNotify for PointerUserData {
-    fn object_destroyed(&self, _client_id: ClientId, object_id: ObjectId) {
-        if let Some(ref handle) = self.handle {
+    fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &Self::UserData) {
+        if let Some(ref handle) = data.handle {
             handle
                 .inner
                 .lock()

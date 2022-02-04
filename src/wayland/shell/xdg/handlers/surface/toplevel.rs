@@ -1,17 +1,18 @@
-use std::sync::Mutex;
+use std::sync::{atomic::Ordering, Mutex};
 
 use crate::wayland::{compositor, Serial};
 
 use wayland_protocols::xdg_shell::server::xdg_toplevel::{self, XdgToplevel};
 
 use wayland_server::{
-    protocol::wl_surface, DataInit, DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle,
-    Resource, WEnum,
+    backend::{ClientId, ObjectId},
+    protocol::wl_surface,
+    DataInit, DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource, WEnum,
 };
 
 use super::{
-    SurfaceCachedState, ToplevelConfigure, XdgRequest, XdgShellHandler, XdgShellState,
-    XdgShellSurfaceUserData, XdgToplevelSurfaceRoleAttributes,
+    SurfaceCachedState, SurfaceKind, ToplevelConfigure, XdgRequest, XdgShellHandler, XdgShellState,
+    XdgShellSurfaceUserData, XdgSurfaceUserData, XdgToplevelSurfaceRoleAttributes,
 };
 
 impl DelegateDispatchBase<XdgToplevel> for XdgShellState {
@@ -150,6 +151,31 @@ where
                 XdgShellHandler::request(state, dh, XdgRequest::Minimize { surface: handle });
             }
             _ => unreachable!(),
+        }
+    }
+
+    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &Self::UserData) {
+        if let Some(surface_data) = data.xdg_surface.data::<XdgSurfaceUserData>() {
+            surface_data.has_active_role.store(false, Ordering::Release);
+        }
+
+        match &data.kind {
+            SurfaceKind::Toplevel => {
+                // remove this surface from the known ones (as well as any leftover dead surface)
+                data.shell_data
+                    .lock()
+                    .unwrap()
+                    .known_toplevels
+                    .retain(|other| other.shell_surface.id() != object_id);
+            }
+            SurfaceKind::Popup => {
+                // remove this surface from the known ones (as well as any leftover dead surface)
+                data.shell_data
+                    .lock()
+                    .unwrap()
+                    .known_popups
+                    .retain(|other| other.shell_surface.id() != object_id);
+            }
         }
     }
 }
