@@ -27,7 +27,6 @@ static SUPPORTED_EXTENSIONS: &[WlcsExtensionDescriptor] = extension_list!(
     ("wl_compositor", 4),
     ("wl_subcompositor", 1),
     ("wl_data_device_manager", 3),
-    ("wl_shell", 1),
     ("wl_seat", 5),
     ("wl_output", 3),
     ("xdg_wm_base", 3),

@@ -4,10 +4,7 @@ use std::{
 };
 
 use smithay::{
-    backend::{
-        renderer::{Frame, Renderer},
-        SwapBuffersError,
-    },
+    desktop::space::RenderElement,
     reexports::{
         calloop::{
             channel::{Channel, Event as ChannelEvent},
@@ -18,16 +15,16 @@ use smithay::{
             Client, Display,
         },
     },
-    utils::{Rectangle, Transform},
     wayland::{
-        output::{Mode, PhysicalProperties},
+        output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
         SERIAL_COUNTER as SCOUNTER,
     },
 };
 
 use anvil::{
-    drawing::{draw_cursor, draw_dnd_icon, draw_windows},
+    drawing::{draw_cursor, draw_dnd_icon},
+    render::render_output,
     state::Backend,
     AnvilState,
 };
@@ -44,6 +41,8 @@ impl Backend for TestState {
     fn seat_name(&self) -> String {
         "anvil_wlcs".into()
     }
+
+    fn reset_buffers(&mut self, _output: &Output) {}
 }
 
 pub fn run(channel: Channel<WlcsEvent>) {
@@ -81,98 +80,71 @@ pub fn run(channel: Channel<WlcsEvent>) {
         refresh: 60_000,
     };
 
-    state.output_map.borrow_mut().add(
-        OUTPUT_NAME,
+    let (output, _global) = Output::new(
+        &mut *display.borrow_mut(),
+        OUTPUT_NAME.to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
             subpixel: wl_output::Subpixel::Unknown,
             make: "Smithay".into(),
-            model: "Winit".into(),
+            model: "WLCS".into(),
         },
-        mode,
+        logger.clone(),
     );
+    output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
+    output.set_preferred(mode);
+    state.space.borrow_mut().map_output(&output, 1.0, (0, 0));
 
     while state.running.load(Ordering::SeqCst) {
         // pretend to draw something
         {
-            let output_geometry = state
-                .output_map
-                .borrow()
-                .find_by_name(OUTPUT_NAME)
-                .unwrap()
-                .geometry();
+            let mut elements = Vec::new();
+            let dnd_guard = state.dnd_icon.lock().unwrap();
+            let mut cursor_guard = state.cursor_status.lock().unwrap();
 
-            renderer
-                .render((800, 600).into(), Transform::Normal, |renderer, frame| {
-                    frame.clear(
-                        [0.8, 0.8, 0.9, 1.0],
-                        &[Rectangle::from_loc_and_size((0, 0), (800, 600))],
-                    )?;
-
-                    // draw the windows
-                    draw_windows(
-                        renderer,
-                        frame,
-                        &*state.window_map.borrow(),
-                        output_geometry,
-                        1.0,
+            // draw the dnd icon if any
+            if let Some(ref surface) = *dnd_guard {
+                if surface.as_ref().is_alive() {
+                    elements.push(Box::new(draw_dnd_icon(
+                        surface.clone(),
+                        state.pointer_location.to_i32_round(),
                         &logger,
-                    )?;
+                    )) as Box<dyn RenderElement<_, _, _, _>>);
+                }
+            }
 
-                    // draw the dnd icon if any
-                    {
-                        let guard = state.dnd_icon.lock().unwrap();
-                        if let Some(ref surface) = *guard {
-                            if surface.as_ref().is_alive() {
-                                draw_dnd_icon(
-                                    renderer,
-                                    frame,
-                                    surface,
-                                    state.pointer_location.to_i32_floor(),
-                                    1.0,
-                                    &logger,
-                                )?;
-                            }
-                        }
-                    }
-                    // draw the cursor as relevant
-                    {
-                        let mut guard = state.cursor_status.lock().unwrap();
-                        // reset the cursor if the surface is no longer alive
-                        let mut reset = false;
-                        if let CursorImageStatus::Image(ref surface) = *guard {
-                            reset = !surface.as_ref().is_alive();
-                        }
-                        if reset {
-                            *guard = CursorImageStatus::Default;
-                        }
+            // draw the cursor as relevant
+            // reset the cursor if the surface is no longer alive
+            let mut reset = false;
+            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+                reset = !surface.as_ref().is_alive();
+            }
+            if reset {
+                *cursor_guard = CursorImageStatus::Default;
+            }
+            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+                elements.push(Box::new(draw_cursor(
+                    surface.clone(),
+                    state.pointer_location.to_i32_round(),
+                    &logger,
+                )));
+            }
 
-                        // draw as relevant
-                        if let CursorImageStatus::Image(ref surface) = *guard {
-                            draw_cursor(
-                                renderer,
-                                frame,
-                                surface,
-                                state.pointer_location.to_i32_floor(),
-                                1.0,
-                                &logger,
-                            )?;
-                        }
-                    }
-
-                    Ok(())
-                })
-                .map_err(Into::<SwapBuffersError>::into)
-                .and_then(|x| x)
-                .unwrap();
+            let _ = render_output(
+                &output,
+                &mut *state.space.borrow_mut(),
+                &mut renderer,
+                0,
+                &*elements,
+                &logger,
+            );
         }
 
         // Send frame events so that client start drawing their next frame
         state
-            .window_map
+            .space
             .borrow()
-            .send_frames(state.start_time.elapsed().as_millis() as u32);
-        display.borrow_mut().flush_clients(&mut state);
+            .send_frames(false, state.start_time.elapsed().as_millis() as u32);
 
         if event_loop
             .dispatch(Some(Duration::from_millis(16)), &mut state)
@@ -180,9 +152,9 @@ pub fn run(channel: Channel<WlcsEvent>) {
         {
             state.running.store(false, Ordering::SeqCst);
         } else {
+            state.space.borrow_mut().refresh();
+            state.popups.borrow_mut().cleanup();
             display.borrow_mut().flush_clients(&mut state);
-            state.window_map.borrow_mut().refresh();
-            state.output_map.borrow_mut().refresh();
         }
     }
 }
@@ -202,14 +174,14 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
         } => {
             // find the surface
             let client = state.backend_data.clients.get(&client_id);
-            let mut wmap = state.window_map.borrow_mut();
-            let toplevel = wmap.windows().find(|kind| {
-                let surface = kind.get_surface().unwrap();
+            let mut space = state.space.borrow_mut();
+            let toplevel = space.windows().find(|w| {
+                let surface = w.toplevel().get_surface().unwrap();
                 surface.as_ref().client().as_ref() == client && surface.as_ref().id() == surface_id
             });
-            if let Some(toplevel) = toplevel {
+            if let Some(toplevel) = toplevel.cloned() {
                 // set its location
-                wmap.set_location(&toplevel, location);
+                space.map_window(&toplevel, location, false);
             }
         }
         // pointer inputs
@@ -217,27 +189,27 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
         WlcsEvent::PointerMoveAbsolute { location, .. } => {
             state.pointer_location = location;
             let serial = SCOUNTER.next_serial();
-            let under = state.window_map.borrow().get_surface_under(location);
+            let under = state.surface_under();
             let time = state.start_time.elapsed().as_millis() as u32;
             state.pointer.motion(location, under, serial, time);
         }
         WlcsEvent::PointerMoveRelative { delta, .. } => {
             state.pointer_location += delta;
             let serial = SCOUNTER.next_serial();
-            let under = state
-                .window_map
-                .borrow()
-                .get_surface_under(state.pointer_location);
+            let under = state.surface_under();
             let time = state.start_time.elapsed().as_millis() as u32;
             state.pointer.motion(state.pointer_location, under, serial, time);
         }
         WlcsEvent::PointerButtonDown { button_id, .. } => {
             let serial = SCOUNTER.next_serial();
             if !state.pointer.is_grabbed() {
-                let under = state
-                    .window_map
-                    .borrow_mut()
-                    .get_surface_and_bring_to_top(state.pointer_location);
+                let under = state.surface_under();
+                if let Some((s, _)) = under.as_ref() {
+                    let mut space = state.space.borrow_mut();
+                    if let Some(window) = space.window_for_surface(s).cloned() {
+                        space.raise_window(&window, true);
+                    }
+                }
                 state
                     .keyboard
                     .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
