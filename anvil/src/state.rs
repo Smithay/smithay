@@ -8,6 +8,7 @@ use std::{
 };
 
 use smithay::{
+    desktop::{PopupManager, Space},
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
         wayland_protocols::unstable::xdg_decoration,
@@ -16,7 +17,7 @@ use smithay::{
     utils::{Logical, Point},
     wayland::{
         data_device::{default_action_chooser, init_data_device, set_data_device_focus, DataDeviceEvent},
-        output::xdg::init_xdg_output_manager,
+        output::{xdg::init_xdg_output_manager, Output},
         seat::{CursorImageStatus, KeyboardHandle, PointerHandle, Seat, XkbConfig},
         shell::xdg::decoration::{init_xdg_decoration_manager, XdgDecorationRequest},
         shm::init_shm_global,
@@ -28,7 +29,7 @@ use smithay::{
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::{XWayland, XWaylandEvent};
 
-use crate::{output_map::OutputMap, shell::init_shell, window_map::WindowMap};
+use crate::shell::{init_shell, ShellHandles};
 
 #[derive(Debug)]
 pub struct AnvilState<BackendData> {
@@ -37,8 +38,9 @@ pub struct AnvilState<BackendData> {
     pub running: Arc<AtomicBool>,
     pub display: Rc<RefCell<Display>>,
     pub handle: LoopHandle<'static, AnvilState<BackendData>>,
-    pub window_map: Rc<RefCell<crate::window_map::WindowMap>>,
-    pub output_map: Rc<RefCell<crate::output_map::OutputMap>>,
+    pub space: Rc<RefCell<Space>>,
+    pub popups: Rc<RefCell<PopupManager>>,
+    pub shells: ShellHandles,
     pub dnd_icon: Arc<Mutex<Option<WlSurface>>>,
     pub log: slog::Logger,
     // input-related fields
@@ -83,20 +85,14 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             .expect("Failed to init the wayland event source.");
 
         // Init a window map, to track the location of our windows
-        let window_map = Rc::new(RefCell::new(WindowMap::default()));
-        let output_map = Rc::new(RefCell::new(OutputMap::new(
-            display.clone(),
-            window_map.clone(),
-            log.clone(),
-        )));
+        let space = Rc::new(RefCell::new(Space::new(log.clone())));
+        let popups = Rc::new(RefCell::new(PopupManager::new(log.clone())));
 
         // Init the basic compositor globals
-
         init_shm_global(&mut (*display).borrow_mut(), vec![], log.clone());
 
         // Init the shell states
-        init_shell::<BackendData>(display.clone(), log.clone());
-
+        let shells = init_shell::<BackendData>(display.clone(), log.clone());
         init_xdg_output_manager(&mut display.borrow_mut(), log.clone());
         init_xdg_activation_global(
             &mut display.borrow_mut(),
@@ -110,7 +106,11 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     } => {
                         if token_data.timestamp.elapsed().as_secs() < 10 {
                             // Just grant the wish
-                            anvil_state.window_map.borrow_mut().bring_surface_to_top(&surface);
+                            let mut space = anvil_state.space.borrow_mut();
+                            let w = space.window_for_surface(&surface).cloned();
+                            if let Some(window) = w {
+                                space.raise_window(&window, true);
+                            }
                         } else {
                             // Discard the request
                             state.lock().unwrap().remove_request(&token);
@@ -224,8 +224,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             running: Arc::new(AtomicBool::new(true)),
             display,
             handle,
-            window_map,
-            output_map,
+            space,
+            popups,
+            shells,
             dnd_icon,
             log,
             socket_name,
@@ -245,4 +246,5 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
 pub trait Backend {
     fn seat_name(&self) -> String;
+    fn reset_buffers(&mut self, output: &Output);
 }
