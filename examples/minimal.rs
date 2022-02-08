@@ -90,8 +90,8 @@ impl ShmHandler for App {
     }
 }
 
-impl SeatHandler for App {
-    fn seat_state(&mut self) -> &mut SeatState {
+impl SeatHandler<Self> for App {
+    fn seat_state(&mut self) -> &mut SeatState<Self> {
         &mut self.seat_state
     }
 }
@@ -100,7 +100,7 @@ struct App {
     compositor_state: CompositorState,
     xdg_shell_state: XdgShellState,
     shm_state: ShmState,
-    seat_state: SeatState,
+    seat_state: SeatState<Self>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -270,5 +270,5 @@ delegate_dispatch!(App: [WlShm, WlShmPool, WlBuffer] => ShmState);
 // Wl Seat
 //
 
-delegate_global_dispatch!(App: [WlSeat] => SeatState);
-delegate_dispatch!(App: [WlSeat, WlPointer, WlKeyboard] => SeatState);
+delegate_global_dispatch!(App: [WlSeat] => SeatState<App>);
+delegate_dispatch!(App: [WlSeat, WlPointer, WlKeyboard] => SeatState<App>);
