@@ -26,21 +26,21 @@ pub use grab::{GrabStartData, PointerGrab};
 mod cursor_image;
 pub use cursor_image::{CursorImageAttributes, CursorImageStatus, CURSOR_IMAGE_ROLE};
 
-mod axis_frame;
-pub use axis_frame::AxisFrame;
+mod events;
+pub use events::{AxisFrame, ButtonEvent, MotionEvent};
 
-struct PointerInternal {
+struct PointerInternal<T> {
     known_pointers: Vec<WlPointer>,
     focus: Option<(WlSurface, Point<i32, Logical>)>,
     pending_focus: Option<(WlSurface, Point<i32, Logical>)>,
     location: Point<f64, Logical>,
-    grab: GrabStatus,
+    grab: GrabStatus<T>,
     pressed_buttons: Vec<u32>,
     image_callback: Box<dyn FnMut(CursorImageStatus) + Send + Sync>,
 }
 
 // image_callback does not implement debug, so we have to impl Debug manually
-impl fmt::Debug for PointerInternal {
+impl<T> fmt::Debug for PointerInternal<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PointerInternal")
             .field("known_pointers", &self.known_pointers)
@@ -54,7 +54,7 @@ impl fmt::Debug for PointerInternal {
     }
 }
 
-impl PointerInternal {
+impl<T> PointerInternal<T> {
     fn new(image_callback: Box<dyn FnMut(CursorImageStatus) + Send + Sync>) -> Self {
         Self {
             known_pointers: Vec::new(),
@@ -67,7 +67,7 @@ impl PointerInternal {
         }
     }
 
-    fn set_grab<G: PointerGrab + 'static>(
+    fn set_grab<G: PointerGrab<T> + 'static>(
         &mut self,
         dh: &mut DisplayHandle<'_>,
         serial: Serial,
@@ -164,7 +164,7 @@ impl PointerInternal {
 
     fn with_grab<F>(&mut self, dh: &mut DisplayHandle<'_>, f: F)
     where
-        F: FnOnce(&mut DisplayHandle<'_>, PointerInnerHandle<'_>, &mut dyn PointerGrab),
+        F: FnOnce(&mut DisplayHandle<'_>, PointerInnerHandle<'_, T>, &mut dyn PointerGrab<T>),
     {
         let mut grab = ::std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
         match grab {
@@ -203,11 +203,11 @@ impl PointerInternal {
 /// When sending events using this handle, they will be intercepted by a pointer
 /// grab if any is active. See the [`PointerGrab`] trait for details.
 #[derive(Debug)]
-pub struct PointerHandle {
-    inner: Arc<Mutex<PointerInternal>>,
+pub struct PointerHandle<T> {
+    inner: Arc<Mutex<PointerInternal<T>>>,
 }
 
-impl Clone for PointerHandle {
+impl<T> Clone for PointerHandle<T> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -215,8 +215,8 @@ impl Clone for PointerHandle {
     }
 }
 
-impl PointerHandle {
-    pub(crate) fn new<F>(cb: F) -> PointerHandle
+impl<T> PointerHandle<T> {
+    pub(crate) fn new<F>(cb: F) -> PointerHandle<T>
     where
         F: FnMut(CursorImageStatus) + Send + Sync + 'static,
     {
@@ -233,7 +233,7 @@ impl PointerHandle {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab + 'static>(
+    pub fn set_grab<G: PointerGrab<T> + 'static>(
         &self,
         dh: &mut DisplayHandle<'_>,
         grab: G,
@@ -283,18 +283,11 @@ impl PointerHandle {
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of enter/motion/leave events.
-    pub fn motion(
-        &self,
-        dh: &mut DisplayHandle<'_>,
-        location: Point<f64, Logical>,
-        focus: Option<(WlSurface, Point<i32, Logical>)>,
-        serial: Serial,
-        time: u32,
-    ) {
+    pub fn motion(&self, data: &mut T, dh: &mut DisplayHandle<'_>, event: &MotionEvent) {
         let mut inner = self.inner.lock().unwrap();
-        inner.pending_focus = focus.clone();
+        inner.pending_focus = event.focus.clone();
         inner.with_grab(dh, move |dh, mut handle, grab| {
-            grab.motion(dh, &mut handle, location, focus, serial, time);
+            grab.motion(data, dh, &mut handle, event);
         });
     }
 
@@ -302,37 +295,30 @@ impl PointerHandle {
     ///
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
-    pub fn button(
-        &self,
-        dh: &mut DisplayHandle<'_>,
-        button: u32,
-        state: ButtonState,
-        serial: Serial,
-        time: u32,
-    ) {
+    pub fn button(&self, data: &mut T, dh: &mut DisplayHandle<'_>, event: &ButtonEvent) {
         let mut inner = self.inner.lock().unwrap();
-        match state {
+        match event.state {
             ButtonState::Pressed => {
-                inner.pressed_buttons.push(button);
+                inner.pressed_buttons.push(event.button);
             }
             ButtonState::Released => {
-                inner.pressed_buttons.retain(|b| *b != button);
+                inner.pressed_buttons.retain(|b| *b != event.button);
             }
             _ => unreachable!(),
         }
         inner.with_grab(dh, |dh, mut handle, grab| {
-            grab.button(dh, &mut handle, button, state, serial, time);
+            grab.button(data, dh, &mut handle, event);
         });
     }
 
-    // /// Start an axis frame
-    // ///
-    // /// A single frame will group multiple scroll events as if they happened in the same instance.
-    // pub fn axis(&self, details: AxisFrame) {
-    //     self.inner.borrow_mut().with_grab(|mut handle, grab| {
-    //         grab.axis(&mut handle, details);
-    //     });
-    // }
+    /// Start an axis frame
+    ///
+    /// A single frame will group multiple scroll events as if they happened in the same instance.
+    pub fn axis(&self, data: &mut T, dh: &mut DisplayHandle<'_>, details: AxisFrame) {
+        self.inner.lock().unwrap().with_grab(dh, |dh, mut handle, grab| {
+            grab.axis(data, dh, &mut handle, details);
+        });
+    }
 
     /// Access the current location of this pointer in the global space
     pub fn current_location(&self) -> Point<f64, Logical> {
@@ -343,15 +329,15 @@ impl PointerHandle {
 /// This inner handle is accessed from inside a pointer grab logic, and directly
 /// sends event to the client
 #[derive(Debug)]
-pub struct PointerInnerHandle<'a> {
-    inner: &'a mut PointerInternal,
+pub struct PointerInnerHandle<'a, T> {
+    inner: &'a mut PointerInternal<T>,
 }
 
-impl<'a> PointerInnerHandle<'a> {
+impl<'a, T> PointerInnerHandle<'a, T> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab + 'static>(
+    pub fn set_grab<G: PointerGrab<T> + 'static>(
         &mut self,
         dh: &mut DisplayHandle<'_>,
         serial: Serial,
@@ -473,19 +459,20 @@ impl<'a> PointerInnerHandle<'a> {
 
 /// User data for pointer
 #[derive(Debug)]
-pub struct PointerUserData {
-    pub(crate) handle: Option<PointerHandle>,
+pub struct PointerUserData<T> {
+    pub(crate) handle: Option<PointerHandle<T>>,
 }
 
-impl DelegateDispatchBase<WlPointer> for SeatState {
-    type UserData = PointerUserData;
+impl<T: 'static> DelegateDispatchBase<WlPointer> for SeatState<T> {
+    type UserData = PointerUserData<T>;
 }
 
-impl<D> DelegateDispatch<WlPointer, D> for SeatState
+impl<T, D> DelegateDispatch<WlPointer, D> for SeatState<T>
 where
-    D: Dispatch<WlPointer, UserData = PointerUserData>,
-    D: SeatHandler,
+    D: Dispatch<WlPointer, UserData = PointerUserData<T>>,
+    D: SeatHandler<T>,
     D: 'static,
+    T: 'static,
 {
     fn request(
         _state: &mut D,
