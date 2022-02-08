@@ -1,4 +1,46 @@
-use wayland_server::protocol::wl_pointer::{Axis, AxisSource};
+use wayland_server::protocol::{
+    wl_pointer::{Axis, AxisSource, ButtonState},
+    wl_surface::WlSurface,
+};
+
+use crate::{
+    utils::{Logical, Point},
+    wayland::Serial,
+};
+
+/// Pointer motion event
+#[derive(Debug, Clone)]
+pub struct MotionEvent {
+    /// Location of the pointer in compositor space
+    pub location: Point<f64, Logical>,
+    /// Currently focused surface
+    pub focus: Option<(WlSurface, Point<i32, Logical>)>,
+    /// Serial of the event
+    pub serial: Serial,
+    /// Timestamp of the event, with millisecond granularity
+    pub time: u32,
+}
+
+/// Pointer button event
+
+/// Mouse button click and release notifications.
+/// The location of the click is given by the last motion or enter event.
+#[derive(Debug, Clone, Copy)]
+pub struct ButtonEvent {
+    /// Serial of the event
+    pub serial: Serial,
+    /// Timestamp with millisecond granularity, with an undefined base.
+    pub time: u32,
+    /// Button that produced the event
+    ///
+    /// The button is a button code as defined in the
+    /// Linux kernel's linux/input-event-codes.h header file, e.g. BTN_LEFT.
+    ///
+    /// Any 16-bit button code value is reserved for future additions to the kernel's event code list. All other button codes above 0xFFFF are currently undefined but may be used in future versions of this protocol.
+    pub button: u32,
+    /// Physical state of the button
+    pub state: ButtonState,
+}
 
 /// A frame of pointer axis events.
 ///

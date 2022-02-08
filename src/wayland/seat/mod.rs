@@ -42,6 +42,8 @@ pub use pointer::PointerUserData;
 
 use std::sync::{Arc, Mutex};
 
+use crate::utils::user_data::UserDataMap;
+
 pub use self::{
     keyboard::{
         keysyms, Error as KeyboardError, FilterResult, GrabStartData as KeyboardGrabStartData, KeyboardGrab,
@@ -66,21 +68,23 @@ use wayland_server::{
 };
 
 #[derive(Debug)]
-struct Inner {
-    pointer: Option<PointerHandle>,
+struct Inner<T> {
+    pointer: Option<PointerHandle<T>>,
     keyboard: Option<KeyboardHandle>,
     known_seats: Vec<wl_seat::WlSeat>,
 }
 
 #[derive(Debug)]
-struct SeatRc {
+struct SeatRc<T> {
     name: String,
-    inner: Mutex<Inner>,
+    inner: Mutex<Inner<T>>,
+    seat: GlobalId,
+    user_data_map: UserDataMap,
 
     log: ::slog::Logger,
 }
 
-impl Inner {
+impl<T> Inner<T> {
     fn compute_caps(&self) -> wl_seat::Capability {
         let mut caps = wl_seat::Capability::empty();
         if self.pointer.is_some() {
@@ -101,9 +105,9 @@ impl Inner {
 }
 
 /// Handler trait for WlSeat
-pub trait SeatHandler {
+pub trait SeatHandler<T> {
     /// [SeatState] getter
-    fn seat_state(&mut self) -> &mut SeatState;
+    fn seat_state(&mut self) -> &mut SeatState<T>;
 }
 
 /// A Seat handle
@@ -117,21 +121,19 @@ pub trait SeatHandler {
 ///
 /// See module-level documentation for details of use.
 #[derive(Debug)]
-pub struct SeatState {
-    arc: Arc<SeatRc>,
-    seat: GlobalId,
+pub struct SeatState<T> {
+    arc: Arc<SeatRc<T>>,
 }
 
-impl Clone for SeatState {
+impl<T> Clone for SeatState<T> {
     fn clone(&self) -> Self {
         Self {
             arc: self.arc.clone(),
-            seat: self.seat.clone(),
         }
     }
 }
 
-impl SeatState {
+impl<T: 'static> SeatState<T> {
     /// Create a new seat global
     ///
     /// A new seat global is created with given name and inserted
@@ -158,15 +160,28 @@ impl SeatState {
                     keyboard: None,
                     known_seats: Default::default(),
                 }),
+                seat,
+                user_data_map: UserDataMap::new(),
                 log,
             }),
-            seat,
         }
     }
 
     /// Get id of WlSeat global
     pub fn seat_global(&self) -> GlobalId {
-        self.seat.clone()
+        self.arc.seat.clone()
+    }
+
+    /// Attempt to retrieve a [`Seat`] from an existing resource
+    pub fn from_resource(seat: &WlSeat) -> Option<Self> {
+        seat.data::<SeatUserData<T>>()
+            .map(|d| d.seat.clone())
+            .map(|arc| Self { arc })
+    }
+
+    /// Access the `UserDataMap` associated with this `Seat`
+    pub fn user_data(&self) -> &UserDataMap {
+        &self.arc.user_data_map
     }
 
     /// Adds the pointer capability to this seat
@@ -198,7 +213,7 @@ impl SeatState {
     ///     |new_status| { /* a closure handling requests from clients to change the cursor icon */ }
     /// );
     /// ```
-    pub fn add_pointer<F>(&mut self, dh: &mut DisplayHandle<'_>, cb: F) -> PointerHandle
+    pub fn add_pointer<F>(&mut self, dh: &mut DisplayHandle<'_>, cb: F) -> PointerHandle<T>
     where
         F: FnMut(CursorImageStatus) + Send + Sync + 'static,
     {
@@ -216,7 +231,7 @@ impl SeatState {
     }
 
     /// Access the pointer of this seat if any
-    pub fn get_pointer(&self) -> Option<PointerHandle> {
+    pub fn get_pointer(&self) -> Option<PointerHandle<T>> {
         self.arc.inner.lock().unwrap().pointer.clone()
     }
 
@@ -275,7 +290,7 @@ impl SeatState {
         mut focus_hook: F,
     ) -> Result<KeyboardHandle, KeyboardError>
     where
-        F: FnMut(&SeatState, Option<&wl_surface::WlSurface>) + 'static,
+        F: FnMut(&Self, Option<&wl_surface::WlSurface>) + 'static,
     {
         let me = self.clone();
         let mut inner = self.arc.inner.lock().unwrap();
@@ -320,7 +335,7 @@ impl SeatState {
     }
 }
 
-impl ::std::cmp::PartialEq for SeatState {
+impl<T> ::std::cmp::PartialEq for SeatState<T> {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.arc, &other.arc)
     }
@@ -328,19 +343,22 @@ impl ::std::cmp::PartialEq for SeatState {
 
 /// User data for seat
 #[derive(Debug)]
-pub struct SeatUserData {
-    seat: std::sync::Weak<SeatRc>,
-}
-impl DelegateDispatchBase<WlSeat> for SeatState {
-    type UserData = SeatUserData;
+pub struct SeatUserData<T> {
+    seat: Arc<SeatRc<T>>,
 }
 
-impl<D: 'static> DelegateDispatch<WlSeat, D> for SeatState
+impl<T: 'static> DelegateDispatchBase<WlSeat> for SeatState<T> {
+    type UserData = SeatUserData<T>;
+}
+
+impl<T, D> DelegateDispatch<WlSeat, D> for SeatState<T>
 where
-    D: Dispatch<WlSeat, UserData = SeatUserData>,
+    D: Dispatch<WlSeat, UserData = SeatUserData<T>>,
     D: Dispatch<WlKeyboard, UserData = KeyboardUserData>,
-    D: Dispatch<WlPointer, UserData = PointerUserData>,
-    D: SeatHandler,
+    D: Dispatch<WlPointer, UserData = PointerUserData<T>>,
+    D: SeatHandler<T>,
+    D: 'static,
+    T: 'static,
 {
     fn request(
         state: &mut D,
@@ -396,27 +414,28 @@ where
     }
 
     fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &Self::UserData) {
-        if let Some(seat) = data.seat.upgrade() {
-            seat.inner
-                .lock()
-                .unwrap()
-                .known_seats
-                .retain(|s| s.id() != object_id);
-        }
+        data.seat
+            .inner
+            .lock()
+            .unwrap()
+            .known_seats
+            .retain(|s| s.id() != object_id);
     }
 }
 
-impl DelegateGlobalDispatchBase<WlSeat> for SeatState {
+impl<T: 'static> DelegateGlobalDispatchBase<WlSeat> for SeatState<T> {
     type GlobalData = ();
 }
 
-impl<D: 'static> DelegateGlobalDispatch<WlSeat, D> for SeatState
+impl<T, D> DelegateGlobalDispatch<WlSeat, D> for SeatState<T>
 where
     D: GlobalDispatch<WlSeat, GlobalData = ()>,
-    D: Dispatch<WlSeat, UserData = SeatUserData>,
+    D: Dispatch<WlSeat, UserData = SeatUserData<T>>,
     D: Dispatch<WlKeyboard, UserData = KeyboardUserData>,
-    D: Dispatch<WlPointer, UserData = PointerUserData>,
-    D: SeatHandler,
+    D: Dispatch<WlPointer, UserData = PointerUserData<T>>,
+    D: SeatHandler<T>,
+    D: 'static,
+    T: 'static,
 {
     fn bind(
         state: &mut D,
@@ -429,7 +448,7 @@ where
         let state = state.seat_state();
 
         let data = SeatUserData {
-            seat: Arc::downgrade(&state.arc),
+            seat: state.arc.clone(),
         };
 
         let resource = data_init.init(resource, data);
