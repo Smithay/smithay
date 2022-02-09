@@ -33,7 +33,7 @@ pub fn window_state(space: usize, w: &Window) -> RefMut<'_, WindowState> {
 pub fn window_geo(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
     let loc = window_loc(window, space_id);
     let mut wgeo = window.geometry();
-    wgeo.loc = loc;
+    wgeo.loc += loc;
     wgeo
 }
 
