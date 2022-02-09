@@ -6,7 +6,7 @@
 //! - initialize OpenGL contexts from.
 //! - Import/Export external resources to/from OpenGL
 //!
-//! To use this module, you first need to create a [`EGLDisplay`] through a supported EGL platform
+//! To use this module, you first need to create an [`EGLDisplay`] through a supported EGL platform
 //! as indicated by an implementation of the [`native::EGLNativeDisplay`] trait.
 //!
 //! You may bind the [`EGLDisplay`], that shall be used by clients for rendering (so pick one initialized by a fast platform)
