@@ -390,7 +390,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
         planes(self, &self.crtc, self.has_universal_planes)
     }
 
-    /// Tests is a framebuffer can be used with this surface.
+    /// Tests if a framebuffer can be used with this surface.
     ///
     /// # Arguments
     ///
@@ -416,7 +416,7 @@ impl<A: AsRawFd + 'static> DrmSurface<A> {
         }
     }
 
-    /// Tests is a framebuffer can be used with this surface and a given plane.
+    /// Tests if a framebuffer can be used with this surface and a given plane.
     ///
     /// # Arguments
     ///
