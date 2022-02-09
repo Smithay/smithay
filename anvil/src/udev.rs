@@ -1,7 +1,7 @@
 use std::{
+    borrow::Cow,
     cell::RefCell,
     collections::hash_map::{Entry, HashMap},
-    io::Error as IoError,
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
     rc::Rc,
@@ -73,7 +73,7 @@ use crate::{
     state::{AnvilState, Backend},
 };
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct SessionFd(RawFd);
 impl AsRawFd for SessionFd {
     fn as_raw_fd(&self) -> RawFd {
@@ -161,7 +161,7 @@ pub fn run_udev(log: Logger) {
     /*
      * Initialize the udev backend
      */
-    let udev_backend = match UdevBackend::new(state.seat_name.clone(), log.clone()) {
+    let udev_backend = match UdevBackend::new(&state.seat_name, log.clone()) {
         Ok(ret) => ret,
         Err(err) => {
             crit!(log, "Failed to initialize udev backend"; "error" => err);
@@ -186,13 +186,13 @@ pub fn run_udev(log: Logger) {
     /*
      * Bind all our objects that get driven by the event loop
      */
-    let libinput_event_source = event_loop
+    event_loop
         .handle()
         .insert_source(libinput_backend, move |event, _, anvil_state| {
             anvil_state.process_input_event(event)
         })
         .unwrap();
-    let session_event_source = event_loop
+    event_loop
         .handle()
         .insert_source(notifier, |(), &mut (), _anvil_state| {})
         .unwrap();
@@ -226,14 +226,13 @@ pub fn run_udev(log: Logger) {
         );
     }
 
-    let udev_event_source = event_loop
+    event_loop
         .handle()
         .insert_source(udev_backend, move |event, _, state| match event {
             UdevEvent::Added { device_id, path } => state.device_added(device_id, path),
             UdevEvent::Changed { device_id } => state.device_changed(device_id),
             UdevEvent::Removed { device_id } => state.device_removed(device_id),
         })
-        .map_err(|e| -> IoError { e.into() })
         .unwrap();
 
     /*
@@ -258,11 +257,6 @@ pub fn run_udev(log: Logger) {
             display.borrow_mut().flush_clients(&mut state);
         }
     }
-
-    // Cleanup stuff
-    event_loop.handle().remove(session_event_source);
-    event_loop.handle().remove(libinput_event_source);
-    event_loop.handle().remove(udev_event_source);
 }
 
 pub type RenderSurface = GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, SessionFd>;
@@ -296,7 +290,7 @@ struct BackendData {
 }
 
 fn scan_connectors(
-    device: &mut DrmDevice<SessionFd>,
+    device: &DrmDevice<SessionFd>,
     gbm: &Rc<RefCell<GbmDevice<SessionFd>>>,
     renderer: &mut Gles2Renderer,
     display: &mut Display,
@@ -307,7 +301,7 @@ fn scan_connectors(
     // Get a set of all modesetting resource handles (excluding planes):
     let res_handles = device.resource_handles().unwrap();
 
-    // Use first connected connector
+    // Find all connected output ports.
     let connector_infos: Vec<ConnectorInfo> = res_handles
         .connectors()
         .iter()
@@ -323,107 +317,106 @@ fn scan_connectors(
         let encoder_infos = connector_info
             .encoders()
             .iter()
-            .filter_map(|e| *e)
-            .flat_map(|encoder_handle| device.get_encoder(encoder_handle))
+            .flatten()
+            .flat_map(|encoder_handle| device.get_encoder(*encoder_handle))
             .collect::<Vec<EncoderInfo>>();
-        'outer: for encoder_info in encoder_infos {
-            for crtc in res_handles.filter_crtcs(encoder_info.possible_crtcs()) {
-                if let Entry::Vacant(entry) = backends.entry(crtc) {
-                    info!(
-                        logger,
-                        "Trying to setup connector {:?}-{} with crtc {:?}",
-                        connector_info.interface(),
-                        connector_info.interface_id(),
-                        crtc,
-                    );
-                    let mut surface = match device.create_surface(
-                        crtc,
-                        connector_info.modes()[0],
-                        &[connector_info.handle()],
-                    ) {
-                        Ok(surface) => surface,
-                        Err(err) => {
-                            warn!(logger, "Failed to create drm surface: {}", err);
-                            continue;
-                        }
-                    };
-                    surface.link(signaler.clone());
 
-                    let renderer_formats =
-                        Bind::<Dmabuf>::supported_formats(renderer).expect("Dmabuf renderer without formats");
+        let crtcs = encoder_infos
+            .iter()
+            .map(|encoder_info| res_handles.filter_crtcs(encoder_info.possible_crtcs()))
+            .flatten();
 
-                    let gbm_surface =
-                        match GbmBufferedSurface::new(surface, gbm.clone(), renderer_formats, logger.clone())
-                        {
-                            Ok(renderer) => renderer,
-                            Err(err) => {
-                                warn!(logger, "Failed to create rendering surface: {}", err);
-                                continue;
-                            }
-                        };
+        for crtc in crtcs {
+            // Skip CRTCs used by previous connectors.
+            let entry = match backends.entry(crtc) {
+                Entry::Vacant(entry) => entry,
+                Entry::Occupied(_) => continue,
+            };
 
-                    let mode = connector_info.modes()[0];
-                    let size = mode.size();
-                    let mode = Mode {
-                        size: (size.0 as i32, size.1 as i32).into(),
-                        refresh: (mode.vrefresh() * 1000) as i32,
-                    };
+            info!(
+                logger,
+                "Trying to setup connector {:?}-{} with crtc {:?}",
+                connector_info.interface(),
+                connector_info.interface_id(),
+                crtc,
+            );
 
-                    let other_short_name;
-                    let interface_short_name = match connector_info.interface() {
-                        drm::control::connector::Interface::DVII => "DVI-I",
-                        drm::control::connector::Interface::DVID => "DVI-D",
-                        drm::control::connector::Interface::DVIA => "DVI-A",
-                        drm::control::connector::Interface::SVideo => "S-VIDEO",
-                        drm::control::connector::Interface::DisplayPort => "DP",
-                        drm::control::connector::Interface::HDMIA => "HDMI-A",
-                        drm::control::connector::Interface::HDMIB => "HDMI-B",
-                        drm::control::connector::Interface::EmbeddedDisplayPort => "eDP",
-                        other => {
-                            other_short_name = format!("{:?}", other);
-                            &other_short_name
-                        }
-                    };
-
-                    let output_name = format!("{}-{}", interface_short_name, connector_info.interface_id());
-
-                    let (phys_w, phys_h) = connector_info.size().unwrap_or((0, 0));
-                    let (output, global) = Output::new(
-                        display,
-                        output_name,
-                        PhysicalProperties {
-                            size: (phys_w as i32, phys_h as i32).into(),
-                            subpixel: wl_output::Subpixel::Unknown,
-                            make: "Smithay".into(),
-                            model: "Generic DRM".into(),
-                        },
-                        None,
-                    );
-                    let position = (
-                        space
-                            .outputs()
-                            .fold(0, |acc, o| acc + space.output_geometry(o).unwrap().size.w),
-                        0,
-                    )
-                        .into();
-                    output.change_current_state(Some(mode), None, None, Some(position));
-                    output.set_preferred(mode);
-                    space.map_output(&output, 1.0, position);
-
-                    output.user_data().insert_if_missing(|| UdevOutputId {
-                        crtc,
-                        device_id: device.device_id(),
-                    });
-
-                    entry.insert(Rc::new(RefCell::new(SurfaceData {
-                        surface: gbm_surface,
-                        global: Some(global),
-                        #[cfg(feature = "debug")]
-                        fps: fps_ticker::Fps::default(),
-                    })));
-                    break 'outer;
+            let mode = connector_info.modes()[0];
+            let mut surface = match device.create_surface(crtc, mode, &[connector_info.handle()]) {
+                Ok(surface) => surface,
+                Err(err) => {
+                    warn!(logger, "Failed to create drm surface: {}", err);
+                    continue;
                 }
-            }
+            };
+            surface.link(signaler.clone());
+
+            let renderer_formats =
+                Bind::<Dmabuf>::supported_formats(renderer).expect("Dmabuf renderer without formats");
+
+            let gbm_surface =
+                match GbmBufferedSurface::new(surface, gbm.clone(), renderer_formats, logger.clone()) {
+                    Ok(renderer) => renderer,
+                    Err(err) => {
+                        warn!(logger, "Failed to create rendering surface: {}", err);
+                        continue;
+                    }
+                };
+
+            let size = mode.size();
+            let mode = Mode {
+                size: (size.0 as i32, size.1 as i32).into(),
+                refresh: mode.vrefresh() as i32 * 1000,
+            };
+
+            let interface_short_name = match connector_info.interface() {
+                drm::control::connector::Interface::DVII => Cow::Borrowed("DVI-I"),
+                drm::control::connector::Interface::DVID => Cow::Borrowed("DVI-D"),
+                drm::control::connector::Interface::DVIA => Cow::Borrowed("DVI-A"),
+                drm::control::connector::Interface::SVideo => Cow::Borrowed("S-VIDEO"),
+                drm::control::connector::Interface::DisplayPort => Cow::Borrowed("DP"),
+                drm::control::connector::Interface::HDMIA => Cow::Borrowed("HDMI-A"),
+                drm::control::connector::Interface::HDMIB => Cow::Borrowed("HDMI-B"),
+                drm::control::connector::Interface::EmbeddedDisplayPort => Cow::Borrowed("eDP"),
+                other => Cow::Owned(format!("{:?}", other)),
+            };
+
+            let output_name = format!("{}-{}", interface_short_name, connector_info.interface_id());
+
+            let (phys_w, phys_h) = connector_info.size().unwrap_or((0, 0));
+            let (output, global) = Output::new(
+                display,
+                output_name,
+                PhysicalProperties {
+                    size: (phys_w as i32, phys_h as i32).into(),
+                    subpixel: wl_output::Subpixel::Unknown,
+                    make: "Smithay".into(),
+                    model: "Generic DRM".into(),
+                },
+                None,
+            );
+            let position = (
+                space.outputs().map(|output| space.output_geometry(output).unwrap().size.w).sum(),
+                0,
+            )
+                .into();
+            output.change_current_state(Some(mode), None, None, Some(position));
+            output.set_preferred(mode);
+            space.map_output(&output, 1.0, position);
+
+            output.user_data().insert_if_missing(|| UdevOutputId {
+                crtc,
+                device_id: device.device_id(),
+            });
+
+            entry.insert(Rc::new(RefCell::new(SurfaceData {
+                surface: gbm_surface,
+                global: Some(global),
+                #[cfg(feature = "debug")]
+                fps: fps_ticker::Fps::default(),
+            })));
+
+            break;
         }
     }
 
@@ -433,101 +426,94 @@ fn scan_connectors(
 impl AnvilState<UdevData> {
     fn device_added(&mut self, device_id: dev_t, path: PathBuf) {
         // Try to open the device
-        if let Some((mut device, gbm)) = self
-            .backend_data
-            .session
-            .open(
-                &path,
-                OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK,
-            )
-            .ok()
-            .and_then(|fd| {
-                match {
-                    let fd = SessionFd(fd);
-                    (
-                        DrmDevice::new(fd.clone(), true, self.log.clone()),
-                        GbmDevice::new(fd),
-                    )
-                } {
-                    (Ok(drm), Ok(gbm)) => Some((drm, gbm)),
-                    (Err(err), _) => {
-                        warn!(
-                            self.log,
-                            "Skipping device {:?}, because of drm error: {}", device_id, err
-                        );
-                        None
-                    }
-                    (_, Err(err)) => {
-                        // TODO try DumbBuffer allocator in this case
-                        warn!(
-                            self.log,
-                            "Skipping device {:?}, because of gbm error: {}", device_id, err
-                        );
-                        None
-                    }
-                }
-            })
-        {
-            let egl = match EGLDisplay::new(&gbm, self.log.clone()) {
-                Ok(display) => display,
-                Err(err) => {
-                    warn!(
-                        self.log,
-                        "Skipping device {:?}, because of egl display error: {}", device_id, err
-                    );
-                    return;
-                }
-            };
+        let open_flags = OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK;
+        let device_fd = self.backend_data.session.open(&path, open_flags).ok();
+        let devices = device_fd
+            .map(SessionFd)
+            .map(|fd| (DrmDevice::new(fd, true, self.log.clone()), GbmDevice::new(fd)));
 
-            let context = match EGLContext::new(&egl, self.log.clone()) {
-                Ok(context) => context,
-                Err(err) => {
-                    warn!(
-                        self.log,
-                        "Skipping device {:?}, because of egl context error: {}", device_id, err
-                    );
-                    return;
-                }
-            };
-
-            let renderer = Rc::new(RefCell::new(unsafe {
-                Gles2Renderer::new(context, self.log.clone()).unwrap()
-            }));
-
-            #[cfg(feature = "egl")]
-            if path.canonicalize().ok() == self.backend_data.primary_gpu {
-                info!(self.log, "Initializing EGL Hardware Acceleration via {:?}", path);
-                if renderer
-                    .borrow_mut()
-                    .bind_wl_display(&*self.display.borrow())
-                    .is_ok()
-                {
-                    info!(self.log, "EGL hardware-acceleration enabled");
-                }
+        // Report device open failures.
+        let (mut device, gbm) = match devices {
+            Some((Ok(drm), Ok(gbm))) => (drm, gbm),
+            Some((Err(err), _)) => {
+                warn!(
+                    self.log,
+                    "Skipping device {:?}, because of drm error: {}", device_id, err
+                );
+                return;
             }
+            Some((_, Err(err))) => {
+                // TODO try DumbBuffer allocator in this case
+                warn!(
+                    self.log,
+                    "Skipping device {:?}, because of gbm error: {}", device_id, err
+                );
+                return;
+            }
+            None => return,
+        };
 
-            let gbm = Rc::new(RefCell::new(gbm));
-            let backends = Rc::new(RefCell::new(scan_connectors(
-                &mut device,
-                &gbm,
-                &mut *renderer.borrow_mut(),
-                &mut *self.display.borrow_mut(),
-                &mut *self.space.borrow_mut(),
-                &self.backend_data.signaler,
-                &self.log,
-            )));
+        let egl = match EGLDisplay::new(&gbm, self.log.clone()) {
+            Ok(display) => display,
+            Err(err) => {
+                warn!(
+                    self.log,
+                    "Skipping device {:?}, because of egl display error: {}", device_id, err
+                );
+                return;
+            }
+        };
 
-            let dev_id = device.device_id();
-            let handle = self.handle.clone();
-            let restart_token = self.backend_data.signaler.register(move |signal| match signal {
-                SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => {
-                    handle.insert_idle(move |anvil_state| anvil_state.render(dev_id, None));
-                }
-                _ => {}
-            });
+        let context = match EGLContext::new(&egl, self.log.clone()) {
+            Ok(context) => context,
+            Err(err) => {
+                warn!(
+                    self.log,
+                    "Skipping device {:?}, because of egl context error: {}", device_id, err
+                );
+                return;
+            }
+        };
 
-            device.link(self.backend_data.signaler.clone());
-            let event_dispatcher = Dispatcher::new(
+        let renderer = Rc::new(RefCell::new(unsafe {
+            Gles2Renderer::new(context, self.log.clone()).unwrap()
+        }));
+
+        #[cfg(feature = "egl")]
+        if path.canonicalize().ok() == self.backend_data.primary_gpu {
+            info!(self.log, "Initializing EGL Hardware Acceleration via {:?}", path);
+            if renderer
+                .borrow_mut()
+                .bind_wl_display(&*self.display.borrow())
+                .is_ok()
+            {
+                info!(self.log, "EGL hardware-acceleration enabled");
+            }
+        }
+
+        let gbm = Rc::new(RefCell::new(gbm));
+        let backends = Rc::new(RefCell::new(scan_connectors(
+            &device,
+            &gbm,
+            &mut *renderer.borrow_mut(),
+            &mut *self.display.borrow_mut(),
+            &mut *self.space.borrow_mut(),
+            &self.backend_data.signaler,
+            &self.log,
+        )));
+
+        let dev_id = device.device_id();
+        let handle = self.handle.clone();
+        let restart_token = self.backend_data.signaler.register(move |signal| match signal {
+            SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => {
+                handle.insert_idle(move |anvil_state| anvil_state.render(dev_id, None));
+            }
+            _ => {}
+        });
+
+        device.link(self.backend_data.signaler.clone());
+        let event_dispatcher =
+            Dispatcher::new(
                 device,
                 move |event, _, anvil_state: &mut AnvilState<_>| match event {
                     DrmEvent::VBlank(crtc) => anvil_state.render(dev_id, Some(crtc)),
@@ -536,44 +522,39 @@ impl AnvilState<UdevData> {
                     }
                 },
             );
-            let registration_token = self.handle.register_dispatcher(event_dispatcher.clone()).unwrap();
+        let registration_token = self.handle.register_dispatcher(event_dispatcher.clone()).unwrap();
 
-            trace!(self.log, "Backends: {:?}", backends.borrow().keys());
-            for backend in backends.borrow_mut().values() {
-                // render first frame
-                trace!(self.log, "Scheduling frame");
-                schedule_initial_render(backend.clone(), renderer.clone(), &self.handle, self.log.clone());
-            }
+        for backend in backends.borrow_mut().values() {
+            // render first frame
+            trace!(self.log, "Scheduling frame");
+            schedule_initial_render(backend.clone(), renderer.clone(), &self.handle, self.log.clone());
+        }
 
-            #[cfg(feature = "debug")]
-            let fps_texture = import_bitmap(
-                &mut renderer.borrow_mut(),
-                &image::io::Reader::with_format(
-                    std::io::Cursor::new(FPS_NUMBERS_PNG),
-                    image::ImageFormat::Png,
-                )
+        #[cfg(feature = "debug")]
+        let fps_texture = import_bitmap(
+            &mut renderer.borrow_mut(),
+            &image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
                 .decode()
                 .unwrap()
                 .to_rgba8(),
-            )
-            .expect("Unable to upload FPS texture");
+        )
+        .expect("Unable to upload FPS texture");
 
-            self.backend_data.backends.insert(
+        self.backend_data.backends.insert(
+            dev_id,
+            BackendData {
+                _restart_token: restart_token,
+                registration_token,
+                event_dispatcher,
+                surfaces: backends,
+                renderer,
+                gbm,
+                pointer_images: Vec::new(),
+                #[cfg(feature = "debug")]
+                fps_texture,
                 dev_id,
-                BackendData {
-                    _restart_token: restart_token,
-                    registration_token,
-                    event_dispatcher,
-                    surfaces: backends,
-                    renderer,
-                    gbm,
-                    pointer_images: Vec::new(),
-                    #[cfg(feature = "debug")]
-                    fps_texture,
-                    dev_id,
-                },
-            );
-        }
+            },
+        );
     }
 
     fn device_changed(&mut self, device: dev_t) {

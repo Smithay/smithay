@@ -78,7 +78,7 @@ pub fn run_winit(log: Logger) {
             .collect::<Vec<_>>();
         let backend = backend.clone();
         init_dmabuf_global(
-            &mut *display.borrow_mut(),
+            &mut display.borrow_mut(),
             dmabuf_formats,
             move |buffer, _| backend.borrow_mut().renderer().import_dmabuf(buffer).is_ok(),
             log.clone(),

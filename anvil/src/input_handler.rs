@@ -701,7 +701,7 @@ fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> Optio
         // logo + q = quit
         Some(KeyAction::Quit)
     } else if (xkb::KEY_XF86Switch_VT_1..=xkb::KEY_XF86Switch_VT_12).contains(&keysym) {
-        // VTSwicth
+        // VTSwitch
         Some(KeyAction::VtSwitch(
             (keysym - xkb::KEY_XF86Switch_VT_1 + 1) as i32,
         ))
