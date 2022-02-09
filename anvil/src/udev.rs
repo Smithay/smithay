@@ -396,7 +396,9 @@ fn scan_connectors(
                 None,
             );
             let position = (
-                space.outputs().map(|output| space.output_geometry(output).unwrap().size.w).sum(),
+                space
+                    .outputs()
+                    .fold(0, |acc, o| acc + space.output_geometry(o).unwrap().size.w),
                 0,
             )
                 .into();
@@ -581,10 +583,10 @@ impl AnvilState<UdevData> {
                 space.unmap_output(&output);
             }
 
-            let mut source = backend_data.event_dispatcher.as_source_mut();
+            let source = backend_data.event_dispatcher.as_source_mut();
             let mut backends = backend_data.surfaces.borrow_mut();
             *backends = scan_connectors(
-                &mut *source,
+                &source,
                 &backend_data.gbm,
                 &mut *backend_data.renderer.borrow_mut(),
                 &mut *self.display.borrow_mut(),
