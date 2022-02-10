@@ -113,6 +113,9 @@ pub trait Texture {
     fn height(&self) -> u32;
 }
 
+/// A downloaded texture buffer
+pub trait TextureMapping: Texture {}
+
 /// Helper trait for [`Renderer`], which defines a rendering api for a currently in-progress frame during [`Renderer::render`].
 pub trait Frame {
     /// Error type returned by the rendering operations of this renderer.
@@ -183,6 +186,8 @@ pub trait Renderer {
     type Error: Error;
     /// Texture Handle type used by this renderer.
     type TextureId: Texture;
+    /// Texture type representing a downloaded pixel buffer.
+    type TextureMapping: TextureMapping;
     /// Type representing a currently in-progress frame during the [`Renderer::render`]-call
     type Frame: Frame<Error = Self::Error, TextureId = Self::TextureId>;
 
@@ -464,6 +469,44 @@ impl<R: Renderer + ImportMem + ImportDma> ImportAll for R {
     }
 }
 
+/// Trait for renderers supporting exporting contents of framebuffers or textures into memory.
+pub trait ExportMem: Renderer {
+    /// Copies the contents of the currently bound framebuffer.
+    ///
+    /// This operation is not destructive, the contents of the framebuffer keep being valid.
+    ///
+    /// This function *may* fail, if (but not limited to):
+    /// - The framebuffer is not readable
+    /// - The region is out of bounds of the framebuffer
+    /// - There is not enough space to create the mapping
+    fn copy_framebuffer(
+        &mut self,
+        region: Rectangle<i32, Buffer>,
+    ) -> Result<<Self as Renderer>::TextureMapping, <Self as Renderer>::Error>;
+    /// Copies the contents of the currently bound framebuffer.
+    /// *Note*: This function may change or invalidate the current bind.
+    ///
+    /// This operation is not destructive, the contents of the texture keep being valid.
+    ///
+    /// This function *may* fail, if:
+    /// - There is not enough space to create the mapping
+    /// - The texture does no allow copying for implementation-specfic reasons
+    fn copy_texture(
+        &mut self,
+        texture: &Self::TextureId,
+        region: Rectangle<i32, Buffer>,
+    ) -> Result<<Self as Renderer>::TextureMapping, Self::Error>;
+    /// Returns a read-only pointer to a previously created texture mapping.
+    ///
+    /// The format of the returned slice is RGBA8.
+    ///
+    /// This function *may* fail, if (but not limited to):
+    /// - There is not enough space in memory
+    fn map_texture<'a>(
+        &mut self,
+        texture_mapping: &'a Self::TextureMapping,
+    ) -> Result<&'a [u8], <Self as Renderer>::Error>;
+}
 #[cfg(feature = "wayland_frontend")]
 #[non_exhaustive]
 /// Buffer type of a given wl_buffer, if managed by smithay

@@ -1,20 +1,26 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
-use std::borrow::Cow;
-use std::convert::TryFrom;
-use std::ffi::CStr;
-use std::fmt;
-use std::ptr;
-use std::rc::Rc;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::{collections::HashSet, os::raw::c_char};
-
 use cgmath::{prelude::*, Matrix3, Vector2, Vector3};
+use core::slice;
+use std::{
+    borrow::Cow,
+    collections::HashSet,
+    convert::TryFrom,
+    ffi::CStr,
+    fmt,
+    os::raw::c_char,
+    ptr,
+    rc::Rc,
+    sync::{
+        atomic::{AtomicPtr, Ordering},
+        mpsc::{channel, Receiver, Sender},
+    },
+};
 
 mod shaders;
 mod version;
 
-use super::{Bind, Frame, Offscreen, Renderer, Texture, TextureFilter, Unbind};
+use super::{Bind, ExportMem, Frame, Offscreen, Renderer, Texture, TextureFilter, TextureMapping, Unbind};
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
     Format,
@@ -134,6 +140,7 @@ enum CleanupResource {
     FramebufferObject(ffi::types::GLuint),
     RenderbufferObject(ffi::types::GLuint),
     EGLImage(EGLImage),
+    Mapping(ffi::types::GLuint, *const nix::libc::c_void),
 }
 
 impl Texture for Gles2Texture {
@@ -145,6 +152,37 @@ impl Texture for Gles2Texture {
     }
     fn size(&self) -> Size<i32, Buffer> {
         self.0.size
+    }
+}
+
+/// Texture mapping of a GLES2 texture
+#[derive(Debug)]
+pub struct Gles2Mapping {
+    pbo: ffi::types::GLuint,
+    size: Size<i32, Buffer>,
+    mapping: AtomicPtr<nix::libc::c_void>,
+    destruction_callback_sender: Sender<CleanupResource>,
+}
+
+impl Texture for Gles2Mapping {
+    fn width(&self) -> u32 {
+        self.size.w as u32
+    }
+    fn height(&self) -> u32 {
+        self.size.h as u32
+    }
+    fn size(&self) -> Size<i32, Buffer> {
+        self.size
+    }
+}
+impl TextureMapping for Gles2Mapping {}
+
+impl Drop for Gles2Mapping {
+    fn drop(&mut self) {
+        let _ = self.destruction_callback_sender.send(CleanupResource::Mapping(
+            self.pbo,
+            self.mapping.load(Ordering::SeqCst),
+        ));
     }
 }
 
@@ -180,7 +218,7 @@ impl Drop for Gles2RenderbufferInternal {
 #[derive(Debug)]
 enum Gles2Target {
     Image {
-        _buf: Gles2Buffer,
+        buf: Gles2Buffer,
         _dmabuf: Dmabuf,
     },
     Surface(Rc<EGLSurface>),
@@ -325,6 +363,12 @@ pub enum Gles2Error {
     /// This rendering operation was called without a previous `begin`-call
     #[error("Call begin before doing any rendering operations")]
     UnconstraintRenderingOperation,
+    /// There was an error mapping the buffer
+    #[error("Error mapping the buffer")]
+    MappingError,
+    /// The provided buffer's size did not match the requested one.
+    #[error("Error reading buffer, size is too small for the given dimensions")]
+    UnexpectedSize,
 }
 
 impl From<Gles2Error> for SwapBuffersError {
@@ -341,6 +385,8 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::BindBufferEGLError(_)
             | x @ Gles2Error::UnsupportedPixelFormat(_)
             | x @ Gles2Error::BufferAccessError(_)
+            | x @ Gles2Error::MappingError
+            | x @ Gles2Error::UnexpectedSize
             | x @ Gles2Error::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
@@ -353,9 +399,10 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::GLExtensionNotSupported(_)
             | x @ Gles2Error::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
             Gles2Error::ContextActivationError(err) => err.into(),
-            x @ Gles2Error::FramebufferBindingError | x @ Gles2Error::BindBufferEGLError(_) => {
-                SwapBuffersError::TemporaryFailure(Box::new(x))
-            }
+            x @ Gles2Error::FramebufferBindingError
+            | x @ Gles2Error::MappingError
+            | x @ Gles2Error::UnexpectedSize
+            | x @ Gles2Error::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
 }
@@ -669,6 +716,14 @@ impl Gles2Renderer {
                 },
                 CleanupResource::RenderbufferObject(rbo) => unsafe {
                     self.gl.DeleteRenderbuffers(1, &rbo);
+                },
+                CleanupResource::Mapping(pbo, mapping) => unsafe {
+                    if !mapping.is_null() {
+                        self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
+                        self.gl.UnmapBuffer(ffi::PIXEL_PACK_BUFFER);
+                        self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
+                    }
+                    self.gl.DeleteBuffers(1, &pbo);
                 },
             }
         }
@@ -1044,6 +1099,118 @@ impl Gles2Renderer {
     }
 }
 
+impl ExportMem for Gles2Renderer {
+    fn copy_framebuffer(
+        &mut self,
+        region: Rectangle<i32, Buffer>,
+    ) -> Result<Self::TextureMapping, Self::Error> {
+        self.make_current()?;
+        let mut pbo = 0;
+        unsafe {
+            self.gl.GenBuffers(1, &mut pbo);
+            self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
+            let size = (region.size.w * region.size.h * 4) as isize;
+            self.gl
+                .BufferData(ffi::PIXEL_PACK_BUFFER, size, ptr::null(), ffi::STREAM_READ);
+            self.gl.ReadBuffer(ffi::COLOR_ATTACHMENT0);
+            self.gl.ReadPixels(
+                region.loc.x,
+                region.loc.y,
+                region.size.w,
+                region.size.h,
+                ffi::RGBA,
+                ffi::UNSIGNED_BYTE,
+                ptr::null_mut(),
+            );
+            self.gl.ReadBuffer(ffi::NONE);
+            self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
+        }
+        Ok(Gles2Mapping {
+            pbo,
+            size: region.size,
+            mapping: AtomicPtr::new(ptr::null_mut()),
+            destruction_callback_sender: self.destruction_callback_sender.clone(),
+        })
+    }
+
+    fn copy_texture(
+        &mut self,
+        texture: &Self::TextureId,
+        region: Rectangle<i32, Buffer>,
+    ) -> Result<Self::TextureMapping, Self::Error> {
+        let size = texture.size();
+        let mut pbo = 0;
+        let old_target = self.target.take();
+        self.bind(texture.clone())?;
+
+        unsafe {
+            self.gl.GenBuffers(1, &mut pbo);
+            self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
+            self.gl.BufferData(
+                ffi::PIXEL_PACK_BUFFER,
+                (region.size.w * region.size.h * 4) as isize,
+                ptr::null(),
+                ffi::STREAM_READ,
+            );
+            self.gl.ReadBuffer(ffi::COLOR_ATTACHMENT0);
+            self.gl.ReadPixels(
+                region.loc.x,
+                region.loc.y,
+                region.size.w,
+                region.size.h,
+                ffi::RGBA,
+                ffi::UNSIGNED_BYTE,
+                ptr::null_mut(),
+            );
+            self.gl.ReadBuffer(ffi::NONE);
+            self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
+        }
+
+        // restore old framebuffer
+        self.unbind()?;
+        self.target = old_target;
+        self.make_current()?;
+
+        Ok(Gles2Mapping {
+            pbo,
+            size: region.size,
+            mapping: AtomicPtr::new(ptr::null_mut()),
+            destruction_callback_sender: self.destruction_callback_sender.clone(),
+        })
+    }
+
+    fn map_texture<'a>(
+        &mut self,
+        texture_mapping: &'a Self::TextureMapping,
+    ) -> Result<&'a [u8], Self::Error> {
+        self.make_current()?;
+        let size = texture_mapping.size();
+        let len = size.w * size.h * 4;
+
+        let mapping_ptr = texture_mapping.mapping.load(Ordering::SeqCst);
+        let ptr = if mapping_ptr.is_null() {
+            unsafe {
+                self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, texture_mapping.pbo);
+                let ptr = self
+                    .gl
+                    .MapBufferRange(ffi::PIXEL_PACK_BUFFER, 0, len as isize, ffi::MAP_READ_BIT);
+                self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
+
+                if ptr.is_null() {
+                    return Err(Gles2Error::MappingError);
+                }
+
+                texture_mapping.mapping.store(ptr, Ordering::SeqCst);
+                ptr
+            }
+        } else {
+            mapping_ptr
+        };
+
+        unsafe { Ok(slice::from_raw_parts(ptr as *const u8, len as usize)) }
+    }
+}
+
 impl Bind<Rc<EGLSurface>> for Gles2Renderer {
     fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), Gles2Error> {
         self.unbind()?;
@@ -1115,14 +1282,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
                 }
             })?;
 
-        unsafe {
-            self.gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.fbo);
-        }
-
-        self.target = Some(Gles2Target::Image {
-            _buf: buf,
-            _dmabuf: dmabuf,
-        });
+        self.target = Some(Gles2Target::Image { buf, _dmabuf: dmabuf });
         Ok(())
     }
 
@@ -1157,7 +1317,7 @@ impl Bind<Gles2Texture> for Gles2Renderer {
         }
 
         self.target = Some(Gles2Target::Texture {
-            texture,
+            _texture: texture,
             destruction_callback_sender: self.destruction_callback_sender.clone(),
             fbo,
         });
@@ -1317,6 +1477,7 @@ impl Gles2Renderer {
 impl Renderer for Gles2Renderer {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
+    type TextureMapping = Gles2Mapping;
     type Frame = Gles2Frame;
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
