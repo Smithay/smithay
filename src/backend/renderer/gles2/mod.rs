@@ -14,7 +14,7 @@ use cgmath::{prelude::*, Matrix3, Vector2, Vector3};
 mod shaders;
 mod version;
 
-use super::{Bind, Frame, Renderer, Texture, TextureFilter, Unbind};
+use super::{Bind, Frame, Offscreen, Renderer, Texture, TextureFilter, Unbind};
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
     Format,
@@ -131,6 +131,7 @@ impl Drop for Gles2TextureInternal {
 
 enum CleanupResource {
     Texture(ffi::types::GLuint),
+    FramebufferObject(ffi::types::GLuint),
     EGLImage(EGLImage),
 }
 
@@ -147,7 +148,7 @@ impl Texture for Gles2Texture {
 }
 
 #[derive(Debug, Clone)]
-struct WeakGles2Buffer {
+struct Gles2Buffer {
     dmabuf: WeakDmabuf,
     image: EGLImage,
     rbo: ffi::types::GLuint,
@@ -155,16 +156,36 @@ struct WeakGles2Buffer {
 }
 
 #[derive(Debug)]
-struct Gles2Buffer {
-    internal: WeakGles2Buffer,
-    _dmabuf: Dmabuf,
+enum Gles2Target {
+    Image {
+        _buf: Gles2Buffer,
+        _dmabuf: Dmabuf,
+    },
+    Surface(Rc<EGLSurface>),
+    Texture {
+        _texture: Gles2Texture,
+        fbo: ffi::types::GLuint,
+        destruction_callback_sender: Sender<CleanupResource>,
+    },
+}
+
+impl Drop for Gles2Target {
+    fn drop(&mut self) {
+        if let Gles2Target::Texture {
+            fbo,
+            destruction_callback_sender,
+            ..
+        } = self
+        {
+            let _ = destruction_callback_sender.send(CleanupResource::FramebufferObject(*fbo));
+        }
+    }
 }
 
 /// A renderer utilizing OpenGL ES 2
 pub struct Gles2Renderer {
-    buffers: Vec<WeakGles2Buffer>,
-    target_buffer: Option<Gles2Buffer>,
-    target_surface: Option<Rc<EGLSurface>>,
+    buffers: Vec<Gles2Buffer>,
+    target: Option<Gles2Target>,
     extensions: Vec<String>,
     tex_programs: [Gles2TexProgram; shaders::FRAGMENT_COUNT],
     solid_program: Gles2SolidProgram,
@@ -218,8 +239,7 @@ impl fmt::Debug for Gles2Renderer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Gles2Renderer")
             .field("buffers", &self.buffers)
-            .field("target_buffer", &self.target_buffer)
-            .field("target_surface", &self.target_surface)
+            .field("target", &self.target)
             .field("extensions", &self.extensions)
             .field("tex_programs", &self.tex_programs)
             .field("solid_program", &self.solid_program)
@@ -542,8 +562,7 @@ impl Gles2Renderer {
             extensions: exts,
             tex_programs,
             solid_program,
-            target_buffer: None,
-            target_surface: None,
+            target: None,
             buffers: Vec::new(),
             #[cfg(feature = "wayland_frontend")]
             dmabuf_cache: std::collections::HashMap::new(),
@@ -563,8 +582,8 @@ impl Gles2Renderer {
 
     fn make_current(&self) -> Result<(), MakeCurrentError> {
         unsafe {
-            if let Some(surface) = self.target_surface.as_ref() {
-                self.egl.make_current_with_surface(surface)?;
+            if let Some(&Gles2Target::Surface(ref surface)) = self.target.as_ref() {
+                self.egl.make_current_with_surface(&**surface)?;
             } else {
                 self.egl.make_current()?;
             }
@@ -576,6 +595,21 @@ impl Gles2Renderer {
         self.make_current()?;
         #[cfg(feature = "wayland_frontend")]
         self.dmabuf_cache.retain(|entry, _tex| entry.upgrade().is_some());
+        // Free outdated buffer resources
+        // TODO: Replace with `drain_filter` once it lands
+        let mut i = 0;
+        while i != self.buffers.len() {
+            if self.buffers[i].dmabuf.upgrade().is_none() {
+                let old = self.buffers.remove(i);
+                unsafe {
+                    self.gl.DeleteFramebuffers(1, &old.fbo as *const _);
+                    self.gl.DeleteRenderbuffers(1, &old.rbo as *const _);
+                    ffi_egl::DestroyImageKHR(**self.egl.display.display, old.image);
+                }
+            } else {
+                i += 1;
+            }
+        }
         for resource in self.destruction_callback.try_iter() {
             match resource {
                 CleanupResource::Texture(texture) => unsafe {
@@ -583,6 +617,9 @@ impl Gles2Renderer {
                 },
                 CleanupResource::EGLImage(image) => unsafe {
                     ffi_egl::DestroyImageKHR(**self.egl.display.display, image);
+                },
+                CleanupResource::FramebufferObject(fbo) => unsafe {
+                    self.gl.DeleteFramebuffers(1, &fbo);
                 },
             }
         }
@@ -878,7 +915,7 @@ impl Gles2Renderer {
 impl Bind<Rc<EGLSurface>> for Gles2Renderer {
     fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), Gles2Error> {
         self.unbind()?;
-        self.target_surface = Some(surface);
+        self.target = Some(Gles2Target::Surface(surface));
         self.make_current()?;
         Ok(())
     }
@@ -889,23 +926,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
         self.unbind()?;
         self.make_current()?;
 
-        // Free outdated buffer resources
-        // TODO: Replace with `drain_filter` once it lands
-        let mut i = 0;
-        while i != self.buffers.len() {
-            if self.buffers[i].dmabuf.upgrade().is_none() {
-                let weak = self.buffers.remove(i);
-                unsafe {
-                    self.gl.DeleteFramebuffers(1, &weak.fbo as *const _);
-                    self.gl.DeleteRenderbuffers(1, &weak.rbo as *const _);
-                    ffi_egl::DestroyImageKHR(**self.egl.display.display, weak.image);
-                }
-            } else {
-                i += 1;
-            }
-        }
-
-        let buffer = self
+        let (buf, dmabuf) = self
             .buffers
             .iter()
             .find(|buffer| {
@@ -915,17 +936,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
                     false
                 }
             })
-            .map(|buf| {
-                let dmabuf = buf
-                    .dmabuf
-                    .upgrade()
-                    .expect("Dmabuf equal check succeeded for freed buffer");
-                Ok(Gles2Buffer {
-                    internal: buf.clone(),
-                    // we keep the dmabuf alive as long as we are bound
-                    _dmabuf: dmabuf,
-                })
-            })
+            .map(|buf| Ok((buf.clone(), buf.dmabuf.upgrade().unwrap())))
             .unwrap_or_else(|| {
                 trace!(self.logger, "Creating EGLImage for Dmabuf: {:?}", dmabuf);
                 let image = self
@@ -959,27 +970,27 @@ impl Bind<Dmabuf> for Gles2Renderer {
                         return Err(Gles2Error::FramebufferBindingError);
                     }
 
-                    let weak = WeakGles2Buffer {
+                    let buf = Gles2Buffer {
                         dmabuf: dmabuf.weak(),
                         image,
                         rbo,
                         fbo,
                     };
 
-                    self.buffers.push(weak.clone());
+                    self.buffers.push(buf.clone());
 
-                    Ok(Gles2Buffer {
-                        internal: weak,
-                        _dmabuf: dmabuf,
-                    })
+                    Ok((buf, dmabuf))
                 }
             })?;
 
         unsafe {
-            self.gl.BindFramebuffer(ffi::FRAMEBUFFER, buffer.internal.fbo);
+            self.gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.fbo);
         }
 
-        self.target_buffer = Some(buffer);
+        self.target = Some(Gles2Target::Image {
+            _buf: buf,
+            _dmabuf: dmabuf,
+        });
         Ok(())
     }
 
@@ -988,14 +999,72 @@ impl Bind<Dmabuf> for Gles2Renderer {
     }
 }
 
+impl Bind<Gles2Texture> for Gles2Renderer {
+    fn bind(&mut self, texture: Gles2Texture) -> Result<(), Gles2Error> {
+        self.unbind()?;
+        self.make_current()?;
+
+        let mut fbo = 0;
+        unsafe {
+            self.gl.GenFramebuffers(1, &mut fbo as *mut _);
+            self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+            self.gl.FramebufferTexture2D(
+                ffi::FRAMEBUFFER,
+                ffi::COLOR_ATTACHMENT0,
+                ffi::TEXTURE_2D,
+                texture.0.texture,
+                0,
+            );
+            let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+            self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+
+            if status != ffi::FRAMEBUFFER_COMPLETE {
+                //TODO wrap image and drop here
+                return Err(Gles2Error::FramebufferBindingError);
+            }
+        }
+
+        self.target = Some(Gles2Target::Texture {
+            texture,
+            destruction_callback_sender: self.destruction_callback_sender.clone(),
+            fbo,
+        });
+
+        Ok(())
+    }
+}
+
+impl Offscreen<Gles2Texture> for Gles2Renderer {
+    fn create_buffer(&mut self, size: Size<i32, Buffer>) -> Result<Gles2Texture, Gles2Error> {
+        self.make_current()?;
+        let tex = unsafe {
+            let mut tex = 0;
+            self.gl.GenTextures(1, &mut tex);
+            self.gl.BindTexture(ffi::TEXTURE_2D, tex);
+            self.gl.TexImage2D(
+                ffi::TEXTURE_2D,
+                0,
+                ffi::RGBA as i32,
+                size.w,
+                size.h,
+                0,
+                ffi::RGBA,
+                ffi::UNSIGNED_BYTE,
+                std::ptr::null(),
+            );
+            tex
+        };
+
+        Ok(unsafe { Gles2Texture::from_raw(self, tex, size) })
+    }
+}
 impl Unbind for Gles2Renderer {
     fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error> {
         unsafe {
             self.egl.make_current()?;
         }
         unsafe { self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0) };
-        self.target_buffer = None;
-        self.target_surface = None;
+        self.target = None;
         self.egl.unbind()?;
         Ok(())
     }
