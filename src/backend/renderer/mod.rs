@@ -208,6 +208,18 @@ pub trait Renderer {
         F: FnOnce(&mut Self, &mut Self::Frame) -> R;
 }
 
+/// Trait for renderers that support creating offscreen framebuffers to render into.
+///
+/// Usually also implement either [`ExportMem`] and/or [`ExportDma`] to receive the framebuffers contents.
+pub trait Offscreen<Target>: Renderer + Bind<Target> {
+    /// Create a new instance of a framebuffer.
+    ///
+    /// This call *may* fail, if (but not limited to):
+    /// - The maximum amount of framebuffers for this renderer would be exceeded
+    /// - The size is too large for a framebuffer
+    fn create_buffer(&mut self, size: Size<i32, Buffer>) -> Result<Target, <Self as Renderer>::Error>;
+}
+
 #[cfg(feature = "wayland_frontend")]
 /// Trait for Renderers supporting importing shm-based buffers.
 pub trait ImportShm: Renderer {
