@@ -60,12 +60,12 @@ pub fn run_x11(log: Logger) {
     let handle = backend.handle();
 
     // Obtain the DRM node the X server uses for direct rendering.
-    let drm_node = handle
+    let (_, fd) = handle
         .drm_node()
         .expect("Could not get DRM node used by X server");
 
     // Create the gbm device for buffer allocation.
-    let device = gbm::Device::new(drm_node).expect("Failed to create gbm device");
+    let device = gbm::Device::new(fd).expect("Failed to create gbm device");
     // Initialize EGL using the GBM device.
     let egl = EGLDisplay::new(&device, log.clone()).expect("Failed to create EGLDisplay");
     // Create the OpenGL context

@@ -7,20 +7,16 @@ use libc::dev_t;
 
 use std::{
     fmt::{self, Display, Formatter},
-    fs, io, mem,
-    os::unix::prelude::{AsRawFd, IntoRawFd, RawFd},
+    fs, io,
+    os::unix::prelude::{AsRawFd, RawFd},
     path::{Path, PathBuf},
 };
 
-use nix::{
-    sys::stat::{fstat, major, minor, stat},
-    unistd::close,
-};
+use nix::sys::stat::{fstat, major, minor, stat, FileStat};
 
 /// A node which refers to a DRM device.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DrmNode {
-    fd: RawFd,
     dev: dev_t,
     ty: NodeType,
 }
@@ -28,12 +24,31 @@ pub struct DrmNode {
 impl DrmNode {
     /// Creates a DRM node from a file descriptor.
     ///
-    /// This function takes ownership of the passed in file descriptor, which will be closed when
-    /// dropped.
-    pub fn from_fd<A: AsRawFd>(fd: A) -> Result<DrmNode, CreateDrmNodeError> {
-        let fd = fd.as_raw_fd();
+    /// This function does not take ownership of the passed in file descriptor.
+    pub fn from_fd(fd: RawFd) -> Result<DrmNode, CreateDrmNodeError> {
         let stat = fstat(fd).map_err(Into::<io::Error>::into)?;
+        DrmNode::from_stat(stat)
+    }
+
+    /// Creates a DRM node from an open drm device.
+    pub fn from_file<A: AsRawFd>(file: &A) -> Result<DrmNode, CreateDrmNodeError> {
+        DrmNode::from_fd(file.as_raw_fd())
+    }
+
+    /// Creates a DRM node from path.
+    pub fn from_path<A: AsRef<Path>>(path: A) -> Result<DrmNode, CreateDrmNodeError> {
+        let stat = stat(path.as_ref()).map_err(Into::<io::Error>::into)?;
+        DrmNode::from_stat(stat)
+    }
+
+    /// Creates a DRM node from a file stat.
+    pub fn from_stat(stat: FileStat) -> Result<DrmNode, CreateDrmNodeError> {
         let dev = stat.st_rdev;
+        DrmNode::from_dev_id(dev)
+    }
+
+    /// Creates a DRM node from a dev_t
+    pub fn from_dev_id(dev: dev_t) -> Result<DrmNode, CreateDrmNodeError> {
         let major = major(dev);
         let minor = minor(dev);
 
@@ -55,7 +70,7 @@ impl DrmNode {
             _ => return Err(CreateDrmNodeError::NotDrmNode),
         };
 
-        Ok(DrmNode { fd, dev, ty })
+        Ok(DrmNode { dev, ty })
     }
 
     /// Returns the type of the DRM node.
@@ -73,9 +88,14 @@ impl DrmNode {
         node_path(self, self.ty).ok()
     }
 
-    /// Returns the path of the specified node type matching the open device if possible.
+    /// Returns the path of the specified node type matching the device, if available.
     pub fn dev_path_with_type(&self, ty: NodeType) -> Option<PathBuf> {
         node_path(self, ty).ok()
+    }
+
+    /// Returns a new node of the specified node type matching the device, if available.
+    pub fn node_with_type(&self, ty: NodeType) -> Option<Result<DrmNode, CreateDrmNodeError>> {
+        self.dev_path_with_type(ty).map(DrmNode::from_path)
     }
 
     /// Returns the major device number of the DRM device.
@@ -111,26 +131,6 @@ impl DrmNode {
 impl Display for DrmNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}{}", self.ty.minor_name_prefix(), minor(self.dev_id()))
-    }
-}
-
-impl IntoRawFd for DrmNode {
-    fn into_raw_fd(self) -> RawFd {
-        let fd = self.fd;
-        mem::forget(self);
-        fd
-    }
-}
-
-impl AsRawFd for DrmNode {
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd
-    }
-}
-
-impl Drop for DrmNode {
-    fn drop(&mut self) {
-        let _ = close(self.fd);
     }
 }
 
