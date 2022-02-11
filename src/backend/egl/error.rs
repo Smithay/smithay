@@ -39,12 +39,15 @@ pub enum Error {
     /// No EGLDisplay is currently bound to this `WlDisplay`
     #[error("No EGLDisplay is currently bound to this `WlDisplay`")]
     NoEGLDisplayBound,
-    /// Index of plane is out of bounds for `EGLBuffer`
+    /// Index of plane is out of bounds for `EGLImage`
     #[error("Index of plane is out of bounds for `EGLBuffer`")]
     PlaneIndexOutOfBounds,
-    /// Failed to create `EGLBuffer` from the buffer
-    #[error("Failed to create `EGLBuffer` from the buffer")]
+    /// Failed to create `EGLImage` from the buffer
+    #[error("Failed to create `EGLImage` from the buffer")]
     EGLImageCreationFailed,
+    /// Failed to create `Dmabuf` from the image
+    #[error("Faiedl to create `Dmabuf` from the image")]
+    DmabufExportFailed(#[source] EGLError),
     /// Failed to query the available `EGLDevice`s
     #[error("Failed to query the available `EGLDevice`s")]
     QueryDevices(#[source] EGLError),
