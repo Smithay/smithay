@@ -221,8 +221,8 @@ pub trait Offscreen<Target>: Renderer + Bind<Target> {
 }
 
 #[cfg(feature = "wayland_frontend")]
-/// Trait for Renderers supporting importing shm-based buffers.
-pub trait ImportShm: Renderer {
+/// Trait for Renderers supporting importing memory-based buffers.
+pub trait ImportMem: Renderer {
     /// Import a given shm-based buffer into the renderer (see [`buffer_type`]).
     ///
     /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
@@ -244,6 +244,42 @@ pub trait ImportShm: Renderer {
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
+
+    /// Import a given chunk of memory into the renderer.
+    ///
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
+    ///  or implementation-specific functions.
+    ///
+    /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
+    /// This operation needs no bound or default rendering target.
+    ///
+    /// The provided data slice needs to be in RGBA8 format, its length should thus be `size.w * size.h * 4`.
+    /// Anything beyond will be truncated, if the buffer is too small an error will be returned.
+    fn import_memory(
+        &mut self,
+        data: &[u8],
+        size: Size<i32, Buffer>,
+    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
+
+    /// Import a given chunk of memory into an existing texture.
+    ///
+    /// This operation needs no bound or default rendering target.
+    ///
+    /// The provided data slice needs to be in RGBA8 format, its length should thus be `region.size.w * region.size.h * 4`.
+    /// Anything beyond will be truncated, if the buffer is too small an error will be returned.
+    ///
+    /// This function *may* error, if (but not limited to):
+    /// - The texture was not created using either [`ImportMem::import_shm_buffer`] or [`ImportMem::import_memory`].
+    ///   External textures imported by other means (e.g. via ImportDma) may not be writable. This property is defined
+    ///   by the implementation.
+    /// - The region is out of bounds of the initial size the texture was created with. Implementations are not required
+    ///   to support resizing the original texture.
+    fn update_memory(
+        &mut self,
+        texture: &<Self as Renderer>::TextureId,
+        data: &[u8],
+        region: Rectangle<i32, Buffer>,
+    ) -> Result<(), <Self as Renderer>::Error>;
 
     /// Returns supported formats for shared memory buffers.
     ///
@@ -393,7 +429,7 @@ pub trait ImportAll: Renderer {
     feature = "backend_egl",
     feature = "use_system_lib"
 ))]
-impl<R: Renderer + ImportShm + ImportEgl + ImportDma> ImportAll for R {
+impl<R: Renderer + ImportMem + ImportEgl + ImportDma> ImportAll for R {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -413,7 +449,7 @@ impl<R: Renderer + ImportShm + ImportEgl + ImportDma> ImportAll for R {
     feature = "wayland_frontend",
     not(all(feature = "backend_egl", feature = "use_system_lib"))
 ))]
-impl<R: Renderer + ImportShm + ImportDma> ImportAll for R {
+impl<R: Renderer + ImportMem + ImportDma> ImportAll for R {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,

@@ -29,7 +29,7 @@ use crate::utils::{Buffer, Physical, Rectangle, Size, Transform};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use super::ImportEgl;
 #[cfg(feature = "wayland_frontend")]
-use super::{ImportDma, ImportShm};
+use super::{ImportDma, ImportMem};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
 #[cfg(feature = "wayland_frontend")]
@@ -677,7 +677,7 @@ impl Gles2Renderer {
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl ImportShm for Gles2Renderer {
+impl ImportMem for Gles2Renderer {
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -782,6 +782,89 @@ impl ImportShm for Gles2Renderer {
             Ok(texture)
         })
         .map_err(Gles2Error::BufferAccessError)?
+    }
+
+    fn import_memory(&mut self, data: &[u8], size: Size<i32, Buffer>) -> Result<Gles2Texture, Gles2Error> {
+        self.make_current()?;
+
+        if data.len() < (size.w * size.h * 4) as usize {
+            return Err(Gles2Error::UnexpectedSize);
+        }
+
+        let texture = Gles2Texture(Rc::new({
+            let mut tex = 0;
+            unsafe {
+                self.gl.GenTextures(1, &mut tex);
+                self.gl.BindTexture(ffi::TEXTURE_2D, tex);
+                self.gl
+                    .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
+                self.gl
+                    .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+                self.gl.TexImage2D(
+                    ffi::TEXTURE_2D,
+                    0,
+                    ffi::RGBA as i32,
+                    size.w,
+                    size.h,
+                    0,
+                    ffi::RGBA,
+                    ffi::UNSIGNED_BYTE as u32,
+                    data.as_ptr() as *const _,
+                );
+                self.gl.BindTexture(ffi::TEXTURE_2D, 0);
+            }
+            // new texture, upload in full
+            Gles2TextureInternal {
+                texture: tex,
+                texture_kind: 0,
+                is_external: false,
+                y_inverted: false,
+                size,
+                egl_images: None,
+                destruction_callback_sender: self.destruction_callback_sender.clone(),
+            }
+        }));
+
+        Ok(texture)
+    }
+
+    fn update_memory(
+        &mut self,
+        texture: &<Self as Renderer>::TextureId,
+        data: &[u8],
+        region: Rectangle<i32, Buffer>,
+    ) -> Result<(), <Self as Renderer>::Error> {
+        self.make_current()?;
+
+        if data.len() < (region.size.w * region.size.h * 4) as usize {
+            return Err(Gles2Error::UnexpectedSize);
+        }
+
+        unsafe {
+            self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
+            self.gl
+                .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
+            self.gl
+                .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+            self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
+            self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
+            self.gl.TexSubImage2D(
+                ffi::TEXTURE_2D,
+                0,
+                region.loc.x,
+                region.loc.y,
+                region.size.w,
+                region.size.h,
+                ffi::RGBA,
+                ffi::UNSIGNED_BYTE as u32,
+                data.as_ptr() as *const _,
+            );
+            self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
+            self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
+            self.gl.BindTexture(ffi::TEXTURE_2D, 0);
+        }
+
+        Ok(())
     }
 
     #[cfg(feature = "wayland_frontend")]
