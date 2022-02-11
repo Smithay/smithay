@@ -20,7 +20,9 @@ use std::{
 mod shaders;
 mod version;
 
-use super::{Bind, ExportMem, Frame, Offscreen, Renderer, Texture, TextureFilter, TextureMapping, Unbind};
+use super::{
+    Bind, ExportDma, ExportMem, Frame, Offscreen, Renderer, Texture, TextureFilter, TextureMapping, Unbind,
+};
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
     Format,
@@ -219,11 +221,11 @@ impl Drop for Gles2RenderbufferInternal {
 enum Gles2Target {
     Image {
         buf: Gles2Buffer,
-        _dmabuf: Dmabuf,
+        dmabuf: Dmabuf,
     },
     Surface(Rc<EGLSurface>),
     Texture {
-        _texture: Gles2Texture,
+        texture: Gles2Texture,
         fbo: ffi::types::GLuint,
         destruction_callback_sender: Sender<CleanupResource>,
     },
@@ -266,6 +268,7 @@ pub struct Gles2Renderer {
     egl: EGLContext,
     #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
     egl_reader: Option<EGLBufferReader>,
+    gl_version: version::GlVersion,
     vbos: [ffi::types::GLuint; 2],
     gl: ffi::Gles2,
     destruction_callback: Receiver<CleanupResource>,
@@ -342,11 +345,16 @@ pub enum Gles2Error {
     /// Required GL extension are not supported by the underlying implementation
     #[error("None of the following GL extensions is supported by the underlying GL implementation, at least one is required: {0:?}")]
     GLExtensionNotSupported(&'static [&'static str]),
+    /// Required GL version is not available by the underlying implementation
+    #[error(
+        "The OpenGL ES version of the underlying GL implementation is too low, at least required: {0:?}"
+    )]
+    GLVersionNotSupported(version::GlVersion),
     /// The underlying egl context could not be activated
     #[error("Failed to active egl context")]
     ContextActivationError(#[from] crate::backend::egl::MakeCurrentError),
     ///The given dmabuf could not be converted to an EGLImage for framebuffer use
-    #[error("Failed to convert dmabuf to EGLImage")]
+    #[error("Failed to convert between dmabuf and EGLImage")]
     BindBufferEGLError(#[source] crate::backend::egl::Error),
     /// The given buffer has an unsupported pixel format
     #[error("Unsupported pixel format: {0:?}")]
@@ -379,6 +387,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::ProgramLinkError
             | x @ Gles2Error::GLFunctionLoaderError
             | x @ Gles2Error::GLExtensionNotSupported(_)
+            | x @ Gles2Error::GLVersionNotSupported(_)
             | x @ Gles2Error::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
             Gles2Error::ContextActivationError(err) => err.into(),
             x @ Gles2Error::FramebufferBindingError
@@ -397,6 +406,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::ProgramLinkError
             | x @ Gles2Error::GLFunctionLoaderError
             | x @ Gles2Error::GLExtensionNotSupported(_)
+            | x @ Gles2Error::GLVersionNotSupported(_)
             | x @ Gles2Error::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
             Gles2Error::ContextActivationError(err) => err.into(),
             x @ Gles2Error::FramebufferBindingError
@@ -545,7 +555,7 @@ impl Gles2Renderer {
 
         context.make_current()?;
 
-        let (gl, exts, logger_ptr, supports_instancing) = {
+        let (gl, gl_version, exts, logger_ptr, supports_instancing) = {
             let gl = ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _);
             let ext_ptr = gl.GetString(ffi::EXTENSIONS) as *const c_char;
             if ext_ptr.is_null() {
@@ -606,7 +616,7 @@ impl Gles2Renderer {
                 None
             };
 
-            (gl, exts, logger, supports_instancing)
+            (gl, gl_version, exts, logger, supports_instancing)
         };
 
         let tex_programs = [
@@ -641,6 +651,7 @@ impl Gles2Renderer {
             #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
             egl_reader: None,
             extensions: exts,
+            gl_version,
             tex_programs,
             solid_program,
             target: None,
@@ -1211,6 +1222,153 @@ impl ExportMem for Gles2Renderer {
     }
 }
 
+impl ExportDma for Gles2Renderer {
+    fn export_texture(&mut self, texture: &Gles2Texture) -> Result<Dmabuf, Gles2Error> {
+        self.make_current()?;
+
+        if !self
+            .egl
+            .display
+            .extensions
+            .iter()
+            .any(|s| s == "EGL_KHR_gl_texture_2D_image")
+        {
+            return Err(Gles2Error::EGLBufferAccessError(
+                crate::backend::egl::EglExtensionNotSupportedError(&["EGL_KHR_gl_texture_2D_image"]).into(),
+            ));
+        }
+
+        let image = if let Some(egl_images) = texture.0.egl_images.as_ref() {
+            egl_images[0]
+        } else {
+            unsafe {
+                let attributes = [ffi_egl::IMAGE_PRESERVED, ffi_egl::TRUE, ffi_egl::NONE];
+                let img = ffi_egl::CreateImage(
+                    **self.egl.display.display,
+                    self.egl.get_context_handle(),
+                    ffi_egl::GL_TEXTURE_2D,
+                    texture.0.texture as ffi_egl::types::EGLClientBuffer,
+                    attributes.as_ptr() as *const _,
+                );
+                if img == ffi_egl::NO_IMAGE_KHR {
+                    return Err(Gles2Error::BindBufferEGLError(
+                        crate::backend::egl::Error::EGLImageCreationFailed,
+                    ));
+                }
+                img
+            }
+        };
+
+        let res = self
+            .egl
+            .display
+            .create_dmabuf_from_image(image, texture.size(), true)
+            .map_err(Gles2Error::BindBufferEGLError);
+        unsafe { ffi_egl::DestroyImageKHR(**self.egl.display.display, image) };
+        res
+    }
+
+    fn export_framebuffer(&mut self, size: Size<i32, Buffer>) -> Result<Dmabuf, Gles2Error> {
+        self.make_current()?;
+
+        if !self
+            .egl
+            .display
+            .extensions
+            .iter()
+            .any(|s| s == "EGL_KHR_gl_renderbuffer_image")
+        {
+            return Err(Gles2Error::EGLBufferAccessError(
+                crate::backend::egl::EglExtensionNotSupportedError(&["EGL_KHR_gl_renderbuffer_image"]).into(),
+            ));
+        }
+
+        let rbo = match self.target.as_ref() {
+            Some(&Gles2Target::Image { ref dmabuf, .. }) => return Ok(dmabuf.clone()),
+            Some(&Gles2Target::Texture { ref texture, .. }) => {
+                // work around immutable borrow of self..
+                let texture = texture.clone();
+                return self.export_texture(&texture);
+            }
+            Some(&Gles2Target::Renderbuffer { ref buf, .. }) => buf.0.rbo,
+            _ => unsafe {
+                let mut rbo = 0;
+                self.gl.GenRenderbuffers(1, &mut rbo);
+                rbo
+            },
+        };
+
+        let image = unsafe {
+            let img = ffi_egl::CreateImage(
+                **self.egl.display.display,
+                self.egl.get_context_handle(),
+                ffi_egl::GL_RENDERBUFFER,
+                rbo as ffi_egl::types::EGLClientBuffer,
+                ptr::null(),
+            );
+            if img == ffi_egl::NO_IMAGE_KHR {
+                return Err(Gles2Error::BindBufferEGLError(
+                    crate::backend::egl::Error::EGLImageCreationFailed,
+                ));
+            }
+            img
+        };
+
+        if !matches!(self.target.as_ref(), Some(&Gles2Target::Renderbuffer { .. })) {
+            // At this point the user tries to copy from an EGLSurface or another
+            // default framebuffer, we need glBlitFramebuffer to do this, which
+            // only exists for GL ES 3.0 and higher.
+            if self.gl_version < version::GLES_3_0 {
+                return Err(Gles2Error::GLVersionNotSupported(version::GLES_3_0));
+            }
+
+            unsafe {
+                let mut fbo = 0;
+                self.gl.GenFramebuffers(1, &mut fbo as *mut _);
+                self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, fbo);
+                self.gl.FramebufferRenderbuffer(
+                    ffi::DRAW_FRAMEBUFFER,
+                    ffi::COLOR_ATTACHMENT0,
+                    ffi::RENDERBUFFER,
+                    rbo,
+                );
+                let status = self.gl.CheckFramebufferStatus(ffi::DRAW_FRAMEBUFFER);
+
+                if status != ffi::FRAMEBUFFER_COMPLETE {
+                    //TODO wrap image and drop here
+                    return Err(Gles2Error::FramebufferBindingError);
+                }
+
+                self.gl.BlitFramebuffer(
+                    0,
+                    0,
+                    size.w,
+                    size.h,
+                    0,
+                    0,
+                    size.w,
+                    size.h,
+                    ffi::COLOR_BUFFER_BIT,
+                    ffi::NEAREST,
+                );
+                self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+            }
+            // reset framebuffer
+            self.make_current()?;
+        };
+
+        let res = self
+            .egl
+            .display
+            .create_dmabuf_from_image(image, size, true)
+            .map_err(Gles2Error::BindBufferEGLError);
+        unsafe {
+            ffi_egl::DestroyImageKHR(**self.egl.display.display, image);
+        }
+        res
+    }
+}
+
 impl Bind<Rc<EGLSurface>> for Gles2Renderer {
     fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), Gles2Error> {
         self.unbind()?;
@@ -1282,7 +1440,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
                 }
             })?;
 
-        self.target = Some(Gles2Target::Image { buf, _dmabuf: dmabuf });
+        self.target = Some(Gles2Target::Image { buf, dmabuf });
         Ok(())
     }
 
@@ -1317,7 +1475,7 @@ impl Bind<Gles2Texture> for Gles2Renderer {
         }
 
         self.target = Some(Gles2Target::Texture {
-            _texture: texture,
+            texture,
             destruction_callback_sender: self.destruction_callback_sender.clone(),
             fbo,
         });

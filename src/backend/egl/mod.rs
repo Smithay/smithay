@@ -58,7 +58,7 @@ use std::sync::Arc;
 
 /// Error that can happen on optional EGL features
 #[derive(Debug, Clone, PartialEq)]
-pub struct EglExtensionNotSupportedError(&'static [&'static str]);
+pub struct EglExtensionNotSupportedError(pub &'static [&'static str]);
 
 impl fmt::Display for EglExtensionNotSupportedError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> ::std::result::Result<(), fmt::Error> {
