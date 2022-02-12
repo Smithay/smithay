@@ -439,7 +439,8 @@ pub enum BufferType {
 /// or otherwise not supported (e.g. not initialized using one of smithays [`crate::wayland`]-handlers).
 #[cfg(feature = "wayland_frontend")]
 pub fn buffer_type(
-    dh: &mut wayland_server::DisplayHandle<'_>,
+    // Note: this variable is only used if the inner [cfg()] is triggered
+    _dh: &mut wayland_server::DisplayHandle<'_>,
     buffer: &wl_buffer::WlBuffer,
 ) -> Option<BufferType> {
     if buffer.data::<Dmabuf>().is_some() {
@@ -452,7 +453,7 @@ pub fn buffer_type(
         .unwrap()
         .as_ref()
         .and_then(|x| x.upgrade())
-        .and_then(|x| x.egl_buffer_dimensions(dh, buffer))
+        .and_then(|x| x.egl_buffer_dimensions(_dh, buffer))
         .is_some()
     {
         return Some(BufferType::Egl);
@@ -470,7 +471,8 @@ pub fn buffer_type(
 /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`])
 #[cfg(feature = "wayland_frontend")]
 pub fn buffer_dimensions(
-    dh: &mut wayland_server::DisplayHandle<'_>,
+    // Note: this variable is only used if the inner [cfg()] is triggered
+    _dh: &mut wayland_server::DisplayHandle<'_>,
     buffer: &wl_buffer::WlBuffer,
 ) -> Option<Size<i32, Buffer>> {
     use crate::backend::allocator::Buffer;
@@ -485,7 +487,7 @@ pub fn buffer_dimensions(
         .unwrap()
         .as_ref()
         .and_then(|x| x.upgrade())
-        .and_then(|x| x.egl_buffer_dimensions(dh, buffer))
+        .and_then(|x| x.egl_buffer_dimensions(_dh, buffer))
     {
         return Some(dim);
     }
