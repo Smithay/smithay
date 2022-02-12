@@ -178,7 +178,7 @@ impl KbdInternal {
             GrabStatus::Borrowed => panic!("Accessed a keyboard grab from within a keyboard grab access."),
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
-                if let Some(ref surface) = handler.start_data().focus {
+                if let Some(ref _surface) = handler.start_data().focus {
                     // TODO
                     /*
                     if !surface.as_ref().is_alive() {
@@ -294,6 +294,7 @@ pub struct GrabStartData {
 /// rather than trying to guess when the grab will end.
 pub trait KeyboardGrab {
     /// An input was reported
+    #[allow(clippy::too_many_arguments)]
     fn input(
         &mut self,
         dh: &mut DisplayHandle<'_>,
