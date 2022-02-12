@@ -21,6 +21,10 @@ use super::{
 /// This trait is the interface to intercept regular pointer events and change them as needed, its
 /// interface mimics the [`PointerHandle`] interface.
 ///
+/// Any interactions with [`PointerHandle`] should be done using [`PointerInnerHandle`],
+/// as handle is borrowed/locked before grab methods are called,
+/// so calling methods on [`PointerHandle`] would result in a deadlock.
+///
 /// If your logic decides that the grab should end, both [`PointerInnerHandle`] and [`PointerHandle`] have
 /// a method to change it.
 ///
