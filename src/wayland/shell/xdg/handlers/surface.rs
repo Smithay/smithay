@@ -313,7 +313,8 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, _object_id: ObjectId, data: &Self::UserData) {
+    fn destroyed(_state: &mut D, _client_id: ClientId, _object_id: ObjectId, _data: &Self::UserData) {
+        // TODO
         // if !self.wl_surface.as_ref().is_alive() {
         //     // the wl_surface is destroyed, this means the client is not
         //     // trying to change the role but it's a cleanup (possibly a
