@@ -107,6 +107,7 @@ pub fn on_commit_buffer_handler(dh: &mut DisplayHandle<'_>, surface: &WlSurface)
 /// Note: This element will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_surface_tree<R, E, F, T>(
     renderer: &mut R,
     frame: &mut F,

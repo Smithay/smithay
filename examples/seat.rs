@@ -37,14 +37,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut clients = Vec::new();
 
     loop {
-        match listener.accept().unwrap() {
-            Some(stream) => {
-                println!("Got a client: {:?}", stream);
+        if let Some(stream) = listener.accept().unwrap() {
+            println!("Got a client: {:?}", stream);
 
-                let client = display.insert_client(stream, Arc::new(ClientState)).unwrap();
-                clients.push(client);
-            }
-            None => {}
+            let client = display.insert_client(stream, Arc::new(ClientState)).unwrap();
+            clients.push(client);
         }
 
         keyboard.input(
