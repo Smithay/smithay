@@ -66,21 +66,31 @@ use super::{seat::XkbConfig, text_input::TextInputHandle, Serial};
 
 const INPUT_METHOD_VERSION: u32 = 1;
 
-#[derive(Default, Clone)]
-struct InputMethod {
-    keyboard: Option<Main<ZwpInputMethodKeyboardGrabV2>>,
-    instance: Option<Main<ZwpInputMethodV2>>,
-    popup_surface: Option<Main<ZwpInputPopupSurfaceV2>>,
-    surface: Option<WlSurface>,
-    keyboard_state: Option<KeyboardState>,
-}
-
 #[derive(Clone)]
 struct KeyboardState {
     xkbstate: xkb::State,
     rate: i32,
     delay: i32,
     keymap: String,
+}
+
+impl fmt::Debug for KeyboardState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyboardState")
+            .field("rate", &self.rate)
+            .field("delay", &self.delay)
+            .field("keymap", &self.keymap)
+            .finish()
+    }
+}
+
+#[derive(Default, Clone, Debug)]
+struct InputMethod {
+    keyboard: Option<Main<ZwpInputMethodKeyboardGrabV2>>,
+    instance: Option<Main<ZwpInputMethodV2>>,
+    popup_surface: Option<Main<ZwpInputPopupSurfaceV2>>,
+    surface: Option<WlSurface>,
+    keyboard_state: Option<KeyboardState>,
 }
 
 impl InputMethod {
@@ -178,12 +188,6 @@ fn xkb_handler(xkb_config: XkbConfig<'_>) -> (String, xkb::State) {
     .unwrap();
     let state = xkb::State::new(&keymap);
     (keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1), state)
-}
-
-impl fmt::Debug for InputMethod {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InputMethod").finish()
-    }
 }
 
 /// Handle to an input method

@@ -126,7 +126,7 @@ impl<Backend> AnvilState<Backend> {
                         .get_surface_and_bring_to_top(self.pointer_location);
                     self.keyboard
                         .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
-                    self.text_input.set_focus(under.as_ref().map(|&(ref s, _)| s));
+                    self.text_input.set_focus(under.as_ref().map(|(s, _)| s));
                 }
                 wl_pointer::ButtonState::Pressed
             }
@@ -466,7 +466,7 @@ impl AnvilState<UdevData> {
                         let serial = SCOUNTER.next_serial();
                         self.keyboard
                             .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
-                        self.text_input.set_focus(under.as_ref().map(|&(ref s, _)| s));
+                        self.text_input.set_focus(under.as_ref().map(|(s, _)| s));
                     }
                 }
                 TabletToolTipState::Up => {
