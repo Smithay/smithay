@@ -289,18 +289,13 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
             // this will result in wasting a frame, because this flip will need to wait
             // for `set_crtc`, but is necessary to drive the event loop and thus provide
             // a more consistent api.
-            ControlDevice::page_flip(
-                &*self.fd,
-                self.crtc,
-                framebuffer,
-                &[PageFlipFlags::PageFlipEvent],
-                None,
-            )
-            .map_err(|source| Error::Access {
-                errmsg: "Failed to queue page flip",
-                dev: self.fd.dev_path(),
-                source,
-            })?;
+            ControlDevice::page_flip(&*self.fd, self.crtc, framebuffer, PageFlipFlags::EVENT, None).map_err(
+                |source| Error::Access {
+                    errmsg: "Failed to queue page flip",
+                    dev: self.fd.dev_path(),
+                    source,
+                },
+            )?;
         }
 
         Ok(())
@@ -318,9 +313,9 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
             self.crtc,
             framebuffer,
             if event {
-                &[PageFlipFlags::PageFlipEvent]
+                PageFlipFlags::EVENT
             } else {
-                &[]
+                PageFlipFlags::empty()
             },
             None,
         )

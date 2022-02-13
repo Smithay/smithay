@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use drm::buffer::PlanarBuffer;
 use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
-use gbm::{BufferObject, Device as GbmDevice};
+use gbm::BufferObject;
 
 use crate::backend::allocator::{
     dmabuf::{AsDmabuf, Dmabuf},
     gbm::GbmConvertError,
-    Format, Fourcc, Modifier, Slot, Swapchain,
+    Allocator, Format, Fourcc, Modifier, Slot, Swapchain,
 };
 use crate::backend::drm::{device::DevPath, surface::DrmSurfaceInternal, DrmError, DrmSurface};
 use crate::backend::SwapBuffersError;
@@ -18,17 +18,19 @@ use slog::{debug, error, o, trace, warn};
 
 /// Simplified abstraction of a swapchain for gbm-buffers displayed on a [`DrmSurface`].
 #[derive(Debug)]
-pub struct GbmBufferedSurface<D: AsRawFd + 'static> {
+pub struct GbmBufferedSurface<A: Allocator<BufferObject<()>> + 'static, D: AsRawFd + 'static> {
     current_fb: Slot<BufferObject<()>>,
     pending_fb: Option<Slot<BufferObject<()>>>,
     queued_fb: Option<Slot<BufferObject<()>>>,
     next_fb: Option<Slot<BufferObject<()>>>,
-    swapchain: Swapchain<GbmDevice<D>, BufferObject<()>>,
+    swapchain: Swapchain<A, BufferObject<()>>,
     drm: Arc<DrmSurface<D>>,
 }
 
-impl<D> GbmBufferedSurface<D>
+impl<A, D> GbmBufferedSurface<A, D>
 where
+    A: Allocator<BufferObject<()>>,
+    A::Error: std::error::Error + Send + Sync,
     D: AsRawFd + 'static,
 {
     /// Create a new `GbmBufferedSurface` from a given compatible combination
@@ -40,10 +42,10 @@ where
     #[allow(clippy::type_complexity)]
     pub fn new<L>(
         drm: DrmSurface<D>,
-        allocator: GbmDevice<D>,
+        allocator: A,
         mut renderer_formats: HashSet<Format>,
         log: L,
-    ) -> Result<GbmBufferedSurface<D>, Error>
+    ) -> Result<GbmBufferedSurface<A, D>, Error<A::Error>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -121,7 +123,7 @@ where
 
         let mode = drm.pending_mode();
 
-        let mut swapchain: Swapchain<GbmDevice<D>, BufferObject<()>> = Swapchain::new(
+        let mut swapchain: Swapchain<A, BufferObject<()>> = Swapchain::new(
             allocator,
             mode.size().0 as u32,
             mode.size().1 as u32,
@@ -130,7 +132,7 @@ where
         );
 
         // Test format
-        let buffer = swapchain.acquire()?.unwrap();
+        let buffer = swapchain.acquire().map_err(Error::GbmError)?.unwrap();
         let format = Format {
             code,
             modifier: buffer.modifier().unwrap(), // no guarantee
@@ -171,9 +173,13 @@ where
     ///
     /// *Note*: This function can be called multiple times and
     /// will return the same buffer until it is queued (see [`GbmBufferedSurface::queue_buffer`]).
-    pub fn next_buffer(&mut self) -> Result<(Dmabuf, u8), Error> {
+    pub fn next_buffer(&mut self) -> Result<(Dmabuf, u8), Error<A::Error>> {
         if self.next_fb.is_none() {
-            let slot = self.swapchain.acquire()?.ok_or(Error::NoFreeSlotsError)?;
+            let slot = self
+                .swapchain
+                .acquire()
+                .map_err(Error::GbmError)?
+                .ok_or(Error::NoFreeSlotsError)?;
 
             let maybe_buffer = slot.userdata().get::<Dmabuf>().cloned();
             if maybe_buffer.is_none() {
@@ -197,7 +203,7 @@ where
     /// *Note*: This function needs to be followed up with [`GbmBufferedSurface::frame_submitted`]
     /// when a vblank event is received, that denotes successful scanout of the buffer.
     /// Otherwise the underlying swapchain will eventually run out of buffers.
-    pub fn queue_buffer(&mut self) -> Result<(), Error> {
+    pub fn queue_buffer(&mut self) -> Result<(), Error<A::Error>> {
         self.queued_fb = self.next_fb.take();
         if self.pending_fb.is_none() && self.queued_fb.is_some() {
             self.submit()?;
@@ -210,10 +216,9 @@ where
     /// *Note*: Needs to be called, after the vblank event of the matching [`DrmDevice`](super::super::DrmDevice)
     /// was received after calling [`GbmBufferedSurface::queue_buffer`] on this surface.
     /// Otherwise the underlying swapchain will run out of buffers eventually.
-    pub fn frame_submitted(&mut self) -> Result<(), Error> {
+    pub fn frame_submitted(&mut self) -> Result<(), Error<A::Error>> {
         if let Some(mut pending) = self.pending_fb.take() {
             std::mem::swap(&mut pending, &mut self.current_fb);
-            self.swapchain.submitted(pending);
             if self.queued_fb.is_some() {
                 self.submit()?;
             }
@@ -222,7 +227,7 @@ where
         Ok(())
     }
 
-    fn submit(&mut self) -> Result<(), Error> {
+    fn submit(&mut self) -> Result<(), Error<A::Error>> {
         // yes it does not look like it, but both of these lines should be safe in all cases.
         let slot = self.queued_fb.take().unwrap();
         let fb = slot.userdata().get::<FbHandle<D>>().unwrap().fb;
@@ -233,9 +238,15 @@ where
             self.drm.page_flip([(fb, self.drm.plane())].iter(), true)
         };
         if flip.is_ok() {
+            self.swapchain.submitted(&slot);
             self.pending_fb = Some(slot);
         }
         flip.map_err(Error::DrmError)
+    }
+
+    /// Reset the underlying buffers
+    pub fn reset_buffers(&mut self) {
+        self.swapchain.reset_buffers()
     }
 
     /// Returns the underlying [`crtc`](drm::control::crtc) of this surface
@@ -271,13 +282,13 @@ where
     /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
     /// or is not compatible with the currently pending
     /// [`Mode`](drm::control::Mode).
-    pub fn add_connector(&self, connector: connector::Handle) -> Result<(), Error> {
+    pub fn add_connector(&self, connector: connector::Handle) -> Result<(), Error<A::Error>> {
         self.drm.add_connector(connector).map_err(Error::DrmError)
     }
 
     /// Tries to mark a [`connector`](drm::control::connector)
     /// for removal on the next commit.    
-    pub fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error> {
+    pub fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error<A::Error>> {
         self.drm.remove_connector(connector).map_err(Error::DrmError)
     }
 
@@ -287,7 +298,7 @@ where
     /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
     /// or is not compatible with the currently pending
     /// [`Mode`](drm::control::Mode).    
-    pub fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error> {
+    pub fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error<A::Error>> {
         self.drm.set_connectors(connectors).map_err(Error::DrmError)
     }
 
@@ -309,7 +320,7 @@ where
     /// Fails if the mode is not compatible with the underlying
     /// [`crtc`](drm::control::crtc) or any of the
     /// pending [`connector`](drm::control::connector)s.
-    pub fn use_mode(&mut self, mode: Mode) -> Result<(), Error> {
+    pub fn use_mode(&mut self, mode: Mode) -> Result<(), Error<A::Error>> {
         self.drm.use_mode(mode).map_err(Error::DrmError)?;
         let (w, h) = mode.size();
         self.swapchain.resize(w as _, h as _);
@@ -329,9 +340,10 @@ impl<A: AsRawFd + 'static> Drop for FbHandle<A> {
     }
 }
 
-fn attach_framebuffer<A>(drm: &Arc<DrmSurface<A>>, bo: &BufferObject<()>) -> Result<FbHandle<A>, Error>
+fn attach_framebuffer<E, D>(drm: &Arc<DrmSurface<D>>, bo: &BufferObject<()>) -> Result<FbHandle<D>, Error<E>>
 where
-    A: AsRawFd + 'static,
+    E: std::error::Error + Send + Sync,
+    D: AsRawFd + 'static,
 {
     let modifier = match bo.modifier().unwrap() {
         Modifier::Invalid => None,
@@ -380,7 +392,7 @@ where
 
 /// Errors thrown by a [`GbmBufferedSurface`]
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum Error<E: std::error::Error + Send + Sync + 'static> {
     /// No supported pixel format for the given plane could be determined
     #[error("No supported plane buffer format found")]
     NoSupportedPlaneFormat,
@@ -401,14 +413,14 @@ pub enum Error {
     DrmError(#[from] DrmError),
     /// Error importing the rendered buffer to libgbm for scan-out
     #[error("The underlying gbm device encounted an error: {0}")]
-    GbmError(#[from] std::io::Error),
+    GbmError(#[source] E),
     /// Error exporting as Dmabuf
     #[error("The allocated buffer could not be exported as a dmabuf: {0}")]
     AsDmabufError(#[from] GbmConvertError),
 }
 
-impl From<Error> for SwapBuffersError {
-    fn from(err: Error) -> SwapBuffersError {
+impl<E: std::error::Error + Send + Sync + 'static> From<Error<E>> for SwapBuffersError {
+    fn from(err: Error<E>) -> SwapBuffersError {
         match err {
             x @ Error::NoSupportedPlaneFormat
             | x @ Error::NoSupportedRendererFormat

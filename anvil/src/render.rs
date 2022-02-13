@@ -24,7 +24,10 @@ pub fn render_layers_and_windows(
     output_scale: f32,
     logger: &Logger,
 ) -> Result<(), SwapBuffersError> {
-    frame.clear([0.8, 0.8, 0.9, 1.0])?;
+    frame.clear(
+        [0.8, 0.8, 0.9, 1.0],
+        &[Rectangle::from_loc_and_size((0, 0), (i32::MAX, i32::MAX))],
+    )?;
 
     for layer in [Layer::Background, Layer::Bottom] {
         draw_layers(

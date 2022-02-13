@@ -159,7 +159,7 @@ where
                     output: wl_output,
                 } => {
                     let output = Output::from_resource(&wl_output).unwrap();
-                    let mut inner = output.inner.lock().unwrap();
+                    let mut inner = output.inner.0.lock().unwrap();
 
                     if inner.xdg_output.is_none() {
                         inner.xdg_output = Some(XdgOutput::new(&inner, log.clone()));

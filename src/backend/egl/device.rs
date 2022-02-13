@@ -173,7 +173,9 @@ impl EGLDevice {
     }
 
     /// Returns the pointer to the raw [`EGLDevice`].
-    pub fn inner(&self) -> *const c_void {
+    ///
+    /// The pointer will become invalid, when this struct is destroyed.
+    pub fn get_device_handle(&self) -> *const c_void {
         self.inner
     }
 }

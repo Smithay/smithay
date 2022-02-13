@@ -839,7 +839,7 @@ impl EGLBufferReader {
     pub fn egl_buffer_dimensions(
         &self,
         buffer: &WlBuffer,
-    ) -> Option<crate::utils::Size<i32, crate::utils::Physical>> {
+    ) -> Option<crate::utils::Size<i32, crate::utils::Buffer>> {
         if !buffer.as_ref().is_alive() {
             debug!(self.logger, "Suplied buffer is no longer alive");
             return None;

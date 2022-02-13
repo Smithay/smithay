@@ -1,12 +1,21 @@
 //! EGL context related structs
-use std::collections::HashSet;
-use std::os::raw::c_int;
-use std::sync::atomic::Ordering;
+use std::{
+    collections::HashSet,
+    os::raw::c_int,
+    sync::{atomic::Ordering, Arc},
+};
 
 use super::{ffi, wrap_egl_call, Error, MakeCurrentError};
-use crate::backend::allocator::Format as DrmFormat;
-use crate::backend::egl::display::{EGLDisplay, PixelFormat};
-use crate::backend::egl::EGLSurface;
+use crate::{
+    backend::{
+        allocator::Format as DrmFormat,
+        egl::{
+            display::{EGLDisplay, PixelFormat},
+            EGLSurface,
+        },
+    },
+    utils::user_data::UserDataMap,
+};
 
 use slog::{info, o, trace};
 
@@ -17,6 +26,7 @@ pub struct EGLContext {
     pub(crate) display: EGLDisplay,
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: Option<PixelFormat>,
+    user_data: Arc<UserDataMap>,
 }
 // EGLContexts can be moved between threads safely
 unsafe impl Send for EGLContext {}
@@ -162,6 +172,11 @@ impl EGLContext {
             display: display.clone(),
             config_id,
             pixel_format,
+            user_data: if let Some(shared) = shared {
+                shared.user_data.clone()
+            } else {
+                Arc::new(UserDataMap::default())
+            },
         })
     }
 
@@ -240,6 +255,21 @@ impl EGLContext {
     /// Returns a list of formats for dmabufs that can be used as textures.
     pub fn dmabuf_texture_formats(&self) -> &HashSet<DrmFormat> {
         &self.display.dmabuf_import_formats
+    }
+
+    /// Retrieve user_data associated with this context
+    ///
+    /// *Note:* UserData is shared between shared context, if constructed with
+    /// [`new_shared`](EGLContext::new_shared) or [`new_shared_with_config`](EGLContext::new_shared_with_config).
+    pub fn user_data(&self) -> &UserDataMap {
+        &*self.user_data
+    }
+
+    /// Get a raw handle to the underlying context.
+    ///
+    /// The pointer will become invalid, when this struct is destroyed.
+    pub fn get_context_handle(&self) -> ffi::egl::types::EGLContext {
+        self.context
     }
 }
 

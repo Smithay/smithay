@@ -383,6 +383,14 @@ xdg_role!(
         /// It is a protocol error to call commit on a wl_surface with
         /// the xdg_popup role when no parent is set.
         pub parent: Option<wl_surface::WlSurface>,
+
+        /// Defines if the surface has received at least one commit
+        ///
+        /// This can be used to check for protocol errors, like
+        /// checking if a popup requested a grab after it has been
+        /// mapped.
+        pub committed: bool,
+
         popup_handle: Option<xdg_popup::XdgPopup>
     }
 );
@@ -1169,15 +1177,14 @@ impl ToplevelSurface {
     /// The parent must be another toplevel equivalent surface.
     ///
     /// If the parent is `None`, the parent-child relationship is removed.
-    pub fn set_parent(&self, parent: Option<wl_surface::WlSurface>) -> bool {
+    pub fn set_parent(&self, parent: Option<&wl_surface::WlSurface>) -> bool {
         if let Some(parent) = parent {
-            if !is_toplevel_equivalent(&parent) {
+            if !is_toplevel_equivalent(parent) {
                 return false;
             }
         }
 
-        // Unset the parent
-        xdg_handlers::set_parent(&self.shell_surface, None);
+        xdg_handlers::set_parent(&self.shell_surface, parent.cloned());
 
         true
     }
@@ -1399,6 +1406,7 @@ impl PopupSurface {
                 .unwrap()
                 .lock()
                 .unwrap();
+            attributes.committed = true;
             if attributes.initial_configure_sent {
                 if let Some(state) = attributes.last_acked {
                     if state != attributes.current {

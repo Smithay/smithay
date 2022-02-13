@@ -8,7 +8,7 @@ use wayland_server::{
 use crate::{
     utils::{Logical, Point},
     wayland::{
-        seat::{AxisFrame, GrabStartData, PointerGrab, PointerInnerHandle, Seat},
+        seat::{AxisFrame, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat},
         Serial,
     },
 };
@@ -42,7 +42,7 @@ pub enum ServerDndEvent {
 }
 
 pub(crate) struct ServerDnDGrab<C: 'static> {
-    start_data: GrabStartData,
+    start_data: PointerGrabStartData,
     metadata: super::SourceMetadata,
     current_focus: Option<wl_surface::WlSurface>,
     pending_offers: Vec<wl_data_offer::WlDataOffer>,
@@ -53,7 +53,7 @@ pub(crate) struct ServerDnDGrab<C: 'static> {
 
 impl<C: 'static> ServerDnDGrab<C> {
     pub(crate) fn new(
-        start_data: GrabStartData,
+        start_data: PointerGrabStartData,
         metadata: super::SourceMetadata,
         seat: Seat,
         callback: Rc<RefCell<C>>,
@@ -222,7 +222,7 @@ where
         handle.axis(details);
     }
 
-    fn start_data(&self) -> &GrabStartData {
+    fn start_data(&self) -> &PointerGrabStartData {
         &self.start_data
     }
 }

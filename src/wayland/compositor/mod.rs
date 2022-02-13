@@ -449,7 +449,7 @@ mod tests {
     #[test]
     fn region_attributes_empty() {
         let region = RegionAttributes { rects: vec![] };
-        assert_eq!(region.contains((0, 0)), false);
+        assert!(!region.contains((0, 0)));
     }
 
     #[test]
@@ -458,7 +458,7 @@ mod tests {
             rects: vec![(RectangleKind::Add, Rectangle::from_loc_and_size((0, 0), (10, 10)))],
         };
 
-        assert_eq!(region.contains((0, 0)), true);
+        assert!(region.contains((0, 0)));
     }
 
     #[test]
@@ -473,8 +473,8 @@ mod tests {
             ],
         };
 
-        assert_eq!(region.contains((0, 0)), false);
-        assert_eq!(region.contains((5, 5)), true);
+        assert!(!region.contains((0, 0)));
+        assert!(region.contains((5, 5)));
     }
 
     #[test]
@@ -490,8 +490,8 @@ mod tests {
             ],
         };
 
-        assert_eq!(region.contains((0, 0)), false);
-        assert_eq!(region.contains((5, 5)), true);
-        assert_eq!(region.contains((2, 2)), true);
+        assert!(!region.contains((0, 0)));
+        assert!(region.contains((5, 5)));
+        assert!(region.contains((2, 2)));
     }
 }

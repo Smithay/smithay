@@ -242,7 +242,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             req.add_property(*crtc, *mode_prop, property::Value::Unknown(0));
         }
         self.fd
-            .atomic_commit(&[AtomicCommitFlags::AllowModeset], req)
+            .atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req)
             .map_err(|source| Error::Access {
                 errmsg: "Failed to disable connectors",
                 dev: self.fd.dev_path(),
@@ -282,7 +282,7 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmDevice<A> {
             add_multiple_props(&mut req, &self.old_state.2);
             add_multiple_props(&mut req, &self.old_state.3);
 
-            if let Err(err) = self.fd.atomic_commit(&[AtomicCommitFlags::AllowModeset], req) {
+            if let Err(err) = self.fd.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req) {
                 error!(self.logger, "Failed to restore previous state. Error: {}", err);
             }
         }

@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 use std::error::Error;
 
-use crate::utils::{Buffer, Physical, Point, Rectangle, Size};
+use crate::utils::{Buffer, Physical, Point, Rectangle, Size, Transform};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::compositor::SurfaceData;
@@ -32,26 +32,8 @@ use crate::backend::egl::{
     Error as EglError,
 };
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-/// Possible transformations to two-dimensional planes
-pub enum Transform {
-    /// Identity transformation (plane is unaltered when applied)
-    Normal,
-    /// Plane is rotated by 90 degrees
-    _90,
-    /// Plane is rotated by 180 degrees
-    _180,
-    /// Plane is rotated by 270 degrees
-    _270,
-    /// Plane is flipped vertically
-    Flipped,
-    /// Plane is flipped vertically and rotated by 90 degrees
-    Flipped90,
-    /// Plane is flipped vertically and rotated by 180 degrees
-    Flipped180,
-    /// Plane is flipped vertically and rotated by 270 degrees
-    Flipped270,
-}
+#[cfg(feature = "wayland_frontend")]
+pub mod utils;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Texture filtering methods
@@ -71,38 +53,9 @@ impl Transform {
             Transform::_180 => Matrix3::new(-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0),
             Transform::_270 => Matrix3::new(0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
             Transform::Flipped => Matrix3::new(-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
-            Transform::Flipped90 => Matrix3::new(0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+            Transform::Flipped90 => Matrix3::new(0.0, -1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
             Transform::Flipped180 => Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0),
-            Transform::Flipped270 => Matrix3::new(0.0, -1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
-        }
-    }
-
-    /// Inverts any 90-degree transformation into 270-degree transformations and vise versa.
-    ///
-    /// Flipping is preserved and 180/Normal transformation are uneffected.
-    pub fn invert(&self) -> Transform {
-        match self {
-            Transform::Normal => Transform::Normal,
-            Transform::Flipped => Transform::Flipped,
-            Transform::_90 => Transform::_270,
-            Transform::_180 => Transform::_180,
-            Transform::_270 => Transform::_90,
-            Transform::Flipped90 => Transform::Flipped270,
-            Transform::Flipped180 => Transform::Flipped180,
-            Transform::Flipped270 => Transform::Flipped90,
-        }
-    }
-
-    /// Transformed size after applying this transformation.
-    pub fn transform_size(&self, width: u32, height: u32) -> (u32, u32) {
-        if *self == Transform::_90
-            || *self == Transform::_270
-            || *self == Transform::Flipped90
-            || *self == Transform::Flipped270
-        {
-            (height, width)
-        } else {
-            (width, height)
+            Transform::Flipped270 => Matrix3::new(0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
         }
     }
 }
@@ -169,13 +122,17 @@ pub trait Frame {
 
     /// Clear the complete current target with a single given color.
     ///
+    /// The `at` parameter specifies a set of rectangles to clear in the current target. This allows partially
+    /// clearing the target which may be useful for damaged rendering.
+    ///
     /// This operation is only valid in between a `begin` and `finish`-call.
     /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
-    fn clear(&mut self, color: [f32; 4]) -> Result<(), Self::Error>;
+    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error>;
 
     /// Render a texture to the current target as a flat 2d-plane at a given
     /// position and applying the given transformation with the given alpha value.
     /// (Meaning `src_transform` should match the orientation of surface being rendered).
+    #[allow(clippy::too_many_arguments)]
     fn render_texture_at(
         &mut self,
         texture: &Self::TextureId,
@@ -183,6 +140,7 @@ pub trait Frame {
         texture_scale: i32,
         output_scale: f64,
         src_transform: Transform,
+        damage: &[Rectangle<i32, Buffer>],
         alpha: f32,
     ) -> Result<(), Self::Error> {
         self.render_texture_from_to(
@@ -192,10 +150,11 @@ pub trait Frame {
                 pos,
                 texture
                     .size()
-                    .to_logical(texture_scale)
+                    .to_logical(texture_scale, src_transform)
                     .to_f64()
                     .to_physical(output_scale),
             ),
+            damage,
             src_transform,
             alpha,
         )
@@ -209,9 +168,13 @@ pub trait Frame {
         texture: &Self::TextureId,
         src: Rectangle<i32, Buffer>,
         dst: Rectangle<f64, Physical>,
+        damage: &[Rectangle<i32, Buffer>],
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error>;
+
+    /// Output transformation that is applied to this frame
+    fn transformation(&self) -> Transform;
 }
 
 /// Abstraction of commonly used rendering operations for compositors.
@@ -250,7 +213,7 @@ pub trait Renderer {
 pub trait ImportShm: Renderer {
     /// Import a given shm-based buffer into the renderer (see [`buffer_type`]).
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
@@ -317,7 +280,7 @@ pub trait ImportEgl: Renderer {
 
     /// Import a given wl_drm-based buffer into the renderer (see [`buffer_type`]).
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
@@ -365,7 +328,7 @@ pub trait ImportDma: Renderer {
 
     /// Import a given raw dmabuf into the renderer.
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
@@ -388,7 +351,7 @@ pub trait ImportDma: Renderer {
 pub trait ImportAll: Renderer {
     /// Import a given buffer into the renderer.
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
@@ -500,7 +463,7 @@ pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
 ///
 /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`])
 #[cfg(feature = "wayland_frontend")]
-pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Physical>> {
+pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Buffer>> {
     use crate::backend::allocator::Buffer;
 
     if let Some(buf) = buffer.as_ref().user_data().get::<Dmabuf>() {

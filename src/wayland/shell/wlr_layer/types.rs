@@ -50,7 +50,7 @@ impl Default for Layer {
 /// - some applications are not interested in keyboard events
 ///   and not allowing them to be focused can improve the desktop experience
 /// - some applications will want to take exclusive keyboard focus.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyboardInteractivity {
     /// This value indicates that this surface is not interested in keyboard events
     /// and the compositor should never assign it the keyboard focus.
@@ -162,7 +162,7 @@ impl TryFrom<zwlr_layer_surface_v1::Anchor> for Anchor {
 }
 
 /// Exclusive zone descriptor
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExclusiveZone {
     /// Requests that the compositor avoids occluding an area with other surfaces.
     ///

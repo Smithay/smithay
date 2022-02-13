@@ -12,6 +12,7 @@ use crate::backend::egl::{
     native::EGLNativeSurface,
     EGLError, SwapBuffersError,
 };
+use crate::utils::{Physical, Rectangle};
 
 use slog::{debug, o};
 
@@ -79,12 +80,40 @@ impl EGLSurface {
         })
     }
 
+    /// Returns the buffer age of the underlying back buffer
+    pub fn buffer_age(&self) -> Option<i32> {
+        let surface = self.surface.load(Ordering::SeqCst);
+        let mut age = 0;
+        let ret = unsafe {
+            ffi::egl::QuerySurface(
+                **self.display,
+                surface as *const _,
+                ffi::egl::BUFFER_AGE_EXT as i32,
+                &mut age as *mut _,
+            )
+        };
+        if ret == ffi::egl::FALSE {
+            slog::debug!(
+                self.logger,
+                "Failed to query buffer age value for surface {:?}: {}",
+                self,
+                EGLError::from_last_call().unwrap_err()
+            );
+            None
+        } else {
+            Some(age)
+        }
+    }
+
     /// Swaps buffers at the end of a frame.
-    pub fn swap_buffers(&self) -> ::std::result::Result<(), SwapBuffersError> {
+    pub fn swap_buffers(
+        &self,
+        damage: Option<&mut [Rectangle<i32, Physical>]>,
+    ) -> ::std::result::Result<(), SwapBuffersError> {
         let surface = self.surface.load(Ordering::SeqCst);
 
         let result = if !surface.is_null() {
-            self.native.swap_buffers(&self.display, surface)
+            self.native.swap_buffers(&self.display, surface, damage)
         } else {
             Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface))
         };
@@ -152,6 +181,16 @@ impl EGLSurface {
     /// Returns true if the resize was successful.
     pub fn resize(&self, width: i32, height: i32, dx: i32, dy: i32) -> bool {
         self.native.resize(width, height, dx, dy)
+    }
+
+    /// Get a raw handle to the underlying surface
+    ///
+    /// *Note*: The surface might get dynamically recreated during swap-buffers
+    /// causing the pointer to become invalid.
+    ///
+    /// The pointer will become invalid, when this struct is destroyed.
+    pub fn get_surface_handle(&self) -> ffi::egl::types::EGLSurface {
+        self.surface.load(Ordering::SeqCst)
     }
 }
 
