@@ -97,10 +97,9 @@ impl<Backend> AnvilState<Backend> {
                     self.keyboard
                         .set_focus(Some(layer.get_surface().unwrap()), serial);
                     self.text_input
-                        .set_focus(Some(layer.get_surface().unwrap()), serial);
+                        .set_focus(Some(layer.get_surface().unwrap()));
                     if self.input_method.keyboard_grabbed() {
                         self.input_method.input(keycode, state, serial, time);
-                        KeyAction::None
                     } else {
                         self.keyboard
                             .input::<(), _>(keycode, state, serial, time, |_, _| FilterResult::Forward);
