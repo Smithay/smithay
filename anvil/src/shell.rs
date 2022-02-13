@@ -436,7 +436,7 @@ pub fn init_shell<BackendData: Backend + 'static>(
                         .window_for_surface(surface.get_surface().unwrap())
                         .unwrap()
                         .clone();
-                    let mut initial_window_location = space.borrow().window_geometry(&window).unwrap().loc;
+                    let mut initial_window_location = space.borrow().window_location(&window).unwrap();
 
                     // If surface is maximized then unmaximize it
                     if let Some(current_state) = surface.current_state() {
@@ -512,8 +512,9 @@ pub fn init_shell<BackendData: Backend + 'static>(
                         .window_for_surface(surface.get_surface().unwrap())
                         .unwrap()
                         .clone();
-                    let geometry = space.borrow().window_geometry(&window).unwrap();
-                    let (initial_window_location, initial_window_size) = (geometry.loc, geometry.size);
+                    let geometry = window.geometry();
+                    let loc = space.borrow().window_location(&window).unwrap();
+                    let (initial_window_location, initial_window_size) = (loc, geometry.size);
 
                     with_states(surface.get_surface().unwrap(), move |states| {
                         states
@@ -847,7 +848,8 @@ fn surface_commit(surface: &wl_surface::WlSurface, space: &RefCell<Space>, popup
             }
         }
 
-        let geometry = space.window_geometry(&window).unwrap();
+        let geometry = window.geometry();
+        let window_loc = space.window_location(&window).unwrap();
         let new_location = with_states(surface, |states| {
             let mut data = states
                 .data_map
@@ -870,7 +872,7 @@ fn surface_commit(surface: &wl_surface::WlSurface, space: &RefCell<Space>, popup
                     } = resize_data;
 
                     if edges.intersects(ResizeEdge::TOP_LEFT) {
-                        let mut location = geometry.loc;
+                        let mut location = window_loc;
 
                         if edges.intersects(ResizeEdge::LEFT) {
                             location.x =
@@ -1002,12 +1004,13 @@ pub fn fixup_positions(space: &mut Space) {
         })
         .collect::<Vec<_>>();
     for window in space.windows() {
-        let window_geo = match space.window_geometry(window) {
-            Some(geo) => geo,
+        let window_location = match space.window_location(window) {
+            Some(loc) => loc,
             None => continue,
         };
+        let geo_loc = window.bbox().loc + window_location;
 
-        if !outputs.iter().any(|o_geo| o_geo.contains(window_geo.loc)) {
+        if !outputs.iter().any(|o_geo| o_geo.contains(geo_loc)) {
             orphaned_windows.push(window.clone());
         }
     }
