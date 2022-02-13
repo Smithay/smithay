@@ -122,7 +122,7 @@ fn main() {
     let mut event_loop = EventLoop::<()>::try_new().unwrap();
     event_loop
         .handle()
-        .insert_source(device, move |event, _: &mut (), _: &mut ()| match event {
+        .insert_source(device, move |event, _: &mut _, _: &mut ()| match event {
             DrmEvent::VBlank(crtc) => vblank_handler.vblank(crtc),
             DrmEvent::Error(e) => panic!("{}", e),
         })

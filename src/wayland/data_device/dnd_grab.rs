@@ -53,12 +53,15 @@ impl DnDGrab {
 impl PointerGrab for DnDGrab {
     fn motion(
         &mut self,
-        _handle: &mut PointerInnerHandle<'_>,
+        handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(wl_surface::WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
+        // While the grab is active, no client has pointer focus
+        handle.motion(location, None, serial, time);
+
         let seat_data = self
             .seat
             .user_data()
@@ -209,7 +212,9 @@ impl PointerGrab for DnDGrab {
                     source.cancelled();
                 }
             }
-            (&mut *self.callback.borrow_mut())(super::DataDeviceEvent::DnDDropped);
+            (&mut *self.callback.borrow_mut())(super::DataDeviceEvent::DnDDropped {
+                seat: self.seat.clone(),
+            });
             self.icon = None;
             // in all cases abandon the drop
             // no more buttons are pressed, release the grab

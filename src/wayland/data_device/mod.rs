@@ -88,13 +88,18 @@ pub enum DataDeviceEvent {
         /// The icon the client requested to be used to be associated with the cursor icon
         /// during the drag'n'drop.
         icon: Option<wl_surface::WlSurface>,
+        /// The seat on which the DnD operation was started
+        seat: Seat,
     },
     /// The drag'n'drop action was finished by the user releasing the buttons
     ///
     /// At this point, any pointer icon should be removed.
     ///
     /// Note that this event will only be generated for client-initiated drag'n'drop session.
-    DnDDropped,
+    DnDDropped {
+        /// The seat on which the DnD action was finished.
+        seat: Seat,
+    },
     /// A client requested to read the server-set selection
     SendSelection {
         /// the requested mime type
@@ -356,6 +361,7 @@ pub fn start_dnd<C>(
                 Rc::new(RefCell::new(callback)),
             ),
             serial,
+            0,
         );
     }
 }
@@ -445,6 +451,7 @@ where
                     (&mut *callback.borrow_mut())(DataDeviceEvent::DnDStarted {
                         source: source.clone(),
                         icon: icon.clone(),
+                        seat: seat.clone(),
                     });
                     let start_data = pointer.grab_start_data().unwrap();
                     pointer.set_grab(
@@ -457,6 +464,7 @@ where
                             callback.clone(),
                         ),
                         serial,
+                        0,
                     );
                     return;
                 }

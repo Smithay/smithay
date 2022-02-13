@@ -7,7 +7,7 @@ use libc::dev_t;
 
 use std::{
     fmt::{self, Display, Formatter},
-    fs, io,
+    fs, io, mem,
     os::unix::prelude::{AsRawFd, IntoRawFd, RawFd},
     path::{Path, PathBuf},
 };
@@ -20,8 +20,7 @@ use nix::{
 /// A node which refers to a DRM device.
 #[derive(Debug)]
 pub struct DrmNode {
-    // Always `Some`, None variant is used when taking ownership
-    fd: Option<RawFd>,
+    fd: RawFd,
     dev: dev_t,
     ty: NodeType,
 }
@@ -56,11 +55,7 @@ impl DrmNode {
             _ => return Err(CreateDrmNodeError::NotDrmNode),
         };
 
-        Ok(DrmNode {
-            fd: Some(fd),
-            dev,
-            ty,
-        })
+        Ok(DrmNode { fd, dev, ty })
     }
 
     /// Returns the type of the DRM node.
@@ -120,22 +115,22 @@ impl Display for DrmNode {
 }
 
 impl IntoRawFd for DrmNode {
-    fn into_raw_fd(mut self) -> RawFd {
-        self.fd.take().unwrap()
+    fn into_raw_fd(self) -> RawFd {
+        let fd = self.fd;
+        mem::forget(self);
+        fd
     }
 }
 
 impl AsRawFd for DrmNode {
     fn as_raw_fd(&self) -> RawFd {
-        self.fd.unwrap()
+        self.fd
     }
 }
 
 impl Drop for DrmNode {
     fn drop(&mut self) {
-        if let Some(fd) = self.fd {
-            let _ = close(fd);
-        }
+        let _ = close(self.fd);
     }
 }
 
