@@ -1,5 +1,6 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
+use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::ffi::CStr;
 use std::fmt;
@@ -180,6 +181,7 @@ pub struct Gles2Renderer {
     destruction_callback_sender: Sender<CleanupResource>,
     min_filter: TextureFilter,
     max_filter: TextureFilter,
+    supports_instancing: bool,
     logger_ptr: Option<*mut ::slog::Logger>,
     logger: ::slog::Logger,
     _not_send: *mut (),
@@ -196,6 +198,7 @@ pub struct Gles2Frame {
     size: Size<i32, Physical>,
     min_filter: TextureFilter,
     max_filter: TextureFilter,
+    supports_instancing: bool,
 }
 
 impl fmt::Debug for Gles2Frame {
@@ -441,7 +444,7 @@ impl Gles2Renderer {
 
         context.make_current()?;
 
-        let (gl, exts, logger_ptr) = {
+        let (gl, exts, logger_ptr, supports_instancing) = {
             let gl = ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _);
             let ext_ptr = gl.GetString(ffi::EXTENSIONS) as *const c_char;
             if ext_ptr.is_null() {
@@ -487,16 +490,10 @@ impl Gles2Renderer {
             if gl_version < version::GLES_3_0 && !exts.iter().any(|ext| ext == "GL_EXT_unpack_subimage") {
                 return Err(Gles2Error::GLExtensionNotSupported(&["GL_EXT_unpack_subimage"]));
             }
-            // required for instanced damage rendering
-            if gl_version < version::GLES_3_0
-                && !(exts.iter().any(|ext| ext == "GL_EXT_instanced_arrays")
-                    && exts.iter().any(|ext| ext == "GL_EXT_draw_instanced"))
-            {
-                return Err(Gles2Error::GLExtensionNotSupported(&[
-                    "GL_EXT_instanced_arrays",
-                    "GL_EXT_draw_instanced",
-                ]));
-            }
+            // Check if GPU supports instanced rendering.
+            let supports_instancing = gl_version >= version::GLES_3_0
+                || (exts.iter().any(|ext| ext == "GL_EXT_instanced_arrays")
+                    && exts.iter().any(|ext| ext == "GL_EXT_draw_instanced"));
 
             let logger = if exts.iter().any(|ext| ext == "GL_KHR_debug") {
                 let logger = Box::into_raw(Box::new(log.clone()));
@@ -508,7 +505,7 @@ impl Gles2Renderer {
                 None
             };
 
-            (gl, exts, logger)
+            (gl, exts, logger, supports_instancing)
         };
 
         let tex_programs = [
@@ -518,13 +515,20 @@ impl Gles2Renderer {
         ];
         let solid_program = solid_program(&gl)?;
 
+        // Initialize vertices based on drawing methodology.
+        let vertices: &[ffi::types::GLfloat] = if supports_instancing {
+            &INSTANCED_VERTS
+        } else {
+            &TRIANGLE_VERTS
+        };
+
         let mut vbos = [0; 2];
         gl.GenBuffers(2, vbos.as_mut_ptr());
         gl.BindBuffer(ffi::ARRAY_BUFFER, vbos[0]);
         gl.BufferData(
             ffi::ARRAY_BUFFER,
-            (std::mem::size_of::<ffi::types::GLfloat>() * VERTS.len()) as isize,
-            VERTS.as_ptr() as *const _,
+            (std::mem::size_of::<ffi::types::GLfloat>() * vertices.len()) as isize,
+            vertices.as_ptr() as *const _,
             ffi::STATIC_DRAW,
         );
         gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
@@ -548,6 +552,7 @@ impl Gles2Renderer {
             vbos,
             min_filter: TextureFilter::Nearest,
             max_filter: TextureFilter::Linear,
+            supports_instancing,
             logger_ptr,
             logger: log,
             _not_send: std::ptr::null_mut(),
@@ -1121,6 +1126,7 @@ impl Renderer for Gles2Renderer {
             size,
             min_filter: self.min_filter,
             max_filter: self.max_filter,
+            supports_instancing: self.supports_instancing,
         };
 
         let result = rendering(self, &mut frame);
@@ -1149,12 +1155,52 @@ impl Renderer for Gles2Renderer {
     }
 }
 
-static VERTS: [ffi::types::GLfloat; 8] = [
+/// Vertices for instanced rendering.
+static INSTANCED_VERTS: [ffi::types::GLfloat; 8] = [
     1.0, 0.0, // top right
     0.0, 0.0, // top left
     1.0, 1.0, // bottom right
     0.0, 1.0, // bottom left
 ];
+
+/// Vertices for rendering individual triangles.
+const MAX_RECTS_PER_DRAW: usize = 10;
+const TRIANGLE_VERTS: [ffi::types::GLfloat; 12 * MAX_RECTS_PER_DRAW] = triangle_verts();
+const fn triangle_verts() -> [ffi::types::GLfloat; 12 * MAX_RECTS_PER_DRAW] {
+    let mut verts = [0.; 12 * MAX_RECTS_PER_DRAW];
+    let mut i = 0;
+    loop {
+        // Top Left.
+        verts[i * 12] = 0.0;
+        verts[i * 12 + 1] = 0.0;
+
+        // Bottom left.
+        verts[i * 12 + 2] = 0.0;
+        verts[i * 12 + 3] = 1.0;
+
+        // Bottom right.
+        verts[i * 12 + 4] = 1.0;
+        verts[i * 12 + 5] = 1.0;
+
+        // Top left.
+        verts[i * 12 + 6] = 0.0;
+        verts[i * 12 + 7] = 0.0;
+
+        // Bottom right.
+        verts[i * 12 + 8] = 1.0;
+        verts[i * 12 + 9] = 1.0;
+
+        // Top right.
+        verts[i * 12 + 10] = 1.0;
+        verts[i * 12 + 11] = 0.0;
+
+        i += 1;
+        if i == MAX_RECTS_PER_DRAW {
+            break;
+        }
+    }
+    verts
+}
 
 impl Frame for Gles2Frame {
     type Error = Gles2Error;
@@ -1207,13 +1253,27 @@ impl Frame for Gles2Frame {
                 std::ptr::null(),
             );
 
+            // Damage vertices.
+            let vertices = if self.supports_instancing {
+                damage
+            } else {
+                // Add the 4 f32s per damage rectangle for each of the 6 vertices.
+                let mut vertices = Vec::with_capacity(damage.len() * 6);
+                for chunk in damage.chunks(4) {
+                    for _ in 0..6 {
+                        vertices.extend_from_slice(chunk);
+                    }
+                }
+                vertices
+            };
+
             self.gl
                 .EnableVertexAttribArray(self.solid_program.attrib_position as u32);
             self.gl.BindBuffer(ffi::ARRAY_BUFFER, self.vbos[1]);
             self.gl.BufferData(
                 ffi::ARRAY_BUFFER,
-                (std::mem::size_of::<ffi::types::GLfloat>() * damage.len()) as isize,
-                damage.as_ptr() as *const _,
+                (std::mem::size_of::<ffi::types::GLfloat>() * vertices.len()) as isize,
+                vertices.as_ptr() as *const _,
                 ffi::STREAM_DRAW,
             );
 
@@ -1225,14 +1285,37 @@ impl Frame for Gles2Frame {
                 0,
                 std::ptr::null(),
             );
-            self.gl
-                .VertexAttribDivisor(self.solid_program.attrib_vert as u32, 0);
 
-            self.gl
-                .VertexAttribDivisor(self.solid_program.attrib_position as u32, 1);
+            let damage_len = at.len() as i32;
+            if self.supports_instancing {
+                self.gl
+                    .VertexAttribDivisor(self.solid_program.attrib_vert as u32, 0);
 
-            self.gl
-                .DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, at.len() as i32);
+                self.gl
+                    .VertexAttribDivisor(self.solid_program.attrib_position as u32, 1);
+
+                self.gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
+            } else {
+                // When we have more than 10 rectangles, draw them in batches of 10.
+                for i in 0..(damage_len - 1) / 10 {
+                    self.gl.DrawArrays(ffi::TRIANGLES, 0, 60);
+
+                    // Set damage pointer to the next 10 rectangles.
+                    let offset = (i + 1) as usize * 60 * 4 * std::mem::size_of::<ffi::types::GLfloat>();
+                    self.gl.VertexAttribPointer(
+                        self.solid_program.attrib_position as u32,
+                        4,
+                        ffi::FLOAT,
+                        ffi::FALSE,
+                        0,
+                        offset as *const _,
+                    );
+                }
+
+                // Draw the up to 10 remaining rectangles.
+                let count = ((damage_len - 1) % 10 + 1) * 6;
+                self.gl.DrawArrays(ffi::TRIANGLES, 0, count);
+            }
 
             self.gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
             self.gl
@@ -1320,7 +1403,7 @@ impl Frame for Gles2Frame {
 
 impl Gles2Frame {
     /// Render a texture to the current target using given projection matrix and alpha.
-    /// The given vertices are used to source the texture. This is mostly useful for cropping the texture.    
+    /// The given vertices are used to source the texture. This is mostly useful for cropping the texture.
     pub fn render_texture(
         &mut self,
         tex: &Gles2Texture,
@@ -1329,6 +1412,11 @@ impl Gles2Frame {
         tex_coords: [Vector2<f32>; 4],
         alpha: f32,
     ) -> Result<(), Gles2Error> {
+        let damage = instances.unwrap_or(&[0.0, 0.0, 1.0, 1.0]);
+        if damage.is_empty() {
+            return Ok(());
+        }
+
         //apply output transformation
         matrix = self.current_projection * matrix;
 
@@ -1375,6 +1463,27 @@ impl Gles2Frame {
             self.gl
                 .Uniform1f(self.tex_programs[tex.0.texture_kind].uniform_alpha, alpha);
 
+            // Create all required texture vertices.
+            let tex_verts: Cow<'_, [Vector2<ffi::types::GLfloat>]> = if self.supports_instancing {
+                Cow::Borrowed(&tex_coords)
+            } else {
+                let tex_verts = [
+                    // Top left.
+                    tex_coords[1],
+                    // Bottom left.
+                    tex_coords[3],
+                    // Bottom right.
+                    tex_coords[2],
+                    // Top left.
+                    tex_coords[1],
+                    // Bottom right.
+                    tex_coords[2],
+                    // Top right.
+                    tex_coords[0],
+                ];
+                Cow::Owned(tex_verts.repeat(damage.len() / 4))
+            };
+
             self.gl
                 .EnableVertexAttribArray(self.tex_programs[tex.0.texture_kind].attrib_tex_coords as u32);
             self.gl.VertexAttribPointer(
@@ -1383,7 +1492,8 @@ impl Gles2Frame {
                 ffi::FLOAT,
                 ffi::FALSE,
                 0,
-                tex_coords.as_ptr() as *const _, // cgmath::Vector2 is marked as repr(C), this cast should be safe
+                // cgmath::Vector2 is marked as repr(C), so this cast should be safe
+                tex_verts.as_ptr() as *const _,
             );
 
             self.gl
@@ -1398,18 +1508,30 @@ impl Gles2Frame {
                 std::ptr::null(),
             );
 
-            let damage = instances.unwrap_or(&[0.0, 0.0, 1.0, 1.0]);
+            // Damage vertices.
+            let vertices = if self.supports_instancing {
+                Cow::Borrowed(damage)
+            } else {
+                let mut vertices = Vec::with_capacity(damage.len() * 6);
+                // Add the 4 f32s per damage rectangle for each of the 6 vertices.
+                for chunk in damage.chunks(4) {
+                    for _ in 0..6 {
+                        vertices.extend_from_slice(chunk);
+                    }
+                }
+                Cow::Owned(vertices)
+            };
+
             self.gl
                 .EnableVertexAttribArray(self.tex_programs[tex.0.texture_kind].attrib_position as u32);
             self.gl.BindBuffer(ffi::ARRAY_BUFFER, self.vbos[1]);
             self.gl.BufferData(
                 ffi::ARRAY_BUFFER,
-                (std::mem::size_of::<ffi::types::GLfloat>() * damage.len()) as isize,
-                damage.as_ptr() as *const _,
+                (std::mem::size_of::<ffi::types::GLfloat>() * vertices.len()) as isize,
+                vertices.as_ptr() as *const _,
                 ffi::STREAM_DRAW,
             );
 
-            let count = (damage.len() / 4) as i32;
             self.gl.VertexAttribPointer(
                 self.tex_programs[tex.0.texture_kind].attrib_position as u32,
                 4,
@@ -1419,14 +1541,37 @@ impl Gles2Frame {
                 std::ptr::null(),
             );
 
-            self.gl
-                .VertexAttribDivisor(self.tex_programs[tex.0.texture_kind].attrib_vert as u32, 0);
-            self.gl
-                .VertexAttribDivisor(self.tex_programs[tex.0.texture_kind].attrib_tex_coords as u32, 0);
-            self.gl
-                .VertexAttribDivisor(self.tex_programs[tex.0.texture_kind].attrib_position as u32, 1);
+            let damage_len = (damage.len() / 4) as i32;
+            if self.supports_instancing {
+                self.gl
+                    .VertexAttribDivisor(self.tex_programs[tex.0.texture_kind].attrib_vert as u32, 0);
+                self.gl
+                    .VertexAttribDivisor(self.tex_programs[tex.0.texture_kind].attrib_tex_coords as u32, 0);
+                self.gl
+                    .VertexAttribDivisor(self.tex_programs[tex.0.texture_kind].attrib_position as u32, 1);
 
-            self.gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, count);
+                self.gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
+            } else {
+                // When we have more than 10 rectangles, draw them in batches of 10.
+                for i in 0..(damage_len - 1) / 10 {
+                    self.gl.DrawArrays(ffi::TRIANGLES, 0, 6);
+
+                    // Set damage pointer to the next 10 rectangles.
+                    let offset = (i + 1) as usize * 6 * 4 * std::mem::size_of::<ffi::types::GLfloat>();
+                    self.gl.VertexAttribPointer(
+                        self.solid_program.attrib_position as u32,
+                        4,
+                        ffi::FLOAT,
+                        ffi::FALSE,
+                        0,
+                        offset as *const _,
+                    );
+                }
+
+                // Draw the up to 10 remaining rectangles.
+                let count = ((damage_len - 1) % 10 + 1) * 6;
+                self.gl.DrawArrays(ffi::TRIANGLES, 0, count);
+            }
 
             self.gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
             self.gl.BindTexture(target, 0);

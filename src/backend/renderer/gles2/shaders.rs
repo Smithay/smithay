@@ -2,7 +2,6 @@
  * OpenGL Shaders
  */
 pub const VERTEX_SHADER: &str = r#"
-
 #version 100
 uniform mat3 matrix;
 uniform bool invert_y;
@@ -26,7 +25,7 @@ void main() {
     } else {
         v_tex_coords = tex_coords;
     }
-    
+
     vec2 transform_translation = position.xy;
     vec2 transform_scale = position.zw;
     v_tex_coords = (vec3((tex_coords * scale(transform_scale)) + transform_translation, 1.0)).xy;
