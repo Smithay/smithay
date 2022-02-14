@@ -1171,7 +1171,7 @@ const fn triangle_verts() -> [ffi::types::GLfloat; 12 * MAX_RECTS_PER_DRAW] {
     let mut i = 0;
     loop {
         // Top Left.
-        verts[i * 12 + 0] = 0.0;
+        verts[i * 12] = 0.0;
         verts[i * 12 + 1] = 0.0;
 
         // Bottom left.
