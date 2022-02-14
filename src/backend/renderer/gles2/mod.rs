@@ -1463,7 +1463,7 @@ impl Gles2Frame {
             self.gl
                 .Uniform1f(self.tex_programs[tex.0.texture_kind].uniform_alpha, alpha);
 
-            // TODO(UL): Kinda uggo?
+            // Create all required texture vertices.
             let tex_verts: Cow<'_, [Vector2<ffi::types::GLfloat>]> = if self.supports_instancing {
                 Cow::Borrowed(&tex_coords)
             } else {
