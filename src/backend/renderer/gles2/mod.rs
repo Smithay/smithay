@@ -132,6 +132,7 @@ impl Drop for Gles2TextureInternal {
 enum CleanupResource {
     Texture(ffi::types::GLuint),
     FramebufferObject(ffi::types::GLuint),
+    RenderbufferObject(ffi::types::GLuint),
     EGLImage(EGLImage),
 }
 
@@ -155,6 +156,27 @@ struct Gles2Buffer {
     fbo: ffi::types::GLuint,
 }
 
+/// Offscreen render surface
+///
+/// Usually more performant than using a texture as a framebuffer.
+/// Can be read out, but not used like a texture otherwise.
+#[derive(Debug, Clone)]
+pub struct Gles2Renderbuffer(Rc<Gles2RenderbufferInternal>);
+
+#[derive(Debug)]
+struct Gles2RenderbufferInternal {
+    rbo: ffi::types::GLuint,
+    destruction_callback_sender: Sender<CleanupResource>,
+}
+
+impl Drop for Gles2RenderbufferInternal {
+    fn drop(&mut self) {
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::RenderbufferObject(self.rbo));
+    }
+}
+
 #[derive(Debug)]
 enum Gles2Target {
     Image {
@@ -167,17 +189,29 @@ enum Gles2Target {
         fbo: ffi::types::GLuint,
         destruction_callback_sender: Sender<CleanupResource>,
     },
+    Renderbuffer {
+        buf: Gles2Renderbuffer,
+        fbo: ffi::types::GLuint,
+    },
 }
 
 impl Drop for Gles2Target {
     fn drop(&mut self) {
-        if let Gles2Target::Texture {
-            fbo,
-            destruction_callback_sender,
-            ..
-        } = self
-        {
-            let _ = destruction_callback_sender.send(CleanupResource::FramebufferObject(*fbo));
+        match self {
+            Gles2Target::Texture {
+                fbo,
+                destruction_callback_sender,
+                ..
+            } => {
+                let _ = destruction_callback_sender.send(CleanupResource::FramebufferObject(*fbo));
+            }
+            Gles2Target::Renderbuffer { buf, fbo } => {
+                let _ = buf
+                    .0
+                    .destruction_callback_sender
+                    .send(CleanupResource::FramebufferObject(*fbo));
+            }
+            _ => {}
         }
     }
 }
@@ -586,6 +620,18 @@ impl Gles2Renderer {
                 self.egl.make_current_with_surface(&**surface)?;
             } else {
                 self.egl.make_current()?;
+                match self.target.as_ref() {
+                    Some(&Gles2Target::Image { ref buf, .. }) => {
+                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.fbo)
+                    }
+                    Some(&Gles2Target::Texture { ref fbo, .. }) => {
+                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
+                    }
+                    Some(&Gles2Target::Renderbuffer { ref fbo, .. }) => {
+                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
+                    }
+                    _ => {}
+                }
             }
         }
         Ok(())
@@ -620,6 +666,9 @@ impl Gles2Renderer {
                 },
                 CleanupResource::FramebufferObject(fbo) => unsafe {
                     self.gl.DeleteFramebuffers(1, &fbo);
+                },
+                CleanupResource::RenderbufferObject(rbo) => unsafe {
+                    self.gl.DeleteRenderbuffers(1, &rbo);
                 },
             }
         }
@@ -1058,6 +1107,61 @@ impl Offscreen<Gles2Texture> for Gles2Renderer {
         Ok(unsafe { Gles2Texture::from_raw(self, tex, size) })
     }
 }
+
+impl Bind<Gles2Renderbuffer> for Gles2Renderer {
+    fn bind(&mut self, renderbuffer: Gles2Renderbuffer) -> Result<(), Gles2Error> {
+        self.unbind()?;
+        self.make_current()?;
+
+        let mut fbo = 0;
+        unsafe {
+            self.gl.GenFramebuffers(1, &mut fbo as *mut _);
+            self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+            self.gl.BindRenderbuffer(ffi::RENDERBUFFER, renderbuffer.0.rbo);
+            self.gl.FramebufferRenderbuffer(
+                ffi::FRAMEBUFFER,
+                ffi::COLOR_ATTACHMENT0,
+                ffi::RENDERBUFFER,
+                renderbuffer.0.rbo,
+            );
+            let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+            self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+            self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+
+            if status != ffi::FRAMEBUFFER_COMPLETE {
+                //TODO wrap image and drop here
+                return Err(Gles2Error::FramebufferBindingError);
+            }
+        }
+
+        self.target = Some(Gles2Target::Renderbuffer {
+            buf: renderbuffer,
+            fbo,
+        });
+
+        Ok(())
+    }
+}
+
+impl Offscreen<Gles2Renderbuffer> for Gles2Renderer {
+    fn create_buffer(&mut self, size: Size<i32, Buffer>) -> Result<Gles2Renderbuffer, Gles2Error> {
+        self.make_current()?;
+        unsafe {
+            let mut rbo = 0;
+            self.gl.GenRenderbuffers(1, &mut rbo);
+            self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
+            self.gl
+                .RenderbufferStorage(ffi::RENDERBUFFER, ffi::RGBA8, size.w, size.h);
+            self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+
+            Ok(Gles2Renderbuffer(Rc::new(Gles2RenderbufferInternal {
+                rbo,
+                destruction_callback_sender: self.destruction_callback_sender.clone(),
+            })))
+        }
+    }
+}
+
 impl Unbind for Gles2Renderer {
     fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error> {
         unsafe {
