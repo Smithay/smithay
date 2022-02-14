@@ -88,8 +88,8 @@ impl fmt::Debug for KeyboardState {
 struct InputMethod {
     keyboard: Option<Main<ZwpInputMethodKeyboardGrabV2>>,
     instance: Option<Main<ZwpInputMethodV2>>,
-    popup_surface: Option<Main<ZwpInputPopupSurfaceV2>>,
-    surface: Option<WlSurface>,
+    popup_surface_handle: Option<Main<ZwpInputPopupSurfaceV2>>,
+    popup_surface: Option<WlSurface>,
     keyboard_state: Option<KeyboardState>,
 }
 
@@ -220,8 +220,8 @@ impl InputMethodHandle {
 
     fn add_popup_surface(&self, popup_surface: Main<ZwpInputPopupSurfaceV2>, surface: WlSurface) {
         let mut inner = self.inner.borrow_mut();
-        inner.popup_surface = Some(popup_surface);
-        inner.surface = Some(surface);
+        inner.popup_surface_handle = Some(popup_surface);
+        inner.popup_surface = Some(surface);
     }
 
     /// Takes keyboard input and sends it to the input method
@@ -243,7 +243,12 @@ impl InputMethodHandle {
     }
 
     /// used to access the Main popup surface handler from text input
-    pub fn popup_surface(&self) -> Option<Main<ZwpInputPopupSurfaceV2>> {
+    pub fn popup_surface_handle(&self) -> Option<Main<ZwpInputPopupSurfaceV2>> {
+        self.inner.borrow().popup_surface_handle.clone()
+    }
+
+    /// used to access the surface for popup
+    pub fn popup_surface(&self) -> Option<WlSurface> {
         self.inner.borrow().popup_surface.clone()
     }
 }
@@ -252,6 +257,9 @@ impl InputMethodHandle {
 pub trait InputMethodSeatTrait {
     /// Get input method seat associated with this seat
     /// this is also used to set xkb config parameters that will be sent to the input method
+    /// Input methods need different keyboard languages for different input methods
+    /// E.g Norwegian pinyin user will want to use a nordic keyboard layout
+    /// but a Taiwanese person will write their input method with a us layout
     fn add_input_method(
         &self,
         repeat_rate: i32,
@@ -318,9 +326,9 @@ pub fn init_input_method_manager_global(display: &mut Display) -> Global<ZwpInpu
                                         text_input.delete_surrounding_text(before_length, after_length);
                                     }
                                 }
-                                zwp_input_method_v2::Request::Commit { serial } => {
-                                    if let Some(text_input) = text_input.handle() {
-                                        text_input.done(serial);
+                                zwp_input_method_v2::Request::Commit { serial: _ } => {
+                                    if let Some(text_input_handle) = text_input.handle() {
+                                        text_input_handle.done(text_input.serial());
                                     }
                                 }
                                 zwp_input_method_v2::Request::GetInputPopupSurface { id, surface } => {
@@ -331,7 +339,7 @@ pub fn init_input_method_manager_global(display: &mut Display) -> Global<ZwpInpu
                                     let input_method_handle = im.clone();
                                     id.assign_destructor(Filter::new(
                                         move |_popup_surface: ZwpInputPopupSurfaceV2, _, _| {
-                                            input_method_handle.inner.borrow_mut().popup_surface = None
+                                            input_method_handle.inner.borrow_mut().popup_surface_handle = None
                                         },
                                     ));
                                 }

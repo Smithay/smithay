@@ -186,6 +186,20 @@ pub fn run_winit(log: Logger) {
                     )) as Box<dyn RenderElement<_, _, _, _>>);
                 }
             }
+            // draw the input method surface if any
+            let guard = state.input_method.popup_surface_handle();
+            if let Some(_popup) = guard {
+                let popup_surface = state.input_method.popup_surface();
+                if let Some(popup_surface) = popup_surface {
+                    let (x,y) = state.text_input.coordinates();
+                    println!("Popup surface: {x},{y}");
+                    elements.push(Box::new(draw_input_popup_surface(
+                        popup_surface, 
+                        (x, y).into()
+                    )) as Box<dyn RenderElement<_, _, _, _>>);
+                }
+            }
+
 
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive

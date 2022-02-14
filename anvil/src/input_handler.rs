@@ -184,6 +184,7 @@ impl<Backend> AnvilState<Backend> {
                         )
                         .map(|(s, _)| s);
                     self.keyboard.set_focus(surface.as_ref(), serial);
+                    self.text_input.set_focus(surface.as_ref());
                     return;
                 }
 
@@ -202,6 +203,7 @@ impl<Backend> AnvilState<Backend> {
                             )
                             .map(|(s, _)| s);
                         self.keyboard.set_focus(surface.as_ref(), serial);
+                        self.text_input.set_focus(surface.as_ref());
                         return;
                     }
                 }
@@ -217,6 +219,7 @@ impl<Backend> AnvilState<Backend> {
                     )
                     .map(|(s, _)| s);
                 self.keyboard.set_focus(surface.as_ref(), serial);
+                self.text_input.set_focus(surface.as_ref());
                 return;
             }
 
@@ -237,6 +240,7 @@ impl<Backend> AnvilState<Backend> {
                             )
                             .map(|(s, _)| s);
                         self.keyboard.set_focus(surface.as_ref(), serial);
+                        self.text_input.set_focus(surface.as_ref());
                     }
                 }
             };

@@ -213,6 +213,8 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
                 state
                     .keyboard
                     .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
+                println!("FIGURE OUT HOW I GOT HERE!?");
+                state.text_input.set_focus(surface.as_ref());
             }
             let time = state.start_time.elapsed().as_millis() as u32;
             state

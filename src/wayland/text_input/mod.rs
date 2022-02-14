@@ -50,11 +50,20 @@ use super::input_method::InputMethodHandle;
 
 const TEXT_INPUT_VERSION: u32 = 1;
 
+#[derive(Clone, Debug)]
+struct Instance {
+    handle: Main<ZwpTextInputV3>,
+    serial: u32,
+    x: i32,
+    y: i32,
+}
+
 /// Contains all the text input instances
 #[derive(Default, Clone, Debug)]
 struct TextInput {
-    instances: Vec<Main<ZwpTextInputV3>>,
+    instances: Vec<Instance>,
     focus: Option<WlSurface>,
+    old_focus: Option<WlSurface>,
 }
 
 impl TextInput {
@@ -65,38 +74,68 @@ impl TextInput {
             .and_then(|f| focus.map(|s| s.as_ref().equals(f.as_ref())))
             .unwrap_or(false);
         if !same {
-            // unset old focus
             if let Some(focus) = self.focus.as_ref() {
-                if let Some(old_instance) = &self
+                if let Some(old_instance) = self
                     .instances
                     .iter()
-                    .find(|i| i.as_ref().same_client_as(self.focus.as_ref().unwrap().as_ref()))
+                    .find(|i| i.handle.as_ref().same_client_as(self.focus.as_ref().unwrap().as_ref()))
                 {
-                    old_instance.leave(focus);
+                    old_instance.handle.leave(focus);
+                    self.old_focus = Some(focus.clone());
                 }
-            }
+            } 
             self.focus = None;
-
             // set new focus
             self.focus = focus.cloned();
-            if let Some(focus) = &self.focus {
-                if let Some(instance) = &self
-                    .instances
-                    .iter()
-                    .find(|i| i.as_ref().same_client_as(focus.as_ref()))
-                {
-                    instance.enter(focus);
+
+            if self.old_focus.is_none() {
+                if let Some(focus) = &self.focus {
+                    if let Some(instance) = &self
+                        .instances
+                        .iter()
+                        .find(|i| i.handle.as_ref().same_client_as(focus.as_ref()))
+                    {
+                        instance.handle.enter(focus);
+                    }
                 }
             }
         }
     }
 
-    fn focused_text_input(&self) -> Option<Main<ZwpTextInputV3>> {
+    fn increment(&mut self){
+        if let Some(old_focus) = &self.old_focus {
+            if let Some(old_instance) = self
+                .instances
+                .iter_mut()
+                .find(|i| i.handle.as_ref().same_client_as(old_focus.as_ref()))
+            {
+                old_instance.serial += 1;
+                self.old_focus = None;
+                if let Some(focus) = &self.focus {
+                    if let Some(instance) = &self
+                        .instances
+                        .iter()
+                        .find(|i| i.handle.as_ref().same_client_as(focus.as_ref()))
+                    {
+                        instance.handle.enter(focus);
+                    }
+                }
+            }
+        } else if let Some(focus) = &self.focus {
+            if let Some(instance) = self.instances
+                .iter_mut()
+                .find(|i| i.handle.as_ref().same_client_as(focus.as_ref()))
+            {
+                instance.serial += 1;
+            }
+        }
+    }
+
+    fn focused_text_input(&mut self) -> Option<&mut Instance> {
         if let Some(focus) = &self.focus {
             self.instances
-                .iter()
-                .find(|i| i.as_ref().same_client_as(focus.as_ref()))
-                .cloned()
+                .iter_mut()
+                .find(|i| i.handle.as_ref().same_client_as(focus.as_ref()))
         } else {
             None
         }
@@ -110,9 +149,29 @@ pub struct TextInputHandle {
 }
 
 impl TextInputHandle {
-    fn add_instance(&self, instance: Main<ZwpTextInputV3>) {
+    fn add_instance(&self, instance: Instance) {
         let mut inner = self.inner.borrow_mut();
         inner.instances.push(instance);
+    }
+
+    fn add_coordinates(&self, x: i32, y:i32) {
+        let mut inner = self.inner.borrow_mut();
+        let focused_instance = inner.focused_text_input();
+        if let Some(instance) = focused_instance{
+            instance.x = x;
+            instance.y = y;
+        }
+    }
+
+    /// TODO:Document something
+    pub fn coordinates(&self) ->(i32, i32) {
+        let mut inner = self.inner.borrow_mut();
+        let focused_instance = inner.focused_text_input();
+        if let Some(instance) = focused_instance {
+            (instance.x, instance.y)
+        } else {
+            (0, 0)
+        }
     }
 
     /// Activates a text input when a surface is focused and deactivates it when
@@ -124,7 +183,20 @@ impl TextInputHandle {
 
     /// used to access the Main handle from an input method
     pub fn handle(&self) -> Option<Main<ZwpTextInputV3>> {
-        self.inner.borrow().focused_text_input()
+        self.inner.borrow_mut().focused_text_input().map(|i| i.handle.clone())
+    }
+
+    /// Used to access serial for each individual text input.
+    /// It is the compositors responsibility to increment a separate serial on each
+    /// text input.
+    pub fn serial(&self) -> u32 {
+        self.inner.borrow_mut().focused_text_input().map(|i| i.serial)
+            .expect("Got a message from a text input that does not exist!")
+    }
+
+    fn increment_serial(&mut self) {
+        let mut inner = self.inner.borrow_mut();
+        inner.increment();
     }
 }
 
@@ -153,11 +225,18 @@ pub fn init_text_input_manager_global(display: &mut Display) -> Global<ZwpTextIn
                         let seat = Seat::from_resource(&seat).unwrap();
                         let user_data = seat.user_data();
                         user_data.insert_if_missing(TextInputHandle::default);
-                        let ti = user_data.get::<TextInputHandle>().unwrap().clone();
-                        ti.add_instance(id.clone());
+                        let mut ti = user_data.get::<TextInputHandle>().unwrap().clone();
+                        ti.add_instance(Instance {
+                            handle: id.clone(),
+                            serial: 0,
+                            x: 0,
+                            y: 0
+                        });
                         let input_method = user_data.get::<InputMethodHandle>().unwrap().clone();
+                        let text_input_handle = ti.clone();
                         id.quick_assign(move |_text_input, req, _| match req {
                             zwp_text_input_v3::Request::Enable => {
+                                println!("Did we get this?");
                                 if let Some(input_method) = input_method.handle() {
                                     input_method.activate();
                                 }
@@ -187,23 +266,26 @@ pub fn init_text_input_manager_global(display: &mut Display) -> Global<ZwpTextIn
                                 }
                             }
                             zwp_text_input_v3::Request::SetCursorRectangle { x, y, width, height } => {
-                                if let Some(popup_surface) = input_method.popup_surface() {
+                                println!("CursorRectangle: {x}, {y}");
+                                ti.add_coordinates(x,y);
+                                if let Some(popup_surface) = input_method.popup_surface_handle() {
                                     popup_surface.text_input_rectangle(x, y, width, height);
                                 }
                             }
                             zwp_text_input_v3::Request::Commit => {
                                 if let Some(input_method) = input_method.handle() {
-                                    input_method.done()
+                                    ti.increment_serial();
+                                    input_method.done();
                                 }
                             }
                             zwp_text_input_v3::Request::Destroy => {}
                             _ => {}
                         });
                         id.assign_destructor(Filter::new(move |text_input: ZwpTextInputV3, _, _| {
-                            ti.inner
+                            text_input_handle.inner
                                 .borrow_mut()
                                 .instances
-                                .retain(|ti| !ti.as_ref().equals(text_input.as_ref()))
+                                .retain(|ti| !ti.handle.as_ref().equals(text_input.as_ref()))
                         }));
                     }
                     zwp_text_input_manager_v3::Request::Destroy => {
