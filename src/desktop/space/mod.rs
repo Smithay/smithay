@@ -542,37 +542,6 @@ impl Space {
                         // Map from logical to physical
                         .map(|geo| geo.to_f64().to_physical(state.render_scale).to_i32_round())
                         .collect::<Vec<_>>(),
-                    // &[
-                    //     Rectangle::from_loc_and_size((0, 0), (100, 100)),
-                    //     Rectangle::from_loc_and_size((150, 0), (100, 100)),
-                    //     Rectangle::from_loc_and_size((300, 0), (100, 100)),
-                    //     Rectangle::from_loc_and_size((450, 0), (100, 100)),
-                    //     Rectangle::from_loc_and_size((600, 0), (100, 100)),
-
-                    //     Rectangle::from_loc_and_size((0, 150), (100, 100)),
-                    //     Rectangle::from_loc_and_size((150, 150), (100, 100)),
-                    //     Rectangle::from_loc_and_size((300, 150), (100, 100)),
-                    //     Rectangle::from_loc_and_size((450, 150), (100, 100)),
-                    //     Rectangle::from_loc_and_size((600, 150), (100, 100)),
-
-                    //     Rectangle::from_loc_and_size((0, 300), (100, 100)),
-                    //     Rectangle::from_loc_and_size((150, 300), (100, 100)),
-                    //     Rectangle::from_loc_and_size((300, 300), (100, 100)),
-                    //     Rectangle::from_loc_and_size((450, 300), (100, 100)),
-                    //     Rectangle::from_loc_and_size((600, 300), (100, 100)),
-
-                    //     Rectangle::from_loc_and_size((0, 450), (100, 100)),
-                    //     Rectangle::from_loc_and_size((150, 450), (100, 100)),
-                    //     Rectangle::from_loc_and_size((300, 450), (100, 100)),
-                    //     Rectangle::from_loc_and_size((450, 450), (100, 100)),
-                    //     Rectangle::from_loc_and_size((600, 450), (100, 100)),
-
-                    //     Rectangle::from_loc_and_size((0, 600), (100, 100)),
-                    //     Rectangle::from_loc_and_size((150, 600), (100, 100)),
-                    //     Rectangle::from_loc_and_size((300, 600), (100, 100)),
-                    //     Rectangle::from_loc_and_size((450, 600), (100, 100)),
-                    //     Rectangle::from_loc_and_size((600, 600), (100, 100)),
-                    // ],
                 )?;
                 // Then re-draw all windows & layers overlapping with a damage rect.
 
