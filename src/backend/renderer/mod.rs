@@ -32,6 +32,8 @@ use crate::backend::egl::{
     Error as EglError,
 };
 
+pub mod multigpu;
+
 #[cfg(feature = "wayland_frontend")]
 pub mod utils;
 
@@ -190,8 +192,6 @@ pub trait Renderer {
     type Error: Error;
     /// Texture Handle type used by this renderer.
     type TextureId: Texture;
-    /// Texture type representing a downloaded pixel buffer.
-    type TextureMapping: TextureMapping;
     /// Type representing a currently in-progress frame during the [`Renderer::render`]-call
     type Frame: Frame<Error = Self::Error, TextureId = Self::TextureId>;
 
@@ -355,6 +355,8 @@ pub trait ImportEgl: Renderer {
     fn import_egl_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
+        surface: Option<&crate::wayland::compositor::SurfaceData>,
+        damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 }
 
@@ -380,13 +382,16 @@ pub trait ImportDma: Renderer {
     fn import_dma_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
+        surface: Option<&crate::wayland::compositor::SurfaceData>,
+        damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+        let _ = surface;
         let dmabuf = buffer
             .as_ref()
             .user_data()
             .get::<Dmabuf>()
             .expect("import_dma_buffer without checking buffer type?");
-        self.import_dmabuf(dmabuf)
+        self.import_dmabuf(dmabuf, Some(damage))
     }
 
     /// Import a given raw dmabuf into the renderer.
@@ -403,6 +408,7 @@ pub trait ImportDma: Renderer {
     fn import_dmabuf(
         &mut self,
         dmabuf: &Dmabuf,
+        damage: Option<&[Rectangle<i32, Buffer>]>,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 }
 
@@ -453,8 +459,8 @@ impl<R: Renderer + ImportMem + ImportEgl + ImportDma> ImportAll for R {
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
         match buffer_type(buffer) {
             Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
-            Some(BufferType::Egl) => Some(self.import_egl_buffer(buffer)),
-            Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer)),
+            Some(BufferType::Egl) => Some(self.import_egl_buffer(buffer, surface, damage)),
+            Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer, surface, damage)),
             _ => None,
         }
     }
@@ -473,7 +479,7 @@ impl<R: Renderer + ImportMem + ImportDma> ImportAll for R {
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
         match buffer_type(buffer) {
             Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
-            Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer)),
+            Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer, surface, damage)),
             _ => None,
         }
     }
@@ -481,6 +487,9 @@ impl<R: Renderer + ImportMem + ImportDma> ImportAll for R {
 
 /// Trait for renderers supporting exporting contents of framebuffers or textures into memory.
 pub trait ExportMem: Renderer {
+    /// Texture type representing a downloaded pixel buffer.
+    type TextureMapping: TextureMapping;
+
     /// Copies the contents of the currently bound framebuffer.
     ///
     /// This operation is not destructive, the contents of the framebuffer keep being valid.
@@ -492,7 +501,7 @@ pub trait ExportMem: Renderer {
     fn copy_framebuffer(
         &mut self,
         region: Rectangle<i32, Buffer>,
-    ) -> Result<<Self as Renderer>::TextureMapping, <Self as Renderer>::Error>;
+    ) -> Result<Self::TextureMapping, <Self as Renderer>::Error>;
     /// Copies the contents of the currently bound framebuffer.
     /// *Note*: This function may change or invalidate the current bind.
     ///
@@ -505,7 +514,7 @@ pub trait ExportMem: Renderer {
         &mut self,
         texture: &Self::TextureId,
         region: Rectangle<i32, Buffer>,
-    ) -> Result<<Self as Renderer>::TextureMapping, Self::Error>;
+    ) -> Result<Self::TextureMapping, Self::Error>;
     /// Returns a read-only pointer to a previously created texture mapping.
     ///
     /// The format of the returned slice is RGBA8.

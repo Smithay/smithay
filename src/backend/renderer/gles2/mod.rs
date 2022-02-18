@@ -264,7 +264,7 @@ impl Drop for Gles2Target {
 pub struct Gles2Renderer {
     buffers: Vec<Gles2Buffer>,
     target: Option<Gles2Target>,
-    extensions: Vec<String>,
+    pub(crate) extensions: Vec<String>,
     tex_programs: [Gles2TexProgram; shaders::FRAGMENT_COUNT],
     solid_program: Gles2SolidProgram,
     #[cfg(feature = "wayland_frontend")]
@@ -676,7 +676,7 @@ impl Gles2Renderer {
         Ok(renderer)
     }
 
-    fn make_current(&self) -> Result<(), MakeCurrentError> {
+    pub(crate) fn make_current(&self) -> Result<(), MakeCurrentError> {
         unsafe {
             if let Some(&Gles2Target::Surface(ref surface)) = self.target.as_ref() {
                 self.egl.make_current_with_surface(&**surface)?;
@@ -786,12 +786,13 @@ impl ImportMem for Gles2Renderer {
                 // this is guaranteed a non-public internal type, so we are good.
                 surface
                     .and_then(|surface| surface.data_map.get::<Rc<Gles2TextureInternal>>().cloned())
+                    .filter(|texture| texture.size == (width, height).into())
                     .unwrap_or_else(|| {
                         let mut tex = 0;
                         unsafe { self.gl.GenTextures(1, &mut tex) };
                         // new texture, upload in full
                         upload_full = true;
-                        Rc::new(Gles2TextureInternal {
+                        let new = Rc::new(Gles2TextureInternal {
                             texture: tex,
                             texture_kind: shader_idx,
                             is_external: false,
@@ -799,7 +800,12 @@ impl ImportMem for Gles2Renderer {
                             size: (width, height).into(),
                             egl_images: None,
                             destruction_callback_sender: self.destruction_callback_sender.clone(),
-                        })
+                        });
+                        if let Some(surface) = surface {
+                            let copy = new.clone();
+                            surface.data_map.insert_if_missing(|| copy);
+                        }
+                        new
                     }),
             );
 
@@ -975,7 +981,12 @@ impl ImportEgl for Gles2Renderer {
         self.egl_reader.as_ref()
     }
 
-    fn import_egl_buffer(&mut self, buffer: &wl_buffer::WlBuffer) -> Result<Gles2Texture, Gles2Error> {
+    fn import_egl_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        _surface: Option<&crate::wayland::compositor::SurfaceData>,
+        _damage: &[Rectangle<i32, Buffer>],
+    ) -> Result<Gles2Texture, Gles2Error> {
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
@@ -1023,7 +1034,11 @@ impl ImportEgl for Gles2Renderer {
 
 #[cfg(feature = "wayland_frontend")]
 impl ImportDma for Gles2Renderer {
-    fn import_dmabuf(&mut self, buffer: &Dmabuf) -> Result<Gles2Texture, Gles2Error> {
+    fn import_dmabuf(
+        &mut self,
+        buffer: &Dmabuf,
+        _damage: Option<&[Rectangle<i32, Buffer>]>,
+    ) -> Result<Gles2Texture, Gles2Error> {
         use crate::backend::allocator::Buffer;
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
@@ -1049,7 +1064,6 @@ impl ImportDma for Gles2Renderer {
                 egl_images: Some(vec![image]),
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
             }));
-            self.egl.unbind()?;
             self.dmabuf_cache.insert(buffer.weak(), texture.clone());
             Ok(texture)
         })
@@ -1120,6 +1134,8 @@ impl Gles2Renderer {
 }
 
 impl ExportMem for Gles2Renderer {
+    type TextureMapping = Gles2Mapping;
+
     fn copy_framebuffer(
         &mut self,
         region: Rectangle<i32, Buffer>,
@@ -1158,7 +1174,6 @@ impl ExportMem for Gles2Renderer {
         texture: &Self::TextureId,
         region: Rectangle<i32, Buffer>,
     ) -> Result<Self::TextureMapping, Self::Error> {
-        let size = texture.size();
         let mut pbo = 0;
         let old_target = self.target.take();
         self.bind(texture.clone())?;
@@ -1644,7 +1659,6 @@ impl Gles2Renderer {
 impl Renderer for Gles2Renderer {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
-    type TextureMapping = Gles2Mapping;
     type Frame = Gles2Frame;
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
