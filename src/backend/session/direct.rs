@@ -55,7 +55,7 @@ use nix::{
     libc::c_int,
     sys::stat::{dev_t, fstat, major, minor, Mode},
     unistd::{close, dup},
-    Error as NixError, Result as NixResult,
+    Error as NixError,
 };
 use std::{
     fmt,
@@ -348,14 +348,14 @@ impl DirectSession {
 impl Session for DirectSession {
     type Error = NixError;
 
-    fn open(&mut self, path: &Path, flags: OFlag) -> NixResult<RawFd> {
+    fn open(&mut self, path: &Path, flags: OFlag) -> nix::Result<RawFd> {
         debug!(self.logger, "Opening device: {:?}", path);
         let fd = open(path, flags, Mode::empty())?;
         trace!(self.logger, "Fd num: {:?}", fd);
         Ok(fd)
     }
 
-    fn close(&mut self, fd: RawFd) -> NixResult<()> {
+    fn close(&mut self, fd: RawFd) -> nix::Result<()> {
         debug!(self.logger, "Closing device: {:?}", fd);
         close(fd)
     }
@@ -369,7 +369,7 @@ impl Session for DirectSession {
         String::from("seat0")
     }
 
-    fn change_vt(&mut self, vt_num: i32) -> NixResult<()> {
+    fn change_vt(&mut self, vt_num: i32) -> nix::Result<()> {
         unsafe { tty::vt_activate(self.tty, vt_num).map(|_| ()) }
     }
 }

@@ -5,7 +5,7 @@ use std::{
     cell::RefCell,
     default::Default,
     fmt,
-    io::{Error as IoError, Seek, Write},
+    io::{self, Seek, Write},
     ops::Deref as _,
     os::unix::io::AsRawFd,
     rc::Rc,
@@ -264,7 +264,7 @@ pub enum Error {
     BadKeymap,
     /// Smithay could not create a tempfile to share the keymap with clients
     #[error("Failed to create tempfile to share the keymap: {0}")]
-    IoError(IoError),
+    IoError(io::Error),
 }
 
 /// Create a keyboard handler from a set of RMLVO rules

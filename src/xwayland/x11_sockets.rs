@@ -5,7 +5,7 @@ use std::{
 
 use slog::{debug, info, warn};
 
-use nix::{errno::Errno, sys::socket, Result as NixResult};
+use nix::{errno::Errno, sys::socket};
 
 /// Find a free X11 display slot and setup
 pub(crate) fn prepare_x11_sockets(log: ::slog::Logger) -> Result<(X11Lock, [UnixStream; 2]), std::io::Error> {
@@ -112,7 +112,7 @@ impl Drop for X11Lock {
 /// Open the two unix sockets an X server listens on
 ///
 /// Should only be done after the associated lockfile is acquired!
-fn open_x11_sockets_for_display(display: u32) -> NixResult<[UnixStream; 2]> {
+fn open_x11_sockets_for_display(display: u32) -> nix::Result<[UnixStream; 2]> {
     let path = format!("/tmp/.X11-unix/X{}", display);
     let _ = ::std::fs::remove_file(&path);
     // We know this path is not to long, these unwrap cannot fail
@@ -124,7 +124,7 @@ fn open_x11_sockets_for_display(display: u32) -> NixResult<[UnixStream; 2]> {
 }
 
 /// Open an unix socket for listening and bind it to given path
-fn open_socket(addr: socket::UnixAddr) -> NixResult<UnixStream> {
+fn open_socket(addr: socket::UnixAddr) -> nix::Result<UnixStream> {
     // create an unix stream socket
     let fd = socket::socket(
         socket::AddressFamily::Unix,
