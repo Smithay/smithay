@@ -1,3 +1,4 @@
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 // Allow acronyms like EGL
 #![allow(clippy::upper_case_acronyms)]
