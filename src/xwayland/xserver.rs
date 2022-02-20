@@ -42,7 +42,7 @@ use std::{
     any::Any,
     cell::RefCell,
     env,
-    io::{Read, Result as IOResult},
+    io::{self, Read},
     os::unix::{
         io::{AsRawFd, IntoRawFd, RawFd},
         net::UnixStream,
@@ -368,7 +368,7 @@ fn spawn_xwayland(
     wayland_socket: UnixStream,
     wm_socket: UnixStream,
     listen_sockets: &[UnixStream],
-) -> IOResult<ChildStdout> {
+) -> io::Result<ChildStdout> {
     let mut command = Command::new("sh");
 
     // We use output stream to communicate because FD is easier to handle than exit code.
@@ -422,7 +422,7 @@ fn spawn_xwayland(
 ///
 /// This means that the `Fd` will *not* be automatically
 /// closed when we `exec()` into XWayland
-fn unset_cloexec(fd: RawFd) -> IOResult<()> {
+fn unset_cloexec(fd: RawFd) -> io::Result<()> {
     use nix::fcntl::{fcntl, FcntlArg, FdFlag};
     fcntl(fd, FcntlArg::F_SETFD(FdFlag::empty()))?;
     Ok(())
