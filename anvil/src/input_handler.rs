@@ -97,7 +97,7 @@ impl<Backend> AnvilState<Backend> {
                     self.keyboard
                         .set_focus(Some(layer.get_surface().unwrap()), serial);
                     self.text_input
-                        .set_focus(Some(layer.get_surface().unwrap()));
+                        .set_focus(Some(layer.get_surface().unwrap()), None);
                     if self.input_method.keyboard_grabbed() {
                         self.input_method.input(keycode, state, serial, time);
                     } else {
@@ -181,10 +181,11 @@ impl<Backend> AnvilState<Backend> {
                         .surface_under(
                             self.pointer_location - output_geo.loc.to_f64(),
                             WindowSurfaceType::TOPLEVEL | WindowSurfaceType::SUBSURFACE,
-                        )
-                        .map(|(s, _)| s);
-                    self.keyboard.set_focus(surface.as_ref(), serial);
-                    self.text_input.set_focus(surface.as_ref());
+                        );
+                    self.keyboard.set_focus(surface.as_ref().map(|(s, _)| s), serial);
+                    self.text_input.set_focus(
+                        surface.as_ref().map(|(s, _)| s), 
+                        surface.as_ref().map(|(_, p)| p));
                     return;
                 }
 
@@ -200,10 +201,11 @@ impl<Backend> AnvilState<Backend> {
                                     - output_geo.loc.to_f64()
                                     - layers.layer_geometry(layer).unwrap().loc.to_f64(),
                                 WindowSurfaceType::ALL,
-                            )
-                            .map(|(s, _)| s);
-                        self.keyboard.set_focus(surface.as_ref(), serial);
-                        self.text_input.set_focus(surface.as_ref());
+                            );
+                        self.keyboard.set_focus(surface.as_ref().map(|(s, _)| s), serial);
+                        self.text_input.set_focus(
+                            surface.as_ref().map(|(s, _)| s), 
+                            surface.as_ref().map(|(_, p)| p));
                         return;
                     }
                 }
@@ -219,7 +221,7 @@ impl<Backend> AnvilState<Backend> {
                     )
                     .map(|(s, _)| s);
                 self.keyboard.set_focus(surface.as_ref(), serial);
-                self.text_input.set_focus(surface.as_ref());
+                self.text_input.set_focus(surface.as_ref(), Some(&window_loc));
                 return;
             }
 
@@ -237,10 +239,11 @@ impl<Backend> AnvilState<Backend> {
                                     - output_geo.loc.to_f64()
                                     - layers.layer_geometry(layer).unwrap().loc.to_f64(),
                                 WindowSurfaceType::ALL,
-                            )
-                            .map(|(s, _)| s);
-                        self.keyboard.set_focus(surface.as_ref(), serial);
-                        self.text_input.set_focus(surface.as_ref());
+                            );
+                        self.keyboard.set_focus(surface.as_ref().map(|(s, _)| s), serial);
+                        self.text_input.set_focus(
+                            surface.as_ref().map(|(s, _)| s), 
+                            surface.as_ref().map(|(_, p)| p));
                     }
                 }
             };

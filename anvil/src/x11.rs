@@ -235,6 +235,19 @@ pub fn run_x11(log: Logger) {
                 }
             }
 
+            // draw the input method surface if any
+            let guard = state.input_method.popup_surface_handle();
+            if let Some(_popup) = guard {
+                let popup_surface = state.input_method.popup_surface();
+                if let Some(popup_surface) = popup_surface {
+                    let (x, y, _, height) = state.text_input.coordinates();
+                    elements.push(Box::new(draw_input_popup_surface(
+                        popup_surface, 
+                        (x, y+height).into()
+                    )) as Box<dyn RenderElement<_, _, _, _>>);
+                }
+            }
+
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
             let mut reset = false;

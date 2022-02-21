@@ -44,7 +44,7 @@ use wayland_protocols::unstable::text_input::v3::server::{
 };
 use wayland_server::{protocol::wl_surface::WlSurface, Display, Filter, Global, Main};
 
-use crate::wayland::seat::Seat;
+use crate::{wayland::seat::Seat, utils::{Logical, Point}};
 
 use super::input_method::InputMethodHandle;
 
@@ -56,6 +56,10 @@ struct Instance {
     serial: u32,
     x: i32,
     y: i32,
+    width: i32,
+    height: i32,
+    l_x: i32,
+    l_y: i32
 }
 
 /// Contains all the text input instances
@@ -99,6 +103,13 @@ impl TextInput {
                     }
                 }
             }
+        }
+    }
+
+    fn set_point(&mut self, point: &Point<i32, Logical>){
+        if let Some(instance) = self.focused_text_input(){
+            instance.l_x = point.x;
+            instance.l_y = point.y;
         }
     }
 
@@ -154,31 +165,36 @@ impl TextInputHandle {
         inner.instances.push(instance);
     }
 
-    fn add_coordinates(&self, x: i32, y:i32) {
+    fn add_coordinates(&self, x: i32, y:i32, width: i32, height: i32) {
         let mut inner = self.inner.borrow_mut();
         let focused_instance = inner.focused_text_input();
         if let Some(instance) = focused_instance{
             instance.x = x;
             instance.y = y;
+            instance.width = width;
+            instance.height = height;
         }
     }
 
     /// TODO:Document something
-    pub fn coordinates(&self) ->(i32, i32) {
+    pub fn coordinates(&self) ->(i32, i32, i32, i32) {
         let mut inner = self.inner.borrow_mut();
         let focused_instance = inner.focused_text_input();
         if let Some(instance) = focused_instance {
-            (instance.x, instance.y)
+            (instance.x+instance.l_x, instance.y+instance.l_y, instance.width, instance.height)
         } else {
-            (0, 0)
+            (0, 0, 0, 0)
         }
     }
 
     /// Activates a text input when a surface is focused and deactivates it when
     /// the current surface goes out of focus.
-    pub fn set_focus(&mut self, focus: Option<&WlSurface>) {
+    pub fn set_focus(&mut self, focus: Option<&WlSurface>, location: Option<&Point<i32, Logical>>) {
         let mut inner = self.inner.borrow_mut();
         inner.set_focus(focus);
+        if let Some(point) = location{
+            inner.set_point(point);
+        }
     }
 
     /// used to access the Main handle from an input method
@@ -230,13 +246,16 @@ pub fn init_text_input_manager_global(display: &mut Display) -> Global<ZwpTextIn
                             handle: id.clone(),
                             serial: 0,
                             x: 0,
-                            y: 0
+                            y: 0,
+                            width: 0,
+                            height: 0,
+                            l_x: 0,
+                            l_y: 0
                         });
                         let input_method = user_data.get::<InputMethodHandle>().unwrap().clone();
                         let text_input_handle = ti.clone();
                         id.quick_assign(move |_text_input, req, _| match req {
                             zwp_text_input_v3::Request::Enable => {
-                                println!("Did we get this?");
                                 if let Some(input_method) = input_method.handle() {
                                     input_method.activate();
                                 }
@@ -266,8 +285,8 @@ pub fn init_text_input_manager_global(display: &mut Display) -> Global<ZwpTextIn
                                 }
                             }
                             zwp_text_input_v3::Request::SetCursorRectangle { x, y, width, height } => {
-                                println!("CursorRectangle: {x}, {y}");
-                                ti.add_coordinates(x,y);
+                                println!("CursorRectangle: {x}, {y}, {width}, {height}");
+                                ti.add_coordinates(x, y, width, height);
                                 if let Some(popup_surface) = input_method.popup_surface_handle() {
                                     popup_surface.text_input_rectangle(x, y, width, height);
                                 }
