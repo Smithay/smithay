@@ -347,9 +347,9 @@ impl From<Option<u32>> for TouchSlot {
     }
 }
 
-impl Into<i32> for TouchSlot {
-    fn into(self) -> i32 {
-        self.id.map(|id| id as i32).unwrap_or(-1)
+impl From<TouchSlot> for i32 {
+    fn from(slot: TouchSlot) -> i32 {
+        slot.id.map(|id| id as i32).unwrap_or(-1)
     }
 }
 
