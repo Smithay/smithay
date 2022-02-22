@@ -336,22 +336,27 @@ impl<B: InputBackend> PointerMotionAbsoluteEvent<B> for UnusedEvent {
 /// Touch events are grouped by slots, usually to identify different
 /// fingers on a multi-touch enabled input device. Events should only
 /// be interpreted in the context of other events on the same slot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TouchSlot {
-    id: u64,
+    id: Option<u32>,
 }
 
-#[cfg(any(feature = "backend_winit", feature = "backend_libinput"))]
-impl TouchSlot {
-    pub(crate) fn new(id: u64) -> Self {
-        TouchSlot { id }
+impl From<Option<u32>> for TouchSlot {
+    fn from(id: Option<u32>) -> Self {
+        Self { id }
+    }
+}
+
+impl Into<i32> for TouchSlot {
+    fn into(self) -> i32 {
+        self.id.map(|id| id as i32).unwrap_or(-1)
     }
 }
 
 /// Trait for touch events starting at a given position.
 pub trait TouchDownEvent<B: InputBackend>: Event<B> {
-    /// [`TouchSlot`], if the device has multi-touch capabilities
-    fn slot(&self) -> Option<TouchSlot>;
+    /// Multi-touch slot identifier.
+    fn slot(&self) -> TouchSlot;
 
     /// Touch position in the device's native coordinate space
     ///
@@ -390,7 +395,7 @@ pub trait TouchDownEvent<B: InputBackend>: Event<B> {
 }
 
 impl<B: InputBackend> TouchDownEvent<B> for UnusedEvent {
-    fn slot(&self) -> Option<TouchSlot> {
+    fn slot(&self) -> TouchSlot {
         match *self {}
     }
 
@@ -413,8 +418,8 @@ impl<B: InputBackend> TouchDownEvent<B> for UnusedEvent {
 
 /// Trait for touch events regarding movement on the screen
 pub trait TouchMotionEvent<B: InputBackend>: Event<B> {
-    /// [`TouchSlot`], if the device has multi-touch capabilities
-    fn slot(&self) -> Option<TouchSlot>;
+    /// Multi-touch slot identifier.
+    fn slot(&self) -> TouchSlot;
 
     /// Touch position in the device's native coordinate space
     ///
@@ -453,7 +458,7 @@ pub trait TouchMotionEvent<B: InputBackend>: Event<B> {
 }
 
 impl<B: InputBackend> TouchMotionEvent<B> for UnusedEvent {
-    fn slot(&self) -> Option<TouchSlot> {
+    fn slot(&self) -> TouchSlot {
         match *self {}
     }
 
@@ -476,24 +481,24 @@ impl<B: InputBackend> TouchMotionEvent<B> for UnusedEvent {
 
 /// Trait for touch events finishing.
 pub trait TouchUpEvent<B: InputBackend>: Event<B> {
-    /// [`TouchSlot`], if the device has multi-touch capabilities
-    fn slot(&self) -> Option<TouchSlot>;
+    /// Multi-touch slot identifier.
+    fn slot(&self) -> TouchSlot;
 }
 
 impl<B: InputBackend> TouchUpEvent<B> for UnusedEvent {
-    fn slot(&self) -> Option<TouchSlot> {
+    fn slot(&self) -> TouchSlot {
         match *self {}
     }
 }
 
 /// Trait for touch events canceling the chain
 pub trait TouchCancelEvent<B: InputBackend>: Event<B> {
-    /// [`TouchSlot`], if the device has multi-touch capabilities
-    fn slot(&self) -> Option<TouchSlot>;
+    /// Multi-touch slot identifier.
+    fn slot(&self) -> TouchSlot;
 }
 
 impl<B: InputBackend> TouchCancelEvent<B> for UnusedEvent {
-    fn slot(&self) -> Option<TouchSlot> {
+    fn slot(&self) -> TouchSlot {
         match *self {}
     }
 }

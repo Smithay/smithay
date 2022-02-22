@@ -256,8 +256,8 @@ impl backend::Event<LibinputInputBackend> for event::touch::TouchDownEvent {
 }
 
 impl backend::TouchDownEvent<LibinputInputBackend> for event::touch::TouchDownEvent {
-    fn slot(&self) -> Option<backend::TouchSlot> {
-        event::touch::TouchEventSlot::slot(self).map(|x| backend::TouchSlot::new(x as u64))
+    fn slot(&self) -> backend::TouchSlot {
+        event::touch::TouchEventSlot::slot(self).into()
     }
 
     fn x(&self) -> f64 {
@@ -288,8 +288,8 @@ impl backend::Event<LibinputInputBackend> for event::touch::TouchMotionEvent {
 }
 
 impl backend::TouchMotionEvent<LibinputInputBackend> for event::touch::TouchMotionEvent {
-    fn slot(&self) -> Option<backend::TouchSlot> {
-        event::touch::TouchEventSlot::slot(self).map(|x| backend::TouchSlot::new(x as u64))
+    fn slot(&self) -> backend::TouchSlot {
+        event::touch::TouchEventSlot::slot(self).into()
     }
 
     fn x(&self) -> f64 {
@@ -320,8 +320,8 @@ impl backend::Event<LibinputInputBackend> for event::touch::TouchUpEvent {
 }
 
 impl backend::TouchUpEvent<LibinputInputBackend> for event::touch::TouchUpEvent {
-    fn slot(&self) -> Option<backend::TouchSlot> {
-        event::touch::TouchEventSlot::slot(self).map(|x| backend::TouchSlot::new(x as u64))
+    fn slot(&self) -> backend::TouchSlot {
+        event::touch::TouchEventSlot::slot(self).into()
     }
 }
 
@@ -336,8 +336,8 @@ impl backend::Event<LibinputInputBackend> for event::touch::TouchCancelEvent {
 }
 
 impl backend::TouchCancelEvent<LibinputInputBackend> for event::touch::TouchCancelEvent {
-    fn slot(&self) -> Option<backend::TouchSlot> {
-        event::touch::TouchEventSlot::slot(self).map(|x| backend::TouchSlot::new(x as u64))
+    fn slot(&self) -> backend::TouchSlot {
+        event::touch::TouchEventSlot::slot(self).into()
     }
 }
 
