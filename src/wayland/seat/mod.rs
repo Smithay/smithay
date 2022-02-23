@@ -93,6 +93,9 @@ impl Inner {
         if self.keyboard.is_some() {
             caps |= wl_seat::Capability::Keyboard;
         }
+        if self.touch.is_some() {
+            caps |= wl_seat::Capability::Touch;
+        }
         caps
     }
 
