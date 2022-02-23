@@ -135,11 +135,19 @@ impl TouchInternal {
     }
 
     fn shape(&self, slot: TouchSlot, major: f64, minor: f64) {
-        self.with_focused_handles(slot, |handle| handle.shape(slot.into(), major, minor));
+        self.with_focused_handles(slot, |handle| {
+            if handle.as_ref().version() >= 6 {
+                handle.shape(slot.into(), major, minor);
+            }
+        });
     }
 
     fn orientation(&self, slot: TouchSlot, orientation: f64) {
-        self.with_focused_handles(slot, |handle| handle.orientation(slot.into(), orientation));
+        self.with_focused_handles(slot, |handle| {
+            if handle.as_ref().version() >= 6 {
+                handle.orientation(slot.into(), orientation);
+            }
+        });
     }
 
     // TODO: In theory doesn't need to be sent for WlTouch that isn't in the focus hashmap?
