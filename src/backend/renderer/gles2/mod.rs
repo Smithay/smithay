@@ -1732,12 +1732,23 @@ impl Renderer for Gles2Renderer {
         // We account for OpenGLs coordinate system here
         let flip180 = Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0);
 
+        // Matrix handling the width/height swap when output is rotated by 90°/270°.
+        let rotation_stretch = match transform {
+            Transform::_90 | Transform::_270 | Transform::Flipped90 | Transform::Flipped270 => {
+                let factor = size.w as f32 / size.h as f32;
+                Matrix3::new(factor, 0.0, 0.0, 0.0, 1. / factor, 0.0, 0.0, 0.0, 1.0)
+            }
+            Transform::Normal | Transform::_180 | Transform::Flipped | Transform::Flipped180 => {
+                Matrix3::identity()
+            }
+        };
+
         let mut frame = Gles2Frame {
             gl: self.gl.clone(),
             tex_programs: self.tex_programs.clone(),
             solid_program: self.solid_program.clone(),
             // output transformation passed in by the user
-            current_projection: flip180 * transform.matrix() * renderer,
+            current_projection: flip180 * transform.matrix() * renderer * rotation_stretch,
             transform,
             vbos: self.vbos,
             size,
