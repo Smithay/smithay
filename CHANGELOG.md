@@ -14,8 +14,7 @@
 - `MouseButton` is now non-exhaustive.
 - Remove `Other` and add `Forward` and `Back` variants to `MouseButton`. Use the new `PointerButtonEvent::button_code` in place of `Other`.
 - `GrabStartData` has been renamed to `PointerGrabStartData`
-- Added `TouchHandle` for Wayland client touch support (see `Seat::get_touch`)
-- **[Breaking]**: The `slot` method on touch events no longer returns an `Option` and multi-touch capability is thus opaque to the compositor
+- The `slot` method on touch events no longer returns an `Option` and multi-touch capability is thus opaque to the compositor
 
 #### Backends
 
@@ -59,6 +58,7 @@
 - Added a `KeyboardGrab` similar to the existing `PointerGrab`
 - `wayland::output::Output` now has a `current_scale` method to quickly retrieve its set scale.
 - `wayland::shell::wlr_layer::KeyboardInteractivity` now implements `PartialEq` and `Eq`.
+- Added `TouchHandle` for Wayland client touch support (see `Seat::get_touch`)
 
 #### Backends
 
