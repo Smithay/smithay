@@ -1,6 +1,8 @@
 use std::fmt;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
+use wayland_server::protocol::wl_output::Transform as WlTransform;
+
 /// Type-level marker for the logical coordinate space
 #[derive(Debug)]
 pub struct Logical;
@@ -1205,6 +1207,21 @@ impl Transform {
         };
 
         Rectangle::from_loc_and_size(loc, size)
+    }
+}
+
+impl From<Transform> for WlTransform {
+    fn from(transform: Transform) -> Self {
+        match transform {
+            Transform::Normal => WlTransform::Normal,
+            Transform::_90 => WlTransform::_90,
+            Transform::_180 => WlTransform::_180,
+            Transform::_270 => WlTransform::_270,
+            Transform::Flipped => WlTransform::Flipped,
+            Transform::Flipped90 => WlTransform::Flipped90,
+            Transform::Flipped180 => WlTransform::Flipped180,
+            Transform::Flipped270 => WlTransform::Flipped270,
+        }
     }
 }
 
