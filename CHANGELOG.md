@@ -14,6 +14,8 @@
 - `MouseButton` is now non-exhaustive.
 - Remove `Other` and add `Forward` and `Back` variants to `MouseButton`. Use the new `PointerButtonEvent::button_code` in place of `Other`.
 - `GrabStartData` has been renamed to `PointerGrabStartData`
+- Added `TouchHandle` for Wayland client touch support (see `Seat::get_touch`)
+- **[Breaking]**: The `slot` method on touch events no longer returns an `Option` and multi-touch capability is thus opaque to the compositor
 
 #### Backends
 
@@ -61,10 +63,10 @@
 #### Backends
 
 - New `x11` backend to run the compositor as an X11 client. Enabled through the `backend_x11` feature.
-- `x11rb` event source integration used in anvil's XWayland implementation is now part of smithay at `utils::x11rb`. Enabled through the `x11rb_event_source` feature. 
+- `x11rb` event source integration used in anvil's XWayland implementation is now part of smithay at `utils::x11rb`. Enabled through the `x11rb_event_source` feature.
 - `KeyState`, `MouseButton`, `ButtonState` and `Axis` in `backend::input` now derive `Hash`.
 - New `DrmNode` type in drm backend. This is primarily for use a backend which needs to run as client inside another session.
-- The button code for a `PointerButtonEvent` may now be obtained using `PointerButtonEvent::button_code`. 
+- The button code for a `PointerButtonEvent` may now be obtained using `PointerButtonEvent::button_code`.
 - `Renderer` now allows texture filtering methods to be set.
 - `backend::renderer` has a new `utils`-module that can take care of client buffer management for you.
 - `EGLSurface::buffer_age` can be used to query the surface buffer age.
