@@ -1209,6 +1209,44 @@ impl Transform {
 
         Rectangle::from_loc_and_size(loc, size)
     }
+
+    /// Returns true if the transformation would flip contents
+    pub fn flipped(&self) -> bool {
+        !matches!(
+            self,
+            Transform::Normal | Transform::_90 | Transform::_180 | Transform::_270
+        )
+    }
+
+    /// Returns the degrees of the transformation
+    pub fn degrees(&self) -> u32 {
+        match self {
+            Transform::Normal | Transform::Flipped => 0,
+            Transform::_90 | Transform::Flipped90 => 90,
+            Transform::_180 | Transform::Flipped180 => 180,
+            Transform::_270 | Transform::Flipped270 => 270,
+        }
+    }
+}
+
+impl std::ops::Add for Transform {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let flipped = matches!((self.flipped(), other.flipped()), (true, false) | (false, true));
+        let degrees = (self.degrees() + other.degrees()) % 360;
+        match (flipped, degrees) {
+            (false, 0) => Transform::Normal,
+            (false, 90) => Transform::_90,
+            (false, 180) => Transform::_180,
+            (false, 270) => Transform::_270,
+            (true, 0) => Transform::Flipped,
+            (true, 90) => Transform::Flipped90,
+            (true, 180) => Transform::Flipped180,
+            (true, 270) => Transform::Flipped270,
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[cfg(feature = "wayland_frontend")]
