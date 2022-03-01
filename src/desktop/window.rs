@@ -143,8 +143,12 @@ impl Window {
 
     /// Returns the geometry of this window.
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
+        let surface = match self.0.toplevel.get_surface() {
+            Some(surface) => surface,
+            None => return Rectangle::from_loc_and_size((0, 0), (0, 0)),
+        };
         // It's the set geometry with the full bounding box as the fallback.
-        with_states(self.0.toplevel.get_surface().unwrap(), |states| {
+        with_states(surface, |states| {
             states.cached_state.current::<SurfaceCachedState>().geometry
         })
         .unwrap()
