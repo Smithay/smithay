@@ -778,15 +778,14 @@ fn render_surface(
     // set cursor
     if output_geometry.to_f64().contains(pointer_location) {
         let (ptr_x, ptr_y) = pointer_location.into();
-        let relative_ptr_location =
-            Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)) - output_geometry.loc;
-        // draw the dnd icon if applicable
+        let ptr_location = Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)); // - output_geometry.loc;
+                                                                                      // draw the dnd icon if applicable
         {
             if let Some(ref wl_surface) = dnd_icon.as_ref() {
                 if wl_surface.as_ref().is_alive() {
                     elements.push(CustomElem::from(draw_dnd_icon(
                         (*wl_surface).clone(),
-                        relative_ptr_location,
+                        ptr_location,
                         logger,
                     )));
                 }
@@ -807,13 +806,13 @@ fn render_surface(
             if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
                 elements.push(CustomElem::from(draw_cursor(
                     wl_surface.clone(),
-                    relative_ptr_location,
+                    ptr_location,
                     logger,
                 )));
             } else {
                 elements.push(CustomElem::from(PointerElement::new(
                     pointer_image.clone(),
-                    relative_ptr_location,
+                    ptr_location,
                 )));
             }
         }

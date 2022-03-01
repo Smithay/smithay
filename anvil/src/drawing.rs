@@ -2,11 +2,7 @@
 
 use std::sync::Mutex;
 
-#[cfg(feature = "image")]
-use image::{ImageBuffer, Rgba};
 use slog::Logger;
-#[cfg(feature = "image")]
-use smithay::backend::renderer::gles2::{Gles2Error, Gles2Renderer, Gles2Texture};
 use smithay::{
     backend::renderer::{Frame, ImportAll, Renderer, Texture},
     desktop::space::{RenderElement, SpaceOutputTuple, SurfaceTree},
@@ -75,11 +71,11 @@ pub struct PointerElement<T: Texture> {
 }
 
 impl<T: Texture> PointerElement<T> {
-    pub fn new(texture: T, relative_pointer_pos: Point<i32, Logical>) -> PointerElement<T> {
+    pub fn new(texture: T, pointer_pos: Point<i32, Logical>) -> PointerElement<T> {
         let size = texture.size().to_logical(1, Transform::Normal);
         PointerElement {
             texture,
-            position: relative_pointer_pos,
+            position: pointer_pos,
             size,
         }
     }
