@@ -1218,7 +1218,7 @@ impl Frame for Gles2Frame {
 
         let damage = at
             .iter()
-            .map(|rect| {
+            .flat_map(|rect| {
                 [
                     rect.loc.x as f32 / self.size.w as f32,
                     rect.loc.y as f32 / self.size.h as f32,
@@ -1226,7 +1226,6 @@ impl Frame for Gles2Frame {
                     rect.size.h as f32 / self.size.h as f32,
                 ]
             })
-            .flatten()
             .collect::<Vec<ffi::types::GLfloat>>();
 
         unsafe {
@@ -1371,7 +1370,7 @@ impl Frame for Gles2Frame {
 
         let damage = damage
             .iter()
-            .map(|rect| {
+            .flat_map(|rect| {
                 let src = src.size.to_f64();
                 let rect = rect.to_f64();
 
@@ -1390,7 +1389,6 @@ impl Frame for Gles2Frame {
                     (rect.size.h / src.h) as f32,
                 ]
             })
-            .flatten()
             .collect::<Vec<_>>();
 
         self.render_texture(texture, mat, Some(&damage), tex_verts, alpha)

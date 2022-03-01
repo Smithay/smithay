@@ -166,8 +166,7 @@ impl PopupManager {
             .or_else(|| {
                 self.popup_trees
                     .iter()
-                    .map(|tree| tree.iter_popups())
-                    .flatten()
+                    .flat_map(|tree| tree.iter_popups())
                     .find(|(p, _)| p.get_surface() == Some(surface))
                     .map(|(p, _)| p)
             })
@@ -243,8 +242,7 @@ impl PopupTree {
             .lock()
             .unwrap()
             .iter()
-            .map(|n| n.iter_popups_relative_to((0, 0)).map(|(p, l)| (p.clone(), l)))
-            .flatten()
+            .flat_map(|n| n.iter_popups_relative_to((0, 0)).map(|(p, l)| (p.clone(), l)))
             .collect::<Vec<_>>()
             .into_iter()
     }
@@ -301,15 +299,10 @@ impl PopupNode {
         loc: P,
     ) -> impl Iterator<Item = (&PopupKind, Point<i32, Logical>)> {
         let relative_to = loc.into() + self.surface.location();
-        std::iter::once((&self.surface, relative_to)).chain(
-            self.children
-                .iter()
-                .map(move |x| {
-                    Box::new(x.iter_popups_relative_to(relative_to))
-                        as Box<dyn Iterator<Item = (&PopupKind, Point<i32, Logical>)>>
-                })
-                .flatten(),
-        )
+        std::iter::once((&self.surface, relative_to)).chain(self.children.iter().flat_map(move |x| {
+            Box::new(x.iter_popups_relative_to(relative_to))
+                as Box<dyn Iterator<Item = (&PopupKind, Point<i32, Logical>)>>
+        }))
     }
 
     fn insert(&mut self, popup: PopupKind) -> bool {
