@@ -114,7 +114,11 @@ pub trait Texture {
 }
 
 /// A downloaded texture buffer
-pub trait TextureMapping: Texture {}
+pub trait TextureMapping: Texture {
+    /// Returns if the mapped buffer is flipped on the y-axis
+    /// (compared to the lower left being (0, 0))
+    fn flipped(&self) -> bool;
+}
 
 /// Helper trait for [`Renderer`], which defines a rendering api for a currently in-progress frame during [`Renderer::render`].
 pub trait Frame {
@@ -258,12 +262,18 @@ pub trait ImportMem: Renderer {
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
     /// This operation needs no bound or default rendering target.
     ///
+    /// Settings flipped to true will cause the buffer to be interpreted like the y-axis is flipped
+    /// (opposed to the lower left begin (0, 0)).
+    /// This is a texture specific property, so future uploads to the same texture via [`ImportMem::update_memory`]
+    /// will also be interpreted as flipped.
+    ///
     /// The provided data slice needs to be in RGBA8 format, its length should thus be `size.w * size.h * 4`.
     /// Anything beyond will be truncated, if the buffer is too small an error will be returned.
     fn import_memory(
         &mut self,
         data: &[u8],
         size: Size<i32, Buffer>,
+        flipped: bool,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 
     /// Import a given chunk of memory into an existing texture.

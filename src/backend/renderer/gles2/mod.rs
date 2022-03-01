@@ -177,7 +177,11 @@ impl Texture for Gles2Mapping {
         self.size
     }
 }
-impl TextureMapping for Gles2Mapping {}
+impl TextureMapping for Gles2Mapping {
+    fn flipped(&self) -> bool {
+        true
+    }
+}
 
 impl Drop for Gles2Mapping {
     fn drop(&mut self) {
@@ -850,7 +854,12 @@ impl ImportMem for Gles2Renderer {
         .map_err(Gles2Error::BufferAccessError)?
     }
 
-    fn import_memory(&mut self, data: &[u8], size: Size<i32, Buffer>) -> Result<Gles2Texture, Gles2Error> {
+    fn import_memory(
+        &mut self,
+        data: &[u8],
+        size: Size<i32, Buffer>,
+        flipped: bool,
+    ) -> Result<Gles2Texture, Gles2Error> {
         self.make_current()?;
 
         if data.len() < (size.w * size.h * 4) as usize {
@@ -884,7 +893,7 @@ impl ImportMem for Gles2Renderer {
                 texture: tex,
                 texture_kind: 0,
                 is_external: false,
-                y_inverted: false,
+                y_inverted: flipped,
                 size,
                 egl_images: None,
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
