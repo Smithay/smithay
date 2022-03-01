@@ -1,7 +1,7 @@
 use crate::{
-    backend::renderer::{Frame, ImportAll, Renderer, Texture},
+    backend::renderer::{ImportAll, Renderer},
     desktop::{
-        space::{Space, SpaceElement},
+        space::Space,
         window::{draw_window, Window},
     },
     utils::{Logical, Point, Rectangle},
@@ -55,43 +55,45 @@ pub fn window_loc(window: &Window, space_id: &usize) -> Point<i32, Logical> {
         .location
 }
 
-impl<R, F, E, T> SpaceElement<R, F, E, T> for Window
-where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
-{
-    fn id(&self) -> usize {
+impl Window {
+    pub(super) fn elem_id(&self) -> usize {
         self.0.id
     }
 
-    fn type_of(&self) -> TypeId {
+    pub(super) fn elem_type_of(&self) -> TypeId {
         TypeId::of::<Window>()
     }
 
-    fn location(&self, space_id: usize) -> Point<i32, Logical> {
+    pub(super) fn elem_location(&self, space_id: usize) -> Point<i32, Logical> {
         window_loc(self, &space_id)
     }
 
-    fn geometry(&self, space_id: usize) -> Rectangle<i32, Logical> {
+    pub(super) fn elem_geometry(&self, space_id: usize) -> Rectangle<i32, Logical> {
         window_rect_with_popups(self, &space_id)
     }
 
-    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
+    pub(super) fn elem_accumulated_damage(
+        &self,
+        for_values: Option<(&Space, &Output)>,
+    ) -> Vec<Rectangle<i32, Logical>> {
         self.accumulated_damage(for_values)
     }
 
-    fn draw(
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn elem_draw<R>(
         &self,
         space_id: usize,
         renderer: &mut R,
-        frame: &mut F,
+        frame: &mut <R as Renderer>::Frame,
         scale: f64,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
-    ) -> Result<(), R::Error> {
+    ) -> Result<(), <R as Renderer>::Error>
+    where
+        R: Renderer + ImportAll,
+        <R as Renderer>::TextureId: 'static,
+    {
         let res = draw_window(renderer, frame, self, scale, location, damage, log);
         if res.is_ok() {
             window_state(space_id, self).drawn = true;
@@ -99,7 +101,7 @@ where
         res
     }
 
-    fn z_index(&self) -> u8 {
+    pub(super) fn elem_z_index(&self) -> u8 {
         RenderZindex::Shell as u8
     }
 }

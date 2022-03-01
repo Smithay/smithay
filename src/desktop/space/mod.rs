@@ -394,19 +394,18 @@ impl Space {
     ///
     /// Returns a list of updated regions relative to the rendered output
     /// (or `None` if that list would be empty) in case of success.
-    pub fn render_output<R>(
+    pub fn render_output<R, E>(
         &mut self,
         renderer: &mut R,
         output: &Output,
         age: usize,
         clear_color: [f32; 4],
-        custom_elements: &[DynamicRenderElements<R>],
+        custom_elements: &[E],
     ) -> Result<Option<Vec<Rectangle<i32, Logical>>>, RenderError<R>>
     where
-        R: Renderer + ImportAll + 'static,
+        R: Renderer + ImportAll,
         R::TextureId: 'static,
-        R::Error: 'static,
-        R::Frame: 'static,
+        E: RenderElement<R>,
     {
         if !self.outputs.contains(output) {
             return Err(RenderError::UnmappedOutput);
@@ -426,14 +425,14 @@ impl Space {
         let window_popups = self
             .windows
             .iter()
-            .flat_map(|w| w.popup_elements::<R>(self.id))
+            .flat_map(|w| w.popup_elements(self.id))
             .collect::<Vec<_>>();
         let layer_popups = layer_map
             .layers()
-            .flat_map(|l| l.popup_elements::<R>(self.id))
+            .flat_map(|l| l.popup_elements(self.id))
             .collect::<Vec<_>>();
 
-        let mut render_elements: Vec<&SpaceElem<R>> = Vec::with_capacity(
+        let mut render_elements: Vec<SpaceElement<'_, R, E>> = Vec::with_capacity(
             custom_elements.len()
                 + layer_map.len()
                 + self.windows.len()
@@ -441,11 +440,15 @@ impl Space {
                 + layer_popups.len(),
         );
 
-        render_elements.extend(custom_elements.iter().map(|l| l as &SpaceElem<R>));
-        render_elements.extend(self.windows.iter().map(|l| l as &SpaceElem<R>));
-        render_elements.extend(window_popups.iter().map(|l| l as &SpaceElem<R>));
-        render_elements.extend(layer_map.layers().map(|l| l as &SpaceElem<R>));
-        render_elements.extend(layer_popups.iter().map(|l| l as &SpaceElem<R>));
+        render_elements.extend(
+            custom_elements
+                .iter()
+                .map(|e| SpaceElement::Custom(e, std::marker::PhantomData)),
+        );
+        render_elements.extend(self.windows.iter().map(SpaceElement::Window));
+        render_elements.extend(window_popups.iter().map(SpaceElement::Popup));
+        render_elements.extend(layer_map.layers().map(SpaceElement::Layer));
+        render_elements.extend(layer_popups.iter().map(SpaceElement::Popup));
 
         render_elements.sort_by_key(|e| e.z_index());
 
@@ -457,7 +460,7 @@ impl Space {
             .last_state
             .iter()
             .filter_map(|(id, geo)| {
-                if !render_elements.iter().any(|e| ToplevelId::from(*e) == *id) {
+                if !render_elements.iter().any(|e| ToplevelId::from(e) == *id) {
                     Some(*geo)
                 } else {
                     None
@@ -472,7 +475,7 @@ impl Space {
         // lets iterate front to back and figure out, what new windows or unmoved windows we have
         for element in &render_elements {
             let geo = element.geometry(self.id);
-            let old_geo = state.last_state.get(&ToplevelId::from(*element)).cloned();
+            let old_geo = state.last_state.get(&ToplevelId::from(element)).cloned();
 
             // window was moved or resized
             if old_geo.map(|old_geo| old_geo != geo).unwrap_or(false) {
@@ -592,7 +595,7 @@ impl Space {
             .iter()
             .map(|elem| {
                 let geo = elem.geometry(self.id);
-                (ToplevelId::from(*elem), geo)
+                (ToplevelId::from(elem), geo)
             })
             .collect();
         state.old_damage.push_front(new_damage.clone());
@@ -659,4 +662,157 @@ impl<R: Renderer> fmt::Debug for RenderError<R> {
             RenderError::UnmappedOutput => f.write_str("Output was not mapped to this space"),
         }
     }
+}
+
+#[cfg_attr(
+    not(feature = "renderer_gl"),
+    doc = r##"
+/// Macro to collate multiple [`smithay::desktop::RenderElement`]-implementations
+/// into one type to be used with [`Space::render_output`].
+"##
+)]
+#[cfg_attr(
+    feature = "renderer_gl",
+    doc = r##"
+/// Macro to collate multiple [`smithay::desktop::RenderElement`]-implementations
+/// into one type to be used with [`Space::render_output`].
+/// ## Example
+///
+/// ```no_run
+/// use smithay::{
+///     backend::renderer::{
+///         Texture, Renderer, ImportAll,
+///         gles2::{Gles2Renderer, Gles2Texture},
+///     },
+///     desktop::space::{SurfaceTree, Space, SpaceOutputTuple, RenderElement},
+///     utils::{Point, Size, Rectangle, Transform, Logical},
+/// };
+/// use slog::Logger;
+///
+/// smithay::custom_elements! {
+///     CustomElem; // name of the new type
+///     Gles2Renderer; // type of the renderer used
+///     SurfaceTree=SurfaceTree, // <variant name> = <type to collate>
+///     PointerElement=PointerElement::<Gles2Texture>, // custom pointer rendering
+/// };
+///
+/// pub struct PointerElement<T: Texture> {
+///    texture: T,
+///    position: Point<i32, Logical>,
+///    size: Size<i32, Logical>,
+/// }
+///
+/// impl<T: Texture> PointerElement<T> {
+///    pub fn new(texture: T, pointer_pos: Point<i32, Logical>) -> PointerElement<T> {
+///        let size = texture.size().to_logical(1, Transform::Normal);
+///        PointerElement {
+///            texture,
+///            position: pointer_pos,
+///            size,
+///        }
+///    }
+/// }
+///
+///# impl<R> RenderElement<R> for PointerElement<<R as Renderer>::TextureId>
+///# where
+///#    R: Renderer + ImportAll,
+///#    <R as Renderer>::TextureId: 'static,
+///# {
+///#    fn id(&self) -> usize {
+///#        0
+///#    }
+///#
+///#    fn geometry(&self) -> Rectangle<i32, Logical> {
+///#        Rectangle::from_loc_and_size(self.position, self.size)
+///#    }
+///#
+///#    fn accumulated_damage(&self, _: Option<SpaceOutputTuple<'_, '_>>) -> Vec<Rectangle<i32, Logical>> {
+///#        vec![]
+///#    }
+///#
+///#    fn draw(
+///#        &self,
+///#        _renderer: &mut R,
+///#        frame: &mut <R as Renderer>::Frame,
+///#        scale: f64,
+///#        location: Point<i32, Logical>,
+///#        damage: &[Rectangle<i32, Logical>],
+///#        _log: &Logger,
+///#    ) -> Result<(), <R as Renderer>::Error> {
+///#        Ok(())
+///#    }
+///# }
+///# // just placeholders
+///# let mut renderer = unsafe { std::mem::zeroed::<Gles2Renderer>() };
+///# let texture = unsafe { std::mem::zeroed::<Gles2Texture>() };
+///# let output = unsafe { std::mem::zeroed() };
+///# let mut space = Space::new(None);
+///# let age = 0;
+///
+/// let elements = [CustomElem::from(PointerElement::new(texture, (0, 0).into()))];
+/// space.render_output(&mut renderer, &output, age, [0.0, 0.0, 0.0, 1.0], &elements);
+/// ```
+"##
+)]
+#[macro_export]
+macro_rules! custom_elements {
+    ($name:ident; $renderer:ty;) => {};
+    ($name:ident; $renderer:ty; $($body:ident=$field:ty),* $(,)?) => {
+        enum $name { $($body($field)),* }
+
+        impl $crate::desktop::space::RenderElement<$renderer> for $name
+        {
+            fn id(&self) -> usize {
+                match self {
+                    $($name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::id(x)),*
+                }
+            }
+
+            fn type_of(&self) -> std::any::TypeId {
+                match self {
+                    $($name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::type_of(x)),*
+                }
+            }
+
+            fn geometry(&self) -> $crate::utils::Rectangle<i32, $crate::utils::Logical> {
+                match self {
+                    $($name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::geometry(x)),*
+                }
+            }
+
+            fn accumulated_damage(&self, for_values: std::option::Option<$crate::desktop::space::SpaceOutputTuple<'_, '_>>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Logical>> {
+                match self {
+                    $($name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::accumulated_damage(x, for_values)),*
+                }
+            }
+
+            fn draw(
+                &self,
+                renderer: &mut $renderer,
+                frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
+                scale: f64,
+                location: $crate::utils::Point<i32, $crate::utils::Logical>,
+                damage: &[$crate::utils::Rectangle<i32, $crate::utils::Logical>],
+                log: &slog::Logger,
+            ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>{
+                match self {
+                    $($name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::draw(x, renderer, frame, scale, location, damage, log)),*
+                }
+            }
+
+            fn z_index(&self) -> u8 {
+                match self {
+                    $($name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::z_index(x)),*
+                }
+            }
+        }
+
+        $(
+            impl From<$field> for $name {
+                fn from(field: $field) -> $name {
+                    $name::$body(field)
+                }
+            }
+        )*
+    };
 }

@@ -1,8 +1,8 @@
 use crate::{
-    backend::renderer::{Frame, ImportAll, Renderer, Texture},
+    backend::renderer::{ImportAll, Renderer},
     desktop::{
         layer::{layer_state as output_layer_state, *},
-        space::{Space, SpaceElement},
+        space::Space,
     },
     utils::{Logical, Point, Rectangle},
     wayland::{output::Output, shell::wlr_layer::Layer},
@@ -29,42 +29,44 @@ pub fn layer_state(space: usize, l: &LayerSurface) -> RefMut<'_, LayerState> {
     })
 }
 
-impl<R, F, E, T> SpaceElement<R, F, E, T> for LayerSurface
-where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
-{
-    fn id(&self) -> usize {
+impl LayerSurface {
+    pub(super) fn elem_id(&self) -> usize {
         self.0.id
     }
 
-    fn type_of(&self) -> TypeId {
+    pub(super) fn elem_type_of(&self) -> TypeId {
         TypeId::of::<LayerSurface>()
     }
 
-    fn geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
+    pub(super) fn elem_geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
         let mut bbox = self.bbox_with_popups();
         let state = output_layer_state(self);
         bbox.loc += state.location;
         bbox
     }
 
-    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
+    pub(super) fn elem_accumulated_damage(
+        &self,
+        for_values: Option<(&Space, &Output)>,
+    ) -> Vec<Rectangle<i32, Logical>> {
         self.accumulated_damage(for_values)
     }
 
-    fn draw(
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn elem_draw<R>(
         &self,
         space_id: usize,
         renderer: &mut R,
-        frame: &mut F,
+        frame: &mut <R as Renderer>::Frame,
         scale: f64,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
-    ) -> Result<(), R::Error> {
+    ) -> Result<(), <R as Renderer>::Error>
+    where
+        R: Renderer + ImportAll,
+        <R as Renderer>::TextureId: 'static,
+    {
         let res = draw_layer_surface(renderer, frame, self, scale, location, damage, log);
         if res.is_ok() {
             layer_state(space_id, self).drawn = true;
@@ -72,7 +74,7 @@ where
         res
     }
 
-    fn z_index(&self) -> u8 {
+    pub(super) fn elem_z_index(&self) -> u8 {
         if let Some(layer) = self.layer() {
             let z_index = match layer {
                 Layer::Background => RenderZindex::Background,

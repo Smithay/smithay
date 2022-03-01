@@ -1,6 +1,6 @@
 use crate::{
-    backend::renderer::{Frame, ImportAll, Renderer, Texture},
-    desktop::space::SpaceElement,
+    backend::renderer::{ImportAll, Renderer},
+    desktop::space::{RenderElement, SpaceElement},
     utils::{Logical, Point, Rectangle},
     wayland::output::Output,
 };
@@ -19,14 +19,13 @@ pub struct ToplevelId {
     id: usize,
 }
 
-impl<R, F, E, T> From<&dyn SpaceElement<R, F, E, T>> for ToplevelId
+impl<'a, R, E> From<&SpaceElement<'a, R, E>> for ToplevelId
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll + 'static,
-    F: Frame<Error = E, TextureId = T> + 'static,
-    E: std::error::Error + 'static,
-    T: Texture + 'static,
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+    E: RenderElement<R>,
 {
-    fn from(elem: &dyn SpaceElement<R, F, E, T>) -> ToplevelId {
+    fn from(elem: &SpaceElement<'a, R, E>) -> ToplevelId {
         ToplevelId {
             t_id: elem.type_of(),
             id: elem.id(),

@@ -26,7 +26,7 @@ use smithay::{
         udev::{UdevBackend, UdevEvent},
         SwapBuffersError,
     },
-    desktop::space::{DynamicRenderElements, RenderError, Space},
+    desktop::space::{RenderError, Space, SurfaceTree},
     reexports::{
         calloop::{
             timer::{Timer, TimerHandle},
@@ -72,6 +72,11 @@ use crate::{
     drawing::*,
     state::{AnvilState, Backend},
 };
+
+#[cfg(feature = "debug")]
+smithay::custom_elements!(CustomElem; UdevRenderer<'_>; SurfaceTree=SurfaceTree, PointerElement=PointerElement::<MultiTexture>, FpsElement=FpsElement::<MultiTexture>);
+#[cfg(not(feature = "debug"))]
+smithay::custom_elements!(CustomElem; UdevRenderer<'_>; SurfaceTree=SurfaceTree, PointerElement=PointerElement::<MultiTexture>);
 
 #[derive(Copy, Clone)]
 pub struct SessionFd(RawFd);
@@ -769,7 +774,7 @@ fn render_surface(
     let (dmabuf, age) = surface.surface.next_buffer()?;
     renderer.bind(dmabuf)?;
 
-    let mut elements: Vec<DynamicRenderElements<Gles2Renderer>> = Vec::new();
+    let mut elements: Vec<CustomElem> = Vec::new();
     // set cursor
     if output_geometry.to_f64().contains(pointer_location) {
         let (ptr_x, ptr_y) = pointer_location.into();
@@ -779,7 +784,7 @@ fn render_surface(
         {
             if let Some(ref wl_surface) = dnd_icon.as_ref() {
                 if wl_surface.as_ref().is_alive() {
-                    elements.push(Box::new(draw_dnd_icon(
+                    elements.push(CustomElem::from(draw_dnd_icon(
                         (*wl_surface).clone(),
                         relative_ptr_location,
                         logger,
@@ -800,13 +805,13 @@ fn render_surface(
             }
 
             if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
-                elements.push(Box::new(draw_cursor(
+                elements.push(CustomElem::from(draw_cursor(
                     wl_surface.clone(),
                     relative_ptr_location,
                     logger,
                 )));
             } else {
-                elements.push(Box::new(PointerElement::new(
+                elements.push(CustomElem::from(PointerElement::new(
                     pointer_image.clone(),
                     relative_ptr_location,
                 )));
@@ -815,7 +820,10 @@ fn render_surface(
 
         #[cfg(feature = "debug")]
         {
-            elements.push(Box::new(draw_fps(fps_texture, surface.fps.avg().round() as u32)));
+            elements.push(CustomElem::from(draw_fps::<UdevRenderer<'_>>(
+                fps_texture,
+                surface.fps.avg().round() as u32,
+            )));
             surface.fps.tick();
         }
     }

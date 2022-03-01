@@ -4,16 +4,24 @@ use std::{
     sync::{atomic::Ordering, Arc, Mutex},
 };
 
+use crate::{drawing::*, state::Backend, AnvilState};
+#[cfg(feature = "debug")]
+use image::GenericImageView;
 use slog::Logger;
+#[cfg(feature = "debug")]
+use smithay::backend::renderer::ImportMem;
 #[cfg(feature = "egl")]
 use smithay::{backend::renderer::ImportDma, wayland::dmabuf::init_dmabuf_global};
 use smithay::{
     backend::{
         egl::{EGLContext, EGLDisplay},
-        renderer::{gles2::Gles2Renderer, Bind, ImportEgl},
+        renderer::{
+            gles2::{Gles2Renderer, Gles2Texture},
+            Bind, ImportEgl,
+        },
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
-    desktop::space::RenderElement,
+    desktop::space::SurfaceTree,
     reexports::{
         calloop::EventLoop,
         gbm,
@@ -25,10 +33,10 @@ use smithay::{
     },
 };
 
-use crate::{drawing::*, state::Backend, AnvilState};
-
+#[cfg(not(feature = "debug"))]
+smithay::custom_elements!(CustomElem; Gles2Renderer; SurfaceTree=SurfaceTree, PointerElement=PointerElement::<Gles2Texture>);
 #[cfg(feature = "debug")]
-use smithay::backend::renderer::gles2::Gles2Texture;
+smithay::custom_elements!(CustomElem; Gles2Renderer; SurfaceTree=SurfaceTree, PointerElement=PointerElement::<Gles2Texture>, FpsElement=FpsElement::<Gles2Texture>);
 
 pub const OUTPUT_NAME: &str = "x11";
 
@@ -107,7 +115,7 @@ pub fn run_x11(log: Logger) {
             init_dmabuf_global(
                 &mut *display.borrow_mut(),
                 dmabuf_formats,
-                move |buffer, _| renderer.borrow_mut().import_dmabuf(buffer).is_ok(),
+                move |buffer, _| renderer.borrow_mut().import_dmabuf(buffer, None).is_ok(),
                 log.clone(),
             );
         }
@@ -124,23 +132,25 @@ pub fn run_x11(log: Logger) {
         refresh: 60_000,
     };
 
+    #[cfg(feature = "debug")]
+    let fps_image =
+        image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
+            .decode()
+            .unwrap();
     let data = X11Data {
         render: true,
         mode,
         surface,
         #[cfg(feature = "debug")]
         fps_texture: {
-            import_bitmap(
-                &mut *renderer.borrow_mut(),
-                &image::io::Reader::with_format(
-                    std::io::Cursor::new(FPS_NUMBERS_PNG),
-                    image::ImageFormat::Png,
+            renderer
+                .borrow_mut()
+                .import_memory(
+                    &fps_image.to_rgba8(),
+                    (fps_image.width() as i32, fps_image.height() as i32).into(),
+                    false,
                 )
-                .decode()
-                .unwrap()
-                .to_rgba8(),
-            )
-            .expect("Unable to upload FPS texture")
+                .expect("Unable to upload FPS texture")
         },
         #[cfg(feature = "debug")]
         fps: fps_ticker::Fps::default(),
@@ -228,10 +238,11 @@ pub fn run_x11(log: Logger) {
             // draw the dnd icon if any
             if let Some(ref surface) = *dnd_guard {
                 if surface.as_ref().is_alive() {
-                    elements.push(
-                        Box::new(draw_dnd_icon(surface.clone(), (x as i32, y as i32), &log))
-                            as Box<dyn RenderElement<_, _, _, _>>,
-                    );
+                    elements.push(CustomElem::from(draw_dnd_icon(
+                        surface.clone(),
+                        (x as i32, y as i32),
+                        &log,
+                    )));
                 }
             }
 
@@ -246,7 +257,11 @@ pub fn run_x11(log: Logger) {
             }
             if let CursorImageStatus::Image(ref surface) = *cursor_guard {
                 cursor_visible = false;
-                elements.push(Box::new(draw_cursor(surface.clone(), (x as i32, y as i32), &log)));
+                elements.push(CustomElem::from(draw_cursor(
+                    surface.clone(),
+                    (x as i32, y as i32),
+                    &log,
+                )));
             } else {
                 cursor_visible = true;
             }
@@ -254,7 +269,7 @@ pub fn run_x11(log: Logger) {
             // draw FPS
             #[cfg(feature = "debug")]
             {
-                elements.push(Box::new(draw_fps(fps_texture, fps)));
+                elements.push(CustomElem::from(draw_fps::<Gles2Renderer>(fps_texture, fps)));
             }
 
             let render_res = crate::render::render_output(

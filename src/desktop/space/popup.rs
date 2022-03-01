@@ -1,9 +1,9 @@
 use crate::{
-    backend::renderer::{Frame, ImportAll, Renderer, Texture},
+    backend::renderer::Renderer,
     desktop::{
         layer::LayerSurface,
         popup::{PopupKind, PopupManager},
-        space::{window_loc, Space, SpaceElement},
+        space::{window_loc, Space},
         utils::{bbox_from_surface_tree, damage_from_surface_tree},
         window::Window,
     },
@@ -22,13 +22,7 @@ pub struct RenderPopup {
 }
 
 impl Window {
-    pub(super) fn popup_elements<R>(&self, space_id: usize) -> impl Iterator<Item = RenderPopup>
-    where
-        R: Renderer + ImportAll + 'static,
-        R::TextureId: 'static,
-        R::Error: 'static,
-        R::Frame: 'static,
-    {
+    pub(super) fn popup_elements(&self, space_id: usize) -> impl Iterator<Item = RenderPopup> {
         let loc = window_loc(self, &space_id) + self.geometry().loc;
         self.toplevel()
             .get_surface()
@@ -52,17 +46,8 @@ impl Window {
 }
 
 impl LayerSurface {
-    pub(super) fn popup_elements<R>(&self, space_id: usize) -> impl Iterator<Item = RenderPopup> + '_
-    where
-        R: Renderer + ImportAll + 'static,
-        R::TextureId: 'static,
-        R::Error: 'static,
-        R::Frame: 'static,
-    {
-        type SpaceElem<R> =
-            dyn SpaceElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>;
-
-        let loc = (self as &SpaceElem<R>).geometry(space_id).loc;
+    pub(super) fn popup_elements(&self, space_id: usize) -> impl Iterator<Item = RenderPopup> + '_ {
+        let loc = self.elem_geometry(space_id).loc;
         self.get_surface()
             .map(move |surface| {
                 PopupManager::popups_for_surface(surface)
@@ -93,25 +78,19 @@ impl LayerSurface {
     }
 }
 
-impl<R, F, E, T> SpaceElement<R, F, E, T> for RenderPopup
-where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
-{
-    fn id(&self) -> usize {
+impl RenderPopup {
+    pub(super) fn elem_id(&self) -> usize {
         self.popup
             .get_surface()
             .map(|s| s.as_ref().id() as usize)
             .unwrap_or(0)
     }
 
-    fn type_of(&self) -> TypeId {
+    pub(super) fn elem_type_of(&self) -> TypeId {
         TypeId::of::<RenderPopup>()
     }
 
-    fn geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
+    pub(super) fn elem_geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
         if let Some(surface) = self.popup.get_surface() {
             bbox_from_surface_tree(surface, self.location)
         } else {
@@ -119,7 +98,10 @@ where
         }
     }
 
-    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
+    pub(super) fn elem_accumulated_damage(
+        &self,
+        for_values: Option<(&Space, &Output)>,
+    ) -> Vec<Rectangle<i32, Logical>> {
         if let Some(surface) = self.popup.get_surface() {
             damage_from_surface_tree(surface, (0, 0), for_values)
         } else {
@@ -128,21 +110,24 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn draw(
+    pub(super) fn elem_draw<R>(
         &self,
         _space_id: usize,
         _renderer: &mut R,
-        _frame: &mut F,
+        _frame: &mut <R as Renderer>::Frame,
         _scale: f64,
         _location: Point<i32, Logical>,
         _damage: &[Rectangle<i32, Logical>],
         _log: &slog::Logger,
-    ) -> Result<(), R::Error> {
+    ) -> Result<(), <R as Renderer>::Error>
+    where
+        R: Renderer,
+    {
         // popups are special, we track them, but they render with their parents
         Ok(())
     }
 
-    fn z_index(&self) -> u8 {
+    pub(super) fn elem_z_index(&self) -> u8 {
         self.z_index
     }
 }

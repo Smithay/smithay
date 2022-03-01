@@ -8,10 +8,7 @@ use slog::Logger;
 #[cfg(feature = "image")]
 use smithay::backend::renderer::gles2::{Gles2Error, Gles2Renderer, Gles2Texture};
 use smithay::{
-    backend::{
-        renderer::{Frame, ImportAll, Renderer, Texture},
-        SwapBuffersError,
-    },
+    backend::renderer::{Frame, ImportAll, Renderer, Texture},
     desktop::space::{RenderElement, SpaceOutputTuple, SurfaceTree},
     reexports::wayland_server::protocol::wl_surface,
     utils::{Logical, Point, Rectangle, Size, Transform},
@@ -23,17 +20,11 @@ use smithay::{
 
 pub static CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.9, 1.0];
 
-pub fn draw_cursor<R, F, E, T>(
+pub fn draw_cursor(
     surface: wl_surface::WlSurface,
     location: impl Into<Point<i32, Logical>>,
     log: &Logger,
-) -> impl RenderElement<R, F, E, T>
-where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll + 'static,
-    F: Frame<Error = E, TextureId = T> + 'static,
-    E: std::error::Error + Into<SwapBuffersError> + 'static,
-    T: Texture + 'static,
-{
+) -> SurfaceTree {
     let mut position = location.into();
     let ret = with_states(&surface, |states| {
         Some(
@@ -60,17 +51,11 @@ where
     SurfaceTree { surface, position }
 }
 
-pub fn draw_dnd_icon<R, F, E, T>(
+pub fn draw_dnd_icon(
     surface: wl_surface::WlSurface,
     location: impl Into<Point<i32, Logical>>,
     log: &Logger,
-) -> impl RenderElement<R, F, E, T>
-where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll + 'static,
-    F: Frame<Error = E, TextureId = T> + 'static,
-    E: std::error::Error + Into<SwapBuffersError> + 'static,
-    T: Texture + 'static,
-{
+) -> SurfaceTree {
     if get_role(&surface) != Some("dnd_icon") {
         warn!(
             log,
@@ -100,12 +85,10 @@ impl<T: Texture> PointerElement<T> {
     }
 }
 
-impl<R, F, E, T> RenderElement<R, F, E, T> for PointerElement<T>
+impl<R> RenderElement<R> for PointerElement<<R as Renderer>::TextureId>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll + 'static,
-    F: Frame<Error = E, TextureId = T> + 'static,
-    E: std::error::Error + Into<SwapBuffersError> + 'static,
-    T: Texture + 'static,
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
 {
     fn id(&self) -> usize {
         0
@@ -122,12 +105,12 @@ where
     fn draw(
         &self,
         _renderer: &mut R,
-        frame: &mut F,
+        frame: &mut <R as Renderer>::Frame,
         scale: f64,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         _log: &Logger,
-    ) -> Result<(), R::Error> {
+    ) -> Result<(), <R as Renderer>::Error> {
         frame.render_texture_at(
             &self.texture,
             location.to_f64().to_physical(scale).to_i32_round(),
@@ -154,12 +137,10 @@ pub struct FpsElement<T: Texture> {
 }
 
 #[cfg(feature = "debug")]
-impl<R, F, E, T> RenderElement<R, F, E, T> for FpsElement<T>
+impl<R> RenderElement<R> for FpsElement<<R as Renderer>::TextureId>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll + 'static,
-    F: Frame<Error = E, TextureId = T> + 'static,
-    E: std::error::Error + Into<SwapBuffersError> + 'static,
-    T: Texture + 'static,
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
 {
     fn id(&self) -> usize {
         0
@@ -183,12 +164,12 @@ where
     fn draw(
         &self,
         _renderer: &mut R,
-        frame: &mut F,
+        frame: &mut <R as Renderer>::Frame,
         scale: f64,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         _log: &Logger,
-    ) -> Result<(), R::Error> {
+    ) -> Result<(), <R as Renderer>::Error> {
         let value_str = std::cmp::min(self.value, 999).to_string();
         let location = location.to_f64().to_physical(scale);
         let mut offset_x = location.x;
@@ -237,49 +218,13 @@ where
 }
 
 #[cfg(feature = "debug")]
-pub fn draw_fps<R, F, E, T>(texture: &T, value: u32) -> impl RenderElement<R, F, E, T>
+pub fn draw_fps<R>(texture: &<R as Renderer>::TextureId, value: u32) -> FpsElement<<R as Renderer>::TextureId>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll + 'static,
-    F: Frame<Error = E, TextureId = T> + 'static,
-    E: std::error::Error + Into<SwapBuffersError> + 'static,
-    T: Texture + Clone + 'static,
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: Clone,
 {
     FpsElement {
         value,
         texture: texture.clone(),
     }
-}
-
-#[cfg(feature = "image")]
-pub fn import_bitmap<C: std::ops::Deref<Target = [u8]>>(
-    renderer: &mut Gles2Renderer,
-    image: &ImageBuffer<Rgba<u8>, C>,
-) -> Result<Gles2Texture, Gles2Error> {
-    use smithay::backend::renderer::gles2::ffi;
-
-    renderer.with_context(|renderer, gl| unsafe {
-        let mut tex = 0;
-        gl.GenTextures(1, &mut tex);
-        gl.BindTexture(ffi::TEXTURE_2D, tex);
-        gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
-        gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
-        gl.TexImage2D(
-            ffi::TEXTURE_2D,
-            0,
-            ffi::RGBA as i32,
-            image.width() as i32,
-            image.height() as i32,
-            0,
-            ffi::RGBA,
-            ffi::UNSIGNED_BYTE as u32,
-            image.as_ptr() as *const _,
-        );
-        gl.BindTexture(ffi::TEXTURE_2D, 0);
-
-        Gles2Texture::from_raw(
-            renderer,
-            tex,
-            (image.width() as i32, image.height() as i32).into(),
-        )
-    })
 }
