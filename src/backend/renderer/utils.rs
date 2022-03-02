@@ -1,7 +1,7 @@
 //! Utility module for helpers around drawing [`WlSurface`]s with [`Renderer`]s.
 
 use crate::{
-    backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer, Texture},
+    backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
     utils::{Buffer, Logical, Point, Rectangle, Size, Transform},
     wayland::compositor::{
         is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
@@ -128,9 +128,10 @@ where
                 let data = &mut *data_ref;
                 let attributes = states.cached_state.current::<SurfaceAttributes>();
                 // Import a new buffer if available
-                let surface_size = data.surface_size().unwrap();
+                let surface_size = data.surface_size();
                 if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
+                        let surface_size = surface_size.unwrap();
                         let buffer_damage = attributes
                             .damage
                             .iter()
@@ -186,23 +187,21 @@ where
 /// Note: This element will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn draw_surface_tree<R, E, F, T>(
+pub fn draw_surface_tree<R>(
     renderer: &mut R,
-    frame: &mut F,
+    frame: &mut <R as Renderer>::Frame,
     surface: &WlSurface,
     scale: f64,
     location: Point<i32, Logical>,
     damage: &[Rectangle<i32, Logical>],
     log: &slog::Logger,
-) -> Result<(), R::Error>
+) -> Result<(), <R as Renderer>::Error>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
 {
     let mut result = Ok(());
-    let texture_id = (TypeId::of::<T>(), renderer.id());
+    let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
     with_surface_tree_upward(
         surface,
         location,
@@ -213,9 +212,10 @@ where
                 let data = &mut *data_ref;
                 let attributes = states.cached_state.current::<SurfaceAttributes>();
                 // Import a new buffer if necessary
-                let surface_size = data.surface_size().unwrap();
+                let surface_size = data.surface_size();
                 if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
+                        let surface_size = surface_size.unwrap();
                         let buffer_damage = attributes
                             .damage
                             .iter()
@@ -270,7 +270,7 @@ where
                 if let Some(texture) = data
                     .textures
                     .get_mut(&texture_id)
-                    .and_then(|x| x.downcast_mut::<T>())
+                    .and_then(|x| x.downcast_mut::<<R as Renderer>::TextureId>())
                 {
                     let dimensions = dimensions.unwrap();
                     // we need to re-extract the subsurface offset, as the previous closure
