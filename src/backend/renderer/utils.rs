@@ -98,6 +98,85 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
     }
 }
 
+/// Imports buffers of a surface and its subsurfaces using a given [`Renderer`].
+///
+/// This can be called early as an optimization, if `draw_surface_tree` is used later.
+/// `draw_surface_tree` will also import buffers as necessary, but calling `import_surface_tree`
+/// already may allow buffer imports to happen before compositing takes place, depending
+/// on your event loop.
+///
+/// Note: This will do nothing, if you are not using
+/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
+/// to let smithay handle buffer management.
+pub fn import_surface_tree<R>(
+    renderer: &mut R,
+    surface: &WlSurface,
+    log: &slog::Logger,
+) -> Result<(), <R as Renderer>::Error>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+{
+    let mut result = Ok(());
+    let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
+    with_surface_tree_upward(
+        surface,
+        (),
+        |_surface, states, _| {
+            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+                let mut data_ref = data.borrow_mut();
+                let data = &mut *data_ref;
+                let attributes = states.cached_state.current::<SurfaceAttributes>();
+                // Import a new buffer if available
+                let surface_size = data.surface_size().unwrap();
+                if let Entry::Vacant(e) = data.textures.entry(texture_id) {
+                    if let Some(buffer) = data.buffer.as_ref() {
+                        let buffer_damage = attributes
+                            .damage
+                            .iter()
+                            .map(|dmg| match dmg {
+                                Damage::Buffer(rect) => *rect,
+                                Damage::Surface(rect) => rect.to_buffer(
+                                    attributes.buffer_scale,
+                                    attributes.buffer_transform.into(),
+                                    &surface_size,
+                                ),
+                            })
+                            .collect::<Vec<_>>();
+
+                        match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
+                            Some(Ok(m)) => {
+                                e.insert(Box::new(m));
+                            }
+                            Some(Err(err)) => {
+                                slog::warn!(log, "Error loading buffer: {}", err);
+                                result = Err(err);
+                            }
+                            None => {
+                                slog::error!(log, "Unknown buffer format for: {:?}", buffer);
+                            }
+                        }
+                    }
+                }
+                // Now, was the import successful?
+                if data.textures.contains_key(&texture_id) {
+                    TraversalAction::DoChildren(())
+                } else {
+                    // we are not displayed, so our children are neither
+                    TraversalAction::SkipChildren
+                }
+            } else {
+                // we are not displayed, so our children are neither
+                TraversalAction::SkipChildren
+            }
+        },
+        |_, _, _| {},
+        |_, _, _| true,
+    );
+
+    result
+}
+
 /// Draws a surface and its subsurfaces using a given [`Renderer`] and [`Frame`].
 ///
 /// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
