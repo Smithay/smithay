@@ -21,7 +21,8 @@ mod shaders;
 mod version;
 
 use super::{
-    Bind, ExportDma, ExportMem, Frame, Offscreen, Renderer, Texture, TextureFilter, TextureMapping, Unbind,
+    Bind, ExportDma, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer, Texture, TextureFilter,
+    TextureMapping, Unbind,
 };
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
@@ -37,7 +38,7 @@ use crate::utils::{Buffer, Physical, Rectangle, Size, Transform};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use super::ImportEgl;
 #[cfg(feature = "wayland_frontend")]
-use super::{ImportDma, ImportMem};
+use super::{ImportDmaWl, ImportMemWl};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
 #[cfg(feature = "wayland_frontend")]
@@ -759,7 +760,7 @@ impl Gles2Renderer {
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl ImportMem for Gles2Renderer {
+impl ImportMemWl for Gles2Renderer {
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -872,6 +873,17 @@ impl ImportMem for Gles2Renderer {
         .map_err(Gles2Error::BufferAccessError)?
     }
 
+    fn shm_formats(&self) -> &[wl_shm::Format] {
+        &[
+            wl_shm::Format::Abgr8888,
+            wl_shm::Format::Xbgr8888,
+            wl_shm::Format::Argb8888,
+            wl_shm::Format::Xrgb8888,
+        ]
+    }
+}
+
+impl ImportMem for Gles2Renderer {
     fn import_memory(
         &mut self,
         data: &[u8],
@@ -959,16 +971,6 @@ impl ImportMem for Gles2Renderer {
 
         Ok(())
     }
-
-    #[cfg(feature = "wayland_frontend")]
-    fn shm_formats(&self) -> &[wl_shm::Format] {
-        &[
-            wl_shm::Format::Abgr8888,
-            wl_shm::Format::Xbgr8888,
-            wl_shm::Format::Argb8888,
-            wl_shm::Format::Xrgb8888,
-        ]
-    }
 }
 
 #[cfg(all(
@@ -1044,7 +1046,6 @@ impl ImportEgl for Gles2Renderer {
     }
 }
 
-#[cfg(feature = "wayland_frontend")]
 impl ImportDma for Gles2Renderer {
     fn import_dmabuf(
         &mut self,
@@ -1081,13 +1082,14 @@ impl ImportDma for Gles2Renderer {
         })
     }
 
-    #[cfg(feature = "wayland_frontend")]
     fn dmabuf_formats<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Format> + 'a> {
         Box::new(self.egl.dmabuf_texture_formats().iter())
     }
 }
 
 #[cfg(feature = "wayland_frontend")]
+impl ImportDmaWl for Gles2Renderer {}
+
 impl Gles2Renderer {
     fn existing_dmabuf_texture(&self, buffer: &Dmabuf) -> Result<Option<Gles2Texture>, Gles2Error> {
         let existing_texture = self

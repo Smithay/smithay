@@ -17,15 +17,15 @@ use crate::backend::{
 ))]
 use crate::{
     backend::{
-        allocator::dmabuf::Dmabuf,
+        allocator::{dmabuf::Dmabuf, Buffer},
         egl::display::EGLBufferReader,
         renderer::{
-            multigpu::{Error as MultigpuError, MultiRenderer},
+            multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
             ImportEgl, Offscreen, Renderer,
         },
     },
     reexports::wayland_server::protocol::wl_buffer,
-    utils::{Buffer, Rectangle},
+    utils::{Buffer as BufferCoords, Rectangle},
 };
 
 /// Errors raised by the [`EglGlesBackend`]
@@ -157,18 +157,34 @@ where
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
-        damage: &[Rectangle<i32, Buffer>],
+        damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         if let Some(ref mut renderer) = self.target.as_mut() {
             if let Ok(dmabuf) = Self::try_import_egl(renderer.renderer_mut(), buffer) {
                 let node = *renderer.node();
-                return self.import_dmabuf_internal(Some(node), &dmabuf, surface, Some(buffer), Some(damage));
+                let texture = MultiTexture::from_surface(surface, dmabuf.size());
+                let texture_ref = texture.0.clone();
+                let res = self.import_dmabuf_internal(Some(node), &dmabuf, texture, Some(damage));
+                if res.is_ok() {
+                    if let Some(surface) = surface {
+                        surface.data_map.insert_if_missing(|| texture_ref);
+                    }
+                }
+                return res;
             }
         }
         for renderer in self.other_renderers.iter_mut() {
             if let Ok(dmabuf) = Self::try_import_egl(renderer.renderer_mut(), buffer) {
                 let node = *renderer.node();
-                return self.import_dmabuf_internal(Some(node), &dmabuf, surface, Some(buffer), Some(damage));
+                let texture = MultiTexture::from_surface(surface, dmabuf.size());
+                let texture_ref = texture.0.clone();
+                let res = self.import_dmabuf_internal(Some(node), &dmabuf, texture, Some(damage));
+                if res.is_ok() {
+                    if let Some(surface) = surface {
+                        surface.data_map.insert_if_missing(|| texture_ref);
+                    }
+                }
+                return res;
             }
         }
         Err(MultigpuError::DeviceMissing)

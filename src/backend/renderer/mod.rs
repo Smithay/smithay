@@ -20,7 +20,7 @@ use wayland_server::protocol::{wl_buffer, wl_shm};
 
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
-#[cfg(feature = "wayland_frontend")]
+
 use crate::backend::allocator::{dmabuf::Dmabuf, Format};
 #[cfg(all(
     feature = "wayland_frontend",
@@ -31,7 +31,7 @@ use crate::backend::egl::{
     display::{EGLBufferReader, BUFFER_READER},
     Error as EglError,
 };
-
+#[cfg(feature = "backend_drm")]
 pub mod multigpu;
 
 #[cfg(feature = "wayland_frontend")]
@@ -233,9 +233,9 @@ pub trait Offscreen<Target>: Renderer + Bind<Target> {
     fn create_buffer(&mut self, size: Size<i32, Buffer>) -> Result<Target, <Self as Renderer>::Error>;
 }
 
+/// Trait for Renderers supporting importing wl_buffers using shared memory.
 #[cfg(feature = "wayland_frontend")]
-/// Trait for Renderers supporting importing memory-based buffers.
-pub trait ImportMem: Renderer {
+pub trait ImportMemWl: ImportMem {
     /// Import a given shm-based buffer into the renderer (see [`buffer_type`]).
     ///
     /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
@@ -258,6 +258,17 @@ pub trait ImportMem: Renderer {
         damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 
+    /// Returns supported formats for shared memory buffers.
+    ///
+    /// Will always contain At least `Argb8888` and `Xrgb8888`.
+    fn shm_formats(&self) -> &[wl_shm::Format] {
+        // Mandatory
+        &[wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888]
+    }
+}
+
+/// Trait for Renderers supporting importing bitmaps from memory.
+pub trait ImportMem: Renderer {
     /// Import a given chunk of memory into the renderer.
     ///
     /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
@@ -299,14 +310,6 @@ pub trait ImportMem: Renderer {
         data: &[u8],
         region: Rectangle<i32, Buffer>,
     ) -> Result<(), <Self as Renderer>::Error>;
-
-    /// Returns supported formats for shared memory buffers.
-    ///
-    /// Will always contain At least `Argb8888` and `Xrgb8888`.
-    fn shm_formats(&self) -> &[wl_shm::Format] {
-        // Mandatory
-        &[wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888]
-    }
 }
 
 #[cfg(all(
@@ -365,13 +368,8 @@ pub trait ImportEgl: Renderer {
 }
 
 #[cfg(feature = "wayland_frontend")]
-/// Trait for Renderers supporting importing dmabuf-based buffers.
-pub trait ImportDma: Renderer {
-    /// Returns supported formats for dmabufs.
-    fn dmabuf_formats<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Format> + 'a> {
-        Box::new([].iter())
-    }
-
+/// Trait for Renderers supporting importing dmabuf-based wl_buffers
+pub trait ImportDmaWl: ImportDma {
     /// Import a given dmabuf-based buffer into the renderer (see [`buffer_type`]).
     ///
     /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
@@ -396,6 +394,14 @@ pub trait ImportDma: Renderer {
             .get::<Dmabuf>()
             .expect("import_dma_buffer without checking buffer type?");
         self.import_dmabuf(dmabuf, Some(damage))
+    }
+}
+
+/// Trait for Renderers supporting importing dmabufs.
+pub trait ImportDma: Renderer {
+    /// Returns supported formats for dmabufs.
+    fn dmabuf_formats<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Format> + 'a> {
+        Box::new([].iter())
     }
 
     /// Import a given raw dmabuf into the renderer.
@@ -454,7 +460,7 @@ pub trait ImportAll: Renderer {
     feature = "backend_egl",
     feature = "use_system_lib"
 ))]
-impl<R: Renderer + ImportMem + ImportEgl + ImportDma> ImportAll for R {
+impl<R: Renderer + ImportMemWl + ImportEgl + ImportDmaWl> ImportAll for R {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -474,7 +480,7 @@ impl<R: Renderer + ImportMem + ImportEgl + ImportDma> ImportAll for R {
     feature = "wayland_frontend",
     not(all(feature = "backend_egl", feature = "use_system_lib"))
 ))]
-impl<R: Renderer + ImportMem + ImportDma> ImportAll for R {
+impl<R: Renderer + ImportMemWl + ImportDmaWl> ImportAll for R {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,

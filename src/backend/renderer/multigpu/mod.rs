@@ -43,16 +43,17 @@ use std::{
     sync::Mutex,
 };
 
+#[cfg(feature = "wayland_frontend")]
+use crate::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use crate::{
     backend::{
         allocator::{Buffer, Format},
         drm::DrmNode,
         SwapBuffersError,
     },
-    reexports::wayland_server::protocol::wl_surface::WlSurface,
     utils::{Buffer as BufferCoords, Physical, Size},
 };
-
+#[cfg(all(feature = "backend_egl", feature = "renderer_gl"))]
 pub mod egl;
 
 lazy_static::lazy_static! {
@@ -335,6 +336,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     /// Note: This will do nothing, if you are not using
     /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
     /// to let smithay handle buffer management.
+    #[cfg(feature = "wayland_frontend")]
     pub fn early_import(
         &mut self,
         source: Option<DrmNode>,
@@ -343,7 +345,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     ) -> Result<(), Error<A, A>>
     where
         A: 'static,
-        <A::Device as ApiDevice>::Renderer: ImportMem + ImportDma + ExportMem,
+        <A::Device as ApiDevice>::Renderer: ImportMemWl + ImportDmaWl + ExportMem,
         <<A::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
     {
         use crate::{
@@ -401,6 +403,7 @@ impl<A: GraphicsApi> GpuManager<A> {
         result
     }
 
+    #[cfg(feature = "wayland_frontend")]
     fn early_import_buffer(
         &mut self,
         source: Option<DrmNode>,
@@ -411,7 +414,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     ) -> Result<(), Error<A, A>>
     where
         A: 'static,
-        <A::Device as ApiDevice>::Renderer: ImportMem + ImportDma + ExportMem,
+        <A::Device as ApiDevice>::Renderer: ImportMemWl + ImportDmaWl + ExportMem,
         <<A::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
     {
         match buffer_type(buffer) {
@@ -439,11 +442,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                             if let (Some(ref mut can_import), Some(source)) = (can_import, source) {
                                 can_import.insert((source, target, format), true);
                             }
-                            let mut texture = MultiTexture::from_surface(
-                                Some(surface),
-                                Some(buffer.clone()),
-                                imported.size(),
-                            );
+                            let mut texture = MultiTexture::from_surface(Some(surface), imported.size());
                             texture.insert_texture::<A>(target, imported);
                             surface.data_map.insert_if_missing(|| texture.0);
                             return Ok(());
@@ -475,8 +474,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                             .renderer_mut()
                             .import_dma_buffer(buffer, Some(surface), damage)
                     {
-                        let mut gpu_texture =
-                            MultiTexture::from_surface(Some(surface), Some(buffer.clone()), texture.size());
+                        let mut gpu_texture = MultiTexture::from_surface(Some(surface), texture.size());
                         let mappings = if gpu_texture.get::<A>(&target).is_none() {
                             // force full copy
                             let damage = Rectangle::from_loc_and_size((0, 0), texture.size());
@@ -536,11 +534,8 @@ impl<A: GraphicsApi> GpuManager<A> {
                     .renderer_mut()
                     .import_shm_buffer(buffer, Some(surface), damage)
                     .map_err(Error::<A, A>::Target)?;
-                let mut texture = MultiTexture::from_surface(
-                    Some(surface),
-                    Some(buffer.clone()),
-                    buffer_dimensions(buffer).unwrap(),
-                );
+                let mut texture =
+                    MultiTexture::from_surface(Some(surface), buffer_dimensions(buffer).unwrap());
                 texture.insert_texture::<A>(target, shm_texture);
                 surface.data_map.insert_if_missing(|| texture.0);
                 Ok(())
@@ -973,7 +968,6 @@ pub struct MultiTexture(Rc<RefCell<MultiTextureInternal>>);
 #[derive(Debug)]
 struct MultiTextureInternal {
     textures: HashMap<TypeId, HashMap<DrmNode, GpuSingleTexture>>,
-    source: Option<wl_buffer::WlBuffer>,
     size: Size<i32, BufferCoords>,
 }
 
@@ -985,9 +979,9 @@ struct GpuSingleTexture {
 }
 
 impl MultiTexture {
+    #[cfg(feature = "wayland_frontend")]
     fn from_surface(
         surface: Option<&crate::wayland::compositor::SurfaceData>,
-        buffer: Option<wl_buffer::WlBuffer>,
         size: Size<i32, BufferCoords>,
     ) -> MultiTexture {
         let internal = surface
@@ -1000,13 +994,18 @@ impl MultiTexture {
             .unwrap_or_else(|| {
                 Rc::new(RefCell::new(MultiTextureInternal {
                     textures: HashMap::new(),
-                    source: None,
                     size,
                 }))
             });
-        internal.borrow_mut().source = buffer;
         internal.borrow_mut().size = size;
         MultiTexture(internal)
+    }
+
+    fn new(size: Size<i32, BufferCoords>) -> MultiTexture {
+        MultiTexture(Rc::new(RefCell::new(MultiTextureInternal {
+            textures: HashMap::new(),
+            size,
+        })))
     }
 
     fn get<A: GraphicsApi + 'static>(
@@ -1175,9 +1174,10 @@ where
     }
 }
 
-impl<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target> ImportMem for MultiRenderer<'a, 'b, R, T, Target>
+#[cfg(feature = "wayland_frontend")]
+impl<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target> ImportMemWl for MultiRenderer<'a, 'b, R, T, Target>
 where
-    <R::Device as ApiDevice>::Renderer: ImportMem,
+    <R::Device as ApiDevice>::Renderer: ImportMemWl,
     // We need this because the Renderer-impl does and ImportMem requires Renderer
     R: 'static,
     R::Error: 'static,
@@ -1198,12 +1198,28 @@ where
             .renderer_mut()
             .import_shm_buffer(buffer, surface, damage)
             .map_err(Error::Render)?;
-        let mut texture =
-            MultiTexture::from_surface(surface, Some(buffer.clone()), buffer_dimensions(buffer).unwrap());
+        let mut texture = MultiTexture::from_surface(surface, buffer_dimensions(buffer).unwrap());
         texture.insert_texture::<R>(*self.render.node(), shm_texture);
         Ok(texture)
     }
 
+    fn shm_formats(&self) -> &[wl_shm::Format] {
+        self.render.renderer().shm_formats()
+    }
+}
+
+impl<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target> ImportMem for MultiRenderer<'a, 'b, R, T, Target>
+where
+    <R::Device as ApiDevice>::Renderer: ImportMem,
+    // We need this because the Renderer-impl does and ImportMem requires Renderer
+    R: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: Offscreen<Target> + ExportDma + ExportMem + ImportDma + ImportMem,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+{
     fn import_memory(
         &mut self,
         data: &[u8],
@@ -1215,7 +1231,7 @@ where
             .renderer_mut()
             .import_memory(data, size, flipped)
             .map_err(Error::Render)?;
-        let mut texture = MultiTexture::from_surface(None, None, size);
+        let mut texture = MultiTexture::new(size);
         texture.insert_texture::<R>(*self.render.node(), mem_texture);
         Ok(texture)
     }
@@ -1226,7 +1242,7 @@ where
         data: &[u8],
         region: Rectangle<i32, BufferCoords>,
     ) -> Result<(), <Self as Renderer>::Error> {
-        let texture = MultiTexture::from_surface(None, None, texture.size());
+        let texture = MultiTexture::new(texture.size());
         let mem_texture = texture
             .get::<R>(self.render.node())
             .ok_or_else(|| Error::MismatchedDevice(*self.render.node()))?;
@@ -1235,9 +1251,44 @@ where
             .update_memory(&*mem_texture, data, region)
             .map_err(Error::Render)
     }
+}
 
-    fn shm_formats(&self) -> &[wl_shm::Format] {
-        self.render.renderer().shm_formats()
+#[cfg(feature = "wayland_frontend")]
+impl<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target> ImportDmaWl for MultiRenderer<'a, 'b, R, T, Target>
+where
+    <R::Device as ApiDevice>::Renderer: ImportDmaWl + ImportMem + ExportMem,
+    <T::Device as ApiDevice>::Renderer: ExportMem,
+    <<R::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
+    <<T::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
+    T: 'static,
+    // We need this because the Renderer-impl does and ImportDma requires Renderer
+    R: 'static,
+    <R::Device as ApiDevice>::Renderer: Offscreen<Target> + ExportDma + ExportMem + ImportDma + ImportMem,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+{
+    fn import_dma_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        surface: Option<&SurfaceData>,
+        damage: &[Rectangle<i32, BufferCoords>],
+    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+        let dmabuf = buffer
+            .as_ref()
+            .user_data()
+            .get::<Dmabuf>()
+            .expect("import_dma_buffer without checking buffer type?");
+        let tranch = unsafe { &mut *self.source }(buffer);
+        let texture = MultiTexture::from_surface(surface, dmabuf.size());
+        let texture_ref = texture.0.clone();
+        let res = self.import_dmabuf_internal(tranch, dmabuf, texture, Some(damage));
+        if res.is_ok() {
+            if let Some(surface) = surface {
+                surface.data_map.insert_if_missing(|| texture_ref);
+            }
+        }
+        res
     }
 }
 
@@ -1259,27 +1310,13 @@ where
         self.render.renderer().dmabuf_formats()
     }
 
-    fn import_dma_buffer(
-        &mut self,
-        buffer: &wl_buffer::WlBuffer,
-        surface: Option<&SurfaceData>,
-        damage: &[Rectangle<i32, BufferCoords>],
-    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-        let dmabuf = buffer
-            .as_ref()
-            .user_data()
-            .get::<Dmabuf>()
-            .expect("import_dma_buffer without checking buffer type?");
-        let tranch = unsafe { &mut *self.source }(buffer);
-        self.import_dmabuf_internal(tranch, dmabuf, surface, Some(buffer), Some(damage))
-    }
-
     fn import_dmabuf(
         &mut self,
         dmabuf: &Dmabuf,
         damage: Option<&[Rectangle<i32, BufferCoords>]>,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-        self.import_dmabuf_internal(None, dmabuf, None, None, damage)
+        let texture = MultiTexture::new(dmabuf.size());
+        self.import_dmabuf_internal(None, dmabuf, texture, damage)
     }
 }
 
@@ -1301,8 +1338,7 @@ where
         &mut self,
         source: Option<DrmNode>,
         dmabuf: &Dmabuf,
-        surface: Option<&SurfaceData>,
-        buffer: Option<&wl_buffer::WlBuffer>,
+        mut texture: MultiTexture,
         damage: Option<&[Rectangle<i32, BufferCoords>]>,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         let source = source.filter(|source| source != self.render.node());
@@ -1323,11 +1359,7 @@ where
                     if let (Some(ref mut can_import), Some(source)) = (can_import, source) {
                         can_import.insert((source, *self.render.node(), dmabuf.format()), true);
                     }
-                    let mut texture = MultiTexture::from_surface(surface, buffer.cloned(), imported.size());
                     texture.insert_texture::<R>(*self.render.node(), imported);
-                    if let Some(surface) = surface {
-                        surface.data_map.insert_if_missing(|| texture.0.clone());
-                    }
                     return Ok(texture);
                 }
                 Err(err) => {
@@ -1349,7 +1381,6 @@ where
         }
 
         // lets check if we don't have a mapping
-        let mut texture = MultiTexture::from_surface(surface, buffer.cloned(), dmabuf.size());
         let size = texture.0.borrow().size;
         let needs_reimport = texture
             .0
@@ -1511,10 +1542,6 @@ where
                 }
             };
         }
-        if let Some(surface) = surface {
-            surface.data_map.insert_if_missing(|| texture.0.clone());
-        }
-
         std::mem::drop(texture_ref);
         Ok(texture)
     }
