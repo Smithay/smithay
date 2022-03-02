@@ -195,6 +195,10 @@ pub trait Renderer {
     /// Type representing a currently in-progress frame during the [`Renderer::render`]-call
     type Frame: Frame<Error = Self::Error, TextureId = Self::TextureId>;
 
+    /// Returns an id, that is unique to all renderers, that can use
+    /// `TextureId`s originating from any of these renderers.
+    fn id(&self) -> usize;
+
     /// Set the filter method to be used when rendering a texture into a smaller area than its size
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error>;
     /// Set the filter method to be used when rendering a texture into a larger area than its size

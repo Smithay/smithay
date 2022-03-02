@@ -8,9 +8,13 @@ use crate::{
         SurfaceAttributes, TraversalAction,
     },
 };
-use std::cell::RefCell;
 #[cfg(feature = "desktop")]
 use std::collections::HashSet;
+use std::{
+    any::TypeId,
+    cell::RefCell,
+    collections::{hash_map::Entry, HashMap},
+};
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
 #[derive(Default)]
@@ -19,7 +23,7 @@ pub(crate) struct SurfaceState {
     pub(crate) buffer_scale: i32,
     pub(crate) buffer_transform: Transform,
     pub(crate) buffer: Option<WlBuffer>,
-    pub(crate) texture: Option<Box<dyn std::any::Any + 'static>>,
+    pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     #[cfg(feature = "desktop")]
     pub(crate) damage_seen: HashSet<crate::desktop::space::SpaceOutputHash>,
 }
@@ -37,7 +41,7 @@ impl SurfaceState {
                         old_buffer.release();
                     }
                 }
-                self.texture = None;
+                self.textures.clear();
                 #[cfg(feature = "desktop")]
                 self.damage_seen.clear();
             }
@@ -47,7 +51,7 @@ impl SurfaceState {
                 if let Some(buffer) = self.buffer.take() {
                     buffer.release();
                 };
-                self.texture = None;
+                self.textures.clear();
                 #[cfg(feature = "desktop")]
                 self.damage_seen.clear();
             }
@@ -119,16 +123,19 @@ where
     T: Texture + 'static,
 {
     let mut result = Ok(());
+    let texture_id = (TypeId::of::<T>(), renderer.id());
     with_surface_tree_upward(
         surface,
         location,
         |_surface, states, location| {
             let mut location = *location;
             if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
-                let mut data = data.borrow_mut();
+                let mut data_ref = data.borrow_mut();
+                let data = &mut *data_ref;
                 let attributes = states.cached_state.current::<SurfaceAttributes>();
                 // Import a new buffer if necessary
-                if data.texture.is_none() {
+                let surface_size = data.surface_size().unwrap();
+                if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
                         let buffer_damage = attributes
                             .damage
@@ -138,14 +145,14 @@ where
                                 Damage::Surface(rect) => rect.to_buffer(
                                     attributes.buffer_scale,
                                     attributes.buffer_transform.into(),
-                                    &data.surface_size().unwrap(),
+                                    &surface_size,
                                 ),
                             })
                             .collect::<Vec<_>>();
 
                         match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
-                                data.texture = Some(Box::new(m));
+                                e.insert(Box::new(m));
                             }
                             Some(Err(err)) => {
                                 slog::warn!(log, "Error loading buffer: {}", err);
@@ -157,7 +164,7 @@ where
                     }
                 }
                 // Now, should we be drawn ?
-                if data.texture.is_some() {
+                if data.textures.contains_key(&texture_id) {
                     // if yes, also process the children
                     if states.role == Some("subsurface") {
                         let current = states.cached_state.current::<SubsurfaceCachedState>();
@@ -181,7 +188,11 @@ where
                 let buffer_scale = data.buffer_scale;
                 let buffer_transform = data.buffer_transform;
                 let attributes = states.cached_state.current::<SurfaceAttributes>();
-                if let Some(texture) = data.texture.as_mut().and_then(|x| x.downcast_mut::<T>()) {
+                if let Some(texture) = data
+                    .textures
+                    .get_mut(&texture_id)
+                    .and_then(|x| x.downcast_mut::<T>())
+                {
                     let dimensions = dimensions.unwrap();
                     // we need to re-extract the subsurface offset, as the previous closure
                     // only passes it to our children

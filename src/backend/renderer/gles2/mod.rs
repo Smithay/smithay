@@ -50,6 +50,8 @@ pub mod ffi {
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
 }
 
+crate::utils::ids::id_gen!(next_renderer_id, RENDERER_ID, RENDERER_IDS);
+
 #[derive(Debug, Clone)]
 struct Gles2TexProgram {
     program: ffi::types::GLuint,
@@ -285,6 +287,13 @@ pub struct Gles2Renderer {
     logger_ptr: Option<*mut ::slog::Logger>,
     logger: ::slog::Logger,
     _not_send: *mut (),
+}
+
+struct RendererId(usize);
+impl Drop for RendererId {
+    fn drop(&mut self) {
+        RENDERER_IDS.lock().unwrap().remove(&self.0);
+    }
 }
 
 /// Handle to the currently rendered frame during [`Gles2Renderer::render`](Renderer::render)
@@ -648,6 +657,9 @@ impl Gles2Renderer {
         );
         gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
 
+        context
+            .user_data()
+            .insert_if_missing(|| RendererId(next_renderer_id()));
         let (tx, rx) = channel();
         let renderer = Gles2Renderer {
             gl,
@@ -1660,6 +1672,10 @@ impl Renderer for Gles2Renderer {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
     type Frame = Gles2Frame;
+
+    fn id(&self) -> usize {
+        self.egl.user_data().get::<RendererId>().unwrap().0
+    }
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
         self.min_filter = filter;

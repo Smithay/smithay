@@ -755,6 +755,10 @@ where
     type TextureId = MultiTexture;
     type Frame = MultiFrame<R, T>;
 
+    fn id(&self) -> usize {
+        self.render.renderer().id()
+    }
+
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
         self.render
             .renderer_mut()
