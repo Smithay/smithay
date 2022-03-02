@@ -19,7 +19,10 @@ use smithay::{
     desktop::space::{RenderError, SurfaceTree},
     reexports::{
         calloop::EventLoop,
-        wayland_server::{protocol::wl_output, Display},
+        wayland_server::{
+            protocol::{wl_output, wl_surface},
+            Display,
+        },
     },
     wayland::{
         output::{Mode, Output, PhysicalProperties},
@@ -54,6 +57,7 @@ impl Backend for WinitData {
     fn reset_buffers(&mut self, _output: &Output) {
         self.full_redraw = 4;
     }
+    fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
 
 pub fn run_winit(log: Logger) {

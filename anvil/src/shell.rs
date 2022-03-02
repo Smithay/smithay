@@ -337,6 +337,7 @@ pub fn init_shell<BackendData: Backend + 'static>(
         move |surface, mut ddata| {
             on_commit_buffer_handler(&surface);
             let anvil_state = ddata.get::<AnvilState<BackendData>>().unwrap();
+            anvil_state.backend_data.early_import(&surface);
             let mut popups = anvil_state.popups.borrow_mut();
             let space = anvil_state.space.as_ref();
             space.borrow_mut().commit(&surface);

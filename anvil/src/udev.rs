@@ -100,6 +100,7 @@ pub struct UdevData {
     signaler: Signaler<SessionSignal>,
     pointer_image: crate::cursor::Cursor,
     render_timer: TimerHandle<(DrmNode, crtc::Handle)>,
+    logger: slog::Logger,
 }
 
 impl Backend for UdevData {
@@ -115,6 +116,12 @@ impl Backend for UdevData {
                     surface.borrow_mut().surface.reset_buffers();
                 }
             }
+        }
+    }
+
+    fn early_import(&mut self, surface: &wl_surface::WlSurface) {
+        if let Err(err) = self.gpus.early_import(None, self.primary_gpu, surface) {
+            warn!(self.logger, "Early buffer import failed: {}", err);
         }
     }
 }
@@ -198,6 +205,7 @@ pub fn run_udev(log: Logger) {
         render_timer: timer.handle(),
         #[cfg(feature = "debug")]
         fps_texture,
+        logger: log.clone(),
     };
     let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone(), true);
 

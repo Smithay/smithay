@@ -25,7 +25,10 @@ use smithay::{
     reexports::{
         calloop::EventLoop,
         gbm,
-        wayland_server::{protocol::wl_output, Display},
+        wayland_server::{
+            protocol::{wl_output, wl_surface},
+            Display,
+        },
     },
     wayland::{
         output::{Mode, Output, PhysicalProperties},
@@ -58,6 +61,7 @@ impl Backend for X11Data {
     fn reset_buffers(&mut self, _output: &Output) {
         self.surface.reset_buffers();
     }
+    fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
 
 pub fn run_x11(log: Logger) {
