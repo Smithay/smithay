@@ -70,10 +70,14 @@ use smithay::{
 };
 
 type UdevRenderer<'a> = MultiRenderer<'a, 'a, EglGlesBackend, EglGlesBackend, Gles2Renderbuffer>;
-#[cfg(feature = "debug")]
-smithay::custom_elements!(CustomElem; UdevRenderer<'_>; SurfaceTree=SurfaceTree, PointerElement=PointerElement::<MultiTexture>, FpsElement=FpsElement::<MultiTexture>);
-#[cfg(not(feature = "debug"))]
-smithay::custom_elements!(CustomElem; UdevRenderer<'_>; SurfaceTree=SurfaceTree, PointerElement=PointerElement::<MultiTexture>);
+smithay::custom_elements! {
+    CustomElem;
+    UdevRenderer<'_>;
+    SurfaceTree=SurfaceTree,
+    PointerElement=PointerElement::<MultiTexture>,
+    #[cfg(feature = "debug")]
+    FpsElement=FpsElement::<MultiTexture>,
+}
 
 #[derive(Copy, Clone)]
 pub struct SessionFd(RawFd);

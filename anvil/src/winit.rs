@@ -35,10 +35,14 @@ use crate::{
     state::{AnvilState, Backend},
 };
 
-#[cfg(not(feature = "debug"))]
-smithay::custom_elements!(CustomElem; Gles2Renderer; SurfaceTree=SurfaceTree, PointerElement=PointerElement::<Gles2Texture>);
-#[cfg(feature = "debug")]
-smithay::custom_elements!(CustomElem; Gles2Renderer; SurfaceTree=SurfaceTree, PointerElement=PointerElement::<Gles2Texture>, FpsElement=FpsElement::<Gles2Texture>);
+smithay::custom_elements! {
+    CustomElem;
+    Gles2Renderer;
+    SurfaceTree=SurfaceTree,
+    PointerElement=PointerElement::<Gles2Texture>,
+    #[cfg(feature = "debug")]
+    FpsElement=FpsElement::<Gles2Texture>,
+}
 
 pub const OUTPUT_NAME: &str = "winit";
 

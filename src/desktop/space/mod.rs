@@ -757,32 +757,57 @@ impl<R: Renderer> fmt::Debug for RenderError<R> {
 #[macro_export]
 macro_rules! custom_elements {
     ($name:ident; $renderer:ty;) => {};
-    ($name:ident; $renderer:ty; $($body:ident=$field:ty),* $(,)?) => {
-        enum $name { $($body($field)),* }
+    ($name:ident; $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+        enum $name { $(
+            $(
+                #[$meta]
+            )*
+            $body($field)
+        ),* }
 
         impl $crate::desktop::space::RenderElement<$renderer> for $name
         {
             fn id(&self) -> usize {
                 match self {
-                    $($name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::id(x)),*
+                    $(
+                        $(
+                            #[$meta]
+                        )*
+                        $name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::id(x)
+                    ),*
                 }
             }
 
             fn type_of(&self) -> std::any::TypeId {
                 match self {
-                    $($name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::type_of(x)),*
+                    $(
+                        $(
+                            #[$meta]
+                        )
+                        *$name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::type_of(x)
+                    ),*
                 }
             }
 
             fn geometry(&self) -> $crate::utils::Rectangle<i32, $crate::utils::Logical> {
                 match self {
-                    $($name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::geometry(x)),*
+                    $(
+                        $(
+                            #[$meta]
+                        )
+                        *$name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::geometry(x)
+                    ),*
                 }
             }
 
             fn accumulated_damage(&self, for_values: std::option::Option<$crate::desktop::space::SpaceOutputTuple<'_, '_>>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Logical>> {
                 match self {
-                    $($name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::accumulated_damage(x, for_values)),*
+                    $(
+                        $(
+                            #[$meta]
+                        )
+                        *$name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::accumulated_damage(x, for_values)
+                    ),*
                 }
             }
 
@@ -796,18 +821,31 @@ macro_rules! custom_elements {
                 log: &slog::Logger,
             ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>{
                 match self {
-                    $($name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::draw(x, renderer, frame, scale, location, damage, log)),*
+                    $(
+                        $(
+                            #[$meta]
+                        )
+                        *$name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::draw(x, renderer, frame, scale, location, damage, log)
+                    ),*
                 }
             }
 
             fn z_index(&self) -> u8 {
                 match self {
-                    $($name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::z_index(x)),*
+                    $(
+                        $(
+                            #[$meta]
+                        )
+                        *$name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::z_index(x)
+                    ),*
                 }
             }
         }
 
         $(
+            $(
+                #[$meta]
+            )*
             impl From<$field> for $name {
                 fn from(field: $field) -> $name {
                     $name::$body(field)
