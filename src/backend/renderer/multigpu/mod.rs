@@ -38,6 +38,7 @@ use std::{
     any::{Any, TypeId},
     cell::{Ref, RefCell},
     collections::{hash_map::Entry, HashMap},
+    convert::{AsMut, AsRef},
     fmt,
     rc::Rc,
     sync::Mutex,
@@ -577,6 +578,22 @@ pub struct MultiRenderer<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target> {
     log: ::slog::Logger,
 }
 
+impl<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target> AsRef<<R::Device as ApiDevice>::Renderer>
+    for MultiRenderer<'a, 'b, R, T, Target>
+{
+    fn as_ref(&self) -> &<R::Device as ApiDevice>::Renderer {
+        self.render.renderer()
+    }
+}
+
+impl<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target> AsMut<<R::Device as ApiDevice>::Renderer>
+    for MultiRenderer<'a, 'b, R, T, Target>
+{
+    fn as_mut(&mut self) -> &mut <R::Device as ApiDevice>::Renderer {
+        self.render.renderer_mut()
+    }
+}
+
 // Hack for implementing Renderer::render..
 #[derive(Debug)]
 enum RenderDevice<'a, A: GraphicsApi> {
@@ -627,6 +644,25 @@ pub struct MultiFrame<R: GraphicsApi, T: GraphicsApi> {
     // We need this for the associated Error type of the Frame implementation
     _target: std::marker::PhantomData<T>,
     log: ::slog::Logger,
+}
+
+// These casts are ok, because the frame cannot outlive the MultiFrame,
+// see MultiRenderer::render for how this hack works and why it is necessary.
+
+impl<R: GraphicsApi, T: GraphicsApi> AsRef<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame>
+    for MultiFrame<R, T>
+{
+    fn as_ref(&self) -> &<<R::Device as ApiDevice>::Renderer as Renderer>::Frame {
+        unsafe { &*self.frame }
+    }
+}
+
+impl<R: GraphicsApi, T: GraphicsApi> AsMut<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame>
+    for MultiFrame<R, T>
+{
+    fn as_mut(&mut self) -> &mut <<R::Device as ApiDevice>::Renderer as Renderer>::Frame {
+        unsafe { &mut *self.frame }
+    }
 }
 
 impl<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target> Unbind for MultiRenderer<'a, 'b, R, T, Target>
