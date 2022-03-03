@@ -270,7 +270,6 @@ pub struct Gles2Renderer {
     pub(crate) extensions: Vec<String>,
     tex_programs: [Gles2TexProgram; shaders::FRAGMENT_COUNT],
     solid_program: Gles2SolidProgram,
-    #[cfg(feature = "wayland_frontend")]
     dmabuf_cache: std::collections::HashMap<WeakDmabuf, Gles2Texture>,
     egl: EGLContext,
     #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
@@ -359,6 +358,9 @@ pub enum Gles2Error {
     /// Required GL extension are not supported by the underlying implementation
     #[error("None of the following GL extensions is supported by the underlying GL implementation, at least one is required: {0:?}")]
     GLExtensionNotSupported(&'static [&'static str]),
+    /// Required EGL extension are not supported by the underlying implementation
+    #[error("None of the following EGL extensions is supported by the underlying implementation, at least one is required: {0:?}")]
+    EGLExtensionNotSupported(&'static [&'static str]),
     /// Required GL version is not available by the underlying implementation
     #[error(
         "The OpenGL ES version of the underlying GL implementation is too low, at least required: {0:?}"
@@ -401,6 +403,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::ProgramLinkError
             | x @ Gles2Error::GLFunctionLoaderError
             | x @ Gles2Error::GLExtensionNotSupported(_)
+            | x @ Gles2Error::EGLExtensionNotSupported(_)
             | x @ Gles2Error::GLVersionNotSupported(_)
             | x @ Gles2Error::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
             Gles2Error::ContextActivationError(err) => err.into(),
@@ -420,6 +423,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::ProgramLinkError
             | x @ Gles2Error::GLFunctionLoaderError
             | x @ Gles2Error::GLExtensionNotSupported(_)
+            | x @ Gles2Error::EGLExtensionNotSupported(_)
             | x @ Gles2Error::GLVersionNotSupported(_)
             | x @ Gles2Error::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
             Gles2Error::ContextActivationError(err) => err.into(),
@@ -673,7 +677,6 @@ impl Gles2Renderer {
             solid_program,
             target: None,
             buffers: Vec::new(),
-            #[cfg(feature = "wayland_frontend")]
             dmabuf_cache: std::collections::HashMap::new(),
             destruction_callback: rx,
             destruction_callback_sender: tx,
@@ -1271,9 +1274,9 @@ impl ExportDma for Gles2Renderer {
             .iter()
             .any(|s| s == "EGL_KHR_gl_texture_2D_image")
         {
-            return Err(Gles2Error::EGLBufferAccessError(
-                crate::backend::egl::EglExtensionNotSupportedError(&["EGL_KHR_gl_texture_2D_image"]).into(),
-            ));
+            return Err(Gles2Error::EGLExtensionNotSupported(&[
+                "EGL_KHR_gl_texture_2D_image",
+            ]));
         }
 
         let image = if let Some(egl_images) = texture.0.egl_images.as_ref() {
@@ -1316,9 +1319,9 @@ impl ExportDma for Gles2Renderer {
             .iter()
             .any(|s| s == "EGL_KHR_gl_renderbuffer_image")
         {
-            return Err(Gles2Error::EGLBufferAccessError(
-                crate::backend::egl::EglExtensionNotSupportedError(&["EGL_KHR_gl_renderbuffer_image"]).into(),
-            ));
+            return Err(Gles2Error::EGLExtensionNotSupported(&[
+                "EGL_KHR_gl_renderbuffer_image",
+            ]));
         }
 
         let rbo = match self.target.as_ref() {

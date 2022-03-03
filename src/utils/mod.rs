@@ -6,7 +6,7 @@ pub mod signaling;
 #[cfg(feature = "x11rb_event_source")]
 pub mod x11rb;
 
-#[cfg(feature = "desktop")]
+#[cfg(any(feature = "desktop", feature = "renderer_gl"))]
 pub(crate) mod ids;
 pub mod user_data;
 
