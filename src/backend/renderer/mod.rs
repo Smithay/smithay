@@ -31,7 +31,7 @@ use crate::backend::egl::{
     display::{EGLBufferReader, BUFFER_READER},
     Error as EglError,
 };
-#[cfg(feature = "backend_drm")]
+#[cfg(feature = "renderer_multi")]
 pub mod multigpu;
 
 #[cfg(feature = "wayland_frontend")]
