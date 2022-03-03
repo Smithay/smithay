@@ -120,7 +120,10 @@ impl Backend for UdevData {
     }
 
     fn early_import(&mut self, surface: &wl_surface::WlSurface) {
-        if let Err(err) = self.gpus.early_import(None, self.primary_gpu, surface) {
+        if let Err(err) = self
+            .gpus
+            .early_import(Some(self.primary_gpu), self.primary_gpu, surface)
+        {
             warn!(self.logger, "Early buffer import failed: {}", err);
         }
     }
@@ -155,13 +158,14 @@ pub fn run_udev(log: Logger) {
                 .find_map(|x| DrmNode::from_path(x).ok())
                 .expect("No GPU!")
         });
+    info!(log, "Using {} as primary gpu.", primary_gpu);
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
     let mut gpus = GpuManager::new(EglGlesBackend, log.clone()).unwrap();
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
     #[cfg(any(feature = "egl", feature = "debug"))]
     let mut renderer = gpus
-        .renderer::<_, Gles2Renderbuffer>(|_| None, &primary_gpu, &primary_gpu)
+        .renderer::<Gles2Renderbuffer>(&primary_gpu, &primary_gpu)
         .unwrap();
 
     #[cfg(feature = "egl")]
@@ -271,8 +275,7 @@ pub fn run_udev(log: Logger) {
                 anvil_state
                     .backend_data
                     .gpus
-                    .renderer::<_, Gles2Renderbuffer>(
-                        |_| None,
+                    .renderer::<Gles2Renderbuffer>(
                         &anvil_state.backend_data.primary_gpu,
                         &anvil_state.backend_data.primary_gpu,
                     )
@@ -697,7 +700,7 @@ impl AnvilState<UdevData> {
             let mut renderer = self
                 .backend_data
                 .gpus
-                .renderer::<_, Gles2Renderbuffer>(move |_| Some(primary_gpu), &primary_gpu, &dev_id)
+                .renderer::<Gles2Renderbuffer>(&primary_gpu, &dev_id)
                 .unwrap();
             let pointer_images = &mut self.backend_data.pointer_images;
             let pointer_image = pointer_images
@@ -875,9 +878,7 @@ fn schedule_initial_render(
 ) {
     let node = surface.borrow().node;
     let result = {
-        let mut renderer = gpus
-            .renderer::<_, Gles2Renderbuffer>(|_| None, &node, &node)
-            .unwrap();
+        let mut renderer = gpus.renderer::<Gles2Renderbuffer>(&node, &node).unwrap();
         let mut surface = surface.borrow_mut();
         initial_render(&mut surface.surface, &mut renderer)
     };
