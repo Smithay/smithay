@@ -3,7 +3,7 @@ use std::cell::Cell;
 use smithay::{
     backend::{
         allocator::dmabuf::Dmabuf,
-        renderer::{Frame, ImportDma, ImportShm, Renderer, Texture, TextureFilter},
+        renderer::{Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture, TextureFilter},
         SwapBuffersError,
     },
     reexports::wayland_server::protocol::wl_buffer,
@@ -23,6 +23,10 @@ impl Renderer for DummyRenderer {
     type Error = SwapBuffersError;
     type TextureId = DummyTexture;
     type Frame = DummyFrame;
+
+    fn id(&self) -> usize {
+        0
+    }
 
     fn render<F, R>(
         &mut self,
@@ -46,7 +50,27 @@ impl Renderer for DummyRenderer {
     }
 }
 
-impl ImportShm for DummyRenderer {
+impl ImportMem for DummyRenderer {
+    fn import_memory(
+        &mut self,
+        _data: &[u8],
+        _size: Size<i32, Buffer>,
+        _flipped: bool,
+    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+        unimplemented!()
+    }
+
+    fn update_memory(
+        &mut self,
+        _texture: &<Self as Renderer>::TextureId,
+        _data: &[u8],
+        _region: Rectangle<i32, Buffer>,
+    ) -> Result<(), <Self as Renderer>::Error> {
+        unimplemented!()
+    }
+}
+
+impl ImportMemWl for DummyRenderer {
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -86,10 +110,13 @@ impl ImportDma for DummyRenderer {
     fn import_dmabuf(
         &mut self,
         _dmabuf: &Dmabuf,
+        _damage: Option<&[Rectangle<i32, Buffer>]>,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         unimplemented!()
     }
 }
+
+impl ImportDmaWl for DummyRenderer {}
 
 pub struct DummyFrame {}
 
