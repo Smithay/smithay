@@ -40,6 +40,8 @@
 - `EGLNativeSurface` implementations overriding `swap_buffers` now receive and additional `damage` attribute to be used with `eglSwapBuffersWithDamageEXT` if desired
 - `EGLSurface::swap_buffers` now accepts an optional `damage` parameter
 - `WinitGraphicsBackend` does no longer provide a `render`-method and exposes its `Renderer` directly instead including new functions `bind` and `submit` to handle swapping buffers.
+- `ImportShm` was renamed to `ImportMem`
+- `ImportMem` and `ImportDma` were split and do now have accompanying traits `ImportMemWl` and `ImportDmaWl` to import wayland buffers.
 
 ### Additions
 
@@ -71,6 +73,12 @@
 - `backend::renderer` has a new `utils`-module that can take care of client buffer management for you.
 - `EGLSurface::buffer_age` can be used to query the surface buffer age.
 - `GbmBufferedSurface::reset_buffers` can now be used to reset underlying buffers.
+- Added new `Offscreen` trait to create offscreen surfaces for `Renderer`s
+- Added functions to `ImportMem` to upload bitmaps from memory
+- Added `ExportDma` trait to export framebuffers and textures into dmabufs
+- Added `ExportMem` trait to copy framebuffers and textures into memory
+- Added `multigpu`-module to the renderer, which makes handling multi-gpu setups easier!
+- Added `backend::renderer::utils::import_surface_tree` to be able to import buffers before rendering
 
 #### Desktop
 
