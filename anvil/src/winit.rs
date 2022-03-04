@@ -4,7 +4,7 @@ use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 use image::GenericImageView;
 use slog::Logger;
 #[cfg(feature = "debug")]
-use smithay::backend::renderer::ImportMem;
+use smithay::backend::renderer::{gles2::Gles2Texture, ImportMem};
 #[cfg(feature = "egl")]
 use smithay::{
     backend::renderer::{ImportDma, ImportEgl},
@@ -12,11 +12,11 @@ use smithay::{
 };
 use smithay::{
     backend::{
-        renderer::gles2::{Gles2Renderer, Gles2Texture},
+        renderer::gles2::Gles2Renderer,
         winit::{self, WinitEvent},
         SwapBuffersError,
     },
-    desktop::space::{RenderError, SurfaceTree},
+    desktop::space::RenderError,
     reexports::{
         calloop::EventLoop,
         wayland_server::{
@@ -34,15 +34,6 @@ use crate::{
     drawing::*,
     state::{AnvilState, Backend},
 };
-
-smithay::custom_elements! {
-    CustomElem;
-    Gles2Renderer;
-    SurfaceTree=SurfaceTree,
-    PointerElement=PointerElement::<Gles2Texture>,
-    #[cfg(feature = "debug")]
-    FpsElement=FpsElement::<Gles2Texture>,
-}
 
 pub const OUTPUT_NAME: &str = "winit";
 
@@ -199,18 +190,16 @@ pub fn run_winit(log: Logger) {
             let mut backend = backend.borrow_mut();
             let cursor_visible: bool;
 
-            let mut elements = Vec::new();
+            let mut elements = Vec::<CustomElem<Gles2Renderer>>::new();
             let dnd_guard = state.dnd_icon.lock().unwrap();
             let mut cursor_guard = state.cursor_status.lock().unwrap();
 
             // draw the dnd icon if any
             if let Some(ref surface) = *dnd_guard {
                 if surface.as_ref().is_alive() {
-                    elements.push(CustomElem::from(draw_dnd_icon(
-                        surface.clone(),
-                        state.pointer_location.to_i32_round(),
-                        &log,
-                    )));
+                    elements.push(
+                        draw_dnd_icon(surface.clone(), state.pointer_location.to_i32_round(), &log).into(),
+                    );
                 }
             }
 
@@ -225,11 +214,8 @@ pub fn run_winit(log: Logger) {
             }
             if let CursorImageStatus::Image(ref surface) = *cursor_guard {
                 cursor_visible = false;
-                elements.push(CustomElem::from(draw_cursor(
-                    surface.clone(),
-                    state.pointer_location.to_i32_round(),
-                    &log,
-                )));
+                elements
+                    .push(draw_cursor(surface.clone(), state.pointer_location.to_i32_round(), &log).into());
             } else {
                 cursor_visible = true;
             }
@@ -239,7 +225,7 @@ pub fn run_winit(log: Logger) {
             {
                 let fps = state.backend_data.fps.avg().round() as u32;
                 let fps_texture = &state.backend_data.fps_texture;
-                elements.push(CustomElem::from(draw_fps::<Gles2Renderer>(fps_texture, fps)));
+                elements.push(draw_fps::<Gles2Renderer>(fps_texture, fps).into());
             }
 
             let full_redraw = &mut state.backend_data.full_redraw;

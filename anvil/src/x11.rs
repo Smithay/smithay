@@ -9,19 +9,15 @@ use crate::{drawing::*, state::Backend, AnvilState};
 use image::GenericImageView;
 use slog::Logger;
 #[cfg(feature = "debug")]
-use smithay::backend::renderer::ImportMem;
+use smithay::backend::renderer::{gles2::Gles2Texture, ImportMem};
 #[cfg(feature = "egl")]
 use smithay::{backend::renderer::ImportDma, wayland::dmabuf::init_dmabuf_global};
 use smithay::{
     backend::{
         egl::{EGLContext, EGLDisplay},
-        renderer::{
-            gles2::{Gles2Renderer, Gles2Texture},
-            Bind, ImportEgl,
-        },
+        renderer::{gles2::Gles2Renderer, Bind, ImportEgl},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
-    desktop::space::SurfaceTree,
     reexports::{
         calloop::EventLoop,
         gbm,
@@ -35,15 +31,6 @@ use smithay::{
         seat::CursorImageStatus,
     },
 };
-
-smithay::custom_elements! {
-    CustomElem;
-    Gles2Renderer;
-    SurfaceTree=SurfaceTree,
-    PointerElement=PointerElement::<Gles2Texture>,
-    #[cfg(feature = "debug")]
-    FpsElement=FpsElement::<Gles2Texture>,
-}
 
 pub const OUTPUT_NAME: &str = "x11";
 
@@ -239,18 +226,14 @@ pub fn run_x11(log: Logger) {
                 continue;
             }
 
-            let mut elements = Vec::new();
+            let mut elements = Vec::<CustomElem<Gles2Renderer>>::new();
             let dnd_guard = dnd_icon.lock().unwrap();
             let mut cursor_guard = cursor_status.lock().unwrap();
 
             // draw the dnd icon if any
             if let Some(ref surface) = *dnd_guard {
                 if surface.as_ref().is_alive() {
-                    elements.push(CustomElem::from(draw_dnd_icon(
-                        surface.clone(),
-                        (x as i32, y as i32),
-                        &log,
-                    )));
+                    elements.push(draw_dnd_icon(surface.clone(), (x as i32, y as i32), &log).into());
                 }
             }
 
@@ -265,11 +248,7 @@ pub fn run_x11(log: Logger) {
             }
             if let CursorImageStatus::Image(ref surface) = *cursor_guard {
                 cursor_visible = false;
-                elements.push(CustomElem::from(draw_cursor(
-                    surface.clone(),
-                    (x as i32, y as i32),
-                    &log,
-                )));
+                elements.push(draw_cursor(surface.clone(), (x as i32, y as i32), &log).into());
             } else {
                 cursor_visible = true;
             }
@@ -277,7 +256,7 @@ pub fn run_x11(log: Logger) {
             // draw FPS
             #[cfg(feature = "debug")]
             {
-                elements.push(CustomElem::from(draw_fps::<Gles2Renderer>(fps_texture, fps)));
+                elements.push(draw_fps::<Gles2Renderer>(fps_texture, fps).into());
             }
 
             let render_res = crate::render::render_output(

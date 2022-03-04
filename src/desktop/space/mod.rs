@@ -664,36 +664,271 @@ impl<R: Renderer> fmt::Debug for RenderError<R> {
     }
 }
 
-#[cfg_attr(
-    not(feature = "renderer_gl"),
-    doc = r##"
-/// Macro to collate multiple [`smithay::desktop::RenderElement`]-implementations
-/// into one type to be used with [`Space::render_output`].
-"##
-)]
-#[cfg_attr(
-    feature = "renderer_gl",
-    doc = r##"
+#[macro_export]
+#[doc(hidden)]
+macro_rules! custom_elements_internal {
+    (@enum $vis:vis $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+        $vis enum $name {
+            $(
+                $(
+                    #[$meta]
+                )*
+                $body($field)
+            ),*,
+            #[doc(hidden)]
+            _GenericCatcher(std::convert::Infallible),
+        }
+    };
+    (@enum $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+        $vis enum $name<$renderer>
+        where
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
+        {
+            $(
+                $(
+                    #[$meta]
+                )*
+                $body($field)
+            ),*,
+            #[doc(hidden)]
+            _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
+        }
+    };
+    (@body $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+        fn id(&self) -> usize {
+            match self {
+                $(
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::id(x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn type_of(&self) -> std::any::TypeId {
+            match self {
+                $(
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::type_of(x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn geometry(&self) -> $crate::utils::Rectangle<i32, $crate::utils::Logical> {
+            match self {
+                $(
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::geometry(x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn accumulated_damage(&self, for_values: std::option::Option<$crate::desktop::space::SpaceOutputTuple<'_, '_>>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Logical>> {
+            match self {
+                $(
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::accumulated_damage(x, for_values)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn draw(
+            &self,
+            renderer: &mut $renderer,
+            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
+            scale: f64,
+            location: $crate::utils::Point<i32, $crate::utils::Logical>,
+            damage: &[$crate::utils::Rectangle<i32, $crate::utils::Logical>],
+            log: &slog::Logger,
+        ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error> {
+            match self {
+                $(
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::draw(x, renderer, frame, scale, location, damage, log)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn z_index(&self) -> u8 {
+            match self {
+                $(
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::z_index(x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+    };
+    (@impl $name:ident<$renderer:ident>; $($tail:tt)*) => {
+        impl<$renderer> $crate::desktop::space::RenderElement<$renderer> for $name<$renderer>
+        where
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            <$renderer as Renderer>::TextureId: 'static,
+        {
+            $crate::custom_elements_internal!(@body $renderer; $($tail)*);
+        }
+    };
+    (@impl $name:ident; $renderer:ident; $($tail:tt)*) => {
+        impl<$renderer> $crate::desktop::space::RenderElement<$renderer> for $name
+        where
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            <$renderer as Renderer>::TextureId: 'static,
+        {
+            $crate::custom_elements_internal!(@body $renderer; $($tail)*);
+        }
+    };
+    (@impl $name:ident<=$renderer:ty>; $($tail:tt)*) => {
+        impl $crate::desktop::space::RenderElement<$renderer> for $name
+        {
+            $crate::custom_elements_internal!(@body $renderer; $($tail)*);
+        }
+    };
+    (@from $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+        $(
+            $(
+                #[$meta]
+            )*
+            impl<$renderer> From<$field> for $name<$renderer>
+            where
+                $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
+            {
+                fn from(field: $field) -> $name<$renderer> {
+                    $name::$body(field)
+                }
+            }
+        )*
+    };
+    (@from $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+        $(
+            $(
+                #[$meta]
+            )*
+            impl From<$field> for $name {
+                fn from(field: $field) -> $name {
+                    $name::$body(field)
+                }
+            }
+        )*
+    };
+}
+
 /// Macro to collate multiple [`smithay::desktop::RenderElement`]-implementations
 /// into one type to be used with [`Space::render_output`].
 /// ## Example
 ///
 /// ```no_run
 /// use smithay::{
-///     backend::renderer::{
-///         Texture, Renderer, ImportAll,
-///         gles2::{Gles2Renderer, Gles2Texture},
-///     },
+///     backend::renderer::{Texture, Renderer, ImportAll},
 ///     desktop::space::{SurfaceTree, Space, SpaceOutputTuple, RenderElement},
 ///     utils::{Point, Size, Rectangle, Transform, Logical},
 /// };
 /// use slog::Logger;
 ///
+/// # use smithay::{
+/// #   backend::SwapBuffersError,
+/// #   backend::renderer::{TextureFilter, Frame},
+/// #   reexports::wayland_server::protocol::wl_buffer,
+/// #   wayland::compositor::SurfaceData,
+/// #   utils::{Buffer, Physical},
+/// # };
+/// # struct DummyRenderer;
+/// # struct DummyFrame;
+/// # struct DummyError;
+/// # struct DummyTexture;
+/// # impl Renderer for DummyRenderer {
+/// #    type Error = smithay::backend::SwapBuffersError;
+/// #    type TextureId = DummyTexture;
+/// #    type Frame = DummyFrame;
+/// #    fn id(&self) -> usize { 0 }
+/// #    fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> { Ok(()) }
+/// #    fn upscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> { Ok(()) }
+/// #    fn render<F, R>(
+/// #        &mut self,
+/// #        size: Size<i32, Physical>,
+/// #        dst_transform: Transform,
+/// #        rendering: F,
+/// #    ) -> Result<R, Self::Error>
+/// #    where
+/// #        F: FnOnce(&mut Self, &mut Self::Frame) -> R
+/// #    {
+/// #       Ok(rendering(self, &mut DummyFrame))
+/// #    }
+/// # }
+/// # impl ImportAll for DummyRenderer {
+/// #    fn import_buffer(
+/// #        &mut self,
+/// #        buffer: &wl_buffer::WlBuffer,
+/// #        surface: Option<&SurfaceData>,
+/// #        damage: &[Rectangle<i32, Buffer>],
+/// #    ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> { None }
+/// # }
+/// # impl Texture for DummyTexture {
+/// #    fn width(&self) -> u32 { 0 }
+/// #    fn height(&self) -> u32 { 0 }
+/// # }
+/// # impl Frame for DummyFrame {
+/// #   type Error = SwapBuffersError;
+/// #   type TextureId = DummyTexture;
+/// #   fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> { Ok(()) }
+/// #   #[allow(clippy::too_many_arguments)]
+/// #   fn render_texture_at(
+/// #       &mut self,
+/// #       texture: &Self::TextureId,
+/// #       pos: Point<f64, Physical>,
+/// #       texture_scale: i32,
+/// #       output_scale: f64,
+/// #       src_transform: Transform,
+/// #       damage: &[Rectangle<i32, Buffer>],
+/// #       alpha: f32,
+/// #   ) -> Result<(), Self::Error> {
+/// #       Ok(())
+/// #   }
+/// #   fn render_texture_from_to(
+/// #       &mut self,
+/// #       texture: &Self::TextureId,
+/// #       src: Rectangle<i32, Buffer>,
+/// #       dst: Rectangle<f64, Physical>,
+/// #       damage: &[Rectangle<i32, Buffer>],
+/// #       src_transform: Transform,
+/// #       alpha: f32,
+/// #   ) -> Result<(), Self::Error> {
+/// #       Ok(())   
+/// #   }
+/// #   fn transformation(&self) -> Transform { Transform::Normal }
+/// # }
+///
 /// smithay::custom_elements! {
 ///     CustomElem; // name of the new type
-///     Gles2Renderer; // type of the renderer used
 ///     SurfaceTree=SurfaceTree, // <variant name> = <type to collate>
-///     PointerElement=PointerElement::<Gles2Texture>, // custom pointer rendering
+/// };
+///
+/// smithay::custom_elements! {
+///     CustomElemGeneric<R>; // You can make it generic over renderers!
+///     SurfaceTree=SurfaceTree,
+///     PointerElement=PointerElement<<R as Renderer>::TextureId>, // and then use R in your types
+/// };
+///
+/// smithay::custom_elements! {
+///     CustomElemExplicit<=DummyRenderer>; // You can make it only usable with one renderer
+///     // that is particulary useful, if your renderer has lifetimes (e.g. MultiRenderer)
+///     SurfaceTree=SurfaceTree,
+///     PointerElement=PointerElement<DummyTexture>, // and then you use a concrete and matching texture type
 /// };
 ///
 /// pub struct PointerElement<T: Texture> {
@@ -743,114 +978,32 @@ impl<R: Renderer> fmt::Debug for RenderError<R> {
 ///#    }
 ///# }
 ///# // just placeholders
-///# let mut renderer = unsafe { std::mem::zeroed::<Gles2Renderer>() };
-///# let texture = unsafe { std::mem::zeroed::<Gles2Texture>() };
+///# let mut renderer = DummyRenderer;
+///# let texture = DummyTexture;
 ///# let output = unsafe { std::mem::zeroed() };
+///# let surface_tree: SurfaceTree = unsafe { std::mem::zeroed() };
 ///# let mut space = Space::new(None);
 ///# let age = 0;
 ///
-/// let elements = [CustomElem::from(PointerElement::new(texture, (0, 0).into()))];
+/// let elements = [CustomElem::from(surface_tree)];
 /// space.render_output(&mut renderer, &output, age, [0.0, 0.0, 0.0, 1.0], &elements);
 /// ```
-"##
-)]
 #[macro_export]
 macro_rules! custom_elements {
-    ($name:ident; $renderer:ty;) => {};
-    ($name:ident; $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
-        enum $name { $(
-            $(
-                #[$meta]
-            )*
-            $body($field)
-        ),* }
+    ($vis:vis $name:ident<=$renderer:ty>; $($tail:tt)*) => {
+        $crate::custom_elements_internal!(@enum $vis $name; $($tail)*);
+        $crate::custom_elements_internal!(@impl $name<=$renderer>; $($tail)*);
+        $crate::custom_elements_internal!(@from $name; $($tail)*);
 
-        impl $crate::desktop::space::RenderElement<$renderer> for $name
-        {
-            fn id(&self) -> usize {
-                match self {
-                    $(
-                        $(
-                            #[$meta]
-                        )*
-                        $name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::id(x)
-                    ),*
-                }
-            }
-
-            fn type_of(&self) -> std::any::TypeId {
-                match self {
-                    $(
-                        $(
-                            #[$meta]
-                        )
-                        *$name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::type_of(x)
-                    ),*
-                }
-            }
-
-            fn geometry(&self) -> $crate::utils::Rectangle<i32, $crate::utils::Logical> {
-                match self {
-                    $(
-                        $(
-                            #[$meta]
-                        )
-                        *$name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::geometry(x)
-                    ),*
-                }
-            }
-
-            fn accumulated_damage(&self, for_values: std::option::Option<$crate::desktop::space::SpaceOutputTuple<'_, '_>>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Logical>> {
-                match self {
-                    $(
-                        $(
-                            #[$meta]
-                        )
-                        *$name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::accumulated_damage(x, for_values)
-                    ),*
-                }
-            }
-
-            fn draw(
-                &self,
-                renderer: &mut $renderer,
-                frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
-                scale: f64,
-                location: $crate::utils::Point<i32, $crate::utils::Logical>,
-                damage: &[$crate::utils::Rectangle<i32, $crate::utils::Logical>],
-                log: &slog::Logger,
-            ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>{
-                match self {
-                    $(
-                        $(
-                            #[$meta]
-                        )
-                        *$name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::draw(x, renderer, frame, scale, location, damage, log)
-                    ),*
-                }
-            }
-
-            fn z_index(&self) -> u8 {
-                match self {
-                    $(
-                        $(
-                            #[$meta]
-                        )
-                        *$name::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::z_index(x)
-                    ),*
-                }
-            }
-        }
-
-        $(
-            $(
-                #[$meta]
-            )*
-            impl From<$field> for $name {
-                fn from(field: $field) -> $name {
-                    $name::$body(field)
-                }
-            }
-        )*
+    };
+    ($vis:vis $name:ident<$renderer:ident>; $($tail:tt)*) => {
+        $crate::custom_elements_internal!(@enum $vis $name<$renderer>; $($tail)*);
+        $crate::custom_elements_internal!(@impl $name<$renderer>; $($tail)*);
+        $crate::custom_elements_internal!(@from $name<$renderer>; $($tail)*);
+    };
+    ($vis:vis $name:ident; $($tail:tt)*) => {
+        $crate::custom_elements_internal!(@enum $vis $name; $($tail)*);
+        $crate::custom_elements_internal!(@impl $name; R; $($tail)*);
+        $crate::custom_elements_internal!(@from $name; $($tail)*);
     };
 }

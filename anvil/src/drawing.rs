@@ -16,6 +16,14 @@ use smithay::{
 
 pub static CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.9, 1.0];
 
+smithay::custom_elements! {
+    pub CustomElem<R>;
+    SurfaceTree=SurfaceTree,
+    PointerElement=PointerElement::<<R as Renderer>::TextureId>,
+    #[cfg(feature = "debug")]
+    FpsElement=FpsElement::<<R as Renderer>::TextureId>,
+}
+
 pub fn draw_cursor(
     surface: wl_surface::WlSurface,
     location: impl Into<Point<i32, Logical>>,

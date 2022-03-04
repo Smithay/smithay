@@ -71,8 +71,7 @@ use smithay::{
 
 type UdevRenderer<'a> = MultiRenderer<'a, 'a, EglGlesBackend, EglGlesBackend, Gles2Renderbuffer>;
 smithay::custom_elements! {
-    CustomElem;
-    UdevRenderer<'_>;
+    pub CustomElem<=UdevRenderer<'_>>;
     SurfaceTree=SurfaceTree,
     PointerElement=PointerElement::<MultiTexture>,
     #[cfg(feature = "debug")]
@@ -810,11 +809,7 @@ fn render_surface(
         {
             if let Some(ref wl_surface) = dnd_icon.as_ref() {
                 if wl_surface.as_ref().is_alive() {
-                    elements.push(CustomElem::from(draw_dnd_icon(
-                        (*wl_surface).clone(),
-                        ptr_location,
-                        logger,
-                    )));
+                    elements.push(draw_dnd_icon((*wl_surface).clone(), ptr_location, logger).into());
                 }
             }
         }
@@ -831,25 +826,15 @@ fn render_surface(
             }
 
             if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
-                elements.push(CustomElem::from(draw_cursor(
-                    wl_surface.clone(),
-                    ptr_location,
-                    logger,
-                )));
+                elements.push(draw_cursor(wl_surface.clone(), ptr_location, logger).into());
             } else {
-                elements.push(CustomElem::from(PointerElement::new(
-                    pointer_image.clone(),
-                    ptr_location,
-                )));
+                elements.push(PointerElement::new(pointer_image.clone(), ptr_location).into());
             }
         }
 
         #[cfg(feature = "debug")]
         {
-            elements.push(CustomElem::from(draw_fps::<UdevRenderer<'_>>(
-                fps_texture,
-                surface.fps.avg().round() as u32,
-            )));
+            elements.push(draw_fps::<UdevRenderer<'_>>(fps_texture, surface.fps.avg().round() as u32).into());
             surface.fps.tick();
         }
     }
