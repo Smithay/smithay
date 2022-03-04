@@ -186,7 +186,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                             1.0,
                             (0, 0).into(),
                             &[damage.to_logical(1)],
-                            &mut display.handle(),
+                            dh,
                             &log,
                         )
                         .unwrap();
@@ -195,8 +195,6 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 });
             })?;
-
-        backend.submit(Some(&[damage.to_logical(1)]), 1.0).unwrap();
 
         if let Some(stream) = listener.accept()? {
             println!("Got a client: {:?}", stream);
@@ -207,6 +205,10 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
         display.dispatch_clients(&mut state)?;
         display.flush_clients()?;
+
+        // It is important that all events on the display have been dispatched and flushed to clients before
+        // swapping buffers because this operation may block.
+        backend.submit(Some(&[damage.to_logical(1)]), 1.0).unwrap();
     }
 }
 
