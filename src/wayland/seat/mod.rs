@@ -406,6 +406,23 @@ pub struct SeatUserData<T> {
     seat: Arc<SeatRc<T>>,
 }
 
+#[macro_export]
+macro_rules! delegate_seat {
+    ($ty: ty) => {
+        $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
+            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat
+        ] => $crate::wayland::seat::SeatState<$ty>);
+
+        $crate::reexports::wayland_server::delegate_dispatch!($ty: [
+            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat,
+            $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer,
+            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard
+            // TODO: Enable touch
+            //$crate::reexports::wayland_server::protocol::wl_touch::WlTouch
+        ] => $crate::wayland::seat::SeatState<$ty>);
+    };
+}
+
 impl<T: 'static> DelegateDispatchBase<WlSeat> for SeatState<T> {
     type UserData = SeatUserData<T>;
 }
