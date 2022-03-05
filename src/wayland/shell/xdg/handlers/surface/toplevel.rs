@@ -194,7 +194,6 @@ where
             .lock()
             .unwrap())
     })
-    .unwrap()
 }
 
 pub(super) fn make_toplevel_handle(
@@ -231,7 +230,6 @@ where
     compositor::with_states(&data.wl_surface, |states| {
         f(&mut *states.cached_state.pending::<SurfaceCachedState>())
     })
-    .unwrap()
 }
 
 pub fn send_toplevel_configure(

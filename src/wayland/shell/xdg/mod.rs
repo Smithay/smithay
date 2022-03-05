@@ -61,7 +61,6 @@
 //! the subhandler you provided, or via methods on the [`ShellState`]
 //! that you are given (in an `Arc<Mutex<_>>`) as return value of the `init` function.
 
-use crate::utils::DeadResource;
 use crate::utils::{user_data::UserDataMap, Logical, Point, Rectangle, Size};
 use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
@@ -904,13 +903,6 @@ impl std::cmp::PartialEq for ToplevelSurface {
 }
 
 impl ToplevelSurface {
-    /// Is the toplevel surface referred by this handle still alive?
-    pub fn alive(&self, dh: &mut DisplayHandle<'_>) -> bool {
-        let a = dh.object_info(self.shell_surface.id()).is_ok();
-        let b = dh.object_info(self.wl_surface.id()).is_ok();
-        a && b
-    }
-
     /// Supported XDG shell protocol version.
     pub fn version(&self) -> u32 {
         self.shell_surface.version()
@@ -919,11 +911,7 @@ impl ToplevelSurface {
     /// Retrieve the shell client owning this toplevel surface
     ///
     /// Returns `None` if the surface does actually no longer exist.
-    pub fn client(&self, dh: &mut DisplayHandle<'_>) -> Option<ShellClient> {
-        if !self.alive(dh) {
-            return None;
-        }
-
+    pub fn client(&self) -> ShellClient {
         let shell = {
             let data = self
                 .shell_surface
@@ -932,7 +920,7 @@ impl ToplevelSurface {
             data.wm_base.clone()
         };
 
-        Some(ShellClient { kind: shell })
+        ShellClient { kind: shell }
     }
 
     /// Gets the current pending state for a configure
@@ -966,53 +954,50 @@ impl ToplevelSurface {
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
     pub fn send_configure(&self, dh: &mut DisplayHandle<'_>) {
-        if let Some(surface) = self.get_surface(dh) {
-            let configure = compositor::with_states(surface, |states| {
-                let mut attributes = states
-                    .data_map
-                    .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
-                if let Some(pending) = self.get_pending_state(&mut *attributes) {
-                    // Retrieve the last configured decoration mode and test
-                    // if the mode has changed.
-                    // We have to do this check before adding the pending state
-                    // to the pending configures.
-                    let decoration_mode_changed =
-                        pending.decoration_mode != attributes.current_server_state().decoration_mode;
+        let configure = compositor::with_states(&self.wl_surface, |states| {
+            let mut attributes = states
+                .data_map
+                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
+            if let Some(pending) = self.get_pending_state(&mut *attributes) {
+                // Retrieve the last configured decoration mode and test
+                // if the mode has changed.
+                // We have to do this check before adding the pending state
+                // to the pending configures.
+                let decoration_mode_changed =
+                    pending.decoration_mode != attributes.current_server_state().decoration_mode;
 
-                    let configure = ToplevelConfigure {
-                        serial: SERIAL_COUNTER.next_serial(),
-                        state: pending,
-                    };
+                let configure = ToplevelConfigure {
+                    serial: SERIAL_COUNTER.next_serial(),
+                    state: pending,
+                };
 
-                    attributes.pending_configures.push(configure.clone());
-                    attributes.initial_configure_sent = true;
+                attributes.pending_configures.push(configure.clone());
+                attributes.initial_configure_sent = true;
 
-                    Some((configure, decoration_mode_changed))
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(None);
-            if let Some((configure, decoration_mode_changed)) = configure {
-                if decoration_mode_changed {
-                    if let Some(data) = self.shell_surface.data::<XdgShellSurfaceUserData>() {
-                        if let Some(_decoration) = &*data.decoration.lock().unwrap() {
-                            // TODO:
-                            // self::decoration::send_decoration_configure(
-                            //     decoration,
-                            //     configure.state.decoration_mode.unwrap_or(
-                            //         xdg_decoration::v1::server::zxdg_toplevel_decoration_v1::Mode::ClientSide,
-                            //     ),
-                            // );
-                        }
+                Some((configure, decoration_mode_changed))
+            } else {
+                None
+            }
+        });
+        if let Some((configure, decoration_mode_changed)) = configure {
+            if decoration_mode_changed {
+                if let Some(data) = self.shell_surface.data::<XdgShellSurfaceUserData>() {
+                    if let Some(_decoration) = &*data.decoration.lock().unwrap() {
+                        // TODO:
+                        // self::decoration::send_decoration_configure(
+                        //     decoration,
+                        //     configure.state.decoration_mode.unwrap_or(
+                        //         xdg_decoration::v1::server::zxdg_toplevel_decoration_v1::Mode::ClientSide,
+                        //     ),
+                        // );
                     }
                 }
-
-                self::handlers::send_toplevel_configure(dh, &self.shell_surface, configure)
             }
+
+            self::handlers::send_toplevel_configure(dh, &self.shell_surface, configure)
         }
     }
 
@@ -1031,8 +1016,7 @@ impl ToplevelSurface {
             if let Some(state) = guard.last_acked.clone() {
                 guard.current = state;
             }
-        })
-        .unwrap();
+        });
     }
 
     /// Make sure this surface was configured
@@ -1044,9 +1028,6 @@ impl ToplevelSurface {
     /// `xdg_shell` mandates that a client acks a configure before committing
     /// anything.
     pub fn ensure_configured(&self, dh: &mut DisplayHandle<'_>) -> bool {
-        if !self.alive(dh) {
-            return false;
-        }
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
@@ -1055,8 +1036,7 @@ impl ToplevelSurface {
                 .lock()
                 .unwrap()
                 .configured
-        })
-        .unwrap();
+        });
         if !configured {
             let data = self
                 .shell_surface
@@ -1079,12 +1059,8 @@ impl ToplevelSurface {
     /// Access the underlying `wl_surface` of this toplevel surface
     ///
     /// Returns `None` if the toplevel surface actually no longer exists.
-    pub fn get_surface(&self, dh: &mut DisplayHandle<'_>) -> Option<&wl_surface::WlSurface> {
-        if self.alive(dh) {
-            Some(&self.wl_surface)
-        } else {
-            None
-        }
+    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
+        &self.wl_surface
     }
 
     /// Allows the pending state of this toplevel to
@@ -1094,15 +1070,11 @@ impl ToplevelSurface {
     /// for example after a resize request from the client.
     ///
     /// The state will be sent to the client when calling [`send_configure`](#method.send_configure).
-    pub fn with_pending_state<F, T>(&self, dh: &mut DisplayHandle<'_>, f: F) -> Result<T, DeadResource>
+    pub fn with_pending_state<F, T>(&self, f: F) -> T
     where
         F: FnOnce(&mut ToplevelState) -> T,
     {
-        if !self.alive(dh) {
-            return Err(DeadResource);
-        }
-
-        Ok(compositor::with_states(&self.wl_surface, |states| {
+        compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
                 .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
@@ -1116,31 +1088,23 @@ impl ToplevelSurface {
             let server_pending = attributes.server_pending.as_mut().unwrap();
             f(server_pending)
         })
-        .unwrap())
     }
 
     /// Gets a copy of the current state of this toplevel
     ///
     /// Returns `None` if the underlying surface has been
     /// destroyed
-    pub fn current_state(&self, dh: &mut DisplayHandle<'_>) -> Option<ToplevelState> {
-        if !self.alive(dh) {
-            return None;
-        }
+    pub fn current_state(&self) -> ToplevelState {
+        compositor::with_states(&self.wl_surface, |states| {
+            let attributes = states
+                .data_map
+                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
 
-        Some(
-            compositor::with_states(&self.wl_surface, |states| {
-                let attributes = states
-                    .data_map
-                    .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
-
-                attributes.current.clone()
-            })
-            .unwrap(),
-        )
+            attributes.current.clone()
+        })
     }
 
     /// Returns the parent of this toplevel surface.
@@ -1200,42 +1164,25 @@ impl std::cmp::PartialEq for PopupSurface {
 }
 
 impl PopupSurface {
-    /// Is the popup surface referred by this handle still alive?
-    pub fn alive(&self, dh: &mut DisplayHandle<'_>) -> bool {
-        let a = dh.object_info(self.shell_surface.id()).is_ok();
-        let b = dh.object_info(self.wl_surface.id()).is_ok();
-
-        a && b
-    }
-
     /// Gets a reference of the parent WlSurface of
     /// this popup.
-    pub fn get_parent_surface(&self, dh: &mut DisplayHandle<'_>) -> Option<wl_surface::WlSurface> {
-        if !self.alive(dh) {
-            None
-        } else {
-            compositor::with_states(&self.wl_surface, |states| {
-                states
-                    .data_map
-                    .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .parent
-                    .clone()
-            })
-            .unwrap()
-        }
+    pub fn get_parent_surface(&self) -> Option<wl_surface::WlSurface> {
+        compositor::with_states(&self.wl_surface, |states| {
+            states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .parent
+                .clone()
+        })
     }
 
     /// Retrieve the shell client owning this popup surface
     ///
     /// Returns `None` if the surface does actually no longer exist.
-    pub fn client(&self, dh: &mut DisplayHandle<'_>) -> Option<ShellClient> {
-        if !self.alive(dh) {
-            return None;
-        }
-
+    pub fn client(&self) -> ShellClient {
         let shell = {
             let data = self
                 .shell_surface
@@ -1244,7 +1191,7 @@ impl PopupSurface {
             data.wm_base.clone()
         };
 
-        Some(ShellClient { kind: shell })
+        ShellClient { kind: shell }
     }
 
     /// Get the version of the popup resource
@@ -1255,42 +1202,39 @@ impl PopupSurface {
     /// Internal configure function to re-use the configure
     /// logic for both [`XdgRequest::send_configure`] and [`XdgRequest::send_repositioned`]
     fn send_configure_internal(&self, dh: &mut DisplayHandle<'_>, reposition_token: Option<u32>) {
-        if let Some(surface) = self.get_surface(dh) {
-            let next_configure = compositor::with_states(surface, |states| {
-                let mut attributes = states
-                    .data_map
-                    .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
+        let next_configure = compositor::with_states(&self.wl_surface, |states| {
+            let mut attributes = states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
 
-                if !attributes.initial_configure_sent
-                    || attributes.has_pending_changes()
-                    || reposition_token.is_some()
-                {
-                    let pending = attributes
-                        .server_pending
-                        .take()
-                        .unwrap_or_else(|| *attributes.current_server_state());
+            if !attributes.initial_configure_sent
+                || attributes.has_pending_changes()
+                || reposition_token.is_some()
+            {
+                let pending = attributes
+                    .server_pending
+                    .take()
+                    .unwrap_or_else(|| *attributes.current_server_state());
 
-                    let configure = PopupConfigure {
-                        state: pending,
-                        serial: SERIAL_COUNTER.next_serial(),
-                        reposition_token,
-                    };
+                let configure = PopupConfigure {
+                    state: pending,
+                    serial: SERIAL_COUNTER.next_serial(),
+                    reposition_token,
+                };
 
-                    attributes.pending_configures.push(configure);
-                    attributes.initial_configure_sent = true;
+                attributes.pending_configures.push(configure);
+                attributes.initial_configure_sent = true;
 
-                    Some(configure)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(None);
-            if let Some(configure) = next_configure {
-                self::handlers::send_popup_configure(dh, &self.shell_surface, configure);
+                Some(configure)
+            } else {
+                None
             }
+        });
+        if let Some(configure) = next_configure {
+            self::handlers::send_popup_configure(dh, &self.shell_surface, configure);
         }
     }
 
@@ -1305,35 +1249,32 @@ impl PopupSurface {
     /// the client protocol version disallows a re-configure or the current [`PositionerState`]
     /// is not reactive
     pub fn send_configure(&self, dh: &mut DisplayHandle<'_>) -> Result<(), PopupConfigureError> {
-        if let Some(surface) = self.get_surface(dh) {
-            // Check if we are allowed to send a configure
-            compositor::with_states(surface, |states| {
-                let attributes = states
-                    .data_map
-                    .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
+        // Check if we are allowed to send a configure
+        compositor::with_states(&self.wl_surface, |states| {
+            let attributes = states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
 
-                if attributes.initial_configure_sent && self.version() < xdg_popup::EVT_REPOSITIONED_SINCE {
-                    // Return error, initial configure already sent and client
-                    // does not support re-configure
-                    return Err(PopupConfigureError::AlreadyConfigured);
-                }
+            if attributes.initial_configure_sent && self.version() < xdg_popup::EVT_REPOSITIONED_SINCE {
+                // Return error, initial configure already sent and client
+                // does not support re-configure
+                return Err(PopupConfigureError::AlreadyConfigured);
+            }
 
-                let is_reactive = attributes.current.positioner.reactive;
+            let is_reactive = attributes.current.positioner.reactive;
 
-                if attributes.initial_configure_sent && !is_reactive {
-                    // Return error, the positioner does not allow re-configure
-                    return Err(PopupConfigureError::NotReactive);
-                }
+            if attributes.initial_configure_sent && !is_reactive {
+                // Return error, the positioner does not allow re-configure
+                return Err(PopupConfigureError::NotReactive);
+            }
 
-                Ok(())
-            })
-            .unwrap_or(Ok(()))?;
+            Ok(())
+        })?;
 
-            self.send_configure_internal(dh, None);
-        }
+        self.send_configure_internal(dh, None);
 
         Ok(())
     }
@@ -1363,8 +1304,7 @@ impl PopupSurface {
             } else {
                 None
             }
-        })
-        .unwrap_or(None);
+        });
         if let Some(handle) = send_error_to {
             let data = handle.data::<self::handlers::XdgShellSurfaceUserData>().unwrap();
             data.xdg_surface.post_error(
@@ -1391,8 +1331,7 @@ impl PopupSurface {
                 }
             }
             !attributes.initial_configure_sent
-        })
-        .unwrap();
+        });
     }
 
     /// Make sure this surface was configured
@@ -1404,9 +1343,6 @@ impl PopupSurface {
     /// xdg_shell mandates that a client acks a configure before committing
     /// anything.
     pub fn ensure_configured(&self, dh: &mut DisplayHandle<'_>) -> bool {
-        if !self.alive(dh) {
-            return false;
-        }
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
@@ -1415,8 +1351,7 @@ impl PopupSurface {
                 .lock()
                 .unwrap()
                 .configured
-        })
-        .unwrap();
+        });
         if !configured {
             let data = self
                 .shell_surface
@@ -1436,22 +1371,14 @@ impl PopupSurface {
     /// It means that the use has dismissed the popup surface, or that
     /// the pointer has left the area of popup grab if there was a grab.
     pub fn send_popup_done(&self, dh: &mut DisplayHandle<'_>) {
-        if !self.alive(dh) {
-            return;
-        }
-
         self.shell_surface.popup_done(dh);
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface
     ///
     /// Returns `None` if the popup surface actually no longer exists.
-    pub fn get_surface(&self, dh: &mut DisplayHandle<'_>) -> Option<&wl_surface::WlSurface> {
-        if self.alive(dh) {
-            Some(&self.wl_surface)
-        } else {
-            None
-        }
+    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
+        &self.wl_surface
     }
 
     /// Allows the pending state of this popup to
@@ -1461,15 +1388,11 @@ impl PopupSurface {
     /// for example after a move of the parent toplevel.
     ///
     /// The state will be sent to the client when calling [`send_configure`](#method.send_configure).
-    pub fn with_pending_state<F, T>(&self, dh: &mut DisplayHandle<'_>, f: F) -> Result<T, DeadResource>
+    pub fn with_pending_state<F, T>(&self, f: F) -> T
     where
         F: FnOnce(&mut PopupState) -> T,
     {
-        if !self.alive(dh) {
-            return Err(DeadResource);
-        }
-
-        Ok(compositor::with_states(&self.wl_surface, |states| {
+        compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
                 .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
@@ -1483,7 +1406,6 @@ impl PopupSurface {
             let server_pending = attributes.server_pending.as_mut().unwrap();
             f(server_pending)
         })
-        .unwrap())
     }
 }
 
