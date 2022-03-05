@@ -243,6 +243,7 @@ impl TransactionQueue {
             // if not, does this transaction depend on any previous transaction?
             if !skip {
                 for (s, _) in &self.transactions[i].surfaces {
+                    // TODO: is this alive check still needed?
                     if dh.object_info(s.id()).is_err() {
                         continue;
                     }
@@ -257,6 +258,7 @@ impl TransactionQueue {
                 // this transaction is not yet ready and should be skipped, add its surfaces to our
                 // seen list
                 for (s, _) in &self.transactions[i].surfaces {
+                    // TODO: is this alive check still needed?
                     if dh.object_info(s.id()).is_err() {
                         continue;
                     }
