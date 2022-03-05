@@ -155,6 +155,8 @@ where
     }
 
     fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &Self::UserData) {
+        data.alive_tracker.destroy_notify();
+
         if let Some(surface_data) = data.xdg_surface.data::<XdgSurfaceUserData>() {
             surface_data.has_active_role.store(false, Ordering::Release);
         }

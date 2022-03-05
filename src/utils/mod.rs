@@ -10,6 +10,9 @@ pub mod x11rb;
 pub(crate) mod ids;
 pub mod user_data;
 
+#[cfg(feature = "wayland_frontend")]
+pub mod alive_tracker;
+
 pub use self::geometry::{Buffer, Coordinate, Logical, Physical, Point, Raw, Rectangle, Size, Transform};
 
 /// This resource is not managed by Smithay

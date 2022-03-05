@@ -11,6 +11,7 @@ use wayland_server::{
     GlobalDispatch, Resource,
 };
 
+use crate::utils::alive_tracker::{AliveTracker, IsAlive};
 use crate::wayland::{compositor, shell::wlr_layer::Layer, Serial};
 
 use super::{
@@ -19,6 +20,10 @@ use super::{
 };
 
 use super::LAYER_SURFACE_ROLE;
+
+/*
+ * layer_shell
+ */
 
 impl DelegateGlobalDispatchBase<ZwlrLayerShellV1> for WlrLayerShellState {
     type GlobalData = ();
@@ -98,6 +103,7 @@ where
                     WlrLayerSurfaceUserData {
                         shell_data: state.shell_state().clone(),
                         wl_surface: wl_surface.clone(),
+                        alive_tracker: Default::default(),
                     },
                 );
 
@@ -171,6 +177,25 @@ where
             }
             _ => {}
         }
+    }
+}
+
+/*
+ * layer_surface
+ */
+
+/// User data for wlr layer surface
+#[derive(Debug)]
+pub struct WlrLayerSurfaceUserData {
+    shell_data: WlrLayerShellState,
+    wl_surface: wl_surface::WlSurface,
+    alive_tracker: AliveTracker,
+}
+
+impl IsAlive for ZwlrLayerSurfaceV1 {
+    fn alive(&self) -> bool {
+        let data: &WlrLayerSurfaceUserData = self.data().unwrap();
+        data.alive_tracker.alive()
     }
 }
 
@@ -317,6 +342,7 @@ where
         object_id: wayland_server::backend::ObjectId,
         data: &Self::UserData,
     ) {
+        data.alive_tracker.destroy_notify();
         // remove this surface from the known ones (as well as any leftover dead surface)
         data.shell_data
             .known_layers
@@ -324,13 +350,6 @@ where
             .unwrap()
             .retain(|other| other.shell_surface.id() != object_id);
     }
-}
-
-/// User data for wlr layer surface
-#[derive(Debug)]
-pub struct WlrLayerSurfaceUserData {
-    shell_data: WlrLayerShellState,
-    wl_surface: wl_surface::WlSurface,
 }
 
 fn with_surface_pending_state<F, T>(layer_surface: &zwlr_layer_surface_v1::ZwlrLayerSurfaceV1, f: F) -> T
