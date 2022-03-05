@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
+use smithay::delegate_seat;
 use smithay::reexports::wayland_server::Display;
 use smithay::wayland::seat::{self as seat, SeatHandler};
 
 use seat::SeatState;
 
 use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
-use wayland_server::protocol::{wl_keyboard::WlKeyboard, wl_pointer::WlPointer, wl_seat::WlSeat};
 use wayland_server::socket::ListeningSocket;
-use wayland_server::{delegate_dispatch, delegate_global_dispatch};
 
 struct App {
     seat_state: SeatState<Self>,
@@ -77,5 +76,4 @@ impl ClientData<App> for ClientState {
     }
 }
 
-delegate_global_dispatch!(App: [WlSeat] => SeatState<App>);
-delegate_dispatch!(App: [WlSeat, WlPointer, WlKeyboard] => SeatState<App>);
+delegate_seat!(App);

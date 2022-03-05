@@ -1,17 +1,12 @@
 use std::sync::Arc;
 
+use smithay::delegate_compositor;
 use smithay::reexports::wayland_server::Display;
 
 use smithay::wayland::compositor::{CompositorHandler, CompositorState};
 
 use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
-use wayland_server::protocol::wl_callback::WlCallback;
-use wayland_server::protocol::wl_compositor::WlCompositor;
-use wayland_server::protocol::wl_region::WlRegion;
-use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
-use wayland_server::protocol::wl_subsurface::WlSubsurface;
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{delegate_dispatch, delegate_global_dispatch};
 use wayland_server::{socket::ListeningSocket, DisplayHandle};
 
 struct App {
@@ -69,8 +64,4 @@ impl AsMut<CompositorState> for App {
     }
 }
 
-delegate_global_dispatch!(App: [WlCompositor] => CompositorState);
-delegate_dispatch!(App: [WlCompositor, WlSurface, WlRegion, WlCallback] => CompositorState);
-
-delegate_global_dispatch!(App: [WlSubcompositor] => CompositorState);
-delegate_dispatch!(App: [WlSubcompositor, WlSubsurface] => CompositorState);
+delegate_compositor!(App);
