@@ -248,6 +248,33 @@ impl ShmGlobalData {
                 stride,
                 format,
             } => {
+                // Validate client parameters
+                let message = if offset < 0 {
+                    Some("offset must not be negative".to_string())
+                } else if width <= 0 || height <= 0 {
+                    Some(format!("invalid width or height ({}x{})", width, height))
+                } else if stride < width {
+                    Some(format!(
+                        "width must not be larger than stride (width {}, stride {})",
+                        width, stride
+                    ))
+                } else if (i32::MAX / stride) < height {
+                    Some(format!(
+                        "height is too large for stride (max {})",
+                        i32::MAX / stride
+                    ))
+                } else if offset > arc_pool.size() as i32 - (stride * height) {
+                    Some("offset is too large".to_string())
+                } else {
+                    None
+                };
+
+                if let Some(message) = message {
+                    pool.as_ref()
+                        .post_error(wl_shm::Error::InvalidStride as u32, message);
+                    return;
+                }
+
                 if !self.formats.contains(&format) {
                     pool.as_ref().post_error(
                         wl_shm::Error::InvalidFormat as u32,
