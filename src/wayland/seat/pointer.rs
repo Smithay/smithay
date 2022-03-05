@@ -150,6 +150,7 @@ impl<T> PointerInternal<T> {
     {
         if let Some((ref focus, _)) = self.focus {
             focus.id();
+            // TODO: is this alive check still needed?
             // This is is_alive check
             if dh.object_info(focus.id()).is_err() {
                 return;
@@ -172,6 +173,7 @@ impl<T> PointerInternal<T> {
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some((ref surface, _)) = handler.start_data().focus {
+                    // TODO: is this alive check still needed?
                     // This is is_alive check
                     if dh.object_info(surface.id()).is_err() {
                         self.grab = GrabStatus::None;
@@ -523,8 +525,7 @@ where
                                             .lock()
                                             .unwrap()
                                             .hotspot = (hotspot_x, hotspot_y).into();
-                                    })
-                                    .unwrap();
+                                    });
 
                                     (guard.image_callback)(CursorImageStatus::Image(surface));
                                 }
