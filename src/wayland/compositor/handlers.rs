@@ -16,7 +16,10 @@ use wayland_server::{
     Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
-use crate::utils::{Logical, Point};
+use crate::utils::{
+    alive_tracker::{AliveTracker, IsAlive},
+    Logical, Point,
+};
 
 use super::{
     cache::Cacheable,
@@ -86,6 +89,7 @@ where
                     id,
                     SurfaceUserData {
                         inner: PrivateSurfaceData::new(),
+                        alive_tracker: Default::default(),
                     },
                 );
                 PrivateSurfaceData::init(&surface);
@@ -149,6 +153,7 @@ impl Cacheable for SurfaceAttributes {
 #[derive(Debug)]
 pub struct SurfaceUserData {
     pub(crate) inner: Mutex<PrivateSurfaceData>,
+    alive_tracker: AliveTracker,
 }
 
 impl DelegateDispatchBase<WlSurface> for CompositorState {
@@ -278,7 +283,15 @@ where
         object_id: wayland_server::backend::ObjectId,
         data: &Self::UserData,
     ) {
+        data.alive_tracker.destroy_notify();
         PrivateSurfaceData::cleanup(data, object_id);
+    }
+}
+
+impl IsAlive for WlSurface {
+    fn alive(&self) -> bool {
+        let data: &SurfaceUserData = self.data().unwrap();
+        data.alive_tracker.alive()
     }
 }
 

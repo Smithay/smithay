@@ -61,6 +61,7 @@
 //! the subhandler you provided, or via methods on the [`ShellState`]
 //! that you are given (in an `Arc<Mutex<_>>`) as return value of the `init` function.
 
+use crate::utils::alive_tracker::IsAlive;
 use crate::utils::{user_data::UserDataMap, Logical, Point, Rectangle, Size};
 use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
@@ -888,6 +889,11 @@ impl std::cmp::PartialEq for ToplevelSurface {
 }
 
 impl ToplevelSurface {
+    /// Is the toplevel surface referred by this handle still alive?
+    pub fn alive(&self) -> bool {
+        self.wl_surface.alive() && self.shell_surface.alive()
+    }
+
     /// Supported XDG shell protocol version.
     pub fn version(&self) -> u32 {
         self.shell_surface.version()
@@ -1155,6 +1161,11 @@ impl std::cmp::PartialEq for PopupSurface {
 }
 
 impl PopupSurface {
+    /// Is the toplevel surface referred by this handle still alive?
+    pub fn alive(&self) -> bool {
+        self.wl_surface.alive() && self.shell_surface.alive()
+    }
+
     /// Gets a reference of the parent WlSurface of
     /// this popup.
     pub fn get_parent_surface(&self) -> Option<wl_surface::WlSurface> {
