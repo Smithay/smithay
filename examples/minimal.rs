@@ -9,6 +9,7 @@ use smithay::{
         },
         winit::{self, WinitEvent},
     },
+    delegate_compositor, delegate_seat, delegate_shm, delegate_xdg_shell,
     reexports::wayland_server::Display,
     utils::{Rectangle, Transform},
     wayland::{
@@ -21,30 +22,10 @@ use smithay::{
         shm::{ShmHandler, ShmState},
     },
 };
-use wayland_protocols::xdg_shell::server::{
-    xdg_popup::XdgPopup,
-    xdg_positioner::XdgPositioner,
-    xdg_surface::XdgSurface,
-    xdg_toplevel::{self, XdgToplevel},
-    xdg_wm_base::XdgWmBase,
-};
+use wayland_protocols::xdg_shell::server::xdg_toplevel;
 use wayland_server::{
     backend::{ClientData, ClientId, DisconnectReason},
-    delegate_dispatch, delegate_global_dispatch,
-    protocol::{
-        wl_buffer::WlBuffer,
-        wl_callback::WlCallback,
-        wl_compositor::WlCompositor,
-        wl_keyboard::WlKeyboard,
-        wl_pointer::WlPointer,
-        wl_region::WlRegion,
-        wl_seat::WlSeat,
-        wl_shm::WlShm,
-        wl_shm_pool::WlShmPool,
-        wl_subcompositor::WlSubcompositor,
-        wl_subsurface::WlSubsurface,
-        wl_surface::{self, WlSurface},
-    },
+    protocol::wl_surface::{self, WlSurface},
     socket::ListeningSocket,
     DisplayHandle,
 };
@@ -242,33 +223,8 @@ impl ClientData<App> for ClientState {
     }
 }
 
-//
-// Xdg Shell
-//
-
-delegate_global_dispatch!(App: [XdgWmBase] => XdgShellState);
-delegate_dispatch!(App: [XdgWmBase, XdgPositioner, XdgPopup, XdgSurface, XdgToplevel] => XdgShellState);
-
-//
-// Wl Compositor
-//
-
-delegate_global_dispatch!(App: [WlCompositor] => CompositorState);
-delegate_dispatch!(App: [WlCompositor, WlSurface, WlRegion, WlCallback] => CompositorState);
-
-delegate_global_dispatch!(App: [WlSubcompositor] => CompositorState);
-delegate_dispatch!(App: [WlSubcompositor, WlSubsurface] => CompositorState);
-
-//
-// Wl Shm
-//
-
-delegate_global_dispatch!(App: [WlShm] => ShmState);
-delegate_dispatch!(App: [WlShm, WlShmPool, WlBuffer] => ShmState);
-
-//
-// Wl Seat
-//
-
-delegate_global_dispatch!(App: [WlSeat] => SeatState<App>);
-delegate_dispatch!(App: [WlSeat, WlPointer, WlKeyboard] => SeatState<App>);
+// Macros used to delegate protocol handling to types in the app state.
+delegate_xdg_shell!(App);
+delegate_compositor!(App);
+delegate_shm!(App);
+delegate_seat!(App);
