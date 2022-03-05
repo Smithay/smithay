@@ -86,8 +86,7 @@ where
                     states.data_map.insert_if_missing_threadsafe(|| {
                         Mutex::new(XdgToplevelSurfaceRoleAttributes::default())
                     })
-                })
-                .unwrap();
+                });
 
                 compositor::add_pre_commit_hook(surface, super::super::ToplevelSurface::commit_hook);
 
@@ -162,8 +161,7 @@ where
                         .unwrap()
                         .lock()
                         .unwrap() = attributes;
-                })
-                .unwrap();
+                });
 
                 compositor::add_pre_commit_hook(surface, super::super::PopupSurface::commit_hook);
 
@@ -226,8 +224,7 @@ where
                 compositor::with_states(surface, |states| {
                     states.cached_state.pending::<SurfaceCachedState>().geometry =
                         Some(Rectangle::from_loc_and_size((x, y), (width, height)));
-                })
-                .unwrap();
+                });
             }
             xdg_surface::Request::AckConfigure { serial } => {
                 let serial = Serial::from(serial);
@@ -277,8 +274,7 @@ where
                     } else {
                         Err(())
                     }
-                })
-                .unwrap();
+                });
 
                 let configure = match found_configure {
                     Ok(Some(configure)) => configure,
