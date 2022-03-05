@@ -1,6 +1,6 @@
 use super::{
     pool::{Pool, ResizeError},
-    BufferData, ShmHandler, ShmState,
+    BufferData, ShmState,
 };
 
 use std::sync::Arc;
@@ -14,10 +14,6 @@ use wayland_server::{
     Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
-/*
- * wl_shm
- */
-
 impl DelegateGlobalDispatchBase<WlShm> for ShmState {
     type GlobalData = ();
 }
@@ -27,7 +23,7 @@ where
     D: GlobalDispatch<WlShm, GlobalData = ()>,
     D: Dispatch<WlShm, UserData = ()>,
     D: Dispatch<WlShmPool, UserData = ShmPoolUserData>,
-    D: ShmHandler,
+    D: AsRef<ShmState>,
     D: 'static,
 {
     fn bind(
@@ -41,7 +37,7 @@ where
         let shm = data_init.init(resource, ());
 
         // send the formats
-        for &f in &state.shm_state().formats[..] {
+        for &f in &state.as_ref().formats[..] {
             shm.format(handle, f);
         }
     }
@@ -53,10 +49,10 @@ impl DelegateDispatchBase<WlShm> for ShmState {
 
 impl<D> DelegateDispatch<WlShm, D> for ShmState
 where
-    D: Dispatch<WlShm, UserData = ()>,
-    D: Dispatch<WlShmPool, UserData = ShmPoolUserData>,
-    D: ShmHandler,
-    D: 'static,
+    D: Dispatch<WlShm, UserData = ()>
+        + Dispatch<WlShmPool, UserData = ShmPoolUserData>
+        + AsRef<ShmState>
+        + 'static,
 {
     fn request(
         state: &mut D,
@@ -73,14 +69,16 @@ where
             Request::CreatePool { id: pool, fd, size } => (pool, fd, size),
             _ => unreachable!(),
         };
+
         if size <= 0 {
-            shm.post_error(dh, Error::InvalidFd, "Invalid size for a new wl_shm_pool.");
+            shm.post_error(dh, Error::InvalidStride, "invalid wl_shm_pool size");
             return;
         }
-        let mmap_pool = match Pool::new(fd, size as usize, state.shm_state().log.clone()) {
+
+        let mmap_pool = match Pool::new(fd, size as usize, state.as_ref().log.clone()) {
             Ok(p) => p,
             Err(()) => {
-                shm.post_error(dh, wl_shm::Error::InvalidFd, format!("Failed mmap of fd {}.", fd));
+                shm.post_error(dh, wl_shm::Error::InvalidFd, format!("Failed to mmap fd {}", fd));
                 return;
             }
         };
@@ -110,10 +108,10 @@ impl DelegateDispatchBase<WlShmPool> for ShmState {
 
 impl<D> DelegateDispatch<WlShmPool, D> for ShmState
 where
-    D: Dispatch<WlShmPool, UserData = ShmPoolUserData>,
-    D: Dispatch<WlBuffer, UserData = ShmBufferUserData>,
-    D: ShmHandler,
-    D: 'static,
+    D: Dispatch<WlShmPool, UserData = ShmPoolUserData>
+        + Dispatch<WlBuffer, UserData = ShmBufferUserData>
+        + AsRef<ShmState>
+        + 'static,
 {
     fn request(
         state: &mut D,
@@ -163,43 +161,58 @@ where
                     return;
                 }
 
-                if let WEnum::Value(format) = format {
-                    if !state.shm_state().formats.contains(&format) {
+                match format {
+                    WEnum::Value(format) => {
+                        if !state.as_ref().formats.contains(&format) {
+                            pool.post_error(
+                                dh,
+                                wl_shm::Error::InvalidFormat,
+                                format!("format {:?} not supported", format),
+                            );
+
+                            return;
+                        }
+
+                        let data = ShmBufferUserData {
+                            pool: arc_pool.clone(),
+                            data: BufferData {
+                                offset,
+                                width,
+                                height,
+                                stride,
+                                format,
+                            },
+                        };
+
+                        data_init.init(buffer, data);
+                    }
+
+                    WEnum::Unknown(unknown) => {
                         pool.post_error(
                             dh,
                             wl_shm::Error::InvalidFormat,
-                            format!("SHM format {:?} is not supported.", format),
+                            format!("unknown format 0x{:x}", unknown),
                         );
-                        return;
                     }
-                    let data = ShmBufferUserData {
-                        pool: arc_pool.clone(),
-                        data: BufferData {
-                            offset,
-                            width,
-                            height,
-                            stride,
-                            format,
-                        },
-                    };
-
-                    data_init.init(buffer, data);
                 }
             }
-            Request::Resize { size } => match arc_pool.resize(size) {
-                Ok(()) => {}
-                Err(ResizeError::InvalidSize) => {
-                    pool.post_error(
-                        dh,
-                        wl_shm::Error::InvalidFd,
-                        "Invalid new size for a wl_shm_pool.",
-                    );
+
+            Request::Resize { size } => {
+                if let Err(err) = arc_pool.resize(size) {
+                    match err {
+                        ResizeError::InvalidSize => {
+                            pool.post_error(dh, wl_shm::Error::InvalidFd, "cannot shrink wl_shm_pool");
+                        }
+
+                        ResizeError::MremapFailed => {
+                            pool.post_error(dh, wl_shm::Error::InvalidFd, "mremap failed");
+                        }
+                    }
                 }
-                Err(ResizeError::MremapFailed) => {
-                    pool.post_error(dh, wl_shm::Error::InvalidFd, "mremap failed.");
-                }
-            },
+            }
+
             Request::Destroy => {}
+
             _ => unreachable!(),
         }
     }

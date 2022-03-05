@@ -88,12 +88,6 @@ mod pool;
 
 pub use handlers::{ShmBufferUserData, ShmPoolUserData};
 
-/// Handler for Wl Shm module
-pub trait ShmHandler {
-    /// [ShmState] getter
-    fn shm_state(&mut self) -> &mut ShmState;
-}
-
 /// State of SHM module
 #[derive(Debug)]
 pub struct ShmState {
@@ -103,27 +97,26 @@ pub struct ShmState {
 }
 
 impl ShmState {
-    /// Create a new SHM global advertizing given supported formats.
+    /// Create a new SHM global advertizing the given formats.
     ///
-    /// This global will always advertize `ARGB8888` and `XRGB8888` format
-    /// as they are required by the protocol. Formats given as argument
-    /// as additionally advertized.
+    /// This global will always advertize `ARGB8888` and `XRGB8888` since these formats are required by the
+    /// protocol. Formats given as an argument are also advertized.
     ///
     /// The global is directly created on the provided [`Display`](wayland_server::Display),
-    /// and this function returns the global handle, in case you wish to remove this global in
-    /// the future.
+    /// and this function returns the a delegate type. The id provided by [`ShmState::global`] may be used to
+    /// remove this global in the future.
     pub fn new<L, D>(display: &mut Display<D>, mut formats: Vec<wl_shm::Format>, logger: L) -> ShmState
     where
-        D: GlobalDispatch<WlShm, GlobalData = ()>,
-        D: Dispatch<WlShm, UserData = ()>,
-        D: Dispatch<WlShmPool, UserData = ShmPoolUserData>,
-        D: ShmHandler,
-        D: 'static,
+        D: GlobalDispatch<WlShm, GlobalData = ()>
+            + Dispatch<WlShm, UserData = ()>
+            + Dispatch<WlShmPool, UserData = ShmPoolUserData>
+            + AsRef<ShmState>
+            + 'static,
         L: Into<Option<::slog::Logger>>,
     {
         let log = crate::slog_or_fallback(logger);
 
-        // always add the mandatory formats
+        // Mandatory formats
         formats.push(wl_shm::Format::Argb8888);
         formats.push(wl_shm::Format::Xrgb8888);
 
@@ -136,8 +129,8 @@ impl ShmState {
         }
     }
 
-    /// Get id of WlShm globabl
-    pub fn shm_global(&self) -> GlobalId {
+    /// Returns the id of the [`WlShm`] global.
+    pub fn global(&self) -> GlobalId {
         self.shm.clone()
     }
 }
@@ -173,22 +166,20 @@ pub fn with_buffer_contents<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<
 where
     F: FnOnce(&[u8], BufferData) -> T,
 {
-    let data = match buffer.data::<ShmBufferUserData>() {
-        Some(d) => d,
-        None => return Err(BufferAccessError::NotManaged),
-    };
+    let data = buffer
+        .data::<ShmBufferUserData>()
+        .ok_or(BufferAccessError::NotManaged)?;
 
     match data.pool.with_data_slice(|slice| f(slice, data.data)) {
         Ok(t) => Ok(t),
         Err(()) => {
             // SIGBUS error occurred
+            // FIXME: This error should be emitted.
             // buffer.post_error(display_handle, wl_shm::Error::InvalidFd, "Bad pool size.");
             Err(BufferAccessError::BadMap)
         }
     }
 }
-
-impl ShmState {}
 
 /// Details of the contents of a buffer relative to its pool
 #[derive(Copy, Clone, Debug)]
