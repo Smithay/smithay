@@ -19,7 +19,7 @@ use smithay::{
         },
         seat::{FilterResult, SeatHandler, SeatState},
         shell::xdg::{XdgRequest, XdgShellHandler, XdgShellState},
-        shm::{ShmHandler, ShmState},
+        shm::ShmState,
     },
 };
 use wayland_protocols::xdg_shell::server::xdg_toplevel;
@@ -63,9 +63,9 @@ impl CompositorHandler for App {
     }
 }
 
-impl ShmHandler for App {
-    fn shm_state(&mut self) -> &mut ShmState {
-        &mut self.shm_state
+impl AsRef<ShmState> for App {
+    fn as_ref(&self) -> &ShmState {
+        &self.shm_state
     }
 }
 
