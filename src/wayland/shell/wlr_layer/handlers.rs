@@ -107,8 +107,7 @@ where
                         .insert_if_missing_threadsafe(|| Mutex::new(LayerSurfaceAttributes::new(id.clone())));
 
                     states.cached_state.pending::<LayerSurfaceCachedState>().layer = layer;
-                })
-                .unwrap();
+                });
 
                 compositor::add_pre_commit_hook(&wl_surface, |dh, surface| {
                     compositor::with_states(surface, |states| {
@@ -142,8 +141,7 @@ where
                         if let Some(state) = guard.last_acked.clone() {
                             guard.current = state;
                         }
-                    })
-                    .unwrap();
+                    });
                 });
 
                 let handle = super::LayerSurface {
@@ -273,8 +271,7 @@ where
                         .lock()
                         .unwrap()
                         .parent = Some(parent_surface);
-                })
-                .unwrap();
+                });
             }
             zwlr_layer_surface_v1::Request::AckConfigure { serial } => {
                 let serial = Serial::from(serial);
@@ -288,8 +285,7 @@ where
                         .lock()
                         .unwrap()
                         .ack_configure(serial)
-                })
-                .unwrap();
+                });
 
                 let configure = match found_configure {
                     Some(configure) => configure,
@@ -345,5 +341,4 @@ where
     compositor::with_states(&data.wl_surface, |states| {
         f(&mut *states.cached_state.pending::<LayerSurfaceCachedState>())
     })
-    .unwrap()
 }

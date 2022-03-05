@@ -389,8 +389,7 @@ where
 
                 super::with_states(&surface, |states| {
                     states.data_map.insert_if_missing_threadsafe(SubsurfaceState::new)
-                })
-                .unwrap();
+                });
             }
             wl_subcompositor::Request::Destroy => {}
             _ => unreachable!(),

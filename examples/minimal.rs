@@ -59,11 +59,9 @@ impl XdgShellHandler for App {
 
         match request {
             XdgRequest::NewToplevel { surface } => {
-                surface
-                    .with_pending_state(dh, |state| {
-                        state.states.set(xdg_toplevel::State::Activated);
-                    })
-                    .unwrap();
+                surface.with_pending_state(|state| {
+                    state.states.set(xdg_toplevel::State::Activated);
+                });
                 surface.send_configure(dh);
             }
             XdgRequest::Move { .. } => {
@@ -155,7 +153,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                     let dh = &mut display.handle();
                     state.xdg_shell_state.toplevel_surfaces(|surfaces| {
                         for surface in surfaces {
-                            let surface = surface.get_surface(dh).unwrap();
+                            let surface = surface.wl_surface();
                             keyboard.set_focus(dh, Some(surface), 0.into());
                         }
                     });
@@ -178,7 +176,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                 state.xdg_shell_state.toplevel_surfaces(|surfaces| {
                     for surface in surfaces {
                         let dh = &mut display.handle();
-                        let surface = surface.get_surface(dh).unwrap();
+                        let surface = surface.wl_surface();
                         draw_surface_tree(
                             renderer,
                             frame,
