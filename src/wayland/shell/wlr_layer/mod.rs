@@ -38,7 +38,7 @@ use wayland_server::{
 };
 
 use crate::{
-    utils::{Logical, Size},
+    utils::{alive_tracker::IsAlive, Logical, Size},
     wayland::{
         compositor::{self, Cacheable},
         Serial, SERIAL_COUNTER,
@@ -211,6 +211,11 @@ impl std::cmp::PartialEq for LayerSurface {
 }
 
 impl LayerSurface {
+    /// Checks if the surface is still alive
+    pub fn alive(&self) -> bool {
+        self.wl_surface.alive() && self.shell_surface.alive()
+    }
+
     /// Gets the current pending state for a configure
     ///
     /// Returns `Some` if either no initial configure has been sent or
