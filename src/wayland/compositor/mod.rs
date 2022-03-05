@@ -91,7 +91,7 @@ pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::SubsurfaceCachedState;
 use self::tree::PrivateSurfaceData;
 pub use self::tree::{AlreadyHasRole, TraversalAction};
-use crate::utils::{user_data::UserDataMap, Buffer, DeadResource, Logical, Point, Rectangle};
+use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
 use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
@@ -356,18 +356,11 @@ pub fn give_role(surface: &WlSurface, role: &'static str) -> Result<(), AlreadyH
 }
 
 /// Access the states associated to this surface
-pub fn with_states<F, T>(
-    // dh: &mut DisplayHandle<'_, D>,
-    surface: &WlSurface,
-    f: F,
-) -> Result<T, DeadResource>
+pub fn with_states<F, T>(surface: &WlSurface, f: F) -> T
 where
     F: FnOnce(&SurfaceData) -> T,
 {
-    // if dh.object_info(surface.id()).is_err() {
-    //     return Err(DeadResource);
-    // }
-    Ok(PrivateSurfaceData::with_states(surface, f))
+    PrivateSurfaceData::with_states(surface, f)
 }
 
 /// Retrieve the metadata associated with a `wl_region`

@@ -425,7 +425,7 @@ pub fn init_shell<BackendData: Backend + 'static>(
                             .unwrap()
                             .0
                             .as_ref()
-                            .same_client_as(surface.get_surface().unwrap().as_ref())
+                            .same_client_as(surface.wl_surface().unwrap().as_ref())
                     {
                         return;
                     }
@@ -433,7 +433,7 @@ pub fn init_shell<BackendData: Backend + 'static>(
                     let space = state.space.clone();
                     let window = space
                         .borrow_mut()
-                        .window_for_surface(surface.get_surface().unwrap())
+                        .window_for_surface(surface.wl_surface().unwrap())
                         .unwrap()
                         .clone();
                     let mut initial_window_location = space.borrow().window_location(&window).unwrap();
@@ -501,7 +501,7 @@ pub fn init_shell<BackendData: Backend + 'static>(
                             .unwrap()
                             .0
                             .as_ref()
-                            .same_client_as(surface.get_surface().unwrap().as_ref())
+                            .same_client_as(surface.wl_surface().unwrap().as_ref())
                     {
                         return;
                     }
@@ -509,14 +509,14 @@ pub fn init_shell<BackendData: Backend + 'static>(
                     let space = state.space.clone();
                     let window = space
                         .borrow_mut()
-                        .window_for_surface(surface.get_surface().unwrap())
+                        .window_for_surface(surface.wl_surface().unwrap())
                         .unwrap()
                         .clone();
                     let geometry = window.geometry();
                     let loc = space.borrow().window_location(&window).unwrap();
                     let (initial_window_location, initial_window_size) = (loc, geometry.size);
 
-                    with_states(surface.get_surface().unwrap(), move |states| {
+                    with_states(surface.wl_surface().unwrap(), move |states| {
                         states
                             .data_map
                             .get::<RefCell<SurfaceData>>()
@@ -607,7 +607,7 @@ pub fn init_shell<BackendData: Backend + 'static>(
                     // NOTE: This is only one part of the solution. We can set the
                     // location and configure size here, but the surface should be rendered fullscreen
                     // independently from its buffer size
-                    let wl_surface = if let Some(surface) = surface.get_surface() {
+                    let wl_surface = if let Some(surface) = surface.wl_surface() {
                         surface
                     } else {
                         // If there is no underlying surface just ignore the request
@@ -675,7 +675,7 @@ pub fn init_shell<BackendData: Backend + 'static>(
                     // get the correct maximum size
                     let mut space = state.space.borrow_mut();
                     let window = space
-                        .window_for_surface(surface.get_surface().unwrap())
+                        .window_for_surface(surface.wl_surface().unwrap())
                         .unwrap()
                         .clone();
                     let output = &space.outputs_for_window(&window)[0];
