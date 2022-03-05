@@ -36,7 +36,7 @@
 
 mod keyboard;
 mod pointer;
-mod touch;
+// mod touch;
 
 pub use keyboard::KeyboardUserData;
 pub use pointer::PointerUserData;
@@ -54,7 +54,7 @@ pub use self::{
         AxisFrame, CursorImageAttributes, CursorImageStatus, GrabStartData as PointerGrabStartData,
         PointerGrab, PointerHandle, PointerInnerHandle,
     },
-    touch::TouchHandle,
+    // touch::TouchHandle,
 };
 
 use wayland_server::{
@@ -73,7 +73,7 @@ use wayland_server::{
 struct Inner<T> {
     pointer: Option<PointerHandle<T>>,
     keyboard: Option<KeyboardHandle>,
-    touch: Option<TouchHandle>,
+    // touch: Option<TouchHandle>,
     known_seats: Vec<wl_seat::WlSeat>,
 }
 
@@ -96,9 +96,9 @@ impl<T> Inner<T> {
         if self.keyboard.is_some() {
             caps |= wl_seat::Capability::Keyboard;
         }
-        if self.touch.is_some() {
-            caps |= wl_seat::Capability::Touch;
-        }
+        // if self.touch.is_some() {
+        //     caps |= wl_seat::Capability::Touch;
+        // }
         caps
     }
 
@@ -334,58 +334,58 @@ impl<T: 'static> SeatState<T> {
         }
     }
 
-    /// Adds the touch capability to this seat
-    ///
-    /// You are provided a [`TouchHandle`], which allows you to send input events
-    /// to this pointer. This handle can be cloned.
-    ///
-    /// Calling this method on a seat that already has a touch capability
-    /// will overwrite it, and will be seen by the clients as if the
-    /// touchscreen was unplugged and a new one was plugged in.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # extern crate wayland_server;
-    /// #
-    /// # use smithay::wayland::seat::Seat;
-    /// #
-    /// # let mut display = wayland_server::Display::new();
-    /// # let (mut seat, seat_global) = Seat::new(
-    /// #     &mut display,
-    /// #     "seat-0".into(),
-    /// #     None
-    /// # );
-    /// let touch_handle = seat.add_touch();
-    /// ```
-    pub fn add_touch(&mut self) -> TouchHandle {
-        let mut inner = self.arc.inner.borrow_mut();
-        let touch = TouchHandle::new();
-        if inner.touch.is_some() {
-            // If there's already a tocuh device, remove it notify the clients about the change.
-            inner.touch = None;
-            inner.send_all_caps();
-        }
-        inner.touch = Some(touch.clone());
-        inner.send_all_caps();
-        touch
-    }
+    // /// Adds the touch capability to this seat
+    // ///
+    // /// You are provided a [`TouchHandle`], which allows you to send input events
+    // /// to this pointer. This handle can be cloned.
+    // ///
+    // /// Calling this method on a seat that already has a touch capability
+    // /// will overwrite it, and will be seen by the clients as if the
+    // /// touchscreen was unplugged and a new one was plugged in.
+    // ///
+    // /// # Examples
+    // ///
+    // /// ```
+    // /// # extern crate wayland_server;
+    // /// #
+    // /// # use smithay::wayland::seat::Seat;
+    // /// #
+    // /// # let mut display = wayland_server::Display::new();
+    // /// # let (mut seat, seat_global) = Seat::new(
+    // /// #     &mut display,
+    // /// #     "seat-0".into(),
+    // /// #     None
+    // /// # );
+    // /// let touch_handle = seat.add_touch();
+    // /// ```
+    // pub fn add_touch(&mut self) -> TouchHandle {
+    //     let mut inner = self.arc.inner.borrow_mut();
+    //     let touch = TouchHandle::new();
+    //     if inner.touch.is_some() {
+    //         // If there's already a tocuh device, remove it notify the clients about the change.
+    //         inner.touch = None;
+    //         inner.send_all_caps();
+    //     }
+    //     inner.touch = Some(touch.clone());
+    //     inner.send_all_caps();
+    //     touch
+    // }
 
-    /// Access the touch device of this seat, if any.
-    pub fn get_touch(&self) -> Option<TouchHandle> {
-        self.arc.inner.borrow_mut().touch.clone()
-    }
+    // /// Access the touch device of this seat, if any.
+    // pub fn get_touch(&self) -> Option<TouchHandle> {
+    //     self.arc.inner.borrow_mut().touch.clone()
+    // }
 
-    /// Remove the touch capability from this seat
-    ///
-    /// Clients will be appropriately notified.
-    pub fn remove_touch(&mut self) {
-        let mut inner = self.arc.inner.borrow_mut();
-        if inner.touch.is_some() {
-            inner.touch = None;
-            inner.send_all_caps();
-        }
-    }
+    // /// Remove the touch capability from this seat
+    // ///
+    // /// Clients will be appropriately notified.
+    // pub fn remove_touch(&mut self) {
+    //     let mut inner = self.arc.inner.borrow_mut();
+    //     if inner.touch.is_some() {
+    //         inner.touch = None;
+    //         inner.send_all_caps();
+    //     }
+    // }
 
     /// Checks whether a given [`WlSeat`](wl_seat::WlSeat) is associated with this [`Seat`]
     pub fn owns(&self, seat: &wl_seat::WlSeat) -> bool {
@@ -462,13 +462,14 @@ where
                     // same as pointer, should error but cannot
                 }
             }
-            wl_seat::Request::GetTouch { id } => {
-                let touch = self::touch::implement_touch(id, inner.touch.as_ref());
-                if let Some(ref touch_handle) = inner.touch {
-                    touch_handle.new_touch(touch);
-                } else {
-                    // same as pointer, should error but cannot
-                }
+            wl_seat::Request::GetTouch { id: _ } => {
+                unimplemented!()
+                // let touch = self::touch::implement_touch(id, inner.touch.as_ref());
+                // if let Some(ref touch_handle) = inner.touch {
+                //     touch_handle.new_touch(touch);
+                // } else {
+                //     // same as pointer, should error but cannot
+                // }
             }
             wl_seat::Request::Release => {
                 // Our destructors already handle it
