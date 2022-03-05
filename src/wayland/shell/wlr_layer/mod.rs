@@ -38,7 +38,7 @@ use wayland_server::{
 };
 
 use crate::{
-    utils::{DeadResource, Logical, Size},
+    utils::{Logical, Size},
     wayland::{
         compositor::{self, Cacheable},
         Serial, SERIAL_COUNTER,
@@ -211,15 +211,6 @@ impl std::cmp::PartialEq for LayerSurface {
 }
 
 impl LayerSurface {
-    /// Is the layer surface referred by this handle still alive?
-    pub fn alive(&self, dh: &mut DisplayHandle<'_>) -> bool {
-        // TODO: perhaps is_alive should be stored in both userdata of wlsurface and layersurface
-        // so DisplayHandle would no longer be needed
-        let a = dh.object_info(self.shell_surface.id()).is_ok();
-        let b = dh.object_info(self.wl_surface.id()).is_ok();
-        a && b
-    }
-
     /// Gets the current pending state for a configure
     ///
     /// Returns `Some` if either no initial configure has been sent or
@@ -283,8 +274,7 @@ impl LayerSurface {
             } else {
                 None
             }
-        })
-        .unwrap_or(None);
+        });
 
         // send surface configure
         if let Some(configure) = configure {
@@ -309,8 +299,7 @@ impl LayerSurface {
                 .lock()
                 .unwrap()
                 .configured
-        })
-        .unwrap();
+        });
         if !configured {
             self.shell_surface.post_error(
                 dh,
@@ -329,7 +318,7 @@ impl LayerSurface {
     /// Access the underlying `wl_surface` of this layer surface
     ///
     /// Returns `None` if the layer surface actually no longer exists.
-    pub fn get_surface(&self) -> &wl_surface::WlSurface {
+    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
     }
 
@@ -340,11 +329,11 @@ impl LayerSurface {
     /// for example after a resize request from the client.
     ///
     /// The state will be sent to the client when calling [`send_configure`](#method.send_configure).
-    pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, DeadResource>
+    pub fn with_pending_state<F, T>(&self, f: F) -> T
     where
         F: FnOnce(&mut LayerSurfaceState) -> T,
     {
-        Ok(compositor::with_states(&self.wl_surface, |states| {
+        compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
                 .get::<Mutex<LayerSurfaceAttributes>>()
@@ -358,27 +347,23 @@ impl LayerSurface {
             let server_pending = attributes.server_pending.as_mut().unwrap();
             f(server_pending)
         })
-        .unwrap())
     }
 
     /// Gets a copy of the current state of this layer
     ///
     /// Returns `None` if the underlying surface has been
     /// destroyed
-    pub fn current_state(&self) -> Option<LayerSurfaceState> {
-        Some(
-            compositor::with_states(&self.wl_surface, |states| {
-                let attributes = states
-                    .data_map
-                    .get::<Mutex<LayerSurfaceAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
+    pub fn current_state(&self) -> LayerSurfaceState {
+        compositor::with_states(&self.wl_surface, |states| {
+            let attributes = states
+                .data_map
+                .get::<Mutex<LayerSurfaceAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
 
-                attributes.current.clone()
-            })
-            .unwrap(),
-        )
+            attributes.current.clone()
+        })
     }
 }
 
