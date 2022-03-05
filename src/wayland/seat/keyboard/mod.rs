@@ -4,7 +4,7 @@ use slog::{debug, info, o, trace, warn};
 use std::{
     default::Default,
     fmt,
-    io::{Error as IoError, Write},
+    io::{self, Write},
     os::unix::io::AsRawFd,
     sync::{Arc, Mutex},
 };
