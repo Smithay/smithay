@@ -142,10 +142,6 @@ impl ShmState {
     }
 }
 
-/// Dispatching type for shm module
-#[derive(Debug)]
-pub struct ShmDispatch<'a>(pub &'a mut ShmState);
-
 /// Error that can occur when accessing an SHM buffer
 #[derive(Debug, thiserror::Error)]
 pub enum BufferAccessError {
@@ -207,4 +203,20 @@ pub struct BufferData {
     pub stride: i32,
     /// Format used by this buffer
     pub format: wl_shm::Format,
+}
+
+#[macro_export]
+macro_rules! delegate_shm {
+    ($ty: ty) => {
+        $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
+            $crate::reexports::wayland_server::protocol::wl_shm::WlShm
+        ] => $crate::wayland::shm::ShmState);
+
+        $crate::reexports::wayland_server::delegate_dispatch!($ty: [
+            $crate::reexports::wayland_server::protocol::wl_shm::WlShm,
+            $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool,
+            // FIXME: wl_shm should not be the dispatch target for a WlBuffer.
+            $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer
+        ] => $crate::wayland::shm::ShmState);
+    };
 }
