@@ -1581,3 +1581,20 @@ pub enum XdgRequest {
         token: u32,
     },
 }
+
+#[macro_export]
+macro_rules! delegate_xdg_shell {
+    ($ty: ty) => {
+        $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
+            wayland_protocols::xdg_shell::server::xdg_wm_base::XdgWmBase
+        ] => $crate::wayland::shell::xdg::XdgShellState);
+
+        $crate::reexports::wayland_server::delegate_dispatch!($ty: [
+            wayland_protocols::xdg_shell::server::xdg_wm_base::XdgWmBase,
+            wayland_protocols::xdg_shell::server::xdg_positioner::XdgPositioner,
+            wayland_protocols::xdg_shell::server::xdg_popup::XdgPopup,
+            wayland_protocols::xdg_shell::server::xdg_surface::XdgSurface,
+            wayland_protocols::xdg_shell::server::xdg_toplevel::XdgToplevel
+        ] => $crate::wayland::shell::xdg::XdgShellState);
+    };
+}
