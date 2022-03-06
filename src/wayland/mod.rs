@@ -52,7 +52,7 @@
 //! over the synchronization for accessing graphics buffer with the compositor, for low-latency
 //! rendering. It is however still experimental, and largely untested.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 pub mod compositor;
 // pub mod data_device;
@@ -70,7 +70,7 @@ pub mod shm;
 ///
 /// Is is also used internally by some parts of Smithay.
 pub static SERIAL_COUNTER: SerialCounter = SerialCounter {
-    serial: AtomicUsize::new(0),
+    serial: AtomicU32::new(0),
 };
 
 /// A serial type, whose comparison takes into account the wrapping-around behavior of the
@@ -96,7 +96,7 @@ impl PartialOrd for Serial {
         if distance < u32::MAX / 2 {
             self.0.partial_cmp(&other.0)
         } else {
-            // wrap-around occured, invert comparison
+            // wrap-around occurred, invert comparison
             other.0.partial_cmp(&self.0)
         }
     }
@@ -124,14 +124,13 @@ impl From<Serial> for u32 {
 /// as needed.
 #[derive(Debug)]
 pub struct SerialCounter {
-    // TODO: replace with an AtomicU32 when stabilized
-    serial: AtomicUsize,
+    serial: AtomicU32,
 }
 
 impl SerialCounter {
     /// Retrieve the next serial from the counter
     pub fn next_serial(&self) -> Serial {
-        Serial(self.serial.fetch_add(1, Ordering::AcqRel) as u32)
+        Serial(self.serial.fetch_add(1, Ordering::AcqRel))
     }
 }
 
@@ -141,7 +140,7 @@ mod tests {
 
     fn create_serial_counter(initial_value: u32) -> SerialCounter {
         SerialCounter {
-            serial: AtomicUsize::new(initial_value as usize),
+            serial: AtomicU32::new(initial_value),
         }
     }
 
