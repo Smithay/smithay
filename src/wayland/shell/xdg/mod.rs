@@ -88,36 +88,10 @@ pub(super) mod handlers;
 pub use handlers::{XdgPositionerUserData, XdgShellSurfaceUserData, XdgSurfaceUserData, XdgWmBaseUserData};
 
 /// The role of an XDG toplevel surface.
-///
-/// If you are checking if the surface role is an xdg_toplevel, you should also check if the surface
-/// is an [zxdg_toplevel] since the zxdg toplevel role is equivalent.
-///
-/// [zxdg_toplevel]: self::ZXDG_TOPLEVEL_ROLE
 pub const XDG_TOPLEVEL_ROLE: &str = "xdg_toplevel";
 
 /// The role of an XDG popup surface.
-///
-/// If you are checking if the surface role is an xdg_popup, you should also check if the surface
-/// is a [zxdg_popup] since the zxdg popup role is equivalent.
-///
-/// [zxdg_popup]: self::ZXDG_POPUP_ROLE
 pub const XDG_POPUP_ROLE: &str = "xdg_popup";
-
-/// The role of an ZXDG toplevel surface.
-///
-/// If you are checking if the surface role is an zxdg_toplevel, you should also check if the surface
-/// is an [xdg_toplevel] since the xdg toplevel role is equivalent.
-///
-/// [xdg_toplevel]: self::XDG_TOPLEVEL_ROLE
-pub const ZXDG_TOPLEVEL_ROLE: &str = "zxdg_toplevel";
-
-/// The role of an ZXDG popup surface.
-///
-/// If you are checking if the surface role is an zxdg_popup, you should also check if the surface
-/// is a [xdg_popup] since the xdg popup role is equivalent.
-///
-/// [xdg_popup]: self::XDG_POPUP_ROLE
-pub const ZXDG_POPUP_ROLE: &str = "zxdg_popup";
 
 /// Constant for toplevel state version checking
 const XDG_TOPLEVEL_STATE_TILED_SINCE: u32 = 2;
