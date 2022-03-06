@@ -45,6 +45,6 @@ pub fn is_toplevel_equivalent(surface: &WlSurface) -> bool {
 
     matches!(
         role,
-        Some(xdg::XDG_TOPLEVEL_ROLE) | Some(xdg::ZXDG_TOPLEVEL_ROLE) //| Some(legacy::WL_SHELL_SURFACE_ROLE)
+        Some(xdg::XDG_TOPLEVEL_ROLE) //| Some(legacy::WL_SHELL_SURFACE_ROLE)
     )
 }
