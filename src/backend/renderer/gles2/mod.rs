@@ -723,7 +723,7 @@ impl Gles2Renderer {
         // TODO: Replace with `drain_filter` once it lands
         let mut i = 0;
         while i != self.buffers.len() {
-            if self.buffers[i].dmabuf.upgrade().is_none() {
+            if self.buffers[i].dmabuf.is_gone() {
                 let old = self.buffers.remove(i);
                 unsafe {
                     self.gl.DeleteFramebuffers(1, &old.fbo as *const _);
@@ -1510,7 +1510,7 @@ impl Bind<Gles2Texture> for Gles2Renderer {
             self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
 
             if status != ffi::FRAMEBUFFER_COMPLETE {
-                //TODO wrap image and drop here
+                self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
                 return Err(Gles2Error::FramebufferBindingError);
             }
         }
@@ -1571,7 +1571,7 @@ impl Bind<Gles2Renderbuffer> for Gles2Renderer {
             self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
 
             if status != ffi::FRAMEBUFFER_COMPLETE {
-                //TODO wrap image and drop here
+                self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
                 return Err(Gles2Error::FramebufferBindingError);
             }
         }

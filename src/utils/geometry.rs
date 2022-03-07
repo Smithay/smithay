@@ -1218,7 +1218,7 @@ impl Transform {
         )
     }
 
-    /// Returns the degrees of the transformation
+    /// Returns the angle (in degrees) of the transformation
     pub fn degrees(&self) -> u32 {
         match self {
             Transform::Normal | Transform::Flipped => 0,

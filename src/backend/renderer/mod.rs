@@ -512,7 +512,7 @@ pub trait ExportMem: Renderer {
         &mut self,
         region: Rectangle<i32, Buffer>,
     ) -> Result<Self::TextureMapping, <Self as Renderer>::Error>;
-    /// Copies the contents of the currently bound framebuffer.
+    /// Copies the contents of the passed texture.
     /// *Note*: This function may change or invalidate the current bind.
     ///
     /// This operation is not destructive, the contents of the texture keep being valid.
