@@ -28,9 +28,13 @@ pub struct EGLContext {
     pixel_format: Option<PixelFormat>,
     user_data: Arc<UserDataMap>,
 }
-// EGLContexts can be moved between threads safely
+
+// SAFETY: A context can be sent to another thread when this context is not current.
+//
+// If the context is made current, the safety requirements for calling `EGLDisplay::make_current` must be
+// upheld. This means a context which is made current must be unbound (using `unbind`) in order to send this
+// context to another thread.
 unsafe impl Send for EGLContext {}
-unsafe impl Sync for EGLContext {}
 
 impl EGLContext {
     /// Creates a new configless `EGLContext` from a given `EGLDisplay`
@@ -185,8 +189,8 @@ impl EGLContext {
     ///
     /// # Safety
     ///
-    /// This function is marked unsafe, because the context cannot be made current
-    /// on multiple threads without being unbound again (see `unbind`).
+    /// This function is marked unsafe, because the context cannot be made current on another thread without
+    /// being unbound again (see [`EGLContext::unbind`]).
     pub unsafe fn make_current_with_surface(&self, surface: &EGLSurface) -> Result<(), MakeCurrentError> {
         let surface_ptr = surface.surface.load(Ordering::SeqCst);
         wrap_egl_call(|| {
@@ -200,8 +204,8 @@ impl EGLContext {
     ///
     /// # Safety
     ///
-    /// This function is marked unsafe, because the context cannot be made current
-    /// on multiple threads without being unbound again (see `unbind`).
+    /// This function is marked unsafe, because the context cannot be made current on another thread without
+    /// being unbound again (see [`EGLContext::unbind`]).
     pub unsafe fn make_current(&self) -> Result<(), MakeCurrentError> {
         wrap_egl_call(|| {
             ffi::egl::MakeCurrent(
