@@ -203,7 +203,7 @@ pub struct Output {
 }
 
 impl Output {
-    /// Create a new output global with given name and physical properties
+    /// Create a new output global with given name and physical properties.
     ///
     /// The global is directly registered into the event loop, and this function
     /// returns the state token allowing you to access it, as well as the global handle,
@@ -223,13 +223,11 @@ impl Output {
 
         info!(log, "Creating new wl_output"; "name" => &name);
 
-        let description = format!("{} - {} - {}", physical.make, physical.model, name);
-
         let data = OutputGlobalData {
             inner: Arc::new((
                 Mutex::new(Inner {
-                    name,
-                    description,
+                    name: name.clone(),
+                    description: format!("{} - {} - {}", physical.make, physical.model, name),
                     instances: Vec::new(),
                     physical,
                     location: (0, 0).into(),
@@ -247,7 +245,7 @@ impl Output {
 
         let output = Output { data: data.clone() };
 
-        let global = display.create_global::<WlOutput>(3, data);
+        let global = display.create_global::<WlOutput>(4, data);
 
         (output, global)
     }
