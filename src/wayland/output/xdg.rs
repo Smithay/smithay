@@ -37,17 +37,12 @@ impl XdgOutput {
 
         trace!(log, "Creating new xdg_output"; "name" => &output.name);
 
-        let description = format!(
-            "{} - {} - {}",
-            output.physical.make, output.physical.model, output.name
-        );
-
         let physical_size = output.current_mode.map(|mode| mode.size);
 
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 name: output.name.clone(),
-                description,
+                description: output.description.clone(),
                 logical_position: output.location,
 
                 physical_size,
