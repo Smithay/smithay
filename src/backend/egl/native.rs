@@ -198,13 +198,13 @@ impl EGLNativeDisplay for EGLDevice {
     }
 }
 
-/// Trait for types returning valid surface pointers for initializing egl
+/// Trait for types returning valid surface pointers for initializing egl.
 ///
 /// ## Safety
 ///
 /// The returned [`NativeWindowType`](ffi::NativeWindowType) must be valid for EGL
 /// and there is no way to test that.
-pub unsafe trait EGLNativeSurface: Send + Sync {
+pub unsafe trait EGLNativeSurface: Send {
     /// Create an EGLSurface from the internal native type.
     ///
     /// Must be able to deal with re-creation of existing resources,
