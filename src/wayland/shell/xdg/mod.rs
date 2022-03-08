@@ -81,7 +81,7 @@ use wayland_server::{
 
 use super::PingError;
 
-// pub mod decoration;
+pub mod decoration;
 
 // handlers for the xdg_shell protocol
 pub(super) mod handlers;
@@ -772,6 +772,17 @@ impl XdgShellState {
         cb(&self.inner.lock().unwrap().known_toplevels)
     }
 
+    /// Returns a [`ToplevelSurface`] from an underlying toplevel surface.
+    pub fn get_toplevel(&self, toplevel: &xdg_toplevel::XdgToplevel) -> Option<ToplevelSurface> {
+        self.inner
+            .lock()
+            .unwrap()
+            .known_toplevels
+            .iter()
+            .find(|surface| surface.xdg_toplevel() == toplevel)
+            .cloned()
+    }
+
     // /// Returns a reference to the toplevel surface mapped to the provided wl_surface.
     // pub fn toplevel_surface(&self, surface: &wl_surface::WlSurface) -> Option<&ToplevelSurface> {
     //     self.known_toplevels
@@ -959,14 +970,15 @@ impl ToplevelSurface {
         if let Some((configure, decoration_mode_changed)) = configure {
             if decoration_mode_changed {
                 if let Some(data) = self.shell_surface.data::<XdgShellSurfaceUserData>() {
-                    if let Some(_decoration) = &*data.decoration.lock().unwrap() {
-                        // TODO:
-                        // self::decoration::send_decoration_configure(
-                        //     decoration,
-                        //     configure.state.decoration_mode.unwrap_or(
-                        //         xdg_decoration::v1::server::zxdg_toplevel_decoration_v1::Mode::ClientSide,
-                        //     ),
-                        // );
+                    if let Some(decoration) = &*data.decoration.lock().unwrap() {
+                        self::decoration::send_decoration_configure(
+                            dh,
+                            decoration,
+                            configure
+                                .state
+                                .decoration_mode
+                                .unwrap_or(zxdg_toplevel_decoration_v1::Mode::ClientSide),
+                        );
                     }
                 }
             }
@@ -1035,6 +1047,11 @@ impl ToplevelSurface {
     /// Returns `None` if the toplevel surface actually no longer exists.
     pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
+    }
+
+    /// Access the underlying `xdg_toplevel` of this toplevel surface
+    pub fn xdg_toplevel(&self) -> &xdg_toplevel::XdgToplevel {
+        &self.shell_surface
     }
 
     /// Allows the pending state of this toplevel to
