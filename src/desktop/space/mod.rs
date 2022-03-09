@@ -667,7 +667,7 @@ impl<R: Renderer> fmt::Debug for RenderError<R> {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! custom_elements_internal {
-    (@enum $vis:vis $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+    (@enum $vis:vis $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $vis enum $name {
             $(
                 $(
@@ -679,7 +679,7 @@ macro_rules! custom_elements_internal {
             _GenericCatcher(std::convert::Infallible),
         }
     };
-    (@enum $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+    (@enum $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $vis enum $name<$renderer>
         where
             $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
@@ -694,14 +694,23 @@ macro_rules! custom_elements_internal {
             _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
         }
     };
-    (@body $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+    (@call $renderer:ty; $name:ident; $($x:ident),*) => {
+        $crate::desktop::space::RenderElement::<$renderer>::$name($($x),*)
+    };
+    (@call $renderer:ty as $other:ty; draw; $x:ident, $renderer_ref:ident, $frame:ident, $($tail:ident),*) => {
+        $crate::desktop::space::RenderElement::<$other>::draw($x, $renderer_ref.as_mut(), $frame.as_mut(), $($tail),*).map_err(Into::into)
+    };
+    (@call $renderer:ty as $other:ty; $name:ident; $($x:ident),*) => {
+        $crate::desktop::space::RenderElement::<$other>::$name($($x),*)
+    };
+    (@body $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn id(&self) -> usize {
             match self {
                 $(
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::id(x)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; id; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -713,7 +722,7 @@ macro_rules! custom_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::type_of(x)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; type_of; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -725,7 +734,7 @@ macro_rules! custom_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::geometry(x)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; geometry; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -737,27 +746,7 @@ macro_rules! custom_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::accumulated_damage(x, for_values)
-                ),*,
-                Self::_GenericCatcher(_) => unreachable!(),
-            }
-        }
-
-        fn draw(
-            &self,
-            renderer: &mut $renderer,
-            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
-            scale: f64,
-            location: $crate::utils::Point<i32, $crate::utils::Logical>,
-            damage: &[$crate::utils::Rectangle<i32, $crate::utils::Logical>],
-            log: &slog::Logger,
-        ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error> {
-            match self {
-                $(
-                    $(
-                        #[$meta]
-                    )*
-                    Self::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::draw(x, renderer, frame, scale, location, damage, log)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; accumulated_damage; x, for_values)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -769,7 +758,59 @@ macro_rules! custom_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::desktop::space::RenderElement::<$renderer>::z_index(x)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; z_index; x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+    };
+    (@draw <$renderer:ty>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+        fn draw(
+            &self,
+            renderer: &mut $renderer,
+            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
+            scale: f64,
+            location: $crate::utils::Point<i32, $crate::utils::Logical>,
+            damage: &[$crate::utils::Rectangle<i32, $crate::utils::Logical>],
+            log: &slog::Logger,
+        ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
+        where
+        $(
+            $(
+                $renderer: std::convert::AsMut<$other_renderer>,
+                <$renderer as $crate::backend::renderer::Renderer>::Frame: std::convert::AsMut<<$other_renderer as $crate::backend::renderer::Renderer>::Frame>,
+                <$other_renderer as $crate::backend::renderer::Renderer>::Error: Into<<$renderer as $crate::backend::renderer::Renderer>::Error>,
+            )*
+        )*
+        {
+            match self {
+                $(
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+    };
+    (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+        fn draw(
+            &self,
+            renderer: &mut $renderer,
+            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
+            scale: f64,
+            location: $crate::utils::Point<i32, $crate::utils::Logical>,
+            damage: &[$crate::utils::Rectangle<i32, $crate::utils::Logical>],
+            log: &slog::Logger,
+        ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
+        {
+            match self {
+                $(
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -782,6 +823,7 @@ macro_rules! custom_elements_internal {
             <$renderer as Renderer>::TextureId: 'static,
         {
             $crate::custom_elements_internal!(@body $renderer; $($tail)*);
+            $crate::custom_elements_internal!(@draw <$renderer>; $($tail)*);
         }
     };
     (@impl $name:ident; $renderer:ident; $($tail:tt)*) => {
@@ -791,15 +833,17 @@ macro_rules! custom_elements_internal {
             <$renderer as Renderer>::TextureId: 'static,
         {
             $crate::custom_elements_internal!(@body $renderer; $($tail)*);
+            $crate::custom_elements_internal!(@draw <$renderer>; $($tail)*);
         }
     };
     (@impl $name:ident<=$renderer:ty>; $($tail:tt)*) => {
         impl $crate::desktop::space::RenderElement<$renderer> for $name
         {
             $crate::custom_elements_internal!(@body $renderer; $($tail)*);
+            $crate::custom_elements_internal!(@draw $renderer; $($tail)*);
         }
     };
-    (@from $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+    (@from $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         $(
             $(
                 #[$meta]
@@ -807,6 +851,9 @@ macro_rules! custom_elements_internal {
             impl<$renderer> From<$field> for $name<$renderer>
             where
                 $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
+                $(
+                    $($renderer: std::convert::AsMut<$other_renderer>,)?
+                )*
             {
                 fn from(field: $field) -> $name<$renderer> {
                     $name::$body(field)
@@ -814,7 +861,7 @@ macro_rules! custom_elements_internal {
             }
         )*
     };
-    (@from $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+    (@from $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         $(
             $(
                 #[$meta]
@@ -930,6 +977,10 @@ macro_rules! custom_elements_internal {
 ///     SurfaceTree=SurfaceTree,
 ///     PointerElement=PointerElement<DummyTexture>, // and then you use a concrete and matching texture type
 /// };
+/// // in case your renderer wraps another renderer and implements `std::convert::AsMut`
+/// // you can also use `RenderElement`-implementations requiring the wrapped renderer
+/// // by writing something like: `EguiFrame=EguiFrame as <Gles2Renderer>` where `as <renderer>`
+/// // denotes the type of the wrapped renderer.
 ///
 /// pub struct PointerElement<T: Texture> {
 ///    texture: T,

@@ -5,8 +5,9 @@ use crate::backend::{
     drm::{CreateDrmNodeError, DrmNode, NodeType},
     egl::{EGLContext, EGLDevice, EGLDisplay, Error as EGLError},
     renderer::{
+        Renderer,
         gles2::{Gles2Error, Gles2Renderer},
-        multigpu::{ApiDevice, GraphicsApi},
+        multigpu::{ApiDevice, GraphicsApi, Error as MultiError},
     },
     SwapBuffersError,
 };
@@ -21,7 +22,7 @@ use crate::{
         egl::display::EGLBufferReader,
         renderer::{
             multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
-            ImportEgl, Offscreen, Renderer,
+            ImportEgl, Offscreen,
         },
     },
     reexports::wayland_server::protocol::wl_buffer,
@@ -108,6 +109,17 @@ impl GraphicsApi for EglGlesBackend {
         // but don't replace already initialized renderers
 
         Ok(())
+    }
+}
+
+// TODO: Replace with specialization impl in multigpu/mod once possible
+impl<T: GraphicsApi> std::convert::From<Gles2Error> for MultiError<EglGlesBackend, T>
+where
+    T::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+{
+    fn from(err: Gles2Error) -> MultiError<EglGlesBackend, T> {
+        MultiError::Render(err)
     }
 }
 
