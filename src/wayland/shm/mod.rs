@@ -205,6 +205,7 @@ pub struct BufferData {
     pub format: wl_shm::Format,
 }
 
+#[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_shm {
     ($ty: ty) => {
