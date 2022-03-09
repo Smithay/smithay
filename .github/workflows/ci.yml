@@ -65,11 +65,12 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
-      - name: Clippy Anvil
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
+      # Disable for now
+      # - name: Clippy Anvil
+      #   uses: actions-rs/clippy-check@v1
+      #   with:
+      #     token: ${{ secrets.GITHUB_TOKEN }}
+      #     args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
   
   check-minimal:
     env:
@@ -191,6 +192,7 @@ jobs:
           args: --no-default-features --features "${{ matrix.features }}"
   
   anvil-tests:
+    if: ${{ false }}  # disable for now
     needs:
       - format
       - clippy-check
@@ -251,6 +253,7 @@ jobs:
           args: --manifest-path "./anvil/Cargo.toml" --no-default-features --features "${{ matrix.features }}"
 
   anvil-wlcs:
+    if: ${{ false }}  # disable for now
     needs:
       - format
       - clippy-check
