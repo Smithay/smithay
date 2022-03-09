@@ -406,6 +406,7 @@ pub struct SeatUserData<T> {
     seat: Arc<SeatRc<T>>,
 }
 
+#[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_seat {
     ($ty: ty) => {
