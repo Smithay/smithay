@@ -1556,6 +1556,7 @@ pub enum XdgRequest {
     },
 }
 
+#[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_xdg_shell {
     ($ty: ty) => {
