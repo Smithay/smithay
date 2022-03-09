@@ -5,6 +5,9 @@ use super::{
     wrap_egl_call, EGLDisplay, EGLError, Error,
 };
 
+#[cfg(feature = "backend_drm")]
+use crate::backend::drm::{DrmNode, NodeType};
+
 /// safe EGLDevice wrapper
 #[derive(Debug)]
 pub struct EGLDevice {
@@ -208,6 +211,36 @@ impl EGLDevice {
                 .expect("Non-UTF8 device path name");
 
             Ok(PathBuf::from(device_path))
+        }
+    }
+
+    /// Returns the drm node beloging to this device.
+    /// Tries to optain a render_node first through `EGL_EXT_device_drm_render_node`
+    /// (see also [`EGLDevice::render_device_path`]) and then falls back to
+    /// get a render_node from `EGL_EXT_device_drm` (see also [`EGLDevice::drm_device_path`]).
+    /// If both fail to produce a render node, whichever device returned by
+    /// `EGL_EXT_device_drm` is returned.
+    #[cfg(feature = "backend_drm")]
+    pub fn try_get_render_node(&self) -> Result<Option<DrmNode>, Error> {
+        // first lets try to get a render_node directly
+        match self
+            .render_device_path()
+            .ok()
+            .and_then(|path| DrmNode::from_path(path).ok())
+        {
+            Some(node) => Ok(Some(node)),
+            // else we take a drm_path
+            None => {
+                let path = self.drm_device_path()?;
+                let node = DrmNode::from_path(path).ok();
+                // and try to convert it to a render_node
+                Ok(node.map(|node| {
+                    node.node_with_type(NodeType::Render)
+                        .and_then(Result::ok)
+                        // and otherwise go with whatever we got initially
+                        .unwrap_or(node)
+                }))
+            }
         }
     }
 

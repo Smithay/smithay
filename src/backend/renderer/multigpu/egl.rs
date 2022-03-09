@@ -2,7 +2,7 @@
 //! EGL for device enumeration and OpenGL ES for rendering.
 
 use crate::backend::{
-    drm::{CreateDrmNodeError, DrmNode, NodeType},
+    drm::{CreateDrmNodeError, DrmNode},
     egl::{EGLContext, EGLDevice, EGLDisplay, Error as EGLError},
     renderer::{
         gles2::{Gles2Error, Gles2Renderer},
@@ -68,14 +68,8 @@ impl GraphicsApi for EglGlesBackend {
         let devices = EGLDevice::enumerate()
             .map_err(Error::Egl)?
             .flat_map(|device| {
-                let path = device.drm_device_path().ok()?;
-                Some((
-                    device,
-                    DrmNode::from_path(path)
-                        .ok()?
-                        .node_with_type(NodeType::Render)?
-                        .ok()?,
-                ))
+                let node = device.try_get_render_node().ok()??;
+                Some((device, node))
             })
             .collect::<Vec<_>>();
         // remove old stuff
