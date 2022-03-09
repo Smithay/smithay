@@ -16,8 +16,10 @@ use crate::utils::{Buffer, Physical, Point, Rectangle, Size, Transform};
 use crate::wayland::compositor::SurfaceData;
 use cgmath::Matrix3;
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::{wl_buffer, wl_shm};
-use wayland_server::Resource;
+use wayland_server::{
+    protocol::{wl_buffer, wl_shm},
+    Resource,
+};
 
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
