@@ -25,7 +25,7 @@ use smithay::{
 use smithay::{
     backend::{
         drm::{DrmDevice, DrmError, DrmEvent, DrmNode, GbmBufferedSurface, NodeType},
-        egl::{EGLContext, EGLDisplay},
+        egl::{EGLContext, EGLDevice, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             gles2::Gles2Renderbuffer,
@@ -201,6 +201,7 @@ pub fn run_udev(log: Logger) {
 
     // setup the timer
     let timer = Timer::new().unwrap();
+
     let data = UdevData {
         session,
         primary_gpu,
@@ -326,7 +327,8 @@ pub fn run_udev(log: Logger) {
 pub type RenderSurface = GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, SessionFd>;
 
 struct SurfaceData {
-    node: DrmNode,
+    device_id: DrmNode,
+    render_node: DrmNode,
     surface: RenderSurface,
     global: Option<Global<wl_output::WlOutput>>,
     #[cfg(feature = "debug")]
@@ -347,11 +349,10 @@ struct BackendData {
     gbm: Rc<RefCell<GbmDevice<SessionFd>>>,
     registration_token: RegistrationToken,
     event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, AnvilState<UdevData>>,
-    dev_id: DrmNode,
 }
 
 fn scan_connectors(
-    node: DrmNode,
+    device_id: DrmNode,
     device: &DrmDevice<SessionFd>,
     gbm: &Rc<RefCell<GbmDevice<SessionFd>>>,
     display: &mut Display,
@@ -373,10 +374,17 @@ fn scan_connectors(
 
     let mut backends = HashMap::new();
 
-    let formats = {
+    let (render_node, formats) = {
         let display = EGLDisplay::new(&*gbm.borrow(), logger.clone()).unwrap();
+        let node = match EGLDevice::device_for_display(&display)
+            .ok()
+            .and_then(|x| x.try_get_render_node().ok().flatten())
+        {
+            Some(node) => node,
+            None => return HashMap::new(),
+        };
         let context = EGLContext::new(&display, logger.clone()).unwrap();
-        context.dmabuf_render_formats().clone()
+        (node, context.dmabuf_render_formats().clone())
     };
 
     // very naive way of finding good crtc/encoder/connector combinations. This problem is np-complete
@@ -469,17 +477,13 @@ fn scan_connectors(
             output.set_preferred(mode);
             space.map_output(&output, 1.0, position);
 
-            output.user_data().insert_if_missing(|| UdevOutputId {
-                crtc,
-                device_id: DrmNode::from_fd(device.as_raw_fd())
-                    .unwrap()
-                    .node_with_type(NodeType::Render)
-                    .unwrap()
-                    .unwrap(),
-            });
+            output
+                .user_data()
+                .insert_if_missing(|| UdevOutputId { crtc, device_id });
 
             entry.insert(Rc::new(RefCell::new(SurfaceData {
-                node,
+                device_id,
+                render_node,
                 surface: gbm_surface,
                 global: Some(global),
                 #[cfg(feature = "debug")]
@@ -524,13 +528,15 @@ impl AnvilState<UdevData> {
         };
 
         let gbm = Rc::new(RefCell::new(gbm));
-        let dev_id = DrmNode::from_fd(device.as_raw_fd())
-            .unwrap()
-            .node_with_type(NodeType::Render)
-            .unwrap()
-            .unwrap();
+        let node = match DrmNode::from_dev_id(device_id) {
+            Ok(node) => node,
+            Err(err) => {
+                warn!(self.log, "Failed to access drm node for {}: {}", device_id, err);
+                return;
+            }
+        };
         let backends = Rc::new(RefCell::new(scan_connectors(
-            dev_id,
+            node,
             &device,
             &gbm,
             &mut *self.display.borrow_mut(),
@@ -542,7 +548,7 @@ impl AnvilState<UdevData> {
         let handle = self.handle.clone();
         let restart_token = self.backend_data.signaler.register(move |signal| match signal {
             SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => {
-                handle.insert_idle(move |anvil_state| anvil_state.render(dev_id, None));
+                handle.insert_idle(move |anvil_state| anvil_state.render(node, None));
             }
             _ => {}
         });
@@ -552,7 +558,7 @@ impl AnvilState<UdevData> {
             Dispatcher::new(
                 device,
                 move |event, _, anvil_state: &mut AnvilState<_>| match event {
-                    DrmEvent::VBlank(crtc) => anvil_state.render(dev_id, Some(crtc)),
+                    DrmEvent::VBlank(crtc) => anvil_state.render(node, Some(crtc)),
                     DrmEvent::Error(error) => {
                         error!(anvil_state.log, "{:?}", error);
                     }
@@ -572,24 +578,23 @@ impl AnvilState<UdevData> {
         }
 
         self.backend_data.backends.insert(
-            dev_id,
+            node,
             BackendData {
                 _restart_token: restart_token,
                 registration_token,
                 event_dispatcher,
                 surfaces: backends,
                 gbm,
-                dev_id,
             },
         );
     }
 
     fn device_changed(&mut self, device: dev_t) {
-        let node = DrmNode::from_dev_id(device)
-            .unwrap()
-            .node_with_type(NodeType::Render)
-            .unwrap()
-            .unwrap();
+        let node = match DrmNode::from_dev_id(device).ok() {
+            Some(node) => node,
+            None => return, // we already logged a warning on device_added
+        };
+
         //quick and dirty, just re-init all backends
         if let Some(ref mut backend_data) = self.backend_data.backends.get_mut(&node) {
             let logger = self.log.clone();
@@ -637,7 +642,10 @@ impl AnvilState<UdevData> {
     }
 
     fn device_removed(&mut self, device: dev_t) {
-        let node = DrmNode::from_dev_id(device).unwrap();
+        let node = match DrmNode::from_dev_id(device).ok() {
+            Some(node) => node,
+            None => return, // we already logged a warning on device_added
+        };
         // drop the backends on this side
         if let Some(backend_data) = self.backend_data.backends.remove(&node) {
             // drop surfaces
@@ -703,7 +711,7 @@ impl AnvilState<UdevData> {
             let mut renderer = self
                 .backend_data
                 .gpus
-                .renderer::<Gles2Renderbuffer>(&primary_gpu, &dev_id)
+                .renderer::<Gles2Renderbuffer>(&primary_gpu, &surface.borrow().render_node)
                 .unwrap();
             let pointer_images = &mut self.backend_data.pointer_images;
             let pointer_image = pointer_images
@@ -725,7 +733,6 @@ impl AnvilState<UdevData> {
             let result = render_surface(
                 &mut *surface.borrow_mut(),
                 &mut renderer,
-                device_backend.dev_id,
                 crtc,
                 &mut *self.space.borrow_mut(),
                 self.pointer_location,
@@ -758,7 +765,7 @@ impl AnvilState<UdevData> {
             if reschedule {
                 self.backend_data.render_timer.add_timeout(
                     Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/),
-                    (device_backend.dev_id, crtc),
+                    (dev_id, crtc),
                 );
             }
 
@@ -774,7 +781,6 @@ impl AnvilState<UdevData> {
 fn render_surface(
     surface: &mut SurfaceData,
     renderer: &mut UdevRenderer<'_>,
-    device_id: DrmNode,
     crtc: crtc::Handle,
     space: &mut Space,
     pointer_location: Point<f64, Logical>,
@@ -786,10 +792,13 @@ fn render_surface(
 ) -> Result<bool, SwapBuffersError> {
     surface.surface.frame_submitted()?;
 
-    let output = if let Some(output) = space
-        .outputs()
-        .find(|o| o.user_data().get::<UdevOutputId>() == Some(&UdevOutputId { device_id, crtc }))
-    {
+    let output = if let Some(output) = space.outputs().find(|o| {
+        o.user_data().get::<UdevOutputId>()
+            == Some(&UdevOutputId {
+                device_id: surface.device_id,
+                crtc,
+            })
+    }) {
         output.clone()
     } else {
         // somehow we got called with an invalid output
@@ -865,7 +874,7 @@ fn schedule_initial_render(
     evt_handle: &LoopHandle<'static, AnvilState<UdevData>>,
     logger: ::slog::Logger,
 ) {
-    let node = surface.borrow().node;
+    let node = surface.borrow().render_node;
     let result = {
         let mut renderer = gpus.renderer::<Gles2Renderbuffer>(&node, &node).unwrap();
         let mut surface = surface.borrow_mut();
