@@ -7,7 +7,7 @@ use std::{
     collections::HashSet,
     convert::TryFrom,
     ffi::CStr,
-    fmt,
+    fmt, mem,
     os::raw::c_char,
     ptr,
     rc::Rc,
@@ -1691,7 +1691,7 @@ impl Renderer for Gles2Renderer {
 
     fn render<F, R>(
         &mut self,
-        size: Size<i32, Physical>,
+        mut output_size: Size<i32, Physical>,
         transform: Transform,
         rendering: F,
     ) -> Result<R, Self::Error>
@@ -1703,21 +1703,26 @@ impl Renderer for Gles2Renderer {
         self.cleanup()?;
 
         unsafe {
-            self.gl.Viewport(0, 0, size.w, size.h);
+            self.gl.Viewport(0, 0, output_size.w, output_size.h);
 
-            self.gl.Scissor(0, 0, size.w, size.h);
+            self.gl.Scissor(0, 0, output_size.w, output_size.h);
             self.gl.Enable(ffi::SCISSOR_TEST);
 
             self.gl.Enable(ffi::BLEND);
             self.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
         }
 
+        // Handle the width/height swap when the output is rotated by 90°/270°.
+        if let Transform::_90 | Transform::_270 | Transform::Flipped90 | Transform::Flipped270 = transform {
+            mem::swap(&mut output_size.w, &mut output_size.h);
+        }
+
         // replicate https://www.khronos.org/registry/OpenGL-Refpages/gl2.1/xhtml/glOrtho.xml
         // glOrtho(0, width, 0, height, 1, 1);
         let mut renderer = Matrix3::<f32>::identity();
         let t = Matrix3::<f32>::identity();
-        let x = 2.0 / (size.w as f32);
-        let y = 2.0 / (size.h as f32);
+        let x = 2.0 / (output_size.w as f32);
+        let y = 2.0 / (output_size.h as f32);
 
         // Rotation & Reflection
         renderer[0][0] = x * t[0][0];
@@ -1732,26 +1737,15 @@ impl Renderer for Gles2Renderer {
         // We account for OpenGLs coordinate system here
         let flip180 = Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0);
 
-        // Matrix handling the width/height swap when output is rotated by 90°/270°.
-        let rotation_stretch = match transform {
-            Transform::_90 | Transform::_270 | Transform::Flipped90 | Transform::Flipped270 => {
-                let factor = size.w as f32 / size.h as f32;
-                Matrix3::new(factor, 0.0, 0.0, 0.0, 1. / factor, 0.0, 0.0, 0.0, 1.0)
-            }
-            Transform::Normal | Transform::_180 | Transform::Flipped | Transform::Flipped180 => {
-                Matrix3::identity()
-            }
-        };
-
         let mut frame = Gles2Frame {
             gl: self.gl.clone(),
             tex_programs: self.tex_programs.clone(),
             solid_program: self.solid_program.clone(),
             // output transformation passed in by the user
-            current_projection: flip180 * transform.matrix() * renderer * rotation_stretch,
+            current_projection: flip180 * transform.matrix() * renderer,
             transform,
             vbos: self.vbos,
-            size,
+            size: output_size,
             min_filter: self.min_filter,
             max_filter: self.max_filter,
             supports_instancing: self.supports_instancing,
@@ -2039,7 +2033,7 @@ impl Frame for Gles2Frame {
 
 impl Gles2Frame {
     /// Render a texture to the current target using given projection matrix and alpha.
-    ///  
+    ///
     /// The instances are used to define the regions which should get drawn.
     /// Each instance has to define 4 [`GLfloat`](ffi::types::GLfloat) which define the
     /// relative offset and scale for the vertex position and range from `0.0` to `1.0`.
