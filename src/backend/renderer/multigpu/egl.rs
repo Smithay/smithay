@@ -5,9 +5,9 @@ use crate::backend::{
     drm::{CreateDrmNodeError, DrmNode, NodeType},
     egl::{EGLContext, EGLDevice, EGLDisplay, Error as EGLError},
     renderer::{
-        Renderer,
         gles2::{Gles2Error, Gles2Renderer},
-        multigpu::{ApiDevice, GraphicsApi, Error as MultiError},
+        multigpu::{ApiDevice, Error as MultiError, GraphicsApi},
+        Renderer,
     },
     SwapBuffersError,
 };

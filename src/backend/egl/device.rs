@@ -154,9 +154,48 @@ impl EGLDevice {
                     ffi::egl::DRM_DEVICE_FILE_EXT as ffi::egl::types::EGLint,
                 )
             })
-            .expect("TODO: Add error variant");
+            .map_err(Error::QueryDeviceProperty)?;
+            if raw_path.is_null() {
+                return Err(Error::EmptyDeviceProperty);
+            }
 
-            // FIXME: Ensure EGL_FALSE is not returned.
+            // This is safe because of the following:
+            // 1) The string returned by `eglQueryDeviceStringEXT` is string which will exist as long
+            //    as the EGLDisplay is valid. Since the pointer is only used in this function, the
+            //    lifetime of the pointer will fulfil Rust's CStr requirements on lifetime.
+            // 2) The string returned by EGL is null terminated.
+            let device_path = unsafe { CStr::from_ptr(raw_path) }
+                .to_str()
+                // EGL ensures the string is valid UTF-8
+                .expect("Non-UTF8 device path name");
+
+            Ok(PathBuf::from(device_path))
+        }
+    }
+
+    /// Returns the path to the render node of this EGLDevice.
+    ///
+    /// This function will return an error if the following extensions are not available:
+    /// - [`EGL_EXT_device_drm_render_node`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_device_drm_render_node.txt)
+    pub fn render_device_path(&self) -> Result<PathBuf, Error> {
+        if !self
+            .extensions()
+            .contains(&"EGL_EXT_device_drm_render_node".to_owned())
+        {
+            Err(Error::EglExtensionNotSupported(&[
+                "EGL_EXT_device_drm_render_node",
+            ]))
+        } else {
+            let raw_path = wrap_egl_call(|| unsafe {
+                ffi::egl::QueryDeviceStringEXT(
+                    self.inner,
+                    ffi::egl::DRM_RENDER_NODE_FILE_EXT as ffi::egl::types::EGLint,
+                )
+            })
+            .map_err(Error::QueryDeviceProperty)?;
+            if raw_path.is_null() {
+                return Err(Error::EmptyDeviceProperty);
+            }
 
             // This is safe because of the following:
             // 1) The string returned by `eglQueryDeviceStringEXT` is string which will exist as long

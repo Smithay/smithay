@@ -21,6 +21,7 @@ fn gl_generate() {
                 "EGL_EXT_device_enumeration",
                 "EGL_EXT_device_query",
                 "EGL_EXT_device_drm",
+                "EGL_EXT_device_drm_render_node",
                 "EGL_KHR_stream",
                 "EGL_KHR_stream_producer_eglsurface",
                 "EGL_EXT_platform_base",

@@ -51,6 +51,12 @@ pub enum Error {
     /// Failed to query the available `EGLDevice`s
     #[error("Failed to query the available `EGLDevice`s")]
     QueryDevices(#[source] EGLError),
+    /// Failed to query device properties
+    #[error("Failed to query the requested device property")]
+    QueryDeviceProperty(#[source] EGLError),
+    /// The device does not have the given property
+    #[error("The device does not have the given property")]
+    EmptyDeviceProperty,
 }
 
 /// Raw EGL error
