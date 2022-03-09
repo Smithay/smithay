@@ -126,8 +126,10 @@ impl Space {
     pub fn window_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<&Window> {
         let point = point.into();
         self.windows.iter().rev().find(|w| {
-            let bbox = window_rect(w, &self.id);
-            bbox.to_f64().contains(point)
+            let loc = window_loc(w, &self.id);
+            let mut geo = w.geometry();
+            geo.loc += loc;
+            geo.to_f64().contains(point)
         })
     }
 
