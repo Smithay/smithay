@@ -66,6 +66,12 @@ where
             }
             output.mode(dh, flags, mode.size.w, mode.size.h, mode.refresh);
         }
+
+        if output.version() >= 4 {
+            output.name(dh, inner.name.clone());
+            output.description(dh, inner.description.clone())
+        }
+
         if output.version() >= 2 {
             output.scale(dh, inner.scale);
             output.done(dh);
