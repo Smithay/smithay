@@ -625,7 +625,7 @@ impl AnvilState<UdevData> {
                 &source,
                 &backend_data.gbm,
                 &mut *self.display.borrow_mut(),
-                &mut *self.space.borrow_mut(),
+                &mut *space,
                 &signaler,
                 &logger,
             );
