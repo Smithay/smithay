@@ -87,7 +87,7 @@ impl TextInput {
                     old_instance.handle.leave(focus);
                     self.old_focus = Some(focus.clone());
                 }
-            } 
+            }
             self.focus = None;
             // set new focus
             self.focus = focus.cloned();
@@ -143,7 +143,11 @@ impl TextInput {
     }
 
     fn focused_text_input(&mut self) -> Option<&mut Instance> {
-        if let Some(focus) = &self.focus {
+        if let Some(old_focus) = &self.old_focus {
+            self.instances
+                .iter_mut()
+                .find(|i| i.handle.as_ref().same_client_as(old_focus.as_ref()))
+        } else if let Some(focus) = &self.focus {
             self.instances
                 .iter_mut()
                 .find(|i| i.handle.as_ref().same_client_as(focus.as_ref()))
@@ -176,7 +180,7 @@ impl TextInputHandle {
         }
     }
 
-    /// TODO:Document something
+    /// Used to access the relative location of an input popup surface
     pub fn coordinates(&self) ->(i32, i32, i32, i32) {
         let mut inner = self.inner.borrow_mut();
         let focused_instance = inner.focused_text_input();
@@ -197,7 +201,7 @@ impl TextInputHandle {
         }
     }
 
-    /// used to access the Main handle from an input method
+    /// Used to access the Main handle from an input method
     pub fn handle(&self) -> Option<Main<ZwpTextInputV3>> {
         self.inner.borrow_mut().focused_text_input().map(|i| i.handle.clone())
     }
@@ -285,7 +289,6 @@ pub fn init_text_input_manager_global(display: &mut Display) -> Global<ZwpTextIn
                                 }
                             }
                             zwp_text_input_v3::Request::SetCursorRectangle { x, y, width, height } => {
-                                println!("CursorRectangle: {x}, {y}, {width}, {height}");
                                 ti.add_coordinates(x, y, width, height);
                                 if let Some(popup_surface) = input_method.popup_surface_handle() {
                                     popup_surface.text_input_rectangle(x, y, width, height);
