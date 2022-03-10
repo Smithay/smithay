@@ -151,16 +151,20 @@ pub fn run_udev(log: Logger) {
     /*
      * Initialize the compositor
      */
-    let primary_gpu = primary_gpu(&session.seat())
-        .unwrap()
-        .and_then(|x| DrmNode::from_path(x).ok()?.node_with_type(NodeType::Render)?.ok())
-        .unwrap_or_else(|| {
-            all_gpus(&session.seat())
-                .unwrap()
-                .into_iter()
-                .find_map(|x| DrmNode::from_path(x).ok())
-                .expect("No GPU!")
-        });
+    let primary_gpu = if let Ok(var) = std::env::var("ANVIL_DRM_DEVICE") {
+        DrmNode::from_path(var).expect("Invalid drm device path")
+    } else {
+        primary_gpu(&session.seat())
+            .unwrap()
+            .and_then(|x| DrmNode::from_path(x).ok()?.node_with_type(NodeType::Render)?.ok())
+            .unwrap_or_else(|| {
+                all_gpus(&session.seat())
+                    .unwrap()
+                    .into_iter()
+                    .find_map(|x| DrmNode::from_path(x).ok())
+                    .expect("No GPU!")
+            })
+    };
     info!(log, "Using {} as primary gpu.", primary_gpu);
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
