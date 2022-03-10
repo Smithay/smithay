@@ -4,7 +4,7 @@
 //! backend in a compositor.
 
 use std::{
-    io::Result as IOResult,
+    io,
     sync::Arc,
     thread::{spawn, JoinHandle},
 };
@@ -109,7 +109,7 @@ impl EventSource for X11Source {
         readiness: Readiness,
         token: Token,
         mut callback: C,
-    ) -> IOResult<PostAction>
+    ) -> io::Result<PostAction>
     where
         C: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
@@ -125,7 +125,7 @@ impl EventSource for X11Source {
         }
     }
 
-    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> IOResult<()> {
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> io::Result<()> {
         if let Some(channel) = &mut self.channel {
             channel.register(poll, factory)?;
         }
@@ -133,7 +133,7 @@ impl EventSource for X11Source {
         Ok(())
     }
 
-    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> IOResult<()> {
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> io::Result<()> {
         if let Some(channel) = &mut self.channel {
             channel.reregister(poll, factory)?;
         }
@@ -141,7 +141,7 @@ impl EventSource for X11Source {
         Ok(())
     }
 
-    fn unregister(&mut self, poll: &mut Poll) -> IOResult<()> {
+    fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
         if let Some(channel) = &mut self.channel {
             channel.unregister(poll)?;
         }

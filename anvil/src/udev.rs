@@ -323,8 +323,7 @@ fn scan_connectors(
 
         let crtcs = encoder_infos
             .iter()
-            .map(|encoder_info| res_handles.filter_crtcs(encoder_info.possible_crtcs()))
-            .flatten();
+            .flat_map(|encoder_info| res_handles.filter_crtcs(encoder_info.possible_crtcs()));
 
         for crtc in crtcs {
             // Skip CRTCs used by previous connectors.

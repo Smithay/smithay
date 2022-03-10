@@ -55,6 +55,10 @@ impl Pool {
         })
     }
 
+    pub fn size(&self) -> usize {
+        self.map.read().unwrap().size
+    }
+
     pub fn with_data_slice<T, F: FnOnce(&[u8]) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {

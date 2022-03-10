@@ -41,8 +41,7 @@ use nix::sys::stat::{dev_t, stat};
 use std::{
     collections::HashMap,
     ffi::OsString,
-    fmt,
-    io::Result as IoResult,
+    fmt, io,
     os::unix::io::{AsRawFd, RawFd},
     path::{Path, PathBuf},
 };
@@ -88,7 +87,7 @@ impl UdevBackend {
     /// ## Arguments
     /// `seat`    - system seat which should be bound
     /// `logger`  - slog Logger to be used by the backend and its `DrmDevices`.
-    pub fn new<L, S: AsRef<str>>(seat: S, logger: L) -> IoResult<UdevBackend>
+    pub fn new<L, S: AsRef<str>>(seat: S, logger: L) -> io::Result<UdevBackend>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -233,7 +232,7 @@ pub enum UdevEvent {
 ///
 /// Might be used for filtering of [`UdevEvent::Added`] or for manual
 /// [`DrmDevice`](crate::backend::drm::DrmDevice) initialization.
-pub fn primary_gpu<S: AsRef<str>>(seat: S) -> IoResult<Option<PathBuf>> {
+pub fn primary_gpu<S: AsRef<str>>(seat: S) -> io::Result<Option<PathBuf>> {
     let mut enumerator = Enumerator::new()?;
     enumerator.match_subsystem("drm")?;
     enumerator.match_sysname("card[0-9]*")?;
@@ -267,7 +266,7 @@ pub fn primary_gpu<S: AsRef<str>>(seat: S) -> IoResult<Option<PathBuf>> {
 ///
 /// Might be used for manual  [`DrmDevice`](crate::backend::drm::DrmDevice)
 /// initialization.
-pub fn all_gpus<S: AsRef<str>>(seat: S) -> IoResult<Vec<PathBuf>> {
+pub fn all_gpus<S: AsRef<str>>(seat: S) -> io::Result<Vec<PathBuf>> {
     let mut enumerator = Enumerator::new()?;
     enumerator.match_subsystem("drm")?;
     enumerator.match_sysname("card[0-9]*")?;
@@ -285,7 +284,7 @@ pub fn all_gpus<S: AsRef<str>>(seat: S) -> IoResult<Vec<PathBuf>> {
 }
 
 /// Returns the loaded driver for a device named by it's [`dev_t`](::nix::sys::stat::dev_t).
-pub fn driver(dev: dev_t) -> IoResult<Option<OsString>> {
+pub fn driver(dev: dev_t) -> io::Result<Option<OsString>> {
     let mut enumerator = Enumerator::new()?;
     enumerator.match_subsystem("drm")?;
     enumerator.match_sysname("card[0-9]*")?;

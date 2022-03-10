@@ -213,7 +213,7 @@ impl<Backend> AnvilState<Backend> {
 
             if let Some(window) = space.window_under(self.pointer_location).cloned() {
                 space.raise_window(&window, true);
-                let window_loc = space.window_geometry(&window).unwrap().loc;
+                let window_loc = space.window_location(&window).unwrap();
                 let surface = window
                     .surface_under(
                         self.pointer_location - window_loc.to_f64(),
@@ -279,7 +279,7 @@ impl<Backend> AnvilState<Backend> {
                 )
                 .map(|(s, loc)| (s, loc + layer_loc));
         } else if let Some(window) = space.window_under(pos) {
-            let window_loc = space.window_geometry(window).unwrap().loc;
+            let window_loc = space.window_location(window).unwrap();
             under = window
                 .surface_under(pos - window_loc.to_f64(), WindowSurfaceType::ALL)
                 .map(|(s, loc)| (s, loc + window_loc));

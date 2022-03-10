@@ -13,6 +13,7 @@ categories = ["gui"]
 
 [package.metadata.docs.rs]
 features = ["test_all_features"]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
 members = [ "anvil", "wlcs_anvil" ]

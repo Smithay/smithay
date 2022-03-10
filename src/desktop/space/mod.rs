@@ -126,8 +126,10 @@ impl Space {
     pub fn window_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<&Window> {
         let point = point.into();
         self.windows.iter().rev().find(|w| {
-            let bbox = window_rect(w, &self.id);
-            bbox.to_f64().contains(point)
+            let loc = window_loc(w, &self.id);
+            let mut geo = w.geometry();
+            geo.loc += loc;
+            geo.to_f64().contains(point)
         })
     }
 
@@ -162,13 +164,13 @@ impl Space {
         })
     }
 
-    /// Returns the geometry of a [`Window`] including its relative position inside the Space.
-    pub fn window_geometry(&self, w: &Window) -> Option<Rectangle<i32, Logical>> {
+    /// Returns the location of a [`Window`] inside the Space.
+    pub fn window_location(&self, w: &Window) -> Option<Point<i32, Logical>> {
         if !self.windows.contains(w) {
             return None;
         }
 
-        Some(window_geo(w, &self.id))
+        Some(window_loc(w, &self.id))
     }
 
     /// Returns the bounding box of a [`Window`] including its relative position inside the Space.

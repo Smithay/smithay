@@ -224,8 +224,8 @@ impl Event<WinitInput> for WinitTouchStartedEvent {
 }
 
 impl TouchDownEvent<WinitInput> for WinitTouchStartedEvent {
-    fn slot(&self) -> Option<TouchSlot> {
-        Some(TouchSlot::new(self.id))
+    fn slot(&self) -> TouchSlot {
+        Some(self.id as u32).into()
     }
 
     fn x(&self) -> f64 {
@@ -271,8 +271,8 @@ impl Event<WinitInput> for WinitTouchMovedEvent {
 }
 
 impl TouchMotionEvent<WinitInput> for WinitTouchMovedEvent {
-    fn slot(&self) -> Option<TouchSlot> {
-        Some(TouchSlot::new(self.id))
+    fn slot(&self) -> TouchSlot {
+        Some(self.id as u32).into()
     }
 
     fn x(&self) -> f64 {
@@ -316,8 +316,8 @@ impl Event<WinitInput> for WinitTouchEndedEvent {
 }
 
 impl TouchUpEvent<WinitInput> for WinitTouchEndedEvent {
-    fn slot(&self) -> Option<TouchSlot> {
-        Some(TouchSlot::new(self.id))
+    fn slot(&self) -> TouchSlot {
+        Some(self.id as u32).into()
     }
 }
 
@@ -339,8 +339,8 @@ impl Event<WinitInput> for WinitTouchCancelledEvent {
 }
 
 impl TouchCancelEvent<WinitInput> for WinitTouchCancelledEvent {
-    fn slot(&self) -> Option<TouchSlot> {
-        Some(TouchSlot::new(self.id))
+    fn slot(&self) -> TouchSlot {
+        Some(self.id as u32).into()
     }
 }
 

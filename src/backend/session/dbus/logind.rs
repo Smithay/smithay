@@ -49,8 +49,7 @@ use nix::{
 };
 use std::{
     cell::RefCell,
-    fmt,
-    io::Error as IoError,
+    fmt, io,
     os::unix::io::RawFd,
     path::Path,
     rc::{Rc, Weak},
@@ -502,10 +501,10 @@ pub enum Error {
     FailedDbusConnection(#[source] dbus::Error),
     /// Failed to get session from logind
     #[error("Failed to get session from logind")]
-    FailedToGetSession(#[source] IoError),
+    FailedToGetSession(#[source] io::Error),
     /// Failed to get seat from logind
     #[error("Failed to get seat from logind")]
-    FailedToGetSeat(#[source] IoError),
+    FailedToGetSeat(#[source] io::Error),
     /// Failed to get vt from logind
     #[error("Failed to get vt from logind")]
     FailedToGetVT,

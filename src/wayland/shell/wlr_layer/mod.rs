@@ -254,7 +254,7 @@ impl LayerSurface {
             .pending_configures
             .last()
             .map(|c| &c.state)
-            .or_else(|| attributes.last_acked.as_ref());
+            .or(attributes.last_acked.as_ref());
 
         if let Some(state) = last_state {
             if state == &server_pending {
