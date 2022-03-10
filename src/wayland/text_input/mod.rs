@@ -44,7 +44,10 @@ use wayland_protocols::unstable::text_input::v3::server::{
 };
 use wayland_server::{protocol::wl_surface::WlSurface, Display, Filter, Global, Main};
 
-use crate::{wayland::seat::Seat, utils::{Logical, Point}};
+use crate::{
+    utils::{Logical, Point},
+    wayland::seat::Seat,
+};
 
 use super::input_method::InputMethodHandle;
 
@@ -59,7 +62,7 @@ struct Instance {
     width: i32,
     height: i32,
     l_x: i32,
-    l_y: i32
+    l_y: i32,
 }
 
 /// Contains all the text input instances
@@ -79,11 +82,11 @@ impl TextInput {
             .unwrap_or(false);
         if !same {
             if let Some(focus) = self.focus.as_ref() {
-                if let Some(old_instance) = self
-                    .instances
-                    .iter()
-                    .find(|i| i.handle.as_ref().same_client_as(self.focus.as_ref().unwrap().as_ref()))
-                {
+                if let Some(old_instance) = self.instances.iter().find(|i| {
+                    i.handle
+                        .as_ref()
+                        .same_client_as(self.focus.as_ref().unwrap().as_ref())
+                }) {
                     old_instance.handle.leave(focus);
                     self.old_focus = Some(focus.clone());
                 }
@@ -106,14 +109,14 @@ impl TextInput {
         }
     }
 
-    fn set_point(&mut self, point: &Point<i32, Logical>){
-        if let Some(instance) = self.focused_text_input(){
+    fn set_point(&mut self, point: &Point<i32, Logical>) {
+        if let Some(instance) = self.focused_text_input() {
             instance.l_x = point.x;
             instance.l_y = point.y;
         }
     }
 
-    fn increment(&mut self){
+    fn increment(&mut self) {
         if let Some(old_focus) = &self.old_focus {
             if let Some(old_instance) = self
                 .instances
@@ -133,7 +136,8 @@ impl TextInput {
                 }
             }
         } else if let Some(focus) = &self.focus {
-            if let Some(instance) = self.instances
+            if let Some(instance) = self
+                .instances
                 .iter_mut()
                 .find(|i| i.handle.as_ref().same_client_as(focus.as_ref()))
             {
@@ -169,10 +173,10 @@ impl TextInputHandle {
         inner.instances.push(instance);
     }
 
-    fn add_coordinates(&self, x: i32, y:i32, width: i32, height: i32) {
+    fn add_coordinates(&self, x: i32, y: i32, width: i32, height: i32) {
         let mut inner = self.inner.borrow_mut();
         let focused_instance = inner.focused_text_input();
-        if let Some(instance) = focused_instance{
+        if let Some(instance) = focused_instance {
             instance.x = x;
             instance.y = y;
             instance.width = width;
@@ -181,11 +185,16 @@ impl TextInputHandle {
     }
 
     /// Used to access the relative location of an input popup surface
-    pub fn coordinates(&self) ->(i32, i32, i32, i32) {
+    pub fn coordinates(&self) -> (i32, i32, i32, i32) {
         let mut inner = self.inner.borrow_mut();
         let focused_instance = inner.focused_text_input();
         if let Some(instance) = focused_instance {
-            (instance.x+instance.l_x, instance.y+instance.l_y, instance.width, instance.height)
+            (
+                instance.x + instance.l_x,
+                instance.y + instance.l_y,
+                instance.width,
+                instance.height,
+            )
         } else {
             (0, 0, 0, 0)
         }
@@ -196,21 +205,27 @@ impl TextInputHandle {
     pub fn set_focus(&mut self, focus: Option<&WlSurface>, location: Option<&Point<i32, Logical>>) {
         let mut inner = self.inner.borrow_mut();
         inner.set_focus(focus);
-        if let Some(point) = location{
+        if let Some(point) = location {
             inner.set_point(point);
         }
     }
 
     /// Used to access the Main handle from an input method
     pub fn handle(&self) -> Option<Main<ZwpTextInputV3>> {
-        self.inner.borrow_mut().focused_text_input().map(|i| i.handle.clone())
+        self.inner
+            .borrow_mut()
+            .focused_text_input()
+            .map(|i| i.handle.clone())
     }
 
     /// Used to access serial for each individual text input.
     /// It is the compositors responsibility to increment a separate serial on each
     /// text input.
     pub fn serial(&self) -> u32 {
-        self.inner.borrow_mut().focused_text_input().map(|i| i.serial)
+        self.inner
+            .borrow_mut()
+            .focused_text_input()
+            .map(|i| i.serial)
             .expect("Got a message from a text input that does not exist!")
     }
 
@@ -254,7 +269,7 @@ pub fn init_text_input_manager_global(display: &mut Display) -> Global<ZwpTextIn
                             width: 0,
                             height: 0,
                             l_x: 0,
-                            l_y: 0
+                            l_y: 0,
                         });
                         let input_method = user_data.get::<InputMethodHandle>().unwrap().clone();
                         let text_input_handle = ti.clone();
@@ -304,7 +319,8 @@ pub fn init_text_input_manager_global(display: &mut Display) -> Global<ZwpTextIn
                             _ => {}
                         });
                         id.assign_destructor(Filter::new(move |text_input: ZwpTextInputV3, _, _| {
-                            text_input_handle.inner
+                            text_input_handle
+                                .inner
                                 .borrow_mut()
                                 .instances
                                 .retain(|ti| !ti.handle.as_ref().equals(text_input.as_ref()))

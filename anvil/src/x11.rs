@@ -241,10 +241,10 @@ pub fn run_x11(log: Logger) {
                 let popup_surface = state.input_method.popup_surface();
                 if let Some(popup_surface) = popup_surface {
                     let (x, y, _, height) = state.text_input.coordinates();
-                    elements.push(Box::new(draw_input_popup_surface(
-                        popup_surface, 
-                        (x, y+height).into()
-                    )) as Box<dyn RenderElement<_, _, _, _>>);
+                    elements.push(
+                        Box::new(draw_input_popup_surface(popup_surface, (x, y + height).into()))
+                            as Box<dyn RenderElement<_, _, _, _>>,
+                    );
                 }
             }
 
