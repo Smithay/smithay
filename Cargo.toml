@@ -84,3 +84,15 @@ test_all_features = ["default"]
 [[example]]
 name = "raw_drm"
 required-features = ["backend_drm"]
+
+[[example]]
+name = "minimal"
+required-features = ["backend_winit", "renderer_gl", "wayland_frontend"]
+
+[[example]]
+name = "seat"
+required-features = ["wayland_frontend"]
+
+[[example]]
+name = "compositor"
+required-features = ["wayland_frontend"]
