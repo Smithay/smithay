@@ -385,7 +385,7 @@ impl<'a, T> PointerInnerHandle<'a, T> {
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of enter/motion/leave events.
-    fn motion(
+    pub fn motion(
         &mut self,
         dh: &mut DisplayHandle<'_>,
         location: Point<f64, Logical>,
