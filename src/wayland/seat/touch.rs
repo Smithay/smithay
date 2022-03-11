@@ -9,6 +9,7 @@ use wayland_server::{Filter, Main};
 use crate::backend::input::TouchSlot;
 use crate::utils::{Logical, Point};
 use crate::wayland::seat::wl_surface::WlSurface;
+use crate::wayland::Serial;
 
 /// An handle to a touch handler.
 ///
@@ -38,7 +39,7 @@ impl TouchHandle {
     /// Notify clients about new touch points.
     pub fn down(
         &mut self,
-        serial: u32,
+        serial: Serial,
         time: u32,
         surface: &WlSurface,
         surface_offset: Point<i32, Logical>,
@@ -51,7 +52,7 @@ impl TouchHandle {
     }
 
     /// Notify clients about touch point removal.
-    pub fn up(&self, serial: u32, time: u32, slot: TouchSlot) {
+    pub fn up(&self, serial: Serial, time: u32, slot: TouchSlot) {
         self.inner.borrow_mut().up(serial, time, slot);
     }
 
@@ -95,7 +96,7 @@ struct TouchInternal {
 impl TouchInternal {
     fn down(
         &mut self,
-        serial: u32,
+        serial: Serial,
         time: u32,
         surface: &WlSurface,
         surface_offset: Point<i32, Logical>,
@@ -116,12 +117,12 @@ impl TouchInternal {
 
         let (x, y) = (location - focus.surface_offset).into();
         self.with_focused_handles(slot, |handle| {
-            handle.down(serial, time, surface, slot.into(), x, y)
+            handle.down(serial.into(), time, surface, slot.into(), x, y)
         });
     }
 
-    fn up(&self, serial: u32, time: u32, slot: TouchSlot) {
-        self.with_focused_handles(slot, |handle| handle.up(serial, time, slot.into()));
+    fn up(&self, serial: Serial, time: u32, slot: TouchSlot) {
+        self.with_focused_handles(slot, |handle| handle.up(serial.into(), time, slot.into()));
     }
 
     fn motion(&self, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
