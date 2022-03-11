@@ -310,8 +310,8 @@ pub fn init_text_input_manager_global(display: &mut Display) -> Global<ZwpTextIn
                                 }
                             }
                             zwp_text_input_v3::Request::Commit => {
+                                ti.increment_serial();
                                 if let Some(input_method) = input_method.handle() {
-                                    ti.increment_serial();
                                     input_method.done();
                                 }
                             }
