@@ -59,7 +59,7 @@ jobs:
           path: target
           key: ${{ runner.os }}-build-rust_stable-check-${{ hashFiles('**/Cargo.toml') }}
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev libx11-dev libx11-xcb-dev
       - name: Downgrade log
         uses: actions-rs/cargo@v1
         with:
@@ -99,7 +99,7 @@ jobs:
             ~/.cargo/git
           key: ${{ runner.os }}-cargo-rust_nightly-${{ hashFiles('**/Cargo.toml') }}
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev libx11-dev libx11-xcb-dev
       - name: Downgrade to minimal dependencies
         uses: actions-rs/cargo@v1
         with:
@@ -169,7 +169,7 @@ jobs:
           profile: minimal
       
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev libx11-dev libx11-xcb-dev
 
       - name: Build cache
         uses: actions/cache@v2
@@ -246,7 +246,7 @@ jobs:
           profile: minimal
 
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev libx11-dev libx11-xcb-dev
 
       - name: Build cache
         uses: actions/cache@v2

@@ -74,7 +74,7 @@ impl X11State {
         connection: UnixStream,
         space: Rc<RefCell<Space>>,
         log: slog::Logger,
-    ) -> Result<(Self, X11Source), Box<dyn std::error::Error>> {
+    ) -> Result<(Self, X11Source<RustConnection>), Box<dyn std::error::Error>> {
         // Create an X11 connection. XWayland only uses screen 0.
         let screen = 0;
         let stream = DefaultStream::from_unix_stream(connection)?;

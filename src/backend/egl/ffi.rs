@@ -130,6 +130,7 @@ pub mod egl {
     include!(concat!(env!("OUT_DIR"), "/egl_bindings.rs"));
 
     pub const RESOURCE_BUSY_EXT: u32 = 0x3353;
+    pub const PLATFORM_XCB_EXT: u32 = 0x31DC;
     pub const DRM_RENDER_NODE_FILE_EXT: u32 = 0x3377;
 
     type EGLDEBUGPROCKHR = Option<

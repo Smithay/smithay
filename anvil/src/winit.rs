@@ -141,12 +141,7 @@ pub fn run_winit(log: Logger) {
         },
         log.clone(),
     );
-    output.change_current_state(
-        Some(mode),
-        Some(wl_output::Transform::Flipped180),
-        None,
-        Some((0, 0).into()),
-    );
+    output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
     state.space.borrow_mut().map_output(&output, 1.0, (0, 0));
 

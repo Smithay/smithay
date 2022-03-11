@@ -11,24 +11,17 @@ A link to the ICCCM Section 4: https://tronche.com/gui/x/icccm/sec-4.html
 */
 use crate::utils::{Logical, Size};
 
-use super::{extension::Extensions, Atoms, Window, X11Error};
-use drm_fourcc::DrmFourcc;
-use std::sync::{
-    atomic::{AtomicU32, AtomicU64},
-    mpsc::Sender,
-    Arc, Mutex, Weak,
-};
+use super::{Atoms, WeakX11Connection, Window, X11Error};
+use std::sync::{mpsc::Sender, Arc, Mutex};
 use x11rb::{
     connection::Connection,
     protocol::{
-        present::{self, ConnectionExt as _},
         xfixes::ConnectionExt as _,
         xproto::{
             self as x11, AtomEnum, ConnectionExt, CreateWindowAux, Depth, EventMask, PropMode, Screen,
             UnmapNotifyEvent, WindowClass,
         },
     },
-    rust_connection::RustConnection,
     wrapper::ConnectionExt as _,
 };
 
@@ -55,7 +48,7 @@ impl Default for CursorState {
 
 #[derive(Debug)]
 pub(crate) struct WindowInner {
-    pub connection: Weak<RustConnection>,
+    pub connection: WeakX11Connection,
     pub id: x11::Window,
     root: x11::Window,
     pub atoms: Atoms,
@@ -65,26 +58,20 @@ pub(crate) struct WindowInner {
     ///
     /// This value will be [`None`] if no surface is bound to the window.
     pub resize: Mutex<Option<Sender<Size<u16, Logical>>>>,
-    pub next_serial: AtomicU32,
-    pub last_msc: Arc<AtomicU64>,
-    pub format: DrmFourcc,
     pub depth: Depth,
-    pub extensions: Extensions,
 }
 
 impl WindowInner {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        connection: Weak<RustConnection>,
+        connection: WeakX11Connection,
         screen: &Screen,
         size: Size<u16, Logical>,
         title: &str,
-        format: DrmFourcc,
         atoms: Atoms,
         depth: Depth,
         visual_id: u32,
         colormap: u32,
-        extensions: Extensions,
     ) -> Result<WindowInner, X11Error> {
         let weak = connection;
         let connection = weak.upgrade().unwrap();
@@ -138,14 +125,6 @@ impl WindowInner {
             &window_aux,
         )?;
 
-        // We only ever need one event id since we will only ever have one event context.
-        let present_event_id = connection.generate_id()?;
-        connection.present_select_input(
-            present_event_id,
-            window,
-            present::EventMask::COMPLETE_NOTIFY | present::EventMask::IDLE_NOTIFY,
-        )?;
-
         // Send requests to change window properties while we wait for the window creation request to complete.
         let window = WindowInner {
             connection: weak,
@@ -154,11 +133,7 @@ impl WindowInner {
             atoms,
             cursor_state: Arc::new(Mutex::new(CursorState::default())),
             size: Mutex::new(size),
-            next_serial: AtomicU32::new(0),
-            last_msc: Arc::new(AtomicU64::new(0)),
-            format,
             depth,
-            extensions,
             resize: Mutex::new(None),
         };
 
@@ -251,7 +226,7 @@ impl WindowInner {
 
             if changed && state.inside_window {
                 state.visible = visible;
-                self.update_cursor(&*connection, state.visible);
+                self.update_cursor(&connection, state.visible);
             }
         }
     }
@@ -260,7 +235,7 @@ impl WindowInner {
         if let Some(connection) = self.connection.upgrade() {
             let mut state = self.cursor_state.lock().unwrap();
             state.inside_window = true;
-            self.update_cursor(&*connection, state.visible);
+            self.update_cursor(&connection, state.visible);
         }
     }
 
@@ -268,7 +243,7 @@ impl WindowInner {
         if let Some(connection) = self.connection.upgrade() {
             let mut state = self.cursor_state.lock().unwrap();
             state.inside_window = false;
-            self.update_cursor(&*connection, true);
+            self.update_cursor(&connection, true);
         }
     }
 
@@ -288,7 +263,7 @@ impl WindowInner {
 impl PartialEq for WindowInner {
     fn eq(&self, other: &Self) -> bool {
         match (self.connection.upgrade(), other.connection.upgrade()) {
-            (Some(conn1), Some(conn2)) => Arc::ptr_eq(&conn1, &conn2) && self.id == other.id,
+            (Some(conn1), Some(conn2)) => Arc::ptr_eq(&conn1.display, &conn2.display) && self.id == other.id,
 
             // A window with no connection to the X server cannot be validated.
             _ => false,

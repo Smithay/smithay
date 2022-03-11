@@ -12,7 +12,7 @@ use crate::backend::egl::{
     native::EGLNativeSurface,
     EGLError, SwapBuffersError,
 };
-use crate::utils::{Physical, Rectangle};
+use crate::utils::{Physical, Rectangle, Size};
 
 use slog::{debug, o};
 
@@ -37,6 +37,17 @@ impl fmt::Debug for EGLSurface {
             .field("logger", &self.logger)
             .finish()
     }
+}
+
+/// EGL uses a 2d coordinate system, that starts at the bottom-left,
+/// but smithay uses top-left.
+pub fn adjust_damage(
+    damage: impl Iterator<Item = Rectangle<i32, Physical>>,
+    size: Size<i32, Physical>,
+) -> Vec<Rectangle<i32, Physical>> {
+    damage
+        .map(|rect| Rectangle::from_loc_and_size((rect.loc.x, size.h - rect.loc.y - rect.size.h), rect.size))
+        .collect::<Vec<_>>()
 }
 
 // safe because EGLConfig can be moved between threads
@@ -106,6 +117,11 @@ impl EGLSurface {
     }
 
     /// Swaps buffers at the end of a frame.
+    ///
+    /// *Note*: EGL uses a 2d coordinate system,
+    /// that is based on the lower left corner of the window.
+    ///
+    /// Use [`adjust_damage`] to account for that.
     pub fn swap_buffers(
         &self,
         damage: Option<&mut [Rectangle<i32, Physical>]>,

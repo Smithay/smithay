@@ -1730,7 +1730,12 @@ impl Renderer for Gles2Renderer {
         renderer[2][1] = -(1.0f32.copysign(renderer[0][1] + renderer[1][1]));
 
         // We account for OpenGLs coordinate system here
-        let flip180 = Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0);
+        let flip180 = if !matches!(self.target, Some(Gles2Target::Surface(_))) {
+            Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0)
+        } else {
+            // EGLSurfaces already rotate the contents for us
+            Matrix3::identity()
+        };
 
         let mut frame = Gles2Frame {
             gl: self.gl.clone(),

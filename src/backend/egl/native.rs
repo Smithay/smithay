@@ -2,17 +2,21 @@
 
 use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, EGLDevice, SwapBuffersError};
 use crate::utils::{Physical, Rectangle};
-#[cfg(feature = "backend_winit")]
+#[cfg(any(feature = "backend_winit", feature = "backend_x11"))]
 use std::os::raw::c_int;
 use std::os::raw::c_void;
 #[cfg(feature = "backend_gbm")]
 use std::os::unix::io::AsRawFd;
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
+#[cfg(feature = "backend_x11")]
+use crate::backend::x11::{Window as X11Window, X11Connection};
 #[cfg(feature = "backend_winit")]
 use wayland_egl as wegl;
 #[cfg(feature = "backend_winit")]
 use winit::{platform::unix::WindowExtUnix, window::Window as WinitWindow};
+#[cfg(feature = "backend_x11")]
+use x11rb::xcb_ffi::XCBConnection;
 
 #[cfg(feature = "backend_gbm")]
 use gbm::{AsRaw, Device as GbmDevice};
@@ -143,6 +147,50 @@ impl<A: AsRawFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
     }
 }
 
+#[cfg(feature = "backend_x11")]
+impl EGLNativeDisplay for X11Connection {
+    fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
+        vec![
+            // prefer Xlib, because the nvidia driver does not support EGL_EXT_platform_xcb as of 510.
+            // Otherwise glvnd could select llvmpipe (via mesa, which does support EGL_EXT_platform_xcb),
+            // which is likely not what the user wants.
+            // see: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_x11.txt
+            egl_platform!(PLATFORM_X11_EXT, *self.display, &["EGL_EXT_platform_x11"]),
+            // see: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_MESA_platform_x11.txt
+            egl_platform!(PLATFORM_X11_EXT, *self.display, &["EGL_MESA_platform_x11"]),
+            // We cannot use XCB - even on supported platform - because one of the few differences
+            // between xlib and xcb is the size of the window_id.
+            // which means the pointer in the `EGLNativeSurface` implementation will not work
+            // for XCB-based EGLDisplays ....
+
+            // see: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_xcb.txt
+            // egl_platform!(PLATFORM_XCB_EXT, self.connection.get_raw_xcb_connection(), &["EGL_EXT_platform_xcb"]),
+            // see: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_MESA_platform_xcb.txt
+            // egl_platform!(PLATFORM_XCB_EXT, self.connection.get_raw_xcb_connection(), &["EGL_MESA_platform_xcb"]),
+        ]
+    }
+}
+
+#[cfg(feature = "backend_x11")]
+impl EGLNativeDisplay for XCBConnection {
+    fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
+        vec![
+            // see: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_xcb.txt
+            egl_platform!(
+                PLATFORM_XCB_EXT,
+                self.get_raw_xcb_connection(),
+                &["EGL_EXT_platform_xcb"]
+            ),
+            // see: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_MESA_platform_xcb.txt
+            egl_platform!(
+                PLATFORM_XCB_EXT,
+                self.get_raw_xcb_connection(),
+                &["EGL_MESA_platform_xcb"]
+            ),
+        ]
+    }
+}
+
 #[cfg(feature = "backend_winit")]
 impl EGLNativeDisplay for WinitWindow {
     fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
@@ -265,12 +313,32 @@ pub unsafe trait EGLNativeSurface: Send + Sync {
     }
 }
 
-#[cfg(feature = "backend_winit")]
-static WINIT_SURFACE_ATTRIBUTES: [c_int; 3] = [
+#[cfg(any(feature = "backend_winit", feature = "backend_x11"))]
+const SURFACE_ATTRIBUTES: [c_int; 3] = [
     ffi::egl::RENDER_BUFFER as c_int,
     ffi::egl::BACK_BUFFER as c_int,
     ffi::egl::NONE as c_int,
 ];
+
+#[cfg(feature = "backend_x11")]
+unsafe impl EGLNativeSurface for X11Window {
+    fn create(
+        &self,
+        display: &Arc<EGLDisplayHandle>,
+        config_id: ffi::egl::types::EGLConfig,
+    ) -> Result<*const c_void, super::EGLError> {
+        wrap_egl_call(|| unsafe {
+            // on 64-bit systems this is a u64, which is important for the upcoming call,
+            let mut id = self.id() as std::os::raw::c_ulong;
+            ffi::egl::CreatePlatformWindowSurfaceEXT(
+                display.handle,
+                config_id,
+                (&mut id) as *mut std::os::raw::c_ulong as *mut _,
+                SURFACE_ATTRIBUTES.as_ptr(),
+            )
+        })
+    }
+}
 
 #[cfg(feature = "backend_winit")]
 /// Typed Xlib window for the `X11` backend
@@ -290,7 +358,7 @@ unsafe impl EGLNativeSurface for XlibWindow {
                 display.handle,
                 config_id,
                 (&mut id) as *mut std::os::raw::c_ulong as *mut _,
-                WINIT_SURFACE_ATTRIBUTES.as_ptr(),
+                SURFACE_ATTRIBUTES.as_ptr(),
             )
         })
     }
@@ -308,7 +376,7 @@ unsafe impl EGLNativeSurface for wegl::WlEglSurface {
                 display.handle,
                 config_id,
                 self.ptr() as *mut _,
-                WINIT_SURFACE_ATTRIBUTES.as_ptr(),
+                SURFACE_ATTRIBUTES.as_ptr(),
             )
         })
     }

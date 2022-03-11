@@ -27,6 +27,8 @@ fn gl_generate() {
                 "EGL_EXT_platform_base",
                 "EGL_KHR_platform_x11",
                 "EGL_EXT_platform_x11",
+                "EGL_MESA_platform_xcb",
+                "EGL_EXT_platform_xcb",
                 "EGL_KHR_platform_wayland",
                 "EGL_EXT_platform_wayland",
                 "EGL_KHR_platform_gbm",
