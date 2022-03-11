@@ -95,7 +95,7 @@ where
 {
     SurfaceTree {
         surface,
-        position: location.into(),
+        position: location,
     }
 }
 
