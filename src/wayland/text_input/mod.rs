@@ -147,11 +147,7 @@ impl TextInput {
     }
 
     fn focused_text_input(&mut self) -> Option<&mut Instance> {
-        if let Some(old_focus) = &self.old_focus {
-            self.instances
-                .iter_mut()
-                .find(|i| i.handle.as_ref().same_client_as(old_focus.as_ref()))
-        } else if let Some(focus) = &self.focus {
+        if let Some(focus) = &self.focus {
             self.instances
                 .iter_mut()
                 .find(|i| i.handle.as_ref().same_client_as(focus.as_ref()))
