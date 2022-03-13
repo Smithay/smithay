@@ -130,8 +130,8 @@ unsafe impl Send for KbdInternal {}
 impl KbdInternal {
     fn new(
         xkb_config: XkbConfig<'_>,
-        repeat_rate: i32,
         repeat_delay: i32,
+        repeat_rate: i32,
         focus_hook: Box<dyn FnMut(Option<&WlSurface>)>,
     ) -> Result<KbdInternal, ()> {
         // we create a new contex for each keyboard because libxkbcommon is actually NOT threadsafe
@@ -284,7 +284,7 @@ where
         "variant" => xkb_config.variant, "options" => &xkb_config.options
     );
     let internal =
-        KbdInternal::new(xkb_config, repeat_rate, repeat_delay, Box::new(focus_hook)).map_err(|_| {
+        KbdInternal::new(xkb_config, repeat_delay, repeat_rate, Box::new(focus_hook)).map_err(|_| {
             debug!(log, "Loading keymap failed");
             Error::BadKeymap
         })?;

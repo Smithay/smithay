@@ -94,7 +94,7 @@ struct InputMethod {
 }
 
 impl InputMethod {
-    fn config(&mut self, rate: i32, delay: i32, xkb_config: XkbConfig<'_>) {
+    fn config(&mut self, delay: i32, rate: i32, xkb_config: XkbConfig<'_>) {
         let (keymap, xkbstate) = xkb_handler(xkb_config);
         self.keyboard_state = Some(KeyboardState {
             xkbstate,
@@ -197,9 +197,9 @@ pub struct InputMethodHandle {
 }
 
 impl InputMethodHandle {
-    fn new_handle(&self, rate: i32, delay: i32, xkb_config: XkbConfig<'_>) {
+    fn new_handle(&self, delay: i32, rate: i32, xkb_config: XkbConfig<'_>) {
         let mut inner = self.inner.borrow_mut();
-        inner.config(rate, delay, xkb_config)
+        inner.config(delay, rate, xkb_config)
     }
 
     fn add_instance(&self, instance: Main<ZwpInputMethodV2>) {
@@ -259,11 +259,11 @@ pub trait InputMethodSeatTrait {
     /// this is also used to set xkb config parameters that will be sent to the input method
     /// Input methods need different keyboard languages for different input methods
     /// E.g Norwegian pinyin user will want to use a nordic keyboard layout
-    /// but a Taiwanese person will write their input method with a us layout
+    /// but a Taiwanese person will use their input method with a us layout
     fn add_input_method(
         &self,
-        repeat_rate: i32,
         repeat_delay: i32,
+        repeat_rate: i32,
         xkb_config: XkbConfig<'_>,
     ) -> InputMethodHandle;
 }
@@ -271,8 +271,8 @@ pub trait InputMethodSeatTrait {
 impl InputMethodSeatTrait for Seat {
     fn add_input_method(
         &self,
-        repeat_rate: i32,
         repeat_delay: i32,
+        repeat_rate: i32,
         xkb_config: XkbConfig<'_>,
     ) -> InputMethodHandle {
         let user_data = self.user_data();

@@ -210,7 +210,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         init_input_method_manager_global(&mut display.borrow_mut());
         init_text_input_manager_global(&mut display.borrow_mut());
 
-        let input_method = seat.add_input_method(25, 200, XkbConfig::default());
+        let input_method = seat.add_input_method(200, 25, XkbConfig::default());
         let text_input = seat.add_text_input();
 
         #[cfg(feature = "xwayland")]
