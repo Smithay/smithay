@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use smithay::delegate_seat;
 use smithay::reexports::wayland_server::Display;
-use smithay::wayland::seat::{self as seat, SeatHandler};
+use smithay::wayland::seat::{self as seat, Seat, SeatHandler};
 
 use seat::SeatState;
 
@@ -11,6 +11,7 @@ use wayland_server::socket::ListeningSocket;
 
 struct App {
     seat_state: SeatState<Self>,
+    seat: Seat<Self>,
 }
 
 impl SeatHandler<Self> for App {
@@ -22,14 +23,14 @@ impl SeatHandler<Self> for App {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;
 
-    let seat_state = SeatState::new(&mut display, "Example".into(), None);
+    let seat_state = SeatState::new();
+    let seat = Seat::new(&mut display, "Example", None);
 
-    let mut state = App { seat_state };
+    let mut state = App { seat_state, seat };
 
-    let keyboard =
-        state
-            .seat_state
-            .add_keyboard(&mut display.handle(), Default::default(), 25, 600, |_, _| {})?;
+    let keyboard = state
+        .seat
+        .add_keyboard(&mut display.handle(), Default::default(), 25, 600, |_, _| {})?;
 
     let listener = ListeningSocket::bind("wayland-5").unwrap();
 

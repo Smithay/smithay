@@ -17,7 +17,7 @@ use smithay::{
             with_surface_tree_downward, CompositorHandler, CompositorState, SurfaceAttributes,
             TraversalAction,
         },
-        seat::{FilterResult, SeatHandler, SeatState},
+        seat::{FilterResult, Seat, SeatHandler, SeatState},
         shell::xdg::{XdgRequest, XdgShellHandler, XdgShellState},
         shm::ShmState,
     },
@@ -80,6 +80,8 @@ struct App {
     xdg_shell_state: XdgShellState,
     shm_state: ShmState,
     seat_state: SeatState<Self>,
+
+    seat: Seat<Self>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -96,14 +98,19 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut display: Display<App> = Display::new()?;
 
+    let seat_state = SeatState::new();
+    let seat = Seat::new(&mut display, "winit", None);
+
     let mut state = {
         App {
             compositor_state: CompositorState::new(&mut display, None),
             xdg_shell_state: XdgShellState::new(&mut display, None).0,
             shm_state: ShmState::new(&mut display, vec![], None),
-            seat_state: SeatState::new(&mut display, "winit".into(), None),
+            seat_state,
+            seat,
         }
     };
+
     let listener = ListeningSocket::bind("wayland-5").unwrap();
     let mut clients = Vec::new();
 
@@ -112,7 +119,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     let start_time = std::time::Instant::now();
 
     let keyboard = state
-        .seat_state
+        .seat
         .add_keyboard(&mut display.handle(), Default::default(), 200, 200, |_, _| {})
         .unwrap();
 
@@ -136,6 +143,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                         for surface in surfaces {
                             let surface = surface.wl_surface();
                             keyboard.set_focus(dh, Some(surface), 0.into());
+                            break;
                         }
                     });
                 }
