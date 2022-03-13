@@ -1,11 +1,15 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::ops::Deref;
-use std::rc::Rc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
-use wayland_server::protocol::wl_touch::WlTouch;
-use wayland_server::{Filter, Main};
+use wayland_server::{
+    backend::{ClientId, ObjectId},
+    protocol::wl_touch::{self, WlTouch},
+    DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource,
+};
 
+use super::{SeatHandler, SeatState};
 use crate::backend::input::TouchSlot;
 use crate::utils::{Logical, Point};
 use crate::wayland::seat::wl_surface::WlSurface;
@@ -19,7 +23,7 @@ use crate::wayland::Serial;
 /// clients.
 #[derive(Debug, Clone)]
 pub struct TouchHandle {
-    inner: Rc<RefCell<TouchInternal>>,
+    inner: Arc<Mutex<TouchInternal>>,
 }
 
 impl TouchHandle {
@@ -33,12 +37,13 @@ impl TouchHandle {
     ///
     /// This should be done first, before anything else is done with this touch handle.
     pub(crate) fn new_touch(&self, touch: WlTouch) {
-        self.inner.borrow_mut().known_handles.push(touch);
+        self.inner.lock().unwrap().known_handles.push(touch);
     }
 
     /// Notify clients about new touch points.
     pub fn down(
         &mut self,
+        dh: &mut DisplayHandle<'_>,
         serial: Serial,
         time: u32,
         surface: &WlSurface,
@@ -47,36 +52,43 @@ impl TouchHandle {
         location: Point<f64, Logical>,
     ) {
         self.inner
-            .borrow_mut()
-            .down(serial, time, surface, surface_offset, slot, location);
+            .lock()
+            .unwrap()
+            .down(dh, serial, time, surface, surface_offset, slot, location);
     }
 
     /// Notify clients about touch point removal.
-    pub fn up(&self, serial: Serial, time: u32, slot: TouchSlot) {
-        self.inner.borrow_mut().up(serial, time, slot);
+    pub fn up(&self, dh: &mut DisplayHandle<'_>, serial: Serial, time: u32, slot: TouchSlot) {
+        self.inner.lock().unwrap().up(dh, serial, time, slot);
     }
 
     /// Notify clients about touch motion.
-    pub fn motion(&self, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
-        self.inner.borrow_mut().motion(time, slot, location);
+    pub fn motion(
+        &self,
+        dh: &mut DisplayHandle<'_>,
+        time: u32,
+        slot: TouchSlot,
+        location: Point<f64, Logical>,
+    ) {
+        self.inner.lock().unwrap().motion(dh, time, slot, location);
     }
 
     /// Notify clients about touch shape changes.
-    pub fn shape(&self, slot: TouchSlot, major: f64, minor: f64) {
-        self.inner.borrow_mut().shape(slot, major, minor);
+    pub fn shape(&self, dh: &mut DisplayHandle<'_>, slot: TouchSlot, major: f64, minor: f64) {
+        self.inner.lock().unwrap().shape(dh, slot, major, minor);
     }
 
     /// Notify clients about touch shape orientation.
-    pub fn orientation(&self, slot: TouchSlot, orientation: f64) {
-        self.inner.borrow_mut().orientation(slot, orientation);
+    pub fn orientation(&self, dh: &mut DisplayHandle<'_>, slot: TouchSlot, orientation: f64) {
+        self.inner.lock().unwrap().orientation(dh, slot, orientation);
     }
 
     /// Notify clients about touch cancellation.
     ///
     /// This should be sent by the compositor when the currently active touch
     /// slot was recognized as a gesture.
-    pub fn cancel(&self) {
-        self.inner.borrow_mut().cancel();
+    pub fn cancel(&self, dh: &mut DisplayHandle<'_>) {
+        self.inner.lock().unwrap().cancel(dh);
     }
 }
 
@@ -96,6 +108,7 @@ struct TouchInternal {
 impl TouchInternal {
     fn down(
         &mut self,
+        dh: &mut DisplayHandle<'_>,
         serial: Serial,
         time: u32,
         surface: &WlSurface,
@@ -110,83 +123,105 @@ impl TouchInternal {
 
         // Select all WlTouch instances associated to the active WlSurface.
         for handle in &self.known_handles {
-            if handle.as_ref().same_client_as(surface.as_ref()) {
+            if handle.id().same_client_as(&surface.id()) {
                 focus.handles.push(handle.clone());
             }
         }
 
         let (x, y) = (location - focus.surface_offset).into();
-        self.with_focused_handles(slot, |handle| {
-            handle.down(serial.into(), time, surface, slot.into(), x, y)
+        self.with_focused_handles(dh, slot, |dh, handle| {
+            handle.down(dh, serial.into(), time, surface, slot.into(), x, y)
         });
     }
 
-    fn up(&self, serial: Serial, time: u32, slot: TouchSlot) {
-        self.with_focused_handles(slot, |handle| handle.up(serial.into(), time, slot.into()));
+    fn up(&self, dh: &mut DisplayHandle<'_>, serial: Serial, time: u32, slot: TouchSlot) {
+        self.with_focused_handles(dh, slot, |dh, handle| {
+            handle.up(dh, serial.into(), time, slot.into())
+        });
     }
 
-    fn motion(&self, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
+    fn motion(&self, dh: &mut DisplayHandle<'_>, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
         let focus = match self.focus.get(&slot) {
             Some(slot) => slot,
             None => return,
         };
 
         let (x, y) = (location - focus.surface_offset).into();
-        self.with_focused_handles(slot, |handle| handle.motion(time, slot.into(), x, y));
+        self.with_focused_handles(dh, slot, |dh, handle| handle.motion(dh, time, slot.into(), x, y));
     }
 
-    fn shape(&self, slot: TouchSlot, major: f64, minor: f64) {
-        self.with_focused_handles(slot, |handle| {
-            if handle.as_ref().version() >= 6 {
-                handle.shape(slot.into(), major, minor);
+    fn shape(&self, dh: &mut DisplayHandle<'_>, slot: TouchSlot, major: f64, minor: f64) {
+        self.with_focused_handles(dh, slot, |dh, handle| {
+            if handle.version() >= 6 {
+                handle.shape(dh, slot.into(), major, minor);
             }
         });
     }
 
-    fn orientation(&self, slot: TouchSlot, orientation: f64) {
-        self.with_focused_handles(slot, |handle| {
-            if handle.as_ref().version() >= 6 {
-                handle.orientation(slot.into(), orientation);
+    fn orientation(&self, dh: &mut DisplayHandle<'_>, slot: TouchSlot, orientation: f64) {
+        self.with_focused_handles(dh, slot, |dh, handle| {
+            if handle.version() >= 6 {
+                handle.orientation(dh, slot.into(), orientation);
             }
         });
     }
 
     // TODO: In theory doesn't need to be sent for WlTouch that isn't in the focus hashmap?
-    fn cancel(&self) {
+    fn cancel(&self, dh: &mut DisplayHandle<'_>) {
         for handle in &self.known_handles {
-            handle.cancel();
+            handle.cancel(dh);
         }
     }
 
     // TODO: Document this also sends frame every time.
     #[inline]
-    fn with_focused_handles<F>(&self, slot: TouchSlot, mut f: F)
+    fn with_focused_handles<F>(&self, dh: &mut DisplayHandle<'_>, slot: TouchSlot, mut f: F)
     where
-        F: FnMut(&WlTouch),
+        F: FnMut(&mut DisplayHandle<'_>, &WlTouch),
     {
         if let Some(focus) = self.focus.get(&slot) {
             for handle in &focus.handles {
-                f(handle);
-                handle.frame();
+                f(dh, handle);
+                handle.frame(dh);
             }
         }
     }
 }
 
-pub(crate) fn implement_touch(touch: Main<WlTouch>, handle: Option<&TouchHandle>) -> WlTouch {
-    // The sole `Release` request is already handled by our destructor.
-    touch.quick_assign(|_touch, _request, _data| {});
+/// User data for keyboard
+#[derive(Debug)]
+pub struct TouchUserData {
+    pub(crate) handle: Option<TouchHandle>,
+}
 
-    // Remove from touch handles on destroy.
-    if let Some(handle) = handle {
-        let inner = handle.inner.clone();
-        touch.assign_destructor(Filter::new(move |touch: WlTouch, _, _| {
-            inner
-                .borrow_mut()
-                .known_handles
-                .retain(|t| !t.as_ref().equals(touch.as_ref()))
-        }));
+impl<T> DelegateDispatchBase<WlTouch> for SeatState<T> {
+    type UserData = TouchUserData;
+}
+
+impl<T, D> DelegateDispatch<WlTouch, D> for SeatState<T>
+where
+    D: 'static + Dispatch<WlTouch, UserData = TouchUserData>,
+    D: SeatHandler<T>,
+{
+    fn request(
+        _state: &mut D,
+        _client: &wayland_server::Client,
+        _resource: &WlTouch,
+        _request: wl_touch::Request,
+        _data: &Self::UserData,
+        _dhandle: &mut DisplayHandle<'_>,
+        _data_init: &mut wayland_server::DataInit<'_, D>,
+    ) {
     }
 
-    touch.deref().clone()
+    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &Self::UserData) {
+        if let Some(ref handle) = data.handle {
+            handle
+                .inner
+                .lock()
+                .unwrap()
+                .known_handles
+                .retain(|k| k.id() != object_id)
+        }
+    }
 }
