@@ -439,13 +439,19 @@ pub struct SeatState<T> {
     pd: PhantomData<T>,
 }
 
+impl<T> Default for SeatState<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Clone for SeatState<T> {
     fn clone(&self) -> Self {
         Self { pd: self.pd }
     }
 }
 
-impl<T: 'static> SeatState<T> {
+impl<T> SeatState<T> {
     /// Create a new seat global
     ///
     /// A new seat global is created with given name and inserted
