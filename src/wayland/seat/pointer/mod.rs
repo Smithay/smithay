@@ -149,7 +149,6 @@ impl<T> PointerInternal<T> {
         F: FnMut(&mut DisplayHandle<'_>, &WlPointer, &WlSurface),
     {
         if let Some((ref focus, _)) = self.focus {
-            focus.id();
             // TODO: is this alive check still needed?
             // This is is_alive check
             if dh.object_info(focus.id()).is_err() {
