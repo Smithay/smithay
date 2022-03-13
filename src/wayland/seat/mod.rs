@@ -36,7 +36,7 @@
 
 mod keyboard;
 mod pointer;
-// mod touch;
+mod touch;
 
 use std::{
     marker::PhantomData,
@@ -57,7 +57,7 @@ pub use self::{
         GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab, PointerHandle, PointerInnerHandle,
         PointerUserData,
     },
-    // touch::TouchHandle,
+    touch::{TouchHandle, TouchUserData},
 };
 
 use wayland_server::{
@@ -67,6 +67,7 @@ use wayland_server::{
         wl_pointer::WlPointer,
         wl_seat::{self, WlSeat},
         wl_surface,
+        wl_touch::WlTouch,
     },
     DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
     Dispatch, Display, DisplayHandle, GlobalDispatch, New, Resource,
@@ -76,7 +77,7 @@ use wayland_server::{
 struct Inner<T> {
     pointer: Option<PointerHandle<T>>,
     keyboard: Option<KeyboardHandle>,
-    // touch: Option<TouchHandle>,
+    touch: Option<TouchHandle>,
     known_seats: Vec<wl_seat::WlSeat>,
 
     global_id: Option<GlobalId>,
@@ -100,9 +101,9 @@ impl<T> Inner<T> {
         if self.keyboard.is_some() {
             caps |= wl_seat::Capability::Keyboard;
         }
-        // if self.touch.is_some() {
-        //     caps |= wl_seat::Capability::Touch;
-        // }
+        if self.touch.is_some() {
+            caps |= wl_seat::Capability::Touch;
+        }
         caps
     }
 
@@ -173,6 +174,7 @@ impl<T: 'static> Seat<T> {
             inner: Mutex::new(Inner {
                 pointer: None,
                 keyboard: None,
+                touch: None,
                 known_seats: Default::default(),
 
                 global_id: None,
@@ -363,58 +365,58 @@ impl<T: 'static> Seat<T> {
 
 // Touch
 impl<T> Seat<T> {
-    // /// Adds the touch capability to this seat
-    // ///
-    // /// You are provided a [`TouchHandle`], which allows you to send input events
-    // /// to this pointer. This handle can be cloned.
-    // ///
-    // /// Calling this method on a seat that already has a touch capability
-    // /// will overwrite it, and will be seen by the clients as if the
-    // /// touchscreen was unplugged and a new one was plugged in.
-    // ///
-    // /// # Examples
-    // ///
-    // /// ```
-    // /// # extern crate wayland_server;
-    // /// #
-    // /// # use smithay::wayland::seat::Seat;
-    // /// #
-    // /// # let mut display = wayland_server::Display::new();
-    // /// # let (mut seat, seat_global) = Seat::new(
-    // /// #     &mut display,
-    // /// #     "seat-0".into(),
-    // /// #     None
-    // /// # );
-    // /// let touch_handle = seat.add_touch();
-    // /// ```
-    // pub fn add_touch(&mut self) -> TouchHandle {
-    //     let mut inner = self.arc.inner.borrow_mut();
-    //     let touch = TouchHandle::new();
-    //     if inner.touch.is_some() {
-    //         // If there's already a tocuh device, remove it notify the clients about the change.
-    //         inner.touch = None;
-    //         inner.send_all_caps();
-    //     }
-    //     inner.touch = Some(touch.clone());
-    //     inner.send_all_caps();
-    //     touch
-    // }
+    /// Adds the touch capability to this seat
+    ///
+    /// You are provided a [`TouchHandle`], which allows you to send input events
+    /// to this pointer. This handle can be cloned.
+    ///
+    /// Calling this method on a seat that already has a touch capability
+    /// will overwrite it, and will be seen by the clients as if the
+    /// touchscreen was unplugged and a new one was plugged in.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # extern crate wayland_server;
+    /// #
+    /// # use smithay::wayland::seat::Seat;
+    /// #
+    /// # let mut display = wayland_server::Display::new();
+    /// # let (mut seat, seat_global) = Seat::new(
+    /// #     &mut display,
+    /// #     "seat-0".into(),
+    /// #     None
+    /// # );
+    /// let touch_handle = seat.add_touch();
+    /// ```
+    pub fn add_touch(&mut self, dh: &mut DisplayHandle<'_>) -> TouchHandle {
+        let mut inner = self.arc.inner.lock().unwrap();
+        let touch = TouchHandle::new();
+        if inner.touch.is_some() {
+            // If there's already a tocuh device, remove it notify the clients about the change.
+            inner.touch = None;
+            inner.send_all_caps(dh);
+        }
+        inner.touch = Some(touch.clone());
+        inner.send_all_caps(dh);
+        touch
+    }
 
-    // /// Access the touch device of this seat, if any.
-    // pub fn get_touch(&self) -> Option<TouchHandle> {
-    //     self.arc.inner.borrow_mut().touch.clone()
-    // }
+    /// Access the touch device of this seat, if any.
+    pub fn get_touch(&self) -> Option<TouchHandle> {
+        self.arc.inner.lock().unwrap().touch.clone()
+    }
 
-    // /// Remove the touch capability from this seat
-    // ///
-    // /// Clients will be appropriately notified.
-    // pub fn remove_touch(&mut self) {
-    //     let mut inner = self.arc.inner.borrow_mut();
-    //     if inner.touch.is_some() {
-    //         inner.touch = None;
-    //         inner.send_all_caps();
-    //     }
-    // }
+    /// Remove the touch capability from this seat
+    ///
+    /// Clients will be appropriately notified.
+    pub fn remove_touch(&mut self, dh: &mut DisplayHandle<'_>) {
+        let mut inner = self.arc.inner.lock().unwrap();
+        if inner.touch.is_some() {
+            inner.touch = None;
+            inner.send_all_caps(dh);
+        }
+    }
 }
 
 impl<T> ::std::cmp::PartialEq for Seat<T> {
@@ -474,9 +476,8 @@ macro_rules! delegate_seat {
         $crate::reexports::wayland_server::delegate_dispatch!($ty: [
             $crate::reexports::wayland_server::protocol::wl_seat::WlSeat,
             $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer,
-            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard
-            // TODO: Enable touch
-            //$crate::reexports::wayland_server::protocol::wl_touch::WlTouch
+            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard,
+            $crate::reexports::wayland_server::protocol::wl_touch::WlTouch
         ] => $crate::wayland::seat::SeatState<$ty>);
     };
 }
@@ -490,6 +491,7 @@ where
     D: Dispatch<WlSeat, UserData = SeatUserData<T>>,
     D: Dispatch<WlKeyboard, UserData = KeyboardUserData>,
     D: Dispatch<WlPointer, UserData = PointerUserData<T>>,
+    D: Dispatch<WlTouch, UserData = TouchUserData>,
     D: SeatHandler<T>,
     D: 'static,
     T: 'static,
@@ -537,14 +539,21 @@ where
                     // same as pointer, should error but cannot
                 }
             }
-            wl_seat::Request::GetTouch { id: _ } => {
-                unimplemented!()
-                // let touch = self::touch::implement_touch(id, inner.touch.as_ref());
-                // if let Some(ref touch_handle) = inner.touch {
-                //     touch_handle.new_touch(touch);
-                // } else {
-                //     // same as pointer, should error but cannot
-                // }
+            wl_seat::Request::GetTouch { id } => {
+                let inner = data.arc.inner.lock().unwrap();
+
+                let touch = data_init.init(
+                    id,
+                    TouchUserData {
+                        handle: inner.touch.clone(),
+                    },
+                );
+
+                if let Some(ref h) = inner.touch {
+                    h.new_touch(touch);
+                } else {
+                    // same as pointer, should error but cannot
+                }
             }
             wl_seat::Request::Release => {
                 // Our destructors already handle it
@@ -573,6 +582,7 @@ where
     D: Dispatch<WlSeat, UserData = SeatUserData<T>>,
     D: Dispatch<WlKeyboard, UserData = KeyboardUserData>,
     D: Dispatch<WlPointer, UserData = PointerUserData<T>>,
+    D: Dispatch<WlTouch, UserData = TouchUserData>,
     D: SeatHandler<T>,
     D: 'static,
     T: 'static,
