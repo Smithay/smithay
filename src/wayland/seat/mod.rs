@@ -38,7 +38,10 @@ mod keyboard;
 mod pointer;
 // mod touch;
 
-use std::sync::{Arc, Mutex};
+use std::{
+    marker::PhantomData,
+    sync::{Arc, Mutex},
+};
 
 use crate::utils::user_data::UserDataMap;
 
@@ -75,13 +78,14 @@ struct Inner<T> {
     keyboard: Option<KeyboardHandle>,
     // touch: Option<TouchHandle>,
     known_seats: Vec<wl_seat::WlSeat>,
+
+    global_id: Option<GlobalId>,
 }
 
 #[derive(Debug)]
 struct SeatRc<T> {
     name: String,
     inner: Mutex<Inner<T>>,
-    seat: GlobalId,
     user_data_map: UserDataMap,
 
     log: ::slog::Logger,
@@ -116,8 +120,13 @@ pub trait SeatHandler<T> {
     fn seat_state(&mut self) -> &mut SeatState<T>;
 }
 
+/// Global data of WlSeat
+#[derive(Debug)]
+pub struct SeatGlobalData<T> {
+    arc: Arc<SeatRc<T>>,
+}
+
 /// A Seat handle
-///
 /// This struct gives you access to the control of the
 /// capabilities of the associated seat.
 ///
@@ -127,11 +136,11 @@ pub trait SeatHandler<T> {
 ///
 /// See module-level documentation for details of use.
 #[derive(Debug)]
-pub struct SeatState<T> {
+pub struct Seat<T> {
     arc: Arc<SeatRc<T>>,
 }
 
-impl<T> Clone for SeatState<T> {
+impl<T> Clone for Seat<T> {
     fn clone(&self) -> Self {
         Self {
             arc: self.arc.clone(),
@@ -139,7 +148,7 @@ impl<T> Clone for SeatState<T> {
     }
 }
 
-impl<T: 'static> SeatState<T> {
+impl<T: 'static> Seat<T> {
     /// Create a new seat global
     ///
     /// A new seat global is created with given name and inserted
@@ -148,40 +157,46 @@ impl<T: 'static> SeatState<T> {
     /// You are provided with the state token to retrieve it (allowing
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
-    pub fn new<L, D>(display: &mut Display<D>, name: String, logger: L) -> Self
+    pub fn new<D, N, L>(display: &mut Display<D>, name: N, logger: L) -> Self
     where
+        D: GlobalDispatch<WlSeat, GlobalData = SeatGlobalData<T>> + 'static,
+        N: Into<String>,
         L: Into<Option<::slog::Logger>>,
-        D: GlobalDispatch<WlSeat, GlobalData = ()> + 'static,
     {
+        let name = name.into();
+
         let log = crate::slog_or_fallback(logger);
         let log = log.new(slog::o!("smithay_module" => "seat_handler", "seat_name" => name.clone()));
 
-        let seat = display.create_global(5, ());
+        let arc = Arc::new(SeatRc {
+            name,
+            inner: Mutex::new(Inner {
+                pointer: None,
+                keyboard: None,
+                known_seats: Default::default(),
 
-        Self {
-            arc: Arc::new(SeatRc {
-                name,
-                inner: Mutex::new(Inner {
-                    pointer: None,
-                    keyboard: None,
-                    known_seats: Default::default(),
-                }),
-                seat,
-                user_data_map: UserDataMap::new(),
-                log,
+                global_id: None,
             }),
-        }
+            user_data_map: UserDataMap::new(),
+            log,
+        });
+
+        let global_id = display.create_global(5, SeatGlobalData { arc: arc.clone() });
+        arc.inner.lock().unwrap().global_id = Some(global_id);
+
+        Self { arc }
     }
 
-    /// Get id of WlSeat global
-    pub fn seat_global(&self) -> GlobalId {
-        self.arc.seat.clone()
+    /// Checks whether a given [`WlSeat`](wl_seat::WlSeat) is associated with this [`Seat`]
+    pub fn owns(&self, seat: &wl_seat::WlSeat) -> bool {
+        let inner = self.arc.inner.lock().unwrap();
+        inner.known_seats.iter().any(|s| s == seat)
     }
 
     /// Attempt to retrieve a [`Seat`] from an existing resource
     pub fn from_resource(seat: &WlSeat) -> Option<Self> {
         seat.data::<SeatUserData<T>>()
-            .map(|d| d.seat.clone())
+            .map(|d| d.arc.clone())
             .map(|arc| Self { arc })
     }
 
@@ -190,6 +205,14 @@ impl<T: 'static> SeatState<T> {
         &self.arc.user_data_map
     }
 
+    /// Get the id of WlSeta global
+    pub fn global_id(&self) -> GlobalId {
+        self.arc.inner.lock().unwrap().global_id.as_ref().unwrap().clone()
+    }
+}
+
+// Pointer
+impl<T> Seat<T> {
     /// Adds the pointer capability to this seat
     ///
     /// You are provided a [`PointerHandle`], which allows you to send input events
@@ -251,7 +274,10 @@ impl<T: 'static> SeatState<T> {
             inner.send_all_caps(dh);
         }
     }
+}
 
+// Keyboard
+impl<T: 'static> Seat<T> {
     /// Adds the keyboard capability to this seat
     ///
     /// You are provided a [`KeyboardHandle`], which allows you to send input events
@@ -333,7 +359,10 @@ impl<T: 'static> SeatState<T> {
             inner.send_all_caps(dh);
         }
     }
+}
 
+// Touch
+impl<T> Seat<T> {
     // /// Adds the touch capability to this seat
     // ///
     // /// You are provided a [`TouchHandle`], which allows you to send input events
@@ -386,24 +415,52 @@ impl<T: 'static> SeatState<T> {
     //         inner.send_all_caps();
     //     }
     // }
+}
 
-    /// Checks whether a given [`WlSeat`](wl_seat::WlSeat) is associated with this [`Seat`]
-    pub fn owns(&self, seat: &wl_seat::WlSeat) -> bool {
-        let inner = self.arc.inner.lock().unwrap();
-        inner.known_seats.iter().any(|s| s == seat)
+impl<T> ::std::cmp::PartialEq for Seat<T> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.arc, &other.arc)
     }
 }
 
-impl<T> ::std::cmp::PartialEq for SeatState<T> {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.arc, &other.arc)
+/// A Seat handle
+/// This struct gives you access to the control of the
+/// capabilities of the associated seat.
+///
+/// It is directly inserted in the wayland display by its [`new`](Seat::new) method.
+///
+/// This is an handle to the inner logic, it can be cloned.
+///
+/// See module-level documentation for details of use.
+#[derive(Debug)]
+pub struct SeatState<T> {
+    pd: PhantomData<T>,
+}
+
+impl<T> Clone for SeatState<T> {
+    fn clone(&self) -> Self {
+        Self { pd: self.pd }
+    }
+}
+
+impl<T: 'static> SeatState<T> {
+    /// Create a new seat global
+    ///
+    /// A new seat global is created with given name and inserted
+    /// into this wayland display.
+    ///
+    /// You are provided with the state token to retrieve it (allowing
+    /// you to add or remove capabilities from it), and the global handle,
+    /// in case you want to remove it.
+    pub fn new() -> Self {
+        Self { pd: PhantomData }
     }
 }
 
 /// User data for seat
 #[derive(Debug)]
 pub struct SeatUserData<T> {
-    seat: Arc<SeatRc<T>>,
+    arc: Arc<SeatRc<T>>,
 }
 
 #[allow(missing_docs)] // TODO
@@ -438,17 +495,17 @@ where
     T: 'static,
 {
     fn request(
-        state: &mut D,
+        _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlSeat,
         request: wl_seat::Request,
-        _data: &Self::UserData,
+        data: &Self::UserData,
         dh: &mut DisplayHandle<'_>,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
             wl_seat::Request::GetPointer { id } => {
-                let inner = state.seat_state().arc.inner.lock().unwrap();
+                let inner = data.arc.inner.lock().unwrap();
 
                 let pointer = data_init.init(
                     id,
@@ -465,7 +522,7 @@ where
                 }
             }
             wl_seat::Request::GetKeyboard { id } => {
-                let inner = state.seat_state().arc.inner.lock().unwrap();
+                let inner = data.arc.inner.lock().unwrap();
 
                 let keyboard = data_init.init(
                     id,
@@ -497,7 +554,7 @@ where
     }
 
     fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &Self::UserData) {
-        data.seat
+        data.arc
             .inner
             .lock()
             .unwrap()
@@ -507,12 +564,12 @@ where
 }
 
 impl<T: 'static> DelegateGlobalDispatchBase<WlSeat> for SeatState<T> {
-    type GlobalData = ();
+    type GlobalData = SeatGlobalData<T>;
 }
 
 impl<T, D> DelegateGlobalDispatch<WlSeat, D> for SeatState<T>
 where
-    D: GlobalDispatch<WlSeat, GlobalData = ()>,
+    D: GlobalDispatch<WlSeat, GlobalData = <Self as DelegateGlobalDispatchBase<WlSeat>>::GlobalData>,
     D: Dispatch<WlSeat, UserData = SeatUserData<T>>,
     D: Dispatch<WlKeyboard, UserData = KeyboardUserData>,
     D: Dispatch<WlPointer, UserData = PointerUserData<T>>,
@@ -521,26 +578,24 @@ where
     T: 'static,
 {
     fn bind(
-        state: &mut D,
+        _state: &mut D,
         handle: &mut wayland_server::DisplayHandle<'_>,
         _client: &wayland_server::Client,
         resource: New<WlSeat>,
-        _global_data: &Self::GlobalData,
+        global_data: &Self::GlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let state = state.seat_state();
-
         let data = SeatUserData {
-            seat: state.arc.clone(),
+            arc: global_data.arc.clone(),
         };
 
         let resource = data_init.init(resource, data);
 
         if resource.version() >= 2 {
-            resource.name(handle, state.arc.name.clone());
+            resource.name(handle, global_data.arc.name.clone());
         }
 
-        let mut inner = state.arc.inner.lock().unwrap();
+        let mut inner = global_data.arc.inner.lock().unwrap();
         resource.capabilities(handle, inner.compute_caps());
 
         inner.known_seats.push(resource.clone());
