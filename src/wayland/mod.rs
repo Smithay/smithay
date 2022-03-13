@@ -62,6 +62,7 @@ pub mod output;
 pub mod seat;
 pub mod shell;
 pub mod shm;
+pub mod socket;
 // pub mod tablet_manager;
 pub mod xdg_activation;
 // pub mod xdg_foreign;
