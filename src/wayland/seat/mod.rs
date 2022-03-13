@@ -38,21 +38,21 @@ mod keyboard;
 mod pointer;
 // mod touch;
 
-pub use keyboard::KeyboardUserData;
-pub use pointer::PointerUserData;
-
 use std::sync::{Arc, Mutex};
 
 use crate::utils::user_data::UserDataMap;
 
+// TODO: Just make the keyboard, pointer and touch modules public.
 pub use self::{
     keyboard::{
         keysyms, Error as KeyboardError, FilterResult, GrabStartData as KeyboardGrabStartData, KeyboardGrab,
-        KeyboardHandle, KeyboardInnerHandle, Keysym, KeysymHandle, ModifiersState, XkbConfig,
+        KeyboardHandle, KeyboardInnerHandle, KeyboardUserData, Keysym, KeysymHandle, ModifiersState,
+        XkbConfig,
     },
     pointer::{
-        AxisFrame, CursorImageAttributes, CursorImageStatus, GrabStartData as PointerGrabStartData,
-        PointerGrab, PointerHandle, PointerInnerHandle,
+        AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus,
+        GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab, PointerHandle, PointerInnerHandle,
+        PointerUserData,
     },
     // touch::TouchHandle,
 };
