@@ -4,7 +4,12 @@ use std::{
     sync::{atomic::Ordering, Arc, Mutex},
 };
 
+use crate::{drawing::*, state::Backend, AnvilState};
+#[cfg(feature = "debug")]
+use image::GenericImageView;
 use slog::Logger;
+#[cfg(feature = "debug")]
+use smithay::backend::renderer::{gles2::Gles2Texture, ImportMem};
 #[cfg(feature = "egl")]
 use smithay::{backend::renderer::ImportDma, wayland::dmabuf::init_dmabuf_global};
 use smithay::{
@@ -13,22 +18,19 @@ use smithay::{
         renderer::{gles2::Gles2Renderer, Bind, ImportEgl},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
-    desktop::space::RenderElement,
     reexports::{
         calloop::EventLoop,
         gbm,
-        wayland_server::{protocol::wl_output, Display},
+        wayland_server::{
+            protocol::{wl_output, wl_surface},
+            Display,
+        },
     },
     wayland::{
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
     },
 };
-
-use crate::{drawing::*, state::Backend, AnvilState};
-
-#[cfg(feature = "debug")]
-use smithay::backend::renderer::gles2::Gles2Texture;
 
 pub const OUTPUT_NAME: &str = "x11";
 
@@ -50,6 +52,7 @@ impl Backend for X11Data {
     fn reset_buffers(&mut self, _output: &Output) {
         self.surface.reset_buffers();
     }
+    fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
 
 pub fn run_x11(log: Logger) {
@@ -60,12 +63,12 @@ pub fn run_x11(log: Logger) {
     let handle = backend.handle();
 
     // Obtain the DRM node the X server uses for direct rendering.
-    let drm_node = handle
+    let (_, fd) = handle
         .drm_node()
         .expect("Could not get DRM node used by X server");
 
     // Create the gbm device for buffer allocation.
-    let device = gbm::Device::new(drm_node).expect("Failed to create gbm device");
+    let device = gbm::Device::new(fd).expect("Failed to create gbm device");
     // Initialize EGL using the GBM device.
     let egl = EGLDisplay::new(&device, log.clone()).expect("Failed to create EGLDisplay");
     // Create the OpenGL context
@@ -107,7 +110,7 @@ pub fn run_x11(log: Logger) {
             init_dmabuf_global(
                 &mut *display.borrow_mut(),
                 dmabuf_formats,
-                move |buffer, _| renderer.borrow_mut().import_dmabuf(buffer).is_ok(),
+                move |buffer, _| renderer.borrow_mut().import_dmabuf(buffer, None).is_ok(),
                 log.clone(),
             );
         }
@@ -124,23 +127,25 @@ pub fn run_x11(log: Logger) {
         refresh: 60_000,
     };
 
+    #[cfg(feature = "debug")]
+    let fps_image =
+        image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
+            .decode()
+            .unwrap();
     let data = X11Data {
         render: true,
         mode,
         surface,
         #[cfg(feature = "debug")]
         fps_texture: {
-            import_bitmap(
-                &mut *renderer.borrow_mut(),
-                &image::io::Reader::with_format(
-                    std::io::Cursor::new(FPS_NUMBERS_PNG),
-                    image::ImageFormat::Png,
+            renderer
+                .borrow_mut()
+                .import_memory(
+                    &fps_image.to_rgba8(),
+                    (fps_image.width() as i32, fps_image.height() as i32).into(),
+                    false,
                 )
-                .decode()
-                .unwrap()
-                .to_rgba8(),
-            )
-            .expect("Unable to upload FPS texture")
+                .expect("Unable to upload FPS texture")
         },
         #[cfg(feature = "debug")]
         fps: fps_ticker::Fps::default(),
@@ -221,17 +226,14 @@ pub fn run_x11(log: Logger) {
                 continue;
             }
 
-            let mut elements = Vec::new();
+            let mut elements = Vec::<CustomElem<Gles2Renderer>>::new();
             let dnd_guard = dnd_icon.lock().unwrap();
             let mut cursor_guard = cursor_status.lock().unwrap();
 
             // draw the dnd icon if any
             if let Some(ref surface) = *dnd_guard {
                 if surface.as_ref().is_alive() {
-                    elements.push(
-                        Box::new(draw_dnd_icon(surface.clone(), (x as i32, y as i32), &log))
-                            as Box<dyn RenderElement<_, _, _, _>>,
-                    );
+                    elements.push(draw_dnd_icon(surface.clone(), (x as i32, y as i32), &log).into());
                 }
             }
 
@@ -246,7 +248,7 @@ pub fn run_x11(log: Logger) {
             }
             if let CursorImageStatus::Image(ref surface) = *cursor_guard {
                 cursor_visible = false;
-                elements.push(Box::new(draw_cursor(surface.clone(), (x as i32, y as i32), &log)));
+                elements.push(draw_cursor(surface.clone(), (x as i32, y as i32), &log).into());
             } else {
                 cursor_visible = true;
             }
@@ -254,7 +256,7 @@ pub fn run_x11(log: Logger) {
             // draw FPS
             #[cfg(feature = "debug")]
             {
-                elements.push(Box::new(draw_fps(fps_texture, fps)));
+                elements.push(draw_fps::<Gles2Renderer>(fps_texture, fps).into());
             }
 
             let render_res = crate::render::render_output(

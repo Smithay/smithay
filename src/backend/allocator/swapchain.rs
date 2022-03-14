@@ -1,7 +1,10 @@
-use std::ops::Deref;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU8, Ordering},
-    Arc,
+use std::{
+    fmt,
+    ops::Deref,
+    sync::{
+        atomic::{AtomicBool, AtomicU8, Ordering},
+        Arc,
+    },
 };
 
 use crate::backend::allocator::{Allocator, Buffer, Fourcc, Modifier};
@@ -36,7 +39,6 @@ pub const SLOT_CAP: usize = 4;
 /// If you have associated resources for each buffer that can be reused (e.g. framebuffer `Handle`s for a `DrmDevice`),
 /// you can store then in the `Slot`s userdata field. If a buffer is re-used, its userdata is preserved for the next time
 /// it is returned by `acquire()`.
-#[derive(Debug)]
 pub struct Swapchain<A: Allocator<B>, B: Buffer> {
     /// Allocator used by the swapchain
     pub allocator: A,
@@ -47,6 +49,17 @@ pub struct Swapchain<A: Allocator<B>, B: Buffer> {
     modifiers: Vec<Modifier>,
 
     slots: [Arc<InternalSlot<B>>; SLOT_CAP],
+}
+
+impl<A: Allocator<B>, B: Buffer> fmt::Debug for Swapchain<A, B> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.debug_struct("Swapchain")
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("fourcc", &self.fourcc)
+            .field("modifiers", &self.modifiers)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Slot of a swapchain containing an allocated buffer and its userdata.

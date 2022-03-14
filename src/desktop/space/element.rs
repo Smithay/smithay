@@ -1,5 +1,6 @@
+use crate::desktop::space::popup::RenderPopup;
 use crate::{
-    backend::renderer::{Frame, ImportAll, Renderer, Texture},
+    backend::renderer::{ImportAll, Renderer, Texture},
     desktop::{space::*, utils::*},
     utils::{Logical, Point, Rectangle},
     wayland::output::Output,
@@ -30,27 +31,17 @@ pub enum RenderZindex {
     PopupsOverlay = 70,
 }
 
-/// Elements rendered by [`Space::render_output`] in addition to windows, layers and popups.
-pub type DynamicRenderElements<R> =
-    Box<dyn RenderElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>>;
-
-pub(super) type SpaceElem<R> =
-    dyn SpaceElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>;
-
 /// Trait for custom elements to be rendered during [`Space::render_output`].
-pub trait RenderElement<R, F, E, T>
+pub trait RenderElement<R>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
+    R: Renderer + ImportAll,
     Self: Any + 'static,
 {
     /// Returns an id unique to this element for the type of Self.
     fn id(&self) -> usize;
     #[doc(hidden)]
     fn type_of(&self) -> TypeId {
-        std::any::Any::type_id(self)
+        Any::type_id(self)
     }
     /// Returns the bounding box of this element including its position in the space.
     fn geometry(&self) -> Rectangle<i32, Logical>;
@@ -79,12 +70,12 @@ where
     fn draw(
         &self,
         renderer: &mut R,
-        frame: &mut F,
+        frame: &mut <R as Renderer>::Frame,
         scale: f64,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
-    ) -> Result<(), R::Error>;
+    ) -> Result<(), <R as Renderer>::Error>;
 
     /// Returns z_index of RenderElement, reverf too [`RenderZindex`] for default values
     fn z_index(&self) -> u8 {
@@ -92,68 +83,96 @@ where
     }
 }
 
-pub(crate) trait SpaceElement<R, F, E, T>
+pub(crate) enum SpaceElement<'a, R, E>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture,
+    R: Renderer + ImportAll,
+    E: RenderElement<R>,
 {
-    fn id(&self) -> usize;
-    fn type_of(&self) -> TypeId;
-    fn location(&self, space_id: usize) -> Point<i32, Logical> {
-        self.geometry(space_id).loc
+    Layer(&'a LayerSurface),
+    Window(&'a Window),
+    Popup(&'a RenderPopup),
+    Custom(&'a E, std::marker::PhantomData<R>),
+}
+
+impl<'a, R, E> SpaceElement<'a, R, E>
+where
+    R: Renderer + ImportAll,
+    E: RenderElement<R>,
+    <R as Renderer>::TextureId: 'static,
+{
+    pub fn id(&self) -> usize {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_id(),
+            SpaceElement::Window(window) => window.elem_id(),
+            SpaceElement::Popup(popup) => popup.elem_id(),
+            SpaceElement::Custom(custom, _) => custom.id(),
+        }
     }
-    fn geometry(&self, space_id: usize) -> Rectangle<i32, Logical>;
-    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>>;
+    pub fn type_of(&self) -> TypeId {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_type_of(),
+            SpaceElement::Window(window) => window.elem_type_of(),
+            SpaceElement::Popup(popup) => popup.elem_type_of(),
+            SpaceElement::Custom(custom, _) => custom.type_of(),
+        }
+    }
+    pub fn location(&self, space_id: usize) -> Point<i32, Logical> {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_geometry(space_id).loc,
+            SpaceElement::Window(window) => window.elem_location(space_id),
+            SpaceElement::Popup(popup) => popup.elem_geometry(space_id).loc,
+            SpaceElement::Custom(custom, _) => custom.geometry().loc,
+        }
+    }
+    pub fn geometry(&self, space_id: usize) -> Rectangle<i32, Logical> {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_geometry(space_id),
+            SpaceElement::Window(window) => window.elem_geometry(space_id),
+            SpaceElement::Popup(popup) => popup.elem_geometry(space_id),
+            SpaceElement::Custom(custom, _) => custom.geometry(),
+        }
+    }
+    pub fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_accumulated_damage(for_values),
+            SpaceElement::Window(window) => window.elem_accumulated_damage(for_values),
+            SpaceElement::Popup(popup) => popup.elem_accumulated_damage(for_values),
+            SpaceElement::Custom(custom, _) => {
+                custom.accumulated_damage(for_values.map(|(s, o)| SpaceOutputTuple(s, o)))
+            }
+        }
+    }
     #[allow(clippy::too_many_arguments)]
-    fn draw(
+    pub fn draw(
         &self,
         space_id: usize,
         renderer: &mut R,
-        frame: &mut F,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
-        log: &slog::Logger,
-    ) -> Result<(), R::Error>;
-    fn z_index(&self) -> u8;
-}
-
-impl<R, F, E, T> SpaceElement<R, F, E, T> for Box<dyn RenderElement<R, F, E, T>>
-where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll + 'static,
-    F: Frame<Error = E, TextureId = T> + 'static,
-    E: std::error::Error + 'static,
-    T: Texture + 'static,
-{
-    fn id(&self) -> usize {
-        (&**self as &dyn RenderElement<R, F, E, T>).id()
-    }
-    fn type_of(&self) -> TypeId {
-        (&**self as &dyn RenderElement<R, F, E, T>).type_of()
-    }
-    fn geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
-        (&**self as &dyn RenderElement<R, F, E, T>).geometry()
-    }
-    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
-        (&**self as &dyn RenderElement<R, F, E, T>).accumulated_damage(for_values.map(SpaceOutputTuple::from))
-    }
-    fn draw(
-        &self,
-        _space_id: usize,
-        renderer: &mut R,
-        frame: &mut F,
+        frame: &mut <R as Renderer>::Frame,
         scale: f64,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
-        (&**self as &dyn RenderElement<R, F, E, T>).draw(renderer, frame, scale, location, damage, log)
+        match self {
+            SpaceElement::Layer(layer) => {
+                layer.elem_draw(space_id, renderer, frame, scale, location, damage, log)
+            }
+            SpaceElement::Window(window) => {
+                window.elem_draw(space_id, renderer, frame, scale, location, damage, log)
+            }
+            SpaceElement::Popup(popup) => {
+                popup.elem_draw(space_id, renderer, frame, scale, location, damage, log)
+            }
+            SpaceElement::Custom(custom, _) => custom.draw(renderer, frame, scale, location, damage, log),
+        }
     }
-
-    fn z_index(&self) -> u8 {
-        RenderElement::z_index(self.as_ref())
+    pub fn z_index(&self) -> u8 {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_z_index(),
+            SpaceElement::Window(window) => window.elem_z_index(),
+            SpaceElement::Popup(popup) => popup.elem_z_index(),
+            SpaceElement::Custom(custom, _) => custom.z_index(),
+        }
     }
 }
 
@@ -173,12 +192,10 @@ pub struct SurfaceTree {
     pub position: Point<i32, Logical>,
 }
 
-impl<R, F, E, T> RenderElement<R, F, E, T> for SurfaceTree
+impl<R> RenderElement<R> for SurfaceTree
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: Texture + 'static,
 {
     fn id(&self) -> usize {
         self.surface.as_ref().id() as usize
@@ -200,12 +217,12 @@ where
     fn draw(
         &self,
         renderer: &mut R,
-        frame: &mut F,
+        frame: &mut <R as Renderer>::Frame,
         scale: f64,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
-    ) -> Result<(), R::Error> {
+    ) -> Result<(), <R as Renderer>::Error> {
         crate::backend::renderer::utils::draw_surface_tree(
             renderer,
             frame,

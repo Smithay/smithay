@@ -4,14 +4,13 @@ use std::{
 };
 
 use smithay::{
-    desktop::space::RenderElement,
     reexports::{
         calloop::{
             channel::{Channel, Event as ChannelEvent},
             EventLoop,
         },
         wayland_server::{
-            protocol::{wl_output, wl_pointer},
+            protocol::{wl_output, wl_pointer, wl_surface},
             Client, Display,
         },
     },
@@ -43,6 +42,7 @@ impl Backend for TestState {
     }
 
     fn reset_buffers(&mut self, _output: &Output) {}
+    fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
 
 pub fn run(channel: Channel<WlcsEvent>) {
@@ -105,11 +105,11 @@ pub fn run(channel: Channel<WlcsEvent>) {
             // draw the dnd icon if any
             if let Some(ref surface) = *dnd_guard {
                 if surface.as_ref().is_alive() {
-                    elements.push(Box::new(draw_dnd_icon(
+                    elements.push(draw_dnd_icon(
                         surface.clone(),
                         state.pointer_location.to_i32_round(),
                         &logger,
-                    )) as Box<dyn RenderElement<_, _, _, _>>);
+                    ));
                 }
             }
 
@@ -123,11 +123,11 @@ pub fn run(channel: Channel<WlcsEvent>) {
                 *cursor_guard = CursorImageStatus::Default;
             }
             if let CursorImageStatus::Image(ref surface) = *cursor_guard {
-                elements.push(Box::new(draw_cursor(
+                elements.push(draw_cursor(
                     surface.clone(),
                     state.pointer_location.to_i32_round(),
                     &logger,
-                )));
+                ));
             }
 
             let _ = render_output(

@@ -15,16 +15,21 @@ use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
 #[cfg(feature = "use_system_lib")]
 use wayland_sys::server::wl_display;
 
-use crate::backend::allocator::{dmabuf::Dmabuf, Buffer, Format as DrmFormat, Fourcc, Modifier};
-use crate::backend::egl::{
-    context::{GlAttributes, PixelFormatRequirements},
-    ffi,
-    ffi::egl::types::EGLImage,
-    native::EGLNativeDisplay,
-    wrap_egl_call, EGLError, Error,
-};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{BufferAccessError, EGLBuffer, Format};
+use crate::{
+    backend::{
+        allocator::{dmabuf::Dmabuf, Buffer, Format as DrmFormat, Fourcc, Modifier},
+        egl::{
+            context::{GlAttributes, PixelFormatRequirements},
+            ffi,
+            ffi::egl::types::EGLImage,
+            native::EGLNativeDisplay,
+            wrap_egl_call, EGLError, Error,
+        },
+    },
+    utils::{Buffer as BufferCoords, Size},
+};
 
 use slog::{debug, error, info, o, trace, warn};
 
@@ -402,6 +407,83 @@ impl EGLDisplay {
     /// Returns the supported extensions of this display
     pub fn get_extensions(&self) -> Vec<String> {
         self.extensions.clone()
+    }
+
+    /// Exports an [`EGLImage`] as a [`Dmabuf`]
+    pub fn create_dmabuf_from_image(
+        &self,
+        image: EGLImage,
+        size: Size<i32, BufferCoords>,
+        y_inverted: bool,
+    ) -> Result<Dmabuf, Error> {
+        use crate::backend::allocator::dmabuf::DmabufFlags;
+        use std::convert::TryFrom;
+
+        if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base")
+            && !self
+                .extensions
+                .iter()
+                .any(|s| s == "EGL_MESA_image_dma_buf_export")
+        {
+            return Err(Error::EglExtensionNotSupported(&[
+                "EGL_KHR_image_base",
+                "EGL_MESA_image_dma_buf_export",
+            ]));
+        }
+
+        let mut format: nix::libc::c_int = 0;
+        let mut num_planes: nix::libc::c_int = 0;
+        let mut modifier: ffi::egl::types::EGLuint64KHR = 0;
+        if unsafe {
+            ffi::egl::ExportDMABUFImageQueryMESA(
+                **self.display,
+                image,
+                &mut format as *mut _,
+                &mut num_planes as *mut _,
+                &mut modifier as *mut _,
+            ) == ffi::egl::FALSE
+        } {
+            EGLError::from_last_call().map_err(Error::DmabufExportFailed)?;
+        }
+
+        let mut fds: Vec<nix::libc::c_int> = Vec::with_capacity(num_planes as usize);
+        let mut strides: Vec<ffi::egl::types::EGLint> = Vec::with_capacity(num_planes as usize);
+        let mut offsets: Vec<ffi::egl::types::EGLint> = Vec::with_capacity(num_planes as usize);
+        unsafe {
+            if ffi::egl::ExportDMABUFImageMESA(
+                **self.display,
+                image,
+                fds.as_mut_ptr(),
+                strides.as_mut_ptr(),
+                offsets.as_mut_ptr(),
+            ) == ffi::egl::FALSE
+            {
+                EGLError::from_last_call().map_err(Error::DmabufExportFailed)?;
+            }
+            fds.set_len(num_planes as usize);
+            strides.set_len(num_planes as usize);
+            offsets.set_len(num_planes as usize);
+        }
+
+        let mut dma = Dmabuf::builder(
+            size,
+            Fourcc::try_from(format as u32).expect("Unknown format"),
+            if y_inverted {
+                DmabufFlags::Y_INVERT
+            } else {
+                DmabufFlags::empty()
+            },
+        );
+        for i in 0..num_planes {
+            dma.add_plane(
+                fds[i as usize],
+                i as u32,
+                offsets[i as usize] as u32,
+                strides[i as usize] as u32,
+                Modifier::from(modifier),
+            );
+        }
+        dma.build().ok_or(Error::DmabufExportFailed(EGLError::BadAlloc))
     }
 
     /// Imports a [`Dmabuf`] as an [`EGLImage`]

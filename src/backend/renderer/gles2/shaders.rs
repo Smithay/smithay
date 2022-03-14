@@ -28,7 +28,7 @@ void main() {
 
     vec2 transform_translation = position.xy;
     vec2 transform_scale = position.zw;
-    v_tex_coords = (vec3((tex_coords * scale(transform_scale)) + transform_translation, 1.0)).xy;
+    v_tex_coords = (vec3((v_tex_coords * scale(transform_scale)) + transform_translation, 1.0)).xy;
     gl_Position = vec4(matrix * vec3((vert * scale(transform_scale)) + transform_translation, 1.0), 1.0);
 }
 "#;

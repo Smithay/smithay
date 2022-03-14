@@ -247,4 +247,5 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 pub trait Backend {
     fn seat_name(&self) -> String;
     fn reset_buffers(&mut self, output: &Output);
+    fn early_import(&mut self, surface: &WlSurface);
 }

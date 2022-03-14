@@ -2,7 +2,7 @@ use smithay::{
     backend::renderer::{Frame, ImportAll, Renderer},
     desktop::{
         draw_window,
-        space::{DynamicRenderElements, RenderError, Space},
+        space::{RenderElement, RenderError, Space},
     },
     utils::{Logical, Rectangle},
     wayland::output::Output,
@@ -10,19 +10,18 @@ use smithay::{
 
 use crate::{drawing::*, shell::FullscreenSurface};
 
-pub fn render_output<R>(
+pub fn render_output<R, E>(
     output: &Output,
     space: &mut Space,
     renderer: &mut R,
     age: usize,
-    elements: &[DynamicRenderElements<R>],
+    elements: &[E],
     log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Logical>>>, RenderError<R>>
 where
-    R: Renderer + ImportAll + 'static,
-    R::Frame: 'static,
+    R: Renderer + ImportAll,
     R::TextureId: 'static,
-    R::Error: 'static,
+    E: RenderElement<R>,
 {
     if let Some(window) = output
         .user_data()

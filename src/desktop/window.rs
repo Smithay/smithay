@@ -1,5 +1,5 @@
 use crate::{
-    backend::renderer::{utils::draw_surface_tree, Frame, ImportAll, Renderer, Texture},
+    backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{utils::*, PopupManager, Space},
     utils::{Logical, Point, Rectangle},
     wayland::{
@@ -143,8 +143,12 @@ impl Window {
 
     /// Returns the geometry of this window.
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
+        let surface = match self.0.toplevel.get_surface() {
+            Some(surface) => surface,
+            None => return Rectangle::from_loc_and_size((0, 0), (0, 0)),
+        };
         // It's the set geometry with the full bounding box as the fallback.
-        with_states(self.0.toplevel.get_surface().unwrap(), |states| {
+        with_states(surface, |states| {
             states.cached_state.current::<SurfaceCachedState>().geometry
         })
         .unwrap()
@@ -304,20 +308,18 @@ impl Window {
 /// Note: This function will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn draw_window<R, E, F, T, P>(
+pub fn draw_window<R, P>(
     renderer: &mut R,
-    frame: &mut F,
+    frame: &mut <R as Renderer>::Frame,
     window: &Window,
     scale: f64,
     location: P,
     damage: &[Rectangle<i32, Logical>],
     log: &slog::Logger,
-) -> Result<(), R::Error>
+) -> Result<(), <R as Renderer>::Error>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
     P: Into<Point<i32, Logical>>,
 {
     let location = location.into();

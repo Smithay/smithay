@@ -233,6 +233,11 @@ impl WeakDmabuf {
     pub fn upgrade(&self) -> Option<Dmabuf> {
         self.0.upgrade().map(Dmabuf)
     }
+
+    /// Returns true if there are not any strong references remaining
+    pub fn is_gone(&self) -> bool {
+        self.0.strong_count() == 0
+    }
 }
 
 /// Buffer that can be exported as Dmabufs

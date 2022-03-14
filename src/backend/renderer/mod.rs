@@ -20,7 +20,7 @@ use wayland_server::protocol::{wl_buffer, wl_shm};
 
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
-#[cfg(feature = "wayland_frontend")]
+
 use crate::backend::allocator::{dmabuf::Dmabuf, Format};
 #[cfg(all(
     feature = "wayland_frontend",
@@ -31,6 +31,8 @@ use crate::backend::egl::{
     display::{EGLBufferReader, BUFFER_READER},
     Error as EglError,
 };
+#[cfg(feature = "renderer_multi")]
+pub mod multigpu;
 
 #[cfg(feature = "wayland_frontend")]
 pub mod utils;
@@ -113,6 +115,13 @@ pub trait Texture {
     fn height(&self) -> u32;
 }
 
+/// A downloaded texture buffer
+pub trait TextureMapping: Texture {
+    /// Returns if the mapped buffer is flipped on the y-axis
+    /// (compared to the lower left being (0, 0))
+    fn flipped(&self) -> bool;
+}
+
 /// Helper trait for [`Renderer`], which defines a rendering api for a currently in-progress frame during [`Renderer::render`].
 pub trait Frame {
     /// Error type returned by the rendering operations of this renderer.
@@ -186,6 +195,10 @@ pub trait Renderer {
     /// Type representing a currently in-progress frame during the [`Renderer::render`]-call
     type Frame: Frame<Error = Self::Error, TextureId = Self::TextureId>;
 
+    /// Returns an id, that is unique to all renderers, that can use
+    /// `TextureId`s originating from any of these renderers.
+    fn id(&self) -> usize;
+
     /// Set the filter method to be used when rendering a texture into a smaller area than its size
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error>;
     /// Set the filter method to be used when rendering a texture into a larger area than its size
@@ -208,9 +221,21 @@ pub trait Renderer {
         F: FnOnce(&mut Self, &mut Self::Frame) -> R;
 }
 
+/// Trait for renderers that support creating offscreen framebuffers to render into.
+///
+/// Usually also implement either [`ExportMem`] and/or [`ExportDma`] to receive the framebuffers contents.
+pub trait Offscreen<Target>: Renderer + Bind<Target> {
+    /// Create a new instance of a framebuffer.
+    ///
+    /// This call *may* fail, if (but not limited to):
+    /// - The maximum amount of framebuffers for this renderer would be exceeded
+    /// - The size is too large for a framebuffer
+    fn create_buffer(&mut self, size: Size<i32, Buffer>) -> Result<Target, <Self as Renderer>::Error>;
+}
+
+/// Trait for Renderers supporting importing wl_buffers using shared memory.
 #[cfg(feature = "wayland_frontend")]
-/// Trait for Renderers supporting importing shm-based buffers.
-pub trait ImportShm: Renderer {
+pub trait ImportMemWl: ImportMem {
     /// Import a given shm-based buffer into the renderer (see [`buffer_type`]).
     ///
     /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
@@ -240,6 +265,51 @@ pub trait ImportShm: Renderer {
         // Mandatory
         &[wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888]
     }
+}
+
+/// Trait for Renderers supporting importing bitmaps from memory.
+pub trait ImportMem: Renderer {
+    /// Import a given chunk of memory into the renderer.
+    ///
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
+    ///  or implementation-specific functions.
+    ///
+    /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
+    /// This operation needs no bound or default rendering target.
+    ///
+    /// Settings flipped to true will cause the buffer to be interpreted like the y-axis is flipped
+    /// (opposed to the lower left begin (0, 0)).
+    /// This is a texture specific property, so future uploads to the same texture via [`ImportMem::update_memory`]
+    /// will also be interpreted as flipped.
+    ///
+    /// The provided data slice needs to be in RGBA8 format, its length should thus be `size.w * size.h * 4`.
+    /// Anything beyond will be truncated, if the buffer is too small an error will be returned.
+    fn import_memory(
+        &mut self,
+        data: &[u8],
+        size: Size<i32, Buffer>,
+        flipped: bool,
+    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
+
+    /// Import a given chunk of memory into an existing texture.
+    ///
+    /// This operation needs no bound or default rendering target.
+    ///
+    /// The provided data slice needs to be in RGBA8 format, its length should thus be `region.size.w * region.size.h * 4`.
+    /// Anything beyond will be truncated, if the buffer is too small an error will be returned.
+    ///
+    /// This function *may* error, if (but not limited to):
+    /// - The texture was not created using either [`ImportMem::import_shm_buffer`] or [`ImportMem::import_memory`].
+    ///   External textures imported by other means (e.g. via ImportDma) may not be writable. This property is defined
+    ///   by the implementation.
+    /// - The region is out of bounds of the initial size the texture was created with. Implementations are not required
+    ///   to support resizing the original texture.
+    fn update_memory(
+        &mut self,
+        texture: &<Self as Renderer>::TextureId,
+        data: &[u8],
+        region: Rectangle<i32, Buffer>,
+    ) -> Result<(), <Self as Renderer>::Error>;
 }
 
 #[cfg(all(
@@ -292,17 +362,14 @@ pub trait ImportEgl: Renderer {
     fn import_egl_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
+        surface: Option<&crate::wayland::compositor::SurfaceData>,
+        damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 }
 
 #[cfg(feature = "wayland_frontend")]
-/// Trait for Renderers supporting importing dmabuf-based buffers.
-pub trait ImportDma: Renderer {
-    /// Returns supported formats for dmabufs.
-    fn dmabuf_formats<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Format> + 'a> {
-        Box::new([].iter())
-    }
-
+/// Trait for Renderers supporting importing dmabuf-based wl_buffers
+pub trait ImportDmaWl: ImportDma {
     /// Import a given dmabuf-based buffer into the renderer (see [`buffer_type`]).
     ///
     /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
@@ -317,13 +384,24 @@ pub trait ImportDma: Renderer {
     fn import_dma_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
+        surface: Option<&crate::wayland::compositor::SurfaceData>,
+        damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+        let _ = surface;
         let dmabuf = buffer
             .as_ref()
             .user_data()
             .get::<Dmabuf>()
             .expect("import_dma_buffer without checking buffer type?");
-        self.import_dmabuf(dmabuf)
+        self.import_dmabuf(dmabuf, Some(damage))
+    }
+}
+
+/// Trait for Renderers supporting importing dmabufs.
+pub trait ImportDma: Renderer {
+    /// Returns supported formats for dmabufs.
+    fn dmabuf_formats<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Format> + 'a> {
+        Box::new([].iter())
     }
 
     /// Import a given raw dmabuf into the renderer.
@@ -340,6 +418,7 @@ pub trait ImportDma: Renderer {
     fn import_dmabuf(
         &mut self,
         dmabuf: &Dmabuf,
+        damage: Option<&[Rectangle<i32, Buffer>]>,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 }
 
@@ -381,7 +460,7 @@ pub trait ImportAll: Renderer {
     feature = "backend_egl",
     feature = "use_system_lib"
 ))]
-impl<R: Renderer + ImportShm + ImportEgl + ImportDma> ImportAll for R {
+impl<R: Renderer + ImportMemWl + ImportEgl + ImportDmaWl> ImportAll for R {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -390,8 +469,8 @@ impl<R: Renderer + ImportShm + ImportEgl + ImportDma> ImportAll for R {
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
         match buffer_type(buffer) {
             Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
-            Some(BufferType::Egl) => Some(self.import_egl_buffer(buffer)),
-            Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer)),
+            Some(BufferType::Egl) => Some(self.import_egl_buffer(buffer, surface, damage)),
+            Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer, surface, damage)),
             _ => None,
         }
     }
@@ -401,7 +480,7 @@ impl<R: Renderer + ImportShm + ImportEgl + ImportDma> ImportAll for R {
     feature = "wayland_frontend",
     not(all(feature = "backend_egl", feature = "use_system_lib"))
 ))]
-impl<R: Renderer + ImportShm + ImportDma> ImportAll for R {
+impl<R: Renderer + ImportMemWl + ImportDmaWl> ImportAll for R {
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -410,10 +489,75 @@ impl<R: Renderer + ImportShm + ImportDma> ImportAll for R {
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
         match buffer_type(buffer) {
             Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
-            Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer)),
+            Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer, surface, damage)),
             _ => None,
         }
     }
+}
+
+/// Trait for renderers supporting exporting contents of framebuffers or textures into memory.
+pub trait ExportMem: Renderer {
+    /// Texture type representing a downloaded pixel buffer.
+    type TextureMapping: TextureMapping;
+
+    /// Copies the contents of the currently bound framebuffer.
+    ///
+    /// This operation is not destructive, the contents of the framebuffer keep being valid.
+    ///
+    /// This function *may* fail, if (but not limited to):
+    /// - The framebuffer is not readable
+    /// - The region is out of bounds of the framebuffer
+    /// - There is not enough space to create the mapping
+    fn copy_framebuffer(
+        &mut self,
+        region: Rectangle<i32, Buffer>,
+    ) -> Result<Self::TextureMapping, <Self as Renderer>::Error>;
+    /// Copies the contents of the passed texture.
+    /// *Note*: This function may change or invalidate the current bind.
+    ///
+    /// This operation is not destructive, the contents of the texture keep being valid.
+    ///
+    /// This function *may* fail, if:
+    /// - There is not enough space to create the mapping
+    /// - The texture does no allow copying for implementation-specfic reasons
+    fn copy_texture(
+        &mut self,
+        texture: &Self::TextureId,
+        region: Rectangle<i32, Buffer>,
+    ) -> Result<Self::TextureMapping, Self::Error>;
+    /// Returns a read-only pointer to a previously created texture mapping.
+    ///
+    /// The format of the returned slice is RGBA8.
+    ///
+    /// This function *may* fail, if (but not limited to):
+    /// - There is not enough space in memory
+    fn map_texture<'a>(
+        &mut self,
+        texture_mapping: &'a Self::TextureMapping,
+    ) -> Result<&'a [u8], <Self as Renderer>::Error>;
+}
+
+/// Trait for renderers supporting exporting contents of framebuffers or textures as dmabufs.
+pub trait ExportDma: Renderer {
+    /// Exports the currently bound framebuffer as a dmabuf.
+    ///
+    /// This operation is not destructive, the contents of the framebuffer keep being valid.
+    ///
+    /// This function *may* fail, if (but not limited to):
+    /// - The framebuffer is not readable
+    /// - The size is larger than the framebuffer
+    /// - There is not enough space to create a copy
+    fn export_framebuffer(&mut self, size: Size<i32, Buffer>) -> Result<Dmabuf, <Self as Renderer>::Error>;
+    /// Exports the given texture as a dmabuf.
+    ///
+    /// This operation is not destructive, the contents of the texture keep being valid.
+    ///
+    /// This function *may* fail, if (but not limited to):
+    /// - The texture cannot be exported
+    fn export_texture(
+        &mut self,
+        texture: &<Self as Renderer>::TextureId,
+    ) -> Result<Dmabuf, <Self as Renderer>::Error>;
 }
 
 #[cfg(feature = "wayland_frontend")]

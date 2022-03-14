@@ -1,16 +1,20 @@
 //! Utility module for helpers around drawing [`WlSurface`]s with [`Renderer`]s.
 
 use crate::{
-    backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer, Texture},
+    backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
     utils::{Buffer, Logical, Point, Rectangle, Size, Transform},
     wayland::compositor::{
         is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
         SurfaceAttributes, TraversalAction,
     },
 };
-use std::cell::RefCell;
 #[cfg(feature = "desktop")]
 use std::collections::HashSet;
+use std::{
+    any::TypeId,
+    cell::RefCell,
+    collections::{hash_map::Entry, HashMap},
+};
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
 #[derive(Default)]
@@ -19,7 +23,7 @@ pub(crate) struct SurfaceState {
     pub(crate) buffer_scale: i32,
     pub(crate) buffer_transform: Transform,
     pub(crate) buffer: Option<WlBuffer>,
-    pub(crate) texture: Option<Box<dyn std::any::Any + 'static>>,
+    pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     #[cfg(feature = "desktop")]
     pub(crate) damage_seen: HashSet<crate::desktop::space::SpaceOutputHash>,
 }
@@ -37,7 +41,7 @@ impl SurfaceState {
                         old_buffer.release();
                     }
                 }
-                self.texture = None;
+                self.textures.clear();
                 #[cfg(feature = "desktop")]
                 self.damage_seen.clear();
             }
@@ -47,7 +51,7 @@ impl SurfaceState {
                 if let Some(buffer) = self.buffer.take() {
                     buffer.release();
                 };
-                self.texture = None;
+                self.textures.clear();
                 #[cfg(feature = "desktop")]
                 self.damage_seen.clear();
             }
@@ -94,6 +98,86 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
     }
 }
 
+/// Imports buffers of a surface and its subsurfaces using a given [`Renderer`].
+///
+/// This can be called early as an optimization, if `draw_surface_tree` is used later.
+/// `draw_surface_tree` will also import buffers as necessary, but calling `import_surface_tree`
+/// already may allow buffer imports to happen before compositing takes place, depending
+/// on your event loop.
+///
+/// Note: This will do nothing, if you are not using
+/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
+/// to let smithay handle buffer management.
+pub fn import_surface_tree<R>(
+    renderer: &mut R,
+    surface: &WlSurface,
+    log: &slog::Logger,
+) -> Result<(), <R as Renderer>::Error>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+{
+    let mut result = Ok(());
+    let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
+    with_surface_tree_upward(
+        surface,
+        (),
+        |_surface, states, _| {
+            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+                let mut data_ref = data.borrow_mut();
+                let data = &mut *data_ref;
+                let attributes = states.cached_state.current::<SurfaceAttributes>();
+                // Import a new buffer if available
+                let surface_size = data.surface_size();
+                if let Entry::Vacant(e) = data.textures.entry(texture_id) {
+                    if let Some(buffer) = data.buffer.as_ref() {
+                        let surface_size = surface_size.unwrap();
+                        let buffer_damage = attributes
+                            .damage
+                            .iter()
+                            .map(|dmg| match dmg {
+                                Damage::Buffer(rect) => *rect,
+                                Damage::Surface(rect) => rect.to_buffer(
+                                    attributes.buffer_scale,
+                                    attributes.buffer_transform.into(),
+                                    &surface_size,
+                                ),
+                            })
+                            .collect::<Vec<_>>();
+
+                        match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
+                            Some(Ok(m)) => {
+                                e.insert(Box::new(m));
+                            }
+                            Some(Err(err)) => {
+                                slog::warn!(log, "Error loading buffer: {}", err);
+                                result = Err(err);
+                            }
+                            None => {
+                                slog::error!(log, "Unknown buffer format for: {:?}", buffer);
+                            }
+                        }
+                    }
+                }
+                // Now, was the import successful?
+                if data.textures.contains_key(&texture_id) {
+                    TraversalAction::DoChildren(())
+                } else {
+                    // we are not displayed, so our children are neither
+                    TraversalAction::SkipChildren
+                }
+            } else {
+                // we are not displayed, so our children are neither
+                TraversalAction::SkipChildren
+            }
+        },
+        |_, _, _| {},
+        |_, _, _| true,
+    );
+
+    result
+}
+
 /// Draws a surface and its subsurfaces using a given [`Renderer`] and [`Frame`].
 ///
 /// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
@@ -103,33 +187,35 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
 /// Note: This element will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn draw_surface_tree<R, E, F, T>(
+pub fn draw_surface_tree<R>(
     renderer: &mut R,
-    frame: &mut F,
+    frame: &mut <R as Renderer>::Frame,
     surface: &WlSurface,
     scale: f64,
     location: Point<i32, Logical>,
     damage: &[Rectangle<i32, Logical>],
     log: &slog::Logger,
-) -> Result<(), R::Error>
+) -> Result<(), <R as Renderer>::Error>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
 {
     let mut result = Ok(());
+    let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
     with_surface_tree_upward(
         surface,
         location,
         |_surface, states, location| {
             let mut location = *location;
             if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
-                let mut data = data.borrow_mut();
+                let mut data_ref = data.borrow_mut();
+                let data = &mut *data_ref;
                 let attributes = states.cached_state.current::<SurfaceAttributes>();
                 // Import a new buffer if necessary
-                if data.texture.is_none() {
+                let surface_size = data.surface_size();
+                if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
+                        let surface_size = surface_size.unwrap();
                         let buffer_damage = attributes
                             .damage
                             .iter()
@@ -138,14 +224,14 @@ where
                                 Damage::Surface(rect) => rect.to_buffer(
                                     attributes.buffer_scale,
                                     attributes.buffer_transform.into(),
-                                    &data.surface_size().unwrap(),
+                                    &surface_size,
                                 ),
                             })
                             .collect::<Vec<_>>();
 
                         match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
-                                data.texture = Some(Box::new(m));
+                                e.insert(Box::new(m));
                             }
                             Some(Err(err)) => {
                                 slog::warn!(log, "Error loading buffer: {}", err);
@@ -157,7 +243,7 @@ where
                     }
                 }
                 // Now, should we be drawn ?
-                if data.texture.is_some() {
+                if data.textures.contains_key(&texture_id) {
                     // if yes, also process the children
                     if states.role == Some("subsurface") {
                         let current = states.cached_state.current::<SubsurfaceCachedState>();
@@ -181,7 +267,11 @@ where
                 let buffer_scale = data.buffer_scale;
                 let buffer_transform = data.buffer_transform;
                 let attributes = states.cached_state.current::<SurfaceAttributes>();
-                if let Some(texture) = data.texture.as_mut().and_then(|x| x.downcast_mut::<T>()) {
+                if let Some(texture) = data
+                    .textures
+                    .get_mut(&texture_id)
+                    .and_then(|x| x.downcast_mut::<<R as Renderer>::TextureId>())
+                {
                     let dimensions = dimensions.unwrap();
                     // we need to re-extract the subsurface offset, as the previous closure
                     // only passes it to our children

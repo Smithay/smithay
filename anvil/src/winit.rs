@@ -1,7 +1,10 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 #[cfg(feature = "debug")]
-use smithay::backend::renderer::gles2::Gles2Texture;
+use image::GenericImageView;
+use slog::Logger;
+#[cfg(feature = "debug")]
+use smithay::backend::renderer::{gles2::Gles2Texture, ImportMem};
 #[cfg(feature = "egl")]
 use smithay::{
     backend::renderer::{ImportDma, ImportEgl},
@@ -9,21 +12,23 @@ use smithay::{
 };
 use smithay::{
     backend::{
+        renderer::gles2::Gles2Renderer,
         winit::{self, WinitEvent},
         SwapBuffersError,
     },
-    desktop::space::{RenderElement, RenderError},
+    desktop::space::RenderError,
     reexports::{
         calloop::EventLoop,
-        wayland_server::{protocol::wl_output, Display},
+        wayland_server::{
+            protocol::{wl_output, wl_surface},
+            Display,
+        },
     },
     wayland::{
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
     },
 };
-
-use slog::Logger;
 
 use crate::{
     drawing::*,
@@ -47,6 +52,7 @@ impl Backend for WinitData {
     fn reset_buffers(&mut self, _output: &Output) {
         self.full_redraw = 4;
     }
+    fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
 
 pub fn run_winit(log: Logger) {
@@ -80,7 +86,13 @@ pub fn run_winit(log: Logger) {
         init_dmabuf_global(
             &mut display.borrow_mut(),
             dmabuf_formats,
-            move |buffer, _| backend.borrow_mut().renderer().import_dmabuf(buffer).is_ok(),
+            move |buffer, _| {
+                backend
+                    .borrow_mut()
+                    .renderer()
+                    .import_dmabuf(buffer, None)
+                    .is_ok()
+            },
             log.clone(),
         );
     };
@@ -91,16 +103,22 @@ pub fn run_winit(log: Logger) {
      * Initialize the globals
      */
 
+    #[cfg(feature = "debug")]
+    let fps_image =
+        image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
+            .decode()
+            .unwrap();
     let data = WinitData {
         #[cfg(feature = "debug")]
-        fps_texture: import_bitmap(
-            backend.borrow_mut().renderer(),
-            &image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
-                .decode()
-                .unwrap()
-                .to_rgba8(),
-        )
-        .expect("Unable to upload FPS texture"),
+        fps_texture: backend
+            .borrow_mut()
+            .renderer()
+            .import_memory(
+                &fps_image.to_rgba8(),
+                (fps_image.width() as i32, fps_image.height() as i32).into(),
+                false,
+            )
+            .expect("Unable to upload FPS texture"),
         #[cfg(feature = "debug")]
         fps: fps_ticker::Fps::default(),
         full_redraw: 0,
@@ -172,18 +190,16 @@ pub fn run_winit(log: Logger) {
             let mut backend = backend.borrow_mut();
             let cursor_visible: bool;
 
-            let mut elements = Vec::new();
+            let mut elements = Vec::<CustomElem<Gles2Renderer>>::new();
             let dnd_guard = state.dnd_icon.lock().unwrap();
             let mut cursor_guard = state.cursor_status.lock().unwrap();
 
             // draw the dnd icon if any
             if let Some(ref surface) = *dnd_guard {
                 if surface.as_ref().is_alive() {
-                    elements.push(Box::new(draw_dnd_icon(
-                        surface.clone(),
-                        state.pointer_location.to_i32_round(),
-                        &log,
-                    )) as Box<dyn RenderElement<_, _, _, _>>);
+                    elements.push(
+                        draw_dnd_icon(surface.clone(), state.pointer_location.to_i32_round(), &log).into(),
+                    );
                 }
             }
 
@@ -198,11 +214,8 @@ pub fn run_winit(log: Logger) {
             }
             if let CursorImageStatus::Image(ref surface) = *cursor_guard {
                 cursor_visible = false;
-                elements.push(Box::new(draw_cursor(
-                    surface.clone(),
-                    state.pointer_location.to_i32_round(),
-                    &log,
-                )));
+                elements
+                    .push(draw_cursor(surface.clone(), state.pointer_location.to_i32_round(), &log).into());
             } else {
                 cursor_visible = true;
             }
@@ -212,7 +225,7 @@ pub fn run_winit(log: Logger) {
             {
                 let fps = state.backend_data.fps.avg().round() as u32;
                 let fps_texture = &state.backend_data.fps_texture;
-                elements.push(Box::new(draw_fps(fps_texture, fps)));
+                elements.push(draw_fps::<Gles2Renderer>(fps_texture, fps).into());
             }
 
             let full_redraw = &mut state.backend_data.full_redraw;
