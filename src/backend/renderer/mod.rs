@@ -383,16 +383,13 @@ pub trait ImportDmaWl: ImportDma {
     /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
     fn import_dma_buffer(
         &mut self,
-        _buffer: &Buffer,
-        surface: Option<&crate::wayland::compositor::SurfaceData>,
-        _damage: &[Rectangle<i32, BufferCoord>],
+        buffer: &Buffer,
+        _surface: Option<&crate::wayland::compositor::SurfaceData>,
+        damage: &[Rectangle<i32, BufferCoord>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-        let _ = surface;
-        // let dmabuf = buffer
-        //     .data::<Dmabuf>()
-        //     .expect("import_dma_buffer without checking buffer type?");
-        // self.import_dmabuf(dmabuf, Some(damage))
-        todo!("Dma")
+        let dmabuf = crate::wayland::dmabuf::get_dmabuf(buffer)
+            .expect("import_dma_buffer without checking buffer type?");
+        self.import_dmabuf(&dmabuf, Some(damage))
     }
 }
 
