@@ -11,7 +11,7 @@ use std::{any::Any, sync::Arc};
 use wayland_server::{
     backend::{protocol::Message, ClientId, Handle, InvalidId, ObjectData, ObjectId},
     protocol::wl_buffer::WlBuffer,
-    DataInit, DisplayHandle, New, Resource,
+    Client, DataInit, DisplayHandle, New, Resource,
 };
 
 use crate::utils::UnmanagedResource;
@@ -39,7 +39,7 @@ impl Buffer {
     /// Initializes a buffer, associating some user data with the buffer. This function causes the buffer to
     /// managed by Smithay.
     ///
-    /// The data associated with the buffer may obtained using [`ManagedBuffer::buffer_data`].
+    /// The data associated with the buffer may obtained using [`Buffer::buffer_data`].
     pub fn init_buffer<D, T>(init: &mut DataInit<'_, D>, buffer: New<WlBuffer>, data: T) -> Buffer
     where
         D: BufferHandler + 'static,
@@ -52,6 +52,38 @@ impl Buffer {
             buffer: buffer.id(),
             data,
         })
+    }
+
+    /// Creates a [`WlBuffer`] protocol object and associates some data with the buffer. This buffer object
+    /// is immediately managed by Smithay.
+    ///
+    /// The data associated with the buffer may obtained using [`Buffer::buffer_data`].
+    ///
+    /// # Usage
+    ///
+    /// You must send the created protocol object to the client immediately or else protocol errors will occur.
+    #[must_use = "You must send the WlBuffer to the client or else protocol errors will occur"]
+    pub fn create_buffer<D, T>(
+        dh: &mut DisplayHandle<'_>,
+        client: &Client,
+        data: T,
+    ) -> Result<(WlBuffer, Buffer), InvalidId>
+    where
+        D: BufferHandler + 'static,
+        T: Send + Sync + 'static,
+    {
+        let backend = dh.backend_handle::<D>().unwrap();
+        let data = Arc::new(BufferData { data: Box::new(data) });
+        let buffer_id = backend.create_object(client.id(), WlBuffer::interface(), 1, data.clone())?;
+        let wl_buffer = WlBuffer::from_id(dh, buffer_id.clone())?;
+
+        Ok((
+            wl_buffer,
+            Buffer(BufferInner::Managed {
+                buffer: buffer_id,
+                data,
+            }),
+        ))
     }
 
     /// Creates a [`Buffer`] from a [`WlBuffer`].
