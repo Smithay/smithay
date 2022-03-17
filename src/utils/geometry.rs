@@ -1198,13 +1198,13 @@ impl Transform {
                 .into(),
             Transform::_270 => (rect.loc.y, area.w - rect.loc.x - rect.size.w).into(),
             Transform::Flipped => (area.w - rect.loc.x - rect.size.w, rect.loc.y).into(),
-            Transform::Flipped90 => (rect.loc.y, rect.loc.x).into(),
-            Transform::Flipped180 => (rect.loc.x, area.h - rect.loc.y - rect.size.h).into(),
-            Transform::Flipped270 => (
+            Transform::Flipped90 => (
                 area.h - rect.loc.y - rect.size.h,
                 area.w - rect.loc.x - rect.size.w,
             )
                 .into(),
+            Transform::Flipped180 => (rect.loc.x, area.h - rect.loc.y - rect.size.h).into(),
+            Transform::Flipped270 => (rect.loc.y, rect.loc.x).into(),
         };
 
         Rectangle::from_loc_and_size(loc, size)
@@ -1333,7 +1333,7 @@ mod tests {
         let transform = Transform::Flipped90;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((20, 10), (40, 30)),
+            Rectangle::from_loc_and_size((20, 30), (40, 30)),
             transform.transform_rect_in(rect, &size)
         )
     }
@@ -1357,7 +1357,7 @@ mod tests {
         let transform = Transform::Flipped270;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((30, 30), (40, 30)),
+            Rectangle::from_loc_and_size((20, 10), (40, 30)),
             transform.transform_rect_in(rect, &size)
         )
     }
