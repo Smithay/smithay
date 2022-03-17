@@ -1480,6 +1480,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
             })?;
 
         self.target = Some(Gles2Target::Image { buf, dmabuf });
+        self.make_current()?;
         Ok(())
     }
 
@@ -1518,6 +1519,7 @@ impl Bind<Gles2Texture> for Gles2Renderer {
             destruction_callback_sender: self.destruction_callback_sender.clone(),
             fbo,
         });
+        self.make_current()?;
 
         Ok(())
     }
@@ -1578,6 +1580,7 @@ impl Bind<Gles2Renderbuffer> for Gles2Renderer {
             buf: renderbuffer,
             fbo,
         });
+        self.make_current()?;
 
         Ok(())
     }
