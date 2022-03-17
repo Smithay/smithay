@@ -425,41 +425,17 @@ impl<T> ::std::cmp::PartialEq for Seat<T> {
     }
 }
 
-/// A Seat handle
-/// This struct gives you access to the control of the
-/// capabilities of the associated seat.
+/// Delegate type for all [Seat] globals.
 ///
-/// It is directly inserted in the wayland display by its [`new`](Seat::new) method.
-///
-/// This is an handle to the inner logic, it can be cloned.
-///
-/// See module-level documentation for details of use.
+/// Events will be forwarded to an instance of the Seat global.
 #[derive(Debug)]
 pub struct SeatState<T> {
     pd: PhantomData<T>,
 }
 
-impl<T> Default for SeatState<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T> Clone for SeatState<T> {
-    fn clone(&self) -> Self {
-        Self { pd: self.pd }
-    }
-}
-
 impl<T> SeatState<T> {
-    /// Create a new seat global
-    ///
-    /// A new seat global is created with given name and inserted
-    /// into this wayland display.
-    ///
-    /// You are provided with the state token to retrieve it (allowing
-    /// you to add or remove capabilities from it), and the global handle,
-    /// in case you want to remove it.
+    /// Create new delegate SeatState
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self { pd: PhantomData }
     }
@@ -584,7 +560,7 @@ impl<T: 'static> DelegateGlobalDispatchBase<WlSeat> for SeatState<T> {
 
 impl<T, D> DelegateGlobalDispatch<WlSeat, D> for SeatState<T>
 where
-    D: GlobalDispatch<WlSeat, GlobalData = <Self as DelegateGlobalDispatchBase<WlSeat>>::GlobalData>,
+    D: GlobalDispatch<WlSeat, GlobalData = Self::GlobalData>,
     D: Dispatch<WlSeat, UserData = SeatUserData<T>>,
     D: Dispatch<WlKeyboard, UserData = KeyboardUserData>,
     D: Dispatch<WlPointer, UserData = PointerUserData<T>>,
