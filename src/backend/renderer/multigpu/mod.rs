@@ -1581,7 +1581,9 @@ where
             } else {
                 None
             };
-            tex.texture = Some(Box::new(new_texture) as Box<_>);
+            if let Some(new_texture) = new_texture {
+                tex.texture = Some(Box::new(new_texture) as Box<_>);
+            }
         } else {
             // update
             let texture = <dyn Any>::downcast_ref::<
