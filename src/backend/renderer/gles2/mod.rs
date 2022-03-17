@@ -17,6 +17,9 @@ use std::{
     },
 };
 
+#[cfg(feature = "wayland_frontend")]
+use std::{cell::RefCell, collections::HashMap};
+
 mod shaders;
 mod version;
 
@@ -770,6 +773,10 @@ impl ImportMemWl for Gles2Renderer {
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;
 
+        // why not store a `Gles2Texture`? because the user might do so.
+        // this is guaranteed a non-public internal type, so we are good.
+        type CacheMap = HashMap<usize, Rc<Gles2TextureInternal>>;
+
         with_buffer_contents(buffer, |slice, data| {
             self.make_current()?;
 
@@ -795,11 +802,21 @@ impl ImportMemWl for Gles2Renderer {
 
             let mut upload_full = false;
 
+            let id = self.id();
             let texture = Gles2Texture(
-                // why not store a `Gles2Texture`? because the user might do so.
-                // this is guaranteed a non-public internal type, so we are good.
                 surface
-                    .and_then(|surface| surface.data_map.get::<Rc<Gles2TextureInternal>>().cloned())
+                    .and_then(|surface| {
+                        surface
+                            .data_map
+                            .insert_if_missing(|| Rc::new(RefCell::new(CacheMap::new())));
+                        surface
+                            .data_map
+                            .get::<Rc<RefCell<CacheMap>>>()
+                            .unwrap()
+                            .borrow()
+                            .get(&id)
+                            .cloned()
+                    })
                     .filter(|texture| texture.size == (width, height).into())
                     .unwrap_or_else(|| {
                         let mut tex = 0;
@@ -817,7 +834,12 @@ impl ImportMemWl for Gles2Renderer {
                         });
                         if let Some(surface) = surface {
                             let copy = new.clone();
-                            surface.data_map.insert_if_missing(|| copy);
+                            surface
+                                .data_map
+                                .get::<Rc<RefCell<CacheMap>>>()
+                                .unwrap()
+                                .borrow_mut()
+                                .insert(id, copy);
                         }
                         new
                     }),
