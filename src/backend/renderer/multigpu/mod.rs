@@ -1559,7 +1559,7 @@ where
                     .map_err(Error::Target)?;
                 self.render
                     .renderer_mut()
-                    .import_memory(mapped, mapping.size(), mapping.flipped())
+                    .import_memory(mapped, mapping.size(), false)
                     .ok()
             } else if let Some(source) = self
                 .other_renderers
@@ -1576,7 +1576,7 @@ where
                     .map_err(Error::Render)?;
                 self.render
                     .renderer_mut()
-                    .import_memory(mapped, mapping.size(), mapping.flipped())
+                    .import_memory(mapped, mapping.size(), false)
                     .ok()
             } else {
                 None
