@@ -517,7 +517,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                                 })
                                 .collect::<Result<Vec<_>, Error<A, A>>>()?
                         };
-                        gpu_texture.insert_mapping::<A, _>(
+                        gpu_texture.insert_mapping::<A, A, _>(
                             *import_renderer.node(),
                             target,
                             texture.size(),
@@ -1111,11 +1111,12 @@ impl MultiTexture {
     }
 
     fn insert_mapping<
-        A: GraphicsApi + 'static,
+        R: GraphicsApi + 'static,
+        T: GraphicsApi + 'static,
         I: Iterator<
             Item = (
                 Rectangle<i32, BufferCoords>,
-                <<A::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping,
+                <<T::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping,
             ),
         >,
     >(
@@ -1125,17 +1126,17 @@ impl MultiTexture {
         size: Size<i32, BufferCoords>,
         new_mappings: I,
     ) where
-        <A::Device as ApiDevice>::Renderer: ExportMem,
-        <<A::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
+        <T::Device as ApiDevice>::Renderer: ExportMem,
+        <<T::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
     {
         let mut tex = self.0.borrow_mut();
-        let textures = tex.textures.entry(TypeId::of::<A>()).or_default();
+        let textures = tex.textures.entry(TypeId::of::<R>()).or_default();
         let (old_texture, old_mapping) = textures
             .remove(&render)
             .map(|single| (single.texture, single.mapping))
             .unwrap_or((None, None));
         let old_texture = old_texture.filter(|tex| {
-            <dyn Any>::downcast_ref::<<<A::Device as ApiDevice>::Renderer as Renderer>::TextureId>(tex)
+            <dyn Any>::downcast_ref::<<<R::Device as ApiDevice>::Renderer as Renderer>::TextureId>(tex)
                 .map(|tex| tex.size())
                 == Some(size)
         });
@@ -1488,7 +1489,7 @@ where
                             Ok((damage, mapping))
                         })
                         .collect::<Result<Vec<_>, Error<R, T>>>()?;
-                    texture.insert_mapping::<T, _>(
+                    texture.insert_mapping::<R, T, _>(
                         *import_renderer.node(),
                         *self.render.node(),
                         dma_texture.size(),
@@ -1522,7 +1523,7 @@ where
                             Ok((damage, mapping))
                         })
                         .collect::<Result<Vec<_>, Error<R, T>>>()?;
-                    texture.insert_mapping::<R, _>(
+                    texture.insert_mapping::<R, R, _>(
                         *import_renderer.node(),
                         *self.render.node(),
                         texture.size(),
