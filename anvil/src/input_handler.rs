@@ -344,7 +344,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
 
                     let geometry = space.output_geometry(&output).unwrap();
                     let current_scale = space.output_scale(&output).unwrap();
-                    let new_scale = current_scale - 0.25;
+                    let new_scale = f64::max(1.0, current_scale - 0.25);
                     output.change_current_state(None, None, Some(new_scale.ceil() as i32), None);
                     space.map_output(&output, new_scale, geometry.loc);
 
