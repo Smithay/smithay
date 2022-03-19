@@ -37,7 +37,10 @@ where
         renderer
             .render(mode.size, transform, |renderer, frame| {
                 let mut damage = window.accumulated_damage(None);
-                frame.clear(CLEAR_COLOR, &[Rectangle::from_loc_and_size((0, 0), mode.size)])?;
+                frame.clear(
+                    CLEAR_COLOR,
+                    &[Rectangle::from_loc_and_size((0, 0), mode.size).to_f64()],
+                )?;
                 draw_window(
                     renderer,
                     frame,

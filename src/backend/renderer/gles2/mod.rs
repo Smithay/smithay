@@ -1823,7 +1823,7 @@ impl Frame for Gles2Frame {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
 
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<f64, Physical>]) -> Result<(), Self::Error> {
         if at.is_empty() {
             return Ok(());
         }
@@ -1948,7 +1948,7 @@ impl Frame for Gles2Frame {
         texture: &Self::TextureId,
         src: Rectangle<i32, Buffer>,
         dest: Rectangle<f64, Physical>,
-        damage: &[Rectangle<i32, Physical>],
+        damage: &[Rectangle<f64, Physical>],
         transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
@@ -1999,7 +1999,6 @@ impl Frame for Gles2Frame {
             .iter()
             .flat_map(|rect| {
                 let dest_size = dest.size;
-                let rect = rect.to_f64();
 
                 let rect_constrained_loc = rect
                     .loc
