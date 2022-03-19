@@ -1,6 +1,8 @@
 //! Implementation of the multi-gpu [`GraphicsApi`] using
 //! EGL for device enumeration and OpenGL ES for rendering.
 
+use wayland_server::DisplayHandle;
+
 use crate::backend::{
     drm::{CreateDrmNodeError, DrmNode},
     egl::{EGLContext, EGLDevice, EGLDisplay, Error as EGLError},
@@ -149,7 +151,7 @@ impl<'a, 'b, Target> ImportEgl for MultiRenderer<'a, 'b, EglGlesBackend, EglGles
 where
     Gles2Renderer: Offscreen<Target>,
 {
-    fn bind_wl_display(&mut self, display: &wayland_server::Display) -> Result<(), EGLError> {
+    fn bind_wl_display<D: 'static>(&mut self, display: &wayland_server::Display<D>) -> Result<(), EGLError> {
         self.render.renderer_mut().bind_wl_display(display)
     }
     fn unbind_wl_display(&mut self) {
@@ -161,12 +163,13 @@ where
 
     fn import_egl_buffer(
         &mut self,
+        dh: &mut DisplayHandle<'_>,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         if let Some(ref mut renderer) = self.target.as_mut() {
-            if let Ok(dmabuf) = Self::try_import_egl(renderer.renderer_mut(), buffer) {
+            if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), buffer) {
                 let node = *renderer.node();
                 let texture = MultiTexture::from_surface(surface, dmabuf.size());
                 let texture_ref = texture.0.clone();
@@ -180,7 +183,7 @@ where
             }
         }
         for renderer in self.other_renderers.iter_mut() {
-            if let Ok(dmabuf) = Self::try_import_egl(renderer.renderer_mut(), buffer) {
+            if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), buffer) {
                 let node = *renderer.node();
                 let texture = MultiTexture::from_surface(surface, dmabuf.size());
                 let texture_ref = texture.0.clone();
@@ -204,6 +207,7 @@ where
 ))]
 impl<'a, 'b, Target> MultiRenderer<'a, 'b, EglGlesBackend, EglGlesBackend, Target> {
     fn try_import_egl(
+        dh: &mut DisplayHandle<'_>,
         renderer: &mut Gles2Renderer,
         buffer: &wl_buffer::WlBuffer,
     ) -> Result<Dmabuf, MultigpuError<EglGlesBackend, EglGlesBackend>> {
@@ -227,7 +231,7 @@ impl<'a, 'b, Target> MultiRenderer<'a, 'b, EglGlesBackend, EglGlesBackend, Targe
             .egl_reader()
             .as_ref()
             .unwrap()
-            .egl_buffer_contents(buffer)
+            .egl_buffer_contents(dh, buffer)
             .map_err(Gles2Error::EGLBufferAccessError)
             .map_err(MultigpuError::Render)?;
         renderer

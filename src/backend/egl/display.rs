@@ -417,7 +417,6 @@ impl EGLDisplay {
         y_inverted: bool,
     ) -> Result<Dmabuf, Error> {
         use crate::backend::allocator::dmabuf::DmabufFlags;
-        use std::convert::TryFrom;
 
         if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base")
             && !self
