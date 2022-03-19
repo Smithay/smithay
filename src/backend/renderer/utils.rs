@@ -112,6 +112,7 @@ pub fn on_commit_buffer_handler(dh: &mut DisplayHandle<'_>, surface: &WlSurface)
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 pub fn import_surface_tree<R>(
+    dh: &mut DisplayHandle<'_>,
     renderer: &mut R,
     surface: &WlSurface,
     log: &slog::Logger,
@@ -148,7 +149,7 @@ where
                             })
                             .collect::<Vec<_>>();
 
-                        match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
+                        match renderer.import_buffer(dh, buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
                                 e.insert(Box::new(m));
                             }
