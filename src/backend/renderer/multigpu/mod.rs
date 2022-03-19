@@ -878,6 +878,10 @@ where
                     match target.renderer_mut().import_dmabuf(&dmabuf, Some(&damage)) {
                         Ok(texture) => {
                             // import successful
+                            let damage = damage
+                                .iter()
+                                .map(|rect| rect.to_logical(1, dst_transform, &buffer_size).to_physical(1))
+                                .collect::<Vec<_>>();
                             target
                                 .renderer_mut()
                                 .render(size, dst_transform, |_renderer, frame| {
@@ -963,16 +967,16 @@ where
                         let texture = target
                             .import_memory(slice, mapping.1.size, false)
                             .map_err(Error::Target)?;
+                        let dst = mapping
+                            .1
+                            .to_logical(1, Transform::Normal, &buffer_size)
+                            .to_physical(1);
                         frame
                             .render_texture_from_to(
                                 &texture,
                                 Rectangle::from_loc_and_size((0, 0), mapping.1.size),
-                                mapping
-                                    .1
-                                    .to_logical(1, Transform::Normal, &buffer_size)
-                                    .to_physical(1)
-                                    .to_f64(),
-                                &[Rectangle::from_loc_and_size((0, 0), mapping.1.size)],
+                                dst.to_f64(),
+                                &[Rectangle::from_loc_and_size((0, 0), dst.size)],
                                 Transform::Normal,
                                 1.0,
                             )
@@ -1164,13 +1168,14 @@ where
         texture: &Self::TextureId,
         src: Rectangle<i32, BufferCoords>,
         dst: Rectangle<f64, Physical>,
-        damage: &[Rectangle<i32, BufferCoords>],
+        damage: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
         if let Some(texture) = texture.get::<R>(&self.node) {
             self.damage.extend(damage.iter().map(|rect| {
                 let src = src.to_f64();
+                let dst = dst.to_f64();
                 let rect = rect.to_f64();
                 let (x, y, w, h) = (rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
                 Rectangle::from_loc_and_size(

@@ -133,7 +133,7 @@ impl Frame for DummyFrame {
         _texture: &Self::TextureId,
         _src: Rectangle<i32, Buffer>,
         _dst: Rectangle<f64, Physical>,
-        _damage: &[Rectangle<i32, Buffer>],
+        _damage: &[Rectangle<i32, Physical>],
         _src_transform: Transform,
         _alpha: f32,
     ) -> Result<(), Self::Error> {

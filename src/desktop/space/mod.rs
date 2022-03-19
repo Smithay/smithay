@@ -941,7 +941,7 @@ macro_rules! custom_elements_internal {
 /// #       texture_scale: i32,
 /// #       output_scale: f64,
 /// #       src_transform: Transform,
-/// #       damage: &[Rectangle<i32, Buffer>],
+/// #       damage: &[Rectangle<i32, Physical>],
 /// #       alpha: f32,
 /// #   ) -> Result<(), Self::Error> {
 /// #       Ok(())
@@ -951,7 +951,7 @@ macro_rules! custom_elements_internal {
 /// #       texture: &Self::TextureId,
 /// #       src: Rectangle<i32, Buffer>,
 /// #       dst: Rectangle<f64, Physical>,
-/// #       damage: &[Rectangle<i32, Buffer>],
+/// #       damage: &[Rectangle<i32, Physical>],
 /// #       src_transform: Transform,
 /// #       alpha: f32,
 /// #   ) -> Result<(), Self::Error> {
