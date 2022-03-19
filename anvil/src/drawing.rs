@@ -188,7 +188,7 @@ where
                 })
                 .map(|mut x| {
                     x.loc = (0, 0).into();
-                    x.to_f64().to_physical(scale).to_i32_round()
+                    x.to_f64().to_physical(scale)
                 })
                 .collect::<Vec<_>>();
             frame.render_texture_from_to(

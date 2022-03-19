@@ -293,13 +293,13 @@ where
                         // then clamp to surface size again in logical space
                         .flat_map(|geo| geo.intersection(Rectangle::from_loc_and_size((0, 0), dimensions)))
                         // lastly transform it into physical space
-                        .map(|geo| geo.to_f64().to_physical(scale).to_i32_round())
+                        .map(|geo| geo.to_f64().to_physical(scale))
                         .collect::<Vec<_>>();
 
                     // TODO: Take wp_viewporter into account
                     if let Err(err) = frame.render_texture_at(
                         texture,
-                        location.to_f64().to_physical(scale).to_i32_round(),
+                        location.to_f64().to_physical(scale),
                         buffer_scale,
                         scale,
                         attributes.buffer_transform.into(),
