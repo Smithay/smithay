@@ -4,11 +4,10 @@
 pub const VERTEX_SHADER: &str = r#"
 #version 100
 uniform mat3 matrix;
-uniform bool invert_y;
+uniform mat3 tex_matrix;
 
 attribute vec2 vert;
-attribute vec2 tex_coords;
-attribute vec4 position;
+attribute vec4 vert_position;
 
 varying vec2 v_tex_coords;
 
@@ -20,16 +19,11 @@ mat2 scale(vec2 scale_vec){
 }
 
 void main() {
-    if (invert_y) {
-        v_tex_coords = vec2(tex_coords.x, 1.0 - tex_coords.y);
-    } else {
-        v_tex_coords = tex_coords;
-    }
-
-    vec2 transform_translation = position.xy;
-    vec2 transform_scale = position.zw;
-    v_tex_coords = (vec3((v_tex_coords * scale(transform_scale)) + transform_translation, 1.0)).xy;
-    gl_Position = vec4(matrix * vec3((vert * scale(transform_scale)) + transform_translation, 1.0), 1.0);
+    vec2 vert_transform_translation = vert_position.xy;
+    vec2 vert_transform_scale = vert_position.zw;
+    vec3 position = vec3(vert * scale(vert_transform_scale) + vert_transform_translation, 1.0);
+    v_tex_coords = (tex_matrix * position).xy;
+    gl_Position = vec4(matrix * position, 1.0);
 }
 "#;
 

@@ -149,7 +149,7 @@ pub trait Frame {
         texture_scale: i32,
         output_scale: f64,
         src_transform: Transform,
-        damage: &[Rectangle<i32, Buffer>],
+        damage: &[Rectangle<i32, Physical>],
         alpha: f32,
     ) -> Result<(), Self::Error> {
         self.render_texture_from_to(
@@ -161,7 +161,8 @@ pub trait Frame {
                     .size()
                     .to_logical(texture_scale, src_transform)
                     .to_f64()
-                    .to_physical(output_scale),
+                    .to_physical(output_scale)
+                    .to_i32_round(),
             ),
             damage,
             src_transform,
@@ -177,7 +178,7 @@ pub trait Frame {
         texture: &Self::TextureId,
         src: Rectangle<i32, Buffer>,
         dst: Rectangle<f64, Physical>,
-        damage: &[Rectangle<i32, Buffer>],
+        damage: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error>;

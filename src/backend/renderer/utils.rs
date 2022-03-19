@@ -265,7 +265,6 @@ where
                 let mut data = data.borrow_mut();
                 let dimensions = data.surface_size();
                 let buffer_scale = data.buffer_scale;
-                let buffer_transform = data.buffer_transform;
                 let attributes = states.cached_state.current::<SurfaceAttributes>();
                 if let Some(texture) = data
                     .textures
@@ -293,8 +292,8 @@ where
                         })
                         // then clamp to surface size again in logical space
                         .flat_map(|geo| geo.intersection(Rectangle::from_loc_and_size((0, 0), dimensions)))
-                        // lastly transform it into buffer space
-                        .map(|geo| geo.to_buffer(buffer_scale, buffer_transform, &dimensions))
+                        // lastly transform it into physical space
+                        .map(|geo| geo.to_f64().to_physical(scale).to_i32_round())
                         .collect::<Vec<_>>();
 
                     // TODO: Take wp_viewporter into account

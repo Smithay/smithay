@@ -123,7 +123,7 @@ where
             Transform::Normal,
             &*damage
                 .iter()
-                .map(|rect| rect.to_buffer(1, Transform::Normal, &self.size))
+                .map(|rect| rect.to_f64().to_physical(scale).to_i32_round())
                 .collect::<Vec<_>>(),
             1.0,
         )?;
@@ -188,7 +188,7 @@ where
                 })
                 .map(|mut x| {
                     x.loc = (0, 0).into();
-                    x.to_buffer(1, Transform::Normal, &(22, 35).into())
+                    x.to_f64().to_physical(scale).to_i32_round()
                 })
                 .collect::<Vec<_>>();
             frame.render_texture_from_to(
