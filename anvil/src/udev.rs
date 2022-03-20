@@ -776,7 +776,7 @@ impl AnvilState<UdevData> {
             // Send frame events so that client start drawing their next frame
             self.space
                 .borrow()
-                .send_frames(false, self.start_time.elapsed().as_millis() as u32);
+                .send_frames(self.start_time.elapsed().as_millis() as u32);
         }
     }
 }

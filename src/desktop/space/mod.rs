@@ -26,7 +26,6 @@ mod popup;
 mod window;
 
 pub use self::element::*;
-use self::layer::*;
 use self::output::*;
 use self::window::*;
 
@@ -612,28 +611,14 @@ impl Space {
     }
 
     /// Sends the frame callback to mapped [`Window`]s and [`LayerSurface`]s.
-    ///
-    /// If `all` is set this will be send to `all` mapped surfaces.
-    /// Otherwise only windows and layers previously drawn during the
-    /// previous frame will be send frame events.
-    pub fn send_frames(&self, all: bool, time: u32) {
-        for window in self.windows.iter().filter(|w| {
-            all || {
-                let mut state = window_state(self.id, w);
-                std::mem::replace(&mut state.drawn, false)
-            }
-        }) {
+    pub fn send_frames(&self, time: u32) {
+        for window in self.windows.iter() {
             window.send_frame(time);
         }
 
         for output in self.outputs.iter() {
             let map = layer_map_for_output(output);
-            for layer in map.layers().filter(|l| {
-                all || {
-                    let mut state = layer_state(self.id, l);
-                    std::mem::replace(&mut state.drawn, false)
-                }
-            }) {
+            for layer in map.layers() {
                 layer.send_frame(time);
             }
         }

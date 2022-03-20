@@ -290,7 +290,7 @@ pub fn run_x11(log: Logger) {
         }
 
         // Send frame events so that client start drawing their next frame
-        space.send_frames(false, start_time.elapsed().as_millis() as u32);
+        space.send_frames(start_time.elapsed().as_millis() as u32);
         std::mem::drop(space);
 
         if event_loop.dispatch(None, &mut state).is_err() {
