@@ -144,7 +144,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
         state
             .space
             .borrow()
-            .send_frames(false, state.start_time.elapsed().as_millis() as u32);
+            .send_frames(state.start_time.elapsed().as_millis() as u32);
 
         if event_loop
             .dispatch(Some(Duration::from_millis(16)), &mut state)
