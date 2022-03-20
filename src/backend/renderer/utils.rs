@@ -132,16 +132,20 @@ where
                 if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
                         let surface_size = surface_size.unwrap();
+                        let buffer_dimensions = data.buffer_dimensions.unwrap();
                         let buffer_damage = attributes
                             .damage
                             .iter()
-                            .map(|dmg| match dmg {
-                                Damage::Buffer(rect) => *rect,
-                                Damage::Surface(rect) => rect.to_buffer(
-                                    attributes.buffer_scale,
-                                    attributes.buffer_transform.into(),
-                                    &surface_size,
-                                ),
+                            .flat_map(|dmg| {
+                                match dmg {
+                                    Damage::Buffer(rect) => *rect,
+                                    Damage::Surface(rect) => rect.to_buffer(
+                                        attributes.buffer_scale,
+                                        attributes.buffer_transform.into(),
+                                        &surface_size,
+                                    ),
+                                }
+                                .intersection(Rectangle::from_loc_and_size((0, 0), buffer_dimensions))
                             })
                             .collect::<Vec<_>>();
 
@@ -216,16 +220,20 @@ where
                 if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
                         let surface_size = surface_size.unwrap();
+                        let buffer_dimensions = data.buffer_dimensions.unwrap();
                         let buffer_damage = attributes
                             .damage
                             .iter()
-                            .map(|dmg| match dmg {
-                                Damage::Buffer(rect) => *rect,
-                                Damage::Surface(rect) => rect.to_buffer(
-                                    attributes.buffer_scale,
-                                    attributes.buffer_transform.into(),
-                                    &surface_size,
-                                ),
+                            .flat_map(|dmg| {
+                                match dmg {
+                                    Damage::Buffer(rect) => *rect,
+                                    Damage::Surface(rect) => rect.to_buffer(
+                                        attributes.buffer_scale,
+                                        attributes.buffer_transform.into(),
+                                        &surface_size,
+                                    ),
+                                }
+                                .intersection(Rectangle::from_loc_and_size((0, 0), buffer_dimensions))
                             })
                             .collect::<Vec<_>>();
 
