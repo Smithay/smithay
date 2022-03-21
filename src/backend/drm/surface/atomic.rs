@@ -862,11 +862,9 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 self.plane_prop_handle(primary, "CRTC_H")?,
                 property::Value::UnsignedRange(mode.size().1 as u64),
             );
-            req.add_property(
-                primary,
-                self.plane_prop_handle(primary, "rotation")?,
-                property::Value::Bitmask(1u64),
-            );
+            if let Ok(prop) = self.plane_prop_handle(primary, "rotation") {
+                req.add_property(primary, prop, property::Value::Bitmask(1u64));
+            }
         }
 
         // and finally the others
@@ -913,11 +911,9 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 self.plane_prop_handle(plane_info.handle, "CRTC_H")?,
                 property::Value::UnsignedRange(plane_info.h as u64),
             );
-            req.add_property(
-                plane_info.handle,
-                self.plane_prop_handle(plane_info.handle, "rotation")?,
-                property::Value::Bitmask(1u64),
-            );
+            if let Ok(prop) = self.plane_prop_handle(plane_info.handle, "rotation") {
+                req.add_property(plane_info.handle, prop, property::Value::Bitmask(1u64));
+            }
         }
 
         Ok(req)
